@@ -92,7 +92,9 @@ defmodule Rail.GitHub.Client do
     attempts = Keyword.get(opts, :attempts, 3)
     retry_delay_ms = Keyword.get(opts, :retry_delay_ms, 2000)
 
-    poll_pull_request_state(repo, pr_number, token, attempts, retry_delay_ms, false, opts)
+    known_draft = Keyword.get(opts, :known_draft, false)
+
+    poll_pull_request_state(repo, pr_number, token, attempts, retry_delay_ms, known_draft, opts)
   end
 
   def merge_pull_request(repo, pr_number, user_token, opts \\ []) do

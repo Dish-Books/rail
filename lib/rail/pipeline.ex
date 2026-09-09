@@ -92,4 +92,24 @@ defmodule Rail.Pipeline do
   defdelegate settle_chat_turn(task_target, role_run_target, run_or_outcome, opts), to: Actions.SettleChatTurn
   defdelegate settle_chat_turn(task_target, role_run_target, run_or_outcome), to: Actions.SettleChatTurn
   defdelegate settle_chat_turn(task_target, role_run_target), to: Actions.SettleChatTurn
+
+  defdelegate refresh_mergeability(scope_or_task, task_or_opts, opts), to: Actions.RefreshMergeability
+  defdelegate refresh_mergeability(scope_or_task, task_or_opts), to: Actions.RefreshMergeability
+  defdelegate refresh_mergeability(task_or_id), to: Actions.RefreshMergeability
+
+  defdelegate mark_pr_ready(scope_or_task, task_or_opts, opts), to: Actions.MarkPrReady
+  defdelegate mark_pr_ready(scope_or_task, task_or_opts), to: Actions.MarkPrReady
+  defdelegate mark_pr_ready(task_or_id), to: Actions.MarkPrReady
+
+  defdelegate start_rebase(scope_or_task, task_or_opts, opts), to: Actions.StartRebase
+  defdelegate start_rebase(scope_or_task, task_or_opts), to: Actions.StartRebase
+  defdelegate start_rebase(task_or_id), to: Actions.StartRebase
+
+  defdelegate merge_task(scope_or_task, task_or_opts, opts), to: Actions.MergeTask
+  defdelegate merge_task(scope_or_task, task_or_opts), to: Actions.MergeTask
+  defdelegate merge_task(task_or_id), to: Actions.MergeTask
+
+  defdelegate cleanup_task(scope_or_task, task_or_opts, opts), to: Actions.CleanupTask
+  defdelegate cleanup_task(scope_or_task, task_or_opts), to: Actions.CleanupTask
+  defdelegate cleanup_task(task_or_id), to: Actions.CleanupTask
 end

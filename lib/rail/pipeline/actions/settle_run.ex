@@ -56,23 +56,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     maybe_finish_run(run_or_outcome)
 
     {:ok, role_run} = update_role_run(role_run, exit_code, error, output, usage)
-
-    detected_question =
-      resolve_detected_question(run_or_outcome) ||
-        (output && QuestionDetector.detect_question(output, task_id: task.id, role_id: role_run.role_id))
-
-    {task, role_run} =
-      if detected_question && task.stage_state != :blocked && is_nil(task.question_id) do
-        case Rail.Pipeline.register_question(task, role_run, detected_question) do
-          {:ok, %Rail.Pipeline.Schemas.Question{}} ->
-            {Repo.get!(Task, task.id), Repo.get!(RoleRun, role_run.id)}
-
-          _other ->
-            {task, role_run}
-        end
-      else
-        {task, role_run}
-      end
+    {task, role_run} = maybe_detect_and_register_question(task, role_run, run_or_outcome, output)
 
     scratch_dir =
       Keyword.get(opts, :scratch_dir) ||
@@ -80,18 +64,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
         default_scratch_path(task.project_id, task.id)
 
     {:ok, task} = capture(task.stage, task, scratch_dir)
-
-    {task_attrs, updated_role_run} =
-      cond do
-        task.stage_state == :blocked and is_binary(task.question_id) ->
-          {%{}, role_run}
-
-        exit_code == 0 ->
-          handle_clean_exit(task, role_run)
-
-        true ->
-          handle_failed_exit(task, role_run, error, exit_code)
-      end
+    {task_attrs, updated_role_run} = resolve_settle_outcome(task, role_run, exit_code, error)
 
     {:ok, updated_task} =
       task
@@ -99,10 +72,52 @@ defmodule Rail.Pipeline.Actions.SettleRun do
       |> Repo.update()
 
     Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :run_settled})
-
     Rail.Pipeline.maybe_dispatch_queued_pending_chat(updated_task, opts)
+    final_task = maybe_refresh_rebase_mergeability(updated_task, task, exit_code, opts)
 
-    {:ok, updated_task, updated_role_run}
+    {:ok, final_task, updated_role_run}
+  end
+
+  defp maybe_detect_and_register_question(task, role_run, run_or_outcome, output) do
+    detected_question =
+      resolve_detected_question(run_or_outcome) ||
+        (output && QuestionDetector.detect_question(output, task_id: task.id, role_id: role_run.role_id))
+
+    if detected_question && task.stage_state != :blocked && is_nil(task.question_id) do
+      case Rail.Pipeline.register_question(task, role_run, detected_question) do
+        {:ok, %Rail.Pipeline.Schemas.Question{}} ->
+          {Repo.get!(Task, task.id), Repo.get!(RoleRun, role_run.id)}
+
+        _other ->
+          {task, role_run}
+      end
+    else
+      {task, role_run}
+    end
+  end
+
+  defp resolve_settle_outcome(%Task{stage_state: :blocked, question_id: q_id}, role_run, _code, _error)
+       when is_binary(q_id) do
+    {%{}, role_run}
+  end
+
+  defp resolve_settle_outcome(task, role_run, 0, _error) do
+    handle_clean_exit(task, role_run)
+  end
+
+  defp resolve_settle_outcome(task, role_run, exit_code, error) do
+    handle_failed_exit(task, role_run, error, exit_code)
+  end
+
+  defp maybe_refresh_rebase_mergeability(%Task{} = updated_task, %Task{is_rebasing: true}, 0, opts) do
+    case Rail.Pipeline.refresh_mergeability(updated_task, opts) do
+      {:ok, refreshed} -> refreshed
+      _failure -> updated_task
+    end
+  end
+
+  defp maybe_refresh_rebase_mergeability(%Task{} = updated_task, _task, _exit_code, _opts) do
+    updated_task
   end
 
   defp handle_clean_exit(%Task{is_rebasing: true} = task, role_run) do

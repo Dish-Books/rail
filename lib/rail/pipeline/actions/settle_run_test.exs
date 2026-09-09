@@ -1,6 +1,8 @@
 defmodule Rail.Pipeline.Actions.SettleRunTest do
   use Rail.DataCase, async: false
 
+  import RailTest.Mocks.GitHub
+
   alias Rail.Domain.TaskUsage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Plan
@@ -836,5 +838,86 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     assert {:ok, %Task{}, %RoleRun{}} =
              Pipeline.settle_run(task, role_run, %{kind: :chat, exit_code: 0})
+  end
+
+  test "settling clean exit 0 for rebasing task restores previous state and refreshes mergeability" do
+    project = create_test_project(%{github_repo: "testorg/rebase_settle"})
+
+    task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :review,
+        stage_state: :running,
+        is_rebasing: true,
+        stage_state_before_rebase: :awaiting_approval,
+        pr_number: 999,
+        mergeability: :conflicting,
+        pr_is_draft: false
+      })
+
+    role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+    mock_pull_request_state_success("testorg/rebase_settle", 999, mergeable: true, draft: false)
+
+    assert {:ok,
+            %Task{
+              is_rebasing: false,
+              stage_state: :awaiting_approval,
+              stage_state_before_rebase: nil,
+              mergeability: :mergeable
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0}, token: "tok_test")
+  end
+
+  test "settling non-zero exit for rebasing task preserves is_rebasing for retries" do
+    project = create_test_project()
+
+    task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :review,
+        stage_state: :running,
+        is_rebasing: true,
+        stage_state_before_rebase: :queued
+      })
+
+    role_run = create_test_role_run(%{task_id: task.id, status: :running, auto_retries: 0})
+
+    assert {:ok,
+            %Task{
+              is_rebasing: true,
+              stage_state: :failed,
+              error: "Permanent error"
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 1, error: "Permanent error"})
+  end
+
+  test "settling clean exit for rebasing task falls back to updated_task if refresh_mergeability fails" do
+    project = create_test_project(%{github_repo: "testorg/rebase_settle_fail"})
+
+    task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :ready_to_merge,
+        stage_state: :running,
+        is_rebasing: true,
+        stage_state_before_rebase: :awaiting_approval,
+        mergeability: :unknown,
+        pr_number: 998,
+        pr_is_draft: false
+      })
+
+    role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+    mock_pull_request_state_error("testorg/rebase_settle_fail", 998, 500, "Internal Server Error")
+
+    assert {:ok,
+            %Task{
+              is_rebasing: false,
+              stage_state: :awaiting_approval,
+              stage_state_before_rebase: nil,
+              mergeability: :unknown
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0}, token: "tok_test")
   end
 end
