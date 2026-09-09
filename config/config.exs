@@ -1,0 +1,37 @@
+import Config
+
+config :elixir, :time_zone_database, Tz.TimeZoneDatabase
+
+config :logger, :default_formatter,
+  format: "$time $metadata[$level] $message\n",
+  metadata: [:request_id]
+
+config :phoenix, :json_library, Jason
+
+config :rail, Rail.Repo,
+  migration_primary_key: [type: :text],
+  migration_timestamps: [type: :utc_datetime_usec]
+
+config :rail, Rail.Vault,
+  ciphers: [
+    aes_gcm:
+      {Cloak.Ciphers.AES.GCM,
+       tag: "AES.GCM.V1", key: Base.decode64!("L2zKQh+tDxkUH94a2O+oa8Mae3mryHitrR/LrYABeNA="), iv_length: 12}
+  ]
+
+config :rail, RailWeb.Endpoint,
+  url: [host: "localhost"],
+  adapter: Bandit.PhoenixAdapter,
+  render_errors: [
+    formats: [html: RailWeb.ErrorHTML, json: RailWeb.ErrorJSON],
+    layout: false
+  ],
+  pubsub_server: Rail.PubSub,
+  live_view: [signing_salt: "rail_lv_salt_1234"]
+
+config :rail,
+  config_env: config_env(),
+  ecto_repos: [Rail.Repo],
+  generators: [timestamp_type: :utc_datetime_usec]
+
+import_config "#{config_env()}.exs"
