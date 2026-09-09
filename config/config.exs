@@ -29,6 +29,10 @@ config :rail, RailWeb.Endpoint,
   pubsub_server: Rail.PubSub,
   live_view: [signing_salt: "rail_lv_salt_1234"]
 
+config :rail, :github,
+  app_id: System.get_env("GITHUB_APP_ID", "test_app_id"),
+  private_key: System.get_env("GITHUB_APP_PRIVATE_KEY")
+
 config :rail, :linear_oauth,
   client_id: System.get_env("LINEAR_CLIENT_ID", "linear_client_id"),
   client_secret: System.get_env("LINEAR_CLIENT_SECRET", "linear_client_secret"),

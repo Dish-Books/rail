@@ -21,6 +21,11 @@ config :rail, RailWeb.Endpoint,
   secret_key_base: "rails_test_secret_key_base_at_least_64_bytes_long_for_security_123456789012",
   server: false
 
+config :rail, :github,
+  app_id: "test_github_app_id",
+  private_key: File.read!("test/support/fixtures/github_app.pem"),
+  req_options: [plug: {Req.Test, Rail.GitHub}]
+
 config :rail, :linear_oauth,
   client_id: "test_linear_client_id",
   client_secret: "test_linear_client_secret",

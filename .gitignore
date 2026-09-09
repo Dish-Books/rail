@@ -38,6 +38,7 @@ npm-debug.log
 .env
 
 *.pem
+!test/support/fixtures/*.pem
 .DS_Store
 .terraform
 *.auto.tfvars

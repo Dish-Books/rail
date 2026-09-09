@@ -11,6 +11,12 @@ if client_id = System.get_env("LINEAR_CLIENT_ID") do
     redirect_uri: System.get_env("LINEAR_REDIRECT_URI", "http://localhost:4000/auth/linear/callback")
 end
 
+if app_id = System.get_env("GITHUB_APP_ID") do
+  config :rail, :github,
+    app_id: app_id,
+    private_key: System.get_env("GITHUB_APP_PRIVATE_KEY")
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||

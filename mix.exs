@@ -54,6 +54,7 @@ defmodule Rail.MixProject do
       {:floki, "~> 0.38"},
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
+      {:jose, "~> 1.11"},
       {:lazy_html, ">= 0.1.0", only: :test},
       {:live_sync, "~> 0.1"},
       {:mimic, "~> 2.0", only: :test},
