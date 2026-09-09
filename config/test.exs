@@ -37,3 +37,5 @@ config :rail, :linear_oauth,
   client_secret: "test_linear_client_secret",
   redirect_uri: "http://localhost:4002/auth/linear/callback",
   req_options: [plug: {Req.Test, Rail.Linear}]
+
+config :rail, :no_dispatch, true

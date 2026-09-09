@@ -12,4 +12,7 @@ defmodule RailTest.Helpers do
   defdelegate create_test_role(attrs \\ %{}), to: RailTest.RolesHelpers
   defdelegate create_test_role_run(attrs \\ %{}), to: RailTest.RolesHelpers
   defdelegate create_test_run_event(attrs \\ %{}), to: RailTest.RolesHelpers
+  defdelegate create_test_task(attrs \\ %{}), to: RailTest.PipelineHelpers
+  defdelegate create_test_question(attrs \\ %{}), to: RailTest.PipelineHelpers
+  defdelegate create_test_plan(attrs \\ %{}), to: RailTest.PipelineHelpers
 end

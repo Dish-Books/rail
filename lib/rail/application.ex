@@ -12,6 +12,8 @@ defmodule Rail.Application do
       Rail.Runs.FollowerSupervisor,
       Rail.Runs.Boot,
       Rail.Backends.RefreshServer,
+      Rail.Pipeline.Dispatcher,
+      {Task.Supervisor, name: Rail.TaskSupervisor},
       RailWeb.Endpoint
     ]
 
