@@ -1,0 +1,57 @@
+# The directory Mix will write compiled artifacts to.
+/_build/
+
+# If you run "mix test --cover", coverage assets end up here.
+/cover/
+
+# The directory Mix downloads your dependencies sources to.
+/deps/
+
+# Where 3rd-party dependencies like ExDoc output generated docs.
+/doc/
+
+# Ignore .fetch files in case you like to edit your project deps locally.
+/.fetch
+
+# If the VM crashes, it generates a dump, let's ignore it too.
+erl_crash.dump
+
+# Also ignore archive artifacts (built via "mix archive.build").
+*.ez
+
+# Temporary files, for example, from tests.
+/tmp/
+
+# Ignore package tarball (built via "mix hex.build").
+dishbooks-*.tar
+
+# Ignore assets that are produced by build tools.
+/priv/static/assets/
+
+# Ignore digested assets cache.
+/priv/static/cache_manifest.json
+
+# In case you use Node.js/npm, you want to ignore these.
+npm-debug.log
+/assets/node_modules/
+
+.env
+
+*.pem
+.DS_Store
+.terraform
+*.auto.tfvars
+*.tfstate
+.elixir_ls/
+debug/
+
+# Worktrees and QA artifacts the local tooling writes here. Untracked files count
+# as a dirty tree for scripts/ci.sh, which would otherwise refuse every receipt.
+/.claude/worktrees/
+
+# Per-module cover dumps the BEAM leaves in place when a coveralls run is
+# interrupted. Untracked files count as a dirty tree, which blocks the next run.
+*.coverdata
+
+# Demo and QA scratchpads: frames, scenarios and reset scripts, none of which belong in history.
+.scratch/
