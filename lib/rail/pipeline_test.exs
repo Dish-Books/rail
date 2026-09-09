@@ -41,6 +41,10 @@ defmodule Rail.PipelineTest do
     assert Pipeline.dispatch_disabled?() == true
     assert match?({:disabled, []}, Pipeline.pump_dispatcher())
     assert match?({:error, :dispatch_disabled}, Pipeline.dispatch_now("tsk_dummy"))
+    assert Pipeline.retry_timers() == %{}
+    assert :ok = Pipeline.rearm_pending_retries()
+    assert :ok = Pipeline.cancel_retry_timer("tsk_dummy")
+    assert {:error, :not_waiting_to_retry} = Pipeline.arm_retry_timer("tsk_dummy")
   end
 
   test "delegates stage lifecycle and gate actions" do
@@ -66,6 +70,11 @@ defmodule Rail.PipelineTest do
 
     task_retry = create_test_task(%{project_id: project.id, stage: :engineer, stage_state: :failed})
     assert {:ok, %Task{stage_state: :queued}} = Pipeline.retry_stage(task_retry)
+
+    task_retry_opts = create_test_task(%{project_id: project.id, stage: :engineer, stage_state: :failed})
+
+    assert {:ok, %Task{stage_state: :queued}} =
+             Pipeline.retry_stage(Scope.for_system(), task_retry_opts.id, [])
   end
 
   test "delegates question lifecycle and listing actions" do

@@ -18,42 +18,54 @@ defmodule Rail.Pipeline.Actions.RetryStage do
   @doc """
   Retries the current stage of a task:
   - Resolves role for the current stage (or engineer if rebasing).
+  - Cancels any active retry timer in Dispatcher.
   - Clears `retry_after` and `error`.
   - Sets `stage_state: :queued`.
   - Resets `auto_retries = 0` on the corresponding `RoleRun`.
   - Broadcasts `pipeline_changed` and pumps the Dispatcher.
   """
-  def retry_stage(%Scope{} = scope, task_or_id) do
+  def retry_stage(%Scope{} = scope, task_or_id, opts) when is_list(opts) do
     with :ok <- authorize_scope(scope),
          %Task{} = task <- resolve_task(task_or_id) do
-      do_retry_stage(task)
+      do_retry_stage(task, opts)
     else
       {:error, reason} -> {:error, reason}
       nil -> {:error, :not_found}
     end
   end
 
+  def retry_stage(%Scope{} = scope, task_or_id) do
+    retry_stage(scope, task_or_id, [])
+  end
+
+  def retry_stage(task_or_id, opts) when is_list(opts) do
+    retry_stage(Scope.for_system(), task_or_id, opts)
+  end
+
   def retry_stage(task_or_id) do
-    retry_stage(Scope.for_system(), task_or_id)
+    retry_stage(Scope.for_system(), task_or_id, [])
   end
 
   defp authorize_scope(%Scope{system: true}), do: :ok
   defp authorize_scope(%Scope{user: %{}}), do: :ok
   defp authorize_scope(_scope), do: {:error, :not_authorized}
 
-  defp do_retry_stage(%Task{} = task) do
+  defp do_retry_stage(%Task{} = task, opts) do
     stage_to_find = if task.is_rebasing, do: :engineer, else: task.stage
 
     case Roles.role_for_stage(task.project_id, stage_to_find) do
       {:ok, %Role{} = role} ->
-        execute_retry(task, role)
+        execute_retry(task, role, opts)
 
       _no_role ->
         {:error, {:no_role_for_stage, stage_to_find}}
     end
   end
 
-  defp execute_retry(%Task{} = task, %Role{} = role) do
+  defp execute_retry(%Task{} = task, %Role{} = role, opts) do
+    dispatcher = Keyword.get(opts, :dispatcher, Dispatcher)
+    Dispatcher.cancel_retry_timer(dispatcher, task.id)
+
     reset_role_run_retries(task.id, role.id)
 
     attrs = %{
@@ -68,7 +80,7 @@ defmodule Rail.Pipeline.Actions.RetryStage do
       |> Repo.update()
 
     Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :stage_retried})
-    Dispatcher.pump()
+    Dispatcher.pump(dispatcher)
 
     {:ok, updated_task}
   end

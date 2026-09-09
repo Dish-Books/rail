@@ -297,4 +297,280 @@ defmodule Rail.Pipeline.DispatcherTest do
     assert {:ok, %Task{id: ^task_id}} = Dispatcher.dispatch_now(pid, task)
     GenServer.stop(pid)
   end
+
+  test "arms retry timer on pipeline_changed event with task_id", %{dispatcher: pid} do
+    project = create_test_project()
+    future = DateTime.shift(DateTime.utc_now(), second: 10)
+
+    %Task{id: task_id} =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :product,
+        stage_state: :queued,
+        retry_after: future
+      })
+
+    send(pid, {:pipeline_changed, %{task_id: task_id}})
+    Process.sleep(20)
+
+    timers = Dispatcher.retry_timers(pid)
+    assert Map.has_key?(timers, task_id)
+    assert is_reference(Map.get(timers, task_id))
+  end
+
+  test "arm_retry_timer client API arms timer, handles already armed, and non-waiting tasks", %{dispatcher: pid} do
+    project = create_test_project()
+    future = DateTime.shift(DateTime.utc_now(), second: 30)
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :product,
+        stage_state: :queued,
+        retry_after: future
+      })
+
+    assert {:ok, ref} = Dispatcher.arm_retry_timer(pid, task)
+    assert is_reference(ref)
+
+    # Calling again returns already_armed
+    assert {:ok, :already_armed} = Dispatcher.arm_retry_timer(pid, task_id)
+
+    # Calling on task not waiting to retry
+    not_waiting = create_test_task(%{project_id: project.id, stage: :product, stage_state: :queued})
+    assert {:error, :not_waiting_to_retry} = Dispatcher.arm_retry_timer(pid, not_waiting.id)
+  end
+
+  test "cancel_retry_timer cancels active timer and removes from state", %{dispatcher: pid} do
+    project = create_test_project()
+    future = DateTime.shift(DateTime.utc_now(), minute: 1)
+
+    %Task{id: task_id} =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :product,
+        stage_state: :queued,
+        retry_after: future
+      })
+
+    assert {:ok, _ref} = Dispatcher.arm_retry_timer(pid, task_id)
+    assert Map.has_key?(Dispatcher.retry_timers(pid), task_id)
+
+    assert :ok = Dispatcher.cancel_retry_timer(pid, task_id)
+    refute Map.has_key?(Dispatcher.retry_timers(pid), task_id)
+
+    # Idempotent cancel on missing timer
+    assert :ok = Dispatcher.cancel_retry_timer(pid, task_id)
+  end
+
+  test "retry_stage cancels pending retry timer in dispatcher", %{dispatcher: pid} do
+    project = create_test_project()
+    _role = create_test_role(%{project_id: project.id, stage: :product})
+    future = DateTime.shift(DateTime.utc_now(), minute: 1)
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :product,
+        stage_state: :queued,
+        retry_after: future,
+        error: "Transient timeout"
+      })
+
+    assert {:ok, _ref} = Dispatcher.arm_retry_timer(pid, task.id)
+    assert Map.has_key?(Dispatcher.retry_timers(pid), task_id)
+
+    assert {:ok, %Task{id: ^task_id, retry_after: nil}} =
+             Pipeline.retry_stage(task, dispatcher: pid)
+
+    refute Map.has_key?(Dispatcher.retry_timers(pid), task_id)
+  end
+
+  test "retry timer expiration clears retry_after and triggers pump when delay elapsed", %{dispatcher: pid} do
+    project = create_test_project()
+    _role = create_test_role(%{project_id: project.id, stage: :product, max_concurrent: 1})
+    past = DateTime.shift(DateTime.utc_now(), second: -1)
+
+    %Task{id: task_id} =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :product,
+        stage_state: :queued,
+        retry_after: past
+      })
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
+
+    send(pid, {:retry_timer_expired, task_id})
+    Process.sleep(30)
+
+    updated_task = Repo.get!(Task, task_id)
+    assert updated_task.retry_after == nil
+    assert updated_task.stage_state == :running
+
+    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :retry_timer_expired}}
+  end
+
+  test "retry timer expiration re-arms timer if retry_after is still in future", %{dispatcher: pid} do
+    project = create_test_project()
+    future = DateTime.shift(DateTime.utc_now(), second: 30)
+
+    %Task{id: task_id} =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :product,
+        stage_state: :queued,
+        retry_after: future
+      })
+
+    send(pid, {:retry_timer_expired, task_id})
+    Process.sleep(20)
+
+    timers = Dispatcher.retry_timers(pid)
+    assert Map.has_key?(timers, task_id)
+    assert is_reference(Map.get(timers, task_id))
+
+    updated_task = Repo.get!(Task, task_id)
+    assert updated_task.retry_after
+    assert updated_task.stage_state == :queued
+  end
+
+  test "boot re-arming on init re-arms future retries, clears elapsed retries, and pumps" do
+    project = create_test_project()
+    _role = create_test_role(%{project_id: project.id, stage: :product, max_concurrent: 2})
+
+    future = DateTime.shift(DateTime.utc_now(), second: 20)
+    past = DateTime.shift(DateTime.utc_now(), second: -20)
+
+    %Task{id: future_task_id} =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :product,
+        stage_state: :queued,
+        retry_after: future
+      })
+
+    %Task{id: past_task_id} =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :product,
+        stage_state: :queued,
+        retry_after: past
+      })
+
+    {:ok, pid} =
+      Dispatcher.start_link(
+        name: nil,
+        start_timer: false,
+        subscribe: false,
+        dispatch_disabled: false,
+        rearm_on_boot: true,
+        pump_on_boot: true,
+        dispatch_hook: &mock_dispatch_hook/2
+      )
+
+    Process.sleep(40)
+
+    # Future task timer is re-armed
+    timers = Dispatcher.retry_timers(pid)
+    assert Map.has_key?(timers, future_task_id)
+    assert is_reference(Map.get(timers, future_task_id))
+
+    # Past task has retry_after cleared and was dispatched by pump_on_boot
+    past_task = Repo.get!(Task, past_task_id)
+    assert past_task.retry_after == nil
+    assert past_task.stage_state == :running
+
+    GenServer.stop(pid)
+  end
+
+  test "manual rearm_pending_retries scans database and arms pending retries", %{dispatcher: pid} do
+    project = create_test_project()
+    future = DateTime.shift(DateTime.utc_now(), second: 15)
+
+    %Task{id: task_id} =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :product,
+        stage_state: :queued,
+        retry_after: future
+      })
+
+    assert Dispatcher.retry_timers(pid) == %{}
+
+    assert :ok = Dispatcher.rearm_pending_retries(pid)
+    assert Map.has_key?(Dispatcher.retry_timers(pid), task_id)
+  end
+
+  test "client functions handle unregistered atom dispatcher gracefully" do
+    unregistered = :nonexistent_dispatcher_process_for_test
+
+    assert Dispatcher.retry_timers(unregistered) == %{}
+    assert :ok = Dispatcher.rearm_pending_retries(unregistered)
+    assert :ok = Dispatcher.cancel_retry_timer(unregistered, "tsk_123")
+    assert {:error, :dispatcher_not_running} = Dispatcher.arm_retry_timer(unregistered, "tsk_123")
+    assert {:disabled, []} = Dispatcher.pump(unregistered)
+    assert {:error, :not_found} = Dispatcher.dispatch_now(unregistered, "tsk_123", dispatch_disabled: false)
+  end
+
+  test "cancels active retry timers on terminate" do
+    {:ok, pid} =
+      Dispatcher.start_link(
+        name: nil,
+        start_timer: false,
+        subscribe: false,
+        dispatch_disabled: false
+      )
+
+    project = create_test_project()
+    future = DateTime.shift(DateTime.utc_now(), minute: 1)
+
+    %Task{id: task_id} =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :product,
+        stage_state: :queued,
+        retry_after: future
+      })
+
+    assert {:ok, ref} = Dispatcher.arm_retry_timer(pid, task_id)
+    assert Process.read_timer(ref) != false
+
+    assert :ok = GenServer.stop(pid)
+    assert Process.read_timer(ref) == false
+  end
+
+  test "exercises Dispatcher convenience helpers and 2-tuple dispatch_now", %{dispatcher: pid} do
+    task = create_test_task(%{stage: :product, stage_state: :queued})
+
+    assert {:error, :dispatch_disabled} = Dispatcher.dispatch_now(task)
+
+    assert {:error, {:no_role_for_stage, :product}} =
+             Dispatcher.dispatch_now(task, dispatch_disabled: false)
+
+    assert {:error, :dispatcher_not_running} =
+             Dispatcher.arm_retry_timer(:non_existent_dispatcher, task)
+
+    assert {:error, :not_waiting_to_retry} = Dispatcher.arm_retry_timer(task)
+
+    assert :ok = Dispatcher.cancel_retry_timer(:non_existent_dispatcher, task)
+    assert Dispatcher.retry_timers(:non_existent_dispatcher) == %{}
+
+    assert {:error, {:no_role_for_stage, :product}} =
+             GenServer.call(pid, {:dispatch_now, task.id})
+
+    assert :ok = Dispatcher.cancel_retry_timer(pid, 12_345)
+
+    send(pid, {:retry_timer_expired, "tsk_missing"})
+    Process.sleep(10)
+
+    future = DateTime.shift(DateTime.utc_now(), minute: 1)
+    task_armed = create_test_task(%{stage: :product, stage_state: :queued, retry_after: future})
+    assert {:ok, _ref} = Dispatcher.arm_retry_timer(pid, task_armed.id)
+    send(pid, {:pipeline_changed, %{task_id: task_armed.id}})
+    Process.sleep(10)
+    assert Map.has_key?(Dispatcher.retry_timers(pid), task_armed.id)
+  end
 end
