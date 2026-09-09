@@ -177,5 +177,19 @@ defmodule Rail.Artifacts.Actions.CaptureDesignTest do
                  url_probe: fn _url -> true end
                )
     end
+
+    test "returns error when manifest does not exist in target path", %{dir: dir, project: project} do
+      scope = Scope.for_system()
+      empty_dir = Path.join(dir, "empty_sub")
+      File.mkdir_p!(empty_dir)
+
+      assert {:error, msg} =
+               Artifacts.capture_design(scope, "tsk_missing_manifest", empty_dir,
+                 project: project,
+                 url_probe: fn _url -> true end
+               )
+
+      assert msg =~ "No design manifest found at"
+    end
   end
 end

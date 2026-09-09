@@ -72,10 +72,11 @@ defmodule Rail.Artifacts.Actions.CaptureDesign do
   end
 
   defp resolve_design_dir(path) do
-    if File.exists?(Path.join(path, "manifest.json")) do
-      path
-    else
-      Path.join(path, "design")
+    cond do
+      File.exists?(Path.join(path, "manifest.json")) -> path
+      File.exists?(Path.join([path, "design", "manifest.json"])) -> Path.join(path, "design")
+      File.exists?(Path.join([path, ".axis", "design", "manifest.json"])) -> Path.join([path, ".axis", "design"])
+      true -> Path.join(path, "design")
     end
   end
 

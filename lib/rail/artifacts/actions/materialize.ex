@@ -129,9 +129,10 @@ defmodule Rail.Artifacts.Actions.Materialize do
       end
 
     File.mkdir_p!(design_dir)
+    directions_to_materialize = filter_directions_for_materialize(design.directions || [], design, opts)
 
     with {:ok, token} <- resolve_token(opts),
-         {:ok, directions_data} <- download_design_directions(design.directions || [], design_dir, token, opts) do
+         {:ok, directions_data} <- download_design_directions(directions_to_materialize, design_dir, token, opts) do
       manifest = %{
         "version" => design.version,
         "canvasUrl" => design.canvas_url,
@@ -142,6 +143,14 @@ defmodule Rail.Artifacts.Actions.Materialize do
       manifest_path = Path.join(design_dir, "manifest.json")
       File.write!(manifest_path, Jason.encode!(manifest, pretty: true))
       {:ok, design_dir}
+    end
+  end
+
+  defp filter_directions_for_materialize(directions, design, opts) do
+    if (Keyword.get(opts, :only_picked, false) or Keyword.get(opts, :stage) == :architect) and design.picked_key do
+      Enum.filter(directions || [], fn d -> d.key == design.picked_key end)
+    else
+      directions || []
     end
   end
 

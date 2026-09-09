@@ -14,6 +14,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
 
   alias Rail.Domain.TaskUsage
   alias Rail.Git
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
@@ -21,6 +22,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
   alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
+  alias Rail.Scope
 
   @doc """
   Settles a finished chat turn for a task and role run.
@@ -59,19 +61,19 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
 
     {task, role_run} =
       if exit_code == 0 do
-        handle_clean_chat_exit(task, role_run, usage, before_head_sha, before_dirty_digest)
+        handle_clean_chat_exit(task, role_run, usage, before_head_sha, before_dirty_digest, opts)
       else
         handle_failed_chat_exit(task, role_run, error, exit_code)
       end
 
-    Rail.Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :chat_settled})
+    Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :chat_settled})
 
-    Rail.Pipeline.maybe_dispatch_queued_pending_chat(task, opts)
+    Pipeline.maybe_dispatch_queued_pending_chat(task, opts)
 
     {:ok, task, role_run}
   end
 
-  defp handle_clean_chat_exit(task, role_run, usage, before_head_sha, before_dirty_digest) do
+  defp handle_clean_chat_exit(task, role_run, usage, before_head_sha, before_dirty_digest, opts) do
     current_chat_usage = role_run.chat_usage || %TaskUsage{}
     new_chat_usage = if usage, do: TaskUsage.add(current_chat_usage, usage), else: current_chat_usage
 
@@ -83,7 +85,56 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
       })
       |> Repo.update()
 
-    check_branch_modification(task, role_run, before_head_sha, before_dirty_digest)
+    {task, role_run} = check_branch_modification(task, role_run, before_head_sha, before_dirty_digest)
+    check_design_manifest_modification(task, role_run, opts)
+  end
+
+  defp check_design_manifest_modification(task, role_run, opts) do
+    role = Repo.get(Role, role_run.role_id)
+    before_stamp = Keyword.get(opts, :before_design_stamp)
+
+    if is_struct(role, Role) and role.stage == :design and task.stage == :design and task.stage_state != :blocked and
+         Keyword.has_key?(opts, :before_design_stamp) do
+      after_stamp = Pipeline.design_manifest_stamp(task.worktree_path)
+
+      if after_stamp == before_stamp do
+        {task, role_run}
+      else
+        apply_design_manifest_chat(task, role_run, opts)
+      end
+    else
+      {task, role_run}
+    end
+  end
+
+  defp apply_design_manifest_chat(task, role_run, opts) do
+    scope = Scope.for_system()
+
+    case Pipeline.apply_design_manifest(scope, task, Keyword.put(opts, :require_new_version, false)) do
+      {:ok, _design} ->
+        {:ok, updated_task} =
+          task
+          |> Task.changeset(%{stage_state: :awaiting_approval, error: nil})
+          |> Repo.update()
+
+        Runs.append_run_event(role_run.id, "[axis] Design manifest changed during chat; design accepted.")
+        {updated_task, role_run}
+
+      {:error, reason} ->
+        err_msg = if is_binary(reason), do: reason, else: inspect(reason)
+
+        {:ok, updated_task} =
+          task
+          |> Task.changeset(%{stage_state: :failed, error: err_msg})
+          |> Repo.update()
+
+        Runs.append_run_event(
+          role_run.id,
+          "[axis] Design manifest changed during chat, but was turned down: #{err_msg}"
+        )
+
+        {updated_task, role_run}
+    end
   end
 
   defp handle_failed_chat_exit(task, role_run, error, exit_code) do

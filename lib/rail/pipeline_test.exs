@@ -52,8 +52,8 @@ defmodule Rail.PipelineTest do
     _arch = create_test_role(%{project_id: project.id, stage: :architect})
     _eng = create_test_role(%{project_id: project.id, stage: :engineer})
 
-    task_approve = create_test_task(%{project_id: project.id, stage: :design, stage_state: :awaiting_approval})
-    assert {:ok, %Task{stage: :architect}} = Pipeline.approve_stage(task_approve)
+    task_approve = create_test_task(%{project_id: project.id, stage: :architect, stage_state: :awaiting_approval})
+    assert {:ok, %Task{stage: :engineer}} = Pipeline.approve_stage(task_approve)
 
     task_request = create_test_task(%{project_id: project.id, stage: :architect, stage_state: :awaiting_approval})
     assert {:ok, %Task{stage: :architect, stage_state: :queued}} = Pipeline.request_changes(task_request, "Fix schema")
@@ -106,5 +106,20 @@ defmodule Rail.PipelineTest do
 
     assert {:ok, %Question{status: :dismissed}} =
              Pipeline.dismiss_question(scope, q_dismiss.id)
+  end
+
+  test "delegates design stage actions and helpers" do
+    project = create_test_project()
+    task = create_test_task(%{project_id: project.id, stage: :product})
+    scope = Scope.for_system()
+
+    assert Pipeline.uses_design?(task)
+    assert Pipeline.uses_design?(task, [])
+
+    # recheck_design with 3 args
+    assert {:ok, %Task{stage: :product}} = Pipeline.recheck_design(scope, task.id, [])
+
+    # apply_design_manifest with 3 args
+    assert {:error, _reason} = Pipeline.apply_design_manifest(scope, task, [])
   end
 end

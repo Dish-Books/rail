@@ -119,7 +119,31 @@ defmodule Rail.Artifacts.Validators.DesignValidator do
   defp non_blank?(_other), do: false
 
   defp validate_still_path(design_dir, key, title, notes, raw_still_path) do
-    case verify_confinement(design_dir, raw_still_path, allow_root: false) do
+    worktree_dir =
+      cond do
+        String.ends_with?(design_dir, "/.axis/design") ->
+          String.replace_suffix(design_dir, "/.axis/design", "")
+
+        String.ends_with?(design_dir, "/design") ->
+          String.replace_suffix(design_dir, "/design", "")
+
+        true ->
+          design_dir
+      end
+
+    canonical_target =
+      cond do
+        Path.type(raw_still_path) == :absolute ->
+          Path.expand(raw_still_path)
+
+        File.exists?(Path.expand(raw_still_path, worktree_dir)) ->
+          Path.expand(raw_still_path, worktree_dir)
+
+        true ->
+          Path.expand(raw_still_path, design_dir)
+      end
+
+    case verify_confinement(design_dir, canonical_target, allow_root: false) do
       {:ok, canonical_path} ->
         case File.stat(canonical_path) do
           {:ok, %{type: :regular, size: size}} when size > 0 ->
@@ -137,7 +161,7 @@ defmodule Rail.Artifacts.Validators.DesignValidator do
         end
 
       {:error, :escapes_confinement} ->
-        {:error, "Design still image path must stay inside design directory: #{raw_still_path}."}
+        {:error, "Design still image path must stay inside .axis/design/: #{raw_still_path}."}
     end
   end
 

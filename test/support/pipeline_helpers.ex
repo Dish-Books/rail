@@ -1,10 +1,14 @@
 defmodule RailTest.PipelineHelpers do
   @moduledoc false
 
+  import Ecto.Query
+
+  alias Rail.Artifacts.Schemas.Design
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Repo
 
   def create_test_project(attrs \\ %{}) do
@@ -85,6 +89,62 @@ defmodule RailTest.PipelineHelpers do
 
     %Issue{}
     |> Issue.changeset(merged, project_id)
+    |> Repo.insert!()
+  end
+
+  def create_test_linear_workspace(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    id = System.unique_integer([:positive])
+
+    default_attrs = %{
+      name: "Linear Workspace #{id}",
+      external_id: "lin_ws_#{id}",
+      token: "lin_api_key_#{id}",
+      webhook_secret: "secret_#{id}"
+    }
+
+    merged = Map.merge(default_attrs, attrs)
+
+    workspace =
+      %LinearWorkspace{}
+      |> LinearWorkspace.changeset(merged)
+      |> Repo.insert!()
+
+    project_id = attrs[:project_id] || attrs["project_id"]
+
+    if project_id do
+      Repo.update_all(from(p in Rail.Projects.Schemas.Project, where: p.id == ^project_id),
+        set: [linear_workspace_id: workspace.id]
+      )
+    end
+
+    workspace
+  end
+
+  def create_test_design(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    id = System.unique_integer([:positive])
+    task_id = attrs[:task_id] || attrs["task_id"] || create_test_task().id
+
+    default_attrs = %{
+      task_id: task_id,
+      version: 1,
+      canvas_url: "https://canvas.example.com/project/#{id}",
+      picked_key: nil,
+      directions: [
+        %{
+          key: "dir-1",
+          title: "Direction 1",
+          notes: "Notes 1",
+          still_url: "https://uploads.linear.app/still_1.png"
+        }
+      ]
+    }
+
+    merged = Map.merge(default_attrs, attrs)
+
+    %Design{}
+    |> Design.changeset(merged)
     |> Repo.insert!()
   end
 
@@ -174,5 +234,59 @@ defmodule RailTest.PipelineHelpers do
     end)
 
     script_path
+  end
+
+  def create_test_design_dir(opts \\ []) do
+    worktree_dir = create_temp_scratch_dir()
+    design_dir = Path.join([worktree_dir, ".axis", "design"])
+    File.mkdir_p!(design_dir)
+
+    canvas_url = Keyword.get(opts, :canvas_url, "https://claude.ai/design/canvas-1")
+    version = Keyword.get(opts, :version, 1)
+    picked_key = Keyword.get(opts, :picked_key)
+
+    still_1 = Path.join(design_dir, "dir-1.png")
+    File.write!(still_1, "fake png content 1")
+    still_2 = Path.join(design_dir, "dir-2.png")
+    File.write!(still_2, "fake png content 2")
+
+    default_directions = [
+      %{
+        "key" => "dir-1",
+        "title" => "Minimal Light",
+        "notes" => "Clean aesthetic with spacious white layout",
+        "stillPath" => ".axis/design/dir-1.png"
+      },
+      %{
+        "key" => "dir-2",
+        "title" => "Bold Dark",
+        "notes" => "Dark mode with high contrast neon highlights",
+        "stillPath" => ".axis/design/dir-2.png"
+      }
+    ]
+
+    directions = Keyword.get(opts, :directions, default_directions)
+
+    manifest_content =
+      Keyword.get(opts, :raw_manifest) ||
+        Jason.encode!(%{
+          "canvasUrl" => canvas_url,
+          "version" => version,
+          "pickedKey" => picked_key,
+          "directions" => directions
+        })
+
+    File.write!(Path.join(design_dir, "manifest.json"), manifest_content)
+    worktree_dir
+  end
+
+  def mock_design_uploads(count \\ 1) do
+    Enum.each(1..count, fn i ->
+      RailTest.Mocks.Linear.mock_file_upload_success(
+        upload_url: "https://api.linear.app/upload/dsg_#{i}",
+        asset_url: "https://uploads.linear.app/dsg_#{i}/dir-#{i}.png",
+        asset_id: "ast_dsg_#{i}"
+      )
+    end)
   end
 end

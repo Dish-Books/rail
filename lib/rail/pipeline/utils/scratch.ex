@@ -129,7 +129,7 @@ defmodule Rail.Pipeline.Utils.Scratch do
   defp maybe_write_ticket(_task, _identifier, _scratch_dir), do: :ok
 
   defp maybe_materialize_design(scope, task, scratch_dir, :architect) do
-    _result = Artifacts.materialize(scope, task, scratch_dir, kind: :design)
+    _result = Artifacts.materialize(scope, task, scratch_dir, kind: :design, only_picked: true, stage: :architect)
     :ok
   end
 

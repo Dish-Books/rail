@@ -36,6 +36,18 @@ defmodule Rail.Pipeline do
   defdelegate request_changes(scope_or_task, task_or_comment, comment_or_opts), to: Actions.RequestChanges
   defdelegate request_changes(task_or_id, comment), to: Actions.RequestChanges
 
+  defdelegate pick_design_direction(scope, task_or_id, key, opts), to: Actions.PickDesignDirection
+  defdelegate pick_design_direction(a, b, c), to: Actions.PickDesignDirection
+  defdelegate pick_design_direction(task_or_id, key), to: Actions.PickDesignDirection
+
+  defdelegate recheck_design(scope, task_or_id, opts), to: Actions.RecheckDesign
+  defdelegate recheck_design(a, b), to: Actions.RecheckDesign
+  defdelegate recheck_design(task_or_id), to: Actions.RecheckDesign
+
+  defdelegate uses_design?(task, role_runs \\ []), to: Rail.Pipeline.Schemas.Task
+  defdelegate design_manifest_stamp(target), to: Actions.RecheckDesign
+  defdelegate apply_design_manifest(scope, task, opts \\ []), to: Actions.RecheckDesign
+
   defdelegate send_back_to_engineer(scope, task_or_id, opts), to: Actions.SendBackToEngineer
   defdelegate send_back_to_engineer(scope_or_task, task_or_opts), to: Actions.SendBackToEngineer
   defdelegate send_back_to_engineer(task_or_id), to: Actions.SendBackToEngineer

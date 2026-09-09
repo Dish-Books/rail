@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   use Rail.DataCase, async: false
 
+  alias Rail.Artifacts.Schemas.Design
   alias Rail.Domain.TaskUsage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
@@ -689,5 +690,86 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     # Invalid targets return :not_found
     assert {:error, :not_found} = Pipeline.settle_chat_turn(12_345, role_run)
     assert {:error, :not_found} = Pipeline.settle_chat_turn(task, 12_345)
+  end
+
+  describe "settle_chat_turn at design stage" do
+    test "a chat turn that rewrites the manifest lands the design" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      designer_role = create_test_role(%{project_id: project.id, stage: :design, name: "Designer"})
+      worktree_dir = create_test_design_dir(canvas_url: "https://claude.ai/design/abc")
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :design,
+          stage_state: :failed,
+          error: "Initial canvas 404",
+          worktree_path: worktree_dir
+        })
+
+      role_run =
+        create_test_role_run(%{
+          task_id: task.id,
+          role_id: designer_role.id,
+          status: :finished
+        })
+
+      mock_design_uploads(2)
+
+      assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %RoleRun{}} =
+               Pipeline.settle_chat_turn(
+                 task,
+                 role_run,
+                 %{exit_code: 0},
+                 before_design_stamp: "stale-stamp-123",
+                 url_probe: fn _uri -> true end
+               )
+
+      reloaded = Repo.get!(Task, task.id)
+      assert reloaded.stage_state == :awaiting_approval
+      assert is_nil(reloaded.error)
+
+      design = Repo.one(from d in Design, where: d.task_id == ^task.id)
+      assert design.canvas_url == "https://claude.ai/design/abc"
+    end
+
+    test "a chat turn that leaves the manifest alone changes nothing" do
+      project = create_test_project()
+      designer_role = create_test_role(%{project_id: project.id, stage: :design, name: "Designer"})
+      worktree_dir = create_test_design_dir(canvas_url: "invalid-url")
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :design,
+          stage_state: :failed,
+          error: "Design manifest canvasUrl must be an absolute https URL.",
+          worktree_path: worktree_dir
+        })
+
+      role_run =
+        create_test_role_run(%{
+          task_id: task.id,
+          role_id: designer_role.id,
+          status: :finished
+        })
+
+      # Manifest was modified during chat from older stamp, but is invalid
+      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{}} =
+               Pipeline.settle_chat_turn(
+                 task,
+                 role_run,
+                 %{exit_code: 0},
+                 before_design_stamp: "old_stamp:100"
+               )
+
+      assert err =~ "absolute https URL"
+      designs = Repo.all(from d in Design, where: d.task_id == ^task.id)
+      assert Enum.empty?(designs)
+
+      events = Repo.all(from e in RunEvent, where: e.role_run_id == ^role_run.id, order_by: [asc: e.seq])
+      assert Enum.any?(events, fn e -> e.line =~ "[axis] Design manifest changed during chat, but was turned down" end)
+    end
   end
 end

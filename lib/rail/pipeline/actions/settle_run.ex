@@ -8,6 +8,8 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   import Rail.Pipeline.Utils.CarriedReports, only: [build_carried_gate_reports: 2]
   import Rail.Pipeline.Utils.Scratch
 
+  alias Rail.Artifacts
+  alias Rail.Artifacts.Schemas.Design
   alias Rail.Domain.RunFailure
   alias Rail.Domain.StageVerdict
   alias Rail.Domain.TaskUsage
@@ -20,6 +22,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   alias Rail.Runs.QuestionDetector
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
+  alias Rail.Scope
 
   @doc """
   Settles a finished run for a task:
@@ -63,8 +66,14 @@ defmodule Rail.Pipeline.Actions.SettleRun do
         Keyword.get(opts, :scratch_path) ||
         default_scratch_path(task.project_id, task.id)
 
-    {:ok, task} = capture(task.stage, task, scratch_dir)
-    {task_attrs, updated_role_run} = resolve_settle_outcome(task, role_run, exit_code, error)
+    {:ok, task} =
+      if task.stage == :design do
+        {:ok, task}
+      else
+        capture(task.stage, task, scratch_dir)
+      end
+
+    {task_attrs, updated_role_run} = resolve_settle_outcome(task, role_run, exit_code, error, scratch_dir, opts)
 
     {:ok, updated_task} =
       task
@@ -96,16 +105,16 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     end
   end
 
-  defp resolve_settle_outcome(%Task{stage_state: :blocked, question_id: q_id}, role_run, _code, _error)
+  defp resolve_settle_outcome(%Task{stage_state: :blocked, question_id: q_id}, role_run, _code, _error, _dir, _opts)
        when is_binary(q_id) do
     {%{}, role_run}
   end
 
-  defp resolve_settle_outcome(task, role_run, 0, _error) do
-    handle_clean_exit(task, role_run)
+  defp resolve_settle_outcome(task, role_run, 0, _error, scratch_dir, opts) do
+    handle_clean_exit(task, role_run, scratch_dir, opts)
   end
 
-  defp resolve_settle_outcome(task, role_run, exit_code, error) do
+  defp resolve_settle_outcome(task, role_run, exit_code, error, _scratch_dir, _opts) do
     handle_failed_exit(task, role_run, error, exit_code)
   end
 
@@ -120,7 +129,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     updated_task
   end
 
-  defp handle_clean_exit(%Task{is_rebasing: true} = task, role_run) do
+  defp handle_clean_exit(%Task{is_rebasing: true} = task, role_run, _scratch_dir, _opts) do
     {:ok, role_run} =
       role_run
       |> RoleRun.changeset(%{auto_retries: 0})
@@ -137,7 +146,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     {attrs, role_run}
   end
 
-  defp handle_clean_exit(%Task{stage: :product} = task, role_run) do
+  defp handle_clean_exit(%Task{stage: :product} = task, role_run, _scratch_dir, _opts) do
     {:ok, role_run} =
       role_run
       |> RoleRun.changeset(%{auto_retries: 0})
@@ -159,7 +168,50 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     {attrs, role_run}
   end
 
-  defp handle_clean_exit(%Task{stage: :architect} = task, role_run) do
+  defp handle_clean_exit(%Task{stage: :design} = task, role_run, scratch_dir, opts) do
+    scope = Scope.for_system()
+    design_target = resolve_design_target(task, scratch_dir, opts)
+    read_opts = Keyword.take(opts, [:url_probe, :req_options])
+    capture_opts = Keyword.take(opts, [:project, :issue, :owner_user, :url_probe, :req_options])
+
+    previous_design =
+      Repo.one(
+        from d in Design,
+          where: d.task_id == ^task.id,
+          order_by: [desc: d.version],
+          limit: 1
+      )
+
+    with {:ok, manifest_data} <- Artifacts.read_design(scope, design_target, read_opts),
+         :ok <- validate_design_manifest_transition(manifest_data, previous_design),
+         {:ok, _design} <- Artifacts.capture_design(scope, task, design_target, capture_opts) do
+      {:ok, role_run} =
+        role_run
+        |> RoleRun.changeset(%{auto_retries: 0})
+        |> Repo.update()
+
+      attrs = %{
+        stage_state: :awaiting_approval,
+        retry_after: nil,
+        error: nil
+      }
+
+      {attrs, role_run}
+    else
+      {:error, reason} ->
+        err_msg = if is_binary(reason), do: reason, else: inspect(reason)
+
+        attrs = %{
+          stage_state: :failed,
+          error: err_msg,
+          retry_after: nil
+        }
+
+        {attrs, role_run}
+    end
+  end
+
+  defp handle_clean_exit(%Task{stage: :architect} = task, role_run, _scratch_dir, _opts) do
     has_plan? = Repo.exists?(from p in Plan, where: p.task_id == ^task.id)
 
     if has_plan? do
@@ -188,7 +240,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     end
   end
 
-  defp handle_clean_exit(%Task{stage: :engineer} = _task, role_run) do
+  defp handle_clean_exit(%Task{stage: :engineer} = _task, role_run, _scratch_dir, _opts) do
     {:ok, role_run} =
       role_run
       |> RoleRun.changeset(%{auto_retries: 0})
@@ -204,11 +256,12 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     {attrs, role_run}
   end
 
-  defp handle_clean_exit(%Task{stage: stage} = task, role_run) when stage in [:review, :qa, :qa_lead] do
+  defp handle_clean_exit(%Task{stage: stage} = task, role_run, _scratch_dir, _opts)
+       when stage in [:review, :qa, :qa_lead] do
     handle_gate_exit(task, role_run)
   end
 
-  defp handle_clean_exit(%Task{} = _task, role_run) do
+  defp handle_clean_exit(%Task{} = _task, role_run, _scratch_dir, _opts) do
     {:ok, role_run} =
       role_run
       |> RoleRun.changeset(%{auto_retries: 0})
@@ -551,4 +604,49 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   defp resolve_role_run(%RoleRun{} = role_run), do: role_run
   defp resolve_role_run(id) when is_binary(id), do: Repo.get(RoleRun, id)
   defp resolve_role_run(_other), do: nil
+
+  defp resolve_design_target(task, scratch_dir, opts) do
+    cond do
+      is_binary(opts[:scratch_dir]) ->
+        opts[:scratch_dir]
+
+      is_binary(opts[:scratch_path]) ->
+        opts[:scratch_path]
+
+      is_binary(task.worktree_path) and
+          (File.exists?(Path.join([task.worktree_path, ".axis", "design", "manifest.json"])) or
+             File.exists?(Path.join([task.worktree_path, "design", "manifest.json"])) or
+             File.exists?(Path.join([task.worktree_path, "manifest.json"]))) ->
+        task.worktree_path
+
+      true ->
+        scratch_dir
+    end
+  end
+
+  defp validate_design_manifest_transition(_manifest_data, nil), do: :ok
+
+  defp validate_design_manifest_transition(manifest_data, %Design{} = prev) do
+    cond do
+      prev.picked_key != nil and (is_nil(manifest_data.picked_key) or manifest_data.picked_key == "") ->
+        {:error, "Design manifest is missing pickedKey (expected \"#{prev.picked_key}\")."}
+
+      prev.picked_key != nil and manifest_data.picked_key != prev.picked_key ->
+        {:error,
+         "Design manifest pickedKey (#{manifest_data.picked_key}) does not match chosen direction (#{prev.picked_key})."}
+
+      prev.picked_key != nil and not direction_present?(manifest_data.directions, prev.picked_key) ->
+        {:error, "Manifest missing picked direction: #{prev.picked_key}"}
+
+      manifest_data.version <= prev.version ->
+        {:error, "Manifest version must be incremented after a pick or revision."}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp direction_present?(directions, key) when is_binary(key) do
+    is_list(directions) and Enum.any?(directions, fn d -> Map.get(d, :key) == key end)
+  end
 end

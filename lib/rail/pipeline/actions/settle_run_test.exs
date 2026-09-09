@@ -128,7 +128,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     project = create_test_project()
 
     %Task{id: task_id} =
-      task = create_test_task(%{project_id: project.id, stage: :design, stage_state: :running})
+      task = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running})
 
     role_run = create_test_role_run(%{task_id: task_id, status: :running})
 
@@ -221,7 +221,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     project = create_test_project()
 
     %Task{id: task_id} =
-      task = create_test_task(%{project_id: project.id, stage: :design, stage_state: :running})
+      task = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running})
 
     role_run =
       create_test_role_run(%{
@@ -919,5 +919,160 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               mergeability: :unknown
             }, %RoleRun{status: :finished}} =
              Pipeline.settle_run(task, role_run, %{exit_code: 0}, token: "tok_test")
+  end
+
+  describe "settle_run at design stage" do
+    test "designer run settlement fails when manifest is missing" do
+      project = create_test_project()
+      task = create_test_task(%{project_id: project.id, stage: :design, stage_state: :running})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage: :design, stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+
+      assert err =~ "No design manifest found at"
+    end
+
+    test "designer run settlement populates task.design when manifest is valid" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_design_dir(canvas_url: "https://claude.ai/canvas/v1")
+
+      task =
+        create_test_task(%{project_id: project.id, stage: :design, stage_state: :running, worktree_path: worktree_dir})
+
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      mock_design_uploads(2)
+
+      assert {:ok, %Task{stage: :design, stage_state: :awaiting_approval, error: nil}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, url_probe: fn _uri -> true end)
+
+      designs = Repo.all(from d in Rail.Artifacts.Schemas.Design, where: d.task_id == ^task.id)
+      assert length(designs) == 1
+      assert hd(designs).canvas_url == "https://claude.ai/canvas/v1"
+    end
+
+    test "fails when manifest no longer contains outstanding pickedKey" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+
+      directions = [
+        %{
+          "key" => "dir-other",
+          "title" => "Other",
+          "notes" => "Notes",
+          "stillPath" => ".axis/design/dir-1.png"
+        }
+      ]
+
+      worktree_dir = create_test_design_dir(version: 2, picked_key: "dir-1", directions: directions)
+
+      task =
+        create_test_task(%{project_id: project.id, stage: :design, stage_state: :running, worktree_path: worktree_dir})
+
+      create_test_design(%{task_id: task.id, version: 1, picked_key: "dir-1"})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, url_probe: fn _uri -> true end)
+
+      assert err =~ "Manifest missing picked direction: dir-1"
+    end
+
+    test "fails when manifest version is not incremented after a pick or revision" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_design_dir(version: 1, picked_key: "dir-1")
+
+      task =
+        create_test_task(%{project_id: project.id, stage: :design, stage_state: :running, worktree_path: worktree_dir})
+
+      create_test_design(%{task_id: task.id, version: 1, picked_key: "dir-1"})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, url_probe: fn _uri -> true end)
+
+      assert err =~ "Manifest version must be incremented after a pick or revision."
+    end
+
+    test "fails when manifest is missing pickedKey after a pick" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_design_dir(version: 2, picked_key: nil)
+
+      task =
+        create_test_task(%{project_id: project.id, stage: :design, stage_state: :running, worktree_path: worktree_dir})
+
+      create_test_design(%{task_id: task.id, version: 1, picked_key: "dir-1"})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, url_probe: fn _uri -> true end)
+
+      assert err =~ "Design manifest is missing pickedKey (expected \"dir-1\")."
+    end
+
+    test "fails when manifest pickedKey does not match previously chosen direction" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_design_dir(version: 2, picked_key: "dir-2")
+
+      task =
+        create_test_task(%{project_id: project.id, stage: :design, stage_state: :running, worktree_path: worktree_dir})
+
+      create_test_design(%{task_id: task.id, version: 1, picked_key: "dir-1"})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, url_probe: fn _uri -> true end)
+
+      assert err =~ "Design manifest pickedKey (dir-2) does not match chosen direction (dir-1)."
+    end
+
+    test "supports settling with scratch_path and valid transition" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_design_dir(version: 2, picked_key: "dir-1")
+
+      task =
+        create_test_task(%{project_id: project.id, stage: :design, stage_state: :running, worktree_path: nil})
+
+      create_test_design(%{task_id: task.id, version: 1, picked_key: "dir-1"})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+      mock_design_uploads(2)
+
+      assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(
+                 task,
+                 role_run,
+                 %{exit_code: 0},
+                 scratch_path: worktree_dir,
+                 url_probe: fn _uri -> true end
+               )
+    end
+
+    test "supports settling with scratch_dir and valid transition" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_design_dir(version: 2, picked_key: "dir-1")
+
+      task =
+        create_test_task(%{project_id: project.id, stage: :design, stage_state: :running, worktree_path: nil})
+
+      create_test_design(%{task_id: task.id, version: 1, picked_key: "dir-1"})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+      mock_design_uploads(2)
+
+      assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(
+                 task,
+                 role_run,
+                 %{exit_code: 0},
+                 scratch_dir: worktree_dir,
+                 url_probe: fn _uri -> true end
+               )
+    end
   end
 end
