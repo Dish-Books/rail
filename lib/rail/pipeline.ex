@@ -39,4 +39,32 @@ defmodule Rail.Pipeline do
 
   defdelegate retry_stage(scope, task_or_id), to: Actions.RetryStage
   defdelegate retry_stage(task_or_id), to: Actions.RetryStage
+
+  defdelegate register_question(task_or_id, role_run_or_id, question_or_attrs, opts), to: Actions.RegisterQuestion
+  defdelegate register_question(task_or_id, role_run_or_question, question_or_opts), to: Actions.RegisterQuestion
+  defdelegate register_question(task_or_id, question_or_attrs), to: Actions.RegisterQuestion
+
+  defdelegate answer_question(scope, question_or_id, answer_text), to: Actions.AnswerQuestion
+  defdelegate answer_question(question_or_id, answer_text), to: Actions.AnswerQuestion
+
+  defdelegate dismiss_question(scope, question_or_id), to: Actions.DismissQuestion
+  defdelegate dismiss_question(question_or_id), to: Actions.DismissQuestion
+
+  defdelegate release_blocked_stage(scope, task_or_id), to: Actions.ReleaseBlockedStage
+  defdelegate release_blocked_stage(task_or_id), to: Actions.ReleaseBlockedStage
+
+  defdelegate list_questions(scope, target_or_opts, opts), to: Actions.ListQuestions
+  defdelegate list_questions(scope_or_target, target_or_opts), to: Actions.ListQuestions
+  defdelegate list_questions(target_or_opts), to: Actions.ListQuestions
+  defdelegate list_questions(), to: Actions.ListQuestions
+
+  defdelegate get_question(scope, id), to: Actions.GetQuestion
+  defdelegate get_question(id), to: Actions.GetQuestion
+  defdelegate get_question!(scope, id), to: Actions.GetQuestion
+  defdelegate get_question!(id), to: Actions.GetQuestion
+
+  defdelegate list_pending_questions(scope, target, opts), to: Actions.ListQuestions
+  defdelegate list_pending_questions(scope_or_target, target_or_opts), to: Actions.ListQuestions
+  defdelegate list_pending_questions(target_or_opts), to: Actions.ListQuestions
+  defdelegate list_pending_questions(), to: Actions.ListQuestions
 end

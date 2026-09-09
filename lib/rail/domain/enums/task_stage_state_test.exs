@@ -3,7 +3,7 @@ defmodule Rail.Domain.Enums.TaskStageStateTest do
 
   alias Rail.Domain.Enums.TaskStageState
 
-  test "all/0 and values/0 contain all 10 states" do
+  test "all/0 and values/0 contain all 11 states" do
     expected = [
       :idle,
       :queued,
@@ -14,7 +14,8 @@ defmodule Rail.Domain.Enums.TaskStageStateTest do
       :changes_requested,
       :failed,
       :canceled,
-      :blocked_rework
+      :blocked_rework,
+      :blocked
     ]
 
     assert TaskStageState.all() == expected
@@ -32,12 +33,14 @@ defmodule Rail.Domain.Enums.TaskStageStateTest do
     assert TaskStageState.label(:failed) == "Failed"
     assert TaskStageState.label(:canceled) == "Canceled"
     assert TaskStageState.label(:blocked_rework) == "Blocked rework"
+    assert TaskStageState.label(:blocked) == "Blocked"
     assert TaskStageState.label(:invalid) == nil
   end
 
   test "predicate helpers identify state categories" do
     assert TaskStageState.paused?(:paused_question)
     assert TaskStageState.paused?(:paused_chat)
+    assert TaskStageState.paused?(:blocked)
     refute TaskStageState.paused?(:running)
     refute TaskStageState.paused?(:invalid)
     refute TaskStageState.paused?("paused_question")

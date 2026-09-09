@@ -17,6 +17,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Runs.QuestionDetector
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
 
@@ -47,6 +48,23 @@ defmodule Rail.Pipeline.Actions.SettleRun do
 
     {:ok, role_run} = update_role_run(role_run, exit_code, error, output, usage)
 
+    detected_question =
+      resolve_detected_question(run_or_outcome) ||
+        (output && QuestionDetector.detect_question(output, task_id: task.id, role_id: role_run.role_id))
+
+    {task, role_run} =
+      if detected_question && task.stage_state != :blocked && is_nil(task.question_id) do
+        case Rail.Pipeline.register_question(task, role_run, detected_question) do
+          {:ok, %Rail.Pipeline.Schemas.Question{}} ->
+            {Repo.get!(Task, task.id), Repo.get!(RoleRun, role_run.id)}
+
+          _other ->
+            {task, role_run}
+        end
+      else
+        {task, role_run}
+      end
+
     scratch_dir =
       Keyword.get(opts, :scratch_dir) ||
         Keyword.get(opts, :scratch_path) ||
@@ -55,10 +73,15 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     {:ok, task} = capture(task.stage, task, scratch_dir)
 
     {task_attrs, updated_role_run} =
-      if exit_code == 0 do
-        handle_clean_exit(task, role_run)
-      else
-        handle_failed_exit(task, role_run, error, exit_code)
+      cond do
+        task.stage_state == :blocked and is_binary(task.question_id) ->
+          {%{}, role_run}
+
+        exit_code == 0 ->
+          handle_clean_exit(task, role_run)
+
+        true ->
+          handle_failed_exit(task, role_run, error, exit_code)
       end
 
     {:ok, updated_task} =
@@ -438,8 +461,15 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   end
 
   defp update_role_run(role_run, exit_code, error, output, usage) do
+    new_status =
+      if role_run.status == :blocked_on_input do
+        :blocked_on_input
+      else
+        :finished
+      end
+
     attrs = %{
-      status: :finished,
+      status: new_status,
       completed_at: role_run.completed_at || DateTime.utc_now(),
       exit_code: exit_code,
       error: error,
@@ -452,6 +482,10 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     |> RoleRun.changeset(attrs)
     |> Repo.update()
   end
+
+  defp resolve_detected_question(%{detected_question: %QuestionDetector{} = q}), do: q
+  defp resolve_detected_question(%{"detected_question" => %QuestionDetector{} = q}), do: q
+  defp resolve_detected_question(_other), do: nil
 
   defp maybe_finish_run(%Run{status: status} = run) when status != :finished do
     run |> Run.changeset(%{status: :finished}) |> Repo.update()

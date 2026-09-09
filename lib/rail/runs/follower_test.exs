@@ -2,6 +2,7 @@ defmodule Rail.Runs.FollowerTest do
   use Rail.DataCase, async: false
 
   alias Rail.Domain.TaskUsage
+  alias Rail.Pipeline.Schemas.Task, as: PipelineTask
   alias Rail.Runs
   alias Rail.Runs.Follower
   alias Rail.Runs.FollowerSupervisor
@@ -572,9 +573,72 @@ defmodule Rail.Runs.FollowerTest do
     # drain_err_file on a directory returns [] (read error)
     assert Follower.drain_err_file(tmp_dir) == []
 
+    # pump_stream when file does not exist
+    assert {[], 0, "partial"} = Follower.pump_stream("/tmp/nonexistent_file_xyz", 0, "partial")
+
     # decode_utf8_lenient with incomplete multibyte sequence
     incomplete = <<224, 160>>
     decoded = Follower.decode_utf8_lenient(incomplete)
     assert decoded =~ "\uFFFD"
+  end
+
+  test "detects question in stream and registers it to block task", %{
+    tmp_dir: tmp_dir
+  } do
+    project = create_test_project()
+    role = create_test_role(%{project_id: project.id, stage: :engineer})
+    task = create_test_task(%{project_id: project.id, stage: :engineer, stage_state: :running})
+
+    role_run =
+      create_test_role_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :running
+      })
+
+    stream = Path.join(tmp_dir, "question_stream.ndjson")
+    File.write!(stream, "")
+    File.write!("#{stream}.err", "")
+
+    run =
+      Repo.insert!(%Run{
+        role_run_id: role_run.id,
+        task_id: task.id,
+        kind: :stage,
+        stream_path: stream,
+        node: to_string(Node.self()),
+        boot_id: Runs.boot_id(),
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    {:ok, _follower_pid} =
+      FollowerSupervisor.start_follower(
+        run: run,
+        role_run: role_run,
+        stream_path: stream,
+        os_pid: pid,
+        tail_interval_ms: 20,
+        batch_interval_ms: 30
+      )
+
+    question_line =
+      ~s({"type":"assistant","message":{"content":[{"type":"text","text":"[QUESTION: Which db to choose?] [OPTIONS: PG, MySQL]"}]}}\n)
+
+    File.write!(stream, question_line)
+
+    Process.sleep(100)
+
+    reloaded_task = Repo.get!(PipelineTask, task.id)
+    assert reloaded_task.stage_state == :blocked
+    assert reloaded_task.question_id
+
+    reloaded_rr = Repo.get!(RoleRun, role_run.id)
+    assert reloaded_rr.status == :blocked_on_input
+
+    Runs.stop_run(run.id, grace_period: 50)
   end
 end

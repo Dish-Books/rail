@@ -6,6 +6,7 @@ defmodule Rail.Runs.Follower do
 
   import Ecto.Query
 
+  alias Rail.Pipeline
   alias Rail.Repo
   alias Rail.Runs
   alias Rail.Runs.FollowerRegistry
@@ -68,7 +69,12 @@ defmodule Rail.Runs.Follower do
   def stop_run(id, opts) when is_binary(id) do
     run =
       Repo.get(Run, id) ||
-        Repo.one(from r in Run, where: r.role_run_id == ^id and r.status in [:starting, :running])
+        Repo.one(
+          from r in Run,
+            where: (r.role_run_id == ^id or r.task_id == ^id) and r.status in [:starting, :running],
+            order_by: [desc: r.inserted_at],
+            limit: 1
+        )
 
     if run do
       do_stop_run(run, opts)
@@ -209,6 +215,16 @@ defmodule Rail.Runs.Follower do
         skip_log_lines: skip_log_lines
     }
 
+    if updated_state.task_id && updated_state.event_state.detected_question &&
+         is_nil(state.event_state.detected_question) do
+      # Internal helpers
+      Pipeline.register_question(
+        updated_state.task_id,
+        updated_state.role_run_id,
+        updated_state.event_state.detected_question
+      )
+    end
+
     alive? =
       if is_integer(updated_state.os_pid) and updated_state.os_pid > 0 do
         Spawner.process_alive?(updated_state.os_pid)
@@ -224,8 +240,6 @@ defmodule Rail.Runs.Follower do
       {:stop, :normal, final_state}
     end
   end
-
-  # Internal helpers
 
   @impl true
   def handle_info(:batch_tick, state) do
@@ -349,6 +363,7 @@ defmodule Rail.Runs.Follower do
       # coveralls-ignore-start (defensive file open error fallback)
       _open_error ->
         {[], file_offset, partial_line}
+
         # coveralls-ignore-stop
     end
   end
@@ -411,6 +426,14 @@ defmodule Rail.Runs.Follower do
         event_state.result_error,
         raw_stderr
       )
+
+    if state.task_id && event_state.detected_question do
+      Pipeline.register_question(
+        state.task_id,
+        state.role_run_id,
+        event_state.detected_question
+      )
+    end
 
     case Repo.get(Run, state.run_id) do
       %Run{} = run ->
@@ -491,8 +514,15 @@ defmodule Rail.Runs.Follower do
   defp update_role_run(role_run_id, exit_code, error, event_state) do
     case Repo.get(RoleRun, role_run_id) do
       %RoleRun{} = role_run ->
+        new_status =
+          if role_run.status == :blocked_on_input do
+            :blocked_on_input
+          else
+            :finished
+          end
+
         role_run_attrs = %{
-          status: :finished,
+          status: new_status,
           completed_at: DateTime.utc_now(),
           exit_code: exit_code,
           error: error,

@@ -13,7 +13,8 @@ defmodule Rail.Domain.Enums.TaskStageState do
       :changes_requested,
       :failed,
       :canceled,
-      :blocked_rework
+      :blocked_rework,
+      :blocked
     ],
     labels: %{
       idle: "Idle",
@@ -25,11 +26,12 @@ defmodule Rail.Domain.Enums.TaskStageState do
       changes_requested: "Changes requested",
       failed: "Failed",
       canceled: "Canceled",
-      blocked_rework: "Blocked rework"
+      blocked_rework: "Blocked rework",
+      blocked: "Blocked"
     }
 
   @doc "Returns true if the stage state is paused awaiting human input."
-  def paused?(state) when is_atom(state), do: state in [:paused_question, :paused_chat]
+  def paused?(state) when is_atom(state), do: state in [:paused_question, :paused_chat, :blocked]
   def paused?(_other), do: false
 
   @doc "Returns true if the stage state has terminated without completing."

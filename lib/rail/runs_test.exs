@@ -222,9 +222,13 @@ defmodule Rail.RunsTest do
     follower_pid = Runs.get_follower_pid(run.id)
     assert is_pid(follower_pid)
     assert Process.alive?(follower_pid)
+    assert Runs.is_running?(task_id)
+    refute Runs.is_running?("tsk_nonexistent")
+    refute Runs.is_running?(123)
 
-    {:ok, stopped} = Runs.stop_run(run.id, grace_period: 50)
+    {:ok, stopped} = Runs.stop_run(task_id, grace_period: 50)
     assert stopped.status == :finished
+    refute Runs.is_running?(task_id)
   end
 
   test "adopt_live_runs/1 delegates to Boot" do

@@ -114,11 +114,26 @@ defmodule Rail.Runs do
   end
 
   @doc """
-  Terminates an active agent execution by run or role_run ID.
+  Terminates an active agent execution by run, role_run, or task ID.
   """
-  def stop_run(run_or_role_run_id, opts \\ []) do
-    Follower.stop_run(run_or_role_run_id, opts)
+  def stop_run(run_or_role_run_or_task_id, opts \\ []) do
+    Follower.stop_run(run_or_role_run_or_task_id, opts)
   end
+
+  @doc """
+  Checks if there is an active execution run (:starting or :running) for the given task ID.
+  """
+  def running?(task_id) when is_binary(task_id) do
+    Repo.exists?(
+      from r in Run,
+        where: r.task_id == ^task_id and r.status in [:starting, :running]
+    )
+  end
+
+  def running?(_other), do: false
+
+  @doc false
+  defdelegate is_running?(task_id), to: __MODULE__, as: :running?
 
   @doc """
   Reconciles and adopts in-flight runs on this node.

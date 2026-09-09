@@ -4,9 +4,11 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
   alias Rail.Domain.TaskUsage
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Plan
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
+  alias Rail.Runs.QuestionDetector
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
 
@@ -745,5 +747,80 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     assert {:ok, %Task{stage: :qa},
             %RoleRun{stage_fingerprint_head_sha: "fallback_sha", stage_fingerprint_dirty_digest: "fallback_digest"}} =
              Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+  end
+
+  test "settle_run registers detected question and preserves blocked state without advancing stage" do
+    project = create_test_project()
+    role = create_test_role(%{project_id: project.id, stage: :engineer})
+    task = create_test_task(%{project_id: project.id, stage: :engineer, stage_state: :running})
+    role_run = create_test_role_run(%{task_id: task.id, role_id: role.id, status: :running})
+
+    output = "Working...\n[QUESTION: Which database engine?] [OPTIONS: PG, MySQL]"
+
+    assert {:ok, %Task{stage: :engineer, stage_state: :blocked, question_id: "qst_" <> _rest = q_id},
+            %RoleRun{status: :blocked_on_input, exit_code: 0}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+
+    assert byte_size(q_id) > 0
+  end
+
+  test "settle_run preserves blocked state when task was already blocked on question" do
+    project = create_test_project()
+    role = create_test_role(%{project_id: project.id, stage: :engineer})
+    %Question{id: expected_q_id} = create_test_question(%{status: :pending})
+
+    task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :engineer,
+        stage_state: :blocked,
+        question_id: expected_q_id
+      })
+
+    role_run = create_test_role_run(%{task_id: task.id, role_id: role.id, status: :blocked_on_input})
+
+    assert {:ok, %Task{stage: :engineer, stage_state: :blocked, question_id: ^expected_q_id},
+            %RoleRun{status: :blocked_on_input, exit_code: 0}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: "Exiting after ask"})
+  end
+
+  test "settle_run handles detected_question with atom and string keys and dropped question" do
+    project = create_test_project()
+    role = create_test_role(%{project_id: project.id, stage: :engineer})
+    task1 = create_test_task(%{project_id: project.id, stage: :engineer, stage_state: :running})
+    role_run1 = create_test_role_run(%{task_id: task1.id, role_id: role.id, status: :running})
+
+    detector1 = %QuestionDetector{prompt: "Atom key question?", options: ["A", "B"]}
+
+    assert {:ok, %Task{stage_state: :blocked, question_id: "qst_" <> _rest1 = q_id1}, %RoleRun{status: :blocked_on_input}} =
+             Pipeline.settle_run(task1, role_run1, %{exit_code: 0, detected_question: detector1})
+
+    assert byte_size(q_id1) > 0
+
+    task2 = create_test_task(%{project_id: project.id, stage: :engineer, stage_state: :running})
+    role_run2 = create_test_role_run(%{task_id: task2.id, role_id: role.id, status: :running})
+
+    detector2 = %QuestionDetector{prompt: "String key question?", options: ["C", "D"]}
+
+    assert {:ok, %Task{stage_state: :blocked, question_id: "qst_" <> _rest2 = q_id2}, %RoleRun{status: :blocked_on_input}} =
+             Pipeline.settle_run(task2, role_run2, %{"exit_code" => 0, "detected_question" => detector2})
+
+    assert byte_size(q_id2) > 0
+
+    # Dropped registration when role_run has pending_answer
+    task3 = create_test_task(%{project_id: project.id, stage: :engineer, stage_state: :running})
+
+    role_run3 =
+      create_test_role_run(%{
+        task_id: task3.id,
+        role_id: role.id,
+        status: :running,
+        pending_answer: "Pending"
+      })
+
+    detector3 = %QuestionDetector{prompt: "Drop this duplicate?", options: []}
+
+    assert {:ok, %Task{stage: :review, stage_state: :queued}, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task3, role_run3, %{exit_code: 0, detected_question: detector3})
   end
 end

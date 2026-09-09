@@ -2,6 +2,7 @@ defmodule Rail.PipelineTest do
   use Rail.DataCase, async: true
 
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Scope
 
@@ -65,5 +66,36 @@ defmodule Rail.PipelineTest do
 
     task_retry = create_test_task(%{project_id: project.id, stage: :engineer, stage_state: :failed})
     assert {:ok, %Task{stage_state: :queued}} = Pipeline.retry_stage(task_retry)
+  end
+
+  test "delegates question lifecycle and listing actions" do
+    project = create_test_project()
+    role = create_test_role(%{project_id: project.id, stage: :engineer})
+    _review_role = create_test_role(%{project_id: project.id, stage: :review})
+    task = create_test_task(%{project_id: project.id, stage: :engineer, stage_state: :running})
+    role_run = create_test_role_run(%{task_id: task.id, role_id: role.id, status: :running})
+    scope = Scope.for_system()
+
+    assert {:ok, %Question{id: q_id, prompt: "DB?"}} =
+             Pipeline.register_question(task, role_run, %{prompt: "DB?"}, [])
+
+    assert {:ok, %Question{id: ^q_id}} = Pipeline.get_question(scope, q_id)
+    assert %Question{id: ^q_id} = Pipeline.get_question!(scope, q_id)
+
+    assert [%Question{id: ^q_id}] =
+             Pipeline.list_questions(scope, project.id, status: :pending)
+
+    assert [%Question{id: ^q_id}] =
+             Pipeline.list_pending_questions(scope, project.id, [])
+
+    assert {:ok, %Task{stage: :review, stage_state: :queued}} = Pipeline.release_blocked_stage(scope, task.id)
+
+    assert {:ok, %Question{status: :answered}} =
+             Pipeline.answer_question(scope, q_id, "Postgres")
+
+    q_dismiss = create_test_question(%{status: :pending})
+
+    assert {:ok, %Question{status: :dismissed}} =
+             Pipeline.dismiss_question(scope, q_dismiss.id)
   end
 end
