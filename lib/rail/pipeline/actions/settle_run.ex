@@ -5,14 +5,18 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.CarriedReports, only: [build_carried_gate_reports: 2]
   import Rail.Pipeline.Utils.Scratch
 
   alias Rail.Domain.RunFailure
+  alias Rail.Domain.StageVerdict
   alias Rail.Domain.TaskUsage
+  alias Rail.Git
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Roles.Schemas.Role
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
 
@@ -151,6 +155,10 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     {attrs, role_run}
   end
 
+  defp handle_clean_exit(%Task{stage: stage} = task, role_run) when stage in [:review, :qa, :qa_lead] do
+    handle_gate_exit(task, role_run)
+  end
+
   defp handle_clean_exit(%Task{} = _task, role_run) do
     {:ok, role_run} =
       role_run
@@ -195,6 +203,237 @@ defmodule Rail.Pipeline.Actions.SettleRun do
       }
 
       {attrs, role_run}
+    end
+  end
+
+  defp handle_gate_exit(%Task{} = task, %RoleRun{} = role_run) do
+    {head_sha, dirty_digest} = resolve_fingerprint(task, role_run)
+
+    {:ok, role_run} =
+      role_run
+      |> RoleRun.changeset(%{
+        auto_retries: 0,
+        stage_fingerprint_head_sha: head_sha,
+        stage_fingerprint_dirty_digest: dirty_digest
+      })
+      |> Repo.update()
+
+    gate_role_id = role_run.role_id
+    reports = task.outstanding_reports || []
+    updated_reports = if gate_role_id in reports, do: reports, else: Enum.reverse([gate_role_id | Enum.reverse(reports)])
+    verdict = StageVerdict.parse(role_run.output)
+
+    case verdict.verdict do
+      :passed ->
+        handle_gate_passed(task, role_run, updated_reports, head_sha)
+
+      :changes_requested ->
+        handle_gate_changes_requested(task, role_run, gate_role_id, updated_reports)
+
+      :unclear ->
+        handle_gate_unclear(role_run, gate_role_id, updated_reports)
+    end
+  end
+
+  defp handle_gate_passed(task, role_run, updated_reports, head_sha) do
+    next_stage =
+      case task.stage do
+        :review ->
+          :qa
+
+        :qa ->
+          :qa_lead
+
+        :qa_lead ->
+          case Roles.role_for_stage(task.project_id, :demo) do
+            {:ok, _role} -> :demo
+            _no_demo -> :ready_to_merge
+          end
+      end
+
+    next_stage_state = if next_stage == :ready_to_merge, do: :awaiting_approval, else: :queued
+
+    if (task.rework_cycles || 0) > 0 and next_stage != :ready_to_merge and head_sha != nil do
+      maybe_append_evidence_line_to_next_stage(task, next_stage, head_sha)
+    end
+
+    attrs = %{
+      stage: next_stage,
+      stage_state: next_stage_state,
+      outstanding_reports: updated_reports,
+      retry_after: nil,
+      error: nil
+    }
+
+    {attrs, role_run}
+  end
+
+  defp handle_gate_changes_requested(task, role_run, gate_role_id, updated_reports) do
+    rework_base = task.rework_budget_base || 0
+    total_rework = (task.rework_cycles || 0) - rework_base
+    cycles_by_gate = task.rework_cycles_by_gate || %{}
+    per_gate = Map.get(cycles_by_gate, gate_role_id, 0)
+    rework_exhausted = total_rework >= 5 or per_gate >= 3
+
+    if rework_exhausted do
+      role_name = resolve_role_name(gate_role_id)
+      by_gate_count = per_gate
+      cycle_word = if by_gate_count == 1, do: "cycle", else: "cycles"
+
+      error_msg =
+        "#{role_name} is still requesting changes after #{by_gate_count} rework #{cycle_word}. " <>
+          "Read the findings and decide: Send back to Engineer to have them addressed, " <>
+          "or Skip to take the change as it is and go straight to the merge."
+
+      attrs = %{
+        stage_state: :awaiting_approval,
+        outstanding_reports: updated_reports,
+        retry_after: nil,
+        error: error_msg
+      }
+
+      {attrs, role_run}
+    else
+      new_total_rework = (task.rework_cycles || 0) + 1
+      new_cycles_by_gate = Map.put(cycles_by_gate, gate_role_id, per_gate + 1)
+      role_name = resolve_role_name(gate_role_id)
+      findings = String.trim(role_run.output || "")
+      carried = build_carried_gate_reports(task, except: gate_role_id)
+
+      note =
+        "Findings from #{role_name} on the change you just pushed (rework #{new_total_rework} of 5). " <>
+          "Address every finding, nits included, and the ones marked pre-existing rather than caused by this change too - " <>
+          "nobody else picks those up, so leaving one loses it. Work in the same worktree on the same branch, " <>
+          "run the project's checks from the top, push to the existing pull request, and say what you changed. " <>
+          "Where you disagree with a finding, say why rather than silently leaving it.\n\n" <>
+          findings <> carried
+
+      case Roles.role_for_stage(task.project_id, :engineer) do
+        {:ok, eng_role} ->
+          update_or_create_engineer_pending_answer(task.id, eng_role.id, note)
+
+        _other ->
+          :ok
+      end
+
+      attrs = %{
+        stage: :engineer,
+        stage_state: :queued,
+        rework_cycles: new_total_rework,
+        rework_cycles_by_gate: new_cycles_by_gate,
+        outstanding_reports: [],
+        retry_after: nil,
+        error: nil
+      }
+
+      {attrs, role_run}
+    end
+  end
+
+  defp handle_gate_unclear(role_run, gate_role_id, updated_reports) do
+    role_name = resolve_role_name(gate_role_id)
+
+    error_msg =
+      "#{role_name} ended without a clear verdict. " <>
+        "Read its report, then Send back to Engineer or Skip to the merge."
+
+    attrs = %{
+      stage_state: :awaiting_approval,
+      outstanding_reports: updated_reports,
+      retry_after: nil,
+      error: error_msg
+    }
+
+    {attrs, role_run}
+  end
+
+  defp resolve_fingerprint(%Task{worktree_path: path}, role_run) when is_binary(path) do
+    case Git.branch_fingerprint(path) do
+      %{head_sha: sha, dirty_digest: digest} ->
+        {sha, digest}
+
+      _other ->
+        {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
+    end
+  end
+
+  defp resolve_fingerprint(_task, role_run) do
+    {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
+  end
+
+  defp resolve_role_name(role_id) do
+    case Repo.get(Role, role_id) do
+      %Role{name: name} when is_binary(name) and name != "" -> name
+      _other -> to_string(role_id)
+    end
+  end
+
+  defp update_or_create_engineer_pending_answer(task_id, engineer_role_id, note) do
+    case Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^engineer_role_id) do
+      %RoleRun{} = existing ->
+        pending = existing.pending_answer
+        new_pending = if pending && String.trim(pending) != "", do: "#{pending}\n\n#{note}", else: note
+
+        existing
+        |> RoleRun.changeset(%{pending_answer: new_pending, auto_retries: 0})
+        |> Repo.update!()
+
+      nil ->
+        %RoleRun{}
+        |> RoleRun.changeset(%{
+          task_id: task_id,
+          role_id: engineer_role_id,
+          status: :finished,
+          auto_retries: 0,
+          pending_answer: note,
+          started_at: DateTime.utc_now()
+        })
+        |> Repo.insert!()
+    end
+  end
+
+  defp maybe_append_evidence_line_to_next_stage(task, next_stage, head_sha) do
+    case Roles.role_for_stage(task.project_id, next_stage) do
+      {:ok, next_role} ->
+        stage_label =
+          case task.stage do
+            :review -> "the reviewer"
+            :qa -> "QA"
+            _stage -> "the previous gate"
+          end
+
+        evidence_note =
+          "The change has been reworked and #{stage_label} has signed off on it again. " <>
+            "Inspect it as it stands now, re-checking anything you failed it on before.\n\n" <>
+            "The reworked change is commit #{head_sha}. Every check you report on this pass must have been run against it: " <>
+            "evidence produced before it describes a build that no longer exists, and carrying such a row forward is a false pass. " <>
+            "Re-run what you carry, or say plainly that you did not."
+
+        case Repo.one(from r in RoleRun, where: r.task_id == ^task.id and r.role_id == ^next_role.id) do
+          %RoleRun{} = existing ->
+            pending = existing.pending_answer
+
+            new_pending =
+              if pending && String.trim(pending) != "", do: "#{pending}\n\n#{evidence_note}", else: evidence_note
+
+            existing
+            |> RoleRun.changeset(%{pending_answer: new_pending})
+            |> Repo.update!()
+
+          nil ->
+            %RoleRun{}
+            |> RoleRun.changeset(%{
+              task_id: task.id,
+              role_id: next_role.id,
+              status: :finished,
+              pending_answer: evidence_note,
+              started_at: DateTime.utc_now()
+            })
+            |> Repo.insert!()
+        end
+
+      _other ->
+        :ok
     end
   end
 

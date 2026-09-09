@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+  alias Rail.Roles.Schemas.Role
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
 
@@ -293,5 +294,456 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     assert {:ok, _t4, %RoleRun{usage: %TaskUsage{input_tokens: 42}}} =
              Pipeline.settle_run(task, role_run, %{"usage" => usage_struct})
+  end
+
+  test "settles clean exit 0 for review stage with passed verdict advancing to qa" do
+    project = create_test_project()
+    %Role{id: role_rev_id} = role_rev = create_test_role(%{project_id: project.id, stage: :review, name: "Reviewer"})
+    _role_qa = create_test_role(%{project_id: project.id, stage: :qa, name: "QA"})
+    git_repo = create_temp_git_repo()
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :review,
+        stage_state: :running,
+        worktree_path: git_repo
+      })
+
+    role_run = create_test_role_run(%{task_id: task_id, role_id: role_rev.id, status: :running})
+
+    output = "Code looks great!\n\nVERDICT: APPROVED"
+
+    assert {:ok,
+            %Task{
+              id: ^task_id,
+              stage: :qa,
+              stage_state: :queued,
+              outstanding_reports: [^role_rev_id]
+            },
+            %RoleRun{
+              status: :finished,
+              exit_code: 0,
+              stage_fingerprint_head_sha: head_sha,
+              stage_fingerprint_dirty_digest: dirty_digest
+            }} = Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+
+    assert is_binary(head_sha) and head_sha != ""
+    assert is_binary(dirty_digest) and dirty_digest != ""
+  end
+
+  test "settles clean exit 0 for qa stage with passed verdict advancing to qa_lead" do
+    project = create_test_project()
+    %Role{id: role_qa_id} = role_qa = create_test_role(%{project_id: project.id, stage: :qa, name: "QA Tester"})
+    _role_lead = create_test_role(%{project_id: project.id, stage: :qa_lead, name: "QA Lead"})
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :qa,
+        stage_state: :running
+      })
+
+    role_run = create_test_role_run(%{task_id: task_id, role_id: role_qa.id, status: :running})
+
+    output = "Test checklist passed.\n\nVERDICT: PASS"
+
+    assert {:ok,
+            %Task{
+              id: ^task_id,
+              stage: :qa_lead,
+              stage_state: :queued,
+              outstanding_reports: [^role_qa_id]
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+  end
+
+  test "settles clean exit 0 for qa_lead stage with passed verdict advancing to demo if configured" do
+    project = create_test_project()
+    role_lead = create_test_role(%{project_id: project.id, stage: :qa_lead, name: "QA Lead"})
+    _role_demo = create_test_role(%{project_id: project.id, stage: :demo, name: "Demo Recorder"})
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :qa_lead,
+        stage_state: :running
+      })
+
+    role_run = create_test_role_run(%{task_id: task_id, role_id: role_lead.id, status: :running})
+
+    output = "QA Lead evaluation successful.\n\nVERDICT: PASSED"
+
+    assert {:ok,
+            %Task{
+              id: ^task_id,
+              stage: :demo,
+              stage_state: :queued
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+  end
+
+  test "settles clean exit 0 for qa_lead stage with passed verdict advancing to ready_to_merge if no demo role" do
+    project = create_test_project()
+    role_lead = create_test_role(%{project_id: project.id, stage: :qa_lead, name: "QA Lead"})
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :qa_lead,
+        stage_state: :running
+      })
+
+    role_run = create_test_role_run(%{task_id: task_id, role_id: role_lead.id, status: :running})
+
+    output = "QA Lead evaluation successful.\n\nVERDICT: APPROVED"
+
+    assert {:ok,
+            %Task{
+              id: ^task_id,
+              stage: :ready_to_merge,
+              stage_state: :awaiting_approval
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+  end
+
+  test "settles gate with changes_requested within budget routing back to engineer with carried reports" do
+    project = create_test_project()
+    role_eng = create_test_role(%{project_id: project.id, stage: :engineer, name: "Engineer"})
+    %Role{id: role_rev_id} = role_rev = create_test_role(%{project_id: project.id, stage: :review, name: "Reviewer"})
+    role_prior = create_test_role(%{project_id: project.id, stage: :qa, name: "Prior QA"})
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :review,
+        stage_state: :running,
+        rework_cycles: 0,
+        rework_budget_base: 0,
+        rework_cycles_by_gate: %{},
+        outstanding_reports: [role_prior.id]
+      })
+
+    create_test_role_run(%{
+      task_id: task_id,
+      role_id: role_prior.id,
+      status: :finished,
+      output: "Prior QA note: button is off-center."
+    })
+
+    role_run = create_test_role_run(%{task_id: task_id, role_id: role_rev.id, status: :running})
+
+    output = "Please fix test coverage.\n\nVERDICT: CHANGES REQUESTED"
+
+    assert {:ok,
+            %Task{
+              id: ^task_id,
+              stage: :engineer,
+              stage_state: :queued,
+              rework_cycles: 1,
+              rework_cycles_by_gate: %{^role_rev_id => 1},
+              outstanding_reports: []
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+
+    engineer_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
+    assert engineer_run.pending_answer =~ "Findings from Reviewer on the change you just pushed (rework 1 of 5)"
+    assert engineer_run.pending_answer =~ "Please fix test coverage."
+    assert engineer_run.pending_answer =~ "Also outstanding: what the other gates last reported"
+    assert engineer_run.pending_answer =~ "### Prior QA\n\nPrior QA note: button is off-center."
+  end
+
+  test "settles gate with changes_requested parking for human when per-gate rework limit is reached" do
+    project = create_test_project()
+    role_rev = create_test_role(%{project_id: project.id, stage: :review, name: "Reviewer"})
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :review,
+        stage_state: :running,
+        rework_cycles: 3,
+        rework_budget_base: 0,
+        rework_cycles_by_gate: %{role_rev.id => 3}
+      })
+
+    role_run = create_test_role_run(%{task_id: task_id, role_id: role_rev.id, status: :running})
+
+    output = "Still not fixed.\n\nVERDICT: FAIL"
+
+    assert {:ok,
+            %Task{
+              id: ^task_id,
+              stage: :review,
+              stage_state: :awaiting_approval,
+              rework_cycles: 3,
+              error: err
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+
+    assert err =~ "Reviewer is still requesting changes after 3 rework cycles."
+    assert err =~ "Send back to Engineer to have them addressed, or Skip"
+  end
+
+  test "settles gate with changes_requested parking for human when global rework ceiling is reached" do
+    project = create_test_project()
+    role_qa = create_test_role(%{project_id: project.id, stage: :qa, name: "QA Tester"})
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :qa,
+        stage_state: :running,
+        rework_cycles: 5,
+        rework_budget_base: 0,
+        rework_cycles_by_gate: %{"other_gate" => 2, role_qa.id => 1}
+      })
+
+    role_run = create_test_role_run(%{task_id: task_id, role_id: role_qa.id, status: :running})
+
+    output = "QA failure.\n\nVERDICT: FAILED"
+
+    assert {:ok,
+            %Task{
+              id: ^task_id,
+              stage_state: :awaiting_approval,
+              rework_cycles: 5,
+              error: err
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+
+    assert err =~ "QA Tester is still requesting changes after 1 rework cycle."
+  end
+
+  test "settles gate with unclear verdict parking for human" do
+    project = create_test_project()
+    %Role{id: role_rev_id} = role_rev = create_test_role(%{project_id: project.id, stage: :review, name: "Reviewer"})
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :review,
+        stage_state: :running
+      })
+
+    role_run = create_test_role_run(%{task_id: task_id, role_id: role_rev.id, status: :running})
+
+    output = "Here are some notes but no verdict keyword."
+
+    assert {:ok,
+            %Task{
+              id: ^task_id,
+              stage_state: :awaiting_approval,
+              error: err,
+              outstanding_reports: [^role_rev_id]
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+
+    assert err =~ "Reviewer ended without a clear verdict. Read its report, then Send back to Engineer or Skip"
+  end
+
+  test "settles gate pass with rework stamping evidence commit line to next stage pending_answer" do
+    project = create_test_project()
+    role_rev = create_test_role(%{project_id: project.id, stage: :review, name: "Reviewer"})
+    role_qa = create_test_role(%{project_id: project.id, stage: :qa, name: "QA Tester"})
+    git_repo = create_temp_git_repo()
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :review,
+        stage_state: :running,
+        rework_cycles: 1,
+        worktree_path: git_repo
+      })
+
+    role_run = create_test_role_run(%{task_id: task_id, role_id: role_rev.id, status: :running})
+
+    output = "Rework resolved nicely.\n\nVERDICT: APPROVED"
+
+    assert {:ok, %Task{stage: :qa, stage_state: :queued}, %RoleRun{stage_fingerprint_head_sha: head_sha}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+
+    qa_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_qa.id)
+    assert qa_run.pending_answer =~ "The change has been reworked and the reviewer has signed off on it again."
+    assert qa_run.pending_answer =~ "The reworked change is commit #{head_sha}."
+  end
+
+  test "settles gate with changes_requested appending to existing engineer pending_answer or missing engineer role" do
+    project = create_test_project()
+    role_eng = create_test_role(%{project_id: project.id, stage: :engineer, name: "Engineer"})
+    role_rev = create_test_role(%{project_id: project.id, stage: :review, name: "Reviewer"})
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :review,
+        stage_state: :running,
+        rework_cycles: 0,
+        rework_budget_base: 0
+      })
+
+    create_test_role_run(%{
+      task_id: task_id,
+      role_id: role_eng.id,
+      status: :finished,
+      pending_answer: "Old engineer notes"
+    })
+
+    role_run = create_test_role_run(%{task_id: task_id, role_id: role_rev.id, status: :running})
+    output = "Please fix tests.\n\nVERDICT: CHANGES REQUESTED"
+
+    assert {:ok, %Task{stage: :engineer, stage_state: :queued}, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+
+    eng_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
+    assert eng_run.pending_answer =~ "Old engineer notes\n\nFindings from Reviewer"
+
+    # Part B: Project without engineer role
+    project_no_eng = create_test_project()
+    role_rev2 = create_test_role(%{project_id: project_no_eng.id, stage: :review, name: "Reviewer 2"})
+
+    %Task{id: task_id2} =
+      task2 =
+      create_test_task(%{
+        project_id: project_no_eng.id,
+        stage: :review,
+        stage_state: :running,
+        rework_cycles: 0,
+        rework_budget_base: 0
+      })
+
+    role_run2 = create_test_role_run(%{task_id: task_id2, role_id: role_rev2.id, status: :running})
+
+    assert {:ok, %Task{stage: :engineer, stage_state: :queued}, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task2, role_run2, %{exit_code: 0, output: output})
+  end
+
+  test "settles gate pass with rework from qa and qa_lead appending to existing pending_answer or missing next role" do
+    project = create_test_project()
+    role_qa = create_test_role(%{project_id: project.id, stage: :qa, name: "QA Tester"})
+    role_lead = create_test_role(%{project_id: project.id, stage: :qa_lead, name: "QA Lead"})
+    git_repo = create_temp_git_repo()
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :qa,
+        stage_state: :running,
+        rework_cycles: 1,
+        worktree_path: git_repo
+      })
+
+    create_test_role_run(%{
+      task_id: task_id,
+      role_id: role_lead.id,
+      status: :finished,
+      pending_answer: "Prior lead notes"
+    })
+
+    role_run = create_test_role_run(%{task_id: task_id, role_id: role_qa.id, status: :running})
+    output = "QA passed cleanly.\n\nVERDICT: PASS"
+
+    assert {:ok, %Task{stage: :qa_lead, stage_state: :queued}, %RoleRun{stage_fingerprint_head_sha: head_sha}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+
+    lead_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_lead.id)
+
+    assert lead_run.pending_answer =~
+             "Prior lead notes\n\nThe change has been reworked and QA has signed off on it again."
+
+    assert lead_run.pending_answer =~ "The reworked change is commit #{head_sha}."
+
+    # Part B: QA lead pass with rework when project HAS a demo role (hits "the previous gate" label)
+    role_demo = create_test_role(%{project_id: project.id, stage: :demo, name: "Demo Recorder"})
+
+    %Task{id: task_id2} =
+      task2 =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :qa_lead,
+        stage_state: :running,
+        rework_cycles: 1,
+        worktree_path: git_repo
+      })
+
+    role_run2 = create_test_role_run(%{task_id: task_id2, role_id: role_lead.id, status: :running})
+    output2 = "QA Lead pass.\n\nVERDICT: PASS"
+
+    assert {:ok, %Task{stage: :demo, stage_state: :queued}, %RoleRun{stage_fingerprint_head_sha: head_sha2}} =
+             Pipeline.settle_run(task2, role_run2, %{exit_code: 0, output: output2})
+
+    demo_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id2 and r.role_id == ^role_demo.id)
+    assert demo_run.pending_answer =~ "The change has been reworked and the previous gate has signed off on it again."
+    assert demo_run.pending_answer =~ "The reworked change is commit #{head_sha2}."
+
+    # Part C: Review stage pass with rework when next stage (:qa) role does NOT exist
+    project_no_qa = create_test_project()
+    role_rev3 = create_test_role(%{project_id: project_no_qa.id, stage: :review, name: "Reviewer 3"})
+
+    %Task{id: task_id3} =
+      task3 =
+      create_test_task(%{
+        project_id: project_no_qa.id,
+        stage: :review,
+        stage_state: :running,
+        rework_cycles: 1,
+        worktree_path: git_repo
+      })
+
+    role_run3 = create_test_role_run(%{task_id: task_id3, role_id: role_rev3.id, status: :running})
+
+    assert {:ok, %Task{stage: :qa, stage_state: :queued}, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task3, role_run3, %{exit_code: 0, output: "VERDICT: APPROVED"})
+
+    # Part D: Gate unclear with unknown role ID falls back to to_string(role_id)
+    unknown_role_id = "rol_unknown_gate"
+    role_run_unknown = create_test_role_run(%{task_id: task_id3, role_id: unknown_role_id, status: :running})
+
+    assert {:ok, %Task{stage_state: :awaiting_approval, error: err}, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task3, role_run_unknown, %{exit_code: 0, output: "unclear"})
+
+    assert err =~ "rol_unknown_gate ended without a clear verdict."
+  end
+
+  test "resolve_fingerprint falls back to role_run fingerprint when worktree_path is not a git repo" do
+    project = create_test_project()
+    role_rev = create_test_role(%{project_id: project.id, stage: :review, name: "Reviewer"})
+    _role_qa = create_test_role(%{project_id: project.id, stage: :qa, name: "QA"})
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :review,
+        stage_state: :running,
+        worktree_path: "/tmp/nonexistent_git_dir_#{System.unique_integer([:positive])}"
+      })
+
+    role_run =
+      create_test_role_run(%{
+        task_id: task_id,
+        role_id: role_rev.id,
+        status: :running,
+        stage_fingerprint_head_sha: "fallback_sha",
+        stage_fingerprint_dirty_digest: "fallback_digest"
+      })
+
+    output = "Approved.\n\nVERDICT: APPROVED"
+
+    assert {:ok, %Task{stage: :qa},
+            %RoleRun{stage_fingerprint_head_sha: "fallback_sha", stage_fingerprint_dirty_digest: "fallback_digest"}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
   end
 end

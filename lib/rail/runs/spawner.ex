@@ -210,6 +210,13 @@ defmodule Rail.Runs.Spawner do
                 _error -> :ok
               end
 
+              receive do
+                {^port, {:exit_status, status}} ->
+                  send(follower_pid, {port, {:exit_status, status}})
+              after
+                0 -> :ok
+              end
+
               # coveralls-ignore-stop
 
               {:ok, updated_run}

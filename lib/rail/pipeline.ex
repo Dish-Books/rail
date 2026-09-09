@@ -22,4 +22,21 @@ defmodule Rail.Pipeline do
   defdelegate dispatch_disabled?, to: Dispatcher
   defdelegate start_stage_run(task, opts \\ []), to: Actions.StartStageRun
   defdelegate settle_run(task, role_run, run_or_outcome \\ %{}, opts \\ []), to: Actions.SettleRun
+  defdelegate approve_stage(scope, task_or_id, opts), to: Actions.ApproveStage
+  defdelegate approve_stage(scope_or_task, task_or_opts), to: Actions.ApproveStage
+  defdelegate approve_stage(task_or_id), to: Actions.ApproveStage
+
+  defdelegate request_changes(scope, task_or_id, comment, opts), to: Actions.RequestChanges
+  defdelegate request_changes(scope_or_task, task_or_comment, comment_or_opts), to: Actions.RequestChanges
+  defdelegate request_changes(task_or_id, comment), to: Actions.RequestChanges
+
+  defdelegate send_back_to_engineer(scope, task_or_id, opts), to: Actions.SendBackToEngineer
+  defdelegate send_back_to_engineer(scope_or_task, task_or_opts), to: Actions.SendBackToEngineer
+  defdelegate send_back_to_engineer(task_or_id), to: Actions.SendBackToEngineer
+
+  defdelegate skip_to_ready_to_merge(scope, task_or_id), to: Actions.SkipToReadyToMerge
+  defdelegate skip_to_ready_to_merge(task_or_id), to: Actions.SkipToReadyToMerge
+
+  defdelegate retry_stage(scope, task_or_id), to: Actions.RetryStage
+  defdelegate retry_stage(task_or_id), to: Actions.RetryStage
 end

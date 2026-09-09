@@ -143,6 +143,33 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
     refute File.exists?(Path.join(scratch_dir, "plan.md"))
   end
 
+  test "prepare for engineer writes outstanding_reports.md when outstanding reports exist" do
+    project = create_test_project()
+    role = create_test_role(%{project_id: project.id, stage: :review, name: "Reviewer"})
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :engineer,
+        outstanding_reports: [role.id]
+      })
+
+    create_test_role_run(%{
+      task_id: task_id,
+      role_id: role.id,
+      status: :finished,
+      output: "Needs better tests"
+    })
+
+    scratch_dir = create_temp_scratch_dir()
+
+    assert {:ok, ^scratch_dir} = prepare(task, scratch_dir)
+    reports_file = Path.join(scratch_dir, "outstanding_reports.md")
+    assert File.exists?(reports_file)
+    assert File.read!(reports_file) =~ "### Reviewer\n\nNeeds better tests"
+  end
+
   test "prepare for design or architect materializes design if present" do
     Repo.insert!(Rail.Projects.Schemas.LinearWorkspace.factory())
     project = create_test_project()

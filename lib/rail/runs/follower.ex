@@ -384,6 +384,8 @@ defmodule Rail.Runs.Follower do
   end
 
   defp do_child_exit(state) do
+    state = await_exit_code(state)
+
     {final_lines, final_offset, _remaining_partial} =
       pump_stream(state.stream_path, state.file_offset, state.partial_line, final: true)
 
@@ -434,6 +436,22 @@ defmodule Rail.Runs.Follower do
         {nil, %{state | file_offset: final_offset, pending_events: [], event_state: event_state}}
     end
   end
+
+  # coveralls-ignore-start (defensive exit status collection for fast-exiting processes)
+  defp await_exit_code(%{exit_code: code} = state) when is_integer(code), do: state
+  defp await_exit_code(%{port: nil} = state), do: state
+
+  defp await_exit_code(state) do
+    receive do
+      {_port, {:exit_status, status}} ->
+        %{state | exit_code: status}
+    after
+      50 ->
+        state
+    end
+  end
+
+  # coveralls-ignore-stop
 
   defp compute_error(result_error, raw_stderr, exit_code) do
     cond do

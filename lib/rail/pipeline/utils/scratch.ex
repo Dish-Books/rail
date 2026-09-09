@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Utils.Scratch do
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.CarriedReports, only: [collect_report_entries: 1]
 
   alias Rail.Artifacts
   alias Rail.Domain.TicketBody
@@ -36,6 +37,7 @@ defmodule Rail.Pipeline.Utils.Scratch do
 
       :engineer ->
         write_engineer_plan(task, identifier, scratch_dir)
+        maybe_write_outstanding_reports(task, scratch_dir)
 
       :qa_lead ->
         maybe_materialize_qa(scope, task, scratch_dir)
@@ -158,6 +160,25 @@ defmodule Rail.Pipeline.Utils.Scratch do
 
     :ok
   end
+
+  defp maybe_write_outstanding_reports(%Task{outstanding_reports: reports} = task, scratch_dir)
+       when is_list(reports) and reports != [] do
+    entries = collect_report_entries(task)
+
+    if entries != [] do
+      sections =
+        Enum.map(entries, fn {_role_id, role_name, output} ->
+          "### #{role_name}\n\n#{output}"
+        end)
+
+      content = "# Outstanding Gate Reports\n\n" <> Enum.join(sections, "\n\n") <> "\n"
+      File.write!(Path.join(scratch_dir, "outstanding_reports.md"), content)
+    end
+
+    :ok
+  end
+
+  defp maybe_write_outstanding_reports(_task, _scratch_dir), do: :ok
 
   defp maybe_materialize_qa(scope, task, scratch_dir) do
     _result = Artifacts.materialize(scope, task, scratch_dir, kind: :qa)
