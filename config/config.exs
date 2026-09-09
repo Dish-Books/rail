@@ -33,6 +33,8 @@ config :rail, :github,
   app_id: System.get_env("GITHUB_APP_ID", "test_app_id"),
   private_key: System.get_env("GITHUB_APP_PRIVATE_KEY")
 
+config :rail, :linear, graphql_url: System.get_env("LINEAR_GRAPHQL_URL", "https://api.linear.app/graphql")
+
 config :rail, :linear_oauth,
   client_id: System.get_env("LINEAR_CLIENT_ID", "linear_client_id"),
   client_secret: System.get_env("LINEAR_CLIENT_SECRET", "linear_client_secret"),

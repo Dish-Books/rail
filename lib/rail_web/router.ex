@@ -23,6 +23,12 @@ defmodule RailWeb.Router do
     plug :accepts, ["json"]
   end
 
+  scope "/webhooks", RailWeb do
+    pipe_through :api
+
+    post "/linear/:workspace_id", LinearWebhookController, :handle
+  end
+
   scope "/auth/linear", RailWeb do
     pipe_through [:browser, :require_authenticated_user]
 

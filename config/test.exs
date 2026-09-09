@@ -26,6 +26,10 @@ config :rail, :github,
   private_key: File.read!("test/support/fixtures/github_app.pem"),
   req_options: [plug: {Req.Test, Rail.GitHub}]
 
+config :rail, :linear,
+  graphql_url: "https://api.linear.app/graphql",
+  req_options: [plug: {Req.Test, Rail.Linear}]
+
 config :rail, :linear_oauth,
   client_id: "test_linear_client_id",
   client_secret: "test_linear_client_secret",

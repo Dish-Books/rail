@@ -90,6 +90,7 @@ defmodule RailTest.Mocks.Linear do
   def mock_viewer_success(opts \\ []) do
     id = Keyword.get(opts, :id, "lin_usr_123")
     name = Keyword.get(opts, :name, "Linear Test User")
+    email = Keyword.get(opts, :email, "user@example.com")
 
     Req.Test.expect(Rail.Linear, fn conn ->
       assert conn.request_path == "/graphql"
@@ -102,7 +103,8 @@ defmodule RailTest.Mocks.Linear do
           "data" => %{
             "viewer" => %{
               "id" => id,
-              "name" => name
+              "name" => name,
+              "email" => email
             }
           }
         })
@@ -122,6 +124,247 @@ defmodule RailTest.Mocks.Linear do
           "errors" => [%{"message" => "Not authenticated"}]
         })
       )
+    end)
+  end
+
+  def mock_issues_success(nodes, _opts \\ []) do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert conn.request_path == "/graphql"
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(
+        200,
+        Jason.encode!(%{
+          "data" => %{
+            "team" => %{
+              "issues" => %{
+                "nodes" => nodes
+              }
+            }
+          }
+        })
+      )
+    end)
+  end
+
+  def mock_issue_success(issue, _opts \\ []) do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert conn.request_path == "/graphql"
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(
+        200,
+        Jason.encode!(%{
+          "data" => %{
+            "issue" => issue
+          }
+        })
+      )
+    end)
+  end
+
+  def mock_issue_not_found(_opts \\ []) do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert conn.request_path == "/graphql"
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(
+        200,
+        Jason.encode!(%{
+          "data" => %{
+            "issue" => nil
+          }
+        })
+      )
+    end)
+  end
+
+  def mock_create_issue_success(issue, _opts \\ []) do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert conn.request_path == "/graphql"
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(
+        200,
+        Jason.encode!(%{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => issue
+            }
+          }
+        })
+      )
+    end)
+  end
+
+  def mock_update_issue_success(issue, _opts \\ []) do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert conn.request_path == "/graphql"
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(
+        200,
+        Jason.encode!(%{
+          "data" => %{
+            "issueUpdate" => %{
+              "success" => true,
+              "issue" => issue
+            }
+          }
+        })
+      )
+    end)
+  end
+
+  def mock_workflow_states_success(states, _opts \\ []) do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert conn.request_path == "/graphql"
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(
+        200,
+        Jason.encode!(%{
+          "data" => %{
+            "team" => %{
+              "states" => %{
+                "nodes" => states
+              }
+            }
+          }
+        })
+      )
+    end)
+  end
+
+  def mock_file_upload_success(opts \\ []) do
+    upload_url = Keyword.get(opts, :upload_url, "https://api.linear.app/upload/asset_123")
+    asset_url = Keyword.get(opts, :asset_url, "https://uploads.linear.app/asset_123/file.png")
+    asset_id = Keyword.get(opts, :asset_id, "asset_123")
+    put_status = Keyword.get(opts, :put_status, 200)
+    put_error = Keyword.get(opts, :put_error)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert conn.request_path == "/graphql"
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(
+        200,
+        Jason.encode!(%{
+          "data" => %{
+            "fileUpload" => %{
+              "success" => true,
+              "uploadFile" => %{
+                "id" => asset_id,
+                "uploadUrl" => upload_url,
+                "assetUrl" => asset_url,
+                "headers" => [%{"key" => "Content-Type", "value" => "image/png"}]
+              }
+            }
+          }
+        })
+      )
+    end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert conn.method == "PUT"
+
+      if put_error do
+        Req.Test.transport_error(conn, put_error)
+      else
+        conn
+        |> put_resp_content_type("application/json")
+        |> send_resp(put_status, "")
+      end
+    end)
+  end
+
+  def mock_create_comment_success(comment, _opts \\ []) do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert conn.request_path == "/graphql"
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(
+        200,
+        Jason.encode!(%{
+          "data" => %{
+            "commentCreate" => %{
+              "success" => true,
+              "comment" => comment
+            }
+          }
+        })
+      )
+    end)
+  end
+
+  def mock_attachment_create_success(attachment, _opts \\ []) do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert conn.request_path == "/graphql"
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(
+        200,
+        Jason.encode!(%{
+          "data" => %{
+            "attachmentCreate" => %{
+              "success" => true,
+              "attachment" => attachment
+            }
+          }
+        })
+      )
+    end)
+  end
+
+  def mock_graphql_error(errors \\ [%{"message" => "GraphQL query error"}]) do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert conn.request_path == "/graphql"
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(
+        200,
+        Jason.encode!(%{
+          "errors" => errors
+        })
+      )
+    end)
+  end
+
+  def mock_mutation_failure(mutation_name) do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert conn.request_path == "/graphql"
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(
+        200,
+        Jason.encode!(%{
+          "data" => %{
+            mutation_name => %{"success" => false}
+          }
+        })
+      )
+    end)
+  end
+
+  def mock_api_error(status \\ 500, body \\ %{"error" => "Internal error"}) do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert conn.request_path == "/graphql"
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(status, Jason.encode!(body))
     end)
   end
 end
