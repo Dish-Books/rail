@@ -8,4 +8,8 @@ defmodule RailTest.Helpers do
   defdelegate system_scope, to: Scope
   defdelegate create_temp_git_repo(opts \\ []), to: RailTest.GitHelpers
   defdelegate git!(dir, args), to: RailTest.GitHelpers
+  defdelegate create_test_project(attrs \\ %{}), to: RailTest.RolesHelpers
+  defdelegate create_test_role(attrs \\ %{}), to: RailTest.RolesHelpers
+  defdelegate create_test_role_run(attrs \\ %{}), to: RailTest.RolesHelpers
+  defdelegate create_test_run_event(attrs \\ %{}), to: RailTest.RolesHelpers
 end
