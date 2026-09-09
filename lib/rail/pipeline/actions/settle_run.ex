@@ -32,11 +32,20 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   def settle_run(task_target, role_run_target, run_or_outcome \\ %{}, opts \\ []) do
     with %Task{} = task <- resolve_task(task_target),
          %RoleRun{} = role_run <- resolve_role_run(role_run_target) do
-      do_settle_run(task, role_run, run_or_outcome, opts)
+      if chat_run?(run_or_outcome) do
+        Rail.Pipeline.settle_chat_turn(task, role_run, run_or_outcome, opts)
+      else
+        do_settle_run(task, role_run, run_or_outcome, opts)
+      end
     else
       _not_found -> {:error, :not_found}
     end
   end
+
+  defp chat_run?(%Run{kind: :chat}), do: true
+  defp chat_run?(%{run: %Run{kind: :chat}}), do: true
+  defp chat_run?(%{kind: :chat}), do: true
+  defp chat_run?(_other), do: false
 
   defp do_settle_run(%Task{} = task, %RoleRun{} = role_run, run_or_outcome, opts) do
     exit_code = resolve_exit_code(run_or_outcome, role_run)
@@ -90,6 +99,8 @@ defmodule Rail.Pipeline.Actions.SettleRun do
       |> Repo.update()
 
     Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :run_settled})
+
+    Rail.Pipeline.maybe_dispatch_queued_pending_chat(updated_task, opts)
 
     {:ok, updated_task, updated_role_run}
   end

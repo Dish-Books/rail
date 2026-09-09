@@ -19,4 +19,5 @@ defmodule RailTest.Helpers do
   defdelegate create_test_issue(attrs \\ %{}), to: RailTest.PipelineHelpers
   defdelegate create_temp_scratch_dir, to: RailTest.PipelineHelpers
   defdelegate mock_dispatch_hook(task, role), to: RailTest.PipelineHelpers
+  defdelegate create_chat_stub_cli(opts \\ []), to: RailTest.PipelineHelpers
 end

@@ -74,4 +74,22 @@ defmodule Rail.Pipeline do
   defdelegate list_pending_questions(scope_or_target, target_or_opts), to: Actions.ListQuestions
   defdelegate list_pending_questions(target_or_opts), to: Actions.ListQuestions
   defdelegate list_pending_questions(), to: Actions.ListQuestions
+
+  defdelegate send_chat_turn(scope, task_or_id, role_id, text, opts), to: Actions.SendChatTurn
+  defdelegate send_chat_turn(scope_or_task, task_or_role, role_or_text, text_or_opts), to: Actions.SendChatTurn
+  defdelegate send_chat_turn(task_or_id, role_id, text), to: Actions.SendChatTurn
+  defdelegate dispatch_chat_turn(task, role, role_run, opts), to: Actions.SendChatTurn
+  defdelegate dispatch_chat_turn(task, role, role_run), to: Actions.SendChatTurn
+  defdelegate maybe_dispatch_queued_pending_chat(task, opts), to: Actions.SendChatTurn
+  defdelegate maybe_dispatch_queued_pending_chat(task), to: Actions.SendChatTurn
+
+  defdelegate stop_chat_turn(scope, task_or_id), to: Actions.StopChatTurn
+  defdelegate stop_chat_turn(task_or_id), to: Actions.StopChatTurn
+
+  defdelegate cancel_pending_chat(scope, task_or_id, role_id), to: Actions.CancelPendingChat
+  defdelegate cancel_pending_chat(task_or_id, role_id), to: Actions.CancelPendingChat
+
+  defdelegate settle_chat_turn(task_target, role_run_target, run_or_outcome, opts), to: Actions.SettleChatTurn
+  defdelegate settle_chat_turn(task_target, role_run_target, run_or_outcome), to: Actions.SettleChatTurn
+  defdelegate settle_chat_turn(task_target, role_run_target), to: Actions.SettleChatTurn
 end

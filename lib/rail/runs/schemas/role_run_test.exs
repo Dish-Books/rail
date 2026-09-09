@@ -81,4 +81,29 @@ defmodule Rail.Runs.Schemas.RoleRunTest do
     assert role_run.usage.input_tokens == 120
     assert role_run.usage.output_tokens == 40
   end
+
+  test "has_started?/1 and can_chat?/1 logic" do
+    unstarted = %RoleRun{started_at: nil, attempts: 0, conversation_id: nil}
+    refute RoleRun.has_started?(unstarted)
+    refute RoleRun.can_chat?(unstarted)
+
+    started_no_conv = %RoleRun{started_at: DateTime.utc_now(), attempts: 1, conversation_id: nil}
+    assert RoleRun.has_started?(started_no_conv)
+    refute RoleRun.can_chat?(started_no_conv)
+
+    started_empty_conv = %RoleRun{started_at: DateTime.utc_now(), attempts: 1, conversation_id: "  "}
+    assert RoleRun.has_started?(started_empty_conv)
+    refute RoleRun.can_chat?(started_empty_conv)
+
+    started_with_conv = %RoleRun{started_at: DateTime.utc_now(), attempts: 1, conversation_id: "sess-123"}
+    assert RoleRun.has_started?(started_with_conv)
+    assert RoleRun.can_chat?(started_with_conv)
+
+    attempt_only_with_conv = %RoleRun{started_at: nil, attempts: 2, conversation_id: "sess-456"}
+    assert RoleRun.has_started?(attempt_only_with_conv)
+    assert RoleRun.can_chat?(attempt_only_with_conv)
+
+    refute RoleRun.has_started?(nil)
+    refute RoleRun.can_chat?(nil)
+  end
 end

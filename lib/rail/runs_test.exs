@@ -234,4 +234,23 @@ defmodule Rail.RunsTest do
   test "adopt_live_runs/1 delegates to Boot" do
     assert Runs.adopt_live_runs(node: "empty_node") == []
   end
+
+  test "append_run_event/2 accepts %RoleRun{} struct and persists sequentially" do
+    task_id = UXID.generate!(prefix: "tsk")
+    role_id = UXID.generate!(prefix: "rol")
+
+    {:ok, role_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    assert %RunEvent{line: "Line from struct", seq: 1} =
+             Runs.append_run_event(role_run, "Line from struct")
+
+    assert Runs.chat_prompt("Hi") =~ "Human message:\nHi"
+    assert Runs.build_chat_prompt("Hi") =~ "Human message:\nHi"
+  end
 end

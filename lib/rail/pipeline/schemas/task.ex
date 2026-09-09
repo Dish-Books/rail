@@ -120,6 +120,20 @@ defmodule Rail.Pipeline.Schemas.Task do
     }
   end
 
+  @doc """
+  Returns true if the task is currently busy with an in-flight run:
+  - stage_state is :running, or
+  - active_chat_role_id is non-nil, or
+  - an OS process is actively running for this task.
+  """
+  def busy?(%__MODULE__{} = task) do
+    task.stage_state == :running or
+      is_binary(task.active_chat_role_id) or
+      (is_binary(task.id) and Rail.Runs.running?(task.id))
+  end
+
+  def busy?(_other), do: false
+
   defp maybe_put_project_id(changeset, nil), do: changeset
   defp maybe_put_project_id(changeset, project_id), do: put_change(changeset, :project_id, project_id)
 end

@@ -145,4 +145,17 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
              role_runs: [%RoleRun{task_id: ^task_id}]
            } = preloaded
   end
+
+  test "busy?/1 helper" do
+    idle = %Task{stage_state: :queued, active_chat_role_id: nil, id: nil}
+    refute Task.busy?(idle)
+
+    running_stage = %Task{stage_state: :running, active_chat_role_id: nil, id: nil}
+    assert Task.busy?(running_stage)
+
+    active_chat = %Task{stage_state: :queued, active_chat_role_id: "rol_123", id: nil}
+    assert Task.busy?(active_chat)
+
+    refute Task.busy?(nil)
+  end
 end

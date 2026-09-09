@@ -823,4 +823,18 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     assert {:ok, %Task{stage: :review, stage_state: :queued}, %RoleRun{status: :finished}} =
              Pipeline.settle_run(task3, role_run3, %{exit_code: 0, detected_question: detector3})
   end
+
+  test "settle_run delegates %Run{kind: :chat} and %{kind: :chat} to SettleChatTurn" do
+    project = create_test_project()
+    task = create_test_task(%{project_id: project.id, stage: :engineer, stage_state: :queued})
+    role_run = create_test_role_run(%{task_id: task.id, status: :finished, started_at: DateTime.utc_now()})
+
+    run_struct = %Run{kind: :chat, role_run_id: role_run.id, task_id: task.id, status: :finished}
+
+    assert {:ok, %Task{}, %RoleRun{}} =
+             Pipeline.settle_run(task, role_run, run_struct)
+
+    assert {:ok, %Task{}, %RoleRun{}} =
+             Pipeline.settle_run(task, role_run, %{kind: :chat, exit_code: 0})
+  end
 end

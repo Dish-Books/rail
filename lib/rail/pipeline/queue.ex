@@ -86,6 +86,7 @@ defmodule Rail.Pipeline.Queue do
       from t in Task,
         where: t.project_id == ^project_id,
         where: t.stage_state == :queued,
+        where: is_nil(t.active_chat_role_id),
         where: is_nil(t.retry_after) or t.retry_after <= ^now,
         order_by: [asc: t.inserted_at],
         limit: ^slots

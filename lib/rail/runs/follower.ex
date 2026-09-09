@@ -427,22 +427,22 @@ defmodule Rail.Runs.Follower do
         raw_stderr
       )
 
-    if state.task_id && event_state.detected_question do
-      Pipeline.register_question(
-        state.task_id,
-        state.role_run_id,
-        event_state.detected_question
-      )
-    end
-
     case Repo.get(Run, state.run_id) do
       %Run{} = run ->
+        if state.task_id && event_state.detected_question && run.kind != :chat do
+          Pipeline.register_question(
+            state.task_id,
+            state.role_run_id,
+            event_state.detected_question
+          )
+        end
+
         {:ok, updated_run} =
           run
           |> Run.changeset(%{status: :finished})
           |> Repo.update()
 
-        updated_role_run = update_role_run(state.role_run_id, exit_code, error, event_state)
+        updated_role_run = update_role_run(state.role_run_id, exit_code, error, event_state, run.kind)
         outcome = build_outcome(exit_code, error, event_state, updated_run, updated_role_run)
 
         notify_run_finished(state.on_finished, updated_run, outcome)
@@ -511,25 +511,36 @@ defmodule Rail.Runs.Follower do
     end
   end
 
-  defp update_role_run(role_run_id, exit_code, error, event_state) do
+  defp update_role_run(role_run_id, exit_code, error, event_state, kind) do
     case Repo.get(RoleRun, role_run_id) do
       %RoleRun{} = role_run ->
-        new_status =
-          if role_run.status == :blocked_on_input do
-            :blocked_on_input
-          else
-            :finished
-          end
+        role_run_attrs =
+          if kind == :chat do
+            conv_id = event_state.conversation_id || role_run.conversation_id
 
-        role_run_attrs = %{
-          status: new_status,
-          completed_at: DateTime.utc_now(),
-          exit_code: exit_code,
-          error: error,
-          output: event_state.final_text,
-          usage: event_state.usage,
-          conversation_id: event_state.conversation_id || role_run.conversation_id
-        }
+            if conv_id == role_run.conversation_id do
+              %{}
+            else
+              %{conversation_id: conv_id}
+            end
+          else
+            new_status =
+              if role_run.status == :blocked_on_input do
+                :blocked_on_input
+              else
+                :finished
+              end
+
+            %{
+              status: new_status,
+              completed_at: DateTime.utc_now(),
+              exit_code: exit_code,
+              error: error,
+              output: event_state.final_text,
+              conversation_id: event_state.conversation_id || role_run.conversation_id,
+              usage: event_state.usage
+            }
+          end
 
         {:ok, updated_role_run} =
           role_run
