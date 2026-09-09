@@ -8,6 +8,9 @@ defmodule Rail.Application do
       Rail.Vault,
       Rail.Repo,
       {Phoenix.PubSub, name: Rail.PubSub},
+      {Registry, keys: :unique, name: Rail.Runs.FollowerRegistry},
+      Rail.Runs.FollowerSupervisor,
+      Rail.Runs.Boot,
       RailWeb.Endpoint
     ]
 

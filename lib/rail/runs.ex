@@ -1,15 +1,27 @@
 defmodule Rail.Runs do
   @moduledoc """
-  Context for agent CLI execution, argv/prompt building, and stream event parsing.
+  Context for agent CLI execution, argv/prompt building, process spawning,
+  stream following, and run lifecycle management.
   """
 
+  import Ecto.Query
+
   alias Rail.Domain.RunFailure
+  alias Rail.Repo
   alias Rail.Runs.AgyEvents
   alias Rail.Runs.ArgvBuilder
+  alias Rail.Runs.Boot
   alias Rail.Runs.ClaudeEvents
+  alias Rail.Runs.Follower
   alias Rail.Runs.PromptBuilder
   alias Rail.Runs.QuestionDetector
+  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
+  alias Rail.Runs.Schemas.RunEvent
+  alias Rail.Runs.Spawner
   alias Rail.Runs.ToolSummarizer
+
+  @boot_id_key {__MODULE__, :boot_id}
 
   defdelegate build_argv(opts), to: ArgvBuilder
   defdelegate build_prompt(opts), to: PromptBuilder
@@ -23,9 +35,42 @@ defmodule Rail.Runs do
   def transient?(failure), do: RunFailure.transient?(failure)
 
   @doc """
+  Returns the unique boot identifier for this BEAM node runtime.
+  """
+  def boot_id do
+    case :persistent_term.get(@boot_id_key, nil) do
+      id when is_binary(id) ->
+        id
+
+      nil ->
+        id = UXID.generate!()
+        :persistent_term.put(@boot_id_key, id)
+        id
+    end
+  end
+
+  @doc """
+  Overrides the boot identifier for testing.
+  """
+  def debug_set_boot_id(id) when is_binary(id) do
+    :persistent_term.put(@boot_id_key, id)
+    :ok
+  end
+
+  @doc """
+  Resets the boot identifier.
+  """
+  def reset_boot_id do
+    :persistent_term.erase(@boot_id_key)
+    :ok
+  end
+
+  @doc """
   Initializes an event accumulator state struct for either `:claude` or `:agy`.
   """
   def new_event_state(backend, opts \\ [])
+
+  # Process lifecycle and execution
 
   def new_event_state(:claude, opts), do: ClaudeEvents.new(opts)
 
@@ -50,11 +95,132 @@ defmodule Rail.Runs do
   @doc """
   Dispatches a decoded NDJSON event map to the appropriate backend handler.
   """
+
+  # Persistence and query helpers
+
   def parse_event(%ClaudeEvents{} = state, event), do: ClaudeEvents.handle_event(state, event)
   def parse_event(%AgyEvents{} = state, event), do: AgyEvents.handle_event(state, event)
 
   def parse_event(backend, event) when is_atom(backend) or is_binary(backend) do
     state = new_event_state(backend)
     parse_event(state, event)
+  end
+
+  @doc """
+  Spawns a detached CLI runner, records the `runs` row, and starts its Follower.
+  """
+  def start_run(role_run, kind, argv, opts \\ []) do
+    Spawner.spawn_run(role_run, kind, argv, opts)
+  end
+
+  @doc """
+  Terminates an active agent execution by run or role_run ID.
+  """
+  def stop_run(run_or_role_run_id, opts \\ []) do
+    Follower.stop_run(run_or_role_run_id, opts)
+  end
+
+  @doc """
+  Reconciles and adopts in-flight runs on this node.
+  """
+  def adopt_live_runs(opts \\ []) do
+    Boot.adopt_live_runs(opts)
+  end
+
+  @doc """
+  Callback invoked when a run completes execution.
+  """
+  def on_run_finished(run, outcome) do
+    Phoenix.PubSub.broadcast(Rail.PubSub, "runs", {:run_finished, run, outcome})
+    {:ok, outcome}
+  end
+
+  @doc """
+  Creates a new role run record.
+  """
+  def create_role_run(attrs) do
+    %RoleRun{}
+    |> RoleRun.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Gets a role run by ID.
+  """
+  def get_role_run(id), do: Repo.get(RoleRun, id)
+
+  @doc """
+  Gets a role run by ID, raising if not found.
+  """
+  def get_role_run!(id), do: Repo.get!(RoleRun, id)
+
+  @doc """
+  Updates a role run record.
+  """
+  def update_role_run(%RoleRun{} = role_run, attrs) do
+    role_run
+    |> RoleRun.changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
+  Gets a run by ID.
+  """
+  def get_run(id), do: Repo.get(Run, id)
+
+  @doc """
+  Gets a run by ID, raising if not found.
+  """
+  def get_run!(id), do: Repo.get!(Run, id)
+
+  @doc """
+  Lists runs matching criteria.
+  """
+  def list_runs(opts \\ []) do
+    query = from(r in Run, order_by: [desc: r.inserted_at])
+
+    query =
+      Enum.reduce(opts, query, fn
+        {:role_run_id, role_run_id}, q -> where(q, [r], r.role_run_id == ^role_run_id)
+        {:task_id, task_id}, q -> where(q, [r], r.task_id == ^task_id)
+        {:node, node}, q -> where(q, [r], r.node == ^node)
+        {:status, status}, q -> where(q, [r], r.status == ^status)
+        _other, q -> q
+      end)
+
+    Repo.all(query)
+  end
+
+  @doc """
+  Lists all active runs (:starting or :running).
+  """
+  def list_active_runs(opts \\ []) do
+    list_runs([{:status, :running} | opts])
+  end
+
+  @doc """
+  Lists all run events for a role run ordered by sequence.
+  """
+  def list_run_events(role_run_id, opts \\ []) do
+    limit = Keyword.get(opts, :limit)
+
+    query =
+      from(e in RunEvent,
+        where: e.role_run_id == ^role_run_id,
+        order_by: [asc: e.seq]
+      )
+
+    query = if limit, do: limit(query, ^limit), else: query
+    Repo.all(query)
+  end
+
+  @doc """
+  Looks up the Follower GenServer PID for a given run ID if running.
+  """
+  def get_follower_pid(run_id) do
+    case Registry.lookup(Rail.Runs.FollowerRegistry, run_id) do
+      [{pid, _value}] -> pid
+      _other -> nil
+    end
   end
 end

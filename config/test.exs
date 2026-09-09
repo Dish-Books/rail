@@ -21,6 +21,8 @@ config :rail, RailWeb.Endpoint,
   secret_key_base: "rails_test_secret_key_base_at_least_64_bytes_long_for_security_123456789012",
   server: false
 
+config :rail, :adopt_on_boot, false
+
 config :rail, :github,
   app_id: "test_github_app_id",
   private_key: File.read!("test/support/fixtures/github_app.pem"),

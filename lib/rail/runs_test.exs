@@ -5,6 +5,7 @@ defmodule Rail.RunsTest do
   alias Rail.Runs.AgyEvents
   alias Rail.Runs.ClaudeEvents
   alias Rail.Runs.QuestionDetector
+  alias Rail.Runs.Schemas.RunEvent
 
   test "delegates build_argv/1" do
     argv =
@@ -91,5 +92,142 @@ defmodule Rail.RunsTest do
 
     agy_result = Runs.parse_event("agy", %{"event" => "init", "conversation_id" => "conv-2", "init" => %{}})
     assert %AgyEvents{conversation_id: "conv-2"} = agy_result
+  end
+
+  test "boot_id/0 returns consistent node boot ID and supports override/reset" do
+    id1 = Runs.boot_id()
+    id2 = Runs.boot_id()
+    assert id1 == id2
+    assert is_binary(id1) and byte_size(id1) > 0
+
+    Runs.debug_set_boot_id("custom-boot-123")
+    assert Runs.boot_id() == "custom-boot-123"
+
+    Runs.reset_boot_id()
+    recalculated = Runs.boot_id()
+    assert recalculated != "custom-boot-123"
+  end
+
+  test "create_role_run/1, get_role_run/1, get_role_run!/1, update_role_run/2" do
+    task_id = UXID.generate!(prefix: "tsk")
+    role_id = UXID.generate!(prefix: "rol")
+
+    {:ok, role_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_id,
+        status: :starting,
+        started_at: DateTime.utc_now()
+      })
+
+    assert role_run.id =~ "rr_"
+    assert Runs.get_role_run(role_run.id).id == role_run.id
+    assert Runs.get_role_run!(role_run.id).id == role_run.id
+    assert is_nil(Runs.get_role_run("rr_nonexistent"))
+
+    {:ok, updated} = Runs.update_role_run(role_run, %{status: :running})
+    assert updated.status == :running
+  end
+
+  test "get_run/1, get_run!/1, list_runs/1, list_active_runs/1" do
+    task_id = UXID.generate!(prefix: "tsk")
+    role_id = UXID.generate!(prefix: "rol")
+
+    {:ok, role_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, run} =
+      Runs.start_run(
+        role_run,
+        :stage,
+        ["/bin/sleep", "5"],
+        skip_follower: true
+      )
+
+    assert Runs.get_run(run.id).id == run.id
+    assert Runs.get_run!(run.id).id == run.id
+    assert is_nil(Runs.get_run("run_nonexistent"))
+
+    all_runs = Runs.list_runs(task_id: task_id)
+    assert length(all_runs) == 1
+    assert hd(all_runs).id == run.id
+
+    node_runs = Runs.list_runs(node: run.node, status: :running, ignore_unknown: true)
+    assert length(node_runs) == 1
+
+    active_runs = Runs.list_active_runs(role_run_id: role_run.id)
+    assert length(active_runs) == 1
+
+    Runs.stop_run(run.id, grace_period: 50)
+  end
+
+  test "list_run_events/2 returns events ordered by seq with optional limit" do
+    role_id = UXID.generate!(prefix: "rol")
+    task_id = UXID.generate!(prefix: "tsk")
+
+    {:ok, role_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    Repo.insert!(%RunEvent{role_run_id: role_run.id, seq: 1, line: "line 1"})
+    Repo.insert!(%RunEvent{role_run_id: role_run.id, seq: 2, line: "line 2"})
+    Repo.insert!(%RunEvent{role_run_id: role_run.id, seq: 3, line: "line 3"})
+
+    events = Runs.list_run_events(role_run.id)
+    assert length(events) == 3
+    assert Enum.map(events, & &1.seq) == [1, 2, 3]
+
+    limited = Runs.list_run_events(role_run.id, limit: 2)
+    assert length(limited) == 2
+  end
+
+  test "on_run_finished/2 broadcasts on PubSub" do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "runs")
+
+    run = %Rail.Runs.Schemas.Run{id: "run_test"}
+    outcome = %{exit_code: 0}
+
+    assert {:ok, ^outcome} = Runs.on_run_finished(run, outcome)
+    assert_receive {:run_finished, ^run, ^outcome}, 500
+  end
+
+  test "start_run/4 and stop_run/2 through Runs context" do
+    task_id = UXID.generate!(prefix: "tsk")
+    role_id = UXID.generate!(prefix: "rol")
+
+    {:ok, role_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, run} =
+      Runs.start_run(
+        role_run,
+        :stage,
+        ["/bin/sleep", "30"]
+      )
+
+    follower_pid = Runs.get_follower_pid(run.id)
+    assert is_pid(follower_pid)
+    assert Process.alive?(follower_pid)
+
+    {:ok, stopped} = Runs.stop_run(run.id, grace_period: 50)
+    assert stopped.status == :finished
+  end
+
+  test "adopt_live_runs/1 delegates to Boot" do
+    assert Runs.adopt_live_runs(node: "empty_node") == []
   end
 end
