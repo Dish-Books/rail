@@ -11,6 +11,7 @@ defmodule Rail.Application do
       {Registry, keys: :unique, name: Rail.Runs.FollowerRegistry},
       Rail.Runs.FollowerSupervisor,
       Rail.Runs.Boot,
+      Rail.Backends.RefreshServer,
       RailWeb.Endpoint
     ]
 
