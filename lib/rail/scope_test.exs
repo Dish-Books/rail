@@ -55,4 +55,14 @@ defmodule Rail.ScopeTest do
   test "system_scope returns system scope" do
     assert %Scope{user: nil, system: true} = Scope.system_scope()
   end
+
+  test "linear_linked? returns true when user has linear_access_token or linear_linked flag" do
+    assert Scope.linear_linked?(%Scope{user: %{linear_access_token: "lin_at_valid"}})
+    assert Scope.linear_linked?(%Scope{user: %{linear_linked: true}})
+    refute Scope.linear_linked?(%Scope{user: %{linear_access_token: nil}})
+    refute Scope.linear_linked?(%Scope{user: %{linear_access_token: ""}})
+    refute Scope.linear_linked?(%Scope{user: %{linear_linked: false}})
+    refute Scope.linear_linked?(%Scope{user: nil})
+    refute Scope.linear_linked?(nil)
+  end
 end

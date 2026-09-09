@@ -115,4 +115,71 @@ defmodule Rail.Users.Schemas.UserTest do
     refute String.contains?(inspected, "super-secret-token")
     refute String.contains?(inspected, "github_token:")
   end
+
+  test "linear_link_changeset validates required fields and sets linear attrs" do
+    changeset = User.linear_link_changeset(%User{}, %{})
+
+    assert %{
+             linear_access_token: ["can't be blank"],
+             linear_refresh_token: ["can't be blank"],
+             linear_token_expires_at: ["can't be blank"]
+           } = errors_on(changeset)
+
+    expires = DateTime.utc_now()
+
+    valid_changeset =
+      User.linear_link_changeset(%User{}, %{
+        linear_access_token: "lin_at",
+        linear_refresh_token: "lin_rt",
+        linear_token_expires_at: expires,
+        linear_user_id: "lin_usr_1",
+        linear_name: "Lin Name"
+      })
+
+    assert valid_changeset.valid?
+  end
+
+  test "linear_unlink_changeset clears linear attributes" do
+    user = %User{
+      linear_user_id: "lin_usr_1",
+      linear_name: "Lin Name",
+      linear_access_token: "lin_at",
+      linear_refresh_token: "lin_rt",
+      linear_token_expires_at: DateTime.utc_now()
+    }
+
+    changeset = User.linear_unlink_changeset(user)
+
+    assert changeset.changes == %{
+             linear_user_id: nil,
+             linear_name: nil,
+             linear_access_token: nil,
+             linear_refresh_token: nil,
+             linear_token_expires_at: nil
+           }
+  end
+
+  test "redacts linear tokens on inspect" do
+    assert {:ok, user} =
+             Users.register_oauth_user(%{
+               github_id: "redact_linear_gh",
+               login: "redact_linear_test",
+               email: "redact_linear@example.com"
+             })
+
+    assert {:ok, linked_user} =
+             user
+             |> User.linear_link_changeset(%{
+               linear_access_token: "secret-linear-access-token",
+               linear_refresh_token: "secret-linear-refresh-token",
+               linear_token_expires_at: DateTime.utc_now()
+             })
+             |> Repo.update()
+
+    inspected = inspect(linked_user)
+    refute String.contains?(inspected, "secret-linear-access-token")
+    refute String.contains?(inspected, "secret-linear-refresh-token")
+    refute String.contains?(inspected, "linear_access_token:")
+    refute String.contains?(inspected, "linear_refresh_token:")
+  end
 end

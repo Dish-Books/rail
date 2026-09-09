@@ -4,6 +4,13 @@ if System.get_env("PHX_SERVER") do
   config :rail, RailWeb.Endpoint, server: true
 end
 
+if client_id = System.get_env("LINEAR_CLIENT_ID") do
+  config :rail, :linear_oauth,
+    client_id: client_id,
+    client_secret: System.get_env("LINEAR_CLIENT_SECRET"),
+    redirect_uri: System.get_env("LINEAR_REDIRECT_URI", "http://localhost:4000/auth/linear/callback")
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||

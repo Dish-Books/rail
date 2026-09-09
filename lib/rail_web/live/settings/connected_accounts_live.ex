@@ -1,0 +1,175 @@
+defmodule RailWeb.Settings.ConnectedAccountsLive do
+  @moduledoc false
+  use RailWeb, :live_view
+
+  alias Rail.Scope
+  alias Rail.Users
+
+  def mount(_params, _session, socket) do
+    current_scope = socket.assigns.current_scope
+    user = current_scope && current_scope.user
+
+    socket =
+      socket
+      |> assign(:page_title, "Connected Accounts")
+      |> assign(:current_user, user)
+      |> assign(:linear_connected, linear_connected?(user))
+      |> assign(:linear_name, user && user.linear_name)
+
+    {:ok, socket}
+  end
+
+  def handle_params(_params, _uri, socket) do
+    socket = assign(socket, :page_title, "Connected Accounts")
+    {:noreply, socket}
+  end
+
+  def render(assigns) do
+    ~H"""
+    <div
+      class="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10"
+      id="connected-accounts-settings"
+    >
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight text-zinc-900">Connected Accounts</h1>
+        <p class="mt-1 text-sm text-zinc-500">
+          Manage third-party services connected to your account.
+        </p>
+      </div>
+
+      <!-- GitHub Identity Section -->
+      <section
+        class="bg-white shadow rounded-lg p-6 border border-zinc-200"
+        id="github-account-section"
+      >
+        <div class="flex items-center justify-between pb-4 border-b border-zinc-100">
+          <div class="flex items-center space-x-4">
+            <img
+              :if={@current_user && @current_user.avatar_url}
+              src={@current_user.avatar_url}
+              alt={@current_user.name || @current_user.login}
+              class="h-12 w-12 rounded-full ring-2 ring-zinc-200"
+              id="github-avatar"
+            />
+            <div
+              :if={!@current_user || is_nil(@current_user.avatar_url)}
+              class="h-12 w-12 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400 font-bold"
+              id="github-avatar-placeholder"
+            >
+              GH
+            </div>
+            <div>
+              <h2 class="text-lg font-medium text-zinc-900">GitHub</h2>
+              <p :if={@current_user} class="text-sm text-zinc-500">
+                Connected as
+                <span class="font-semibold text-zinc-800" id="github-login">{@current_user.login}</span>
+                <span :if={@current_user.name} class="text-zinc-400"> ({@current_user.name})</span>
+              </p>
+              <p
+                :if={@current_user && @current_user.email}
+                class="text-xs text-zinc-400"
+                id="github-email"
+              >
+                {@current_user.email}
+              </p>
+            </div>
+          </div>
+          <div>
+            <span
+              class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20"
+              id="github-status-badge"
+            >
+              Connected
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Linear Connection Section -->
+      <section
+        class="bg-white shadow rounded-lg p-6 border border-zinc-200"
+        id="linear-account-section"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-medium text-zinc-900">Linear</h2>
+            <div :if={@linear_connected} id="linear-connected-details">
+              <p class="text-sm text-zinc-600 mt-1">
+                Connected as
+                <span class="font-semibold text-zinc-900" id="linear-user-name">{@linear_name ||
+                  "Linear User"}</span>
+              </p>
+              <p class="text-xs text-zinc-400 mt-0.5">
+                Issues and comments created by you will be attributed to your Linear user.
+              </p>
+            </div>
+            <div :if={!@linear_connected} id="linear-disconnected-details">
+              <p class="text-sm text-zinc-500 mt-1" id="linear-disconnected-message">
+                Linear is not connected.
+              </p>
+              <p class="text-xs text-zinc-400 mt-0.5">
+                Connect Linear to author issues and comments with your identity.
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <button
+              :if={@linear_connected}
+              type="button"
+              phx-click="disconnect"
+              id="disconnect-linear-button"
+              class="rounded-md bg-white px-3 py-2 text-sm font-semibold text-red-600 shadow-sm ring-1 ring-inset ring-red-300 hover:bg-red-50 focus-visible:outline-red-600"
+            >
+              Disconnect
+            </button>
+
+            <.link
+              :if={!@linear_connected}
+              href={~p"/auth/linear"}
+              id="connect-linear-button"
+              class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+            >
+              Connect Linear
+            </.link>
+          </div>
+        </div>
+      </section>
+    </div>
+    """
+  end
+
+  def handle_event("disconnect", _params, socket) do
+    execute_disconnect(socket)
+  end
+
+  def handle_event("unlink", _params, socket) do
+    execute_disconnect(socket)
+  end
+
+  defp execute_disconnect(socket) do
+    current_scope = socket.assigns.current_scope
+
+    case Users.unlink_linear(current_scope) do
+      {:ok, updated_user} ->
+        updated_scope = Scope.for_user(updated_user)
+
+        socket =
+          socket
+          |> assign(:current_scope, updated_scope)
+          |> assign(:current_user, updated_user)
+          |> assign(:linear_connected, false)
+          |> assign(:linear_name, nil)
+
+        {:noreply, socket}
+
+      {:error, _reason} ->
+        {:noreply, socket}
+    end
+  end
+
+  defp linear_connected?(user) do
+    token = user && user.linear_access_token
+    is_binary(token) and token != ""
+  end
+end

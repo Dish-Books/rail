@@ -44,6 +44,28 @@ defmodule Rail.Users.Schemas.User do
     cast(user, attrs, [:last_project_filter])
   end
 
+  def linear_link_changeset(user, attrs) do
+    user
+    |> cast(attrs, [
+      :linear_user_id,
+      :linear_name,
+      :linear_access_token,
+      :linear_refresh_token,
+      :linear_token_expires_at
+    ])
+    |> validate_required([:linear_access_token, :linear_refresh_token, :linear_token_expires_at])
+  end
+
+  def linear_unlink_changeset(user) do
+    change(user, %{
+      linear_user_id: nil,
+      linear_name: nil,
+      linear_access_token: nil,
+      linear_refresh_token: nil,
+      linear_token_expires_at: nil
+    })
+  end
+
   def factory do
     id = System.unique_integer([:positive])
 

@@ -237,6 +237,26 @@ defmodule RailWeb.UserAuthTest do
       assert conn.halted
       assert redirected_to(conn) == ~p"/"
     end
+
+    test "call/2 dispatches to require_admin_user", %{conn: conn, user: user} do
+      admin_user = %{user | admin: true}
+
+      conn =
+        conn
+        |> assign(:current_scope, Scope.for_user(admin_user))
+        |> UserAuth.call(:require_admin_user)
+
+      refute conn.halted
+    end
+
+    test "call/2 dispatches to require_authenticated_user", %{conn: conn, user: user} do
+      conn =
+        conn
+        |> assign(:current_scope, Scope.for_user(user))
+        |> UserAuth.call(:require_authenticated_user)
+
+      refute conn.halted
+    end
   end
 
   describe "disconnect_sessions/1" do

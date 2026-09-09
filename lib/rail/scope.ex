@@ -36,6 +36,14 @@ defmodule Rail.Scope do
   def admin?(%__MODULE__{}), do: false
 
   @doc """
+  Returns true if the user in scope has linked a Linear account.
+  """
+  def linear_linked?(%__MODULE__{user: %{linear_access_token: token}}) when is_binary(token) and token != "", do: true
+
+  def linear_linked?(%__MODULE__{user: %{linear_linked: true}}), do: true
+  def linear_linked?(_scope), do: false
+
+  @doc """
   Helper to build a user scope.
   Supports `:admin` (boolean), `:linear_linked` (boolean), and `:user` overrides.
   """

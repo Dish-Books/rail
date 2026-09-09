@@ -20,3 +20,9 @@ config :rail, RailWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("TEST_PORT") || "4002")],
   secret_key_base: "rails_test_secret_key_base_at_least_64_bytes_long_for_security_123456789012",
   server: false
+
+config :rail, :linear_oauth,
+  client_id: "test_linear_client_id",
+  client_secret: "test_linear_client_secret",
+  redirect_uri: "http://localhost:4002/auth/linear/callback",
+  req_options: [plug: {Req.Test, Rail.Linear}]

@@ -22,6 +22,14 @@ defmodule RailWeb.UserAuth do
 
   def init(opts), do: opts
 
+  def call(conn, :require_authenticated_user) do
+    require_authenticated_user(conn, [])
+  end
+
+  def call(conn, :require_admin_user) do
+    require_admin_user(conn, [])
+  end
+
   def call(conn, _opts) do
     fetch_current_user(conn, [])
   end
