@@ -20,4 +20,6 @@ defmodule Rail.Pipeline do
   defdelegate pump_dispatcher, to: Dispatcher, as: :pump
   defdelegate dispatch_now(task_or_id), to: Dispatcher
   defdelegate dispatch_disabled?, to: Dispatcher
+  defdelegate start_stage_run(task, opts \\ []), to: Actions.StartStageRun
+  defdelegate settle_run(task, role_run, run_or_outcome \\ %{}, opts \\ []), to: Actions.SettleRun
 end

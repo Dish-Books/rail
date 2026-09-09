@@ -171,12 +171,19 @@ defmodule Rail.Pipeline.Dispatcher do
   end
 
   defp default_dispatch_hook(%Task{} = task, _role) do
-    with {:ok, updated_task} <-
-           task
-           |> Task.changeset(%{stage_state: :running})
-           |> Repo.update() do
-      Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :dispatched})
-      {:ok, updated_task}
+    caller = self()
+
+    case Elixir.Task.Supervisor.start_child(Rail.TaskSupervisor, fn ->
+           allow_sandbox(caller)
+           Rail.Pipeline.start_stage_run(task)
+         end) do
+      {:ok, _pid} ->
+        {:ok, task}
+
+      # coveralls-ignore-start
+      {:error, reason} ->
+        {:error, reason}
+        # coveralls-ignore-stop
     end
   end
 

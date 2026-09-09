@@ -13,7 +13,8 @@ defmodule Rail.Pipeline.DispatcherTest do
         start_timer: false,
         subscribe: false,
         dispatch_disabled: false,
-        debounce_ms: 10
+        debounce_ms: 10,
+        dispatch_hook: &mock_dispatch_hook/2
       )
 
     on_exit(fn ->
@@ -157,7 +158,8 @@ defmodule Rail.Pipeline.DispatcherTest do
         start_timer: false,
         subscribe: false,
         dispatch_disabled: false,
-        tick_interval_ms: 15
+        tick_interval_ms: 15,
+        dispatch_hook: &mock_dispatch_hook/2
       )
 
     project = create_test_project()
@@ -276,5 +278,23 @@ defmodule Rail.Pipeline.DispatcherTest do
   test "global Dispatcher process in supervision tree is alive" do
     assert is_pid(Process.whereis(Dispatcher))
     assert Pipeline.dispatch_disabled?() == true
+  end
+
+  test "default_dispatch_hook launches supervised stage run" do
+    {:ok, pid} =
+      Dispatcher.start_link(
+        name: nil,
+        start_timer: false,
+        subscribe: false,
+        dispatch_disabled: false
+      )
+
+    repo_dir = create_temp_git_repo()
+    project = create_test_project(%{clone_path: repo_dir, default_branch: "main"})
+    _role = create_test_role(%{project_id: project.id, stage: :product})
+    %Task{id: task_id} = task = create_test_task(%{project_id: project.id, stage: :product, stage_state: :queued})
+
+    assert {:ok, %Task{id: ^task_id}} = Dispatcher.dispatch_now(pid, task)
+    GenServer.stop(pid)
   end
 end

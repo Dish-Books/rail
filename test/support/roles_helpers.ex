@@ -5,6 +5,7 @@ defmodule RailTest.RolesHelpers do
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
 
   def create_test_project(attrs \\ %{}) do
@@ -86,6 +87,29 @@ defmodule RailTest.RolesHelpers do
 
     %RunEvent{}
     |> RunEvent.changeset(%{role_run_id: role_run_id, seq: seq, line: line})
+    |> Repo.insert!()
+  end
+
+  def create_test_run(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    role_run_id = attrs[:role_run_id] || attrs["role_run_id"] || create_test_role_run().id
+    task_id = attrs[:task_id] || attrs["task_id"] || UXID.generate!(prefix: "tsk")
+
+    default_attrs = %{
+      role_run_id: role_run_id,
+      task_id: task_id,
+      kind: :stage,
+      stream_path: "/tmp/axis/streams/test_#{System.unique_integer([:positive])}.ndjson",
+      node: to_string(Node.self()),
+      boot_id: UXID.generate!(),
+      status: :running,
+      started_at: DateTime.utc_now()
+    }
+
+    merged = Map.merge(default_attrs, attrs)
+
+    %Run{}
+    |> Run.changeset(merged)
     |> Repo.insert!()
   end
 end
