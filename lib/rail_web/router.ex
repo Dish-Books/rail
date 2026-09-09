@@ -19,6 +19,12 @@ defmodule RailWeb.Router do
     plug RailWeb.UserAuth, :require_admin_user
   end
 
+  pipeline :asset_session do
+    plug :fetch_session
+    plug :put_secure_browser_headers
+    plug RailWeb.UserAuth, :fetch_current_user
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
   end
@@ -69,6 +75,12 @@ defmodule RailWeb.Router do
       live "/settings/projects", Settings.ProjectsLive
       live "/settings/linear-workspace", Settings.LinearWorkspaceLive
     end
+  end
+
+  scope "/assets", RailWeb do
+    pipe_through [:asset_session, :require_authenticated_user]
+
+    get "/:kind/:id", AssetController, :show
   end
 
   scope "/", RailWeb do
