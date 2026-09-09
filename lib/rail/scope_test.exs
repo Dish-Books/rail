@@ -31,6 +31,7 @@ defmodule Rail.ScopeTest do
 
     empty_scope = %Scope{}
     refute Scope.admin?(empty_scope)
+    refute Scope.admin?(nil)
   end
 
   test "user_scope builds default user scope" do

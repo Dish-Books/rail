@@ -37,6 +37,8 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
         </p>
       </div>
 
+      <.settings_nav current_scope={@current_scope} active_tab={:connected_accounts} />
+
       <!-- GitHub Identity Section -->
       <section
         class="bg-white shadow rounded-lg p-6 border border-zinc-200"

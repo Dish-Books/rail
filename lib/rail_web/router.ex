@@ -14,6 +14,11 @@ defmodule RailWeb.Router do
     plug RailWeb.UserAuth, :require_authenticated_user
   end
 
+  pipeline :require_admin_user do
+    plug RailWeb.UserAuth, :require_authenticated_user
+    plug RailWeb.UserAuth, :require_admin_user
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
   end
@@ -46,6 +51,17 @@ defmodule RailWeb.Router do
       root_layout: false,
       on_mount: [{RailWeb.UserAuth, :require_authenticated}] do
       live "/settings/connected-accounts", Settings.ConnectedAccountsLive
+    end
+
+    live_session :require_admin_user,
+      layout: false,
+      root_layout: false,
+      on_mount: [
+        {RailWeb.UserAuth, :require_authenticated},
+        {RailWeb.UserAuth, :require_admin}
+      ] do
+      live "/settings/projects", Settings.ProjectsLive
+      live "/settings/linear-workspace", Settings.LinearWorkspaceLive
     end
   end
 

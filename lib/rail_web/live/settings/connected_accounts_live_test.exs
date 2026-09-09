@@ -10,6 +10,14 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
   setup %{conn: conn} do
     id = System.unique_integer([:positive])
 
+    _first =
+      Users.register_oauth_user(%{
+        github_id: "bootstrap_gh_#{id}",
+        login: "bootstrap_user_#{id}",
+        name: "Bootstrap Admin #{id}",
+        email: "bootstrap_#{id}@example.com"
+      })
+
     assert {:ok, %User{id: user_id} = user} =
              Users.register_oauth_user(%{
                github_id: "live_gh_#{id}",
@@ -167,5 +175,38 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
 
     rendered = render_click(element(view, "#disconnect-linear-button"))
     assert rendered =~ "Connected as"
+  end
+
+  test "renders only connected accounts tab for non-admin user", %{authed_conn: conn} do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+    assert has_element?(view, "#tab-connected-accounts")
+    refute has_element?(view, "#tab-projects")
+    refute has_element?(view, "#tab-linear-workspace")
+  end
+
+  test "renders all settings tabs for admin user", %{conn: conn} do
+    id = System.unique_integer([:positive])
+
+    assert {:ok, %User{} = admin} =
+             Users.register_oauth_user(%{
+               github_id: "admin_tabs_gh_#{id}",
+               login: "admin_tabs_#{id}",
+               name: "Admin Tabs",
+               email: "admin_tabs_#{id}@example.com",
+               admin: true
+             })
+
+    admin_token = Users.generate_user_session_token(admin)
+
+    admin_conn =
+      conn
+      |> Map.replace!(:secret_key_base, RailWeb.Endpoint.config(:secret_key_base))
+      |> init_test_session(%{})
+      |> put_session(:user_token, admin_token)
+
+    assert {:ok, view, _html} = live(admin_conn, ~p"/settings/connected-accounts")
+    assert has_element?(view, "#tab-connected-accounts")
+    assert has_element?(view, "#tab-projects")
+    assert has_element?(view, "#tab-linear-workspace")
   end
 end

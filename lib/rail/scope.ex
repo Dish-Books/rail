@@ -33,7 +33,7 @@ defmodule Rail.Scope do
   """
   def admin?(%__MODULE__{system: true}), do: true
   def admin?(%__MODULE__{user: %{admin: true}}), do: true
-  def admin?(%__MODULE__{}), do: false
+  def admin?(_scope), do: false
 
   @doc """
   Returns true if the user in scope has linked a Linear account.

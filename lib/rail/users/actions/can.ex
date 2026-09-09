@@ -7,8 +7,12 @@ defmodule Rail.Users.Actions.Can do
     :list_users,
     :manage_users,
     :manage_projects,
+    :create_project,
+    :update_project,
+    :delete_project,
     :manage_roles,
     :manage_linear_workspace,
+    :upsert_linear_workspace,
     :users,
     :projects,
     :roles,
@@ -37,6 +41,14 @@ defmodule Rail.Users.Actions.Can do
   def can?(%Scope{user: nil}, _resource, _action), do: false
 
   def can?(%Scope{} = scope, :users, action) when action in [:view, :list, :manage] do
+    Scope.admin?(scope)
+  end
+
+  def can?(%Scope{} = scope, :projects, action) when action in [:create, :update, :delete, :manage] do
+    Scope.admin?(scope)
+  end
+
+  def can?(%Scope{} = scope, :linear_workspace, action) when action in [:upsert, :update, :manage] do
     Scope.admin?(scope)
   end
 
