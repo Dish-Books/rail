@@ -6,4 +6,6 @@ defmodule RailTest.Helpers do
   defdelegate user_scope(attrs \\ []), to: Scope
   defdelegate temp_user_scope(attrs \\ []), to: Scope
   defdelegate system_scope, to: Scope
+  defdelegate create_temp_git_repo(opts \\ []), to: RailTest.GitHelpers
+  defdelegate git!(dir, args), to: RailTest.GitHelpers
 end
