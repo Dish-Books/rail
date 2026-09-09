@@ -34,4 +34,13 @@ config :rail,
   ecto_repos: [Rail.Repo],
   generators: [timestamp_type: :utc_datetime_usec]
 
+config :ueberauth, Ueberauth,
+  providers: [
+    github: {Ueberauth.Strategy.Github, [default_scope: "read:user,user:email,repo"]}
+  ]
+
+config :ueberauth, Ueberauth.Strategy.Github.OAuth,
+  client_id: System.get_env("GITHUB_CLIENT_ID", "github_client_id"),
+  client_secret: System.get_env("GITHUB_CLIENT_SECRET", "github_client_secret")
+
 import_config "#{config_env()}.exs"

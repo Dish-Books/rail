@@ -15,7 +15,6 @@ defmodule Rail.DataCase do
       import Ecto.Query
       import Mimic
       import Rail.DataCase
-      import Rail.Factory
       import Rail.Scope, only: [user_scope: 0, user_scope: 1, temp_user_scope: 0, temp_user_scope: 1, system_scope: 0]
       import RailTest.Helpers
 

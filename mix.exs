@@ -50,7 +50,6 @@ defmodule Rail.MixProject do
       {:dotenv, "~> 3.1", only: [:dev, :test]},
       {:ecto_sql, "~> 3.13"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
-      {:ex_machina, "~> 2.8.0", only: :test},
       {:excoveralls, "~> 0.18", only: :test},
       {:floki, "~> 0.38"},
       {:gettext, "~> 1.0"},
@@ -74,6 +73,8 @@ defmodule Rail.MixProject do
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
       {:tz, "~> 0.28"},
+      {:ueberauth, "~> 0.10"},
+      {:ueberauth_github, "~> 0.8"},
       {:uxid, "~> 2.0"}
     ]
   end
