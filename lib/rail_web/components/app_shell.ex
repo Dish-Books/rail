@@ -513,7 +513,7 @@ defmodule RailWeb.Components.AppShell do
       </svg>
 
       <svg
-        :if={@name in ["architecture", "account_tree"]}
+        :if={@name in ["architecture", "account_tree", "account_tree_outlined"]}
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -558,6 +558,94 @@ defmodule RailWeb.Components.AppShell do
         viewBox="0 0 24 24"
       >
         <path d="M20 9V7c0-1.1-.9-2-2-2h-3c0-1.66-1.34-3-3-3S9 3.34 9 5H6c-1.1 0-2 .9-2 2v2c-1.66 0-3 1.34-3 3s1.34 3 3 3v4c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-4c1.66 0 3-1.34 3-3s-1.34-3-3-3zm-2 10H6V7h12v12zm-9-6c-.83 0-1.5-.67-1.5-1.5S8.17 10 9 10s1.5.67 1.5 1.5S9.83 13 9 13zm6 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm-7.5 3h9v1.5h-9V16z" />
+      </svg>
+
+      <svg
+        :if={@name in ["chat_bubble_outline"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
+      </svg>
+
+      <svg
+        :if={@name in ["call_split"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M14 4l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L20 10V4h-6zm-4 0H4v6l2.29-2.29 4.71 4.7V20h2v-8.41l-5.29-5.3L10 4z" />
+      </svg>
+
+      <svg
+        :if={@name in ["play_circle_outline", "play_circle"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-13.5v11l7-5.5-7-5.5z" />
+      </svg>
+
+      <svg
+        :if={@name in ["schedule"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+      </svg>
+
+      <svg
+        :if={@name in ["help_outline"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z" />
+      </svg>
+
+      <svg
+        :if={@name in ["merge_type"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M17 20.41L18.41 19 15 15.59 13.59 17 17 20.41zM7.5 8H11v5.59L5.59 19 7 20.41l6-6V8h3.5L12 3.5 7.5 8z" />
+      </svg>
+
+      <svg
+        :if={@name in ["rate_review_outlined", "rate_review"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12zM14.2 8.7l-4.7 4.7-1.3-.2.2-1.3 4.7-4.7 1.1 1.5zm1.4-1.4l-.8.8-1.5-1.1.8-.8c.2-.2.5-.2.7 0l.8.8c.2.2.2.5 0 .7z" />
+      </svg>
+
+      <svg
+        :if={@name in ["error_outline"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" />
+      </svg>
+
+      <svg
+        :if={@name in ["radio_button_unchecked"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z" />
+      </svg>
+
+      <svg
+        :if={@name in ["open_in_new"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" />
+      </svg>
+
+      <svg
+        :if={@name in ["flag_outlined", "flag"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12.36 6l.4 2H18v6h-3.36l-.4-2H7V6h5.36M14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6L14 4z" />
       </svg>
     </span>
     """

@@ -14,6 +14,8 @@ defmodule Rail.Pipeline do
   defdelegate list_tasks(scope, project_id, opts), to: Actions.ListTasks
   defdelegate get_task(scope, id), to: Actions.GetTask
   defdelegate get_task!(scope, id), to: Actions.GetTask
+  defdelegate get_plan(scope, task_or_id), to: Actions.GetPlan
+  defdelegate get_plan(task_or_id), to: Actions.GetPlan
   defdelegate broadcast_pipeline_changed(), to: Actions.BroadcastPipelineChanged
   defdelegate broadcast_pipeline_changed(meta), to: Actions.BroadcastPipelineChanged
   defdelegate list_eligible_tasks(project_or_id, role), to: Queue, as: :eligible_tasks

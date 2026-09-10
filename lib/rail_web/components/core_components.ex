@@ -20,4 +20,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate issue_editor_modal(assigns), to: RailWeb.Components.IssueEditorModal
   defdelegate archive_issue_modal(assigns), to: RailWeb.Components.ArchiveIssueModal
   defdelegate capture_issue_modal(assigns), to: RailWeb.Components.CaptureIssueModal
+  defdelegate stage_stepper(assigns), to: RailWeb.Components.StageStepper
+  defdelegate stage_outcome(assigns), to: RailWeb.Components.StageOutcome
+  defdelegate markdown(assigns), to: RailWeb.Components.Markdown
 end

@@ -169,6 +169,40 @@ defmodule Rail.Runs do
   def get_role_run(id), do: Repo.get(RoleRun, id)
 
   @doc """
+  Gets the latest role run for a task, optionally filtering by role_id.
+  """
+  def get_latest_role_run_for_task(task_id, role_id \\ nil)
+
+  def get_latest_role_run_for_task(task_id, role_id) when is_binary(task_id) do
+    query =
+      from(r in RoleRun,
+        where: r.task_id == ^task_id,
+        order_by: [desc: r.inserted_at, desc: r.id],
+        limit: 1
+      )
+
+    query =
+      cond do
+        is_binary(role_id) and role_id != "" ->
+          where(query, [r], r.role_id == ^role_id)
+
+        is_atom(role_id) and role_id != nil ->
+          role_str = Atom.to_string(role_id)
+          where(query, [r], r.role_id == ^role_str)
+
+        true ->
+          query
+      end
+
+    case Repo.one(query) do
+      %RoleRun{} = run -> {:ok, run}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  def get_latest_role_run_for_task(_task_id, _role_id), do: {:error, :not_found}
+
+  @doc """
   Gets a role run by ID, raising if not found.
   """
   def get_role_run!(id), do: Repo.get!(RoleRun, id)

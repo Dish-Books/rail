@@ -19,11 +19,13 @@ defmodule Rail.Git.Actions.GetDiffTest do
   test "returns tracked uncommitted changes when filter is uncommitted" do
     repo = create_temp_git_repo()
     File.write!(Path.join(repo, "tracked.txt"), "one\ntwo\n")
+    File.write!(Path.join(repo, "untracked.txt"), "untracked file\n")
 
     diff = Git.get_diff(repo, "uncommitted")
 
     assert String.contains?(diff, "diff --git a/tracked.txt b/tracked.txt")
     assert String.contains?(diff, "+two")
+    assert String.contains?(diff, "diff --git a/untracked.txt b/untracked.txt")
   end
 
   test "returns branch diff against main when filter is main" do

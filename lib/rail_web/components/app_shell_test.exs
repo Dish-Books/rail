@@ -235,7 +235,19 @@ defmodule RailWeb.Components.AppShellTest do
       "unfold_more",
       "add_circle",
       "light_mode",
-      "dark_mode"
+      "dark_mode",
+      "chat_bubble_outline",
+      "call_split",
+      "play_circle_outline",
+      "schedule",
+      "help_outline",
+      "merge_type",
+      "rate_review_outlined",
+      "error_outline",
+      "radio_button_unchecked",
+      "open_in_new",
+      "flag_outlined",
+      "account_tree_outlined"
     ]
 
     for name <- names do

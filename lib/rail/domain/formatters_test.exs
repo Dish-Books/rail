@@ -366,4 +366,138 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.stage_label(12_345) == "Waiting on you"
     end
   end
+
+  describe "stage_state_icon/1" do
+    test "returns expected icon across all states and stages" do
+      assert Formatters.stage_state_icon(%{active_chat_role_id: "engineer"}) == "chat_bubble_outline"
+      assert Formatters.stage_state_icon(%{shows_as_conflicted: true}) == "call_split"
+      assert Formatters.stage_state_icon(%{stage_state: :running}) == "play_circle_outline"
+      assert Formatters.stage_state_icon(%{stage_state: :queued}) == "schedule"
+      assert Formatters.stage_state_icon(%{stage_state: :blocked}) == "help_outline"
+      assert Formatters.stage_state_icon(%{stage_state: :paused_question}) == "help_outline"
+      assert Formatters.stage_state_icon(%{stage_state: :awaiting_approval, stage: :ready_to_merge}) == "merge_type"
+      assert Formatters.stage_state_icon(%{stage_state: :awaiting_approval, stage: :engineer}) == "rate_review_outlined"
+      assert Formatters.stage_state_icon(%{stage_state: :failed}) == "error_outline"
+      assert Formatters.stage_state_icon(%{stage_state: :unknown_state}) == "help_outline"
+    end
+  end
+
+  describe "stage_state_color/1 and stage_state_color_class/2" do
+    test "returns semantic color atom and tailwind classes" do
+      t_chat = %{active_chat_role_id: "engineer"}
+      assert Formatters.stage_state_color(t_chat) == :primary
+      assert Formatters.stage_state_color_class(t_chat, :text) =~ "text-[var(--color-primary)]"
+      assert Formatters.stage_state_color_class(t_chat, :chip) =~ "bg-[var(--color-primary-container)]"
+
+      t_conflicted = %{shows_as_conflicted: true}
+      assert Formatters.stage_state_color(t_conflicted) == :amber
+      assert Formatters.stage_state_color_class(t_conflicted, :text) =~ "text-amber-700"
+      assert Formatters.stage_state_color_class(t_conflicted, :chip) =~ "bg-amber-100"
+
+      t_run = %{stage_state: :running}
+      assert Formatters.stage_state_color(t_run) == :primary
+
+      t_block = %{stage_state: :blocked}
+      assert Formatters.stage_state_color(t_block) == :amber
+
+      t_appr = %{stage_state: :awaiting_approval}
+      assert Formatters.stage_state_color(t_appr) == :amber
+
+      t_queue = %{stage_state: :queued}
+      assert Formatters.stage_state_color(t_queue) == :outline
+      assert Formatters.stage_state_color_class(t_queue, :text) =~ "text-[var(--color-outline)]"
+      assert Formatters.stage_state_color_class(t_queue, :chip) =~ "bg-[var(--color-surface-container-high)]"
+
+      t_fail = %{stage_state: :failed}
+      assert Formatters.stage_state_color(t_fail) == :error
+      assert Formatters.stage_state_color_class(t_fail, :text) =~ "text-[var(--color-error)]"
+      assert Formatters.stage_state_color_class(t_fail, :chip) =~ "bg-[var(--color-error-container)]"
+
+      t_other = %{stage_state: :unknown_state}
+      assert Formatters.stage_state_color(t_other) == :outline
+    end
+  end
+
+  describe "shows_as_conflicted?/1 and has_merge_conflicts?/1" do
+    test "detects merge conflicts accurately" do
+      assert Formatters.shows_as_conflicted?(%{shows_as_conflicted: true})
+      assert Formatters.shows_as_conflicted?(%{conflicted: true})
+      assert Formatters.shows_as_conflicted?(%{has_merge_conflicts: true, is_rebasing: false, stage_state: :queued})
+
+      assert Formatters.shows_as_conflicted?(%{
+               mergeability: :conflicts,
+               is_rebasing: false,
+               stage_state: :awaiting_approval
+             })
+
+      assert Formatters.shows_as_conflicted?(%{mergeability: "conflicting", is_rebasing: false, stage_state: :queued})
+
+      # False if rebasing
+      refute Formatters.shows_as_conflicted?(%{has_merge_conflicts: true, is_rebasing: true, stage_state: :queued})
+
+      # False if running
+      refute Formatters.shows_as_conflicted?(%{has_merge_conflicts: true, is_rebasing: false, stage_state: :running})
+
+      # Non conflicted
+      refute Formatters.shows_as_conflicted?(%{has_merge_conflicts: false, stage_state: :queued})
+    end
+  end
+
+  describe "uses_design?/2" do
+    test "returns true for product and design stages" do
+      assert Formatters.uses_design?(%{stage: :product})
+      assert Formatters.uses_design?(%{stage: :design})
+    end
+
+    test "returns false for stages past design unless designer run exists" do
+      refute Formatters.uses_design?(%{stage: :architect})
+      refute Formatters.uses_design?(nil)
+
+      assert Formatters.uses_design?(%{stage: :architect}, has_designer_run: true)
+      assert Formatters.uses_design?(%{stage: :engineer, runs: %{"designer" => %{}}})
+      assert Formatters.uses_design?(%{stage: :engineer, runs: %{designer: %{}}})
+      assert Formatters.uses_design?(%{stage: :engineer, role_runs: [%{role_id: "designer"}]})
+      assert Formatters.uses_design?(%{stage: :engineer, role_runs: [%{role: %{stage: :design}}]})
+    end
+  end
+
+  describe "ticket_for/1 and plan_for/1" do
+    test "ticket_for returns ticket content or fallback" do
+      assert Formatters.ticket_for(%{description: "Build user auth\n\n## Implementation plan\n1. Do stuff"}) ==
+               "Build user auth"
+
+      assert Formatters.ticket_for(%{description: "   "}) == "_No ticket body yet._"
+      assert Formatters.ticket_for(nil) == "_No ticket body yet._"
+    end
+
+    test "plan_for returns stored plan or plan from description split" do
+      task = create_test_task(%{description: "Ticket text\n\n## Implementation plan\nStep 1\nStep 2"})
+      assert Formatters.plan_for(task) == "## Implementation plan\nStep 1\nStep 2"
+
+      # Stored plan takes precedence
+      _plan = create_test_plan(%{task_id: task.id, content: "# Database Plan"})
+      assert Formatters.plan_for(task) == "# Database Plan"
+
+      # Task with plans association loaded
+      task_with_plans = %{plans: [%Rail.Pipeline.Schemas.Plan{content: "# In-memory plan"}]}
+      assert Formatters.plan_for(task_with_plans) == "# In-memory plan"
+
+      # Empty plan returns nil
+      assert is_nil(Formatters.plan_for(%{description: "Just a ticket"}))
+    end
+
+    test "rework ceiling computed from rework_budget_base + 5 or explicit rework_ceiling" do
+      t_base = %{stage: :engineer, stage_state: :running, rework_cycles: 2, rework_budget_base: 3}
+      assert Formatters.stage_label(t_base) == "Engineer running · rework 2 of 8"
+
+      t_custom = %{stage: :engineer, stage_state: :running, rework_cycles: 1, rework_ceiling: 9}
+      assert Formatters.stage_label(t_custom) == "Engineer running · rework 1 of 9"
+
+      # stage_state_color_class with default 1-arg
+      assert Formatters.stage_state_color_class(t_base) == "text-[var(--color-primary)]"
+
+      # uses_design? with atom keys in map
+      assert Formatters.uses_design?(%{stage: :engineer}, role_runs: %{design: true})
+    end
+  end
 end

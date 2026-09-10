@@ -253,4 +253,28 @@ defmodule Rail.RunsTest do
     assert Runs.chat_prompt("Hi") =~ "Human message:\nHi"
     assert Runs.build_chat_prompt("Hi") =~ "Human message:\nHi"
   end
+
+  test "get_latest_role_run_for_task/2 returns latest run" do
+    task_id = UXID.generate!(prefix: "tsk")
+
+    assert {:error, :not_found} = Runs.get_latest_role_run_for_task(task_id)
+    assert {:error, :not_found} = Runs.get_latest_role_run_for_task(nil)
+
+    role_id_1 = UXID.generate!(prefix: "rol")
+    role_id_2 = UXID.generate!(prefix: "rol")
+    now = DateTime.utc_now()
+
+    {:ok, %{id: expected_1_id}} =
+      Runs.create_role_run(%{task_id: task_id, role_id: role_id_1, status: :finished, started_at: now})
+
+    {:ok, %{id: expected_any_id}} =
+      Runs.create_role_run(%{task_id: task_id, role_id: role_id_2, status: :finished, started_at: now})
+
+    assert {:ok, %{id: ^expected_any_id}} = Runs.get_latest_role_run_for_task(task_id)
+    assert {:ok, %{id: ^expected_1_id}} = Runs.get_latest_role_run_for_task(task_id, role_id_1)
+
+    other_role_id = UXID.generate!(prefix: "rol")
+    assert {:error, :not_found} = Runs.get_latest_role_run_for_task(task_id, other_role_id)
+    assert {:error, :not_found} = Runs.get_latest_role_run_for_task(task_id, :reviewer)
+  end
 end
