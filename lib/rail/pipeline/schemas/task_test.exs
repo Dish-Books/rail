@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Schemas.TaskTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.Scratch, only: [capture: 3]
   import RailTest.PipelineHelpers
 
   alias Rail.Artifacts
@@ -11,7 +12,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Pipeline.Utils.Scratch
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -238,7 +238,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
     expect(File, :read!, fn _path -> "# Plan 13101" end)
 
-    {:ok, _captured} = Scratch.capture(:architect, task, "/tmp/rail_scratch/plan_13101")
+    {:ok, _captured} = capture(:architect, task, "/tmp/rail_scratch/plan_13101")
 
     {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
 

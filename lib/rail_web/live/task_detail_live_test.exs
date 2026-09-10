@@ -3,6 +3,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
   import Ecto.Query
   import Phoenix.LiveViewTest
+  import Rail.Pipeline.Utils.Scratch, only: [capture: 3]
   import RailTest.PipelineHelpers
 
   alias Ecto.Adapters.SQL.Sandbox
@@ -11,7 +12,6 @@ defmodule RailWeb.TaskDetailLiveTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Pipeline.Utils.Scratch
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Roles
@@ -218,7 +218,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     expect(File, :read!, fn _path -> "## Architectural Plan\n1. Step one\n2. Step two" end)
 
-    {:ok, _captured} = Scratch.capture(:architect, task, "/tmp/rail_scratch/plan_14301")
+    {:ok, _captured} = capture(:architect, task, "/tmp/rail_scratch/plan_14301")
 
     {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
 

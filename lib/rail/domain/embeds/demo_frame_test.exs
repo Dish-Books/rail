@@ -23,12 +23,15 @@ defmodule Rail.Domain.Embeds.DemoFrameTest do
   end
 
   test "serializes to JSON" do
-    frame = %DemoFrame{
-      url: "https://linear.app/assets/frame_1.png",
-      linear_asset_id: "asset_f1",
-      hold_ms: 1000,
-      caption: "Sign-in screen displayed"
-    }
+    frame =
+      %DemoFrame{}
+      |> DemoFrame.changeset(%{
+        url: "https://linear.app/assets/frame_1.png",
+        linear_asset_id: "asset_f1",
+        hold_ms: 1000,
+        caption: "Sign-in screen displayed"
+      })
+      |> apply_changes()
 
     assert {:ok, json} = Jason.encode(frame)
     assert {:ok, decoded} = Jason.decode(json)

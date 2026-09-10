@@ -49,17 +49,19 @@ defmodule Rail.Domain.Embeds.QaRowTest do
   end
 
   test "serializes to JSON" do
-    row = %QaRow{
-      id: "check_1",
-      check: "Login flow succeeds",
-      result: :pass,
-      severity: :blocker,
-      caused_by_change: true,
-      command: "mix test",
-      exit_code: 0,
-      note: nil,
-      artifacts: [%QaArtifact{name: "test_output.txt", kind: :text, text: "All 12 checks passed", url: nil}]
-    }
+    row =
+      %QaRow{}
+      |> QaRow.changeset(%{
+        id: "check_1",
+        check: "Login flow succeeds",
+        result: :pass,
+        severity: :blocker,
+        caused_by_change: true,
+        command: "mix test",
+        exit_code: 0,
+        artifacts: [%{name: "test_output.txt", kind: :text, text: "All 12 checks passed"}]
+      })
+      |> apply_changes()
 
     assert {:ok, json} = Jason.encode(row)
     assert {:ok, decoded} = Jason.decode(json)

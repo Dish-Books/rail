@@ -21,9 +21,8 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
     %{project: project}
   end
 
-  test "creates role for project struct with admin scope", %{project: project} do
+  test "creates role for project struct with admin scope", %{project: %Project{id: project_id} = project} do
     scope = Scope.for_user(%{admin: true})
-    %Project{id: project_id} = project
 
     attrs = %{
       name: "Product Agent",
@@ -36,9 +35,8 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
              Roles.create_role(scope, project, attrs)
   end
 
-  test "creates role for project id with system scope", %{project: project} do
+  test "creates role for project id with system scope", %{project: %Project{id: project_id} = project} do
     scope = Scope.for_system()
-    %Project{id: project_id} = project
 
     attrs = %{
       name: "QA Agent",

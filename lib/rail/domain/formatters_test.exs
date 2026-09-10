@@ -1,10 +1,11 @@
 defmodule Rail.Domain.FormattersTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.Scratch, only: [capture: 3]
+
   alias Rail.Domain.Formatters
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.Utils.Scratch
   alias Rail.Projects
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -532,7 +533,7 @@ defmodule Rail.Domain.FormattersTest do
 
       expect(File, :read!, fn _path -> "# Database Plan" end)
 
-      {:ok, _captured} = Scratch.capture(:architect, task, "/tmp/rail_scratch/plan_7710")
+      {:ok, _captured} = capture(:architect, task, "/tmp/rail_scratch/plan_7710")
 
       {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
       assert Formatters.plan_for(task) == "# Database Plan"

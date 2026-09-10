@@ -203,9 +203,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     end
   end
 
-  test "supports preload option", %{task: task} do
-    %Rail.Pipeline.Schemas.Task{id: expected_task_id} = task
-
+  test "supports preload option", %{task: %Rail.Pipeline.Schemas.Task{id: expected_task_id} = task} do
     {:ok, %Question{id: q_id}} =
       Pipeline.register_question(expected_task_id, %{
         prompt: "Question prompt 7213?"

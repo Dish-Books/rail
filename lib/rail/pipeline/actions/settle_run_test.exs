@@ -15,7 +15,6 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Pipeline.Utils.Scratch
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
@@ -100,9 +99,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
              Pipeline.settle_run("tsk_000000000000000000000000", role_run_id)
   end
 
-  test "returns not_found when role_run cannot be resolved", %{task: task} do
-    %Task{id: task_id} = task
-
+  test "returns not_found when role_run cannot be resolved", %{task: %Task{id: task_id} = task} do
     assert {:error, :not_found} =
              Pipeline.settle_run(task_id, "rr_000000000000000000000000")
   end
@@ -172,7 +169,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     File.write!(Path.join(plan_dir, "plan.md"), "# Architecture Plan")
     on_exit(fn -> File.rm_rf(plan_dir) end)
 
-    {:ok, _captured} = Scratch.capture(:architect, task, plan_dir)
+    {:ok, _captured} = capture(:architect, task, plan_dir)
 
     {:ok, _plan} = Pipeline.get_plan(system_scope(), task_id)
 

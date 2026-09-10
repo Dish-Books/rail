@@ -34,9 +34,7 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
     %{project: project, workspace: workspace}
   end
 
-  test "sync_issues/2 syncs new issues and maps state types", %{project: project} do
-    %Project{id: project_id} = project
-
+  test "sync_issues/2 syncs new issues and maps state types", %{project: %Project{id: project_id} = project} do
     nodes = [
       %{
         "id" => "lin_sync_1",

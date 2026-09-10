@@ -71,16 +71,14 @@ defmodule Rail.PipelineTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "delegates get_task and get_task!", %{task: task} do
+  test "delegates get_task and get_task!", %{task: %Task{id: task_id} = task} do
     scope = Scope.for_system()
-    %Task{id: task_id} = task
 
     assert {:ok, %Task{id: ^task_id}} = Pipeline.get_task(scope, task_id)
     assert %Task{id: ^task_id} = Pipeline.get_task!(scope, task_id)
   end
 
-  test "delegates list_tasks", %{project: project, task: task} do
-    %Task{id: task_id} = task
+  test "delegates list_tasks", %{project: project, task: %Task{id: task_id} = task} do
     scope = Scope.for_system()
 
     assert [%Task{id: ^task_id}] = Pipeline.list_tasks(scope, project.id)

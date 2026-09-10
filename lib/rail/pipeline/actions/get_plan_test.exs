@@ -1,10 +1,11 @@
 defmodule Rail.Pipeline.Actions.GetPlanTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.Scratch, only: [capture: 3]
+
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Plan
-  alias Rail.Pipeline.Utils.Scratch
   alias Rail.Projects
   alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -53,11 +54,11 @@ defmodule Rail.Pipeline.Actions.GetPlanTest do
 
     expect(File, :exists?, 2, fn path -> String.ends_with?(path, "plan.md") end)
     expect(File, :read!, fn _path -> "# Old Plan" end)
-    {:ok, _task} = Scratch.capture(:architect, task, "/tmp/rail_scratch/get_plan_1")
+    {:ok, _task} = capture(:architect, task, "/tmp/rail_scratch/get_plan_1")
 
     expect(File, :exists?, 2, fn path -> String.ends_with?(path, "plan.md") end)
     expect(File, :read!, fn _path -> "# New Plan" end)
-    {:ok, _task} = Scratch.capture(:architect, task, "/tmp/rail_scratch/get_plan_2")
+    {:ok, _task} = capture(:architect, task, "/tmp/rail_scratch/get_plan_2")
 
     assert {:ok, %Plan{id: expected_plan_id, content: "# New Plan"}} = Pipeline.get_plan(sys_scope, task.id)
 

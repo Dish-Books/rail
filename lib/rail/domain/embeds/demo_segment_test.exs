@@ -59,20 +59,22 @@ defmodule Rail.Domain.Embeds.DemoSegmentTest do
   end
 
   test "serializes to JSON" do
-    segment = %DemoSegment{
-      criterion_index: 1,
-      criterion: "User can sign in with GitHub",
-      outcome: :recorded,
-      note: nil,
-      frames: [
-        %DemoFrame{
-          url: "https://linear.app/assets/frame_1.png",
-          linear_asset_id: "asset_f1",
-          hold_ms: 1000,
-          caption: "Sign-in screen displayed"
-        }
-      ]
-    }
+    segment =
+      %DemoSegment{}
+      |> DemoSegment.changeset(%{
+        criterion_index: 1,
+        criterion: "User can sign in with GitHub",
+        outcome: :recorded,
+        frames: [
+          %{
+            url: "https://linear.app/assets/frame_1.png",
+            linear_asset_id: "asset_f1",
+            hold_ms: 1000,
+            caption: "Sign-in screen displayed"
+          }
+        ]
+      })
+      |> apply_changes()
 
     assert {:ok, json} = Jason.encode(segment)
     assert {:ok, decoded} = Jason.decode(json)

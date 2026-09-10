@@ -50,9 +50,8 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
              Roles.improve_role(scope, role, "claude-3-7-sonnet")
   end
 
-  test "runs improvement with custom runner and cleans up temp directory", %{role: role} do
+  test "runs improvement with custom runner and cleans up temp directory", %{role: %Role{id: role_id} = role} do
     scope = Scope.for_user(%{admin: true})
-    %Role{id: role_id} = role
 
     {:ok, _role_run} =
       Runs.create_role_run(%{

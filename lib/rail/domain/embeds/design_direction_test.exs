@@ -21,13 +21,16 @@ defmodule Rail.Domain.Embeds.DesignDirectionTest do
   end
 
   test "serializes to JSON" do
-    direction = %DesignDirection{
-      key: "direction_a",
-      title: "Direction A",
-      notes: "Minimalist modern UI",
-      still_url: "https://linear.app/assets/still_a.png",
-      linear_asset_id: "asset_dir_a"
-    }
+    direction =
+      %DesignDirection{}
+      |> DesignDirection.changeset(%{
+        key: "direction_a",
+        title: "Direction A",
+        notes: "Minimalist modern UI",
+        still_url: "https://linear.app/assets/still_a.png",
+        linear_asset_id: "asset_dir_a"
+      })
+      |> apply_changes()
 
     assert {:ok, json} = Jason.encode(direction)
     assert {:ok, decoded} = Jason.decode(json)

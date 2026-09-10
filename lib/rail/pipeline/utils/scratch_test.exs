@@ -9,7 +9,6 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Pipeline.Utils.Scratch
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
@@ -205,7 +204,7 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
     File.write!(Path.join(plan_dir, "plan.md"), "## Implementation plan\nStep 1")
     on_exit(fn -> File.rm_rf(plan_dir) end)
 
-    {:ok, _captured} = Scratch.capture(:architect, task, plan_dir)
+    {:ok, _captured} = capture(:architect, task, plan_dir)
 
     {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
 

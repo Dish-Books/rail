@@ -24,7 +24,11 @@ defmodule Rail.Domain.Embeds.QaArtifactTest do
   end
 
   test "serializes to JSON" do
-    artifact = %QaArtifact{name: "test_output.txt", kind: :text, text: "All 12 checks passed", url: nil}
+    artifact =
+      %QaArtifact{}
+      |> QaArtifact.changeset(%{name: "test_output.txt", kind: :text, text: "All 12 checks passed"})
+      |> apply_changes()
+
     assert {:ok, json} = Jason.encode(artifact)
     assert {:ok, decoded} = Jason.decode(json)
     assert decoded["name"] == "test_output.txt"

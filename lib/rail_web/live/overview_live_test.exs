@@ -663,15 +663,13 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, orphan_issue} = Issues.capture_issue(system_scope(), project, "Orphan question task")
     LinearMock.mock_update_issue_success(%{"id" => "lin_overview_orphan"})
-    {:ok, orphan_task} = Pipeline.bring_local(system_scope(), orphan_issue)
+    {:ok, %Task{id: orphan_task_id} = orphan_task} = Pipeline.bring_local(system_scope(), orphan_issue)
 
     {:ok, %Question{prompt: q_orphan_prompt}} =
       Pipeline.register_question(orphan_task, %{
         prompt: "Orphan clarification prompt?",
         options: ["Option Alpha", "Option Beta"]
       })
-
-    orphan_task_id = orphan_task.id
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
 

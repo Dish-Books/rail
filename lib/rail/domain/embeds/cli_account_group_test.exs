@@ -31,11 +31,14 @@ defmodule Rail.Domain.Embeds.CliAccountGroupTest do
   end
 
   test "serializes to JSON" do
-    group = %CliAccountGroup{
-      name: "Gemini Models",
-      count: 3,
-      details: %{"window" => "5-hour", "remaining_percent" => 100.0}
-    }
+    group =
+      %CliAccountGroup{}
+      |> CliAccountGroup.changeset(%{
+        name: "Gemini Models",
+        count: 3,
+        details: %{"window" => "5-hour", "remaining_percent" => 100.0}
+      })
+      |> apply_changes()
 
     assert {:ok, json} = Jason.encode(group)
     assert {:ok, decoded} = Jason.decode(json)

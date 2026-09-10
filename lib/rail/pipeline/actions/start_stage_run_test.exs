@@ -1,11 +1,12 @@
 defmodule Rail.Pipeline.Actions.StartStageRunTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.Scratch, only: [capture: 3]
+
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Pipeline.Utils.Scratch
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
@@ -270,7 +271,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
     File.write!(Path.join(scratch_dir, "plan.md"), "# Architectural Plan\nSteps to implement.")
     on_exit(fn -> File.rm_rf(scratch_dir) end)
 
-    {:ok, _captured} = Scratch.capture(:architect, task, scratch_dir)
+    {:ok, _captured} = capture(:architect, task, scratch_dir)
 
     {:ok, %Plan{}} = Pipeline.get_plan(system_scope(), task)
 

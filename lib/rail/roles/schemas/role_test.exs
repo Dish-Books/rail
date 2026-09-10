@@ -177,8 +177,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
     assert %{project_id: ["does not exist"]} = errors_on(changeset)
   end
 
-  test "preloads belongs_to project", %{role: role} do
-    %Role{project_id: project_id} = role
+  test "preloads belongs_to project", %{role: %Role{project_id: project_id} = role} do
     preloaded = Repo.preload(role, :project)
     assert %Project{id: ^project_id} = preloaded.project
   end
