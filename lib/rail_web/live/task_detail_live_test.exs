@@ -4,6 +4,7 @@ defmodule RailWeb.TaskDetailLiveTest do
   import Ecto.Query
   import Phoenix.LiveViewTest
 
+  alias Phoenix.LiveView.Socket
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
@@ -569,7 +570,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     render_hook(view, "nonexistent_event", %{})
 
-    dummy_socket = %Phoenix.LiveView.Socket{assigns: %{task: nil}}
+    dummy_socket = %Socket{assigns: %{task: nil}}
     assert {:noreply, _socket} = RailWeb.TaskDetailLive.handle_event("switch_tab", %{"tab" => "plan"}, dummy_socket)
     assert {:noreply, _socket} = RailWeb.TaskDetailLive.handle_event("random", %{}, dummy_socket)
     assert {:noreply, _socket} = RailWeb.TaskDetailLive.handle_async(:dummy, :result, dummy_socket)
@@ -598,5 +599,531 @@ defmodule RailWeb.TaskDetailLiveTest do
     task_no_repo = %{min_task | pr_number: 123, project: %Project{github_repo: nil}}
     send(view_min.pid, {:task_updated, task_no_repo})
     assert has_element?(view_min, "#meta-pr[href='#']")
+  end
+
+  test "clicking chat and diff actions navigates to respective tabs", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+    _scope = Scope.for_user(user)
+    %Project{id: project_id} = create_test_project()
+
+    %Task{id: task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :engineer,
+        stage_state: :awaiting_approval,
+        worktree_path: "/tmp/worktree"
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+
+    # Click chat
+    view |> element("#action-chat") |> render_click()
+    assert_patched(view, ~p"/tasks/#{task_id}?tab=conversation")
+
+    # Click diff
+    view |> element("#action-view-diff") |> render_click()
+    assert_patched(view, ~p"/tasks/#{task_id}?tab=diff")
+  end
+
+  test "confirm merge modal flow (open, cancel, submit with and without ignore_conflicts)", %{conn: conn} do
+    Req.Test.set_req_test_to_shared()
+
+    Req.Test.stub(Rail.GitHub, fn conn ->
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.send_resp(200, Jason.encode!(%{"token" => "test_token"}))
+    end)
+
+    {authed_conn, user} = log_in_test_user(conn)
+    _scope = Scope.for_user(user)
+    %Project{id: project_id} = create_test_project()
+
+    %Task{id: task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :ready_to_merge,
+        stage_state: :awaiting_approval,
+        pr_number: 202,
+        pr_is_draft: false,
+        mergeability: :mergeable
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+
+    # Click Merge pull request button
+    view |> element("#action-merge") |> render_click()
+    assert has_element?(view, "#confirm-merge-modal")
+    refute render(view) =~ "GitHub last reported conflicts"
+
+    # Click Cancel
+    view |> element("#cancel-merge-button") |> render_click()
+    refute has_element?(view, "#confirm-merge-modal")
+
+    # Re-open and submit
+    view |> element("#action-merge") |> render_click()
+    assert has_element?(view, "#confirm-merge-modal")
+    view |> element("#confirm-merge-button") |> render_click()
+    refute has_element?(view, "#confirm-merge-modal")
+
+    # Conflicted task offers Merge anyway with ignore_conflicts
+    %Task{id: conf_task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :ready_to_merge,
+        stage_state: :awaiting_approval,
+        pr_number: 203,
+        pr_is_draft: false,
+        mergeability: :conflicting
+      })
+
+    assert {:ok, conf_view, _html} = live(authed_conn, ~p"/tasks/#{conf_task_id}")
+    conf_view |> element("#action-merge-anyway") |> render_click()
+    assert has_element?(conf_view, "#confirm-merge-modal")
+    assert render(conf_view) =~ "GitHub last reported conflicts"
+    conf_view |> element("#confirm-merge-button") |> render_click()
+    refute has_element?(conf_view, "#confirm-merge-modal")
+  end
+
+  test "confirm rebase modal flow (open, cancel, submit)", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+    _scope = Scope.for_user(user)
+    %Project{id: project_id} = create_test_project()
+
+    %Task{id: task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :ready_to_merge,
+        stage_state: :awaiting_approval,
+        pr_number: 303,
+        mergeability: :conflicting
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+
+    # Click Rebase
+    view |> element("#action-rebase") |> render_click()
+    assert has_element?(view, "#confirm-rebase-modal")
+
+    # Click Cancel
+    view |> element("#cancel-rebase-button") |> render_click()
+    refute has_element?(view, "#confirm-rebase-modal")
+
+    # Re-open and submit
+    view |> element("#action-rebase") |> render_click()
+    view |> element("#confirm-rebase-button") |> render_click()
+    refute has_element?(view, "#confirm-rebase-modal")
+  end
+
+  test "confirm cleanup modal flow and rejection when busy", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+    _scope = Scope.for_user(user)
+    %Project{id: project_id} = create_test_project()
+
+    %Task{id: task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :engineer,
+        stage_state: :awaiting_approval
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+
+    # Open cleanup modal
+    view |> element("#action-cleanup") |> render_click()
+    assert has_element?(view, "#confirm-cleanup-modal")
+
+    # Cancel cleanup modal
+    view |> element("#cancel-cleanup-button") |> render_click()
+    refute has_element?(view, "#confirm-cleanup-modal")
+
+    # Re-open cleanup modal and submit
+    view |> element("#action-cleanup") |> render_click()
+    view |> element("#confirm-cleanup-button") |> render_click()
+    refute has_element?(view, "#confirm-cleanup-modal")
+
+    # Test busy task cannot open cleanup modal
+    %Task{id: busy_task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :engineer,
+        stage_state: :running
+      })
+
+    assert {:ok, busy_view, _html} = live(authed_conn, ~p"/tasks/#{busy_task_id}")
+    assert has_element?(busy_view, "#action-cleanup[disabled]")
+    render_hook(busy_view, "action_click", %{"action" => "cleanup"})
+    refute has_element?(busy_view, "#confirm-cleanup-modal")
+  end
+
+  test "prompt send back modal flow (empty ignored, valid submits)", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+    _scope = Scope.for_user(user)
+    %Project{id: project_id} = create_test_project()
+
+    %Task{id: task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :product,
+        stage_state: :awaiting_approval
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+
+    # Open modal
+    view |> element("#action-send-back") |> render_click()
+    assert has_element?(view, "#prompt-send-back-modal")
+
+    # Submit empty comment -> modal remains open!
+    view |> form("#prompt-send-back-form", %{comment: "   "}) |> render_submit()
+    assert has_element?(view, "#prompt-send-back-modal")
+
+    # Cancel
+    view |> element("#cancel-send-back-button") |> render_click()
+    refute has_element?(view, "#prompt-send-back-modal")
+
+    # Re-open and submit valid comment
+    view |> element("#action-send-back") |> render_click()
+    view |> form("#prompt-send-back-form", %{comment: "Please revise the requirements"}) |> render_submit()
+    refute has_element?(view, "#prompt-send-back-modal")
+  end
+
+  test "prompt send back to engineer modal flow (empty comment allowed)", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+    _scope = Scope.for_user(user)
+    %Project{id: project_id} = create_test_project()
+
+    %Task{id: task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :ready_to_merge,
+        stage_state: :awaiting_approval,
+        pr_number: 404
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+
+    # Open modal
+    view |> element("#action-send-back-to-engineer") |> render_click()
+    assert has_element?(view, "#prompt-send-back-engineer-modal")
+
+    # Cancel modal
+    view |> element("#cancel-send-back-engineer-button") |> render_click()
+    refute has_element?(view, "#prompt-send-back-engineer-modal")
+
+    # Re-open and submit empty comment (allowed)
+    view |> element("#action-send-back-to-engineer") |> render_click()
+    view |> form("#prompt-send-back-engineer-form", %{comment: ""}) |> render_submit()
+    refute has_element?(view, "#prompt-send-back-engineer-modal")
+
+    # Test submitting with non-empty comment on a second task
+    %Task{id: task_id_2} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :ready_to_merge,
+        stage_state: :awaiting_approval,
+        pr_number: 405
+      })
+
+    assert {:ok, view_2, _html} = live(authed_conn, ~p"/tasks/#{task_id_2}")
+    view_2 |> element("#action-send-back-to-engineer") |> render_click()
+    view_2 |> form("#prompt-send-back-engineer-form", %{comment: "Tests failed in CI"}) |> render_submit()
+    refute has_element?(view_2, "#prompt-send-back-engineer-modal")
+  end
+
+  test "prompt decline demo modal flow (empty reason defaults to 'Declined by human')", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+    _scope = Scope.for_user(user)
+    %Project{id: project_id} = create_test_project()
+
+    %Task{id: task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :demo,
+        stage_state: :failed
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+
+    # Open modal
+    view |> element("#action-decline-demo") |> render_click()
+    assert has_element?(view, "#prompt-decline-demo-modal")
+
+    # Cancel modal
+    view |> element("#cancel-decline-demo-button") |> render_click()
+    refute has_element?(view, "#prompt-decline-demo-modal")
+
+    # Re-open and submit empty reason
+    view |> element("#action-decline-demo") |> render_click()
+    view |> form("#prompt-decline-demo-form", %{reason: "  "}) |> render_submit()
+    refute has_element?(view, "#prompt-decline-demo-modal")
+
+    # Test submitting non-empty reason on a second demo-failed task
+    %Task{id: task_id_2} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :demo,
+        stage_state: :failed
+      })
+
+    assert {:ok, view_2, _html} = live(authed_conn, ~p"/tasks/#{task_id_2}")
+    view_2 |> element("#action-decline-demo") |> render_click()
+    view_2 |> form("#prompt-decline-demo-form", %{reason: "Backend-only change"}) |> render_submit()
+    refute has_element?(view_2, "#prompt-decline-demo-modal")
+  end
+
+  test "direct action buttons dispatch corresponding pipeline actions", %{conn: conn} do
+    Req.Test.set_req_test_to_shared()
+
+    Req.Test.stub(Rail.GitHub, fn conn ->
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.send_resp(200, Jason.encode!(%{"token" => "test_token"}))
+    end)
+
+    {authed_conn, user} = log_in_test_user(conn)
+    _scope = Scope.for_user(user)
+    %Project{id: project_id} = create_test_project()
+
+    # 1. Approve & Approve skip design at product stage
+    %Task{id: prod_task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :product,
+        stage_state: :awaiting_approval
+      })
+
+    assert {:ok, prod_view, _html} = live(authed_conn, ~p"/tasks/#{prod_task_id}")
+    assert has_element?(prod_view, "#action-approve", "Approve")
+    assert has_element?(prod_view, "#action-approve-skip-design", "Approve, skip design")
+    prod_view |> element("#action-approve") |> render_click()
+
+    %Task{id: prod_skip_task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :product,
+        stage_state: :awaiting_approval
+      })
+
+    assert {:ok, prod_skip_view, _html} = live(authed_conn, ~p"/tasks/#{prod_skip_task_id}")
+    prod_skip_view |> element("#action-approve-skip-design") |> render_click()
+
+    # 2. Skip to ready to merge at qa stage
+    %Task{id: qa_task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :qa,
+        stage_state: :awaiting_approval
+      })
+
+    assert {:ok, qa_view, _html} = live(authed_conn, ~p"/tasks/#{qa_task_id}")
+    assert has_element?(qa_view, "#action-skip", "Skip")
+    qa_view |> element("#action-skip") |> render_click()
+
+    # 3. Retry on failed state
+    %Task{id: retry_task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :engineer,
+        stage_state: :failed
+      })
+
+    assert {:ok, retry_view, _html} = live(authed_conn, ~p"/tasks/#{retry_task_id}")
+    assert has_element?(retry_view, "#action-retry", "Retry")
+    retry_view |> element("#action-retry") |> render_click()
+
+    # 4. Cancel on running task
+    %Task{id: running_task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :engineer,
+        stage_state: :running
+      })
+
+    assert {:ok, running_view, _html} = live(authed_conn, ~p"/tasks/#{running_task_id}")
+    assert has_element?(running_view, "#action-cancel", "Cancel")
+    running_view |> element("#action-cancel") |> render_click()
+
+    # 5. Dispatch now on queued task
+    %Task{id: queued_task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :engineer,
+        stage_state: :queued,
+        retry_after: DateTime.utc_now()
+      })
+
+    assert {:ok, queued_view, _html} = live(authed_conn, ~p"/tasks/#{queued_task_id}")
+    assert has_element?(queued_view, "#action-dispatch", "Retry now")
+    queued_view |> element("#action-dispatch") |> render_click()
+
+    # 6. Unblock on blocked task without pending question
+    %Task{id: blocked_task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :engineer,
+        stage_state: :blocked,
+        question_id: nil
+      })
+
+    assert {:ok, blocked_view, _html} = live(authed_conn, ~p"/tasks/#{blocked_task_id}")
+    assert has_element?(blocked_view, "#action-unblock", "Unblock")
+    blocked_view |> element("#action-unblock") |> render_click()
+
+    # 7. Mark ready on draft PR
+    %Task{id: draft_task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :ready_to_merge,
+        stage_state: :awaiting_approval,
+        pr_number: 505,
+        pr_is_draft: true
+      })
+
+    assert {:ok, draft_view, _html} = live(authed_conn, ~p"/tasks/#{draft_task_id}")
+    assert has_element?(draft_view, "#action-mark-ready", "Mark ready for review")
+    draft_view |> element("#action-mark-ready") |> render_click()
+
+    # 8. Rerecord demo on demo stage
+    %Task{id: demo_task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :demo,
+        stage_state: :failed
+      })
+
+    assert {:ok, demo_view, _html} = live(authed_conn, ~p"/tasks/#{demo_task_id}")
+    assert has_element?(demo_view, "#action-rerecord-demo", "Re-record demo")
+    demo_view |> element("#action-rerecord-demo") |> render_click()
+
+    # 9. Design direction pick and recheck
+    %Task{id: design_task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :design,
+        stage_state: :awaiting_approval
+      })
+
+    create_test_design(%{
+      task_id: design_task_id,
+      directions: [
+        %{key: "dir-a", title: "Direction Alpha", notes: "Notes A", still_url: "https://example.com/a.png"},
+        %{key: "dir-b", title: "Direction Beta", notes: "Notes B", still_url: "https://example.com/b.png"}
+      ]
+    })
+
+    assert {:ok, design_view, _html} = live(authed_conn, ~p"/tasks/#{design_task_id}")
+    assert has_element?(design_view, "#action-pick-design-dir-a", "Use Direction Alpha")
+    design_view |> element("#action-pick-design-dir-a") |> render_click()
+
+    # Design recheck
+    %Task{id: design_failed_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :design,
+        stage_state: :failed
+      })
+
+    assert {:ok, design_failed_view, _html} = live(authed_conn, ~p"/tasks/#{design_failed_id}")
+    assert has_element?(design_failed_view, "#action-recheck-design", "Design is done")
+    design_failed_view |> element("#action-recheck-design") |> render_click()
+  end
+
+  test "single-flight action locking, spinner, error clearing, and PubSub broadcasts", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+    _scope = Scope.for_user(user)
+    %Project{id: project_id} = create_test_project()
+
+    %Task{id: task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :ready_to_merge,
+        stage_state: :awaiting_approval,
+        pr_number: 606,
+        pr_is_draft: false,
+        error: "Previous error message"
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+    assert has_element?(view, "#task-error-card", "Previous error message")
+
+    # Broadcast task_action_started -> clears error and sets spinner
+    send(view.pid, {:task_action_started, task_id, :merge})
+    _html = render(view)
+    refute has_element?(view, "#task-error-card")
+    assert has_element?(view, "#action-merge[disabled]")
+    assert has_element?(view, "#action-merge [data-qa='action-spinner']")
+
+    # Broadcast task_action_finished -> unlocks buttons and re-enables
+    send(view.pid, {:task_action_finished, task_id, :merge})
+    _html = render(view)
+    refute has_element?(view, "#action-merge[disabled]")
+    refute has_element?(view, "#action-merge [data-qa='action-spinner']")
+
+    # Broadcast task_action_started for different task_id is ignored
+    send(view.pid, {:task_action_started, "tsk_other_999", :merge})
+    _html = render(view)
+    refute has_element?(view, "#action-merge[disabled]")
+
+    # Broadcast task_action_finished for different task_id is ignored
+    send(view.pid, {:task_action_finished, "tsk_other_999", :merge})
+    _html = render(view)
+    refute has_element?(view, "#action-merge[disabled]")
+  end
+
+  test "exercises TaskDetailLive action callbacks and modal error paths", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+    scope = Scope.for_user(user)
+    %Project{id: project_id} = create_test_project()
+
+    %Task{id: task_id} =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :product,
+        stage_state: :awaiting_approval
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+
+    # Form change event does nothing
+    render_hook(view, "modal_form_change", %{})
+
+    # Unknown action click / submit does nothing
+    render_hook(view, "action_click", %{"action" => "unknown_action"})
+    render_hook(view, "submit_modal", %{"action" => "unknown_modal"})
+
+    # Direct callback testing for handle_async with crash and timeout
+    dummy_task = %Task{id: task_id, project_id: project_id, stage: :product}
+
+    dummy_socket = %Socket{
+      assigns: %{
+        __changed__: %{},
+        task: dummy_task,
+        task_id: task_id,
+        current_scope: scope,
+        running_action: :merge,
+        active_modal: nil
+      }
+    }
+
+    assert {:noreply, %{assigns: %{running_action: nil}}} =
+             RailWeb.TaskDetailLive.handle_async({:task_action, :merge}, {:ok, :done}, dummy_socket)
+
+    assert {:noreply, %{assigns: %{running_action: nil}}} =
+             RailWeb.TaskDetailLive.handle_async({:task_action, :merge}, {:exit, :timeout}, dummy_socket)
+
+    # Cleanup modal submit when busy directly returns without running
+    busy_socket = %Socket{
+      assigns: %{
+        __changed__: %{},
+        task: %{dummy_task | stage_state: :running},
+        task_id: task_id,
+        current_scope: scope,
+        running_action: nil,
+        active_modal: %{type: :confirm_cleanup}
+      }
+    }
+
+    assert {:noreply, %{assigns: %{active_modal: nil}}} =
+             RailWeb.TaskDetailLive.handle_event("submit_modal", %{"action" => "cleanup"}, busy_socket)
   end
 end

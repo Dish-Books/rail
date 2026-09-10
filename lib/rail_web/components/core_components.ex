@@ -22,5 +22,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate capture_issue_modal(assigns), to: RailWeb.Components.CaptureIssueModal
   defdelegate stage_stepper(assigns), to: RailWeb.Components.StageStepper
   defdelegate stage_outcome(assigns), to: RailWeb.Components.StageOutcome
+  defdelegate task_actions(assigns), to: RailWeb.Components.TaskActions
+  defdelegate task_action_modals(assigns), to: RailWeb.Components.TaskActionModals
   defdelegate markdown(assigns), to: RailWeb.Components.Markdown
 end

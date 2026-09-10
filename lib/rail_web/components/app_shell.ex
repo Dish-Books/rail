@@ -601,11 +601,107 @@ defmodule RailWeb.Components.AppShell do
       </svg>
 
       <svg
-        :if={@name in ["merge_type"]}
+        :if={@name in ["merge", "merge_type"]}
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
         <path d="M17 20.41L18.41 19 15 15.59 13.59 17 17 20.41zM7.5 8H11v5.59L5.59 19 7 20.41l6-6V8h3.5L12 3.5 7.5 8z" />
+      </svg>
+
+      <svg
+        :if={@name in ["undo"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" />
+      </svg>
+
+      <svg
+        :if={@name in ["check"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+      </svg>
+
+      <svg
+        :if={@name in ["fast_forward_outlined", "fast_forward"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z" />
+      </svg>
+
+      <svg
+        :if={@name in ["skip_next"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+      </svg>
+
+      <svg
+        :if={@name in ["reply"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z" />
+      </svg>
+
+      <svg
+        :if={@name in ["refresh"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
+      </svg>
+
+      <svg
+        :if={@name in ["arrow_forward"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" />
+      </svg>
+
+      <svg
+        :if={@name in ["stop_circle_outlined", "stop_circle"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm4-4H8V8h8v8z" />
+      </svg>
+
+      <svg
+        :if={@name in ["play_arrow"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M8 5v14l11-7z" />
+      </svg>
+
+      <svg
+        :if={@name in ["lock_open"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z" />
+      </svg>
+
+      <svg
+        :if={@name in ["difference_outlined", "difference"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M14.5 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V7.5L14.5 2zM18 20H6V4h7v5h5v11zm-7-4.5h2v-2h2v-2h-2v-2h-2v2H9v2h2v2zm-2 4h6v-1.5H9v1.5z" />
+      </svg>
+
+      <svg
+        :if={@name in ["delete_outline", "delete"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z" />
       </svg>
 
       <svg

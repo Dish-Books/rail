@@ -8,13 +8,16 @@ defmodule RailWeb.TaskDetailLive do
       project_badge: 1,
       stage_stepper: 1,
       stage_outcome: 1,
-      markdown: 1
+      markdown: 1,
+      task_actions: 1,
+      task_action_modals: 1
     ]
 
   alias Rail.Domain.Enums.TaskPriority
   alias Rail.Domain.Formatters
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.TaskActionRunner
 
   def mount(_params, _session, socket) do
     socket =
@@ -27,6 +30,9 @@ defmodule RailWeb.TaskDetailLive do
       |> assign(:current_run, nil)
       |> assign(:current_role_name, nil)
       |> assign(:role_runs, [])
+      |> assign(:running_action, nil)
+      |> assign(:active_modal, nil)
+      |> assign(:design, nil)
       |> assign(:ticket_content, "")
       |> assign(:plan_content, nil)
 
@@ -44,9 +50,12 @@ defmodule RailWeb.TaskDetailLive do
             if connected?(socket) do
               Phoenix.PubSub.subscribe(Rail.PubSub, "tasks:#{task.id}")
               Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline_changed")
+              Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
             end
 
             {current_run, role_name} = resolve_current_run(task)
+            running_action = TaskActionRunner.running_on(task.id)
+            design = if is_list(task.designs) and task.designs != [], do: List.last(task.designs)
 
             socket
             |> assign(:task, task)
@@ -57,6 +66,9 @@ defmodule RailWeb.TaskDetailLive do
             |> assign(:current_run, current_run)
             |> assign(:current_role_name, role_name)
             |> assign(:role_runs, task.role_runs || [])
+            |> assign(:running_action, running_action)
+            |> assign(:active_modal, nil)
+            |> assign(:design, design)
             |> assign(:ticket_content, Formatters.ticket_for(task))
             |> assign(:plan_content, Formatters.plan_for(task))
 
@@ -68,6 +80,9 @@ defmodule RailWeb.TaskDetailLive do
             |> assign(:current_run, nil)
             |> assign(:current_role_name, nil)
             |> assign(:role_runs, [])
+            |> assign(:running_action, nil)
+            |> assign(:active_modal, nil)
+            |> assign(:design, nil)
             |> assign(:ticket_content, "")
             |> assign(:plan_content, nil)
         end
@@ -299,6 +314,14 @@ defmodule RailWeb.TaskDetailLive do
             <p class="text-xs font-mono whitespace-pre-wrap leading-relaxed">{@task.error}</p>
           </div>
 
+          <!-- Task Actions Matrix -->
+          <.task_actions
+            task={@task}
+            running_action={@running_action}
+            design={@design}
+            on_action="action_click"
+          />
+
           <!-- Stage Outcome Component -->
           <.stage_outcome
             task={@task}
@@ -387,6 +410,13 @@ defmodule RailWeb.TaskDetailLive do
             </div>
           <% end %>
         </div>
+
+        <!-- Action Confirmation & Prompt Modals -->
+        <.task_action_modals
+          active_modal={@active_modal}
+          task={@task}
+          current_role_name={@current_role_name}
+        />
       <% end %>
     </div>
     """
@@ -400,7 +430,49 @@ defmodule RailWeb.TaskDetailLive do
     end
   end
 
+  def handle_event("action_click", %{"action" => action} = params, socket) do
+    handle_action_click(action, params, socket)
+  end
+
+  def handle_event("close_modal", _params, socket) do
+    {:noreply, assign(socket, :active_modal, nil)}
+  end
+
+  def handle_event("modal_form_change", _params, socket) do
+    {:noreply, socket}
+  end
+
+  def handle_event("submit_modal", %{"action" => action} = params, socket) do
+    handle_submit_modal(action, params, socket)
+  end
+
   def handle_event(_event, _params, socket), do: {:noreply, socket}
+
+  def handle_info({:task_action_started, task_id, kind}, socket) do
+    if socket.assigns[:task] && socket.assigns.task.id == task_id do
+      socket =
+        socket
+        |> assign(:running_action, kind)
+        |> assign(:task, %{socket.assigns.task | error: nil})
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info({:task_action_finished, task_id, _kind}, socket) do
+    if socket.assigns[:task] && socket.assigns.task.id == task_id do
+      socket =
+        socket
+        |> assign(:running_action, nil)
+        |> refresh_task()
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
+  end
 
   def handle_info({:pipeline_changed, %{task_id: task_id}}, socket) do
     if socket.assigns[:task] && socket.assigns.task.id == task_id do
@@ -435,6 +507,28 @@ defmodule RailWeb.TaskDetailLive do
 
   def handle_info(_other, socket), do: {:noreply, socket}
 
+  def handle_async({:task_action, _kind}, {:ok, _result}, socket) do
+    socket =
+      socket
+      |> assign(:running_action, nil)
+      |> refresh_task()
+
+    {:noreply, socket}
+  end
+
+  def handle_async({:task_action, kind}, {:exit, reason}, socket) do
+    if socket.assigns[:task] do
+      TaskActionRunner.finish_action(socket.assigns.task.id, kind, {:error, reason})
+    end
+
+    socket =
+      socket
+      |> assign(:running_action, nil)
+      |> refresh_task()
+
+    {:noreply, socket}
+  end
+
   def handle_async(_name, _result, socket), do: {:noreply, socket}
 
   def terminate(_reason, _socket), do: :ok
@@ -446,6 +540,225 @@ defmodule RailWeb.TaskDetailLive do
   defp parse_tab("conversation"), do: :conversation
   defp parse_tab("diff"), do: :diff
   defp parse_tab(_other), do: :overview
+
+  defp handle_action_click("chat", _params, socket) do
+    {:noreply, push_patch(socket, to: ~p"/tasks/#{socket.assigns.task.id}?tab=conversation")}
+  end
+
+  defp handle_action_click("diff", _params, socket) do
+    {:noreply, push_patch(socket, to: ~p"/tasks/#{socket.assigns.task.id}?tab=diff")}
+  end
+
+  defp handle_action_click("merge", params, socket) do
+    ignore_conflicts = params["ignore_conflicts"] == "true"
+    {:noreply, assign(socket, :active_modal, %{type: :confirm_merge, ignore_conflicts: ignore_conflicts})}
+  end
+
+  defp handle_action_click("rebase", _params, socket) do
+    {:noreply, assign(socket, :active_modal, %{type: :confirm_rebase})}
+  end
+
+  defp handle_action_click("cleanup", _params, socket) do
+    if task_busy?(socket.assigns.task, socket.assigns.running_action) do
+      {:noreply, socket}
+    else
+      {:noreply, assign(socket, :active_modal, %{type: :confirm_cleanup})}
+    end
+  end
+
+  defp handle_action_click("comment", _params, socket) do
+    role_name = socket.assigns[:current_role_name]
+    {:noreply, assign(socket, :active_modal, %{type: :prompt_send_back, role_name: role_name})}
+  end
+
+  defp handle_action_click("send_back_to_engineer", _params, socket) do
+    {:noreply, assign(socket, :active_modal, %{type: :prompt_send_back_to_engineer})}
+  end
+
+  defp handle_action_click("decline_demo", _params, socket) do
+    {:noreply, assign(socket, :active_modal, %{type: :prompt_decline_demo})}
+  end
+
+  defp handle_action_click("approve", _params, socket) do
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+    execute_action(socket, :approve, fn -> Pipeline.approve_stage(scope, task) end)
+  end
+
+  defp handle_action_click("approve_skip_design", _params, socket) do
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+    execute_action(socket, :approve, fn -> Pipeline.approve_stage(scope, task, skip_design: true) end)
+  end
+
+  defp handle_action_click("pick_design_direction", params, socket) do
+    direction_key = params["direction_key"]
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+    execute_action(socket, :pick_design_direction, fn -> Pipeline.pick_design_direction(scope, task, direction_key) end)
+  end
+
+  defp handle_action_click("skip", _params, socket) do
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+    execute_action(socket, :skip, fn -> Pipeline.skip_to_ready_to_merge(scope, task) end)
+  end
+
+  defp handle_action_click("retry", _params, socket) do
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+    execute_action(socket, :retry, fn -> Pipeline.retry_stage(scope, task) end)
+  end
+
+  defp handle_action_click("rerecord_demo", _params, socket) do
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+    execute_action(socket, :rerecord_demo, fn -> Pipeline.rerecord_demo(scope, task) end)
+  end
+
+  defp handle_action_click("recheck_design", _params, socket) do
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+    execute_action(socket, :recheck_design, fn -> Pipeline.recheck_design(scope, task) end)
+  end
+
+  defp handle_action_click("cancel", _params, socket) do
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+    execute_action(socket, :cancel, fn -> Pipeline.cancel_task(scope, task) end)
+  end
+
+  defp handle_action_click("dispatch", _params, socket) do
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+    execute_action(socket, :dispatch, fn -> Pipeline.dispatch_now(scope, task) end)
+  end
+
+  defp handle_action_click("unblock", _params, socket) do
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+    execute_action(socket, :unblock, fn -> Pipeline.release_blocked_stage(scope, task) end)
+  end
+
+  defp handle_action_click("mark_ready", _params, socket) do
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+    execute_action(socket, :mark_ready, fn -> Pipeline.mark_pr_ready(scope, task) end)
+  end
+
+  defp handle_action_click(_action, _params, socket), do: {:noreply, socket}
+
+  defp handle_submit_modal("merge", params, socket) do
+    ignore_conflicts = params["ignore_conflicts"] == "true"
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+
+    socket
+    |> assign(:active_modal, nil)
+    |> execute_action(:merge, fn ->
+      Pipeline.merge_task(scope, task, ignore_conflicts: ignore_conflicts)
+    end)
+  end
+
+  defp handle_submit_modal("rebase", _params, socket) do
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+
+    socket
+    |> assign(:active_modal, nil)
+    |> execute_action(:rebase, fn ->
+      Pipeline.start_rebase(scope, task)
+    end)
+  end
+
+  defp handle_submit_modal("cleanup", _params, socket) do
+    if task_busy?(socket.assigns.task, socket.assigns.running_action) do
+      {:noreply, assign(socket, :active_modal, nil)}
+    else
+      scope = socket.assigns.current_scope
+      task = socket.assigns.task
+
+      socket
+      |> assign(:active_modal, nil)
+      |> execute_action(:cleanup, fn ->
+        Pipeline.cleanup_task(scope, task)
+      end)
+    end
+  end
+
+  defp handle_submit_modal("comment", params, socket) do
+    comment = params["comment"]
+    trimmed = if is_binary(comment), do: String.trim(comment), else: ""
+
+    if trimmed == "" do
+      {:noreply, socket}
+    else
+      scope = socket.assigns.current_scope
+      task = socket.assigns.task
+
+      socket
+      |> assign(:active_modal, nil)
+      |> execute_action(:comment, fn ->
+        Pipeline.request_changes(scope, task, trimmed)
+      end)
+    end
+  end
+
+  defp handle_submit_modal("send_back_to_engineer", params, socket) do
+    comment = params["comment"]
+    trimmed = if is_binary(comment), do: String.trim(comment), else: ""
+    opts = if trimmed == "", do: [], else: [comment: trimmed]
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+
+    socket
+    |> assign(:active_modal, nil)
+    |> execute_action(:send_back_to_engineer, fn ->
+      Pipeline.send_back_to_engineer(scope, task, opts)
+    end)
+  end
+
+  defp handle_submit_modal("decline_demo", params, socket) do
+    reason = params["reason"]
+    trimmed = if is_binary(reason) and String.trim(reason) != "", do: String.trim(reason), else: "Declined by human"
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+
+    socket
+    |> assign(:active_modal, nil)
+    |> execute_action(:decline_demo, fn ->
+      Pipeline.decline_demo(scope, task, trimmed)
+    end)
+  end
+
+  defp handle_submit_modal(_action, _params, socket), do: {:noreply, socket}
+
+  defp execute_action(socket, kind, work_fn, opts \\ []) do
+    task = socket.assigns[:task]
+
+    if is_nil(task) or socket.assigns[:running_action] != nil do
+      {:noreply, socket}
+    else
+      task_id = task.id
+
+      socket =
+        socket
+        |> assign(:running_action, kind)
+        |> assign(:task, %{task | error: nil})
+
+      socket =
+        start_async(socket, {:task_action, kind}, fn ->
+          TaskActionRunner.run(task_id, kind, work_fn, opts)
+        end)
+
+      {:noreply, socket}
+    end
+  end
+
+  defp task_busy?(task, running_action) do
+    running_action != nil or
+      (is_struct(task) and (task.stage_state in [:running, :rebasing] or task.is_rebasing == true))
+  end
 
   defp resolve_current_run(%Task{} = task) do
     run = if is_list(task.role_runs) and task.role_runs != [], do: List.last(task.role_runs)
@@ -509,12 +822,16 @@ defmodule RailWeb.TaskDetailLive do
 
   defp apply_task_update(socket, task) do
     {current_run, role_name} = resolve_current_run(task)
+    design = if is_list(task.designs) and task.designs != [], do: List.last(task.designs)
+    running_action = socket.assigns[:running_action] || TaskActionRunner.running_on(task.id)
 
     socket
     |> assign(:task, task)
     |> assign(:page_title, task.title)
     |> assign(:current_run, current_run)
     |> assign(:current_role_name, role_name)
+    |> assign(:running_action, running_action)
+    |> assign(:design, design)
     |> assign(:ticket_content, Formatters.ticket_for(task))
     |> assign(:plan_content, Formatters.plan_for(task))
   end

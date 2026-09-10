@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Actions.GetTask do
   end
 
   defp do_get_task(id) do
-    query = from(t in Task, where: t.id == ^id, preload: [:project, :issue, :plans, :role_runs])
+    query = from(t in Task, where: t.id == ^id, preload: [:project, :issue, :plans, :role_runs, :designs])
 
     case Repo.one(query) do
       %Task{} = task -> {:ok, task}
@@ -45,7 +45,7 @@ defmodule Rail.Pipeline.Actions.GetTask do
   end
 
   defp do_get_task!(id) do
-    query = from(t in Task, where: t.id == ^id, preload: [:project, :issue, :plans, :role_runs])
+    query = from(t in Task, where: t.id == ^id, preload: [:project, :issue, :plans, :role_runs, :designs])
     Repo.one!(query)
   end
 end

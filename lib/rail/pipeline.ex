@@ -74,6 +74,10 @@ defmodule Rail.Pipeline do
   defdelegate retry_stage(scope_or_task, task_or_opts), to: Actions.RetryStage
   defdelegate retry_stage(task_or_id), to: Actions.RetryStage
 
+  defdelegate cancel_task(scope, task_or_id, opts), to: Actions.CancelTask
+  defdelegate cancel_task(scope_or_task, task_or_opts), to: Actions.CancelTask
+  defdelegate cancel_task(task_or_id), to: Actions.CancelTask
+
   defdelegate register_question(task_or_id, role_run_or_id, question_or_attrs, opts), to: Actions.RegisterQuestion
   defdelegate register_question(task_or_id, role_run_or_question, question_or_opts), to: Actions.RegisterQuestion
   defdelegate register_question(task_or_id, question_or_attrs), to: Actions.RegisterQuestion
