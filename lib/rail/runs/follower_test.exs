@@ -310,9 +310,15 @@ defmodule Rail.Runs.FollowerTest do
 
     Sandbox.allow(Repo, self(), follower_pid)
 
-    Process.sleep(100)
+    # Wait for the follower to flush its batch.
+    events =
+      Enum.reduce_while(1..100, [], fn _i, _acc ->
+        case Runs.list_run_events(role_run.id) do
+          [_first, _second] = events -> {:halt, events}
+          _other -> Process.sleep(10) && {:cont, []}
+        end
+      end)
 
-    events = Runs.list_run_events(role_run.id)
     # Total events: 1 pre-existing + 1 new (line1 skipped)
     assert length(events) == 2
     assert Enum.at(events, 0).line == "already saved line"

@@ -1,5 +1,5 @@
 defmodule Rail.ReleaseTest do
-  use Rail.DataCase, async: true
+  use Rail.DataCase, async: false
 
   alias Rail.Release
   alias Rail.Repo

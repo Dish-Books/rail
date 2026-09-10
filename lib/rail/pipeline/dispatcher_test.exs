@@ -260,10 +260,15 @@ defmodule Rail.Pipeline.DispatcherTest do
     # Send another pipeline_changed to test timer reset
     send(pid, {:pipeline_changed, %{task_id: task.id}})
 
-    # Wait for debounce to fire
-    Process.sleep(35)
-
-    assert Repo.get!(Task, task.id).stage_state == :running
+    # Wait for the debounced pump to dispatch the task.
+    assert Enum.reduce_while(1..100, false, fn _i, _acc ->
+             if Repo.get!(Task, task.id).stage_state == :running do
+               {:halt, true}
+             else
+               Process.sleep(10)
+               {:cont, false}
+             end
+           end)
   end
 
   test "handles periodic tick and reschedules timer", %{task: task, roles: roles} do
@@ -819,8 +824,10 @@ defmodule Rail.Pipeline.DispatcherTest do
 
     assert {:error, :dispatch_disabled} = Dispatcher.dispatch_now(task)
 
+    # The globally registered Dispatcher is shared with every other test, so the
+    # enabled path runs against this test's own instance.
     assert {:error, {:no_role_for_stage, :product}} =
-             Dispatcher.dispatch_now(task, dispatch_disabled: false)
+             GenServer.call(pid, {:dispatch_now, task, [dispatch_disabled: false]})
 
     assert {:error, :dispatcher_not_running} =
              Dispatcher.arm_retry_timer(:non_existent_dispatcher, task)

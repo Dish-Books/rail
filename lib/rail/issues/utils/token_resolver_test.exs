@@ -94,7 +94,7 @@ defmodule Rail.Issues.Utils.TokenResolverTest do
         assert {:error, :no_workspace_token} = resolve_token(nil, project)
       end)
 
-    assert log == ""
+    refute log =~ "pushed to Linear as the workspace for project #{project.id}"
   end
 
   test "workspace_token/1 with LinearWorkspace directly" do

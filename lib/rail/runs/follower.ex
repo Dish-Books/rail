@@ -2,7 +2,7 @@ defmodule Rail.Runs.Follower do
   @moduledoc """
   Follows a live CLI agent child process by tailing its stream file and monitoring OS PID liveness.
   """
-  use GenServer, restart: :transient
+  use GenServer, restart: :temporary
 
   import Ecto.Query
 
