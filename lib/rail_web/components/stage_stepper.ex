@@ -40,7 +40,7 @@ defmodule RailWeb.Components.StageStepper do
     ~H"""
     <div
       id="stage-stepper"
-      data-qa="stage_stepper"
+      data-qa="stage-stepper stage_stepper"
       class={["flex flex-wrap items-center gap-1 sm:gap-2", @class]}
     >
       <%= for {st, idx} <- Enum.with_index(@stages) do %>
@@ -52,7 +52,7 @@ defmodule RailWeb.Components.StageStepper do
 
         <div
           id={"stage-chip-#{st}"}
-          data-qa={"stage_chip_#{st}"}
+          data-qa={"stage-step stage-step-#{st} stage_chip_#{st}"}
           data-stage={st}
           data-current={if is_current, do: "true", else: "false"}
           data-done={if is_done, do: "true", else: "false"}
@@ -63,7 +63,7 @@ defmodule RailWeb.Components.StageStepper do
           ]}
         >
           <.icon name={icon_name} class="h-3.5 w-3.5 shrink-0" />
-          <span>{label}</span>
+          <span data-qa="stage-label">{label}</span>
         </div>
 
         <.icon

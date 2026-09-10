@@ -63,7 +63,7 @@ defmodule RailWeb.Components.DemoPlayerModal do
     >
       <div
         id="demo-player-modal"
-        data-qa="demo_player_modal"
+        data-qa="demo-player-modal demo_player_modal"
         phx-hook="DemoPlayer"
         class="bg-[var(--color-surface)] rounded-2xl shadow-2xl flex flex-col overflow-hidden max-w-[960px] max-h-[720px] w-full h-[720px] border border-[var(--color-border)]"
       >

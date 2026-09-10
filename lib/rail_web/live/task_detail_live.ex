@@ -155,7 +155,11 @@ defmodule RailWeb.TaskDetailLive do
         </div>
       <% else %>
         <!-- Task Header with Project Badge, Title & 4 Tabs in exact order -->
-        <div class="space-y-4 border-b border-[var(--color-border)] pb-0">
+        <div
+          id="task-header"
+          data-qa="task-header"
+          class="space-y-4 border-b border-[var(--color-border)] pb-0"
+        >
           <div class="flex items-center gap-3">
             <.project_badge project={@task.project} />
             <h1
@@ -177,7 +181,7 @@ defmodule RailWeb.TaskDetailLive do
             <.link
               patch={~p"/tasks/#{@task.id}?tab=overview"}
               id="tab-overview"
-              data-qa="tab_overview"
+              data-qa="tab-overview tab_overview"
               data-active={if @active_tab == :overview, do: "true", else: "false"}
               class={[
                 "pb-3 border-b-2 transition-colors cursor-pointer",
@@ -193,7 +197,7 @@ defmodule RailWeb.TaskDetailLive do
             <.link
               patch={~p"/tasks/#{@task.id}?tab=plan"}
               id="tab-plan"
-              data-qa="tab_plan"
+              data-qa="tab-plan tab_plan"
               data-active={if @active_tab == :plan, do: "true", else: "false"}
               class={[
                 "pb-3 border-b-2 transition-colors cursor-pointer",
@@ -209,7 +213,7 @@ defmodule RailWeb.TaskDetailLive do
             <.link
               patch={~p"/tasks/#{@task.id}?tab=conversation"}
               id="tab-conversation"
-              data-qa="tab_conversation"
+              data-qa="tab-conversation tab_conversation"
               data-active={if @active_tab == :conversation, do: "true", else: "false"}
               class={[
                 "pb-3 border-b-2 transition-colors cursor-pointer",
@@ -225,7 +229,7 @@ defmodule RailWeb.TaskDetailLive do
             <.link
               patch={~p"/tasks/#{@task.id}?tab=diff"}
               id="tab-diff"
-              data-qa="tab_diff"
+              data-qa="tab-diff tab_diff"
               data-active={if @active_tab == :diff, do: "true", else: "false"}
               class={[
                 "pb-3 border-b-2 transition-colors cursor-pointer",

@@ -50,7 +50,7 @@ defmodule RailWeb.Components.DemoPanel do
     ~H"""
     <div
       id="demo-panel"
-      data-qa="demo_panel"
+      data-qa="demo-panel demo_panel"
       class="p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] space-y-3"
     >
       <!-- Header Wrap -->
@@ -110,7 +110,7 @@ defmodule RailWeb.Components.DemoPanel do
             :if={@can_play}
             type="button"
             id="demo-play-all-btn"
-            data-qa="demo_play_all_btn"
+            data-qa="demo-play-button demo_play_all_btn"
             phx-click={if not @stale, do: "play_demo"}
             phx-value-segment="0"
             disabled={@stale}
@@ -167,7 +167,7 @@ defmodule RailWeb.Components.DemoPanel do
 
           <div
             id={"demo-criterion-card-#{idx}"}
-            data-qa="demo_criterion_card"
+            data-qa="demo-card demo_criterion_card"
             class={[
               "p-3 rounded-xl border border-[var(--color-outline-variant)]/50 bg-[var(--color-surface)] flex items-start gap-3.5 transition-opacity",
               @stale && "opacity-50"
@@ -192,7 +192,7 @@ defmodule RailWeb.Components.DemoPanel do
                 <button
                   type="button"
                   id={"demo-criterion-play-btn-#{idx}"}
-                  data-qa="criterion_play_btn"
+                  data-qa="demo-play-button criterion_play_btn"
                   phx-click={if not @stale, do: "play_demo"}
                   phx-value-segment={idx}
                   disabled={@stale}

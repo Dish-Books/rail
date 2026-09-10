@@ -18,7 +18,7 @@ defmodule RailWeb.Components.IssueCard do
     ~H"""
     <div
       id={"issue-card-#{@issue.id}"}
-      data-qa={"issue-card-#{@issue.id}"}
+      data-qa={"issue-row issue-card-#{@issue.id}"}
       class="m3-card p-5 cursor-pointer hover:border-[var(--color-outline)] transition-colors space-y-3"
       phx-click="open_editor"
       phx-value-issue_id={@issue.id}

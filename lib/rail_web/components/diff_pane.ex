@@ -56,12 +56,12 @@ defmodule RailWeb.Components.DiffPane do
         |> assign(:tree_items, tree_items)
 
       ~H"""
-      <div id="diff-pane" data-qa="diff_pane" class="flex gap-3 min-h-[400px]">
+      <div id="diff-pane" data-qa="diff-pane diff_pane" class="flex gap-3 min-h-[400px]">
         <%= if @show_file_tree do %>
           <!-- Left: 280px File Tree -->
           <div
             id="diff-file-tree"
-            data-qa="diff_file_tree"
+            data-qa="diff-tree diff_file_tree"
             class="w-[280px] shrink-0 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] p-2 overflow-y-auto max-h-[750px]"
           >
             <div class="space-y-0.5">
@@ -79,6 +79,7 @@ defmodule RailWeb.Components.DiffPane do
                     type="button"
                     phx-click="select_diff_file"
                     phx-value-path={item.file.path}
+                    data-qa="diff-file-row"
                     class={[
                       "w-full flex items-center justify-between gap-1.5 py-1.5 pr-3 text-xs text-left rounded-lg transition-colors cursor-pointer select-none",
                       if(@selected_file == item.file.path,
@@ -169,6 +170,7 @@ defmodule RailWeb.Components.DiffPane do
                         phx-click="toggle_viewed"
                         phx-value-path={section.file.path}
                         phx-value-digest={section.file.digest}
+                        data-qa="diff-viewed-checkbox"
                         class="rounded border-[var(--color-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)] cursor-pointer"
                       />
                       <span class="text-xs font-medium text-[var(--color-on-surface)]">Viewed</span>

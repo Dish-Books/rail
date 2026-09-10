@@ -17,7 +17,7 @@ defmodule RailWeb.Components.AppShell do
       class={[
         "nav-rail-transition flex flex-col justify-between h-full shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface-container)] select-none",
         @is_rail_extended && "w-56",
-        !@is_rail_extended && "w-16"
+        !@is_rail_extended && "w-[68px]"
       ]}
     >
       <!-- Top Group: Logo and Destinations -->
@@ -329,6 +329,18 @@ defmodule RailWeb.Components.AppShell do
           <.icon :if={@theme == "dark"} name="light_mode" class="h-4 w-4 text-amber-400" />
           <.icon :if={@theme != "dark"} name="dark_mode" class="h-4 w-4 text-slate-700" />
         </button>
+
+        <!-- User Menu Button -->
+        <.link
+          navigate={nav_path("/settings/connected-accounts", @current_project_id)}
+          id="user-menu-button"
+          data-qa="user-menu"
+          title="User menu"
+          aria-label="User menu"
+          class="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-[var(--color-surface-container-high)] text-[var(--color-on-surface)] transition-colors"
+        >
+          <.icon name="account_circle_outlined" class="h-4 w-4 text-[var(--color-outline)]" />
+        </.link>
       </div>
 
       <!-- Capture Issue Modal -->
@@ -351,7 +363,7 @@ defmodule RailWeb.Components.AppShell do
 
   def icon(assigns) do
     ~H"""
-    <span class={@class} aria-hidden="true">
+    <span class={["inline-block", @class]} aria-hidden="true">
       <svg
         :if={@name in ["layers"]}
         class="w-full h-full fill-current"

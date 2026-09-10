@@ -1,0 +1,345 @@
+#!/bin/bash
+# Drives a running Rail Phoenix app from the shell, for QA.
+#
+#   tool/qa/qa start <worktree>   launch the app and browser behind the human's windows
+#   tool/qa/qa start --foreground ... or let it activate, the ordinary way
+#   tool/qa/qa texts              every visible text on screen, with its origin
+#   tool/qa/qa tap "Label"        tap the element whose text is exactly that
+#   tool/qa/qa tap --like Sub     ... or contains it
+#   tool/qa/qa tapicon <name>     tap icon by data-qa, aria-label, or title
+#   tool/qa/qa icons              every icon on screen, with its coordinates
+#   tool/qa/qa theme              the brightness the screen is actually painted with
+#   tool/qa/qa eval '<js>'        evaluate JavaScript in the page
+#   tool/qa/qa shot name.png      capture THIS instance's window (1800x1130)
+#   tool/qa/qa reload | restart   reload page / hot restart
+#   tool/qa/qa console [n]        tail the console logs
+#   tool/qa/qa exceptions         uncaught exceptions with context
+#   tool/qa/qa stop               quit the app and browser
+#   tool/qa/qa url                current page URL
+#   tool/qa/qa pid                PID of the Phoenix server process
+#   tool/qa/qa session            prints session directory path
+#
+# The app it starts runs with AXIS_NO_DISPATCH=1: the queue and every screen
+# work, and no agent is ever spawned.
+#
+# State lives in $AXIS_QA_DIR (default $TMPDIR/axis-qa/<worktree>).
+set -euo pipefail
+
+# ---------------------------------------------------------------- environment
+
+if ! command -v node >/dev/null 2>&1; then
+  if [ -x "$HOME/.local/bin/mise" ]; then
+    eval "$("$HOME/.local/bin/mise" activate bash 2>/dev/null || true)"
+  fi
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  for candidate in $(ls -d "$HOME"/.local/share/mise/installs/node/*/bin 2>/dev/null | sort -V | tail -n1); do
+    [ -x "$candidate/node" ] && PATH="$candidate:$PATH" && break
+  done
+fi
+
+if ! command -v mix >/dev/null 2>&1; then
+  if [ -x "$HOME/.local/bin/mise" ]; then
+    eval "$("$HOME/.local/bin/mise" activate bash 2>/dev/null || true)"
+  fi
+fi
+
+if ! command -v mix >/dev/null 2>&1; then
+  for candidate in $(ls -d "$HOME"/.local/share/mise/installs/elixir/*/bin "$HOME"/.local/share/mise/installs/erlang/*/bin 2>/dev/null | sort -V); do
+    [ -x "$candidate/mix" ] && PATH="$candidate:$PATH"
+  done
+fi
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ "${1:-}" = "start" ]; then
+  for i in 2 3; do
+    arg="${!i:-}"
+    if [ -n "$arg" ] && [ -d "$arg" ]; then
+      AXIS_QA_WORKTREE="$(cd "$arg" && pwd)"
+      set -- "${@:1:$((i - 1))}" "${@:$((i + 1))}"
+      break
+    fi
+  done
+fi
+
+WORKTREE="${AXIS_QA_WORKTREE:-$(cd "$HERE/../.." && pwd)}"
+SESSION="${AXIS_QA_DIR:-${TMPDIR:-/tmp/}axis-qa/$(basename "$WORKTREE")}"
+mkdir -p "$SESSION"
+
+SOCKET="$SESSION/driver.sock"
+SERVER_PID_FILE="$SESSION/server.pid"
+DRIVER_PID_FILE="$SESSION/driver.pid"
+LOG="$SESSION/qa.log"
+SERVER_LOG="$SESSION/phx_server.log"
+DRIVER_LOG="$SESSION/driver.log"
+PORT_FILE="$SESSION/port"
+
+build_helpers() {
+  if [ ! -d "$HERE/node_modules/playwright" ]; then
+    echo "qa: installing dependencies in $HERE..."
+    ( cd "$HERE" && { pnpm install || npm install; } >/dev/null 2>&1 )
+  fi
+}
+
+json_str() {
+  node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$1"
+}
+
+curl_sock() {
+  local endpoint="$1"
+  shift
+  [ -S "$SOCKET" ] || { echo "qa: no running browser session - run 'qa start' first" >&2; exit 1; }
+  curl -s --unix-socket "$SOCKET" "http://unix$endpoint" "$@"
+}
+
+app_pid() {
+  [ -s "$SERVER_PID_FILE" ] || return 0
+  local pid; pid="$(cat "$SERVER_PID_FILE")"
+  ps -p "$pid" -o comm= >/dev/null 2>&1 && echo "$pid"
+}
+
+driver_pid() {
+  [ -s "$DRIVER_PID_FILE" ] || return 0
+  local pid; pid="$(cat "$DRIVER_PID_FILE")"
+  ps -p "$pid" -o comm= >/dev/null 2>&1 && echo "$pid"
+}
+
+cmd_start() {
+  local foreground=""
+  local extra_driver_args=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --foreground) foreground=1; extra_driver_args+=("--foreground"); shift ;;
+      *) shift ;;
+    esac
+  done
+
+  build_helpers
+
+  if [ -S "$SOCKET" ] && curl -s --unix-socket "$SOCKET" http://unix/url >/dev/null 2>&1; then
+    echo "qa: this harness already has an active session in $SESSION; 'qa stop' first" >&2
+    exit 1
+  fi
+
+  rm -f "$SOCKET" "$DRIVER_PID_FILE"
+
+  export AXIS_NO_DISPATCH="${AXIS_NO_DISPATCH:-1}"
+  local port="${PORT:-4002}"
+  echo "$port" > "$PORT_FILE"
+  local base_url="http://127.0.0.1:$port"
+  local login_url="$base_url/dev/login"
+
+  # Check if a server is already listening on port
+  if ! curl -s -f "$login_url" >/dev/null 2>&1; then
+    echo "qa: starting Phoenix server on $base_url (AXIS_NO_DISPATCH=$AXIS_NO_DISPATCH)..."
+    : > "$SERVER_LOG"
+    (
+      cd "$WORKTREE"
+      PORT="$port" AXIS_NO_DISPATCH="$AXIS_NO_DISPATCH" MIX_ENV=dev mix phx.server >> "$SERVER_LOG" 2>&1
+    ) &
+    local s_pid=$!
+    echo "$s_pid" > "$SERVER_PID_FILE"
+
+    local waited=0
+    while [ "$waited" -lt 60 ]; do
+      if curl -s -f "$login_url" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+      waited=$((waited + 1))
+    done
+
+    if ! curl -s -f "$login_url" >/dev/null 2>&1; then
+      echo "qa: Phoenix server failed to respond on $login_url after ${waited}s" >&2
+      tail -30 "$SERVER_LOG" >&2 || true
+      exit 1
+    fi
+  else
+    echo "qa: reusing server on $base_url"
+  fi
+
+  echo "qa: launching Playwright driver daemon (viewport 1800x1130)..."
+  : > "$DRIVER_LOG"
+  (
+    cd "$HERE"
+    if [ "${#extra_driver_args[@]}" -gt 0 ]; then
+      node driver.js --session "$SESSION" --url "$login_url" "${extra_driver_args[@]}" >> "$DRIVER_LOG" 2>&1
+    else
+      node driver.js --session "$SESSION" --url "$login_url" >> "$DRIVER_LOG" 2>&1
+    fi
+  ) &
+  local d_pid=$!
+  echo "$d_pid" > "$DRIVER_PID_FILE"
+
+  local waited=0
+  while [ "$waited" -lt 30 ]; do
+    if [ -S "$SOCKET" ] && curl -s --unix-socket "$SOCKET" http://unix/url >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.5
+    waited=$((waited + 1))
+  done
+
+  if [ ! -S "$SOCKET" ]; then
+    echo "qa: Playwright driver failed to start after 15s" >&2
+    tail -30 "$DRIVER_LOG" >&2 || true
+    exit 1
+  fi
+
+  echo "app url    : $base_url"
+  echo "server pid : $(app_pid || echo '(external)')"
+  echo "driver pid : $(driver_pid)"
+  echo "console    : $DRIVER_LOG"
+  echo "session    : $SESSION"
+}
+
+cmd_texts() {
+  curl_sock /texts
+}
+
+cmd_icons() {
+  curl_sock /icons
+}
+
+cmd_theme() {
+  curl_sock /theme
+}
+
+cmd_tap() {
+  local is_like="false"
+  if [ "${1:-}" = "--like" ]; then is_like="true"; shift; fi
+  local target="${1:?usage: qa tap [--like] <text>}"
+  local json_target; json_target="$(json_str "$target")"
+
+  local resp
+  resp="$(curl -s -w "\n%{http_code}" --unix-socket "$SOCKET" \
+    -X POST -H "Content-Type: application/json" \
+    -d "{\"target\": $json_target, \"like\": $is_like}" \
+    http://unix/tap)"
+
+  local code; code="$(echo "$resp" | tail -n1)"
+  local body; body="$(echo "$resp" | sed '$d')"
+
+  if [ "$code" = "200" ]; then
+    echo "OK"
+  else
+    echo "NOT FOUND"
+    exit 1
+  fi
+}
+
+cmd_tapicon() {
+  local code_arg="${1:?usage: qa tapicon <name/aria-label/data-qa>}"
+  local json_code; json_code="$(json_str "$code_arg")"
+
+  local resp
+  resp="$(curl -s -w "\n%{http_code}" --unix-socket "$SOCKET" \
+    -X POST -H "Content-Type: application/json" \
+    -d "{\"code\": $json_code}" \
+    http://unix/tapicon)"
+
+  local code; code="$(echo "$resp" | tail -n1)"
+
+  if [ "$code" = "200" ]; then
+    echo "OK"
+  else
+    echo "NOT FOUND"
+    exit 1
+  fi
+}
+
+cmd_eval() {
+  local js_code="${1:?usage: qa eval '<js>'}"
+  local json_c; json_c="$(json_str "$js_code")"
+  curl -s --unix-socket "$SOCKET" \
+    -X POST -H "Content-Type: application/json" \
+    -d "{\"code\": $json_c}" \
+    http://unix/eval
+}
+
+cmd_shot() {
+  local out="${1:?usage: qa shot <file.png>}"
+  case "$out" in
+    /*) ;;
+    .*|*/*) out="$PWD/$out" ;;
+    *) out="$SESSION/$out" ;;
+  esac
+  mkdir -p "$(dirname "$out")"
+  local json_p; json_p="$(json_str "$out")"
+
+  curl -s --unix-socket "$SOCKET" \
+    -X POST -H "Content-Type: application/json" \
+    -d "{\"path\": $json_p}" \
+    http://unix/shot
+}
+
+cmd_reload() {
+  curl_sock /reload
+}
+
+cmd_console() {
+  local count="${1:-40}"
+  local json_cnt; json_cnt="$(json_str "$count")"
+  curl -s --unix-socket "$SOCKET" \
+    -X POST -H "Content-Type: application/json" \
+    -d "{\"count\": $count}" \
+    http://unix/console
+}
+
+cmd_exceptions() {
+  curl_sock /exceptions
+}
+
+cmd_url() {
+  curl_sock /url
+}
+
+cmd_pid() {
+  app_pid
+}
+
+cmd_stop() {
+  if [ -S "$SOCKET" ]; then
+    curl -s --unix-socket "$SOCKET" -X POST http://unix/stop >/dev/null 2>&1 || true
+  fi
+  sleep 1
+
+  local dpid; dpid="$(driver_pid || true)"
+  [ -n "$dpid" ] && kill "$dpid" 2>/dev/null || true
+
+  local spid; spid="$(app_pid || true)"
+  [ -n "$spid" ] && kill "$spid" 2>/dev/null || true
+
+  if [ -f "$PORT_FILE" ]; then
+    local port; port="$(cat "$PORT_FILE")"
+    local port_pids; port_pids="$(lsof -ti :"$port" 2>/dev/null || true)"
+    if [ -n "$port_pids" ]; then
+      kill $port_pids 2>/dev/null || true
+    fi
+  fi
+
+  rm -f "$SOCKET" "$DRIVER_PID_FILE" "$SERVER_PID_FILE" "$PORT_FILE"
+  echo "qa: stopped"
+}
+
+case "${1:-}" in
+  start)      shift; cmd_start "$@" ;;
+  url)        cmd_url ;;
+  pid)        cmd_pid ;;
+  eval)       shift; cmd_eval "$@" ;;
+  texts)      cmd_texts ;;
+  icons)      cmd_icons ;;
+  theme)      cmd_theme ;;
+  tap)        shift; cmd_tap "$@" ;;
+  tapicon)    shift; cmd_tapicon "$@" ;;
+  shot)       shift; cmd_shot "$@" ;;
+  reload)     cmd_reload ;;
+  restart)    cmd_reload ;;
+  console)    shift; cmd_console "$@" ;;
+  exceptions) cmd_exceptions ;;
+  stop)       cmd_stop ;;
+  session)    echo "$SESSION" ;;
+  *)          sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's|^# \{0,1\}||' ;;
+esac

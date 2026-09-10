@@ -103,4 +103,13 @@ defmodule RailWeb.Router do
 
     get "/_health", HealthController, :health
   end
+
+  if Application.compile_env(:rail, :dev_routes, false) do
+    scope "/dev", RailWeb do
+      pipe_through :browser
+
+      get "/login", DevLoginController, :login
+      get "/login/:email", DevLoginController, :login
+    end
+  end
 end

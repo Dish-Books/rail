@@ -125,7 +125,7 @@ defmodule RailWeb.CliAccountsLive do
         <div
           :for={account <- @accounts}
           id={"backend-card-#{account.backend}"}
-          data-qa={"backend_card_#{account.backend}"}
+          data-qa={"cli-account-row backend_card_#{account.backend}"}
           class="bg-white shadow-xs rounded-xl border border-zinc-200 p-6 space-y-5"
         >
           <!-- Backend Card Header -->

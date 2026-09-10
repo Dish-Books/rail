@@ -448,7 +448,7 @@ defmodule RailWeb.Components.ConversationTab do
     ~H"""
     <div
       id="composer-root"
-      data-qa="composer"
+      data-qa="composer chat-composer"
       class="p-4 bg-[var(--color-surface)] border-t border-[var(--color-border)]"
     >
       <!-- Precedence Banners: thinking > queued > unavailable -->
@@ -544,7 +544,7 @@ defmodule RailWeb.Components.ConversationTab do
         <button
           type="submit"
           id="chat-send-button"
-          data-qa="chat-send-button"
+          data-qa="chat-submit chat-send-button"
           disabled={
             @is_unavailable or @is_thinking or @chat_sending or String.trim(@chat_input) == ""
           }

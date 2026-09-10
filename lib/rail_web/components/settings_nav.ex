@@ -9,7 +9,7 @@ defmodule RailWeb.Components.SettingsNav do
 
   def settings_nav(assigns) do
     ~H"""
-    <div class="border-b border-zinc-200" id="settings-nav">
+    <div class="border-b border-zinc-200" id="settings-nav" data-qa="settings-nav">
       <nav class="-mb-px flex space-x-8" aria-label="Tabs" id="settings-tabs">
         <.link
           navigate={~p"/settings/connected-accounts"}
@@ -20,6 +20,7 @@ defmodule RailWeb.Components.SettingsNav do
             "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
           ]}
           id="tab-connected-accounts"
+          data-qa="settings-tab"
         >
           Connected Accounts
         </.link>
@@ -33,6 +34,7 @@ defmodule RailWeb.Components.SettingsNav do
             "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
           ]}
           id="tab-appearance"
+          data-qa="settings-tab"
         >
           Appearance
         </.link>
@@ -47,6 +49,7 @@ defmodule RailWeb.Components.SettingsNav do
             "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
           ]}
           id="tab-projects"
+          data-qa="settings-tab"
         >
           Projects
         </.link>
@@ -61,6 +64,7 @@ defmodule RailWeb.Components.SettingsNav do
             "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
           ]}
           id="tab-linear-workspace"
+          data-qa="settings-tab"
         >
           Linear Workspace
         </.link>
@@ -75,6 +79,7 @@ defmodule RailWeb.Components.SettingsNav do
             "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
           ]}
           id="tab-users"
+          data-qa="settings-tab"
         >
           Users
         </.link>
@@ -89,6 +94,7 @@ defmodule RailWeb.Components.SettingsNav do
             "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
           ]}
           id="tab-roles"
+          data-qa="settings-tab"
         >
           Roles
         </.link>

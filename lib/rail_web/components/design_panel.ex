@@ -31,7 +31,7 @@ defmodule RailWeb.Components.DesignPanel do
     ~H"""
     <div
       id="design-panel"
-      data-qa="design_panel"
+      data-qa="design-panel design_panel"
       class="p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] space-y-3"
     >
       <!-- Header Row -->
@@ -77,7 +77,7 @@ defmodule RailWeb.Components.DesignPanel do
 
           <div
             id={"design-direction-card-#{key}"}
-            data-qa="design_direction_card"
+            data-qa="design-card design_direction_card"
             data-picked={if is_picked, do: "true", else: "false"}
             class={[
               "min-w-[260px] max-w-[340px] flex-1 rounded-xl overflow-hidden bg-[var(--color-surface)] p-3 flex flex-col gap-3",

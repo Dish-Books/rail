@@ -35,11 +35,23 @@ defmodule RailWeb.Components.TaskActions do
         <% is_disabled = action_disabled?(@task, action.kind, @running_action)
 
         show_spinner =
-          @running_action == action.kind and TaskActionRunner.shows_progress?(action.kind) %>
+          @running_action == action.kind and TaskActionRunner.shows_progress?(action.kind)
+
+        data_qa =
+          cond do
+            action.id == "action-send-back" ->
+              "#{action.id} action-request-changes"
+
+            String.starts_with?(action.id, "action-pick-design-") ->
+              "#{action.id} pick-direction-button"
+
+            true ->
+              action.id
+          end %>
         <button
           type="button"
           id={action.id}
-          data-qa={action.id}
+          data-qa={data_qa}
           disabled={is_disabled}
           phx-click={@on_action}
           phx-value-action={action.action}

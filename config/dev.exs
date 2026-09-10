@@ -30,3 +30,5 @@ config :rail, RailWeb.Endpoint,
     esbuild: {Esbuild, :install_and_run, [:rail, ~w(--sourcemap=inline --watch)]},
     tailwind: {Tailwind, :install_and_run, [:rail, ~w(--watch)]}
   ]
+
+config :rail, dev_routes: true

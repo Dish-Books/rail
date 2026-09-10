@@ -21,7 +21,7 @@ defmodule RailWeb.Components.NoDemoBanner do
     ~H"""
     <div
       id="no-demo-banner"
-      data-qa="no_demo_banner"
+      data-qa="no-demo-banner no_demo_banner"
       class="p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-between gap-4"
     >
       <div class="flex items-start gap-3">

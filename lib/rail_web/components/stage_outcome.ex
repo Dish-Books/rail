@@ -40,7 +40,12 @@ defmodule RailWeb.Components.StageOutcome do
       |> assign(:resolved_role_name, resolved_role_name)
 
     ~H"""
-    <div :if={@visible} id="stage-outcome" data-qa="stage_outcome" class={["space-y-6", @class]}>
+    <div
+      :if={@visible}
+      id="stage-outcome"
+      data-qa="stage-outcome stage_outcome"
+      class={["space-y-6", @class]}
+    >
       <!-- Failure Block -->
       <div :if={@has_error} id="stage-failure-section" class="space-y-2">
         <h3

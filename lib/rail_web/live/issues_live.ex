@@ -107,7 +107,7 @@ defmodule RailWeb.IssuesLive do
           <button
             type="button"
             id="new-issue-button"
-            data-qa="new-issue-button"
+            data-qa="capture-issue-button new-issue-button"
             phx-click="open_new_issue"
             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-primary)] text-[var(--color-on-primary)] text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
           >
@@ -180,6 +180,17 @@ defmodule RailWeb.IssuesLive do
           <.icon :if={@show_finished} name="check" class="h-3.5 w-3.5" />
           <span>Show finished</span>
         </button>
+
+        <!-- Search input -->
+        <div class="relative ml-auto">
+          <input
+            type="text"
+            id="issues-search"
+            data-qa="issues-search"
+            placeholder="Search issues..."
+            class="px-3 py-1 text-xs rounded-lg border border-[var(--color-outline-variant)] bg-[var(--color-surface)] text-[var(--color-on-surface)] placeholder-[var(--color-outline)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+          />
+        </div>
       </div>
 
       <!-- Issues List or Empty State -->
@@ -210,7 +221,12 @@ defmodule RailWeb.IssuesLive do
         </div>
 
         <!-- Issues Cards List -->
-        <div :if={@filtered_issues != []} id="issues-list" data-qa="issues-list" class="space-y-4">
+        <div
+          :if={@filtered_issues != []}
+          id="issues-list"
+          data-qa="issues-table issues-list"
+          class="space-y-4"
+        >
           <div :for={issue <- @filtered_issues}>
             <.issue_card
               issue={issue}

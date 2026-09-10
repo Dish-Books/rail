@@ -198,6 +198,7 @@ defmodule RailWeb.Settings.RolesLive do
           <li
             :for={stage <- @canonical_stages}
             id={"stage-row-#{stage}"}
+            data-qa={"role-card stage-row-#{stage}"}
             class="p-5 flex items-center justify-between hover:bg-zinc-50 transition-colors"
           >
             <% bound_role = role_for_stage(@roles, stage) %>
@@ -351,6 +352,7 @@ defmodule RailWeb.Settings.RolesLive do
           <li
             :for={role <- unbound_roles}
             id={"unbound-role-row-#{role.id}"}
+            data-qa={"role-card unbound-role-row-#{role.id}"}
             class="p-5 flex items-center justify-between hover:bg-zinc-50 transition-colors"
           >
             <div>
@@ -412,6 +414,7 @@ defmodule RailWeb.Settings.RolesLive do
         :if={@active_modal in [:create_role, :edit_role]}
         class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
         id="role-editor-modal"
+        data-qa="role-editor"
       >
         <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg bg-white p-6 shadow-xl space-y-6">
           <div class="flex items-center justify-between border-b border-zinc-200 pb-4">
