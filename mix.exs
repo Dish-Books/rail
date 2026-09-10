@@ -94,6 +94,10 @@ defmodule Rail.MixProject do
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test --warnings-as-errors"],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"],
+      "assets.setup": [
+        "tailwind.install --if-missing",
+        "esbuild.install --if-missing"
+      ],
       "assets.deploy": ["tailwind rail --minify", "esbuild rail --minify", "phx.digest"]
     ]
   end

@@ -363,9 +363,11 @@ defmodule RailWeb.Components.AppShell do
 
   def icon(assigns) do
     ~H"""
-    <span class={["inline-block", @class]} aria-hidden="true">
+    <span class={["inline-block shrink-0", @class]} aria-hidden="true">
       <svg
         :if={@name in ["layers"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -374,6 +376,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["dashboard"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -382,6 +386,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["dashboard_outlined"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -390,6 +396,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["lightbulb"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -398,6 +406,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["lightbulb_outline"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -406,6 +416,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["account_circle"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -414,6 +426,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["account_circle_outlined"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -422,6 +436,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["settings"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -430,6 +446,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["settings_outlined"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -438,6 +456,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["chevron_left"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -446,6 +466,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["chevron_right"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -454,6 +476,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["folder"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -462,6 +486,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["folder_outlined"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -470,6 +496,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["unfold_more"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -478,6 +506,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["add_circle"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -486,6 +516,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["light_mode"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -494,6 +526,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["dark_mode"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -502,6 +536,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["info_outline", "info"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -510,6 +546,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["check_circle_outline", "check_circle"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -518,6 +556,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["code", "terminal", "hero-command-line"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -526,6 +566,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["architecture", "account_tree", "account_tree_outlined"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -534,6 +576,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["palette", "brush", "design"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -542,6 +586,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["videocam", "movie", "demo"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -550,6 +596,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["fact_check", "checklist", "qa"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -558,6 +606,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["chat"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -566,6 +616,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["smart_toy", "robot", "agent"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -574,6 +626,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["chat_bubble_outline"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -582,6 +636,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["call_split"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -590,6 +646,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["play_circle_outline", "play_circle"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -598,6 +656,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["schedule"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -606,6 +666,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["help_outline"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -614,6 +676,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["merge", "merge_type"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -622,6 +686,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["undo"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -630,6 +696,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["check"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -638,6 +706,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["fast_forward_outlined", "fast_forward"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -646,6 +716,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["skip_next"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -654,6 +726,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["reply"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -662,6 +736,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["refresh"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -670,6 +746,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["arrow_forward"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -678,6 +756,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["stop_circle_outlined", "stop_circle"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -686,6 +766,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["play_arrow"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -694,6 +776,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["lock_open"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -702,6 +786,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["difference_outlined", "difference"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -710,6 +796,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["delete_outline", "delete"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -718,6 +806,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["rate_review_outlined", "rate_review"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -726,6 +816,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["error_outline"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -734,6 +826,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["radio_button_unchecked"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -742,6 +836,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["open_in_new"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -750,6 +846,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["flag_outlined", "flag"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -758,6 +856,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["send"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -766,6 +866,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["person"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -774,6 +876,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["build_outlined", "build"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -782,6 +886,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["call_received"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -790,6 +896,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["call_made"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -798,6 +906,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["expand_more"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -806,6 +916,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["expand_less"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -814,6 +926,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["stop"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -822,6 +936,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["bug_report"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -830,6 +946,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["verified"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -838,6 +956,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["alt_route"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -846,6 +966,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["travel_explore"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -854,6 +976,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["assignment"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >

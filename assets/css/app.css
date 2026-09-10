@@ -1,4 +1,7 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
+@source "../css";
+@source "../js";
+@source "../../lib/rail_web";
 
 :root {
   --seed-color: #2563eb;
