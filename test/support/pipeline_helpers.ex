@@ -392,4 +392,65 @@ defmodule RailTest.PipelineHelpers do
       )
     end)
   end
+
+  def create_test_qa_dir(opts \\ []) do
+    base_dir = create_temp_scratch_dir()
+    sub_path = Keyword.get(opts, :sub_path, ["qa"])
+    qa_dir = Path.join([base_dir | List.wrap(sub_path)])
+    File.mkdir_p!(qa_dir)
+
+    commit = Keyword.get(opts, :commit, "abc1234")
+    session = Keyword.get(opts, :session, %{"port" => 4000, "url" => "http://localhost:4000"})
+
+    screenshot = Path.join(qa_dir, "screenshot.png")
+    File.write!(screenshot, "fake png content")
+
+    log_file = Path.join(qa_dir, "log.txt")
+    File.write!(log_file, "All checks passed")
+
+    default_rows = [
+      %{
+        "id" => "check_1",
+        "check" => "Login works",
+        "result" => "pass",
+        "severity" => "blocker",
+        "caused_by_change" => true,
+        "command" => "mix test",
+        "exit_code" => 0,
+        "note" => "Passed cleanly",
+        "artifacts" => [
+          %{
+            "name" => "log.txt",
+            "kind" => "text",
+            "path" => "log.txt",
+            "text" => "All checks passed"
+          }
+        ]
+      }
+    ]
+
+    rows = Keyword.get(opts, :rows, default_rows)
+
+    manifest_map = %{
+      "commit" => commit,
+      "session" => session,
+      "rows" => rows
+    }
+
+    manifest_content =
+      Keyword.get(opts, :raw_manifest) || Jason.encode!(manifest_map)
+
+    File.write!(Path.join(qa_dir, "manifest.json"), manifest_content)
+    base_dir
+  end
+
+  def mock_qa_uploads(count \\ 1) do
+    Enum.each(1..count, fn i ->
+      Linear.mock_file_upload_success(
+        upload_url: "https://api.linear.app/upload/qa_#{i}",
+        asset_url: "https://uploads.linear.app/qa_#{i}/screenshot-#{i}.png",
+        asset_id: "ast_qa_#{i}"
+      )
+    end)
+  end
 end

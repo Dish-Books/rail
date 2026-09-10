@@ -23,6 +23,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
   alias Rail.Scope
+  alias Rail.Users.Schemas.User
 
   @doc """
   Settles a finished run for a task:
@@ -67,7 +68,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
         default_scratch_path(task.project_id, task.id)
 
     {:ok, task} =
-      if task.stage in [:design, :demo] do
+      if task.stage in [:design, :demo, :qa] do
         {:ok, task}
       else
         capture(task.stage, task, scratch_dir)
@@ -257,8 +258,30 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     {attrs, role_run}
   end
 
-  defp handle_clean_exit(%Task{stage: stage} = task, role_run, _scratch_dir, _opts)
-       when stage in [:review, :qa, :qa_lead] do
+  defp handle_clean_exit(%Task{stage: :qa} = task, role_run, scratch_dir, opts) do
+    scope = Scope.for_system()
+    qa_target = resolve_qa_target(task, scratch_dir, opts)
+
+    if qa_manifest_exists?(qa_target) do
+      read_opts = Keyword.take(opts, [:req_options])
+
+      case Artifacts.read_qa_report(scope, qa_target, read_opts) do
+        {:ok, qa_data} ->
+          capture_and_advance_qa(scope, task, role_run, qa_target, qa_data, opts)
+
+        {:error, reason} ->
+          fail_qa_stage(role_run, reason)
+      end
+    else
+      if opts[:require_qa_manifest] == true do
+        fail_qa_stage(role_run, "QA manifest not found.")
+      else
+        handle_gate_exit(task, role_run)
+      end
+    end
+  end
+
+  defp handle_clean_exit(%Task{stage: stage} = task, role_run, _scratch_dir, _opts) when stage in [:review, :qa_lead] do
     handle_gate_exit(task, role_run)
   end
 
@@ -310,6 +333,37 @@ defmodule Rail.Pipeline.Actions.SettleRun do
       stage_state: :awaiting_approval,
       retry_after: nil,
       error: nil
+    }
+
+    {attrs, role_run}
+  end
+
+  defp capture_and_advance_qa(scope, task, role_run, qa_target, qa_data, opts) do
+    {head_sha, _dirty_digest} = resolve_fingerprint(task, role_run)
+    commit = head_sha || qa_data[:commit]
+
+    capture_opts =
+      opts
+      |> Keyword.take([:req_options, :scratch_dir, :project, :issue, :owner_user])
+      |> Keyword.put(:role_run_id, role_run.id)
+      |> Keyword.put(:commit, commit)
+
+    case Artifacts.capture_qa_report(scope, task, qa_target, capture_opts) do
+      {:ok, _report} ->
+        handle_gate_exit(task, role_run)
+
+      {:error, reason} ->
+        fail_qa_stage(role_run, reason)
+    end
+  end
+
+  defp fail_qa_stage(role_run, reason) do
+    err_msg = if is_binary(reason), do: reason, else: inspect(reason)
+
+    attrs = %{
+      stage_state: :failed,
+      error: err_msg,
+      retry_after: nil
     }
 
     {attrs, role_run}
@@ -834,5 +888,31 @@ defmodule Rail.Pipeline.Actions.SettleRun do
       true ->
         scratch_dir
     end
+  end
+
+  defp resolve_qa_target(task, scratch_dir, opts) do
+    cond do
+      is_binary(opts[:scratch_dir]) ->
+        opts[:scratch_dir]
+
+      is_binary(opts[:scratch_path]) ->
+        opts[:scratch_path]
+
+      is_binary(task.worktree_path) and
+          (File.exists?(Path.join([task.worktree_path, ".axis", "qa", "manifest.json"])) or
+             File.exists?(Path.join([task.worktree_path, "qa", "manifest.json"])) or
+             File.exists?(Path.join([task.worktree_path, "manifest.json"]))) ->
+        task.worktree_path
+
+      true ->
+        scratch_dir
+    end
+  end
+
+  defp qa_manifest_exists?(target) do
+    is_binary(target) and
+      (File.exists?(Path.join(target, "manifest.json")) or
+         File.exists?(Path.join([target, "qa", "manifest.json"])) or
+         File.exists?(Path.join([target, ".axis", "qa", "manifest.json"])))
   end
 end

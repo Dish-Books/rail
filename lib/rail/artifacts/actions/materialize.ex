@@ -11,6 +11,7 @@ defmodule Rail.Artifacts.Actions.Materialize do
   alias Rail.Domain.Embeds.DesignDirection
   alias Rail.Domain.Embeds.QaArtifact
   alias Rail.Domain.Embeds.QaRow
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -37,11 +38,13 @@ defmodule Rail.Artifacts.Actions.Materialize do
   end
 
   defp do_materialize(%QaReport{} = report, dest_scratch_dir, opts) do
+    opts = maybe_attach_task_project(nil, report.task_id, opts)
     materialize_qa_report(report, dest_scratch_dir, opts)
   end
 
   defp do_materialize(task_target, dest_scratch_dir, opts) do
     task_id = extract_task_id(task_target)
+    opts = maybe_attach_task_project(task_target, task_id, opts)
     kind = Keyword.get(opts, :kind, :all)
 
     case kind do
@@ -270,7 +273,7 @@ defmodule Rail.Artifacts.Actions.Materialize do
 
     File.mkdir_p!(qa_dir)
 
-    with {:ok, token} <- resolve_token(opts),
+    with {:ok, token} <- maybe_resolve_token_for_qa(report, opts),
          {:ok, rows_data} <- download_qa_rows(report.rows || [], qa_dir, token, opts) do
       manifest = %{
         "commit" => report.commit,
@@ -282,6 +285,25 @@ defmodule Rail.Artifacts.Actions.Materialize do
       File.write!(manifest_path, Jason.encode!(manifest, pretty: true))
       {:ok, qa_dir}
     end
+  end
+
+  defp maybe_resolve_token_for_qa(report, opts) do
+    if qa_report_requires_download?(report) do
+      resolve_token(opts)
+    else
+      case resolve_token(opts) do
+        {:ok, token} -> {:ok, token}
+        _not_available -> {:ok, nil}
+      end
+    end
+  end
+
+  defp qa_report_requires_download?(%QaReport{rows: rows}) do
+    Enum.any?(rows || [], fn row ->
+      Enum.any?(row.artifacts || [], fn art ->
+        is_binary(art.url) and art.url != ""
+      end)
+    end)
   end
 
   defp download_qa_rows(rows, qa_dir, token, opts) do
@@ -304,14 +326,15 @@ defmodule Rail.Artifacts.Actions.Materialize do
     artifacts
     |> Enum.reduce_while({:ok, []}, fn %QaArtifact{} = art, {:ok, acc} ->
       dest_path = Path.join(qa_dir, art.name)
+      File.mkdir_p!(Path.dirname(dest_path))
 
       res =
         cond do
-          art.kind == :text and is_binary(art.text) ->
-            File.write!(dest_path, art.text)
+          art.kind == :text ->
+            File.write!(dest_path, art.text || "")
             :ok
 
-          is_binary(art.url) ->
+          is_binary(art.url) and art.url != "" ->
             maybe_download_file(art.url, dest_path, token, opts)
 
           true ->
@@ -424,4 +447,25 @@ defmodule Rail.Artifacts.Actions.Materialize do
         {:error, :no_workspace_token}
     end
   end
+
+  defp maybe_attach_task_project(%{project_id: project_id} = task, _task_id, opts) do
+    opts
+    |> Keyword.put_new(:task, task)
+    |> Keyword.put_new_lazy(:project, fn ->
+      if project_id, do: Repo.get(Project, project_id)
+    end)
+  end
+
+  defp maybe_attach_task_project(_target, task_id, opts) when is_binary(task_id) and task_id != "" do
+    Keyword.put_new_lazy(opts, :project, fn ->
+      with %Task{project_id: project_id} when is_binary(project_id) <- Repo.get(Task, task_id),
+           %Project{} = project <- Repo.get(Project, project_id) do
+        project
+      else
+        _other -> nil
+      end
+    end)
+  end
+
+  defp maybe_attach_task_project(_target, _task_id, opts), do: opts
 end

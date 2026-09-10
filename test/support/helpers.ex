@@ -25,6 +25,8 @@ defmodule RailTest.Helpers do
   defdelegate create_test_demo(attrs \\ %{}), to: RailTest.PipelineHelpers
   defdelegate create_test_demo_dir(opts \\ []), to: RailTest.PipelineHelpers
   defdelegate mock_demo_uploads(count \\ 1), to: RailTest.PipelineHelpers
+  defdelegate create_test_qa_dir(opts \\ []), to: RailTest.PipelineHelpers
+  defdelegate mock_qa_uploads(count \\ 1), to: RailTest.PipelineHelpers
   defdelegate mock_dispatch_hook(task, role), to: RailTest.PipelineHelpers
   defdelegate create_chat_stub_cli(opts \\ []), to: RailTest.PipelineHelpers
 end

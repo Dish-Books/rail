@@ -49,6 +49,27 @@ defmodule Rail.Artifacts.Actions.ReadQaReportTest do
       assert {:ok, %{commit: "abc1234"}} = Artifacts.read_qa_report(scope, "tsk_qa_1", scratch_dir: dir)
     end
 
+    test "reads QA report directly from manifest in root directory", %{dir: dir} do
+      scope = Scope.for_system()
+      ArtifactHelpers.write_qa_manifest(dir)
+
+      assert {:ok, %{commit: "abc1234"}} = Artifacts.read_qa_report(scope, dir)
+    end
+
+    test "reads QA report from worktree .axis/qa directory", %{dir: dir} do
+      scope = Scope.for_system()
+      axis_qa = Path.join([dir, ".axis", "qa"])
+      File.mkdir_p!(axis_qa)
+      ArtifactHelpers.write_qa_manifest(axis_qa)
+
+      # Via worktree path string
+      assert {:ok, %{commit: "abc1234"}} = Artifacts.read_qa_report(scope, dir)
+
+      # Via Task struct with worktree_path
+      task = %Rail.Pipeline.Schemas.Task{id: "tsk_wt_qa", worktree_path: dir}
+      assert {:ok, %{commit: "abc1234"}} = Artifacts.read_qa_report(scope, task)
+    end
+
     test "returns validation failure when manifest is invalid", %{qa_dir: qa_dir} do
       scope = Scope.for_system()
       File.write!(Path.join(qa_dir, "manifest.json"), "{bad_json")

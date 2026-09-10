@@ -9,6 +9,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Scope
+  alias Rail.Users.Schemas.User
   alias RailTest.Mocks.Linear, as: LinearMock
   alias RailTest.Support.ArtifactHelpers
 
@@ -159,6 +160,198 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
                )
 
       File.chmod!(img_file, 0o644)
+    end
+
+    test "reads text artifact content from file on disk and captures from worktree .axis/qa", %{
+      dir: dir,
+      project: project
+    } do
+      scope = Scope.for_system()
+      axis_qa = Path.join([dir, ".axis", "qa"])
+      File.mkdir_p!(axis_qa)
+
+      log_path = Path.join(axis_qa, "system_check.txt")
+      File.write!(log_path, "TEST_SYSTEM_LOG_CONTENT")
+
+      ArtifactHelpers.write_qa_manifest(axis_qa, %{
+        "commit" => "wt_commit",
+        "session" => %{"pid" => 1234},
+        "rows" => [
+          %{
+            "id" => "c_txt",
+            "check" => "Check text read",
+            "result" => "pass",
+            "severity" => "cosmetic",
+            "artifacts" => [
+              %{"name" => "system_check.txt", "kind" => "text", "path" => "system_check.txt"}
+            ]
+          }
+        ]
+      })
+
+      assert {:ok,
+              %QaReport{
+                commit: "wt_commit",
+                rows: [
+                  %QaRow{
+                    artifacts: [
+                      %QaArtifact{name: "system_check.txt", kind: :text, text: "TEST_SYSTEM_LOG_CONTENT"}
+                    ]
+                  }
+                ]
+              }} = Artifacts.capture_qa_report(scope, "tsk_wt_qa", dir, project: project)
+    end
+
+    test "resolves issue and owner_user from task associations when posting Linear comment", %{
+      dir: dir,
+      project: project,
+      issue: issue
+    } do
+      scope = Scope.for_system()
+      ArtifactHelpers.write_qa_manifest(dir)
+
+      user = Repo.insert!(User.factory())
+
+      %Rail.Pipeline.Schemas.Task{id: task_id} =
+        task =
+        Repo.insert!(%{
+          Rail.Pipeline.Schemas.Task.factory()
+          | project_id: project.id,
+            issue_id: issue.id,
+            owner_user_id: user.id
+        })
+
+      LinearMock.mock_file_upload_success(
+        upload_url: "https://api.linear.app/upload/qa_task",
+        asset_url: "https://uploads.linear.app/qa_task/screenshot.png",
+        asset_id: "ast_qa_task"
+      )
+
+      LinearMock.mock_create_comment_success(%{
+        "id" => "lin_cmt_task",
+        "body" => "QA Comment"
+      })
+
+      # Pass Task struct without explicit :issue or :owner_user opts
+      assert {:ok, %QaReport{task_id: ^task_id}} =
+               Artifacts.capture_qa_report(scope, task, dir, project: project)
+
+      # Also test with preloaded associations
+      task_preloaded = Repo.preload(task, [:issue, :owner_user])
+
+      LinearMock.mock_file_upload_success(
+        upload_url: "https://api.linear.app/upload/qa_preloaded",
+        asset_url: "https://uploads.linear.app/qa_preloaded/screenshot.png",
+        asset_id: "ast_qa_preloaded"
+      )
+
+      LinearMock.mock_create_comment_success(%{
+        "id" => "lin_cmt_preloaded",
+        "body" => "QA Comment"
+      })
+
+      assert {:ok, %QaReport{task_id: ^task_id}} =
+               Artifacts.capture_qa_report(scope, task_preloaded, dir, project: project)
+    end
+
+    test "resolves project from preloaded task association", %{
+      dir: dir,
+      project: project
+    } do
+      scope = Scope.for_system()
+      ArtifactHelpers.write_qa_manifest(dir)
+
+      %Rail.Pipeline.Schemas.Task{id: task_id} =
+        task = Repo.insert!(%{Rail.Pipeline.Schemas.Task.factory() | project_id: project.id})
+
+      task_with_proj = %{task | project: project}
+
+      LinearMock.mock_file_upload_success(
+        upload_url: "https://api.linear.app/upload/qa_proj_test",
+        asset_url: "https://uploads.linear.app/qa_proj_test/screenshot.png",
+        asset_id: "ast_qa_proj_test"
+      )
+
+      assert {:ok, %QaReport{task_id: ^task_id}} =
+               Artifacts.capture_qa_report(scope, task_with_proj, dir)
+    end
+
+    test "returns error when manifest is not found in directory or subdirectories", %{
+      dir: dir
+    } do
+      scope = Scope.for_system()
+      empty_dir = Path.join(dir, "empty_sub")
+      File.mkdir_p!(empty_dir)
+
+      assert {:error, msg} = Artifacts.capture_qa_report(scope, "tsk_missing", empty_dir)
+      assert msg =~ "QA manifest not found at"
+    end
+
+    test "captures QA report with image artifact that already has URL and no local path", %{
+      dir: dir,
+      project: project
+    } do
+      scope = Scope.for_system()
+
+      ArtifactHelpers.write_qa_manifest(dir, %{
+        "rows" => [
+          %{
+            "id" => "check_url_only",
+            "check" => "Check with existing URL",
+            "result" => "pass",
+            "severity" => "cosmetic",
+            "artifacts" => [
+              %{
+                "name" => "remote.png",
+                "kind" => "image",
+                "url" => "https://example.com/remote.png"
+              }
+            ]
+          }
+        ]
+      })
+
+      assert {:ok,
+              %QaReport{
+                rows: [
+                  %QaRow{
+                    artifacts: [
+                      %QaArtifact{
+                        name: "remote.png",
+                        url: "https://example.com/remote.png"
+                      }
+                    ]
+                  }
+                ]
+              }} = Artifacts.capture_qa_report(scope, "tsk_remote_img", dir, project: project)
+    end
+
+    test "posts Linear comment using explicit owner_user opt", %{
+      dir: dir,
+      project: project,
+      issue: issue
+    } do
+      scope = Scope.for_system()
+      ArtifactHelpers.write_qa_manifest(dir)
+      user = Repo.insert!(User.factory())
+
+      LinearMock.mock_file_upload_success(
+        upload_url: "https://api.linear.app/upload/qa_owner_opt",
+        asset_url: "https://uploads.linear.app/qa_owner_opt/screenshot.png",
+        asset_id: "ast_qa_owner_opt"
+      )
+
+      LinearMock.mock_create_comment_success(%{
+        "id" => "lin_cmt_owner_opt",
+        "body" => "QA Comment"
+      })
+
+      assert {:ok, %QaReport{}} =
+               Artifacts.capture_qa_report(scope, "tsk_explicit_owner", dir,
+                 project: project,
+                 issue: issue,
+                 owner_user: user
+               )
     end
   end
 end

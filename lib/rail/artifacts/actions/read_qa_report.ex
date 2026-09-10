@@ -17,6 +17,11 @@ defmodule Rail.Artifacts.Actions.ReadQaReport do
   defp authorized?(%Scope{user: %{}}), do: true
   defp authorized?(_scope), do: false
 
+  defp resolve_qa_dir(%{worktree_path: path}, opts) when is_binary(path) and path != "" do
+    dir = Keyword.get(opts, :scratch_dir, path)
+    resolve_qa_dir(dir, opts)
+  end
+
   defp resolve_qa_dir(path_or_id, opts) when is_binary(path_or_id) do
     dir = Keyword.get(opts, :scratch_dir, path_or_id)
 
@@ -26,6 +31,9 @@ defmodule Rail.Artifacts.Actions.ReadQaReport do
 
       File.exists?(Path.join([dir, "qa", "manifest.json"])) ->
         Path.join(dir, "qa")
+
+      File.exists?(Path.join([dir, ".axis", "qa", "manifest.json"])) ->
+        Path.join([dir, ".axis", "qa"])
 
       true ->
         dir
