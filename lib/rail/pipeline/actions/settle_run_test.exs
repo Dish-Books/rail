@@ -78,7 +78,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_settle_run_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     # These tests exercise stage transitions, not Linear publishing.
     {:ok, task} = Pipeline.update_task(scope, task.id, %{issue_id: nil})
@@ -907,7 +907,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14502"})
 
-    {:ok, task_qa} = Pipeline.bring_local(system_scope(), issue_14502)
+    {:ok, task_qa} = Pipeline.create_task(issue_14502)
 
     {:ok, task_qa} = Pipeline.update_task(system_scope(), task_qa.id, %{issue_id: nil})
 
@@ -973,7 +973,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14503"})
 
-    {:ok, task_root} = Pipeline.bring_local(system_scope(), issue_14503)
+    {:ok, task_root} = Pipeline.create_task(issue_14503)
 
     {:ok, task_root} = Pipeline.update_task(system_scope(), task_root.id, %{issue_id: nil})
 
@@ -1040,7 +1040,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14504"})
 
-    {:ok, task_wt_root} = Pipeline.bring_local(system_scope(), issue_14504)
+    {:ok, task_wt_root} = Pipeline.create_task(issue_14504)
 
     {:ok, task_wt_root} = Pipeline.update_task(system_scope(), task_wt_root.id, %{issue_id: nil})
 
@@ -1106,7 +1106,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14505"})
 
-    {:ok, task_p} = Pipeline.bring_local(system_scope(), issue_14505)
+    {:ok, task_p} = Pipeline.create_task(issue_14505)
 
     {:ok, task_p} = Pipeline.update_task(system_scope(), task_p.id, %{issue_id: nil})
 
@@ -1741,7 +1741,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14506"})
 
-    {:ok, %Task{id: _task_id2} = task2} = Pipeline.bring_local(system_scope(), issue_14506)
+    {:ok, %Task{id: _task_id2} = task2} = Pipeline.create_task(issue_14506)
 
     {:ok, task2} = Pipeline.update_task(system_scope(), task2.id, %{issue_id: nil})
 
@@ -1835,7 +1835,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14507"})
 
-    {:ok, %Task{id: _task_id2} = task2} = Pipeline.bring_local(system_scope(), issue_14507)
+    {:ok, %Task{id: _task_id2} = task2} = Pipeline.create_task(issue_14507)
 
     {:ok, task2} = Pipeline.update_task(system_scope(), task2.id, %{issue_id: nil})
 
@@ -1897,7 +1897,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14508"})
 
-    {:ok, %Task{id: _task_id3} = task3} = Pipeline.bring_local(system_scope(), issue_14508)
+    {:ok, %Task{id: _task_id3} = task3} = Pipeline.create_task(issue_14508)
 
     {:ok, task3} = Pipeline.update_task(system_scope(), task3.id, %{issue_id: nil})
 
@@ -2070,7 +2070,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14509"})
 
-    {:ok, task2} = Pipeline.bring_local(system_scope(), issue_14509)
+    {:ok, task2} = Pipeline.create_task(issue_14509)
 
     {:ok, task2} = Pipeline.update_task(system_scope(), task2.id, %{issue_id: nil})
 
@@ -2106,7 +2106,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14510"})
 
-    {:ok, task3} = Pipeline.bring_local(system_scope(), issue_14510)
+    {:ok, task3} = Pipeline.create_task(issue_14510)
 
     {:ok, task3} = Pipeline.update_task(system_scope(), task3.id, %{issue_id: nil})
 
@@ -3287,7 +3287,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
       LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14511"})
 
-      {:ok, task2} = Pipeline.bring_local(system_scope(), issue_14511)
+      {:ok, task2} = Pipeline.create_task(issue_14511)
 
       {:ok, task2} = Pipeline.update_task(system_scope(), task2.id, %{issue_id: nil})
 

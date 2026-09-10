@@ -65,7 +65,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_approve_stage_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -237,7 +237,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_approve_stage_10502"})
 
-    {:ok, t_arch} = Pipeline.bring_local(system_scope(), issue_10502)
+    {:ok, t_arch} = Pipeline.create_task(issue_10502)
 
     {:ok, t_arch} =
       Pipeline.update_task(system_scope(), t_arch.id, %{
@@ -257,7 +257,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_approve_stage_10503"})
 
-    {:ok, t_eng} = Pipeline.bring_local(system_scope(), issue_10503)
+    {:ok, t_eng} = Pipeline.create_task(issue_10503)
 
     {:ok, t_eng} =
       Pipeline.update_task(system_scope(), t_eng.id, %{
@@ -277,7 +277,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_approve_stage_10504"})
 
-    {:ok, t_rev} = Pipeline.bring_local(system_scope(), issue_10504)
+    {:ok, t_rev} = Pipeline.create_task(issue_10504)
 
     {:ok, t_rev} =
       Pipeline.update_task(system_scope(), t_rev.id, %{
@@ -297,7 +297,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_approve_stage_10505"})
 
-    {:ok, t_qa} = Pipeline.bring_local(system_scope(), issue_10505)
+    {:ok, t_qa} = Pipeline.create_task(issue_10505)
 
     {:ok, t_qa} =
       Pipeline.update_task(system_scope(), t_qa.id, %{

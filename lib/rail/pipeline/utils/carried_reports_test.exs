@@ -63,7 +63,7 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_carried_reports_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end

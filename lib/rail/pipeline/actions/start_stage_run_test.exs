@@ -68,7 +68,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_start_stage_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     # These tests exercise the runner, not Linear publishing, so detach the issue.
     {:ok, task} = Pipeline.update_task(scope, task.id, %{issue_id: nil})

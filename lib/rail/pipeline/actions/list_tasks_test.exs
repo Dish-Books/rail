@@ -48,7 +48,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_list_tasks_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task}
   end
@@ -69,7 +69,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_list_tasks_7102"})
 
-    {:ok, %Task{id: id2}} = Pipeline.bring_local(system_scope(), issue_7102)
+    {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7102)
 
     system_scope = Scope.for_system()
     user_scope = Scope.for_user(%{admin: false})
@@ -102,7 +102,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_list_tasks_7103"})
 
-    {:ok, %Task{id: eng_q_id}} = Pipeline.bring_local(system_scope(), issue_7103)
+    {:ok, %Task{id: eng_q_id}} = Pipeline.create_task(issue_7103)
 
     {:ok, %Task{id: eng_q_id}} =
       Pipeline.update_task(system_scope(), %Task{id: eng_q_id}.id, %{
@@ -120,7 +120,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_list_tasks_7104"})
 
-    {:ok, _t_eng_running} = Pipeline.bring_local(system_scope(), issue_7104)
+    {:ok, _t_eng_running} = Pipeline.create_task(issue_7104)
 
     {:ok, _t_eng_running} =
       Pipeline.update_task(system_scope(), _t_eng_running.id, %{
@@ -154,7 +154,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_list_tasks_7105"})
 
-    {:ok, %Task{id: id2}} = Pipeline.bring_local(system_scope(), issue_7105)
+    {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7105)
 
     scope = Scope.for_system()
 
@@ -212,7 +212,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_list_tasks_7106"})
 
-    {:ok, %Task{id: id2}} = Pipeline.bring_local(system_scope(), issue_7106)
+    {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7106)
 
     system_scope = Scope.for_system()
     user_scope = Scope.for_user(%{admin: false})

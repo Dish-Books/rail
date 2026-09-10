@@ -65,7 +65,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_mark_pr_ready_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -100,7 +100,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_mark_pr_ready_8903"})
 
-    {:ok, %Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_8903)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8903)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -155,7 +155,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_mark_pr_ready_8906"})
 
-    {:ok, %Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_8906)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8906)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -208,7 +208,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_mark_pr_ready_8908"})
 
-    {:ok, %Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_8908)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8908)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -257,7 +257,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_mark_pr_ready_8910"})
 
-    {:ok, task} = Pipeline.bring_local(system_scope(), issue_8910)
+    {:ok, task} = Pipeline.create_task(issue_8910)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -303,7 +303,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_mark_pr_ready_8912"})
 
-    {:ok, task} = Pipeline.bring_local(system_scope(), issue_8912)
+    {:ok, task} = Pipeline.create_task(issue_8912)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -358,7 +358,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_mark_pr_ready_8914"})
 
-    {:ok, task} = Pipeline.bring_local(system_scope(), issue_8914)
+    {:ok, task} = Pipeline.create_task(issue_8914)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{

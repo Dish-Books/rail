@@ -293,7 +293,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13416"})
 
-    {:ok, _task} = Pipeline.bring_local(system_scope(), issue_13416)
+    {:ok, _task} = Pipeline.create_task(issue_13416)
 
     {:ok, _task} =
       Pipeline.update_task(system_scope(), _task.id, %{
@@ -357,7 +357,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13417"})
 
-    {:ok, _task} = Pipeline.bring_local(system_scope(), issue_13417)
+    {:ok, _task} = Pipeline.create_task(issue_13417)
 
     {:ok, _task} =
       Pipeline.update_task(system_scope(), _task.id, %{
@@ -379,7 +379,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13418"})
 
-    {:ok, _task2} = Pipeline.bring_local(system_scope(), issue_13418)
+    {:ok, _task2} = Pipeline.create_task(issue_13418)
 
     {:ok, _task2} =
       Pipeline.update_task(system_scope(), _task2.id, %{
@@ -449,7 +449,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13419"})
 
-    {:ok, _task1} = Pipeline.bring_local(system_scope(), issue_13419)
+    {:ok, _task1} = Pipeline.create_task(issue_13419)
 
     {:ok, _task1} =
       Pipeline.update_task(system_scope(), _task1.id, %{
@@ -467,7 +467,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13420"})
 
-    {:ok, _task2} = Pipeline.bring_local(system_scope(), issue_13420)
+    {:ok, _task2} = Pipeline.create_task(issue_13420)
 
     {:ok, _task2} =
       Pipeline.update_task(system_scope(), _task2.id, %{
@@ -530,7 +530,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13421"})
 
-    {:ok, %Task{id: merged_id, title: merged_title}} = Pipeline.bring_local(system_scope(), issue_13421)
+    {:ok, %Task{id: merged_id, title: merged_title}} = Pipeline.create_task(issue_13421)
 
     {:ok, %Task{id: merged_id, title: merged_title}} =
       Pipeline.update_task(system_scope(), %Task{id: merged_id, title: merged_title}.id, %{
@@ -631,7 +631,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13422"})
 
-    {:ok, %Task{id: task_id, title: _task_title}} = Pipeline.bring_local(system_scope(), issue_13422)
+    {:ok, %Task{id: task_id, title: _task_title}} = Pipeline.create_task(issue_13422)
 
     {:ok, %Task{id: task_id, title: _task_title}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id, title: _task_title}.id, %{
@@ -663,7 +663,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, orphan_issue} = Issues.capture_issue(system_scope(), project, "Orphan question task")
     LinearMock.mock_update_issue_success(%{"id" => "lin_overview_orphan"})
-    {:ok, %Task{id: orphan_task_id} = orphan_task} = Pipeline.bring_local(system_scope(), orphan_issue)
+    {:ok, %Task{id: orphan_task_id} = orphan_task} = Pipeline.create_task(orphan_issue)
 
     {:ok, %Question{prompt: q_orphan_prompt}} =
       Pipeline.register_question(orphan_task, %{
@@ -753,7 +753,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13423"})
 
-    {:ok, %Task{id: task_id}} = Pipeline.bring_local(system_scope(), issue_13423)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13423)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -852,7 +852,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13424"})
 
-    {:ok, %Task{id: arch_id, title: arch_title}} = Pipeline.bring_local(system_scope(), issue_13424)
+    {:ok, %Task{id: arch_id, title: arch_title}} = Pipeline.create_task(issue_13424)
 
     {:ok, %Task{id: arch_id, title: arch_title}} =
       Pipeline.update_task(system_scope(), %Task{id: arch_id, title: arch_title}.id, %{
@@ -871,7 +871,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13425"})
 
-    {:ok, %Task{id: prod_id, title: prod_title}} = Pipeline.bring_local(system_scope(), issue_13425)
+    {:ok, %Task{id: prod_id, title: prod_title}} = Pipeline.create_task(issue_13425)
 
     {:ok, %Task{id: prod_id, title: prod_title}} =
       Pipeline.update_task(system_scope(), %Task{id: prod_id, title: prod_title}.id, %{
@@ -889,7 +889,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13426"})
 
-    {:ok, %Task{id: eng_id, title: eng_title}} = Pipeline.bring_local(system_scope(), issue_13426)
+    {:ok, %Task{id: eng_id, title: eng_title}} = Pipeline.create_task(issue_13426)
 
     {:ok, %Task{id: eng_id, title: eng_title}} =
       Pipeline.update_task(system_scope(), %Task{id: eng_id, title: eng_title}.id, %{
@@ -987,7 +987,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13427"})
 
-    {:ok, %Task{id: failed_id, title: failed_title}} = Pipeline.bring_local(system_scope(), issue_13427)
+    {:ok, %Task{id: failed_id, title: failed_title}} = Pipeline.create_task(issue_13427)
 
     {:ok, %Task{id: failed_id, title: failed_title}} =
       Pipeline.update_task(system_scope(), %Task{id: failed_id, title: failed_title}.id, %{
@@ -1006,7 +1006,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13428"})
 
-    {:ok, %Task{id: merge_id, title: merge_title}} = Pipeline.bring_local(system_scope(), issue_13428)
+    {:ok, %Task{id: merge_id, title: merge_title}} = Pipeline.create_task(issue_13428)
 
     {:ok, %Task{id: merge_id, title: merge_title}} =
       Pipeline.update_task(system_scope(), %Task{id: merge_id, title: merge_title}.id, %{
@@ -1025,7 +1025,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13429"})
 
-    {:ok, %Task{id: conflict_id, title: conflict_title}} = Pipeline.bring_local(system_scope(), issue_13429)
+    {:ok, %Task{id: conflict_id, title: conflict_title}} = Pipeline.create_task(issue_13429)
 
     {:ok, %Task{id: conflict_id, title: conflict_title}} =
       Pipeline.update_task(system_scope(), %Task{id: conflict_id, title: conflict_title}.id, %{
@@ -1133,7 +1133,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13430"})
 
-    {:ok, %Task{id: t_queued_id}} = Pipeline.bring_local(system_scope(), issue_13430)
+    {:ok, %Task{id: t_queued_id}} = Pipeline.create_task(issue_13430)
 
     {:ok, %Task{id: t_queued_id}} =
       Pipeline.update_task(system_scope(), %Task{id: t_queued_id}.id, %{
@@ -1151,7 +1151,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13431"})
 
-    {:ok, %Task{id: t_rebase_id}} = Pipeline.bring_local(system_scope(), issue_13431)
+    {:ok, %Task{id: t_rebase_id}} = Pipeline.create_task(issue_13431)
 
     {:ok, %Task{id: t_rebase_id}} =
       Pipeline.update_task(system_scope(), %Task{id: t_rebase_id}.id, %{
@@ -1170,7 +1170,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13432"})
 
-    {:ok, %Task{id: t_running_id}} = Pipeline.bring_local(system_scope(), issue_13432)
+    {:ok, %Task{id: t_running_id}} = Pipeline.create_task(issue_13432)
 
     {:ok, %Task{id: t_running_id}} =
       Pipeline.update_task(system_scope(), %Task{id: t_running_id}.id, %{
@@ -1317,7 +1317,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13433"})
 
-    {:ok, %Task{id: t_eng_id}} = Pipeline.bring_local(system_scope(), issue_13433)
+    {:ok, %Task{id: t_eng_id}} = Pipeline.create_task(issue_13433)
 
     {:ok, %Task{id: t_eng_id}} =
       Pipeline.update_task(system_scope(), %Task{id: t_eng_id}.id, %{
@@ -1337,7 +1337,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13434"})
 
-    {:ok, %Task{id: t_arch_id}} = Pipeline.bring_local(system_scope(), issue_13434)
+    {:ok, %Task{id: t_arch_id}} = Pipeline.create_task(issue_13434)
 
     {:ok, %Task{id: t_arch_id}} =
       Pipeline.update_task(system_scope(), %Task{id: t_arch_id}.id, %{
@@ -1358,7 +1358,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13435"})
 
-    {:ok, %Task{id: t_qa_id}} = Pipeline.bring_local(system_scope(), issue_13435)
+    {:ok, %Task{id: t_qa_id}} = Pipeline.create_task(issue_13435)
 
     {:ok, %Task{id: t_qa_id}} =
       Pipeline.update_task(system_scope(), %Task{id: t_qa_id}.id, %{

@@ -48,7 +48,7 @@ defmodule Rail.Pipeline.Schemas.PlanTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_plan_schema_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task}
   end

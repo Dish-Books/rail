@@ -62,7 +62,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_start_rebase_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -95,7 +95,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_start_rebase_8803"})
 
-    {:ok, task_running} = Pipeline.bring_local(system_scope(), issue_8803)
+    {:ok, task_running} = Pipeline.create_task(issue_8803)
 
     {:ok, task_running} =
       Pipeline.update_task(system_scope(), task_running.id, %{
@@ -115,7 +115,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_start_rebase_8804"})
 
-    {:ok, task_chatting} = Pipeline.bring_local(system_scope(), issue_8804)
+    {:ok, task_chatting} = Pipeline.create_task(issue_8804)
 
     {:ok, task_chatting} =
       Pipeline.update_task(system_scope(), task_chatting.id, %{
@@ -169,7 +169,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_start_rebase_8807"})
 
-    {:ok, %Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_8807)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8807)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -228,7 +228,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_start_rebase_8809"})
 
-    {:ok, task} = Pipeline.bring_local(system_scope(), issue_8809)
+    {:ok, task} = Pipeline.create_task(issue_8809)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{

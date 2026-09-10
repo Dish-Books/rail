@@ -295,7 +295,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
 
       LinearMock.mock_update_issue_success(%{"id" => "lin_task_capture_demo_12202"})
 
-      {:ok, task} = Pipeline.bring_local(system_scope(), issue_12202)
+      {:ok, task} = Pipeline.create_task(issue_12202)
 
       {:ok, task} =
         Pipeline.update_task(system_scope(), task.id, %{

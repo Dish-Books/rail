@@ -74,7 +74,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_schema_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -330,7 +330,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
       LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_schema_12602"})
 
-      {:ok, task_without_run} = Pipeline.bring_local(system_scope(), issue_12602)
+      {:ok, task_without_run} = Pipeline.create_task(issue_12602)
 
       {:ok, task_without_run} =
         Pipeline.update_task(system_scope(), task_without_run.id, %{
@@ -382,7 +382,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
       LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_schema_12603"})
 
-      {:ok, task_no_designer} = Pipeline.bring_local(system_scope(), issue_12603)
+      {:ok, task_no_designer} = Pipeline.create_task(issue_12603)
 
       {:ok, task_no_designer} =
         Pipeline.update_task(system_scope(), task_no_designer.id, %{

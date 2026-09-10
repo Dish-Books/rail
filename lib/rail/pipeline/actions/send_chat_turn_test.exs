@@ -75,7 +75,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_send_chat_11227"})
 
-    {:ok, task} = Pipeline.bring_local(system_scope(), issue_11227)
+    {:ok, task} = Pipeline.create_task(issue_11227)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -496,7 +496,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     {:ok, bad_issue} = Issues.capture_issue(system_scope(), bad_project, "Bad Worktree Task")
     LinearMock.mock_update_issue_success(%{"id" => "lin_send_chat_bad"})
-    {:ok, bad_task} = Pipeline.bring_local(system_scope(), bad_issue)
+    {:ok, bad_task} = Pipeline.create_task(bad_issue)
 
     {:ok, %Task{id: bad_task_id} = bad_task} =
       Pipeline.update_task(system_scope(), bad_task.id, %{
@@ -652,7 +652,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_send_chat_11228"})
 
-    {:ok, missing_role_task} = Pipeline.bring_local(system_scope(), issue_11228)
+    {:ok, missing_role_task} = Pipeline.create_task(issue_11228)
 
     {:ok, missing_role_rr} =
       Runs.create_role_run(%{
@@ -717,7 +717,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_send_chat_11229"})
 
-    {:ok, orphan_same_task} = Pipeline.bring_local(system_scope(), issue_11229)
+    {:ok, orphan_same_task} = Pipeline.create_task(issue_11229)
 
     {:ok, orphan_same_task} =
       Pipeline.update_task(system_scope(), orphan_same_task.id, %{
@@ -734,7 +734,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_send_chat_11230"})
 
-    {:ok, orphan_other_task} = Pipeline.bring_local(system_scope(), issue_11230)
+    {:ok, orphan_other_task} = Pipeline.create_task(issue_11230)
 
     {:ok, orphan_other_task} =
       Pipeline.update_task(system_scope(), orphan_other_task.id, %{

@@ -210,7 +210,7 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
 
       LinearMock.mock_update_issue_success(%{"id" => "lin_task_materialize_12404"})
 
-      {:ok, task} = Pipeline.bring_local(system_scope(), issue_12404)
+      {:ok, task} = Pipeline.create_task(issue_12404)
 
       {:ok, _qa} =
         %QaReport{}

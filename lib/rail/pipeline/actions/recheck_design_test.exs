@@ -68,7 +68,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_recheck_design_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end

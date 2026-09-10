@@ -260,7 +260,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
 
       LinearMock.mock_update_issue_success(%{"id" => "lin_task_capture_qa_12306"})
 
-      {:ok, %Rail.Pipeline.Schemas.Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_12306)
+      {:ok, %Rail.Pipeline.Schemas.Task{id: _task_id} = task} = Pipeline.create_task(issue_12306)
 
       {:ok, %Rail.Pipeline.Schemas.Task{id: task_id} = task} =
         Pipeline.update_task(system_scope(), task.id, %{
@@ -318,7 +318,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
 
       LinearMock.mock_update_issue_success(%{"id" => "lin_task_capture_qa_12307"})
 
-      {:ok, %Rail.Pipeline.Schemas.Task{id: task_id} = task} = Pipeline.bring_local(system_scope(), issue_12307)
+      {:ok, %Rail.Pipeline.Schemas.Task{id: task_id} = task} = Pipeline.create_task(issue_12307)
 
       task_with_proj = %{task | project: project}
 

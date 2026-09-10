@@ -65,7 +65,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_answer_question_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -311,7 +311,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_answer_question_7802"})
 
-    {:ok, task_no_role} = Pipeline.bring_local(system_scope(), issue_7802)
+    {:ok, task_no_role} = Pipeline.create_task(issue_7802)
 
     {:ok, task_no_role} =
       Pipeline.update_task(system_scope(), task_no_role.id, %{

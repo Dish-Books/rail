@@ -45,7 +45,7 @@ defmodule Rail.Pipeline.Actions.ExpandDiffGapTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_expand_diff_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task}
   end

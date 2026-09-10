@@ -70,7 +70,7 @@ defmodule Rail.PeriodicTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_periodic_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -181,7 +181,7 @@ defmodule Rail.PeriodicTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12704"})
 
-    {:ok, %Task{id: _t1_id} = t1} = Pipeline.bring_local(system_scope(), issue_12704)
+    {:ok, %Task{id: _t1_id} = t1} = Pipeline.create_task(issue_12704)
 
     {:ok, %Task{id: t1_id} = t1} =
       Pipeline.update_task(system_scope(), t1.id, %{
@@ -202,7 +202,7 @@ defmodule Rail.PeriodicTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12705"})
 
-    {:ok, %Task{id: _t2_id} = t2} = Pipeline.bring_local(system_scope(), issue_12705)
+    {:ok, %Task{id: _t2_id} = t2} = Pipeline.create_task(issue_12705)
 
     {:ok, %Task{id: t2_id} = t2} =
       Pipeline.update_task(system_scope(), t2.id, %{
@@ -223,7 +223,7 @@ defmodule Rail.PeriodicTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12706"})
 
-    {:ok, _task_no_pr} = Pipeline.bring_local(system_scope(), issue_12706)
+    {:ok, _task_no_pr} = Pipeline.create_task(issue_12706)
 
     {:ok, _task_no_pr} =
       Pipeline.update_task(system_scope(), _task_no_pr.id, %{
@@ -242,7 +242,7 @@ defmodule Rail.PeriodicTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12707"})
 
-    {:ok, _task_merged} = Pipeline.bring_local(system_scope(), issue_12707)
+    {:ok, _task_merged} = Pipeline.create_task(issue_12707)
 
     {:ok, _task_merged} =
       Pipeline.update_task(system_scope(), _task_merged.id, %{
@@ -261,7 +261,7 @@ defmodule Rail.PeriodicTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12708"})
 
-    {:ok, _task_merged_at} = Pipeline.bring_local(system_scope(), issue_12708)
+    {:ok, _task_merged_at} = Pipeline.create_task(issue_12708)
 
     {:ok, _task_merged_at} =
       Pipeline.update_task(system_scope(), _task_merged_at.id, %{
@@ -319,7 +319,7 @@ defmodule Rail.PeriodicTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12710"})
 
-    {:ok, %Task{id: _err_id} = err_task} = Pipeline.bring_local(system_scope(), issue_12710)
+    {:ok, %Task{id: _err_id} = err_task} = Pipeline.create_task(issue_12710)
 
     {:ok, %Task{id: err_id} = err_task} =
       Pipeline.update_task(system_scope(), err_task.id, %{
@@ -338,7 +338,7 @@ defmodule Rail.PeriodicTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12711"})
 
-    {:ok, %Task{id: _ok_id} = ok_task} = Pipeline.bring_local(system_scope(), issue_12711)
+    {:ok, %Task{id: _ok_id} = ok_task} = Pipeline.create_task(issue_12711)
 
     {:ok, %Task{id: ok_id} = ok_task} =
       Pipeline.update_task(system_scope(), ok_task.id, %{

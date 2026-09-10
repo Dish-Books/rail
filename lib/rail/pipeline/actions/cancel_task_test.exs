@@ -62,7 +62,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_cancel_task_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -106,7 +106,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_cancel_task_8104"})
 
-    {:ok, %Task{id: task_id} = task} = Pipeline.bring_local(system_scope(), issue_8104)
+    {:ok, %Task{id: task_id} = task} = Pipeline.create_task(issue_8104)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -153,7 +153,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_cancel_task_8106"})
 
-    {:ok, task} = Pipeline.bring_local(system_scope(), issue_8106)
+    {:ok, task} = Pipeline.create_task(issue_8106)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -200,7 +200,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_cancel_task_8108"})
 
-    {:ok, task} = Pipeline.bring_local(system_scope(), issue_8108)
+    {:ok, task} = Pipeline.create_task(issue_8108)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -254,7 +254,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_cancel_task_8110"})
 
-    {:ok, task} = Pipeline.bring_local(system_scope(), issue_8110)
+    {:ok, task} = Pipeline.create_task(issue_8110)
 
     assert {:ok, %Task{stage_state: :failed}} =
              Pipeline.cancel_task(task, dispatcher: nil)
@@ -269,7 +269,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_cancel_task_8111"})
 
-    {:ok, task2} = Pipeline.bring_local(system_scope(), issue_8111)
+    {:ok, task2} = Pipeline.create_task(issue_8111)
 
     assert {:ok, %Task{stage_state: :failed}} =
              Pipeline.cancel_task(Scope.for_system(), task2, dispatcher: nil)

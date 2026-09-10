@@ -63,7 +63,7 @@ defmodule Rail.Pipeline.DispatcherTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_dispatcher_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -384,7 +384,7 @@ defmodule Rail.Pipeline.DispatcherTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_dispatcher_13302"})
 
-    {:ok, task} = Pipeline.bring_local(system_scope(), issue_13302)
+    {:ok, task} = Pipeline.create_task(issue_13302)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -422,7 +422,7 @@ defmodule Rail.Pipeline.DispatcherTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_dispatcher_13303"})
 
-    {:ok, %Task{id: _id2} = t2} = Pipeline.bring_local(system_scope(), issue_13303)
+    {:ok, %Task{id: _id2} = t2} = Pipeline.create_task(issue_13303)
 
     {:ok, %Task{id: id2} = t2} =
       Pipeline.update_task(system_scope(), t2.id, %{
@@ -583,7 +583,7 @@ defmodule Rail.Pipeline.DispatcherTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_dispatcher_13304"})
 
-    {:ok, not_waiting} = Pipeline.bring_local(system_scope(), issue_13304)
+    {:ok, not_waiting} = Pipeline.create_task(issue_13304)
 
     {:ok, not_waiting} =
       Pipeline.update_task(system_scope(), not_waiting.id, %{
@@ -726,7 +726,7 @@ defmodule Rail.Pipeline.DispatcherTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_dispatcher_13305"})
 
-    {:ok, %Task{id: past_task_id}} = Pipeline.bring_local(system_scope(), issue_13305)
+    {:ok, %Task{id: past_task_id}} = Pipeline.create_task(issue_13305)
 
     {:ok, %Task{id: past_task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: past_task_id}.id, %{
@@ -877,7 +877,7 @@ defmodule Rail.Pipeline.DispatcherTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_dispatcher_13306"})
 
-    {:ok, task_armed} = Pipeline.bring_local(system_scope(), issue_13306)
+    {:ok, task_armed} = Pipeline.create_task(issue_13306)
 
     {:ok, task_armed} =
       Pipeline.update_task(system_scope(), task_armed.id, %{

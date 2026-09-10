@@ -144,7 +144,7 @@ defmodule Rail.E2E.TicketLifecycleTest do
     })
 
     assert {:ok, %Task{id: task_id, stage: :product, stage_state: :queued} = task} =
-             Rail.Pipeline.bring_local(scope, issue, scope.user)
+             Rail.Pipeline.create_task(issue)
 
     # -------------------------------------------------------------------------
     # 2. Product run starts and settles -> updates ticket, advances to :architect
@@ -397,7 +397,7 @@ defmodule Rail.E2E.TicketLifecycleTest do
     })
 
     assert {:ok, %Task{id: task_id, stage: :product, stage_state: :queued} = task} =
-             Rail.Pipeline.bring_local(scope, issue, scope.user)
+             Rail.Pipeline.create_task(issue)
 
     LinearMock.mock_update_issue_success(%{
       "id" => "lin_iss_102",

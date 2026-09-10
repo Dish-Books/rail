@@ -46,7 +46,7 @@ defmodule Rail.Pipeline.Actions.SetDiffFileViewedTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_set_diff_viewed_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task}
   end

@@ -47,7 +47,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_skip_ready_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task}
   end
@@ -87,7 +87,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_skip_ready_6601"})
 
-    {:ok, t_running} = Pipeline.bring_local(system_scope(), issue_6601)
+    {:ok, t_running} = Pipeline.create_task(issue_6601)
 
     {:ok, t_running} =
       Pipeline.update_task(system_scope(), t_running, %{
@@ -117,7 +117,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_skip_ready_6602"})
 
-    {:ok, t_prod} = Pipeline.bring_local(system_scope(), issue_6602)
+    {:ok, t_prod} = Pipeline.create_task(issue_6602)
 
     {:ok, t_prod} =
       Pipeline.update_task(system_scope(), t_prod, %{
@@ -137,7 +137,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_skip_ready_6603"})
 
-    {:ok, t_arch} = Pipeline.bring_local(system_scope(), issue_6603)
+    {:ok, t_arch} = Pipeline.create_task(issue_6603)
 
     {:ok, t_arch} =
       Pipeline.update_task(system_scope(), t_arch, %{
@@ -189,7 +189,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_skip_ready_6604"})
 
-    {:ok, t_lead} = Pipeline.bring_local(system_scope(), issue_6604)
+    {:ok, t_lead} = Pipeline.create_task(issue_6604)
 
     {:ok, t_lead} =
       Pipeline.update_task(system_scope(), t_lead, %{

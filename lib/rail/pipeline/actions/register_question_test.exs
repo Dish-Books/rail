@@ -68,7 +68,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_register_question_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -281,7 +281,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_register_question_7902"})
 
-    {:ok, task} = Pipeline.bring_local(system_scope(), issue_7902)
+    {:ok, task} = Pipeline.create_task(issue_7902)
     assert {:error, :invalid_prompt} = Pipeline.register_question(task, %{prompt: "   "})
     assert {:error, :no_question_detected} = Pipeline.register_question(task, "Just some prose text")
     assert {:error, :invalid_question_attrs} = Pipeline.register_question(task, 12_345)

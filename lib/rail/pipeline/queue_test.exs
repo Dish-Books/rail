@@ -61,7 +61,7 @@ defmodule Rail.Pipeline.QueueTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_queue_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -119,7 +119,7 @@ defmodule Rail.Pipeline.QueueTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_queue_10102"})
 
-    {:ok, _chat_task} = Pipeline.bring_local(system_scope(), issue_10102)
+    {:ok, _chat_task} = Pipeline.create_task(issue_10102)
 
     {:ok, _chat_task} =
       Pipeline.update_task(system_scope(), _chat_task.id, %{
@@ -142,7 +142,7 @@ defmodule Rail.Pipeline.QueueTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_queue_10103"})
 
-    {:ok, _another_running} = Pipeline.bring_local(system_scope(), issue_10103)
+    {:ok, _another_running} = Pipeline.create_task(issue_10103)
 
     {:ok, _another_running} =
       Pipeline.update_task(system_scope(), _another_running.id, %{
@@ -208,7 +208,7 @@ defmodule Rail.Pipeline.QueueTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_queue_10104"})
 
-    {:ok, %Task{id: t2_id}} = Pipeline.bring_local(system_scope(), issue_10104)
+    {:ok, %Task{id: t2_id}} = Pipeline.create_task(issue_10104)
 
     {:ok, %Task{id: t2_id}} =
       Pipeline.update_task(system_scope(), %Task{id: t2_id}.id, %{
@@ -226,7 +226,7 @@ defmodule Rail.Pipeline.QueueTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_queue_10105"})
 
-    {:ok, _t3} = Pipeline.bring_local(system_scope(), issue_10105)
+    {:ok, _t3} = Pipeline.create_task(issue_10105)
 
     {:ok, _t3} =
       Pipeline.update_task(system_scope(), _t3.id, %{
@@ -271,7 +271,7 @@ defmodule Rail.Pipeline.QueueTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_queue_10106"})
 
-    {:ok, past_retry_task} = Pipeline.bring_local(system_scope(), issue_10106)
+    {:ok, past_retry_task} = Pipeline.create_task(issue_10106)
 
     {:ok, past_retry_task} =
       Pipeline.update_task(system_scope(), past_retry_task.id, %{
@@ -290,7 +290,7 @@ defmodule Rail.Pipeline.QueueTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_queue_10107"})
 
-    {:ok, nil_retry_task} = Pipeline.bring_local(system_scope(), issue_10107)
+    {:ok, nil_retry_task} = Pipeline.create_task(issue_10107)
 
     {:ok, nil_retry_task} =
       Pipeline.update_task(system_scope(), nil_retry_task.id, %{
@@ -342,7 +342,7 @@ defmodule Rail.Pipeline.QueueTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_queue_10109"})
 
-    {:ok, running_task} = Pipeline.bring_local(system_scope(), issue_10109)
+    {:ok, running_task} = Pipeline.create_task(issue_10109)
 
     {:ok, _running_task} =
       Pipeline.update_task(system_scope(), running_task.id, %{stage: :design, stage_state: :running})
@@ -377,7 +377,7 @@ defmodule Rail.Pipeline.QueueTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_queue_10110"})
 
-    {:ok, other_stage_task} = Pipeline.bring_local(system_scope(), issue_10110)
+    {:ok, other_stage_task} = Pipeline.create_task(issue_10110)
 
     {:ok, _other_stage_task} =
       Pipeline.update_task(system_scope(), other_stage_task.id, %{stage: :engineer, stage_state: :queued})

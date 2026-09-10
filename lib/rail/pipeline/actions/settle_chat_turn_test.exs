@@ -77,7 +77,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_chat_11030"})
 
-    {:ok, task} = Pipeline.bring_local(system_scope(), issue_11030)
+    {:ok, task} = Pipeline.create_task(issue_11030)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -645,7 +645,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_chat_11031"})
 
-    {:ok, task_no_rev} = Pipeline.bring_local(system_scope(), issue_11031)
+    {:ok, task_no_rev} = Pipeline.create_task(issue_11031)
 
     {:ok, task_no_rev} =
       Pipeline.update_task(system_scope(), task_no_rev.id, %{

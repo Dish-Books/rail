@@ -66,7 +66,7 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_decline_demo_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
