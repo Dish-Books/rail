@@ -92,13 +92,21 @@ defmodule Rail.Runs.SpawnerTest do
         skip_follower: true
       )
 
-    # Wait briefly for execution
-    Process.sleep(150)
+    # Wait for the child to write its environment to the stream file.
+    content =
+      Enum.reduce_while(1..200, "", fn _i, _acc ->
+        content = if File.exists?(stream_path), do: File.read!(stream_path), else: ""
+
+        if content =~ "gh_test_123" do
+          {:halt, content}
+        else
+          Process.sleep(10)
+          {:cont, content}
+        end
+      end)
 
     assert File.exists?(stream_path)
     assert File.exists?("#{stream_path}.err")
-
-    content = File.read!(stream_path)
     assert content =~ "gh_test_123"
     assert content =~ scratch_dir
     assert content =~ stream_path
