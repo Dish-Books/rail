@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.RunEvent
   alias Rail.Scope
 
   test "returns not_found when task cannot be resolved" do
@@ -133,5 +134,76 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
     assert {:ok, %Task{stage: :engineer}} = Pipeline.request_changes(user_scope, task.id, "Need rework")
     assert {:ok, %Task{stage: :engineer}} = Pipeline.request_changes(user_scope, task.id, "Need rework", stage: :engineer)
     assert {:error, :not_found} = Pipeline.request_changes(user_scope, :invalid_task, "Need rework")
+  end
+
+  test "formats pending_answer with design_revise_brief when direction is picked at design stage" do
+    project = create_test_project()
+    role_des = create_test_role(%{project_id: project.id, stage: :design, name: "Designer"})
+
+    task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :design,
+        stage_state: :awaiting_approval
+      })
+
+    create_test_design(%{
+      task_id: task.id,
+      version: 1,
+      picked_key: "dir-1",
+      directions: [%{key: "dir-1", title: "Minimal", notes: "Clean", still_url: "https://linear.app/s1.png"}]
+    })
+
+    create_test_role_run(%{
+      task_id: task.id,
+      role_id: role_des.id,
+      status: :finished
+    })
+
+    assert {:ok, %Task{stage: :design, stage_state: :queued}} =
+             Pipeline.request_changes(task, "Please make headers bolder")
+
+    des_run = Repo.one(from r in RoleRun, where: r.task_id == ^task.id and r.role_id == ^role_des.id)
+    assert des_run.pending_answer =~ "The human requested revisions to the picked design:"
+    assert des_run.pending_answer =~ "Please make headers bolder"
+    assert des_run.pending_answer =~ "Revise the design on the canvas to incorporate this feedback"
+
+    events = Repo.all(from e in RunEvent, where: e.role_run_id == ^des_run.id, order_by: [asc: e.seq])
+    assert Enum.any?(events, fn e -> e.line == "[human] Please make headers bolder" end)
+  end
+
+  test "does not wrap comment in design_revise_brief before a pick at design stage" do
+    project = create_test_project()
+    role_des = create_test_role(%{project_id: project.id, stage: :design, name: "Designer"})
+
+    task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :design,
+        stage_state: :awaiting_approval
+      })
+
+    create_test_design(%{
+      task_id: task.id,
+      version: 1,
+      picked_key: nil,
+      directions: [%{key: "dir-1", title: "Minimal", notes: "Clean", still_url: "https://linear.app/s1.png"}]
+    })
+
+    create_test_role_run(%{
+      task_id: task.id,
+      role_id: role_des.id,
+      status: :finished
+    })
+
+    assert {:ok, %Task{stage: :design, stage_state: :queued}} =
+             Pipeline.request_changes(task, "None of these work, try a dark theme")
+
+    des_run = Repo.one(from r in RoleRun, where: r.task_id == ^task.id and r.role_id == ^role_des.id)
+    assert des_run.pending_answer == "None of these work, try a dark theme"
+    refute des_run.pending_answer =~ "Revise the design on the canvas"
+
+    events = Repo.all(from e in RunEvent, where: e.role_run_id == ^des_run.id, order_by: [asc: e.seq])
+    assert Enum.any?(events, fn e -> e.line == "[human] None of these work, try a dark theme" end)
   end
 end

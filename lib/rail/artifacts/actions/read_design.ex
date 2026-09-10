@@ -27,6 +27,9 @@ defmodule Rail.Artifacts.Actions.ReadDesign do
       File.exists?(Path.join([dir, "design", "manifest.json"])) ->
         Path.join(dir, "design")
 
+      File.exists?(Path.join([dir, ".axis", "design", "manifest.json"])) ->
+        Path.join([dir, ".axis", "design"])
+
       true ->
         dir
     end

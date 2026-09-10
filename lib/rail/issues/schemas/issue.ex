@@ -3,8 +3,10 @@ defmodule Rail.Issues.Schemas.Issue do
   use Rail.Schema
 
   alias Rail.Domain.Enums.IssueState
+  alias Rail.Domain.Enums.TaskPriority
   alias Rail.Projects.Schemas.Project
 
+  @derive {LiveSync.Watch, subscription_key: :project_id, table: "issues"}
   @primary_key {:id, UXID, autogenerate: true, prefix: "iss"}
   schema "issues" do
     belongs_to :project, Project
@@ -12,6 +14,7 @@ defmodule Rail.Issues.Schemas.Issue do
     field :identifier, :string
     field :title, :string
     field :description, :string
+    field :priority, TaskPriority, default: :medium
     field :state, IssueState
     field :state_name, :string
     field :branch_name, :string
@@ -27,6 +30,7 @@ defmodule Rail.Issues.Schemas.Issue do
     :identifier,
     :title,
     :description,
+    :priority,
     :state,
     :state_name,
     :branch_name,
@@ -60,6 +64,7 @@ defmodule Rail.Issues.Schemas.Issue do
       identifier: "ENG-#{id}",
       title: "Issue #{id}",
       description: "Description for issue #{id}",
+      priority: :medium,
       state: :triage,
       state_name: "Triage",
       branch_name: "eng-#{id}-branch",

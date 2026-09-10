@@ -31,8 +31,8 @@ defmodule Rail.Runs.Schemas.RoleRun do
     field :stage_fingerprint_head_sha, :string
     field :stage_fingerprint_dirty_digest, :string
 
-    embeds_one :usage, TaskUsage, on_replace: :update
-    embeds_one :chat_usage, TaskUsage, on_replace: :update
+    embeds_one :usage, TaskUsage, on_replace: :delete
+    embeds_one :chat_usage, TaskUsage, on_replace: :delete
 
     has_many :runs, Run
     has_many :run_events, RunEvent
@@ -98,6 +98,27 @@ defmodule Rail.Runs.Schemas.RoleRun do
       pruned: false
     }
   end
+
+  @doc """
+  Returns true if this role run has started execution previously.
+  """
+  def has_started?(%__MODULE__{} = role_run) do
+    is_struct(role_run.started_at, DateTime) or (role_run.attempts || 0) > 0
+  end
+
+  def has_started?(_other), do: false
+
+  @doc """
+  Returns true if this role run can accept an interactive chat turn:
+  it must have previously started and carry a non-empty conversation ID.
+  """
+  def can_chat?(%__MODULE__{} = role_run) do
+    has_started?(role_run) and
+      is_binary(role_run.conversation_id) and
+      String.trim(role_run.conversation_id) != ""
+  end
+
+  def can_chat?(_other), do: false
 
   defp handle_embed(changeset, field, attrs) do
     case Map.get(attrs, field) || Map.get(attrs, to_string(field)) do

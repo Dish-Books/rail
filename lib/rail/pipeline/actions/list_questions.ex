@@ -87,7 +87,15 @@ defmodule Rail.Pipeline.Actions.ListQuestions do
       end
 
     order = Keyword.get(opts, :order_by, desc: :inserted_at)
-    Repo.all(from(q in query, order_by: ^order))
+    query = from(q in query, order_by: ^order)
+
+    query =
+      case Keyword.get(opts, :preload) do
+        preloads when is_list(preloads) and preloads != [] -> from(q in query, preload: ^preloads)
+        _other -> query
+      end
+
+    Repo.all(query)
   end
 
   defp base_query(%Project{id: project_id}) do

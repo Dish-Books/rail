@@ -7,13 +7,17 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
   alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Artifacts.Validators.QaValidator
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
+  alias Rail.Users.Schemas.User
 
   def capture_qa_report(scope, target, scratch_dir_or_opts, opts \\ []) do
     if authorized?(scope) do
-      {task_id, scratch_dir, combined_opts} = normalize_args(target, scratch_dir_or_opts, opts)
-      do_capture_qa_report(scope, task_id, scratch_dir, combined_opts)
+      {task, task_id, scratch_dir, combined_opts} = normalize_args(target, scratch_dir_or_opts, opts)
+      do_capture_qa_report(scope, task, task_id, scratch_dir, combined_opts)
     else
       {:error, :not_authorized}
     end
@@ -24,22 +28,37 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
   defp authorized?(_scope), do: false
 
   defp normalize_args(target, scratch_dir, opts) when is_binary(scratch_dir) do
-    task_id = extract_task_id(target)
-    {task_id, scratch_dir, opts}
+    {task, task_id} = resolve_task_and_id(target)
+    {task, task_id, scratch_dir, opts}
   end
 
   defp normalize_args(target, opts, _extra_opts) when is_list(opts) do
-    task_id = extract_task_id(target)
+    {task, task_id} = resolve_task_and_id(target)
     scratch_dir = Keyword.get(opts, :scratch_dir) || "/tmp/rail_scratch/#{task_id}"
-    {task_id, scratch_dir, opts}
+    {task, task_id, scratch_dir, opts}
   end
 
-  defp extract_task_id(%{id: task_id}), do: to_string(task_id)
-  defp extract_task_id(task_id) when is_binary(task_id), do: task_id
-  defp extract_task_id(other), do: to_string(other)
+  defp resolve_task_and_id(%Task{id: id} = task), do: {task, to_string(id)}
+  defp resolve_task_and_id(%{id: task_id}), do: {Repo.get(Task, task_id), to_string(task_id)}
+  defp resolve_task_and_id(task_id) when is_binary(task_id), do: {Repo.get(Task, task_id), task_id}
+  defp resolve_task_and_id(other), do: {nil, to_string(other)}
 
-  defp do_capture_qa_report(scope, task_id, scratch_dir, opts) do
+  defp do_capture_qa_report(scope, task, task_id, scratch_dir, opts) do
     qa_dir = resolve_qa_dir(scratch_dir)
+
+    opts =
+      Keyword.put_new_lazy(opts, :project, fn ->
+        cond do
+          match?(%Project{}, task && task.project) ->
+            task.project
+
+          task && is_binary(task.project_id) && task.project_id != "" ->
+            Repo.get(Project, task.project_id)
+
+          true ->
+            nil
+        end
+      end)
 
     with {:ok, qa_data} <- QaValidator.validate(qa_dir, opts),
          {:ok, rows_with_assets} <- upload_qa_assets(scope, qa_data.rows, opts) do
@@ -55,17 +74,25 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
       }
 
       with {:ok, report} <- %QaReport{} |> QaReport.changeset(qa_attrs) |> Repo.insert() do
-        maybe_post_comment(scope, report, opts)
+        maybe_post_comment(scope, report, task, opts)
         {:ok, report}
       end
     end
   end
 
   defp resolve_qa_dir(path) do
-    if File.exists?(Path.join(path, "manifest.json")) do
-      path
-    else
-      Path.join(path, "qa")
+    cond do
+      File.exists?(Path.join(path, "manifest.json")) ->
+        path
+
+      File.exists?(Path.join([path, "qa", "manifest.json"])) ->
+        Path.join(path, "qa")
+
+      File.exists?(Path.join([path, ".axis", "qa", "manifest.json"])) ->
+        Path.join([path, ".axis", "qa"])
+
+      true ->
+        Path.join(path, "qa")
     end
   end
 
@@ -88,7 +115,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
 
     artifacts
     |> Enum.reduce_while({:ok, []}, fn art, {:ok, acc_arts} ->
-      case upload_artifact_if_image(scope, art, opts) do
+      case populate_and_upload_artifact(scope, art, opts) do
         {:ok, updated_art} -> {:cont, {:ok, [updated_art | acc_arts]}}
         {:error, reason} -> {:halt, {:error, reason}}
       end
@@ -98,6 +125,23 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  defp populate_and_upload_artifact(scope, %{kind: :image} = art, opts) do
+    upload_artifact_if_image(scope, art, opts)
+  end
+
+  defp populate_and_upload_artifact(_scope, %{kind: :text, resolved_path: path} = art, _opts) when is_binary(path) do
+    updated =
+      if (is_nil(art[:text]) or art[:text] == "") and File.exists?(path) do
+        Map.put(art, :text, File.read!(path))
+      else
+        art
+      end
+
+    {:ok, updated}
+  end
+
+  defp populate_and_upload_artifact(_scope, art, _opts), do: {:ok, art}
 
   defp upload_artifact_if_image(scope, %{kind: :image, resolved_path: path} = art, opts) when is_binary(path) do
     case File.read(path) do
@@ -120,15 +164,53 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
 
   defp upload_artifact_if_image(_scope, art, _opts), do: {:ok, art}
 
-  defp maybe_post_comment(scope, qa_report, opts) do
-    issue = Keyword.get(opts, :issue)
+  defp maybe_post_comment(scope, qa_report, task, opts) do
+    issue = resolve_comment_issue(task, opts)
 
     if issue do
       comment_body = format_qa_comment(qa_report)
-      owner_user = Keyword.get(opts, :owner_user)
+      owner_user = resolve_comment_owner(task, opts)
       Issues.comment(scope, issue, comment_body, owner_user)
     end
 
     :ok
+  end
+
+  defp resolve_comment_issue(task, opts) do
+    case Keyword.get(opts, :issue) do
+      %Issue{} = iss ->
+        iss
+
+      _other ->
+        cond do
+          task && match?(%Issue{}, task.issue) ->
+            task.issue
+
+          task && is_binary(task.issue_id) && task.issue_id != "" ->
+            Repo.get(Issue, task.issue_id)
+
+          true ->
+            nil
+        end
+    end
+  end
+
+  defp resolve_comment_owner(task, opts) do
+    case Keyword.get(opts, :owner_user) do
+      %User{} = user ->
+        user
+
+      _other ->
+        cond do
+          task && match?(%User{}, task.owner_user) ->
+            task.owner_user
+
+          task && is_binary(task.owner_user_id) && task.owner_user_id != "" ->
+            Repo.get(User, task.owner_user_id)
+
+          true ->
+            nil
+        end
+    end
   end
 end

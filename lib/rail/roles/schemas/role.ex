@@ -9,6 +9,7 @@ defmodule Rail.Roles.Schemas.Role do
   alias Rail.Domain.Enums.TaskStage
   alias Rail.Projects.Schemas.Project
 
+  @derive {LiveSync.Watch, subscription_key: :project_id, table: "roles"}
   @primary_key {:id, UXID, autogenerate: true, prefix: "rol"}
   schema "roles" do
     belongs_to :project, Project, type: UXID

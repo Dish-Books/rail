@@ -7,14 +7,17 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
 
   alias Rail.Artifacts.Schemas.Demo
   alias Rail.Artifacts.Validators.DemoValidator
+  alias Rail.Git
   alias Rail.Issues
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Scope
+  alias Rail.Users.Schemas.User
 
   def capture_demo(scope, target, scratch_dir_or_opts, opts \\ []) do
     if authorized?(scope) do
-      {task_id, scratch_dir, combined_opts} = normalize_args(target, scratch_dir_or_opts, opts)
-      do_capture_demo(scope, task_id, scratch_dir, combined_opts)
+      {task, task_id, scratch_dir, combined_opts} = normalize_args(target, scratch_dir_or_opts, opts)
+      do_capture_demo(scope, task, task_id, scratch_dir, combined_opts)
     else
       {:error, :not_authorized}
     end
@@ -25,29 +28,41 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
   defp authorized?(_scope), do: false
 
   defp normalize_args(target, scratch_dir, opts) when is_binary(scratch_dir) do
-    task_id = extract_task_id(target)
-    {task_id, scratch_dir, opts}
+    {task, task_id} = resolve_task_and_id(target)
+    {task, task_id, scratch_dir, opts}
   end
 
   defp normalize_args(target, opts, _extra_opts) when is_list(opts) do
-    task_id = extract_task_id(target)
+    {task, task_id} = resolve_task_and_id(target)
     scratch_dir = Keyword.get(opts, :scratch_dir) || "/tmp/rail_scratch/#{task_id}"
-    {task_id, scratch_dir, opts}
+    {task, task_id, scratch_dir, opts}
   end
 
-  defp extract_task_id(%{id: task_id}), do: to_string(task_id)
-  defp extract_task_id(task_id) when is_binary(task_id), do: task_id
-  defp extract_task_id(other), do: to_string(other)
+  defp resolve_task_and_id(%Task{id: id} = task), do: {task, to_string(id)}
+  defp resolve_task_and_id(%{id: task_id}), do: {Repo.get(Task, task_id), to_string(task_id)}
+  defp resolve_task_and_id(task_id) when is_binary(task_id), do: {Repo.get(Task, task_id), task_id}
+  defp resolve_task_and_id(other), do: {nil, to_string(other)}
 
-  defp do_capture_demo(scope, task_id, scratch_dir, opts) do
+  defp do_capture_demo(scope, task, task_id, scratch_dir, opts) do
     demo_dir = resolve_demo_dir(scratch_dir)
 
     with {:ok, demo_data} <- DemoValidator.validate(demo_dir, opts),
          {:ok, segments_with_assets} <- upload_demo_assets(scope, demo_data.segments, opts) do
       version = next_version(task_id, demo_data[:version])
-      commit = Keyword.get(opts, :commit) || demo_data[:commit]
-      head_sha = Keyword.get(opts, :head_sha) || demo_data[:head_sha]
-      dirty_digest = Keyword.get(opts, :dirty_digest) || demo_data[:dirty_digest]
+
+      {resolved_head_sha, resolved_dirty_digest} =
+        if task && is_binary(task.worktree_path) && File.dir?(task.worktree_path) do
+          case Git.branch_fingerprint(task.worktree_path, ignore_axis: true) do
+            %{head_sha: sha, dirty_digest: digest} -> {sha, digest}
+            _other -> {nil, nil}
+          end
+        else
+          {nil, nil}
+        end
+
+      head_sha = Keyword.get(opts, :head_sha) || demo_data[:head_sha] || resolved_head_sha
+      dirty_digest = Keyword.get(opts, :dirty_digest) || demo_data[:dirty_digest] || resolved_dirty_digest
+      commit = Keyword.get(opts, :commit) || demo_data[:commit] || head_sha
 
       demo_attrs = %{
         task_id: task_id,
@@ -64,7 +79,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
 
       demo_struct = struct(Demo, demo_attrs)
 
-      with {:ok, comment_id} <- maybe_post_comment(scope, demo_struct, opts) do
+      with {:ok, comment_id} <- maybe_post_comment(scope, demo_struct, task, opts) do
         final_attrs =
           if comment_id do
             Map.put(demo_attrs, :linear_comment_id, comment_id)
@@ -80,10 +95,18 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
   end
 
   defp resolve_demo_dir(path) do
-    if File.exists?(Path.join(path, "manifest.json")) do
-      path
-    else
-      Path.join(path, "demo")
+    cond do
+      File.exists?(Path.join(path, "manifest.json")) ->
+        path
+
+      File.exists?(Path.join([path, "demo", "manifest.json"])) ->
+        Path.join(path, "demo")
+
+      File.exists?(Path.join([path, ".axis", "demo", "manifest.json"])) ->
+        Path.join([path, ".axis", "demo"])
+
+      true ->
+        Path.join(path, "demo")
     end
   end
 
@@ -157,12 +180,17 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
     end
   end
 
-  defp maybe_post_comment(scope, demo_struct, opts) do
-    issue = Keyword.get(opts, :issue)
+  defp maybe_post_comment(scope, demo_struct, task, opts) do
+    issue =
+      Keyword.get(opts, :issue) ||
+        (task && task.issue_id && Repo.get(Rail.Issues.Schemas.Issue, task.issue_id))
 
     if issue do
       comment_body = format_demo_comment(demo_struct)
-      owner_user = Keyword.get(opts, :owner_user)
+
+      owner_user =
+        Keyword.get(opts, :owner_user) ||
+          (task && task.owner_user_id && Repo.get(User, task.owner_user_id))
 
       case Issues.comment(scope, issue, comment_body, owner_user) do
         {:ok, %{id: comment_id}} -> {:ok, comment_id}

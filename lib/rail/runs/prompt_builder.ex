@@ -15,6 +15,29 @@ defmodule Rail.Runs.PromptBuilder do
   alias Rail.Domain.TicketBody
 
   @doc """
+  Constructs the interactive chat turn prompt for the agent.
+  """
+  def chat_prompt(message) when is_binary(message) do
+    """
+    The human has a question or comment about this task.
+
+    This is a direct conversation turn with you, not a new stage instruction:
+    - Answer the human's question directly and concisely based on your previous work on this task.
+    - Do NOT re-run your stage pass.
+    - Do NOT output any stage verdict (such as "VERDICT: ...").
+    - Do NOT modify files on the branch unless the human explicitly asks you to make code changes.
+
+    Human message:
+    #{message}
+    """
+  end
+
+  def chat_prompt(_other), do: chat_prompt("")
+
+  @doc false
+  def build_chat_prompt(message), do: chat_prompt(message)
+
+  @doc """
   Builds the full prompt string for an agent run based on the given options.
   """
   def build_prompt(opts) when is_list(opts) do

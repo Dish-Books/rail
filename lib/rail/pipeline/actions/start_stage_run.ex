@@ -86,7 +86,8 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
 
     {:ok, _scratch} = prepare(task, scratch_path)
 
-    {head_sha, dirty_digest} = resolve_fingerprint(worktree_path)
+    fp_opts = if stage == :demo, do: [ignore_axis: true], else: []
+    {head_sha, dirty_digest} = resolve_fingerprint(worktree_path, fp_opts)
 
     {:ok, role_run} = resolve_or_create_role_run(task, role, head_sha, dirty_digest)
 
@@ -176,8 +177,8 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
     updated
   end
 
-  defp resolve_fingerprint(worktree_path) do
-    case Git.branch_fingerprint(worktree_path) do
+  defp resolve_fingerprint(worktree_path, opts) do
+    case Git.branch_fingerprint(worktree_path, opts) do
       %{head_sha: sha, dirty_digest: digest} -> {sha, digest}
       _other -> {nil, nil}
     end

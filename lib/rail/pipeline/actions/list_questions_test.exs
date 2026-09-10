@@ -103,4 +103,12 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
       Pipeline.get_question!(%Rail.Scope{}, expected_id)
     end
   end
+
+  test "supports preload option" do
+    %Rail.Pipeline.Schemas.Task{id: expected_task_id} = create_test_task()
+    %Question{id: q_id} = create_test_question(%{task_id: expected_task_id})
+
+    assert [%Question{id: ^q_id, task: %Rail.Pipeline.Schemas.Task{id: ^expected_task_id}}] =
+             Pipeline.list_questions(expected_task_id, preload: [:task])
+  end
 end

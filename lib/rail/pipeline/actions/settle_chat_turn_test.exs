@@ -1,0 +1,775 @@
+defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
+  use Rail.DataCase, async: false
+
+  alias Rail.Artifacts.Schemas.Design
+  alias Rail.Domain.TaskUsage
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Repo
+  alias Rail.Roles.Schemas.Role
+  alias Rail.Runs
+  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
+  alias Rail.Runs.Schemas.RunEvent
+
+  setup do
+    repo_dir = create_temp_git_repo()
+    project = create_test_project(%{clone_path: repo_dir, default_branch: "main"})
+
+    eng_role =
+      create_test_role(%{
+        project_id: project.id,
+        stage: :engineer,
+        cli_backend: :claude,
+        model: "claude-3-7-sonnet"
+      })
+
+    rev_role =
+      create_test_role(%{
+        project_id: project.id,
+        stage: :review,
+        cli_backend: :claude,
+        model: "claude-3-7-sonnet"
+      })
+
+    task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :review,
+        stage_state: :awaiting_approval,
+        worktree_path: repo_dir
+      })
+
+    %{
+      project: project,
+      eng_role: eng_role,
+      rev_role: rev_role,
+      task: task,
+      repo_dir: repo_dir
+    }
+  end
+
+  test "returns not_found when task or role run does not exist" do
+    assert {:error, :not_found} =
+             Pipeline.settle_chat_turn("tsk_000000000000000000000000", "rr_000000000000000000000000")
+  end
+
+  test "settles clean chat turn, clears active_chat_role_id and pending_chat, and accumulates chat_usage", %{
+    task: %Task{id: task_id} = task,
+    rev_role: %Role{id: rev_role_id}
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
+
+    initial_usage = %TaskUsage{input_tokens: 50, output_tokens: 25, total_cost: Decimal.new("0.01")}
+
+    %RoleRun{id: role_run_id} =
+      create_test_role_run(%{
+        task_id: task_id,
+        role_id: rev_role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        attempts: 1,
+        conversation_id: "sess-rev-1",
+        output: "Original review output",
+        pending_chat: "Can you clarify finding 1?",
+        chat_fingerprint_head_sha: "head123",
+        chat_fingerprint_dirty_digest: "digest123",
+        chat_usage: initial_usage
+      })
+
+    {:ok, task} = task |> Task.changeset(%{active_chat_role_id: rev_role_id}) |> Repo.update()
+
+    run =
+      create_test_run(%{
+        role_run_id: role_run_id,
+        task_id: task_id,
+        kind: :chat,
+        status: :running
+      })
+
+    turn_usage = %TaskUsage{input_tokens: 100, output_tokens: 50, total_cost: Decimal.new("0.05")}
+
+    outcome = %{
+      exit_code: 0,
+      error: nil,
+      output: "Hello from reviewer agent",
+      usage: turn_usage,
+      run: run
+    }
+
+    assert {:ok, %Task{active_chat_role_id: nil}, %RoleRun{pending_chat: nil, chat_usage: %TaskUsage{}}} =
+             Pipeline.settle_chat_turn(task.id, role_run_id, outcome)
+
+    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :chat_settled}}
+
+    refreshed_task = Repo.get!(Task, task_id)
+    refreshed_role_run = Repo.get!(RoleRun, role_run_id)
+
+    assert %Task{
+             stage: :review,
+             stage_state: :awaiting_approval,
+             active_chat_role_id: nil,
+             error: nil
+           } = refreshed_task
+
+    assert %RoleRun{
+             status: :finished,
+             output: "Original review output",
+             pending_chat: nil,
+             chat_fingerprint_head_sha: nil,
+             chat_fingerprint_dirty_digest: nil,
+             chat_usage: %TaskUsage{input_tokens: 150, output_tokens: 75}
+           } = refreshed_role_run
+
+    refreshed_run = Repo.get!(Run, run.id)
+    assert refreshed_run.status == :finished
+  end
+
+  test "review chat returning VERDICT line does not advance stage or touch output", %{
+    task: %Task{id: task_id} = task,
+    rev_role: %Role{id: rev_role_id}
+  } do
+    %RoleRun{id: role_run_id} =
+      create_test_role_run(%{
+        task_id: task_id,
+        role_id: rev_role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        attempts: 1,
+        conversation_id: "sess-verdict",
+        output: "Original verdict: approved"
+      })
+
+    {:ok, task} = task |> Task.changeset(%{active_chat_role_id: rev_role_id}) |> Repo.update()
+
+    outcome = %{
+      exit_code: 0,
+      error: nil,
+      output: "I still have concerns.\nVERDICT: CHANGES REQUESTED",
+      usage: %TaskUsage{input_tokens: 20, output_tokens: 10}
+    }
+
+    assert {:ok, %Task{stage: :review, stage_state: :awaiting_approval}, %RoleRun{}} =
+             Pipeline.settle_chat_turn(task, role_run_id, outcome)
+
+    refreshed_task = Repo.get!(Task, task_id)
+    refreshed_role_run = Repo.get!(RoleRun, role_run_id)
+
+    assert refreshed_task.stage == :review
+    assert refreshed_task.stage_state == :awaiting_approval
+    assert refreshed_role_run.output == "Original verdict: approved"
+  end
+
+  test "chat turn emitting [QUESTION:] does not file question or block stage", %{
+    task: %Task{id: task_id} = task,
+    rev_role: %Role{id: rev_role_id}
+  } do
+    %RoleRun{id: role_run_id} =
+      create_test_role_run(%{
+        task_id: task_id,
+        role_id: rev_role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        attempts: 1,
+        conversation_id: "sess-question"
+      })
+
+    {:ok, task} = task |> Task.changeset(%{active_chat_role_id: rev_role_id}) |> Repo.update()
+
+    outcome = %{
+      exit_code: 0,
+      error: nil,
+      output: "[QUESTION: Do you prefer approach A or B?]",
+      usage: %TaskUsage{input_tokens: 30, output_tokens: 15}
+    }
+
+    assert {:ok, %Task{stage_state: :awaiting_approval, question_id: nil}, %RoleRun{}} =
+             Pipeline.settle_chat_turn(task, role_run_id, outcome)
+
+    questions = Repo.all(from q in Question, where: q.task_id == ^task_id)
+    assert questions == []
+  end
+
+  test "engineer modifying files resets to engineer awaiting_approval (first pass)", %{
+    task: %Task{id: task_id} = task,
+    eng_role: %Role{id: eng_role_id},
+    repo_dir: repo_dir
+  } do
+    before_fp = Rail.Git.branch_fingerprint(repo_dir)
+
+    %RoleRun{id: role_run_id} =
+      create_test_role_run(%{
+        task_id: task_id,
+        role_id: eng_role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        attempts: 1,
+        conversation_id: "sess-eng-mod",
+        chat_fingerprint_head_sha: before_fp.head_sha,
+        chat_fingerprint_dirty_digest: before_fp.dirty_digest
+      })
+
+    {:ok, task} =
+      task
+      |> Task.changeset(%{
+        stage: :review,
+        stage_state: :awaiting_approval,
+        rework_cycles: 0,
+        active_chat_role_id: eng_role_id
+      })
+      |> Repo.update()
+
+    File.write!(Path.join(repo_dir, "modified_by_eng.txt"), "engineer modification\n")
+
+    outcome = %{
+      exit_code: 0,
+      error: nil,
+      output: "I made the code change.",
+      usage: %TaskUsage{input_tokens: 100, output_tokens: 50}
+    }
+
+    assert {:ok, %Task{stage: :engineer, stage_state: :awaiting_approval}, %RoleRun{}} =
+             Pipeline.settle_chat_turn(task, role_run_id, outcome)
+
+    refreshed_task = Repo.get!(Task, task_id)
+    assert refreshed_task.stage == :engineer
+    assert refreshed_task.stage_state == :awaiting_approval
+
+    events = Runs.list_run_events(role_run_id)
+
+    assert Enum.any?(events, fn %RunEvent{line: line} ->
+             line == "[axis] Branch modified during chat; reset pipeline to Engineer."
+           end)
+  end
+
+  test "engineer modifying files with has_been_reworked queues review and appends evidence commit line", %{
+    task: %Task{id: task_id} = task,
+    eng_role: %Role{id: eng_role_id},
+    rev_role: %Role{id: rev_role_id},
+    repo_dir: repo_dir
+  } do
+    before_fp = Rail.Git.branch_fingerprint(repo_dir)
+
+    %RoleRun{id: eng_role_run_id} =
+      create_test_role_run(%{
+        task_id: task_id,
+        role_id: eng_role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        attempts: 1,
+        conversation_id: "sess-eng-rework",
+        chat_fingerprint_head_sha: before_fp.head_sha,
+        chat_fingerprint_dirty_digest: before_fp.dirty_digest
+      })
+
+    %RoleRun{id: rev_role_run_id} =
+      create_test_role_run(%{
+        task_id: task_id,
+        role_id: rev_role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        attempts: 1,
+        conversation_id: "sess-rev-rework",
+        pending_answer: "Previous review notes"
+      })
+
+    {:ok, task} =
+      task
+      |> Task.changeset(%{
+        stage: :review,
+        stage_state: :awaiting_approval,
+        rework_cycles: 1,
+        outstanding_reports: ["qa"],
+        active_chat_role_id: eng_role_id
+      })
+      |> Repo.update()
+
+    File.write!(Path.join(repo_dir, "reworked_mod.txt"), "reworked content\n")
+
+    outcome = %{
+      exit_code: 0,
+      error: nil,
+      output: "Fixed the reported issue.",
+      usage: %TaskUsage{input_tokens: 120, output_tokens: 60}
+    }
+
+    assert {:ok, %Task{stage: :review, stage_state: :queued}, %RoleRun{}} =
+             Pipeline.settle_chat_turn(task, eng_role_run_id, outcome)
+
+    refreshed_task = Repo.get!(Task, task_id)
+    assert refreshed_task.stage == :review
+    assert refreshed_task.stage_state == :queued
+    assert refreshed_task.outstanding_reports == []
+
+    eng_events = Runs.list_run_events(eng_role_run_id)
+
+    assert Enum.any?(eng_events, fn %RunEvent{line: line} ->
+             line == "[axis] Branch modified during chat; queued for review."
+           end)
+
+    refreshed_rev = Repo.get!(RoleRun, rev_role_run_id)
+    assert refreshed_rev.pending_answer =~ "Previous review notes"
+    assert refreshed_rev.pending_answer =~ "The reworked change is commit"
+    assert refreshed_rev.pending_answer =~ "Every check you report on this pass must have been run against it"
+  end
+
+  test "reviewer modifying files logs notice and does not reset pipeline", %{
+    task: %Task{id: task_id} = task,
+    rev_role: %Role{id: rev_role_id},
+    repo_dir: repo_dir
+  } do
+    before_fp = Rail.Git.branch_fingerprint(repo_dir)
+
+    %RoleRun{id: role_run_id} =
+      create_test_role_run(%{
+        task_id: task_id,
+        role_id: rev_role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        attempts: 1,
+        conversation_id: "sess-rev-mod",
+        chat_fingerprint_head_sha: before_fp.head_sha,
+        chat_fingerprint_dirty_digest: before_fp.dirty_digest
+      })
+
+    {:ok, task} =
+      task
+      |> Task.changeset(%{
+        stage: :review,
+        stage_state: :awaiting_approval,
+        active_chat_role_id: rev_role_id
+      })
+      |> Repo.update()
+
+    File.write!(Path.join(repo_dir, "reviewer_mod.txt"), "reviewer touched file\n")
+
+    outcome = %{
+      exit_code: 0,
+      error: nil,
+      output: "Left a comment and touched a file",
+      usage: %TaskUsage{input_tokens: 40, output_tokens: 20}
+    }
+
+    assert {:ok, %Task{stage: :review, stage_state: :awaiting_approval}, %RoleRun{}} =
+             Pipeline.settle_chat_turn(task, role_run_id, outcome)
+
+    refreshed_task = Repo.get!(Task, task_id)
+    assert refreshed_task.stage == :review
+    assert refreshed_task.stage_state == :awaiting_approval
+
+    events = Runs.list_run_events(role_run_id)
+
+    assert Enum.any?(events, fn %RunEvent{line: line} ->
+             line == "[axis] Changes were made to the branch, but only Engineer changes reset the pipeline."
+           end)
+  end
+
+  test "failed chat exit logs notice and does not fail task stage", %{
+    task: %Task{id: task_id} = task,
+    rev_role: %Role{id: rev_role_id}
+  } do
+    %RoleRun{id: role_run_id} =
+      create_test_role_run(%{
+        task_id: task_id,
+        role_id: rev_role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        attempts: 1,
+        conversation_id: "sess-fail"
+      })
+
+    {:ok, task} = task |> Task.changeset(%{active_chat_role_id: rev_role_id}) |> Repo.update()
+
+    outcome = %{
+      exit_code: 1,
+      error: "Command failed: exit 1",
+      output: ""
+    }
+
+    assert {:ok, %Task{stage: :review, stage_state: :awaiting_approval}, %RoleRun{}} =
+             Pipeline.settle_chat_turn(task, role_run_id, outcome)
+
+    refreshed_task = Repo.get!(Task, task_id)
+    assert refreshed_task.stage == :review
+    assert refreshed_task.stage_state == :awaiting_approval
+    assert refreshed_task.active_chat_role_id == nil
+    assert refreshed_task.error == nil
+
+    events = Runs.list_run_events(role_run_id)
+
+    assert Enum.any?(events, fn %RunEvent{line: line} ->
+             line =~ "[axis] That turn was not delivered: Command failed: exit 1"
+           end)
+  end
+
+  test "dispatches queued pending_chat when task becomes idle after settlement", %{
+    task: %Task{id: task_id} = task,
+    eng_role: %Role{id: eng_role_id},
+    rev_role: %Role{id: rev_role_id}
+  } do
+    stub_bin = create_chat_stub_cli(conversation_id: "sess-rev-queued")
+
+    %RoleRun{id: eng_role_run_id} =
+      create_test_role_run(%{
+        task_id: task_id,
+        role_id: eng_role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        attempts: 1,
+        conversation_id: "sess-eng-current"
+      })
+
+    %RoleRun{id: rev_role_run_id} =
+      create_test_role_run(%{
+        task_id: task_id,
+        role_id: rev_role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        attempts: 1,
+        conversation_id: "sess-rev-queued",
+        pending_chat: "Queued turn for reviewer"
+      })
+
+    {:ok, task} = task |> Task.changeset(%{active_chat_role_id: eng_role_id}) |> Repo.update()
+
+    outcome = %{
+      exit_code: 0,
+      error: nil,
+      output: "Done with eng chat",
+      usage: %TaskUsage{input_tokens: 10, output_tokens: 10}
+    }
+
+    assert {:ok, %Task{}, %RoleRun{}} =
+             Pipeline.settle_chat_turn(task, eng_role_run_id, outcome,
+               executable: stub_bin,
+               async: false
+             )
+
+    refreshed_task = Repo.get!(Task, task_id)
+    assert refreshed_task.active_chat_role_id == rev_role_id
+
+    rev_runs = Runs.list_runs(role_run_id: rev_role_run_id)
+    assert length(rev_runs) == 1
+    assert hd(rev_runs).kind == :chat
+  end
+
+  test "settle_run delegates to settle_chat_turn when run kind is :chat", %{
+    task: %Task{id: task_id} = task,
+    rev_role: %Role{id: rev_role_id}
+  } do
+    %RoleRun{id: role_run_id} =
+      create_test_role_run(%{
+        task_id: task_id,
+        role_id: rev_role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        attempts: 1,
+        conversation_id: "sess-chat-delegate"
+      })
+
+    {:ok, task} = task |> Task.changeset(%{active_chat_role_id: rev_role_id}) |> Repo.update()
+
+    run =
+      create_test_run(%{
+        role_run_id: role_run_id,
+        task_id: task_id,
+        kind: :chat,
+        status: :running
+      })
+
+    outcome = %{
+      exit_code: 0,
+      error: nil,
+      output: "Chat reply",
+      usage: %TaskUsage{input_tokens: 30, output_tokens: 15},
+      run: run
+    }
+
+    assert {:ok, %Task{active_chat_role_id: nil}, %RoleRun{chat_usage: %TaskUsage{input_tokens: 30}}} =
+             Pipeline.settle_run(task.id, role_run_id, outcome)
+  end
+
+  test "settle_run dispatches queued pending_chat when stage run completes and task is idle", %{
+    task: %Task{id: task_id} = task,
+    eng_role: %Role{id: eng_role_id},
+    rev_role: %Role{id: rev_role_id}
+  } do
+    stub_bin = create_chat_stub_cli(conversation_id: "sess-rev-stage-finish")
+
+    %RoleRun{id: eng_role_run_id} =
+      create_test_role_run(%{
+        task_id: task_id,
+        role_id: eng_role_id,
+        status: :running,
+        started_at: DateTime.utc_now(),
+        attempts: 1,
+        conversation_id: "sess-eng-stage"
+      })
+
+    %RoleRun{id: rev_role_run_id} =
+      create_test_role_run(%{
+        task_id: task_id,
+        role_id: rev_role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        attempts: 1,
+        conversation_id: "sess-rev-stage-finish",
+        pending_chat: "Queued question while stage was running"
+      })
+
+    {:ok, task} =
+      task
+      |> Task.changeset(%{stage: :engineer, stage_state: :running})
+      |> Repo.update()
+
+    stage_run =
+      create_test_run(%{
+        role_run_id: eng_role_run_id,
+        task_id: task_id,
+        kind: :stage,
+        status: :running
+      })
+
+    outcome = %{
+      exit_code: 0,
+      error: nil,
+      output: "Engineer stage finished",
+      usage: %TaskUsage{input_tokens: 500, output_tokens: 200},
+      run: stage_run
+    }
+
+    assert {:ok, %Task{stage: :review, stage_state: :queued}, %RoleRun{}} =
+             Pipeline.settle_run(task.id, eng_role_run_id, outcome,
+               executable: stub_bin,
+               async: false
+             )
+
+    refreshed_task = Repo.get!(Task, task_id)
+    assert refreshed_task.active_chat_role_id == rev_role_id
+
+    rev_runs = Runs.list_runs(role_run_id: rev_role_run_id)
+    assert length(rev_runs) == 1
+    assert hd(rev_runs).kind == :chat
+  end
+
+  test "settle_chat_turn when branch modified and no review role run exists creates new review role run", %{
+    task: task,
+    eng_role: eng_role
+  } do
+    %RoleRun{id: eng_role_run_id} =
+      create_test_role_run(%{
+        task_id: task.id,
+        role_id: eng_role.id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        attempts: 1,
+        conversation_id: "sess-no-rev-rr",
+        chat_fingerprint_head_sha: "head_before_123",
+        chat_fingerprint_dirty_digest: "digest_before_123"
+      })
+
+    {:ok, task} =
+      task
+      |> Task.changeset(%{rework_cycles: 1, stage: :review, stage_state: :queued})
+      |> Repo.update()
+
+    # Modify file in worktree
+    File.write!(Path.join(task.worktree_path, "rework_new.txt"), "rework change\n")
+
+    assert {:ok, %Task{stage: :review, stage_state: :queued}, %RoleRun{}} =
+             Pipeline.settle_chat_turn(task, eng_role_run_id, %{exit_code: 0})
+  end
+
+  test "settle_chat_turn when branch modified and project has no review role", %{
+    task: orig_task
+  } do
+    proj_no_rev =
+      create_test_project(%{
+        clone_path: orig_task.worktree_path,
+        default_branch: "main"
+      })
+
+    task_no_rev =
+      create_test_task(%{
+        project_id: proj_no_rev.id,
+        stage: :review,
+        stage_state: :queued,
+        worktree_path: orig_task.worktree_path,
+        rework_cycles: 1
+      })
+
+    eng_role_no_rev =
+      create_test_role(%{
+        project_id: proj_no_rev.id,
+        stage: :engineer
+      })
+
+    role_run =
+      create_test_role_run(%{
+        task_id: task_no_rev.id,
+        role_id: eng_role_no_rev.id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        chat_fingerprint_head_sha: "head_before_456",
+        chat_fingerprint_dirty_digest: "digest_before_456"
+      })
+
+    File.write!(Path.join(task_no_rev.worktree_path, "no_rev.txt"), "data\n")
+
+    assert {:ok, %Task{}, %RoleRun{}} =
+             Pipeline.settle_chat_turn(task_no_rev, role_run, %{exit_code: 0})
+  end
+
+  test "settle_chat_turn resolves string-keyed maps, raw maps, and finishes in-flight run", %{
+    task: task,
+    eng_role: eng_role
+  } do
+    role_run =
+      create_test_role_run(%{
+        task_id: task.id,
+        role_id: eng_role.id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        exit_code: 42,
+        error: "role run error"
+      })
+
+    in_flight_run =
+      create_test_run(%{
+        role_run_id: role_run.id,
+        task_id: task.id,
+        kind: :chat,
+        status: :running
+      })
+
+    # Finishing in_flight_run when passed as %Run{}
+    assert {:ok, %Task{}, %RoleRun{}} =
+             Pipeline.settle_chat_turn(task.id, role_run.id, in_flight_run)
+
+    assert Repo.get!(Run, in_flight_run.id).status == :finished
+
+    # String-keyed exit_code, error, usage map
+    assert {:ok, %Task{}, %RoleRun{}} =
+             Pipeline.settle_chat_turn(task.id, role_run.id, %{
+               "exit_code" => 0,
+               "error" => "ignored error",
+               "usage" => %{"input_tokens" => 20, "output_tokens" => 10}
+             })
+
+    # Map usage under :usage
+    assert {:ok, %Task{}, %RoleRun{}} =
+             Pipeline.settle_chat_turn(task.id, role_run.id, %{
+               exit_code: 0,
+               usage: %{input_tokens: 15, output_tokens: 5}
+             })
+
+    # %TaskUsage{} under "usage"
+    assert {:ok, %Task{}, %RoleRun{}} =
+             Pipeline.settle_chat_turn(task.id, role_run.id, %{
+               "usage" => %TaskUsage{input_tokens: 10, output_tokens: 5}
+             })
+
+    # Fallback to role_run exit code and error
+    assert {:ok, %Task{}, %RoleRun{}} =
+             Pipeline.settle_chat_turn(task, role_run)
+
+    # Fallback exit code 0 when neither outcome nor role_run has integer exit code
+    role_run_nil_code =
+      create_test_role_run(%{
+        task_id: task.id,
+        role_id: eng_role.id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        exit_code: nil
+      })
+
+    assert {:ok, %Task{}, %RoleRun{}} =
+             Pipeline.settle_chat_turn(task, role_run_nil_code, %{exit_code: nil})
+
+    # Invalid targets return :not_found
+    assert {:error, :not_found} = Pipeline.settle_chat_turn(12_345, role_run)
+    assert {:error, :not_found} = Pipeline.settle_chat_turn(task, 12_345)
+  end
+
+  describe "settle_chat_turn at design stage" do
+    test "a chat turn that rewrites the manifest lands the design" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      designer_role = create_test_role(%{project_id: project.id, stage: :design, name: "Designer"})
+      worktree_dir = create_test_design_dir(canvas_url: "https://claude.ai/design/abc")
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :design,
+          stage_state: :failed,
+          error: "Initial canvas 404",
+          worktree_path: worktree_dir
+        })
+
+      role_run =
+        create_test_role_run(%{
+          task_id: task.id,
+          role_id: designer_role.id,
+          status: :finished
+        })
+
+      mock_design_uploads(2)
+
+      assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %RoleRun{}} =
+               Pipeline.settle_chat_turn(
+                 task,
+                 role_run,
+                 %{exit_code: 0},
+                 before_design_stamp: "stale-stamp-123",
+                 url_probe: fn _uri -> true end
+               )
+
+      reloaded = Repo.get!(Task, task.id)
+      assert reloaded.stage_state == :awaiting_approval
+      assert is_nil(reloaded.error)
+
+      design = Repo.one(from d in Design, where: d.task_id == ^task.id)
+      assert design.canvas_url == "https://claude.ai/design/abc"
+    end
+
+    test "a chat turn that leaves the manifest alone changes nothing" do
+      project = create_test_project()
+      designer_role = create_test_role(%{project_id: project.id, stage: :design, name: "Designer"})
+      worktree_dir = create_test_design_dir(canvas_url: "invalid-url")
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :design,
+          stage_state: :failed,
+          error: "Design manifest canvasUrl must be an absolute https URL.",
+          worktree_path: worktree_dir
+        })
+
+      role_run =
+        create_test_role_run(%{
+          task_id: task.id,
+          role_id: designer_role.id,
+          status: :finished
+        })
+
+      # Manifest was modified during chat from older stamp, but is invalid
+      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{}} =
+               Pipeline.settle_chat_turn(
+                 task,
+                 role_run,
+                 %{exit_code: 0},
+                 before_design_stamp: "old_stamp:100"
+               )
+
+      assert err =~ "absolute https URL"
+      designs = Repo.all(from d in Design, where: d.task_id == ^task.id)
+      assert Enum.empty?(designs)
+
+      events = Repo.all(from e in RunEvent, where: e.role_run_id == ^role_run.id, order_by: [asc: e.seq])
+      assert Enum.any?(events, fn e -> e.line =~ "[axis] Design manifest changed during chat, but was turned down" end)
+    end
+  end
+end

@@ -9,6 +9,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Scope
+  alias Rail.Users.Schemas.User
   alias RailTest.Mocks.Linear, as: LinearMock
   alias RailTest.Support.ArtifactHelpers
 
@@ -37,6 +38,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
       project: project
     } do
       scope = Scope.for_system()
+      owner = Repo.insert!(User.factory())
       ArtifactHelpers.write_demo_manifest(dir)
 
       LinearMock.mock_file_upload_success(
@@ -68,6 +70,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
               }} =
                Artifacts.capture_demo(scope, "tsk_demo_cap_1", dir,
                  issue: issue,
+                 owner_user: owner,
                  project: project
                )
 
@@ -213,6 +216,51 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
                 ]
               }} =
                Artifacts.capture_demo(scope, "tsk_unfilmable", dir, project: project)
+    end
+
+    test "rejects non-scope caller", %{dir: dir} do
+      assert {:error, :not_authorized} = Artifacts.capture_demo(:not_a_scope, "tsk_1", dir)
+    end
+
+    test "falls back to demo directory when no manifest exists in target", %{dir: dir} do
+      scope = Scope.for_system()
+      empty_target = Path.join(dir, "no_manifest_sub")
+      File.mkdir_p!(empty_target)
+
+      assert {:error, msg} = Artifacts.capture_demo(scope, "tsk_missing_manifest", empty_target)
+      assert msg =~ "Demo manifest not found"
+    end
+
+    test "resolves owner_user from task.owner_user_id when posting comment", %{
+      dir: dir,
+      project: project,
+      issue: issue
+    } do
+      scope = Scope.for_system()
+      owner = Repo.insert!(User.factory())
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          issue_id: issue.id,
+          owner_user_id: owner.id
+        })
+
+      ArtifactHelpers.write_demo_manifest(dir)
+
+      LinearMock.mock_file_upload_success(
+        upload_url: "https://api.linear.app/upload/dmo_owner",
+        asset_url: "https://uploads.linear.app/dmo_owner/ac1-0.png",
+        asset_id: "ast_dmo_owner"
+      )
+
+      LinearMock.mock_create_comment_success(%{
+        "id" => "lin_cmt_demo_owner",
+        "body" => "Demo comment"
+      })
+
+      assert {:ok, %Demo{linear_comment_id: "lin_cmt_demo_owner"}} =
+               Artifacts.capture_demo(scope, task, dir, project: project)
     end
   end
 end

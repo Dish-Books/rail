@@ -129,7 +129,7 @@ defmodule Rail.Pipeline.Utils.Scratch do
   defp maybe_write_ticket(_task, _identifier, _scratch_dir), do: :ok
 
   defp maybe_materialize_design(scope, task, scratch_dir, :architect) do
-    _result = Artifacts.materialize(scope, task, scratch_dir, kind: :design)
+    _result = Artifacts.materialize(scope, task, scratch_dir, kind: :design, only_picked: true, stage: :architect)
     :ok
   end
 
@@ -249,10 +249,20 @@ defmodule Rail.Pipeline.Utils.Scratch do
   end
 
   defp maybe_capture_qa(scope, task, scratch_dir) do
-    manifest_path = Path.join([scratch_dir, "qa", "manifest.json"])
+    qa_path =
+      cond do
+        File.exists?(Path.join([scratch_dir, "qa", "manifest.json"])) ->
+          Path.join(scratch_dir, "qa")
 
-    if File.exists?(manifest_path) do
-      Artifacts.capture_qa_report(scope, task, scratch_dir)
+        File.exists?(Path.join(scratch_dir, "manifest.json")) ->
+          scratch_dir
+
+        true ->
+          nil
+      end
+
+    if qa_path do
+      Artifacts.capture_qa_report(scope, task, qa_path)
     end
   end
 

@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
   import Rail.Pipeline.Utils.Scratch
 
   alias Rail.Artifacts.Schemas.Design
+  alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -221,6 +222,40 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
     assert {:ok, ^scratch_dir} = prepare(task_generic, scratch_dir)
   end
 
+  test "prepare for qa_lead materializes latest QA report into scratch/qa" do
+    project = create_test_project()
+    task = create_test_task(%{project_id: project.id, stage: :qa_lead})
+    scratch_dir = create_temp_scratch_dir()
+
+    {:ok, _qa} =
+      %QaReport{}
+      |> QaReport.changeset(%{
+        task_id: task.id,
+        commit: "qa_commit_123",
+        session: %{"port" => 4000},
+        rows: [
+          %{
+            id: "chk_lead",
+            check: "Lead verify",
+            result: :pass,
+            severity: :cosmetic,
+            artifacts: [
+              %{name: "output.txt", kind: :text, text: "PASS EVIDENCE"}
+            ]
+          }
+        ]
+      })
+      |> Repo.insert()
+
+    assert {:ok, ^scratch_dir} = prepare(task, scratch_dir)
+    assert File.exists?(Path.join([scratch_dir, "qa", "manifest.json"]))
+    assert File.exists?(Path.join([scratch_dir, "qa", "output.txt"]))
+    assert File.read!(Path.join([scratch_dir, "qa", "output.txt"])) == "PASS EVIDENCE"
+
+    manifest = Jason.decode!(File.read!(Path.join([scratch_dir, "qa", "manifest.json"])))
+    assert manifest["commit"] == "qa_commit_123"
+  end
+
   test "capture for product updates ticket and processes split tickets" do
     project = create_test_project()
     issue = create_test_issue(%{project_id: project.id, identifier: "ENG-104", external_id: "lin_104"})
@@ -319,6 +354,10 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
     File.write!(Path.join(qa_dir, "manifest.json"), ~s({"commit": "abc", "session": {}, "rows": []}))
 
     assert {:ok, %Task{}} = capture(:qa, task, scratch_dir)
+
+    scratch_dir_direct = create_temp_scratch_dir()
+    File.write!(Path.join(scratch_dir_direct, "manifest.json"), ~s({"commit": "dir_qa", "session": {}, "rows": []}))
+    assert {:ok, %Task{}} = capture(:qa, task, scratch_dir_direct)
 
     demo_dir = Path.join(scratch_dir, "demo")
     File.mkdir_p!(demo_dir)

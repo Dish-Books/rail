@@ -1,7 +1,13 @@
 defmodule Rail.Pipeline.Actions.SettleRunTest do
   use Rail.DataCase, async: false
 
+  import Rail.Pipeline.Utils.Scratch
+  import RailTest.Mocks.GitHub
+
+  alias Rail.Artifacts.Schemas.Demo
+  alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Domain.TaskUsage
+  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Question
@@ -11,6 +17,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
   alias Rail.Runs.QuestionDetector
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
+  alias RailTest.Mocks.Linear
 
   test "returns not_found when task cannot be resolved" do
     %RoleRun{id: role_run_id} = create_test_role_run()
@@ -126,7 +133,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     project = create_test_project()
 
     %Task{id: task_id} =
-      task = create_test_task(%{project_id: project.id, stage: :design, stage_state: :running})
+      task = create_test_task(%{project_id: project.id, stage: :ready_to_merge, stage_state: :running})
 
     role_run = create_test_role_run(%{task_id: task_id, status: :running})
 
@@ -219,7 +226,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     project = create_test_project()
 
     %Task{id: task_id} =
-      task = create_test_task(%{project_id: project.id, stage: :design, stage_state: :running})
+      task = create_test_task(%{project_id: project.id, stage: :ready_to_merge, stage_state: :running})
 
     role_run =
       create_test_role_run(%{
@@ -360,6 +367,356 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               outstanding_reports: [^role_qa_id]
             }, %RoleRun{status: :finished}} =
              Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+  end
+
+  test "settles clean exit 0 for qa stage with valid manifest capturing report and advancing to qa_lead" do
+    project = create_test_project()
+    _ws = create_test_linear_workspace(%{project_id: project.id})
+    issue = create_test_issue(%{project_id: project.id, external_id: "lin_qa_settle"})
+    user = Repo.insert!(Rail.Users.Schemas.User.factory())
+    %Role{id: role_qa_id} = role_qa = create_test_role(%{project_id: project.id, stage: :qa, name: "QA Tester"})
+    _role_lead = create_test_role(%{project_id: project.id, stage: :qa_lead, name: "QA Lead"})
+
+    scratch_dir =
+      create_test_qa_dir(
+        rows: [
+          %{
+            "id" => "check_1",
+            "check" => "Login works",
+            "result" => "pass",
+            "severity" => "blocker",
+            "caused_by_change" => true,
+            "command" => "mix test",
+            "exit_code" => 0,
+            "note" => "Passed cleanly",
+            "artifacts" => [
+              %{
+                "name" => "screenshot.png",
+                "kind" => "image",
+                "path" => "screenshot.png"
+              }
+            ]
+          }
+        ]
+      )
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        issue_id: issue.id,
+        owner_user_id: user.id,
+        stage: :qa,
+        stage_state: :running
+      })
+
+    %RoleRun{id: role_run_id} =
+      role_run = create_test_role_run(%{task_id: task.id, role_id: role_qa.id, status: :running})
+
+    mock_qa_uploads(1)
+    Linear.mock_create_comment_success(%{"id" => "cmt_qa_settle", "body" => "QA comment"})
+
+    output = "QA checklist completed.\n\nVERDICT: PASS"
+
+    assert {:ok,
+            %Task{
+              id: ^task_id,
+              stage: :qa_lead,
+              stage_state: :queued,
+              outstanding_reports: [^role_qa_id]
+            }, %RoleRun{status: :finished, exit_code: 0}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output}, scratch_dir: scratch_dir)
+
+    assert %QaReport{
+             task_id: ^task_id,
+             role_run_id: ^role_run_id,
+             commit: "abc1234",
+             rows: [
+               %{
+                 artifacts: [
+                   %{url: "https://uploads.linear.app/qa_1/screenshot-1.png"}
+                 ]
+               }
+             ]
+           } = Repo.one(from q in QaReport, where: q.task_id == ^task_id)
+  end
+
+  test "settles clean exit 0 for qa stage with invalid manifest sets stage_state to failed" do
+    project = create_test_project()
+    role_qa = create_test_role(%{project_id: project.id, stage: :qa, name: "QA Tester"})
+    scratch_dir = create_test_qa_dir(raw_manifest: "{broken_json")
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :qa,
+        stage_state: :running
+      })
+
+    role_run = create_test_role_run(%{task_id: task.id, role_id: role_qa.id, status: :running})
+
+    assert {:ok,
+            %Task{
+              id: ^task_id,
+              stage: :qa,
+              stage_state: :failed,
+              error: err_msg
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: "VERDICT: PASS"}, scratch_dir: scratch_dir)
+
+    assert err_msg =~ "Failed to parse QA manifest"
+  end
+
+  test "settles clean exit 0 for qa stage with missing manifest and require_qa_manifest: true fails stage" do
+    project = create_test_project()
+    role_qa = create_test_role(%{project_id: project.id, stage: :qa, name: "QA Tester"})
+    scratch_dir = create_temp_scratch_dir()
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :qa,
+        stage_state: :running
+      })
+
+    role_run = create_test_role_run(%{task_id: task.id, role_id: role_qa.id, status: :running})
+
+    assert {:ok,
+            %Task{
+              id: ^task_id,
+              stage: :qa,
+              stage_state: :failed,
+              error: "QA manifest not found."
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: "VERDICT: PASS"},
+               scratch_dir: scratch_dir,
+               require_qa_manifest: true
+             )
+  end
+
+  test "settles clean exit 0 for qa stage resolving manifest from worktree .axis/qa, worktree qa, and root" do
+    project = create_test_project()
+    role_qa = create_test_role(%{project_id: project.id, stage: :qa, name: "QA Tester"})
+    _role_lead = create_test_role(%{project_id: project.id, stage: :qa_lead, name: "QA Lead"})
+
+    # Case A: Worktree with .axis/qa
+    worktree_axis = create_test_qa_dir(sub_path: [".axis", "qa"], commit: "axis_sha")
+
+    task_axis =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :qa,
+        stage_state: :running,
+        worktree_path: worktree_axis
+      })
+
+    role_run_axis = create_test_role_run(%{task_id: task_axis.id, role_id: role_qa.id, status: :running})
+
+    assert {:ok, %Task{stage: :qa_lead}, %RoleRun{}} =
+             Pipeline.settle_run(task_axis, role_run_axis, %{exit_code: 0, output: "VERDICT: PASS"})
+
+    assert %QaReport{commit: "axis_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task_axis.id)
+
+    # Case B: Worktree with qa/
+    worktree_qa = create_test_qa_dir(sub_path: ["qa"], commit: "wt_qa_sha")
+
+    task_qa =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :qa,
+        stage_state: :running,
+        worktree_path: worktree_qa
+      })
+
+    role_run_qa = create_test_role_run(%{task_id: task_qa.id, role_id: role_qa.id, status: :running})
+
+    assert {:ok, %Task{stage: :qa_lead}, %RoleRun{}} =
+             Pipeline.settle_run(task_qa, role_run_qa, %{exit_code: 0, output: "VERDICT: PASS"})
+
+    assert %QaReport{commit: "wt_qa_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task_qa.id)
+
+    # Case C: Scratch with manifest in root
+    scratch_root = create_test_qa_dir(sub_path: [], commit: "root_sha")
+
+    task_root =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :qa,
+        stage_state: :running
+      })
+
+    role_run_root = create_test_role_run(%{task_id: task_root.id, role_id: role_qa.id, status: :running})
+
+    assert {:ok, %Task{stage: :qa_lead}, %RoleRun{}} =
+             Pipeline.settle_run(task_root, role_run_root, %{exit_code: 0, output: "VERDICT: PASS"},
+               scratch_dir: scratch_root
+             )
+
+    assert %QaReport{commit: "root_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task_root.id)
+
+    # Case D: Worktree with manifest in root
+    worktree_root = create_test_qa_dir(sub_path: [], commit: "wt_root_sha")
+
+    task_wt_root =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :qa,
+        stage_state: :running,
+        worktree_path: worktree_root
+      })
+
+    role_run_wt_root = create_test_role_run(%{task_id: task_wt_root.id, role_id: role_qa.id, status: :running})
+
+    assert {:ok, %Task{stage: :qa_lead}, %RoleRun{}} =
+             Pipeline.settle_run(task_wt_root, role_run_wt_root, %{exit_code: 0, output: "VERDICT: PASS"})
+
+    assert %QaReport{commit: "wt_root_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task_wt_root.id)
+
+    # Case E: scratch_path option pointing directly to manifest or subfolder
+    scratch_p = create_test_qa_dir(sub_path: ["qa"], commit: "scratch_p_sha")
+    task_p = create_test_task(%{project_id: project.id, stage: :qa, stage_state: :running})
+    role_run_p = create_test_role_run(%{task_id: task_p.id, role_id: role_qa.id, status: :running})
+
+    assert {:ok, %Task{stage: :qa_lead}, %RoleRun{}} =
+             Pipeline.settle_run(task_p, role_run_p, %{exit_code: 0, output: "VERDICT: PASS"}, scratch_path: scratch_p)
+
+    assert %QaReport{commit: "scratch_p_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task_p.id)
+  end
+
+  test "settles clean exit 0 for qa stage with VERDICT: FAIL captures QA report and routes to engineer" do
+    project = create_test_project()
+    role_eng = create_test_role(%{project_id: project.id, stage: :engineer, name: "Engineer"})
+    role_qa = create_test_role(%{project_id: project.id, stage: :qa, name: "QA Tester"})
+    scratch_dir = create_test_qa_dir(commit: "fail_qa_commit")
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :qa,
+        stage_state: :running,
+        rework_cycles: 0,
+        rework_cycles_by_gate: %{}
+      })
+
+    role_run = create_test_role_run(%{task_id: task.id, role_id: role_qa.id, status: :running})
+
+    output = "Button is broken.\n\nVERDICT: FAIL"
+
+    assert {:ok,
+            %Task{
+              id: ^task_id,
+              stage: :engineer,
+              stage_state: :queued,
+              rework_cycles: 1
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output}, scratch_dir: scratch_dir)
+
+    assert %QaReport{commit: "fail_qa_commit"} = Repo.one(from q in QaReport, where: q.task_id == ^task_id)
+
+    eng_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
+    assert eng_run.pending_answer =~ "Button is broken."
+  end
+
+  test "settles clean exit 0 for qa stage fails task when artifact capture fails" do
+    project = create_test_project()
+    _ws = create_test_linear_workspace(%{project_id: project.id})
+    role_qa = create_test_role(%{project_id: project.id, stage: :qa, name: "QA Tester"})
+
+    scratch_dir =
+      create_test_qa_dir(
+        rows: [
+          %{
+            "id" => "check_1",
+            "check" => "Login works",
+            "result" => "pass",
+            "severity" => "blocker",
+            "artifacts" => [
+              %{
+                "name" => "screenshot.png",
+                "kind" => "image",
+                "path" => "screenshot.png"
+              }
+            ]
+          }
+        ]
+      )
+
+    %Task{id: task_id} =
+      task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :qa,
+        stage_state: :running
+      })
+
+    role_run = create_test_role_run(%{task_id: task.id, role_id: role_qa.id, status: :running})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Plug.Conn.send_resp(conn, 500, "Upload error")
+    end)
+
+    assert {:ok,
+            %Task{
+              id: ^task_id,
+              stage: :qa,
+              stage_state: :failed,
+              error: err_msg
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: "VERDICT: PASS"}, scratch_dir: scratch_dir)
+
+    assert err_msg =~ "linear_api_error"
+  end
+
+  test "end-to-end pipeline flow: QA -> QA Lead materialization -> Ready to merge" do
+    project = create_test_project()
+    role_qa = create_test_role(%{project_id: project.id, stage: :qa, name: "QA Tester"})
+    role_lead = create_test_role(%{project_id: project.id, stage: :qa_lead, name: "QA Lead"})
+
+    qa_scratch_dir =
+      create_test_qa_dir(
+        commit: "flow_commit",
+        rows: [
+          %{
+            "id" => "flow_1",
+            "check" => "Flow check",
+            "result" => "pass",
+            "severity" => "cosmetic",
+            "artifacts" => [%{"name" => "proof.txt", "kind" => "text", "text" => "FLOW PROOF TEXT"}]
+          }
+        ]
+      )
+
+    task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :qa,
+        stage_state: :running
+      })
+
+    role_run_qa = create_test_role_run(%{task_id: task.id, role_id: role_qa.id, status: :running})
+
+    # Step 1: Settle QA run
+    assert {:ok, %Task{stage: :qa_lead, stage_state: :queued} = task_lead_queued, _rr} =
+             Pipeline.settle_run(task, role_run_qa, %{exit_code: 0, output: "VERDICT: PASS"}, scratch_dir: qa_scratch_dir)
+
+    # Step 2: Scratch prepare for QA Lead
+    lead_scratch_dir = create_temp_scratch_dir()
+    assert {:ok, ^lead_scratch_dir} = prepare(task_lead_queued, lead_scratch_dir)
+
+    # Verify materialization into lead scratch dir
+    assert File.exists?(Path.join([lead_scratch_dir, "qa", "manifest.json"]))
+    assert File.read!(Path.join([lead_scratch_dir, "qa", "proof.txt"])) == "FLOW PROOF TEXT"
+
+    # Step 3: Settle QA Lead run
+    role_run_lead = create_test_role_run(%{task_id: task.id, role_id: role_lead.id, status: :running})
+
+    assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, _rr2} =
+             Pipeline.settle_run(task_lead_queued, role_run_lead, %{exit_code: 0, output: "VERDICT: PASS"},
+               scratch_dir: lead_scratch_dir
+             )
   end
 
   test "settles clean exit 0 for qa_lead stage with passed verdict advancing to demo if configured" do
@@ -822,5 +1179,705 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     assert {:ok, %Task{stage: :review, stage_state: :queued}, %RoleRun{status: :finished}} =
              Pipeline.settle_run(task3, role_run3, %{exit_code: 0, detected_question: detector3})
+  end
+
+  test "settle_run delegates %Run{kind: :chat} and %{kind: :chat} to SettleChatTurn" do
+    project = create_test_project()
+    task = create_test_task(%{project_id: project.id, stage: :engineer, stage_state: :queued})
+    role_run = create_test_role_run(%{task_id: task.id, status: :finished, started_at: DateTime.utc_now()})
+
+    run_struct = %Run{kind: :chat, role_run_id: role_run.id, task_id: task.id, status: :finished}
+
+    assert {:ok, %Task{}, %RoleRun{}} =
+             Pipeline.settle_run(task, role_run, run_struct)
+
+    assert {:ok, %Task{}, %RoleRun{}} =
+             Pipeline.settle_run(task, role_run, %{kind: :chat, exit_code: 0})
+  end
+
+  test "settling clean exit 0 for rebasing task restores previous state and refreshes mergeability" do
+    project = create_test_project(%{github_repo: "testorg/rebase_settle"})
+
+    task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :review,
+        stage_state: :running,
+        is_rebasing: true,
+        stage_state_before_rebase: :awaiting_approval,
+        pr_number: 999,
+        mergeability: :conflicting,
+        pr_is_draft: false
+      })
+
+    role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+    mock_pull_request_state_success("testorg/rebase_settle", 999, mergeable: true, draft: false)
+
+    assert {:ok,
+            %Task{
+              is_rebasing: false,
+              stage_state: :awaiting_approval,
+              stage_state_before_rebase: nil,
+              mergeability: :mergeable
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0}, token: "tok_test")
+  end
+
+  test "settling non-zero exit for rebasing task preserves is_rebasing for retries" do
+    project = create_test_project()
+
+    task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :review,
+        stage_state: :running,
+        is_rebasing: true,
+        stage_state_before_rebase: :queued
+      })
+
+    role_run = create_test_role_run(%{task_id: task.id, status: :running, auto_retries: 0})
+
+    assert {:ok,
+            %Task{
+              is_rebasing: true,
+              stage_state: :failed,
+              error: "Permanent error"
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 1, error: "Permanent error"})
+  end
+
+  test "settling clean exit for rebasing task falls back to updated_task if refresh_mergeability fails" do
+    project = create_test_project(%{github_repo: "testorg/rebase_settle_fail"})
+
+    task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :ready_to_merge,
+        stage_state: :running,
+        is_rebasing: true,
+        stage_state_before_rebase: :awaiting_approval,
+        mergeability: :unknown,
+        pr_number: 998,
+        pr_is_draft: false
+      })
+
+    role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+    mock_pull_request_state_error("testorg/rebase_settle_fail", 998, 500, "Internal Server Error")
+
+    assert {:ok,
+            %Task{
+              is_rebasing: false,
+              stage_state: :awaiting_approval,
+              stage_state_before_rebase: nil,
+              mergeability: :unknown
+            }, %RoleRun{status: :finished}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0}, token: "tok_test")
+  end
+
+  describe "settle_run at design stage" do
+    test "designer run settlement fails when manifest is missing" do
+      project = create_test_project()
+      task = create_test_task(%{project_id: project.id, stage: :design, stage_state: :running})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage: :design, stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+
+      assert err =~ "No design manifest found at"
+    end
+
+    test "designer run settlement populates task.design when manifest is valid" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_design_dir(canvas_url: "https://claude.ai/canvas/v1")
+
+      task =
+        create_test_task(%{project_id: project.id, stage: :design, stage_state: :running, worktree_path: worktree_dir})
+
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      mock_design_uploads(2)
+
+      assert {:ok, %Task{stage: :design, stage_state: :awaiting_approval, error: nil}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, url_probe: fn _uri -> true end)
+
+      designs = Repo.all(from d in Rail.Artifacts.Schemas.Design, where: d.task_id == ^task.id)
+      assert length(designs) == 1
+      assert hd(designs).canvas_url == "https://claude.ai/canvas/v1"
+    end
+
+    test "fails when manifest no longer contains outstanding pickedKey" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+
+      directions = [
+        %{
+          "key" => "dir-other",
+          "title" => "Other",
+          "notes" => "Notes",
+          "stillPath" => ".axis/design/dir-1.png"
+        }
+      ]
+
+      worktree_dir = create_test_design_dir(version: 2, picked_key: "dir-1", directions: directions)
+
+      task =
+        create_test_task(%{project_id: project.id, stage: :design, stage_state: :running, worktree_path: worktree_dir})
+
+      create_test_design(%{task_id: task.id, version: 1, picked_key: "dir-1"})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, url_probe: fn _uri -> true end)
+
+      assert err =~ "Manifest missing picked direction: dir-1"
+    end
+
+    test "fails when manifest version is not incremented after a pick or revision" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_design_dir(version: 1, picked_key: "dir-1")
+
+      task =
+        create_test_task(%{project_id: project.id, stage: :design, stage_state: :running, worktree_path: worktree_dir})
+
+      create_test_design(%{task_id: task.id, version: 1, picked_key: "dir-1"})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, url_probe: fn _uri -> true end)
+
+      assert err =~ "Manifest version must be incremented after a pick or revision."
+    end
+
+    test "fails when manifest is missing pickedKey after a pick" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_design_dir(version: 2, picked_key: nil)
+
+      task =
+        create_test_task(%{project_id: project.id, stage: :design, stage_state: :running, worktree_path: worktree_dir})
+
+      create_test_design(%{task_id: task.id, version: 1, picked_key: "dir-1"})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, url_probe: fn _uri -> true end)
+
+      assert err =~ "Design manifest is missing pickedKey (expected \"dir-1\")."
+    end
+
+    test "fails when manifest pickedKey does not match previously chosen direction" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_design_dir(version: 2, picked_key: "dir-2")
+
+      task =
+        create_test_task(%{project_id: project.id, stage: :design, stage_state: :running, worktree_path: worktree_dir})
+
+      create_test_design(%{task_id: task.id, version: 1, picked_key: "dir-1"})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, url_probe: fn _uri -> true end)
+
+      assert err =~ "Design manifest pickedKey (dir-2) does not match chosen direction (dir-1)."
+    end
+
+    test "supports settling with scratch_path and valid transition" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_design_dir(version: 2, picked_key: "dir-1")
+
+      task =
+        create_test_task(%{project_id: project.id, stage: :design, stage_state: :running, worktree_path: nil})
+
+      create_test_design(%{task_id: task.id, version: 1, picked_key: "dir-1"})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+      mock_design_uploads(2)
+
+      assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(
+                 task,
+                 role_run,
+                 %{exit_code: 0},
+                 scratch_path: worktree_dir,
+                 url_probe: fn _uri -> true end
+               )
+    end
+
+    test "supports settling with scratch_dir and valid transition" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_design_dir(version: 2, picked_key: "dir-1")
+
+      task =
+        create_test_task(%{project_id: project.id, stage: :design, stage_state: :running, worktree_path: nil})
+
+      create_test_design(%{task_id: task.id, version: 1, picked_key: "dir-1"})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+      mock_design_uploads(2)
+
+      assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(
+                 task,
+                 role_run,
+                 %{exit_code: 0},
+                 scratch_dir: worktree_dir,
+                 url_probe: fn _uri -> true end
+               )
+    end
+  end
+
+  describe "settle_run at demo stage" do
+    test "demo run settlement fails when manifest is missing" do
+      project = create_test_project()
+      task = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage: :demo, stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+
+      assert err =~ "Demo manifest not found at"
+    end
+
+    test "demo run settlement fails when worktree moved during recording" do
+      project = create_test_project()
+      worktree = create_temp_git_repo()
+      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree, ignore_axis: true)
+
+      demo_dir = Path.join([worktree, ".axis", "demo"])
+      File.mkdir_p!(demo_dir)
+      File.write!(Path.join(demo_dir, "frame-1.png"), "frame")
+
+      File.write!(
+        Path.join(demo_dir, "manifest.json"),
+        Jason.encode!(%{
+          "version" => 1,
+          "outcome" => "recorded",
+          "segments" => [
+            %{
+              "criterionIndex" => 1,
+              "criterion" => "AC 1",
+              "outcome" => "recorded",
+              "frames" => [%{"path" => "frame-1.png", "holdMs" => 1000, "caption" => "Step 1"}]
+            }
+          ]
+        })
+      )
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: worktree
+        })
+
+      role_run =
+        create_test_role_run(%{
+          task_id: task.id,
+          status: :running,
+          stage_fingerprint_head_sha: "prior_sha_before_move_#{original_sha}",
+          stage_fingerprint_dirty_digest: original_digest
+        })
+
+      expected_err = "The worktree moved during the demo run."
+
+      assert {:ok, %Task{stage_state: :failed, error: ^expected_err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+    end
+
+    test "demo run settlement fails when worktree code outside .axis/ was modified during recording" do
+      project = create_test_project()
+      worktree = create_temp_git_repo()
+      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree, ignore_axis: true)
+
+      demo_dir = Path.join([worktree, ".axis", "demo"])
+      File.mkdir_p!(demo_dir)
+      File.write!(Path.join(demo_dir, "frame-1.png"), "frame")
+
+      File.write!(
+        Path.join(demo_dir, "manifest.json"),
+        Jason.encode!(%{
+          "version" => 1,
+          "outcome" => "recorded",
+          "segments" => [
+            %{
+              "criterionIndex" => 1,
+              "criterion" => "AC 1",
+              "outcome" => "recorded",
+              "frames" => [%{"path" => "frame-1.png", "holdMs" => 1000, "caption" => "Step 1"}]
+            }
+          ]
+        })
+      )
+
+      File.write!(Path.join(worktree, "uncommitted.txt"), "dirtied worktree")
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: worktree
+        })
+
+      role_run =
+        create_test_role_run(%{
+          task_id: task.id,
+          status: :running,
+          stage_fingerprint_head_sha: original_sha,
+          stage_fingerprint_dirty_digest: original_digest
+        })
+
+      expected_err = "Worktree code outside .axis/ was modified during recording."
+
+      assert {:ok, %Task{stage_state: :failed, error: ^expected_err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+    end
+
+    test "demo run settlement succeeds when untracked frames exist in .axis/demo/" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree = create_temp_git_repo()
+      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree, ignore_axis: true)
+
+      demo_dir = Path.join([worktree, ".axis", "demo"])
+      File.mkdir_p!(demo_dir)
+      File.write!(Path.join(demo_dir, "frame-1.png"), "frame")
+
+      File.write!(
+        Path.join(demo_dir, "manifest.json"),
+        Jason.encode!(%{
+          "version" => 1,
+          "outcome" => "recorded",
+          "segments" => [
+            %{
+              "criterionIndex" => 1,
+              "criterion" => "AC 1",
+              "outcome" => "recorded",
+              "frames" => [%{"path" => "frame-1.png", "holdMs" => 1000, "caption" => "Step 1"}]
+            }
+          ]
+        })
+      )
+
+      mock_demo_uploads(1)
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: worktree
+        })
+
+      role_run =
+        create_test_role_run(%{
+          task_id: task.id,
+          status: :running,
+          stage_fingerprint_head_sha: original_sha,
+          stage_fingerprint_dirty_digest: original_digest
+        })
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil},
+              %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+
+      assert %Demo{version: 1, outcome: "recorded", stale: false} =
+               Repo.one(from d in Demo, where: d.task_id == ^task.id)
+    end
+
+    test "recorded outcome increments version, captures demo, and advances to ready_to_merge" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_demo_dir(version: 2)
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: worktree_dir
+        })
+
+      create_test_demo(%{task_id: task.id, version: 1, outcome: "recorded", stale: true})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+      mock_demo_uploads(1)
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil},
+              %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+
+      demos = Repo.all(from d in Demo, where: d.task_id == ^task.id, order_by: [asc: d.version])
+      assert length(demos) == 2
+      latest = List.last(demos)
+      assert latest.version == 2
+      assert latest.outcome == "recorded"
+      refute latest.stale
+    end
+
+    test "declined outcome records demo with note and advances to ready_to_merge" do
+      project = create_test_project()
+      worktree_dir = create_test_demo_dir(version: 1, outcome: "declined", note: "Not suitable for demo recording")
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: worktree_dir
+        })
+
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil},
+              %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+
+      assert %Demo{version: 1, outcome: "declined", note: "Not suitable for demo recording"} =
+               Repo.one(from d in Demo, where: d.task_id == ^task.id)
+    end
+
+    test "failed outcome records failure and stops at demo failed" do
+      project = create_test_project()
+      worktree_dir = create_test_demo_dir(version: 1, outcome: "failed", note: "UI timed out during demo recording")
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: worktree_dir
+        })
+
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage: :demo, stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+
+      assert err =~ "UI timed out during demo recording"
+
+      assert %Demo{version: 1, outcome: "failed", note: "UI timed out during demo recording"} =
+               Repo.one(from d in Demo, where: d.task_id == ^task.id)
+    end
+
+    test "demo run non-zero exit code fails stage" do
+      project = create_test_project()
+      task = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running, auto_retries: 0})
+
+      assert {:ok, %Task{stage: :demo, stage_state: :failed, error: "Demo process crashed"}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 1, error: "Demo process crashed"})
+    end
+
+    test "supports settling demo with scratch_path and scratch_dir options" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      scratch_1 = create_test_demo_dir(version: 1)
+      scratch_2 = create_test_demo_dir(version: 2)
+
+      task1 = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running, worktree_path: nil})
+      role_run1 = create_test_role_run(%{task_id: task1.id, status: :running})
+      mock_demo_uploads(1)
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task1, role_run1, %{exit_code: 0}, scratch_path: scratch_1)
+
+      task2 = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running, worktree_path: nil})
+      role_run2 = create_test_role_run(%{task_id: task2.id, status: :running})
+      mock_demo_uploads(1)
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task2, role_run2, %{exit_code: 0}, scratch_dir: scratch_2)
+    end
+
+    test "fails when manifest format is invalid during capture" do
+      project = create_test_project()
+      scratch_dir = create_temp_scratch_dir()
+      demo_dir = Path.join([scratch_dir, ".axis", "demo"])
+      File.mkdir_p!(demo_dir)
+
+      File.write!(
+        Path.join(demo_dir, "manifest.json"),
+        Jason.encode!(%{"version" => 1, "outcome" => "recorded"})
+      )
+
+      task = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running, worktree_path: nil})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, scratch_dir: scratch_dir)
+
+      assert err =~ "segments"
+    end
+
+    test "fails when capture_demo fails during demo settlement" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      scratch_dir = create_temp_scratch_dir()
+      demo_dir = Path.join([scratch_dir, ".axis", "demo"])
+      File.mkdir_p!(demo_dir)
+      frame = Path.join(demo_dir, "frame-1.png")
+      File.write!(frame, "frame")
+
+      File.write!(
+        Path.join(demo_dir, "manifest.json"),
+        Jason.encode!(%{
+          "version" => 1,
+          "outcome" => "recorded",
+          "segments" => [
+            %{
+              "criterionIndex" => 1,
+              "criterion" => "AC 1",
+              "outcome" => "recorded",
+              "frames" => [%{"path" => "frame-1.png", "holdMs" => 1000, "caption" => "Step 1"}]
+            }
+          ]
+        })
+      )
+
+      Linear.mock_file_upload_success(put_status: 500)
+
+      task = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running, worktree_path: nil})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, scratch_dir: scratch_dir)
+
+      assert byte_size(err) > 0
+    end
+
+    test "resolves criteria from task description and handles nonexistent worktree path" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      scratch_dir = create_test_demo_dir(version: 1, criterion: "First criterion")
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          description: "Feature details\n\n## Acceptance criteria\n- First criterion",
+          worktree_path: "/tmp/nonexistent_wt_#{System.unique_integer([:positive])}"
+        })
+
+      role_run =
+        create_test_role_run(%{
+          task_id: task.id,
+          status: :running,
+          stage_fingerprint_head_sha: "head_fallback",
+          stage_fingerprint_dirty_digest: "digest_fallback"
+        })
+
+      mock_demo_uploads(1)
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, scratch_dir: scratch_dir)
+    end
+
+    test "handles non-git worktree directory gracefully during demo settlement" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      scratch_dir = create_temp_scratch_dir()
+      demo_dir = Path.join([scratch_dir, ".axis", "demo"])
+      File.mkdir_p!(demo_dir)
+      frame = Path.join(demo_dir, "frame-1.png")
+      File.write!(frame, "frame")
+
+      File.write!(
+        Path.join(demo_dir, "manifest.json"),
+        Jason.encode!(%{
+          "version" => 1,
+          "outcome" => "recorded",
+          "segments" => [
+            %{
+              "criterionIndex" => 1,
+              "criterion" => "AC 1",
+              "outcome" => "recorded",
+              "frames" => [%{"path" => "frame-1.png", "holdMs" => 1000, "caption" => "Step 1"}]
+            }
+          ]
+        })
+      )
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: scratch_dir
+        })
+
+      role_run =
+        create_test_role_run(%{
+          task_id: task.id,
+          status: :running,
+          stage_fingerprint_head_sha: "some_sha",
+          stage_fingerprint_dirty_digest: "some_digest"
+        })
+
+      mock_demo_uploads(1)
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+    end
+
+    test "resolves demo target from scratch_dir when task has no worktree_path" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      task = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running, worktree_path: nil})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      scratch_dir = Path.join([System.tmp_dir!(), "axis", task.project_id, "scratch", task.id])
+      demo_dir = Path.join([scratch_dir, "demo"])
+      File.mkdir_p!(demo_dir)
+      frame = Path.join(demo_dir, "frame-1.png")
+      File.write!(frame, "frame")
+
+      File.write!(
+        Path.join(demo_dir, "manifest.json"),
+        Jason.encode!(%{
+          "version" => 1,
+          "outcome" => "recorded",
+          "segments" => [
+            %{
+              "criterionIndex" => 1,
+              "criterion" => "AC 1",
+              "outcome" => "recorded",
+              "frames" => [%{"path" => "frame-1.png", "holdMs" => 1000, "caption" => "Step 1"}]
+            }
+          ]
+        })
+      )
+
+      mock_demo_uploads(1)
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+    end
+
+    test "supports explicit criteria in opts when settling demo" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_demo_dir(version: 1, criterion: "Explicit criterion")
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: worktree_dir
+        })
+
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+      mock_demo_uploads(1)
+
+      assert {:ok, %Task{stage: :ready_to_merge}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, criteria: ["Explicit criterion"])
+    end
   end
 end

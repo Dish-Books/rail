@@ -2,6 +2,14 @@ import Config
 
 config :elixir, :time_zone_database, Tz.TimeZoneDatabase
 
+config :esbuild,
+  version: "0.25.0",
+  rail: [
+    args: ~w(js/app.js --bundle --target=es2020 --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
+    cd: Path.expand("../assets", __DIR__),
+    env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
+  ]
+
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id]
@@ -44,6 +52,16 @@ config :rail,
   config_env: config_env(),
   ecto_repos: [Rail.Repo],
   generators: [timestamp_type: :utc_datetime_usec]
+
+config :tailwind,
+  version: "4.3.0",
+  rail: [
+    args: ~w(
+      --input=css/app.css
+      --output=../priv/static/assets/app.css
+    ),
+    cd: Path.expand("../assets", __DIR__)
+  ]
 
 config :ueberauth, Ueberauth,
   providers: [

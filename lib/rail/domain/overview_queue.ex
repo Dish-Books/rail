@@ -252,7 +252,8 @@ defmodule Rail.Domain.OverviewQueue do
       get_field(task, :has_merge_conflicts) == true and not rebasing?(task) ->
         stage_state(task) in [:queued, :awaiting_approval, nil]
 
-      get_field(task, :mergeability) in [:conflicts, "conflicts"] and not rebasing?(task) ->
+      get_field(task, :mergeability) in [:conflicts, "conflicts", :conflicting, "conflicting"] and
+          not rebasing?(task) ->
         stage_state(task) in [:queued, :awaiting_approval, nil]
 
       true ->

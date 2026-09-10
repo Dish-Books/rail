@@ -10,6 +10,7 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
   alias Rail.Domain.Embeds.DesignDirection
   alias Rail.Domain.Embeds.QaArtifact
   alias Rail.Domain.Embeds.QaRow
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Scope
@@ -134,6 +135,78 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
       manifest = Jason.decode!(File.read!(Path.join(qa_dir, "manifest.json")))
       assert manifest["commit"] == "c1234"
       assert [%{"id" => "c1", "artifacts" => [_art1, _art2]}] = manifest["rows"]
+    end
+
+    test "materializes %QaReport{} with only text artifacts when no Linear workspace exists", %{dest_dir: dest_dir} do
+      scope = Scope.for_system()
+      Repo.delete_all(LinearWorkspace)
+
+      report = %QaReport{
+        commit: "text_only_commit",
+        session: %{"port" => 4000},
+        rows: [
+          %QaRow{
+            id: "c_txt",
+            check: "Console check",
+            result: :pass,
+            severity: :minor,
+            artifacts: [
+              %QaArtifact{name: "console.log", kind: :text, text: "NO ERRORS"}
+            ]
+          }
+        ]
+      }
+
+      assert {:ok, qa_dir} = Artifacts.materialize(scope, report, dest_dir)
+      assert File.exists?(Path.join(qa_dir, "manifest.json"))
+      assert File.read!(Path.join(qa_dir, "console.log")) == "NO ERRORS"
+
+      manifest = Jason.decode!(File.read!(Path.join(qa_dir, "manifest.json")))
+      assert manifest["commit"] == "text_only_commit"
+    end
+
+    test "materializes QA report by %Task{} resolving project workspace token automatically", %{
+      dest_dir: dest_dir,
+      ws: ws
+    } do
+      scope = Scope.for_system()
+      project = Repo.insert!(%{Project.factory() | linear_workspace_id: ws.id})
+      task = Repo.insert!(%{Task.factory() | project_id: project.id})
+
+      {:ok, _qa} =
+        %QaReport{}
+        |> QaReport.changeset(%{
+          task_id: task.id,
+          commit: "task_commit",
+          session: %{},
+          rows: [
+            %{
+              id: "t1",
+              check: "Task test",
+              result: :pass,
+              severity: :blocker,
+              artifacts: [
+                %{name: "img.png", kind: :image, url: "https://uploads.linear.app/asset/task_img.png"}
+              ]
+            }
+          ]
+        })
+        |> Repo.insert()
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        assert conn.request_path == "/asset/task_img.png"
+        Plug.Conn.send_resp(conn, 200, "TASK_IMAGE_DATA")
+      end)
+
+      assert {:ok, qa_dir} = Artifacts.materialize(scope, task, dest_dir, kind: :qa)
+      assert File.exists?(Path.join(qa_dir, "img.png"))
+      assert File.read!(Path.join(qa_dir, "img.png")) == "TASK_IMAGE_DATA"
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Plug.Conn.send_resp(conn, 200, "TASK_IMAGE_DATA_2")
+      end)
+
+      assert {:ok, _qa_dir2} = Artifacts.materialize(scope, task.id, dest_dir, kind: :qa)
     end
 
     test "materializes by task_id for all kinds", %{dest_dir: dest_dir} do

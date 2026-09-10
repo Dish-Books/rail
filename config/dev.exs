@@ -25,4 +25,8 @@ config :rail, RailWeb.Endpoint,
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
-  secret_key_base: "rails_development_secret_key_base_at_least_64_bytes_long_for_security_1234567890"
+  secret_key_base: "rails_development_secret_key_base_at_least_64_bytes_long_for_security_1234567890",
+  watchers: [
+    esbuild: {Esbuild, :install_and_run, [:rail, ~w(--sourcemap=inline --watch)]},
+    tailwind: {Tailwind, :install_and_run, [:rail, ~w(--watch)]}
+  ]

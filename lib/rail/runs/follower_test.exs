@@ -641,4 +641,179 @@ defmodule Rail.Runs.FollowerTest do
 
     Runs.stop_run(run.id, grace_period: 50)
   end
+
+  test "chat child exit preserves role run status/output but updates conversation_id if new", %{
+    tmp_dir: tmp_dir
+  } do
+    test_pid = self()
+    task_id = UXID.generate!(prefix: "tsk")
+    role_id = UXID.generate!(prefix: "rol")
+
+    {:ok, role_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_id,
+        status: :running,
+        started_at: DateTime.utc_now(),
+        conversation_id: "sess-orig",
+        output: "Preserved output"
+      })
+
+    stream = Path.join(tmp_dir, "chat_exit.ndjson")
+    File.write!(stream, ~s({"type":"system","subtype":"init","session_id":"sess-updated"}\n))
+    File.write!("#{stream}.err", "")
+
+    run =
+      Repo.insert!(%Run{
+        role_run_id: role_run.id,
+        task_id: task_id,
+        kind: :chat,
+        stream_path: stream,
+        node: to_string(Node.self()),
+        boot_id: Runs.boot_id(),
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    port = Port.open({:spawn_executable, "/bin/echo"}, [:binary, args: ["done"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(
+        run: run,
+        role_run: role_run,
+        stream_path: stream,
+        os_pid: pid,
+        tail_interval_ms: 20,
+        batch_interval_ms: 30,
+        on_finished: fn finished_run, outcome ->
+          send(test_pid, {:chat_finished, finished_run, outcome})
+        end
+      )
+
+    follower_ref = Process.monitor(follower_pid)
+
+    assert_receive {:chat_finished, _run, _outcome}, 2_000
+    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
+
+    reloaded_rr = Runs.get_role_run!(role_run.id)
+    assert reloaded_rr.status == :running
+    assert reloaded_rr.output == "Preserved output"
+    assert reloaded_rr.conversation_id == "sess-updated"
+  end
+
+  test "chat child exit with same conversation_id leaves role run unchanged", %{
+    tmp_dir: tmp_dir
+  } do
+    test_pid = self()
+    task_id = UXID.generate!(prefix: "tsk")
+    role_id = UXID.generate!(prefix: "rol")
+
+    {:ok, role_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_id,
+        status: :running,
+        started_at: DateTime.utc_now(),
+        conversation_id: "sess-same",
+        output: "Preserved"
+      })
+
+    stream = Path.join(tmp_dir, "chat_same.ndjson")
+    File.write!(stream, ~s({"type":"init","session_id":"sess-same"}\n))
+    File.write!("#{stream}.err", "")
+
+    run =
+      Repo.insert!(%Run{
+        role_run_id: role_run.id,
+        task_id: task_id,
+        kind: :chat,
+        stream_path: stream,
+        node: to_string(Node.self()),
+        boot_id: Runs.boot_id(),
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    port = Port.open({:spawn_executable, "/bin/echo"}, [:binary, args: ["done"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(
+        run: run,
+        role_run: role_run,
+        stream_path: stream,
+        os_pid: pid,
+        tail_interval_ms: 20,
+        batch_interval_ms: 30,
+        on_finished: fn finished_run, outcome ->
+          send(test_pid, {:same_chat_finished, finished_run, outcome})
+        end
+      )
+
+    follower_ref = Process.monitor(follower_pid)
+
+    assert_receive {:same_chat_finished, _run, _outcome}, 2_000
+    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
+
+    reloaded_rr = Runs.get_role_run!(role_run.id)
+    assert reloaded_rr.conversation_id == "sess-same"
+  end
+
+  test "stage child exit without usage map updates role run with nil usage", %{
+    tmp_dir: tmp_dir
+  } do
+    test_pid = self()
+    task_id = UXID.generate!(prefix: "tsk")
+    role_id = UXID.generate!(prefix: "rol")
+
+    {:ok, role_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    stream = Path.join(tmp_dir, "stage_no_usage.ndjson")
+    File.write!(stream, "plain non-json log line\n")
+    File.write!("#{stream}.err", "")
+
+    run =
+      Repo.insert!(%Run{
+        role_run_id: role_run.id,
+        task_id: task_id,
+        kind: :stage,
+        stream_path: stream,
+        node: to_string(Node.self()),
+        boot_id: Runs.boot_id(),
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    port = Port.open({:spawn_executable, "/bin/echo"}, [:binary, args: ["done"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(
+        run: run,
+        role_run: role_run,
+        stream_path: stream,
+        os_pid: pid,
+        tail_interval_ms: 20,
+        batch_interval_ms: 30,
+        on_finished: fn finished_run, outcome ->
+          send(test_pid, {:stage_no_usage_finished, finished_run, outcome})
+        end
+      )
+
+    follower_ref = Process.monitor(follower_pid)
+
+    assert_receive {:stage_no_usage_finished, _run, _outcome}, 2_000
+    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
+
+    reloaded_rr = Runs.get_role_run!(role_run.id)
+    assert reloaded_rr.status == :finished
+    assert %TaskUsage{input_tokens: 0} = reloaded_rr.usage
+  end
 end

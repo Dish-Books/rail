@@ -105,7 +105,7 @@ defmodule Rail.Artifacts.Validators.DesignValidatorTest do
       )
 
       assert {:error, esc_err} = DesignValidator.validate(dir)
-      assert esc_err =~ "Design still image path must stay inside design directory"
+      assert esc_err =~ "Design still image path must stay inside .axis/design/"
 
       File.write!(
         Path.join(dir, "manifest.json"),
@@ -172,6 +172,30 @@ defmodule Rail.Artifacts.Validators.DesignValidatorTest do
       File.write!(Path.join(dir, "manifest.json"), Jason.encode!(Map.put(manifest, "version", "invalid")))
 
       assert {:ok, %{version: 1}} = DesignValidator.validate(dir, url_probe: fn _url -> true end)
+    end
+
+    test "validates with absolute still_path inside design directory", %{dir: dir} do
+      still_file = Path.join(dir, "abs_still.png")
+      File.write!(still_file, "png-bytes")
+      abs_still_path = Path.expand(still_file)
+
+      File.write!(
+        Path.join(dir, "manifest.json"),
+        Jason.encode!(%{
+          "canvasUrl" => "https://canvas.example.com/abs",
+          "directions" => [
+            %{
+              "key" => "k_abs",
+              "title" => "Abs Title",
+              "notes" => "Abs Notes",
+              "still_path" => abs_still_path
+            }
+          ]
+        })
+      )
+
+      assert {:ok, %{directions: [%{still_path: ^abs_still_path}]}} =
+               DesignValidator.validate(dir, url_probe: fn _url -> true end)
     end
   end
 end

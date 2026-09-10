@@ -174,4 +174,12 @@ defmodule Rail.Runs.PromptBuilderTest do
     assert PromptBuilder.build_prompt(backend: nil, task_description: "Hello") == "Hello\n"
     assert PromptBuilder.build_prompt(backend: 123, task_description: "Hello") == "Hello\n"
   end
+
+  test "chat_prompt and build_chat_prompt helpers" do
+    assert PromptBuilder.chat_prompt("How are you?") =~ "How are you?"
+    assert PromptBuilder.chat_prompt(nil) =~ "Human message:\n\n"
+    assert PromptBuilder.build_chat_prompt("Direct call") =~ "Direct call"
+    assert Rail.Runs.chat_prompt("Via Runs") =~ "Via Runs"
+    assert Rail.Runs.build_chat_prompt("Via Runs 2") =~ "Via Runs 2"
+  end
 end

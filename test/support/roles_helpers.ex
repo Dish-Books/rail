@@ -84,10 +84,21 @@ defmodule RailTest.RolesHelpers do
     role_run_id = attrs[:role_run_id] || attrs["role_run_id"] || create_test_role_run().id
     seq = attrs[:seq] || attrs["seq"] || 1
     line = attrs[:line] || attrs["line"] || "Log event line"
+    inserted_at = attrs[:inserted_at] || attrs["inserted_at"]
 
-    %RunEvent{}
-    |> RunEvent.changeset(%{role_run_id: role_run_id, seq: seq, line: line})
-    |> Repo.insert!()
+    if inserted_at do
+      Repo.insert!(%RunEvent{
+        role_run_id: role_run_id,
+        seq: seq,
+        line: line,
+        inserted_at: inserted_at,
+        updated_at: inserted_at
+      })
+    else
+      %RunEvent{}
+      |> RunEvent.changeset(%{role_run_id: role_run_id, seq: seq, line: line})
+      |> Repo.insert!()
+    end
   end
 
   def create_test_run(attrs \\ %{}) do

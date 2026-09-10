@@ -14,6 +14,7 @@ defmodule Rail.Runs do
   alias Rail.Runs.ClaudeEvents
   alias Rail.Runs.Follower
   alias Rail.Runs.PromptBuilder
+  alias Rail.Runs.PruneRunEvents
   alias Rail.Runs.QuestionDetector
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
@@ -25,7 +26,10 @@ defmodule Rail.Runs do
 
   defdelegate build_argv(opts), to: ArgvBuilder
   defdelegate build_prompt(opts), to: PromptBuilder
+  defdelegate chat_prompt(message), to: PromptBuilder
+  defdelegate build_chat_prompt(message), to: PromptBuilder
   defdelegate detect_question(line, opts \\ []), to: QuestionDetector
+  defdelegate prune_run_events(opts \\ []), to: PruneRunEvents
   defdelegate summarize_tool_input(params), to: ToolSummarizer
   defdelegate summarize_tool_input(tool_name, params), to: ToolSummarizer
 
@@ -227,6 +231,48 @@ defmodule Rail.Runs do
 
     query = if limit, do: limit(query, ^limit), else: query
     Repo.all(query)
+  end
+
+  @doc """
+  Appends an individual log or transcript line to the run_events table for a role run,
+  maintaining sequential ordering and broadcasting to PubSub subscribers.
+  """
+  def append_run_event(role_run_or_id, line) do
+    role_run_id =
+      case role_run_or_id do
+        %RoleRun{id: id} -> id
+        id when is_binary(id) -> id
+      end
+
+    max_seq =
+      Repo.one(
+        from e in RunEvent,
+          where: e.role_run_id == ^role_run_id,
+          select: max(e.seq)
+      ) || 0
+
+    now = DateTime.utc_now()
+
+    event_attrs = %{
+      role_run_id: role_run_id,
+      seq: max_seq + 1,
+      line: line,
+      inserted_at: now,
+      updated_at: now
+    }
+
+    {:ok, event} =
+      %RunEvent{}
+      |> RunEvent.changeset(event_attrs)
+      |> Repo.insert()
+
+    Phoenix.PubSub.broadcast(
+      Rail.PubSub,
+      "run:#{role_run_id}",
+      {:run_events, role_run_id, [event]}
+    )
+
+    event
   end
 
   @doc """

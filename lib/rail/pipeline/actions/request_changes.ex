@@ -6,13 +6,16 @@ defmodule Rail.Pipeline.Actions.RequestChanges do
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.Briefs
 
+  alias Rail.Artifacts.Schemas.Design
   alias Rail.Pipeline
   alias Rail.Pipeline.Dispatcher
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Scope
 
@@ -72,24 +75,41 @@ defmodule Rail.Pipeline.Actions.RequestChanges do
         Pipeline.send_back_to_engineer(scope, task, comment: comment)
       end
     else
-      resolve_and_apply_changes(task, target_stage, comment)
+      resolve_and_apply_changes(task, target_stage, comment, opts)
     end
   end
 
-  defp resolve_and_apply_changes(%Task{} = task, target_stage, comment) do
+  defp resolve_and_apply_changes(%Task{} = task, target_stage, comment, opts) do
     stage_for_role = if task.is_rebasing, do: :engineer, else: target_stage
 
     case Roles.role_for_stage(task.project_id, stage_for_role) do
       {:ok, %Role{} = target_role} ->
-        update_task_and_role_run(task, target_stage, target_role, comment)
+        formatted_comment = format_comment_for_stage(task, target_stage, comment, opts)
+        update_task_and_role_run(task, target_stage, target_role, formatted_comment, comment)
 
       _no_role ->
         {:error, {:no_role_for_stage, stage_for_role}}
     end
   end
 
-  defp update_task_and_role_run(%Task{} = task, target_stage, %Role{} = target_role, comment) do
-    update_role_run_pending_answer(task.id, target_role.id, comment)
+  defp format_comment_for_stage(%Task{} = task, :design, comment, opts) do
+    if Keyword.get(opts, :is_pick, false) do
+      comment
+    else
+      case Repo.one(from d in Design, where: d.task_id == ^task.id, order_by: [desc: d.version], limit: 1) do
+        %Design{picked_key: picked_key} when is_binary(picked_key) and picked_key != "" ->
+          design_revise_brief(comment)
+
+        _other ->
+          comment
+      end
+    end
+  end
+
+  defp format_comment_for_stage(_task, _stage, comment, _opts), do: comment
+
+  defp update_task_and_role_run(%Task{} = task, target_stage, %Role{} = target_role, comment, raw_comment) do
+    update_role_run_pending_answer(task.id, target_role.id, comment, raw_comment)
 
     new_stage = if task.is_rebasing, do: task.stage, else: target_stage
 
@@ -111,28 +131,32 @@ defmodule Rail.Pipeline.Actions.RequestChanges do
     {:ok, updated_task}
   end
 
-  defp update_role_run_pending_answer(task_id, role_id, comment) do
-    case Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_id) do
-      %RoleRun{} = existing ->
-        pending = existing.pending_answer
-        new_pending = if pending && String.trim(pending) != "", do: "#{pending}\n\n#{comment}", else: comment
+  defp update_role_run_pending_answer(task_id, role_id, comment, raw_comment) do
+    role_run =
+      case Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_id) do
+        %RoleRun{} = existing ->
+          pending = existing.pending_answer
+          new_pending = if pending && String.trim(pending) != "", do: "#{pending}\n\n#{comment}", else: comment
 
-        existing
-        |> RoleRun.changeset(%{pending_answer: new_pending, auto_retries: 0})
-        |> Repo.update!()
+          existing
+          |> RoleRun.changeset(%{pending_answer: new_pending, auto_retries: 0})
+          |> Repo.update!()
 
-      nil ->
-        %RoleRun{}
-        |> RoleRun.changeset(%{
-          task_id: task_id,
-          role_id: role_id,
-          status: :finished,
-          auto_retries: 0,
-          pending_answer: comment,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
-    end
+        nil ->
+          %RoleRun{}
+          |> RoleRun.changeset(%{
+            task_id: task_id,
+            role_id: role_id,
+            status: :finished,
+            auto_retries: 0,
+            pending_answer: comment,
+            started_at: DateTime.utc_now()
+          })
+          |> Repo.insert!()
+      end
+
+    Runs.append_run_event(role_run.id, "[human] #{raw_comment}")
+    role_run
   end
 
   defp resolve_task(%Task{} = task), do: task
