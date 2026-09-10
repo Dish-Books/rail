@@ -1,14 +1,16 @@
 defmodule RailWeb.IssuesLiveTest do
-  use RailWeb.ConnCase, async: false
+  use RailWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Issues
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
+  alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
   alias RailWeb.Components.ArchiveIssueModal
   alias RailWeb.Components.IssueCard
@@ -20,7 +22,15 @@ defmodule RailWeb.IssuesLiveTest do
   end
 
   test "renders Issues view and navigation rail with active Issues destination", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_1",
+        login: "issues_live_user_1",
+        email: "issues_live_user_1@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
@@ -42,10 +52,26 @@ defmodule RailWeb.IssuesLiveTest do
   end
 
   test "handles ?project=<id> param and updates subtitle and switcher", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_2",
+        login: "issues_live_user_2",
+        email: "issues_live_user_2@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id, name: project_name}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Issues Live Workspace",
+        external_id: "lin_ws_issues_live",
+        token: "lin_api_token_issues_live",
+        webhook_secret: "whsec_issues_live"
+      })
+
+    assert {:ok, %Project{id: project_id, name: project_name} = project} =
              Projects.create_project(scope, %{
                name: "Issues Project",
                github_repo: "example/issues-project",
@@ -70,7 +96,15 @@ defmodule RailWeb.IssuesLiveTest do
   end
 
   test "renders empty state when there are no issues", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_3",
+        login: "issues_live_user_3",
+        email: "issues_live_user_3@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
@@ -86,10 +120,26 @@ defmodule RailWeb.IssuesLiveTest do
   test "renders issue cards with all attributes, badges, body deduplication, and worktree", %{
     conn: conn
   } do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_4",
+        login: "issues_live_user_4",
+        email: "issues_live_user_4@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Issues Live Workspace",
+        external_id: "lin_ws_issues_live",
+        token: "lin_api_token_issues_live",
+        webhook_secret: "whsec_issues_live"
+      })
+
+    assert {:ok, %Project{id: project_id} = project} =
              Projects.create_project(scope, %{
                name: "Demo Project",
                github_repo: "example/demo-project",
@@ -100,11 +150,18 @@ defmodule RailWeb.IssuesLiveTest do
                active: true
              })
 
-    issue =
-      create_test_issue(%{
-        project_id: project_id,
-        identifier: "DEMO-101",
-        title: "Deduplicated title",
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_issues_live_13201",
+      "identifier" => "DEMO-101",
+      "title" => "Deduplicated title"
+    })
+
+    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Deduplicated title")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_issues_live_13201"})
+
+    {:ok, issue} =
+      Issues.update_issue(system_scope(), issue, %{
         description: "Deduplicated title\nDetailed explanation of the issue.",
         priority: :urgent,
         state: :in_progress,
@@ -134,10 +191,26 @@ defmodule RailWeb.IssuesLiveTest do
   end
 
   test "filters by priority chips and updates chip counts", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_5",
+        login: "issues_live_user_5",
+        email: "issues_live_user_5@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Issues Live Workspace",
+        external_id: "lin_ws_issues_live",
+        token: "lin_api_token_issues_live",
+        webhook_secret: "whsec_issues_live"
+      })
+
+    assert {:ok, %Project{id: project_id} = project} =
              Projects.create_project(scope, %{
                name: "Priority Project",
                github_repo: "example/priority-project",
@@ -148,38 +221,58 @@ defmodule RailWeb.IssuesLiveTest do
                active: true
              })
 
-    issue_urgent =
-      create_test_issue(%{
-        project_id: project_id,
-        identifier: "PRIO-1",
-        title: "Urgent issue",
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_issues_live_13202",
+      "identifier" => "PRIO-1",
+      "title" => "Urgent issue"
+    })
+
+    {:ok, issue_urgent} = Issues.capture_issue(system_scope(), project, "Urgent issue")
+
+    {:ok, issue_urgent} =
+      Issues.update_issue(system_scope(), issue_urgent, %{
         priority: :urgent,
         state: :backlog
       })
 
-    issue_high_1 =
-      create_test_issue(%{
-        project_id: project_id,
-        identifier: "PRIO-2",
-        title: "High issue 1",
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_issues_live_13203",
+      "identifier" => "PRIO-2",
+      "title" => "High issue 1"
+    })
+
+    {:ok, issue_high_1} = Issues.capture_issue(system_scope(), project, "High issue 1")
+
+    {:ok, issue_high_1} =
+      Issues.update_issue(system_scope(), issue_high_1, %{
         priority: :high,
         state: :backlog
       })
 
-    issue_high_2 =
-      create_test_issue(%{
-        project_id: project_id,
-        identifier: "PRIO-3",
-        title: "High issue 2",
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_issues_live_13204",
+      "identifier" => "PRIO-3",
+      "title" => "High issue 2"
+    })
+
+    {:ok, issue_high_2} = Issues.capture_issue(system_scope(), project, "High issue 2")
+
+    {:ok, issue_high_2} =
+      Issues.update_issue(system_scope(), issue_high_2, %{
         priority: :high,
         state: :backlog
       })
 
-    issue_low =
-      create_test_issue(%{
-        project_id: project_id,
-        identifier: "PRIO-4",
-        title: "Low issue",
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_issues_live_13205",
+      "identifier" => "PRIO-4",
+      "title" => "Low issue"
+    })
+
+    {:ok, issue_low} = Issues.capture_issue(system_scope(), project, "Low issue")
+
+    {:ok, issue_low} =
+      Issues.update_issue(system_scope(), issue_low, %{
         priority: :low,
         state: :backlog
       })
@@ -227,10 +320,26 @@ defmodule RailWeb.IssuesLiveTest do
   end
 
   test "toggles Show finished filter chip", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_6",
+        login: "issues_live_user_6",
+        email: "issues_live_user_6@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Issues Live Workspace",
+        external_id: "lin_ws_issues_live",
+        token: "lin_api_token_issues_live",
+        webhook_secret: "whsec_issues_live"
+      })
+
+    assert {:ok, %Project{id: project_id} = project} =
              Projects.create_project(scope, %{
                name: "Finished Project",
                github_repo: "example/finished-project",
@@ -241,19 +350,29 @@ defmodule RailWeb.IssuesLiveTest do
                active: true
              })
 
-    active_issue =
-      create_test_issue(%{
-        project_id: project_id,
-        identifier: "FIN-1",
-        title: "Active task",
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_issues_live_13206",
+      "identifier" => "FIN-1",
+      "title" => "Active task"
+    })
+
+    {:ok, active_issue} = Issues.capture_issue(system_scope(), project, "Active task")
+
+    {:ok, active_issue} =
+      Issues.update_issue(system_scope(), active_issue, %{
         state: :in_progress
       })
 
-    done_issue =
-      create_test_issue(%{
-        project_id: project_id,
-        identifier: "FIN-2",
-        title: "Done task",
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_issues_live_13207",
+      "identifier" => "FIN-2",
+      "title" => "Done task"
+    })
+
+    {:ok, done_issue} = Issues.capture_issue(system_scope(), project, "Done task")
+
+    {:ok, done_issue} =
+      Issues.update_issue(system_scope(), done_issue, %{
         state: :done
       })
 
@@ -281,12 +400,34 @@ defmodule RailWeb.IssuesLiveTest do
   end
 
   test "Bring local button creates task and updates card to show stage link", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_7",
+        login: "issues_live_user_7",
+        email: "issues_live_user_7@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
+    {:ok, %LinearWorkspace{id: ws_id}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Issues Live Workspace 13212",
+        external_id: "lin_ws_issues_live_13212",
+        token: "lin_api_token_issues_live_13212",
+        webhook_secret: "whsec_issues_live_13212"
+      })
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Issues Live Workspace",
+        external_id: "lin_ws_issues_live",
+        token: "lin_api_token_issues_live",
+        webhook_secret: "whsec_issues_live"
+      })
+
+    assert {:ok, %Project{id: project_id} = project} =
              Projects.create_project(scope, %{
                name: "Bring Local Project",
                github_repo: "example/bring-local",
@@ -299,12 +440,12 @@ defmodule RailWeb.IssuesLiveTest do
                active: true
              })
 
-    issue =
-      create_test_issue(%{
-        project_id: project_id,
-        external_id: "lin_bl_1",
-        identifier: "BL-10",
-        title: "Bring local feature",
+    LinearMock.mock_create_issue_success(%{"id" => "lin_bl_1", "identifier" => "BL-10", "title" => "Bring local feature"})
+
+    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Bring local feature")
+
+    {:ok, issue} =
+      Issues.update_issue(system_scope(), issue, %{
         state: :backlog
       })
 
@@ -334,12 +475,34 @@ defmodule RailWeb.IssuesLiveTest do
   end
 
   test "opens issue editor modal, updates attributes, and saves changes", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_8",
+        login: "issues_live_user_8",
+        email: "issues_live_user_8@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
+    {:ok, %LinearWorkspace{id: ws_id}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Issues Live Workspace 13213",
+        external_id: "lin_ws_issues_live_13213",
+        token: "lin_api_token_issues_live_13213",
+        webhook_secret: "whsec_issues_live_13213"
+      })
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Issues Live Workspace",
+        external_id: "lin_ws_issues_live",
+        token: "lin_api_token_issues_live",
+        webhook_secret: "whsec_issues_live"
+      })
+
+    assert {:ok, %Project{id: project_id} = project} =
              Projects.create_project(scope, %{
                name: "Editor Project",
                github_repo: "example/editor-proj",
@@ -351,15 +514,16 @@ defmodule RailWeb.IssuesLiveTest do
                active: true
              })
 
-    issue =
-      create_test_issue(%{
-        project_id: project_id,
-        external_id: "lin_ed_1",
-        identifier: "ED-50",
-        title: "Initial title",
+    LinearMock.mock_create_issue_success(%{"id" => "lin_ed_1", "identifier" => "ED-50", "title" => "Initial title"})
+
+    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Initial title")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_ed_1"})
+
+    {:ok, issue} =
+      Issues.update_issue(system_scope(), issue, %{
         description: "Initial description",
-        priority: :low,
-        state: :triage
+        priority: :low
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
@@ -424,12 +588,34 @@ defmodule RailWeb.IssuesLiveTest do
   end
 
   test "opens archive confirmation modal and confirms archive", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_9",
+        login: "issues_live_user_9",
+        email: "issues_live_user_9@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
+    {:ok, %LinearWorkspace{id: ws_id}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Issues Live Workspace 13214",
+        external_id: "lin_ws_issues_live_13214",
+        token: "lin_api_token_issues_live_13214",
+        webhook_secret: "whsec_issues_live_13214"
+      })
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Issues Live Workspace",
+        external_id: "lin_ws_issues_live",
+        token: "lin_api_token_issues_live",
+        webhook_secret: "whsec_issues_live"
+      })
+
+    assert {:ok, %Project{id: project_id} = project} =
              Projects.create_project(scope, %{
                name: "Archive Project",
                github_repo: "example/archive-proj",
@@ -442,12 +628,16 @@ defmodule RailWeb.IssuesLiveTest do
                active: true
              })
 
-    issue =
-      create_test_issue(%{
-        project_id: project_id,
-        external_id: "lin_arc_view_1",
-        identifier: "ARC-99",
-        title: "Issue to archive",
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_arc_view_1",
+      "identifier" => "ARC-99",
+      "title" => "Issue to archive"
+    })
+
+    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Issue to archive")
+
+    {:ok, issue} =
+      Issues.update_issue(system_scope(), issue, %{
         state: :backlog
       })
 
@@ -502,12 +692,34 @@ defmodule RailWeb.IssuesLiveTest do
   end
 
   test "sync_issues button triggers sync on current project or all projects", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_10",
+        login: "issues_live_user_10",
+        email: "issues_live_user_10@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
+    {:ok, %LinearWorkspace{id: ws_id}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Issues Live Workspace 13215",
+        external_id: "lin_ws_issues_live_13215",
+        token: "lin_api_token_issues_live_13215",
+        webhook_secret: "whsec_issues_live_13215"
+      })
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Issues Live Workspace",
+        external_id: "lin_ws_issues_live",
+        token: "lin_api_token_issues_live",
+        webhook_secret: "whsec_issues_live"
+      })
+
+    assert {:ok, %Project{id: project_id} = project} =
              Projects.create_project(scope, %{
                name: "Sync Project",
                github_repo: "example/sync-proj",
@@ -534,10 +746,26 @@ defmodule RailWeb.IssuesLiveTest do
   end
 
   test "reloads on PubSub pipeline_changed and live_sync messages", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_11",
+        login: "issues_live_user_11",
+        email: "issues_live_user_11@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Issues Live Workspace",
+        external_id: "lin_ws_issues_live",
+        token: "lin_api_token_issues_live",
+        webhook_secret: "whsec_issues_live"
+      })
+
+    assert {:ok, %Project{id: project_id} = project} =
              Projects.create_project(scope, %{
                name: "PubSub Project",
                github_repo: "example/pubsub-proj",
@@ -550,11 +778,16 @@ defmodule RailWeb.IssuesLiveTest do
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
-    issue =
-      create_test_issue(%{
-        project_id: project_id,
-        identifier: "PS-1",
-        title: "Pubsub created issue",
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_issues_live_13211",
+      "identifier" => "PS-1",
+      "title" => "Pubsub created issue"
+    })
+
+    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Pubsub created issue")
+
+    {:ok, issue} =
+      Issues.update_issue(system_scope(), issue, %{
         state: :backlog
       })
 
@@ -674,8 +907,24 @@ defmodule RailWeb.IssuesLiveTest do
   end
 
   test "handles subtitle for projects with and without team keys", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_12",
+        login: "issues_live_user_12",
+        email: "issues_live_user_12@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
+
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Issues Live Workspace",
+        external_id: "lin_ws_issues_live",
+        token: "lin_api_token_issues_live",
+        webhook_secret: "whsec_issues_live"
+      })
 
     assert {:ok, %Project{id: p_id, name: p_name}} =
              Projects.create_project(scope, %{
