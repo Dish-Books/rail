@@ -25,4 +25,6 @@ defmodule RailWeb.CoreComponents do
   defdelegate task_actions(assigns), to: RailWeb.Components.TaskActions
   defdelegate task_action_modals(assigns), to: RailWeb.Components.TaskActionModals
   defdelegate markdown(assigns), to: RailWeb.Components.Markdown
+  defdelegate answer_field(assigns), to: RailWeb.Components.AnswerField
+  defdelegate conversation_tab(assigns), to: RailWeb.Components.ConversationTab
 end

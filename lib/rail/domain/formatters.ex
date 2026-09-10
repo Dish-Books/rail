@@ -360,6 +360,52 @@ defmodule Rail.Domain.Formatters do
     end
   end
 
+  @doc """
+  Maps a role icon name to a Material icon name per spec 05 §0.6 / §4.3:
+  `code` -> "code", `bug_report` -> "bug_report", `verified` -> "verified",
+  `fact_check` -> "fact_check", `rate_review` -> "rate_review", `alt_route` -> "alt_route",
+  `travel_explore` -> "travel_explore", `assignment` -> "assignment",
+  `architecture` -> "architecture", `palette` -> "palette", `videocam` -> "videocam",
+  default -> "help_outline".
+  """
+  def role_icon_for(icon_name) when is_binary(icon_name) do
+    case icon_name do
+      "code" -> "code"
+      "bug_report" -> "bug_report"
+      "verified" -> "verified"
+      "fact_check" -> "fact_check"
+      "rate_review" -> "rate_review"
+      "alt_route" -> "alt_route"
+      "travel_explore" -> "travel_explore"
+      "assignment" -> "assignment"
+      "architecture" -> "architecture"
+      "palette" -> "palette"
+      "videocam" -> "videocam"
+      _other -> "help_outline"
+    end
+  end
+
+  def role_icon_for(_other), do: "help_outline"
+
+  @doc """
+  Formats a run status atom or string into lowerCamel per spec 05 §4.4:
+  e.g. :running -> "running", :blocked_on_input -> "blockedOnInput", :completed -> "completed".
+  """
+  def format_run_status(nil), do: ""
+
+  def format_run_status(status) when is_atom(status) do
+    status |> Atom.to_string() |> format_run_status()
+  end
+
+  def format_run_status(""), do: ""
+
+  def format_run_status(status) when is_binary(status) do
+    [first | rest] = String.split(status, "_")
+    first <> Enum.map_join(rest, &String.capitalize/1)
+  end
+
+  # Private Helpers
+
   defp truncate_ask(trimmed) do
     if String.length(trimmed) <= 90 do
       trimmed

@@ -1,5 +1,5 @@
 defmodule RailWeb.TaskDetailLiveTest do
-  use RailWeb.ConnCase, async: true
+  use RailWeb.ConnCase, async: false
 
   import Ecto.Query
   import Phoenix.LiveViewTest
@@ -626,7 +626,8 @@ defmodule RailWeb.TaskDetailLiveTest do
   end
 
   test "confirm merge modal flow (open, cancel, submit with and without ignore_conflicts)", %{conn: conn} do
-    Req.Test.set_req_test_to_shared()
+    Req.Test.set_req_test_to_shared(Rail.GitHub)
+    on_exit(fn -> Req.Test.set_req_test_to_private(Rail.GitHub) end)
 
     Req.Test.stub(Rail.GitHub, fn conn ->
       conn
@@ -872,7 +873,8 @@ defmodule RailWeb.TaskDetailLiveTest do
   end
 
   test "direct action buttons dispatch corresponding pipeline actions", %{conn: conn} do
-    Req.Test.set_req_test_to_shared()
+    Req.Test.set_req_test_to_shared(Rail.GitHub)
+    on_exit(fn -> Req.Test.set_req_test_to_private(Rail.GitHub) end)
 
     Req.Test.stub(Rail.GitHub, fn conn ->
       conn
@@ -1125,5 +1127,424 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     assert {:noreply, %{assigns: %{active_modal: nil}}} =
              RailWeb.TaskDetailLive.handle_event("submit_modal", %{"action" => "cleanup"}, busy_socket)
+  end
+
+  test "Overview tab renders AnswerField when blocked with pending question, handles option click, answer, and dismiss",
+       %{conn: conn} do
+    {authed_conn, _user} = log_in_test_user(conn)
+    %Project{id: project_id} = create_test_project()
+
+    task =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :engineer,
+        stage_state: :blocked
+      })
+
+    question =
+      create_test_question(%{
+        task_id: task.id,
+        prompt: "Which database adapter should be used?",
+        options: ["PostgreSQL", "SQLite"],
+        context_summary: "Found multiple adapters in repo",
+        status: :pending
+      })
+
+    _updated =
+      task
+      |> Ecto.Changeset.change(%{question_id: question.id})
+      |> Rail.Repo.update!()
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
+
+    # 1. Verify AnswerField card renders
+    assert has_element?(view, "#answer-field-card")
+    assert has_element?(view, "#question-prompt", "Which database adapter should be used?")
+    assert has_element?(view, "#question-context-summary", "Found multiple adapters in repo")
+    assert has_element?(view, "#question-option-0", "PostgreSQL")
+    assert has_element?(view, "#question-option-1", "SQLite")
+
+    # 2. Click option chip
+    render_hook(view, "select_option", %{"option" => "PostgreSQL"})
+    assert has_element?(view, "#answer-textarea", "PostgreSQL")
+
+    # 3. Textarea change
+    render_hook(view, "answer_form_change", %{"answer" => "PostgreSQL 16"})
+    assert has_element?(view, "#answer-textarea", "PostgreSQL 16")
+
+    # 4. Empty submit no-ops
+    render_hook(view, "answer_question", %{"answer" => "   "})
+    assert has_element?(view, "#answer-field-card")
+
+    # 5. Non-empty submit with explicit question_id answers and unblocks task
+    render_hook(view, "answer_question", %{"question_id" => question.id, "answer" => "PostgreSQL 16"})
+    refute has_element?(view, "#answer-field-card")
+
+    # 6. Test answer without explicit question_id (hits fallback to pending_question.id)
+    task_answer_fb =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :engineer,
+        stage_state: :blocked
+      })
+
+    q_fallback =
+      create_test_question(%{
+        task_id: task_answer_fb.id,
+        prompt: "Which port?",
+        options: ["5432", "5433"],
+        status: :pending
+      })
+
+    _updated_fb =
+      task_answer_fb
+      |> Ecto.Changeset.change(%{question_id: q_fallback.id})
+      |> Rail.Repo.update!()
+
+    assert {:ok, view_fb, _html} = live(authed_conn, ~p"/tasks/#{task_answer_fb.id}")
+    assert has_element?(view_fb, "#answer-field-card")
+    render_hook(view_fb, "answer_question", %{"answer" => "5432"})
+    refute has_element?(view_fb, "#answer-field-card")
+
+    # 7. Test dismiss with explicit question_id param
+    task_dismiss_exp =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :engineer,
+        stage_state: :blocked
+      })
+
+    q2 =
+      create_test_question(%{
+        task_id: task_dismiss_exp.id,
+        prompt: "Should we run seeds?",
+        options: ["Yes", "No"],
+        status: :pending
+      })
+
+    _updated_2 =
+      task_dismiss_exp
+      |> Ecto.Changeset.change(%{question_id: q2.id})
+      |> Rail.Repo.update!()
+
+    assert {:ok, view2, _html} = live(authed_conn, ~p"/tasks/#{task_dismiss_exp.id}")
+    assert has_element?(view2, "#answer-field-card")
+    render_hook(view2, "dismiss_question", %{"question_id" => q2.id})
+    refute has_element?(view2, "#answer-field-card")
+
+    # 8. Test dismiss on a blocked task without explicit question_id param (uses fallback)
+    task_dismiss_fb =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :engineer,
+        stage_state: :blocked
+      })
+
+    q3 =
+      create_test_question(%{
+        task_id: task_dismiss_fb.id,
+        prompt: "Run migrations?",
+        options: ["Yes", "No"],
+        status: :pending
+      })
+
+    _updated_3 =
+      task_dismiss_fb
+      |> Ecto.Changeset.change(%{question_id: q3.id})
+      |> Rail.Repo.update!()
+
+    assert {:ok, view3, _html} = live(authed_conn, ~p"/tasks/#{task_dismiss_fb.id}")
+    assert has_element?(view3, "#answer-field-card")
+    render_hook(view3, "dismiss_question", %{})
+    refute has_element?(view3, "#answer-field-card")
+
+    # 7. Blocked task with invalid question_id gracefully sets pending_question to nil
+    bad_task =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :engineer,
+        stage_state: :blocked,
+        question_id: "qst_nonexistent_99"
+      })
+
+    assert {:ok, view_bad, _html} = live(authed_conn, ~p"/tasks/#{bad_task.id}")
+    refute has_element?(view_bad, "#answer-field-card")
+  end
+
+  test "Conversation tab renders empty state when task has no runs", %{conn: conn} do
+    {authed_conn, _user} = log_in_test_user(conn)
+    %Project{id: project_id} = create_test_project()
+
+    task =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :engineer,
+        stage_state: :queued
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=conversation")
+
+    assert has_element?(view, "#conversation-tab-root")
+    assert has_element?(view, "#conversation-empty-state")
+    assert has_element?(view, "#conversation-empty-state", "No role has run this task yet.")
+  end
+
+  test "Conversation tab handles role switching, raw log toggle, tool activity, and pubsub streaming", %{conn: conn} do
+    {authed_conn, _user} = log_in_test_user(conn)
+    %Project{id: project_id} = create_test_project()
+
+    role_arch =
+      create_test_role(%{
+        project_id: project_id,
+        name: "Architect",
+        stage: :architect,
+        icon_name: "architecture"
+      })
+
+    role_eng =
+      create_test_role(%{
+        project_id: project_id,
+        name: "Engineer",
+        stage: :engineer,
+        icon_name: "code"
+      })
+
+    task =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :engineer,
+        stage_state: :running
+      })
+
+    now = DateTime.utc_now()
+
+    _run_arch =
+      create_test_role_run(%{
+        task_id: task.id,
+        role_id: role_arch.id,
+        status: :finished,
+        started_at: DateTime.shift(now, minute: -10),
+        completed_at: DateTime.shift(now, minute: -5),
+        conversation_id: "conv_arch",
+        output: "[human] Architect instructions\n[run] claude\nArchitecture design complete."
+      })
+
+    run_eng =
+      create_test_role_run(%{
+        task_id: task.id,
+        role_id: role_eng.id,
+        status: :running,
+        started_at: DateTime.shift(now, second: -200),
+        conversation_id: "conv_eng",
+        output: "[human] Engineer instructions\n[run] claude\n[tool read_file] lib/app.ex\nWriting the code now."
+      })
+
+    _run_custom =
+      create_test_role_run(%{
+        task_id: task.id,
+        role_id: "custom_tester",
+        status: :finished,
+        started_at: DateTime.shift(now, second: -100),
+        conversation_id: "conv_custom",
+        output: "Custom agent report"
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=conversation")
+
+    # Role chips rendered
+    assert has_element?(view, "#role-chip-#{role_arch.id}")
+    assert has_element?(view, "#role-chip-#{role_eng.id}")
+    assert has_element?(view, "#role-chip-custom_tester")
+
+    # Switch to architect role
+    render_hook(view, "select_role", %{"role_id" => role_arch.id})
+    assert has_element?(view, "#role-chip-#{role_arch.id}")
+    assert has_element?(view, "[data-qa='role-bubble']", "Architecture design complete.")
+
+    # Switch to unmapped custom role
+    render_hook(view, "select_role", %{"role_id" => "custom_tester"})
+    assert has_element?(view, "#role-chip-custom_tester")
+    assert has_element?(view, "[data-qa='role-chip-custom_tester']", "Custom Tester")
+
+    # Switch to engineer role
+    render_hook(view, "select_role", %{"role_id" => role_eng.id})
+    assert has_element?(view, "[data-qa='role-bubble']", "Writing the code now.")
+
+    # Toggle tool activity with integer index
+    assert has_element?(view, "[data-qa='activity-tile']")
+    render_hook(view, "toggle_activity", %{"index" => "2"})
+    assert has_element?(view, "[data-qa='activity-content']")
+    assert has_element?(view, "[data-qa='activity-content']", "lib/app.ex")
+    render_hook(view, "toggle_activity", %{"index" => "2"})
+    refute has_element?(view, "[data-qa='activity-content']")
+
+    # Toggle tool activity with non-numeric string index
+    render_hook(view, "toggle_activity", %{"index" => "non_numeric_step"})
+    render_hook(view, "toggle_activity", %{"index" => "non_numeric_step"})
+
+    # Toggle raw log view
+    render_hook(view, "toggle_raw_log", %{})
+    assert has_element?(view, "#raw-log-container")
+    assert has_element?(view, "[data-qa='raw-log-line']", "Writing the code now.")
+    render_hook(view, "toggle_raw_log", %{})
+    assert has_element?(view, "[data-qa='chat-pane']")
+
+    # PubSub live event streaming: {:run_events, run_id, events}
+    send(view.pid, {:run_events, run_eng.id, [%{line: "[tool bash] mix test"}, %{line: "Tests pass"}]})
+    assert has_element?(view, "[data-qa='chat-pane']")
+
+    # PubSub live event streaming ignored for different run_id
+    send(view.pid, {:run_events, "rr_other_run", [%{line: "other line"}]})
+
+    # PubSub {:run_finished, run_id, outcome}
+    send(view.pid, {:run_finished, run_eng.id, :completed})
+    assert has_element?(view, "[data-qa='chat-pane']")
+  end
+
+  test "Conversation tab chat input, delivery modal for running task, and dispatch options", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+    scope = Scope.for_user(user)
+    %Project{id: project_id} = create_test_project()
+
+    role_eng =
+      create_test_role(%{
+        project_id: project_id,
+        name: "Engineer",
+        stage: :engineer,
+        icon_name: "code"
+      })
+
+    task =
+      create_test_task(%{
+        project_id: project_id,
+        stage: :engineer,
+        stage_state: :running
+      })
+
+    _run_eng =
+      create_test_role_run(%{
+        task_id: task.id,
+        role_id: role_eng.id,
+        status: :running,
+        conversation_id: "conv_eng_chat",
+        output: "[human] Hello\n[run] start\nHi there"
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=conversation")
+
+    # Chat input change
+    render_hook(view, "chat_input_change", %{"message" => "Please review tests"})
+    assert has_element?(view, "#chat-input")
+
+    # Chat input change with empty params no-ops
+    render_hook(view, "chat_input_change", %{})
+
+    # Send chat on running task triggers delivery modal
+    render_hook(view, "send_chat", %{"message" => "Please review tests"})
+    assert has_element?(view, "#delivery-modal-card")
+    assert has_element?(view, "#delivery-modal-card", "A run is in flight")
+
+    # Cancel delivery modal dismisses modal and keeps input
+    render_hook(view, "cancel_chat_delivery", %{})
+    refute has_element?(view, "#delivery-modal-card")
+
+    # Confirm delivery with nil modal no-ops
+    render_hook(view, "confirm_chat_delivery", %{"delivery" => "when_finished"})
+
+    # Re-trigger modal and confirm with when_finished
+    render_hook(view, "send_chat", %{"message" => "Please review tests"})
+    assert has_element?(view, "#delivery-modal-card")
+    render_hook(view, "confirm_chat_delivery", %{"delivery" => "when_finished"})
+    refute has_element?(view, "#delivery-modal-card")
+
+    # Re-trigger modal and confirm with stop_and_send
+    render_hook(view, "send_chat", %{"message" => "Stop and send message"})
+    assert has_element?(view, "#delivery-modal-card")
+    render_hook(view, "confirm_chat_delivery", %{"delivery" => "stop_and_send"})
+    refute has_element?(view, "#delivery-modal-card")
+
+    # Stop chat turn event
+    render_hook(view, "stop_chat_turn", %{})
+
+    # Cancel pending chat event
+    render_hook(view, "cancel_pending_chat", %{"role_id" => role_eng.id})
+    render_hook(view, "cancel_pending_chat", %{})
+
+    # Now make task idle
+    _updated =
+      task
+      |> Ecto.Changeset.change(%{stage_state: :awaiting_approval})
+      |> Rail.Repo.update!()
+
+    assert {:ok, idle_view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=conversation")
+
+    # Send chat on idle task with empty message no-ops
+    render_hook(idle_view, "send_chat", %{"message" => "  "})
+
+    # Send chat on idle task dispatches immediate
+    render_hook(idle_view, "send_chat", %{"message" => "Hello idle agent"})
+
+    # Test error fallback branch when send_chat_turn fails (e.g. invalid role)
+    err_socket = %Socket{
+      assigns: %{
+        __changed__: %{},
+        task: %{task | stage_state: :awaiting_approval},
+        task_id: task.id,
+        selected_role: %{id: "rol_missing", name: "Missing"},
+        current_scope: scope,
+        chat_sending: false,
+        chat_input: "failing message"
+      }
+    }
+
+    assert {:noreply, %{assigns: %{chat_sending: false}}} =
+             RailWeb.TaskDetailLive.handle_event("send_chat", %{"message" => "failing"}, err_socket)
+
+    # Test error fallback branch when confirm_chat_delivery fails
+    err_delivery_socket = %Socket{
+      assigns: %{
+        __changed__: %{},
+        task: task,
+        task_id: task.id,
+        active_delivery_modal: %{role_id: "rol_missing", text: "failing message"},
+        current_scope: scope,
+        chat_sending: false,
+        chat_input: ""
+      }
+    }
+
+    assert {:noreply, %{assigns: %{chat_sending: false}}} =
+             RailWeb.TaskDetailLive.handle_event(
+               "confirm_chat_delivery",
+               %{"delivery" => "when_finished"},
+               err_delivery_socket
+             )
+  end
+
+  test "exercises TaskDetailLive chat and delivery corner cases" do
+    dummy_socket = %Socket{
+      assigns: %{
+        __changed__: %{},
+        task: nil,
+        task_id: "tsk_nonexistent_0",
+        selected_role: nil,
+        chat_sending: true,
+        chat_input: "hello",
+        active_delivery_modal: nil,
+        current_scope: Scope.for_system()
+      }
+    }
+
+    assert {:noreply, ^dummy_socket} =
+             RailWeb.TaskDetailLive.handle_event("send_chat", %{"message" => "hi"}, dummy_socket)
+
+    assert {:noreply, ^dummy_socket} =
+             RailWeb.TaskDetailLive.handle_event("confirm_chat_delivery", %{"delivery" => "stop_and_send"}, dummy_socket)
+
+    assert {:noreply, %{assigns: %{task: nil}}} =
+             RailWeb.TaskDetailLive.handle_event("stop_chat_turn", %{}, dummy_socket)
+
+    assert {:noreply, %{assigns: %{task: nil}}} =
+             RailWeb.TaskDetailLive.handle_event("cancel_pending_chat", %{}, dummy_socket)
   end
 end

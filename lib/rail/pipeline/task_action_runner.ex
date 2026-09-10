@@ -250,9 +250,12 @@ defmodule Rail.Pipeline.TaskActionRunner do
       nil ->
         {:error, :not_found}
     end
+
+    # coveralls-ignore-start (test sandbox fallback)
   rescue
     _error in [DBConnection.OwnershipError] ->
       {:error, :ownership_error}
+      # coveralls-ignore-stop
   end
 
   defp set_task_error(task_id, error_msg) do
@@ -265,9 +268,12 @@ defmodule Rail.Pipeline.TaskActionRunner do
       nil ->
         {:error, :not_found}
     end
+
+    # coveralls-ignore-start (test sandbox fallback)
   rescue
     _error in [DBConnection.OwnershipError] ->
       {:error, :ownership_error}
+      # coveralls-ignore-stop
   end
 
   # coveralls-ignore-start

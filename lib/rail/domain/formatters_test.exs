@@ -500,4 +500,34 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.uses_design?(%{stage: :engineer}, role_runs: %{design: true})
     end
   end
+
+  describe "role_icon_for/1" do
+    test "maps known icon names and defaults to help_outline" do
+      assert Formatters.role_icon_for("code") == "code"
+      assert Formatters.role_icon_for("bug_report") == "bug_report"
+      assert Formatters.role_icon_for("verified") == "verified"
+      assert Formatters.role_icon_for("fact_check") == "fact_check"
+      assert Formatters.role_icon_for("rate_review") == "rate_review"
+      assert Formatters.role_icon_for("alt_route") == "alt_route"
+      assert Formatters.role_icon_for("travel_explore") == "travel_explore"
+      assert Formatters.role_icon_for("assignment") == "assignment"
+      assert Formatters.role_icon_for("architecture") == "architecture"
+      assert Formatters.role_icon_for("palette") == "palette"
+      assert Formatters.role_icon_for("videocam") == "videocam"
+      assert Formatters.role_icon_for("terminal") == "help_outline"
+      assert Formatters.role_icon_for("unknown") == "help_outline"
+      assert Formatters.role_icon_for(nil) == "help_outline"
+    end
+  end
+
+  describe "format_run_status/1" do
+    test "formats atom and string statuses into lowerCamel" do
+      assert Formatters.format_run_status(:running) == "running"
+      assert Formatters.format_run_status(:blocked_on_input) == "blockedOnInput"
+      assert Formatters.format_run_status("completed") == "completed"
+      assert Formatters.format_run_status("in_progress") == "inProgress"
+      assert Formatters.format_run_status(nil) == ""
+      assert Formatters.format_run_status("") == ""
+    end
+  end
 end

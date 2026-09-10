@@ -743,6 +743,110 @@ defmodule RailWeb.Components.AppShell do
       >
         <path d="M12.36 6l.4 2H18v6h-3.36l-.4-2H7V6h5.36M14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6L14 4z" />
       </svg>
+
+      <svg
+        :if={@name in ["send"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+      </svg>
+
+      <svg
+        :if={@name in ["person"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+      </svg>
+
+      <svg
+        :if={@name in ["build_outlined", "build"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z" />
+      </svg>
+
+      <svg
+        :if={@name in ["call_received"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M20 5.41L18.59 4 7 15.59V9H5v10h10v-2H8.41z" />
+      </svg>
+
+      <svg
+        :if={@name in ["call_made"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M9 5v2h6.59L4 18.59 5.41 20 17 8.41V15h2V5z" />
+      </svg>
+
+      <svg
+        :if={@name in ["expand_more"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z" />
+      </svg>
+
+      <svg
+        :if={@name in ["expand_less"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.59L18 14z" />
+      </svg>
+
+      <svg
+        :if={@name in ["stop"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M6 6h12v12H6z" />
+      </svg>
+
+      <svg
+        :if={@name in ["bug_report"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 5 12 5c-.49 0-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z" />
+      </svg>
+
+      <svg
+        :if={@name in ["verified"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M23 12l-2.44-2.79.34-3.69-3.61-.82-1.89-3.2L12 2.96 8.6 1.5 6.71 4.69 3.1 5.5l.34 3.7L1 12l2.44 2.79-.34 3.7 3.61.82L8.6 22.5l3.4-1.47 3.4 1.46 1.89-3.19 3.61-.82-.34-3.69L23 12zm-12.91 4.72l-3.8-3.81 1.48-1.48 2.32 2.33 5.85-5.87 1.48 1.48-7.33 7.35z" />
+      </svg>
+
+      <svg
+        :if={@name in ["alt_route"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M8.71 4.71l-1.42 1.42 2.59 2.59-2.59 2.59 1.42 1.42 4-4-4-4zm6.58 0l-4 4 4 4 1.42-1.42-2.59-2.59 2.59-2.59-1.42-1.42z" />
+      </svg>
+
+      <svg
+        :if={@name in ["travel_explore"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+      </svg>
+
+      <svg
+        :if={@name in ["assignment"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z" />
+      </svg>
     </span>
     """
   end
