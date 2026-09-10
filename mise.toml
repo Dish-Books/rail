@@ -1,0 +1,15 @@
+[env]
+# Load the gitignored, per-worktree .env into the environment so config/*.exs
+# pick up the isolated ports. Missing file is tolerated — the primary checkout runs on defaults.
+_.file = ".env"
+
+[tools]
+elixir = "1.19.5-otp-28"
+erlang = "28.4.1"
+node = "24.15.0"
+pnpm = "10.15.1"
+prek = "0.4.14"
+
+[tasks.ci]
+description = "Run every CI gate locally"
+run = "scripts/ci.sh"

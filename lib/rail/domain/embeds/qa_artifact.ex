@@ -1,0 +1,40 @@
+defmodule Rail.Domain.Embeds.QaArtifact do
+  @moduledoc """
+  An artifact attached to a QA report row.
+  """
+  use Ecto.Schema
+
+  import Ecto.Changeset
+
+  alias Rail.Domain.Enums.ArtifactKind
+
+  @derive Jason.Encoder
+
+  @primary_key false
+  embedded_schema do
+    field :name, :string
+    field :kind, ArtifactKind
+    field :text, :string
+    field :url, :string
+  end
+
+  @fields [:name, :kind, :text, :url]
+  @required_fields [:name, :kind]
+
+  @doc "Builds a changeset for a QA artifact."
+  def changeset(artifact, attrs) do
+    artifact
+    |> cast(attrs, @fields)
+    |> validate_required(@required_fields)
+  end
+
+  @doc "Builds a valid fixture struct for testing."
+  def factory do
+    %__MODULE__{
+      name: "test_output.txt",
+      kind: :text,
+      text: "All 12 checks passed",
+      url: nil
+    }
+  end
+end
