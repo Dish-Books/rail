@@ -126,7 +126,7 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
     on_finished_cb =
       Keyword.get(opts, :on_finished) ||
         fn _run, outcome ->
-          Rail.Pipeline.settle_run(task.id, role_run.id, outcome)
+          Rail.Pipeline.settle_run(task.id, role_run.id, outcome, opts)
         end
 
     spawner_opts =

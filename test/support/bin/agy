@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+STAGE="${AXIS_STAGE:-${RAIL_STAGE:-}}"
+if [[ -z "$STAGE" ]]; then
+  ALL_ARGS="$*"
+  if [[ "$ALL_ARGS" =~ "stage qa_lead" || "$ALL_ARGS" =~ "Grade the QA pass" ]]; then
+    STAGE="qa_lead"
+  elif [[ "$ALL_ARGS" =~ "QA the implementation" || "$ALL_ARGS" =~ "stage qa." || "$ALL_ARGS" =~ "stage qa " ]]; then
+    STAGE="qa"
+  elif [[ "$ALL_ARGS" =~ "stage demo" || "$ALL_ARGS" =~ "Record a demo" || "$ALL_ARGS" =~ "demo/" ]]; then
+    STAGE="demo"
+  elif [[ "$ALL_ARGS" =~ "stage review" || "$ALL_ARGS" =~ "Review the implementation" || "$ALL_ARGS" =~ "read-only: report what you find" ]]; then
+    STAGE="review"
+  elif [[ "$ALL_ARGS" =~ "stage engineer" || "$ALL_ARGS" =~ "Implement the ticket" || "$ALL_ARGS" =~ "Implement the approved plan" ]]; then
+    STAGE="engineer"
+  elif [[ "$ALL_ARGS" =~ "stage architect" || "$ALL_ARGS" =~ "Plan the implementation" || "$ALL_ARGS" =~ "plans/" || "$ALL_ARGS" =~ "planWriteBrief" ]]; then
+    STAGE="architect"
+  elif [[ "$ALL_ARGS" =~ "stage product" || "$ALL_ARGS" =~ "Turn this backlog idea" || "$ALL_ARGS" =~ "tickets/" ]]; then
+    STAGE="product"
+  else
+    STAGE="product"
+  fi
+fi
+
+if [[ -n "${AXIS_SCRATCH:-}" ]]; then
+  mkdir -p "$AXIS_SCRATCH"
+
+  IDENTIFIER="ISS-1"
+  if [[ -d "$AXIS_SCRATCH/tickets" ]]; then
+    EXISTING_TICKET=$(ls "$AXIS_SCRATCH/tickets" 2>/dev/null | grep -E '^[A-Za-z0-9_-]+\.md$' | head -n 1 || true)
+    if [[ -n "$EXISTING_TICKET" ]]; then
+      IDENTIFIER="${EXISTING_TICKET%.md}"
+    fi
+  fi
+  if [[ "$*" =~ (ISS-[0-9]+) ]]; then
+    IDENTIFIER="${BASH_REMATCH[1]}"
+  fi
+
+  case "$STAGE" in
+    product)
+      mkdir -p "$AXIS_SCRATCH/tickets"
+      cat <<'TICKET_EOF' > "$AXIS_SCRATCH/tickets/${IDENTIFIER}.md"
+# Implement Feature End-to-End
+
+## Problem
+The system needs end-to-end ticket lifecycle support with automated validation.
+
+## Proposed Changes
+Implement complete integration flow, verify stage progression, and enforce quality gates.
+
+## Acceptance Criteria
+- Feature works end-to-end
+- Verification succeeds
+TICKET_EOF
+      ;;
+
+    architect)
+      mkdir -p "$AXIS_SCRATCH/plans"
+      cat <<'PLAN_EOF' > "$AXIS_SCRATCH/plan.md"
+## Implementation plan
+
+### Approach
+Implement the ticket lifecycle end-to-end adhering to standards and quality gates.
+
+### File-level changes
+- `lib/rail/e2e/ticket_lifecycle_test.exs`: End-to-end integration test
+- `test/PARITY.md`: Behavior inventory parity matrix
+
+### Acceptance Criteria Verification
+1. Feature works end-to-end
+2. Verification succeeds
+PLAN_EOF
+      cp "$AXIS_SCRATCH/plan.md" "$AXIS_SCRATCH/plans/${IDENTIFIER}.md"
+      ;;
+
+    engineer)
+      if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        echo "implementation update $(date +%s)" >> feature_work.txt
+        git add feature_work.txt
+        git commit -m "feat: engineer implementation pass" || true
+      fi
+      ;;
+
+    qa)
+      mkdir -p "$AXIS_SCRATCH/qa"
+      echo "All automated checks passed cleanly." > "$AXIS_SCRATCH/qa/log.txt"
+      cat <<'QA_EOF' > "$AXIS_SCRATCH/qa/manifest.json"
+{
+  "commit": "HEAD",
+  "session": {
+    "url": "http://localhost:4000",
+    "port": 4000
+  },
+  "rows": [
+    {
+      "id": "chk-1",
+      "check": "Feature works end-to-end",
+      "result": "pass",
+      "severity": "blocker",
+      "caused_by_change": true,
+      "command": "mix test",
+      "exit_code": 0,
+      "note": "Verified end to end",
+      "artifacts": [
+        {
+          "name": "log.txt",
+          "kind": "text",
+          "text": "All automated checks passed cleanly."
+        }
+      ]
+    }
+  ]
+}
+QA_EOF
+      ;;
+
+    demo)
+      mkdir -p "$AXIS_SCRATCH/demo"
+      echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > "$AXIS_SCRATCH/demo/frame-1.png"
+      cat <<'DEMO_EOF' > "$AXIS_SCRATCH/demo/manifest.json"
+{
+  "version": 1,
+  "outcome": "recorded",
+  "note": null,
+  "segments": [
+    {
+      "criterionIndex": 1,
+      "criterion": "Feature works end-to-end",
+      "outcome": "recorded",
+      "note": null,
+      "frames": [
+        {
+          "path": "frame-1.png",
+          "holdMs": 1000,
+          "caption": "Feature working end-to-end"
+        }
+      ]
+    },
+    {
+      "criterionIndex": 2,
+      "criterion": "Verification succeeds",
+      "outcome": "not_filmable",
+      "note": "Automated verification validated via test suite.",
+      "frames": []
+    }
+  ]
+}
+DEMO_EOF
+      ;;
+
+    review|qa_lead)
+      ;;
+  esac
+fi
+
+FIXTURE="$REPO_ROOT/test/fixtures/streams/${STAGE}_stream.ndjson"
+if [[ -f "$FIXTURE" ]]; then
+  cat "$FIXTURE"
+  if [[ -n "${AXIS_STREAM:-}" && -f "$AXIS_STREAM" ]]; then
+    if [[ ! -s "$AXIS_STREAM" ]]; then
+      cat "$FIXTURE" >> "$AXIS_STREAM"
+    fi
+  fi
+else
+  echo '{"type":"system","subtype":"init","session_id":"sess-generic","tools":[],"mcp_servers":[]}'
+  echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Done.\n\nVERDICT: PASSED"}]}}'
+  echo '{"type":"result","subtype":"success","session_id":"sess-generic","result":"Done.\nVERDICT: PASSED","num_turns":1,"usage":{"input_tokens":100,"output_tokens":50,"cost_usd":0.001}}'
+fi
+
+exit "${SIMULATE_EXIT_CODE:-0}"

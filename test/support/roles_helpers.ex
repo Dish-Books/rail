@@ -123,4 +123,23 @@ defmodule RailTest.RolesHelpers do
     |> Run.changeset(merged)
     |> Repo.insert!()
   end
+
+  @doc """
+  Creates standard pipeline roles for a project.
+  """
+  def create_pipeline_roles(project, opts \\ []) do
+    stages = Keyword.get(opts, :stages, [:product, :architect, :engineer, :review, :qa, :qa_lead, :demo])
+    backend = Keyword.get(opts, :cli_backend, :claude)
+
+    Enum.map(stages, fn stage ->
+      create_test_role(%{
+        project_id: project.id,
+        stage: stage,
+        name: "#{stage} Role",
+        cli_backend: backend,
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for stage #{stage}."
+      })
+    end)
+  end
 end
