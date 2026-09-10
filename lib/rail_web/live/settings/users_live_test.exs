@@ -19,7 +19,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
                admin: true
              })
 
-    {admin_conn, _logged_admin} = log_in_test_user(conn, admin_user)
+    admin_conn = log_in_user(conn, admin_user)
 
     assert {:ok, %User{} = regular_user} =
              Users.register_oauth_user(%{
@@ -31,7 +31,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
                admin: false
              })
 
-    {regular_conn, _logged_regular} = log_in_test_user(conn, regular_user)
+    regular_conn = log_in_user(conn, regular_user)
 
     %{
       conn: conn,
@@ -141,7 +141,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
     {:ok, %User{id: updated_user_id} = updated_user} =
       Rail.Repo.update(Ecto.Changeset.change(user, linear_user_id: "lin_#{id}", linear_name: nil, name: nil, login: ""))
 
-    {user_conn, _user} = log_in_test_user(conn, updated_user)
+    user_conn = log_in_user(conn, updated_user)
 
     assert {:ok, view, _html} = live(user_conn, ~p"/settings/users")
     assert has_element?(view, "#user-linear-badge-#{updated_user_id}", "Linear: Linked")

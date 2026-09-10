@@ -5,8 +5,7 @@ defmodule Rail.ArtifactsTest do
   alias Rail.Artifacts.Schemas.Demo
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Artifacts.Schemas.QaReport
-  alias Rail.Projects.Schemas.LinearWorkspace
-  alias Rail.Projects.Schemas.Project
+  alias Rail.Projects
   alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
   alias RailTest.Support.ArtifactHelpers
@@ -16,8 +15,25 @@ defmodule Rail.ArtifactsTest do
   setup do
     dir = Path.join(@tmp_base, "facade_#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
-    ws = Repo.insert!(LinearWorkspace.factory())
-    project = Repo.insert!(%{Project.factory() | linear_workspace_id: ws.id})
+
+    {:ok, ws} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Artifacts Facade Workspace",
+        external_id: "lin_ws_artifacts_facade",
+        token: "lin_api_token_artifacts_facade",
+        webhook_secret: "whsec_artifacts_facade"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Artifacts Facade Project",
+        github_repo: "org/artifacts-facade",
+        github_installation_id: 12_001,
+        linear_workspace_id: ws.id,
+        linear_team_id: "team_artifacts_facade",
+        linear_team_key: "AFC",
+        clone_path: "/tmp/repos/artifacts-facade"
+      })
 
     on_exit(fn -> File.rm_rf(dir) end)
     {:ok, dir: dir, project: project, ws: ws}
