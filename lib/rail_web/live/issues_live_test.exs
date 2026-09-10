@@ -79,7 +79,8 @@ defmodule RailWeb.IssuesLiveTest do
                linear_team_id: "t_iss",
                linear_team_key: "ISS",
                clone_path: "/tmp/issues-project",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues?project=#{project_id}")
@@ -147,7 +148,8 @@ defmodule RailWeb.IssuesLiveTest do
                linear_team_id: "t_demo",
                linear_team_key: "DEMO",
                clone_path: "/tmp/demo-project",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
     LinearMock.mock_create_issue_success(%{
@@ -159,6 +161,8 @@ defmodule RailWeb.IssuesLiveTest do
     {:ok, issue} = Issues.capture_issue(system_scope(), project, "Deduplicated title")
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_issues_live_13201"})
+
+    LinearMock.mock_update_issue_success(%{"id" => issue.external_id})
 
     {:ok, issue} =
       Issues.update_issue(system_scope(), issue, %{
@@ -218,7 +222,8 @@ defmodule RailWeb.IssuesLiveTest do
                linear_team_id: "t_prio",
                linear_team_key: "PRIO",
                clone_path: "/tmp/priority-project",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
     LinearMock.mock_create_issue_success(%{
@@ -347,7 +352,8 @@ defmodule RailWeb.IssuesLiveTest do
                linear_team_id: "t_fin",
                linear_team_key: "FIN",
                clone_path: "/tmp/finished-project",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
     LinearMock.mock_create_issue_success(%{
@@ -357,6 +363,8 @@ defmodule RailWeb.IssuesLiveTest do
     })
 
     {:ok, active_issue} = Issues.capture_issue(system_scope(), project, "Active task")
+
+    LinearMock.mock_update_issue_success(%{"id" => active_issue.external_id})
 
     {:ok, active_issue} =
       Issues.update_issue(system_scope(), active_issue, %{
@@ -511,7 +519,8 @@ defmodule RailWeb.IssuesLiveTest do
                linear_team_id: "t_ed",
                linear_team_key: "ED",
                clone_path: "/tmp/editor-proj",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
     LinearMock.mock_create_issue_success(%{"id" => "lin_ed_1", "identifier" => "ED-50", "title" => "Initial title"})
@@ -728,7 +737,8 @@ defmodule RailWeb.IssuesLiveTest do
                linear_team_id: "t_sync",
                linear_team_key: "SYNC",
                clone_path: "/tmp/sync-proj",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
     LinearMock.mock_issues_success([])
@@ -773,7 +783,8 @@ defmodule RailWeb.IssuesLiveTest do
                linear_team_id: "t_ps",
                linear_team_key: "PS",
                clone_path: "/tmp/pubsub-proj",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
@@ -934,7 +945,8 @@ defmodule RailWeb.IssuesLiveTest do
                linear_team_id: "t_key",
                linear_team_key: "KEY",
                clone_path: "/tmp/with-key",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues?project=#{p_id}")
