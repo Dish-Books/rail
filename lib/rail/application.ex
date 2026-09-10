@@ -11,9 +11,10 @@ defmodule Rail.Application do
       {Registry, keys: :unique, name: Rail.Runs.FollowerRegistry},
       Rail.Runs.FollowerSupervisor,
       Rail.Runs.Boot,
+      {Task.Supervisor, name: Rail.TaskSupervisor},
       Rail.Backends.RefreshServer,
       Rail.Pipeline.Dispatcher,
-      {Task.Supervisor, name: Rail.TaskSupervisor},
+      Rail.Periodic,
       RailWeb.Endpoint
     ]
 

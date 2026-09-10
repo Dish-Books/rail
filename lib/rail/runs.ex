@@ -14,6 +14,7 @@ defmodule Rail.Runs do
   alias Rail.Runs.ClaudeEvents
   alias Rail.Runs.Follower
   alias Rail.Runs.PromptBuilder
+  alias Rail.Runs.PruneRunEvents
   alias Rail.Runs.QuestionDetector
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
@@ -28,6 +29,7 @@ defmodule Rail.Runs do
   defdelegate chat_prompt(message), to: PromptBuilder
   defdelegate build_chat_prompt(message), to: PromptBuilder
   defdelegate detect_question(line, opts \\ []), to: QuestionDetector
+  defdelegate prune_run_events(opts \\ []), to: PruneRunEvents
   defdelegate summarize_tool_input(params), to: ToolSummarizer
   defdelegate summarize_tool_input(tool_name, params), to: ToolSummarizer
 
