@@ -19,8 +19,8 @@ defmodule Rail.Pipeline.Actions.ApproveStage do
   Approves the current stage of a task:
   - Enforces `stage_state == :awaiting_approval` and `stage != :ready_to_merge`.
   - Determines the next stage in pipeline order (respecting `:skip_design`).
-  - At `:product`, moves to `:design` if designer role exists, skips to `:architect` if `:skip_design`,
-    or parks at `:design` with an error if no designer role is configured.
+  - At `:product`, moves to `:design` if a `:design` role exists, skips to `:architect` if `:skip_design`,
+    or parks at `:design` with an error if no `:design` role is configured.
   - At `:design`, requires a linked issue and picked direction, publishes the design comment to Linear,
     prepares architect scratch context, and advances to `:architect`.
   - Sets `stage_state: :queued` (or `:awaiting_approval` if advancing to `:ready_to_merge`).
@@ -163,10 +163,8 @@ defmodule Rail.Pipeline.Actions.ApproveStage do
             {:queued, nil}
 
           _no_role ->
-            role_name = if next_stage == :design, do: "designer", else: to_string(next_stage)
-
             {:failed,
-             "No role \"#{role_name}\" is configured, so the #{next_stage} stage has nothing to run it. Add it under Settings, then retry this stage."}
+             "No role \"#{next_stage}\" is configured, so the #{next_stage} stage has nothing to run it. Add it under Settings, then retry this stage."}
         end
       end
 

@@ -16,6 +16,9 @@ defmodule Rail.Pipeline.Schemas.Task do
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Users.Schemas.User
 
+  # The linear pipeline, then stages a task can be parked in off that path.
+  # `:debugger` has no position in the sequence: nothing advances into or out of
+  # it, so `stage_index/1` leaves it unranked and `next_stage/1` has no clause.
   @stages [
     :product,
     :design,
@@ -26,7 +29,8 @@ defmodule Rail.Pipeline.Schemas.Task do
     :qa_lead,
     :demo,
     :ready_to_merge,
-    :merged
+    :merged,
+    :debugger
   ]
 
   @stage_states [
@@ -252,6 +256,7 @@ defmodule Rail.Pipeline.Schemas.Task do
   def stage_label(:demo), do: "Demo"
   def stage_label(:ready_to_merge), do: "Ready to merge"
   def stage_label(:merged), do: "Merged"
+  def stage_label(:debugger), do: "Debugger"
   def stage_label(_other), do: nil
 
   def cast_stage(stage) when is_atom(stage) do

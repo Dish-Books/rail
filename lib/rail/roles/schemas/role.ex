@@ -8,16 +8,16 @@ defmodule Rail.Roles.Schemas.Role do
 
   @canonical_stages [
     :product,
+    :design,
     :architect,
     :engineer,
     :review,
     :qa,
     :qa_lead,
     :demo,
-    :debugger,
-    :designer
+    :debugger
   ]
-  @allowed_stages @canonical_stages ++ [:design, :ready_to_merge, :merged]
+  @allowed_stages @canonical_stages ++ [:ready_to_merge, :merged]
 
   @backends [:claude, :agy, :codex]
   @reasoning_efforts [:low, :medium, :high]

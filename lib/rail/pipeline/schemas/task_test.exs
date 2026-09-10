@@ -208,9 +208,15 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
   describe "schema enums, accessors, and stage lifecycle helpers" do
     test "stages/0, stage_states/0, mergeabilities/0 return expected lists" do
-      assert length(Task.stages()) == 10
+      assert length(Task.stages()) == 11
       assert :product in Task.stages()
       assert :merged in Task.stages()
+
+      # Off the linear path: a task can sit in it, but nothing advances into it.
+      assert :debugger in Task.stages()
+      assert Task.stage_index(:debugger) == nil
+      assert Task.next_stage(:debugger) == nil
+      refute Task.advanceable?(:debugger)
 
       assert length(Task.stage_states()) == 11
       assert :queued in Task.stage_states()

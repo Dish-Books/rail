@@ -69,18 +69,18 @@ defmodule Rail.Roles.Actions.RoleForStageTest do
     assert {:ok, %Role{id: ^deb_id}} = Roles.role_for_stage(project.id, "debugger")
   end
 
-  test "resolves fallback between design and designer" do
-    project1 = create_test_project()
-    %Role{id: des_id1} = create_test_role(project_id: project1.id, stage: :designer)
-    assert {:ok, %Role{id: ^des_id1}} = Roles.role_for_stage(project1.id, :design)
+  test "resolves design stage under the same name tasks use" do
+    project = create_test_project()
+    %Role{id: des_id} = create_test_role(project_id: project.id, stage: :design)
 
-    project2 = create_test_project()
-    %Role{id: des_id2} = create_test_role(project_id: project2.id, stage: :design)
-    assert {:ok, %Role{id: ^des_id2}} = Roles.role_for_stage(project2.id, :designer)
+    assert {:ok, %Role{id: ^des_id}} = Roles.role_for_stage(project.id, :design)
+    assert {:ok, %Role{id: ^des_id}} = Roles.role_for_stage(project.id, "design")
 
-    project3 = create_test_project()
-    assert {:error, :not_found} = Roles.role_for_stage(project3.id, :designer)
-    assert {:error, :not_found} = Roles.role_for_stage(project3.id, :design)
+    other_project = create_test_project()
+    assert {:error, :not_found} = Roles.role_for_stage(other_project.id, :design)
+
+    # `:designer` is no longer a stage a role can bind to.
+    assert {:error, :not_found} = Roles.role_for_stage(project.id, :designer)
     assert length(Roles.canonical_stages()) == 9
   end
 end

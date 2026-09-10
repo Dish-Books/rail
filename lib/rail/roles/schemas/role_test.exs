@@ -25,7 +25,8 @@ defmodule Rail.Roles.Schemas.RoleTest do
     stages = Role.canonical_stages()
     assert length(stages) == 9
     assert :debugger in stages
-    assert :designer in stages
+    assert :design in stages
+    refute :designer in stages
     # Rebase is an engineer action, not a stage a role can bind to
     refute :rebase in stages
   end

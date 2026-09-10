@@ -30,32 +30,13 @@ defmodule Rail.Roles.Actions.RoleForStage do
 
     if stage_atom do
       case Repo.get_by(Role, project_id: project_id, stage: stage_atom) do
-        %Role{} = role ->
-          {:ok, role}
-
-        nil ->
-          find_fallback_stage_role(project_id, stage_atom)
+        %Role{} = role -> {:ok, role}
+        nil -> {:error, :not_found}
       end
     else
       {:error, :not_found}
     end
   end
-
-  defp find_fallback_stage_role(project_id, :design) do
-    case Repo.get_by(Role, project_id: project_id, stage: :designer) do
-      %Role{} = role -> {:ok, role}
-      nil -> {:error, :not_found}
-    end
-  end
-
-  defp find_fallback_stage_role(project_id, :designer) do
-    case Repo.get_by(Role, project_id: project_id, stage: :design) do
-      %Role{} = role -> {:ok, role}
-      nil -> {:error, :not_found}
-    end
-  end
-
-  defp find_fallback_stage_role(_project_id, _stage), do: {:error, :not_found}
 
   defp normalize_stage(stage) when is_atom(stage) do
     cond do

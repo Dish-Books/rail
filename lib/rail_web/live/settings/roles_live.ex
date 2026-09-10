@@ -7,18 +7,7 @@ defmodule RailWeb.Settings.RolesLive do
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Roles.RoleInstructionProposal
-
-  @canonical_stages [
-    :product,
-    :architect,
-    :engineer,
-    :review,
-    :qa,
-    :qa_lead,
-    :demo,
-    :debugger,
-    :designer
-  ]
+  alias Rail.Roles.Schemas.Role
 
   @default_models %{
     claude: "claude-3-7-sonnet",
@@ -37,7 +26,7 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:current_project_id, nil)
       |> assign(:current_project, nil)
       |> assign(:roles, [])
-      |> assign(:canonical_stages, @canonical_stages)
+      |> assign(:canonical_stages, Role.canonical_stages())
       |> assign(:active_modal, nil)
       |> assign(:modal_role, nil)
       |> assign(:modal_form, nil)
@@ -1322,14 +1311,7 @@ defmodule RailWeb.Settings.RolesLive do
   end
 
   defp role_for_stage(roles, stage) do
-    Enum.find(roles, fn role ->
-      cond do
-        role.stage == stage -> true
-        stage == :designer and role.stage == :design -> true
-        stage == :design and role.stage == :designer -> true
-        true -> false
-      end
-    end)
+    Enum.find(roles, &(&1.stage == stage))
   end
 
   @default_role_names %{
@@ -1341,7 +1323,7 @@ defmodule RailWeb.Settings.RolesLive do
     qa_lead: "QA Lead",
     demo: "Demo Recorder",
     debugger: "Debugger",
-    designer: "Designer"
+    design: "Designer"
   }
 
   @effort_map %{

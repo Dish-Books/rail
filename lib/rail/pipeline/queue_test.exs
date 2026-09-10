@@ -176,6 +176,49 @@ defmodule Rail.Pipeline.QueueTest do
     assert [%Task{id: ^rebase_task_id}] = Queue.eligible_tasks(project, engineer_role)
   end
 
+  test "dispatches the design stage like any other" do
+    project = create_test_project()
+    role = create_test_role(%{project_id: project.id, stage: :design, max_concurrent: 1})
+
+    task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :design,
+        stage_state: :queued
+      })
+
+    task_id = task.id
+
+    assert Queue.current_live_runs_count(project, role) == 0
+    assert [%Task{id: ^task_id}] = Queue.eligible_tasks(project, role)
+
+    _running =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :design,
+        stage_state: :running
+      })
+
+    assert Queue.current_live_runs_count(project, role) == 1
+    assert Queue.available_slots(project, role) == 0
+  end
+
+  test "dispatches an off-pipeline stage like any other" do
+    project = create_test_project()
+    role = create_test_role(%{project_id: project.id, stage: :debugger, max_concurrent: 1})
+
+    task = create_test_task(%{project_id: project.id, stage: :debugger, stage_state: :queued})
+    task_id = task.id
+
+    assert Queue.current_live_runs_count(project, role) == 0
+    assert [%Task{id: ^task_id}] = Queue.eligible_tasks(project, role)
+
+    _other_stage =
+      create_test_task(%{project_id: project.id, stage: :engineer, stage_state: :queued})
+
+    assert [%Task{id: ^task_id}] = Queue.eligible_tasks(project, role)
+  end
+
   test "ignores tasks from other projects" do
     project1 = create_test_project()
     project2 = create_test_project()

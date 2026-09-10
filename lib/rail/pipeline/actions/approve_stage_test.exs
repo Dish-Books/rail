@@ -79,7 +79,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
     assert {:ok, %Task{stage: :design, stage_state: :failed, error: err}} =
              Pipeline.approve_stage(task)
 
-    assert err =~ "No role \"designer\" is configured"
+    assert err =~ "No role \"design\" is configured"
   end
 
   test "approving product with skip_design moves task directly from product to architect" do
