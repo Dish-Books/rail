@@ -8,7 +8,7 @@ defmodule RailTest.PipelineHelpers do
   """
   def create_chat_stub_cli(opts \\ []) do
     id = System.unique_integer([:positive])
-    dir = Path.join(System.tmp_dir!(), "rail_stub_cli_#{id}")
+    dir = Path.join("/tmp", "rail_stub_cli_#{id}")
     File.mkdir_p!(dir)
 
     script_path = Path.join(dir, "stub_cli.sh")

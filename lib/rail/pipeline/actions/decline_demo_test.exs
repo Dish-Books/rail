@@ -199,7 +199,7 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
   end
 
   test "declines demo when worktree path is a non-git directory", %{task: task} do
-    scratch_worktree = Path.join(System.tmp_dir!(), "rail_scratch_#{System.unique_integer([:positive])}")
+    scratch_worktree = create_temp_git_repo()
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{

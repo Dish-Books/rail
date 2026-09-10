@@ -1,32 +1,120 @@
 defmodule Rail.Pipeline.Actions.RerecordDemoTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
+  import RailTest.PipelineHelpers
+
+  alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Demo
+  alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Scope
+  alias RailTest.Mocks.Linear, as: LinearMock
 
-  test "marks latest demo stale, resets task to demo queued, broadcasts and pumps dispatcher" do
+  setup do
+    scope = system_scope()
+
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Rerecord Demo Workspace",
+        external_id: "lin_ws_rerecord_demo",
+        token: "lin_api_token_rerecord_demo",
+        webhook_secret: "whsec_rerecord_demo"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Rerecord Demo Project 9401",
+        github_repo: "org/rerecord-demo-9401",
+        github_installation_id: 9401,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_rerecord_demo_9401",
+        linear_team_key: "P9401",
+        clone_path: "/tmp/repos/rerecord-demo-9401",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    roles =
+      Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
+        {:ok, role} =
+          Roles.create_role(scope, project, %{
+            stage: stage,
+            name: "#{stage} role",
+            model: "claude-3-7-sonnet",
+            system_prompt: "You are the #{stage} agent."
+          })
+
+        {stage, role}
+      end)
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_rerecord_demo_1",
+      "identifier" => "RRD-1",
+      "title" => "Rerecord Demo Issue"
+    })
+
+    {:ok, issue} = Issues.capture_issue(scope, project, "Rerecord Demo Issue")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_rerecord_demo_1"})
+
+    {:ok, task} = Pipeline.bring_local(scope, issue)
+
+    %{project: project, issue: issue, task: task, roles: roles}
+  end
+
+  test "marks latest demo stale, resets task to demo queued, broadcasts and pumps dispatcher", %{task: task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-    project = create_test_project()
-    worktree = create_temp_scratch_dir()
+    worktree = create_temp_git_repo()
 
-    task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: worktree,
         error: "Previous failure"
       })
 
-    demo =
-      create_test_demo(%{
-        task_id: task.id,
-        version: 1,
-        stale: false
+    demo_manifest_9901 =
+      Jason.encode!(%{
+        "version" => 1,
+        "outcome" => "recorded",
+        "segments" => [
+          %{
+            "criterionIndex" => 1,
+            "criterion" => "Feature works",
+            "outcome" => "recorded",
+            "frames" => [%{"path" => "frame-1.png", "holdMs" => 1000, "caption" => "Step 1"}]
+          }
+        ]
       })
+
+    expect(File, :exists?, fn _path -> true end)
+
+    expect(File, :read, fn _path -> {:ok, demo_manifest_9901} end)
+
+    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
+
+    expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
+
+    mock_demo_uploads(1)
+
+    LinearMock.mock_create_comment_success(%{
+      "id" => "cmt_demo_9901",
+      "body" => "Demo",
+      "createdAt" => "2026-09-05T12:00:00.000Z"
+    })
+
+    {:ok, demo} =
+      Artifacts.capture_demo(system_scope(), task, "/tmp/rail_scratch/demo_9901")
 
     assert {:ok,
             %Task{
@@ -42,13 +130,11 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     assert %Demo{stale: true} = Repo.get!(Demo, demo.id)
   end
 
-  test "rerecord_demo succeeds even when no previous demo exists" do
-    project = create_test_project()
-    worktree = create_temp_scratch_dir()
+  test "rerecord_demo succeeds even when no previous demo exists", %{task: task} do
+    worktree = create_temp_git_repo()
 
-    task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :demo,
         stage_state: :failed,
         worktree_path: worktree,
@@ -61,21 +147,30 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     assert {:error, :not_found} = Pipeline.rerecord_demo(Scope.for_system(), :bad_id, [])
   end
 
-  test "guards against merged tasks" do
-    project = create_test_project()
-    worktree = create_temp_scratch_dir()
+  test "guards against merged tasks", %{project: project, task: task} do
+    worktree = create_temp_git_repo()
 
-    task_merged_stage =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, task_merged_stage} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :merged,
         stage_state: :awaiting_approval,
         worktree_path: worktree
       })
 
-    task_merged_at =
-      create_test_task(%{
-        project_id: project.id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_rerecord_demo_9402",
+      "identifier" => "TSK-9402",
+      "title" => "Task 9402"
+    })
+
+    {:ok, issue_9402} = Issues.capture_issue(system_scope(), project, "Task 9402")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_rerecord_demo_9402"})
+
+    {:ok, task_merged_at} = Pipeline.bring_local(system_scope(), issue_9402)
+
+    {:ok, task_merged_at} =
+      Pipeline.update_task(system_scope(), task_merged_at.id, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: worktree,
@@ -86,14 +181,12 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     assert {:error, :task_merged} = Pipeline.rerecord_demo(task_merged_at)
   end
 
-  test "guards against missing worktree directory on disk" do
+  test "guards against missing worktree directory on disk", %{project: project, task: task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-    project = create_test_project()
     nonexistent_path = "/tmp/nonexistent_worktree_#{System.unique_integer([:positive])}"
 
-    task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: nonexistent_path
@@ -107,9 +200,20 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     reloaded = Repo.get!(Task, task.id)
     assert reloaded.error == "Worktree does not exist on disk (#{nonexistent_path})."
 
-    task_nil_worktree =
-      create_test_task(%{
-        project_id: project.id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_rerecord_demo_9403",
+      "identifier" => "TSK-9403",
+      "title" => "Task 9403"
+    })
+
+    {:ok, issue_9403} = Issues.capture_issue(system_scope(), project, "Task 9403")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_rerecord_demo_9403"})
+
+    {:ok, task_nil_worktree} = Pipeline.bring_local(system_scope(), issue_9403)
+
+    {:ok, task_nil_worktree} =
+      Pipeline.update_task(system_scope(), task_nil_worktree.id, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: nil
@@ -120,45 +224,87 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     assert reloaded_nil.error == "Worktree does not exist on disk ()."
   end
 
-  test "can_rerecord_demo? checks eligibility accurately" do
-    project = create_test_project()
-    worktree = create_temp_scratch_dir()
+  test "can_rerecord_demo? checks eligibility accurately", %{project: project, task: task} do
+    worktree = create_temp_git_repo()
 
-    eligible_ready =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, eligible_ready} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: worktree
       })
 
-    eligible_demo_failed =
-      create_test_task(%{
-        project_id: project.id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_rerecord_demo_9404",
+      "identifier" => "TSK-9404",
+      "title" => "Task 9404"
+    })
+
+    {:ok, issue_9404} = Issues.capture_issue(system_scope(), project, "Task 9404")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_rerecord_demo_9404"})
+
+    {:ok, eligible_demo_failed} = Pipeline.bring_local(system_scope(), issue_9404)
+
+    {:ok, eligible_demo_failed} =
+      Pipeline.update_task(system_scope(), eligible_demo_failed.id, %{
         stage: :demo,
         stage_state: :failed,
         worktree_path: worktree
       })
 
-    busy_task =
-      create_test_task(%{
-        project_id: project.id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_rerecord_demo_9405",
+      "identifier" => "TSK-9405",
+      "title" => "Task 9405"
+    })
+
+    {:ok, issue_9405} = Issues.capture_issue(system_scope(), project, "Task 9405")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_rerecord_demo_9405"})
+
+    {:ok, busy_task} = Pipeline.bring_local(system_scope(), issue_9405)
+
+    {:ok, busy_task} =
+      Pipeline.update_task(system_scope(), busy_task.id, %{
         stage: :ready_to_merge,
         stage_state: :running,
         worktree_path: worktree
       })
 
-    merged_task =
-      create_test_task(%{
-        project_id: project.id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_rerecord_demo_9406",
+      "identifier" => "TSK-9406",
+      "title" => "Task 9406"
+    })
+
+    {:ok, issue_9406} = Issues.capture_issue(system_scope(), project, "Task 9406")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_rerecord_demo_9406"})
+
+    {:ok, merged_task} = Pipeline.bring_local(system_scope(), issue_9406)
+
+    {:ok, merged_task} =
+      Pipeline.update_task(system_scope(), merged_task.id, %{
         stage: :merged,
         stage_state: :awaiting_approval,
         worktree_path: worktree
       })
 
-    missing_path_task =
-      create_test_task(%{
-        project_id: project.id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_rerecord_demo_9407",
+      "identifier" => "TSK-9407",
+      "title" => "Task 9407"
+    })
+
+    {:ok, issue_9407} = Issues.capture_issue(system_scope(), project, "Task 9407")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_rerecord_demo_9407"})
+
+    {:ok, missing_path_task} = Pipeline.bring_local(system_scope(), issue_9407)
+
+    {:ok, missing_path_task} =
+      Pipeline.update_task(system_scope(), missing_path_task.id, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: nil
@@ -172,9 +318,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     refute Pipeline.can_rerecord_demo?(nil)
   end
 
-  test "enforces authorization" do
-    task = create_test_task()
-
+  test "enforces authorization", %{task: task} do
     assert {:error, :not_authorized} =
              Pipeline.rerecord_demo(%Scope{system: false, user: nil}, task)
   end
