@@ -43,19 +43,23 @@ defmodule RailWeb.Settings.LinearWorkspaceLive do
       id="linear-workspace-settings"
     >
       <div>
-        <h1 class="text-2xl font-bold tracking-tight text-zinc-900">Linear Workspace</h1>
-        <p class="mt-1 text-sm text-zinc-500">
+        <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+          Linear Workspace
+        </h1>
+        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Configure the global Linear workspace API token and webhook secret for automated operations.
         </p>
       </div>
 
       <.settings_nav current_scope={@current_scope} active_tab={:linear_workspace} />
 
-      <section class="bg-white shadow rounded-lg p-6 border border-zinc-200">
-        <div class="pb-4 border-b border-zinc-100 flex items-center justify-between">
+      <section class="bg-slate-50 dark:bg-slate-800 shadow rounded-lg p-6 border border-slate-200 dark:border-slate-700">
+        <div class="pb-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
           <div>
-            <h2 class="text-lg font-medium text-zinc-900">Workspace Credentials</h2>
-            <p class="text-xs text-zinc-500 mt-0.5">
+            <h2 class="text-lg font-medium text-slate-900 dark:text-slate-100">
+              Workspace Credentials
+            </h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Used for system-level sync, webhook verification, and asset uploads.
             </p>
           </div>
@@ -76,14 +80,14 @@ defmodule RailWeb.Settings.LinearWorkspaceLive do
           class="mt-6 space-y-6"
         >
           <div>
-            <label class="block text-sm font-medium text-zinc-700">Workspace Name</label>
+            <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Workspace Name</label>
             <input
               type="text"
               name="linear_workspace[name]"
               id="workspace-name-input"
               value={Ecto.Changeset.get_field(@changeset, :name)}
               placeholder="e.g. Acme Corp"
-              class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
             />
             <span
               :if={@changeset.errors[:name]}
@@ -95,14 +99,14 @@ defmodule RailWeb.Settings.LinearWorkspaceLive do
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-zinc-700">External Workspace ID</label>
+            <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">External Workspace ID</label>
             <input
               type="text"
               name="linear_workspace[external_id]"
               id="workspace-external-id-input"
               value={Ecto.Changeset.get_field(@changeset, :external_id)}
               placeholder="e.g. lin_ws_12345"
-              class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
             />
             <span
               :if={@changeset.errors[:external_id]}
@@ -114,14 +118,14 @@ defmodule RailWeb.Settings.LinearWorkspaceLive do
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-zinc-700">Linear API Token</label>
+            <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Linear API Token</label>
             <input
               type="password"
               name="linear_workspace[token]"
               id="workspace-token-input"
               value={Ecto.Changeset.get_field(@changeset, :token)}
               placeholder="lin_api_..."
-              class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-mono"
+              class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-mono"
             />
             <span
               :if={@changeset.errors[:token]}
@@ -133,14 +137,14 @@ defmodule RailWeb.Settings.LinearWorkspaceLive do
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-zinc-700">Webhook Signing Secret</label>
+            <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Webhook Signing Secret</label>
             <input
               type="password"
               name="linear_workspace[webhook_secret]"
               id="workspace-webhook-secret-input"
               value={Ecto.Changeset.get_field(@changeset, :webhook_secret)}
               placeholder="whsec_..."
-              class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-mono"
+              class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-mono"
             />
             <span
               :if={@changeset.errors[:webhook_secret]}
@@ -151,7 +155,7 @@ defmodule RailWeb.Settings.LinearWorkspaceLive do
             </span>
           </div>
 
-          <div class="flex items-center justify-end pt-4 border-t border-zinc-100">
+          <div class="flex items-center justify-end pt-4 border-t border-slate-200 dark:border-slate-700">
             <button
               type="submit"
               id="save-workspace-button"

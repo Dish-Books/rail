@@ -43,14 +43,14 @@ defmodule RailWeb.Components.ConversationTab do
         <div
           id="conversation-empty-state"
           data-qa="conversation_empty_state"
-          class="flex items-center justify-center min-h-[300px] text-center p-8 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] shadow-xs"
+          class="flex items-center justify-center min-h-[300px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
         >
-          <p class="text-sm font-medium text-[var(--color-outline)]">
+          <p class="text-sm font-medium text-slate-500 dark:text-slate-400">
             No role has run this task yet.
           </p>
         </div>
       <% else %>
-        <div class="m3-card overflow-hidden divide-y divide-[var(--color-border)]">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 overflow-hidden divide-y divide-slate-200 dark:divide-slate-700">
           <!-- 4.3 Role Selector Row -->
           <div
             id="role-selector-row"
@@ -71,9 +71,9 @@ defmodule RailWeb.Components.ConversationTab do
                   class={[
                     "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer border",
                     is_selected &&
-                      "bg-[var(--color-primary-container)] text-[var(--color-on-primary-container)] border-[var(--color-primary)] shadow-xs",
+                      "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border-blue-600 dark:border-blue-500 shadow-xs",
                     not is_selected &&
-                      "bg-[var(--color-surface-container-high)] text-[var(--color-on-surface)] border-[var(--color-outline-variant)] hover:bg-[var(--color-surface-container-highest)]"
+                      "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600"
                   ]}
                 >
                   <.icon name={Formatters.role_icon_for(role.icon_name)} class="h-4 w-4 shrink-0" />
@@ -88,10 +88,10 @@ defmodule RailWeb.Components.ConversationTab do
               id="toggle-raw-log"
               data-qa="toggle-raw-log"
               phx-click="toggle_raw_log"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--color-outline)] text-xs font-semibold text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-high)] transition-colors cursor-pointer shrink-0 ml-auto"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer shrink-0 ml-auto"
             >
               <.icon
-                name={if @show_raw_log, do: "chat_bubble_outline", else: "terminal"}
+                name={if @show_raw_log, do: "pi-chat-circle", else: "pi-terminal-window"}
                 class="h-4 w-4 shrink-0"
               />
               <span>{if @show_raw_log, do: "Show chat", else: "Raw log"}</span>
@@ -103,7 +103,7 @@ defmodule RailWeb.Components.ConversationTab do
             :if={@selected_run}
             id="run-metadata-row"
             data-qa="run-metadata-row"
-            class="flex items-center flex-wrap gap-4 px-6 py-2.5 text-xs text-[var(--color-outline)] bg-[var(--color-surface-container-low)]"
+            class="flex items-center flex-wrap gap-4 px-6 py-2.5 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800"
           >
             <!-- 1. selected.status name in lowerCamel -->
             <span id="metadata-run-status" class="font-mono font-semibold">
@@ -223,7 +223,7 @@ defmodule RailWeb.Components.ConversationTab do
             data-qa="chat-empty-state"
             class="flex items-center justify-center h-48 text-center"
           >
-            <p class="text-sm font-medium text-[var(--color-outline)]">
+            <p class="text-sm font-medium text-slate-500 dark:text-slate-400">
               {if @is_pruned,
                 do: "This transcript aged out and was swept.",
                 else: "No messages yet."}
@@ -281,10 +281,10 @@ defmodule RailWeb.Components.ConversationTab do
         <div
           id={"msg-#{@idx}"}
           data-qa="human-bubble"
-          class="max-w-[600px] ml-auto p-3 rounded-tl-xl rounded-tr-xl rounded-bl-xl rounded-br-xs bg-[var(--color-primary-container)] text-[var(--color-on-primary-container)] space-y-1.5 shadow-xs"
+          class="max-w-[600px] ml-auto p-3 rounded-tl-xl rounded-tr-xl rounded-bl-xl rounded-br-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 space-y-1.5 shadow-xs"
         >
           <div class="flex items-center gap-1.5 text-xs font-bold">
-            <.icon name="person" class="h-3.5 w-3.5 shrink-0" />
+            <.icon name="pi-user" class="h-3.5 w-3.5 shrink-0" />
             <span>You</span>
           </div>
           <div class="text-[13px] whitespace-pre-wrap select-text leading-relaxed">
@@ -296,9 +296,9 @@ defmodule RailWeb.Components.ConversationTab do
         <div
           id={"msg-#{@idx}"}
           data-qa="role-bubble"
-          class="max-w-[720px] mr-auto p-3 rounded-tl-xl rounded-tr-xl rounded-br-xl rounded-bl-xs bg-[var(--color-surface-container-high)] text-[var(--color-on-surface)] border border-[var(--color-outline-variant)]/50 space-y-2 shadow-xs"
+          class="max-w-[720px] mr-auto p-3 rounded-tl-xl rounded-tr-xl rounded-br-xl rounded-bl-xs bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600/50 space-y-2 shadow-xs"
         >
-          <div class="flex items-center gap-1.5 text-xs font-bold text-[var(--color-primary)]">
+          <div class="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-500">
             <.icon name={Formatters.role_icon_for(@role.icon_name)} class="h-3.5 w-3.5 shrink-0" />
             <span>{@role.name}</span>
           </div>
@@ -313,16 +313,16 @@ defmodule RailWeb.Components.ConversationTab do
         <div
           id={"activity-tile-#{@idx}"}
           data-qa="activity-tile"
-          class="rounded-lg border border-[var(--color-outline-variant)]/40 bg-[var(--color-surface-container-low)] overflow-hidden my-1"
+          class="rounded-lg border border-slate-300 dark:border-slate-600/40 bg-slate-50 dark:bg-slate-800 overflow-hidden my-1"
         >
           <button
             type="button"
             phx-click="toggle_activity"
             phx-value-index={@idx}
-            class="w-full flex items-center justify-between px-3 py-2 text-xs font-mono text-[var(--color-outline)] hover:bg-[var(--color-surface-container-high)] transition-colors cursor-pointer text-left"
+            class="w-full flex items-center justify-between px-3 py-2 text-xs font-mono text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer text-left"
           >
             <div class="flex items-center gap-2">
-              <.icon name="build_outlined" class="h-3.5 w-3.5 shrink-0" />
+              <.icon name="pi-wrench" class="h-3.5 w-3.5 shrink-0" />
               <span>
                 {if step_count == 1,
                   do: "Tool activity (1 step)",
@@ -330,7 +330,7 @@ defmodule RailWeb.Components.ConversationTab do
               </span>
             </div>
             <.icon
-              name={if expanded, do: "expand_less", else: "expand_more"}
+              name={if expanded, do: "pi-caret-up", else: "pi-caret-down"}
               class="h-4 w-4 shrink-0"
             />
           </button>
@@ -355,7 +355,11 @@ defmodule RailWeb.Components.ConversationTab do
             <div class="flex items-center justify-between flex-wrap gap-2">
               <div class="flex items-center gap-2 font-mono text-xs font-bold text-amber-700 dark:text-amber-300">
                 <.icon
-                  name={if @handoff.direction == :received, do: "call_received", else: "call_made"}
+                  name={
+                    if @handoff.direction == :received,
+                      do: "pi-arrow-down-left",
+                      else: "pi-arrow-up-right"
+                  }
                   class="h-4 w-4 shrink-0"
                 />
                 <span class="select-text">{@handoff.summary}</span>
@@ -378,7 +382,7 @@ defmodule RailWeb.Components.ConversationTab do
             <!-- Optional handoff note -->
             <div
               :if={is_binary(@handoff.note) and @handoff.note != ""}
-              class="text-xs font-mono text-[var(--color-on-surface-variant)] whitespace-pre-wrap select-text pt-1 border-t border-amber-500/20"
+              class="text-xs font-mono text-slate-600 dark:text-slate-300 whitespace-pre-wrap select-text pt-1 border-t border-amber-500/20"
             >
               {@handoff.note}
             </div>
@@ -391,14 +395,14 @@ defmodule RailWeb.Components.ConversationTab do
               data-qa="rail-event"
               class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 font-mono text-[11px] my-1"
             >
-              <.icon name="info_outline" class="h-3.5 w-3.5 shrink-0" />
+              <.icon name="pi-info" class="h-3.5 w-3.5 shrink-0" />
               <span class="select-text">{@text}</span>
             </div>
           <% else %>
             <div
               id={"msg-#{@idx}"}
               data-qa="system-event"
-              class="text-center font-mono text-[11px] text-[var(--color-outline)] select-text my-0.5"
+              class="text-center font-mono text-[11px] text-slate-500 dark:text-slate-400 select-text my-0.5"
             >
               {@text}
             </div>
@@ -449,7 +453,7 @@ defmodule RailWeb.Components.ConversationTab do
     <div
       id="composer-root"
       data-qa="composer chat-composer"
-      class="p-4 bg-[var(--color-surface)] border-t border-[var(--color-border)]"
+      class="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700"
     >
       <!-- Precedence Banners: thinking > queued > unavailable -->
       <%= cond do %>
@@ -457,9 +461,9 @@ defmodule RailWeb.Components.ConversationTab do
           <div
             id="thinking-banner"
             data-qa="thinking-banner"
-            class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[var(--color-primary-container)]/30 border border-[var(--color-primary)]/20 mb-3"
+            class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-blue-100 dark:bg-blue-900/30 border border-blue-600 dark:border-blue-500/20 mb-3"
           >
-            <div class="flex items-center gap-2 text-xs font-bold text-[var(--color-primary)]">
+            <div class="flex items-center gap-2 text-xs font-bold text-blue-600 dark:text-blue-500">
               <svg class="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
                 <circle
                   class="opacity-25"
@@ -479,9 +483,9 @@ defmodule RailWeb.Components.ConversationTab do
               id="stop-chat-turn"
               data-qa="stop-chat-turn"
               phx-click="stop_chat_turn"
-              class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold text-[var(--color-error)] hover:bg-[var(--color-error-container)]/30 transition-colors cursor-pointer"
+              class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold text-red-600 dark:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
             >
-              <.icon name="stop" class="h-3.5 w-3.5 shrink-0" />
+              <.icon name="pi-stop-fill" class="h-3.5 w-3.5 shrink-0" />
               <span>Stop</span>
             </button>
           </div>
@@ -489,10 +493,10 @@ defmodule RailWeb.Components.ConversationTab do
           <div
             id="queued-banner"
             data-qa="queued-banner"
-            class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[var(--color-surface-container-high)] border border-[var(--color-outline-variant)] mb-3"
+            class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 mb-3"
           >
-            <div class="flex items-center gap-2 text-xs text-[var(--color-on-surface)] truncate">
-              <.icon name="schedule" class="h-4 w-4 shrink-0 text-[var(--color-outline)]" />
+            <div class="flex items-center gap-2 text-xs text-slate-900 dark:text-slate-100 truncate">
+              <.icon name="pi-clock" class="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
               <span class="truncate">
                 {"Queued message: \"#{@run.pending_chat}\" (delivers when pipeline pauses)"}
               </span>
@@ -504,7 +508,7 @@ defmodule RailWeb.Components.ConversationTab do
               data-qa="cancel-pending-chat"
               phx-click="cancel_pending_chat"
               phx-value-role_id={@role_id}
-              class="px-2.5 py-1 rounded text-xs font-semibold text-[var(--color-outline)] hover:text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-highest)] transition-colors cursor-pointer shrink-0"
+              class="px-2.5 py-1 rounded text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors cursor-pointer shrink-0"
             >
               Cancel
             </button>
@@ -513,9 +517,9 @@ defmodule RailWeb.Components.ConversationTab do
           <div
             id="unavailable-banner"
             data-qa="unavailable-banner"
-            class="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--color-surface-container-highest)] text-xs text-[var(--color-outline)] mb-3"
+            class="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-200 dark:bg-slate-600 text-xs text-slate-500 dark:text-slate-400 mb-3"
           >
-            <.icon name="info_outline" class="h-4 w-4 shrink-0" />
+            <.icon name="pi-info" class="h-4 w-4 shrink-0" />
             <span>{"Cannot chat with #{@role_name} yet: the role has not started a conversation."}</span>
           </div>
         <% true -> %>
@@ -538,7 +542,7 @@ defmodule RailWeb.Components.ConversationTab do
           placeholder={@hint_text}
           disabled={@is_unavailable or @is_thinking or @chat_sending}
           autocomplete="off"
-          class="flex-1 px-3 py-2 text-xs sm:text-sm rounded-lg border border-[var(--color-outline)] bg-[var(--color-surface)] text-[var(--color-on-surface)] placeholder-[var(--color-outline)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] disabled:opacity-50 disabled:cursor-not-allowed"
+          class="flex-1 px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
         />
 
         <button
@@ -548,7 +552,7 @@ defmodule RailWeb.Components.ConversationTab do
           disabled={
             @is_unavailable or @is_thinking or @chat_sending or String.trim(@chat_input) == ""
           }
-          class="inline-flex items-center justify-center h-9 w-9 rounded-lg bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity shrink-0 cursor-pointer shadow-xs"
+          class="inline-flex items-center justify-center h-9 w-9 rounded-lg bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity shrink-0 cursor-pointer shadow-xs"
         >
           <%= if @chat_sending do %>
             <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
@@ -563,7 +567,7 @@ defmodule RailWeb.Components.ConversationTab do
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
             </svg>
           <% else %>
-            <.icon name="send" class="h-4 w-4 shrink-0" />
+            <.icon name="pi-paper-plane-tilt" class="h-4 w-4 shrink-0" />
           <% end %>
         </button>
       </form>
@@ -619,7 +623,11 @@ defmodule RailWeb.Components.ConversationTab do
             >
               <div class="flex items-center gap-2">
                 <.icon
-                  name={if handoff.direction == :received, do: "call_received", else: "call_made"}
+                  name={
+                    if handoff.direction == :received,
+                      do: "pi-arrow-down-left",
+                      else: "pi-arrow-up-right"
+                  }
                   class="h-3.5 w-3.5 shrink-0"
                 />
                 <span>{handoff.summary}</span>
@@ -666,13 +674,13 @@ defmodule RailWeb.Components.ConversationTab do
     >
       <div
         id="delivery-modal-card"
-        class="w-full max-w-md p-6 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-xl space-y-4"
+        class="w-full max-w-md p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl space-y-4"
       >
-        <h3 class="text-lg font-bold text-[var(--color-on-surface)]">
+        <h3 class="text-lg font-bold text-slate-900 dark:text-slate-100">
           A run is in flight
         </h3>
 
-        <p class="text-sm text-[var(--color-on-surface-variant)] leading-relaxed">
+        <p class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
           The pipeline is currently executing a run. How would you like to deliver your message to {@modal.role_name}?
         </p>
 
@@ -682,7 +690,7 @@ defmodule RailWeb.Components.ConversationTab do
             id="delivery-modal-cancel"
             data-qa="delivery-cancel"
             phx-click="cancel_chat_delivery"
-            class="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-semibold text-[var(--color-outline)] hover:text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-high)] transition-colors cursor-pointer"
+            class="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
           >
             Cancel
           </button>
@@ -693,7 +701,7 @@ defmodule RailWeb.Components.ConversationTab do
             data-qa="delivery-when-finished"
             phx-click="confirm_chat_delivery"
             phx-value-delivery="when_finished"
-            class="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-semibold border border-[var(--color-outline)] text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-high)] transition-colors cursor-pointer"
+            class="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-semibold border border-slate-500 dark:border-slate-400 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
           >
             Deliver when pipeline pauses
           </button>
@@ -704,7 +712,7 @@ defmodule RailWeb.Components.ConversationTab do
             data-qa="delivery-stop-and-send"
             phx-click="confirm_chat_delivery"
             phx-value-delivery="stop_and_send"
-            class="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-semibold bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:opacity-90 transition-opacity shadow-xs cursor-pointer"
+            class="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 transition-opacity shadow-xs cursor-pointer"
           >
             Stop run & send now
           </button>
@@ -719,9 +727,9 @@ defmodule RailWeb.Components.ConversationTab do
   defp resolve_role(role_id, roles_map) do
     if is_map(roles_map) and Map.has_key?(roles_map, role_id) do
       role = Map.get(roles_map, role_id)
-      %{id: role_id, name: role.name, icon_name: Map.get(role, :icon_name, "terminal")}
+      %{id: role_id, name: role.name, icon_name: Map.get(role, :icon_name, "pi-terminal-window")}
     else
-      %{id: role_id, name: format_role_id(role_id), icon_name: "terminal"}
+      %{id: role_id, name: format_role_id(role_id), icon_name: "pi-terminal-window"}
     end
   end
 

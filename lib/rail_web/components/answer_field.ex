@@ -26,14 +26,14 @@ defmodule RailWeb.Components.AnswerField do
     <div
       id="answer-field-card"
       data-qa="answer-field"
-      class="p-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xs space-y-4"
+      class="p-5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xs space-y-4"
     >
       <!-- Question Prompt (titleMedium, weight 600) -->
       <div>
         <h3
           id="question-prompt"
           data-qa="question-prompt"
-          class="text-base font-semibold text-[var(--color-on-surface)] leading-snug"
+          class="text-base font-semibold text-slate-900 dark:text-slate-100 leading-snug"
         >
           {get_field(@question, :prompt)}
         </h3>
@@ -43,7 +43,7 @@ defmodule RailWeb.Components.AnswerField do
           :if={is_binary(@context_summary) and @context_summary != ""}
           id="question-context-summary"
           data-qa="question-context-summary"
-          class="text-xs text-[var(--color-outline)] mt-1"
+          class="text-xs text-slate-500 dark:text-slate-400 mt-1"
         >
           {@context_summary}
         </p>
@@ -66,9 +66,9 @@ defmodule RailWeb.Components.AnswerField do
           class={[
             "px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer border",
             @answer_text == option &&
-              "bg-[var(--color-primary-container)] text-[var(--color-on-primary-container)] border-[var(--color-primary)]",
+              "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border-blue-600 dark:border-blue-500",
             @answer_text != option &&
-              "bg-[var(--color-surface-container-high)] text-[var(--color-on-surface)] border-[var(--color-outline-variant)] hover:bg-[var(--color-surface-container-highest)]"
+              "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600"
           ]}
         >
           {option}
@@ -87,7 +87,7 @@ defmodule RailWeb.Components.AnswerField do
         <div>
           <label
             for="answer-textarea"
-            class="block text-xs font-medium text-[var(--color-outline)] mb-1"
+            class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1"
           >
             Your answer
           </label>
@@ -97,7 +97,7 @@ defmodule RailWeb.Components.AnswerField do
             data-qa="answer-textarea"
             rows="3"
             placeholder="Type your answer..."
-            class="w-full px-3 py-2 text-sm rounded-lg border border-[var(--color-outline)] bg-[var(--color-surface)] text-[var(--color-on-surface)] placeholder-[var(--color-outline)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] resize-y min-h-[4rem] max-h-[8rem]"
+            class="w-full px-3 py-2 text-sm rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500 resize-y min-h-[4rem] max-h-[8rem]"
           >{@answer_text}</textarea>
         </div>
 
@@ -108,7 +108,7 @@ defmodule RailWeb.Components.AnswerField do
             data-qa="dismiss-question-button"
             phx-click="dismiss_question"
             phx-value-question_id={get_field(@question, :id)}
-            class="px-3 py-1.5 rounded-lg text-xs font-semibold text-[var(--color-outline)] hover:text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-high)] transition-colors cursor-pointer"
+            class="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
           >
             Dismiss
           </button>
@@ -117,9 +117,9 @@ defmodule RailWeb.Components.AnswerField do
             type="submit"
             id="answer-resume-button"
             data-qa="answer-resume-button"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:opacity-90 transition-opacity shadow-xs cursor-pointer"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 transition-opacity shadow-xs cursor-pointer"
           >
-            <.icon name="send" class="h-4 w-4 shrink-0" />
+            <.icon name="pi-paper-plane-tilt" class="h-4 w-4 shrink-0" />
             <span>Answer & resume</span>
           </button>
         </div>

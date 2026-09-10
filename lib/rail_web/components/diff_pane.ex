@@ -38,10 +38,10 @@ defmodule RailWeb.Components.DiffPane do
       <div
         id="diff-empty-state"
         data-qa="diff_empty_state"
-        class="flex flex-col items-center justify-center min-h-[340px] text-center p-8 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] shadow-xs"
+        class="flex flex-col items-center justify-center min-h-[340px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
       >
-        <.icon name="hero-check-circle" class="w-12 h-12 text-emerald-600 mb-3" />
-        <p class="text-sm font-medium text-[var(--color-on-surface)]">
+        <.icon name="pi-check-circle" class="w-12 h-12 text-emerald-600 mb-3" />
+        <p class="text-sm font-medium text-slate-900 dark:text-slate-100">
           {@empty_message}
         </p>
       </div>
@@ -62,16 +62,16 @@ defmodule RailWeb.Components.DiffPane do
           <div
             id="diff-file-tree"
             data-qa="diff-tree diff_file_tree"
-            class="w-[280px] shrink-0 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] p-2 overflow-y-auto max-h-[750px]"
+            class="w-[280px] shrink-0 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-2 overflow-y-auto max-h-[750px]"
           >
             <div class="space-y-0.5">
               <%= for item <- @tree_items do %>
                 <%= if item.type == :dir do %>
                   <div
-                    class="flex items-center gap-1.5 py-1 pr-3 text-xs font-semibold text-[var(--color-on-surface-variant)] select-none truncate"
+                    class="flex items-center gap-1.5 py-1 pr-3 text-xs font-semibold text-slate-600 dark:text-slate-300 select-none truncate"
                     style={"padding-left: #{12 + item.depth * 14}px;"}
                   >
-                    <.icon name="hero-folder" class="w-4 h-4 shrink-0 text-[var(--color-outline)]" />
+                    <.icon name="pi-folder" class="w-4 h-4 shrink-0 text-slate-500 dark:text-slate-400" />
                     <span class="truncate">{item.name}</span>
                   </div>
                 <% else %>
@@ -83,25 +83,26 @@ defmodule RailWeb.Components.DiffPane do
                     class={[
                       "w-full flex items-center justify-between gap-1.5 py-1.5 pr-3 text-xs text-left rounded-lg transition-colors cursor-pointer select-none",
                       if(@selected_file == item.file.path,
-                        do: "bg-[var(--color-primary-container)]/35 text-[var(--color-on-surface)]",
+                        do: "bg-blue-100 dark:bg-blue-900/35 text-slate-900 dark:text-slate-100",
                         else:
-                          "hover:bg-[var(--color-surface-container-high)] text-[var(--color-on-surface-variant)]"
+                          "hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
                       )
                     ]}
                     style={"padding-left: #{12 + item.depth * 14}px;"}
                   >
                     <div class="flex items-center gap-1.5 truncate min-w-0">
                       <%= if file_viewed?(@viewed, item.file.path) do %>
-                        <.icon name="hero-check-circle" class="w-4 h-4 shrink-0 text-emerald-600" />
+                        <.icon name="pi-check-circle" class="w-4 h-4 shrink-0 text-emerald-600" />
                       <% else %>
                         <.icon
-                          name="hero-document-text"
-                          class="w-4 h-4 shrink-0 text-[var(--color-outline)]"
+                          name="pi-file-text"
+                          class="w-4 h-4 shrink-0 text-slate-500 dark:text-slate-400"
                         />
                       <% end %>
                       <span class={[
                         "truncate",
-                        @selected_file == item.file.path && "font-bold text-[var(--color-on-surface)]"
+                        @selected_file == item.file.path &&
+                          "font-bold text-slate-900 dark:text-slate-100"
                       ]}>
                         {item.name}
                       </span>
@@ -123,7 +124,7 @@ defmodule RailWeb.Components.DiffPane do
         <div
           id="diff-row-list"
           data-qa="diff_row_list"
-          class="flex-1 min-w-0 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden flex flex-col max-h-[750px]"
+          class="flex-1 min-w-0 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[750px]"
         >
           <div
             class="overflow-x-auto overflow-y-auto flex-1 selection:bg-blue-500/20"
@@ -134,24 +135,24 @@ defmodule RailWeb.Components.DiffPane do
               <div
                 id={"diff-file-#{slugify(section.file.path)}"}
                 data-qa="diff_file_section"
-                class="border-b border-[var(--color-border)] last:border-b-0"
+                class="border-b border-slate-200 dark:border-slate-700 last:border-b-0"
               >
                 <!-- File Header Row (40px) -->
                 <div
                   id={"diff-header-#{slugify(section.file.path)}"}
                   data-qa="diff_file_header"
-                  class="sticky top-0 z-10 h-10 px-4 flex items-center justify-between gap-3 bg-[var(--color-surface-container-high)] border-b border-[var(--color-border)]/30"
+                  class="sticky top-0 z-10 h-10 px-4 flex items-center justify-between gap-3 bg-slate-100 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-700/30"
                 >
                   <div class="flex items-center gap-2 truncate min-w-0">
                     <%= if section.header.is_viewed do %>
-                      <.icon name="hero-check-circle" class="w-4 h-4 shrink-0 text-emerald-600" />
+                      <.icon name="pi-check-circle" class="w-4 h-4 shrink-0 text-emerald-600" />
                     <% else %>
                       <.icon
-                        name="hero-document-text"
-                        class="w-4 h-4 shrink-0 text-[var(--color-outline)]"
+                        name="pi-file-text"
+                        class="w-4 h-4 shrink-0 text-slate-500 dark:text-slate-400"
                       />
                     <% end %>
-                    <span class="font-mono text-xs font-bold text-[var(--color-on-surface)] truncate">
+                    <span class="font-mono text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
                       {display_path(section.file)}
                     </span>
                   </div>
@@ -171,9 +172,9 @@ defmodule RailWeb.Components.DiffPane do
                         phx-value-path={section.file.path}
                         phx-value-digest={section.file.digest}
                         data-qa="diff-viewed-checkbox"
-                        class="rounded border-[var(--color-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)] cursor-pointer"
+                        class="rounded border-slate-200 dark:border-slate-700 text-blue-600 dark:text-blue-500 focus:ring-blue-600 dark:focus:ring-blue-500 cursor-pointer"
                       />
-                      <span class="text-xs font-medium text-[var(--color-on-surface)]">Viewed</span>
+                      <span class="text-xs font-medium text-slate-900 dark:text-slate-100">Viewed</span>
                     </label>
                   </div>
                 </div>
@@ -212,9 +213,9 @@ defmodule RailWeb.Components.DiffPane do
     ~H"""
     <div
       data-qa="diff_binary_notice"
-      class="h-9 px-4 flex items-center gap-2 bg-[var(--color-surface)] text-[var(--color-outline)]"
+      class="h-9 px-4 flex items-center gap-2 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400"
     >
-      <.icon name="hero-information-circle" class="w-4 h-4 shrink-0 text-[var(--color-outline)]" />
+      <.icon name="pi-info" class="w-4 h-4 shrink-0 text-slate-500 dark:text-slate-400" />
       <span class="text-xs italic">Binary file not shown</span>
     </div>
     """
@@ -232,9 +233,9 @@ defmodule RailWeb.Components.DiffPane do
       phx-value-start-line={@row.start_line}
       phx-value-end-line={@row.end_line}
       data-qa="diff_gap_row"
-      class="w-full h-7 px-4 flex items-center justify-center gap-1.5 bg-[var(--color-surface-container)] hover:bg-[var(--color-surface-container-high)] text-[var(--color-primary)] transition-colors cursor-pointer select-none text-xs"
+      class="w-full h-7 px-4 flex items-center justify-center gap-1.5 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-blue-600 dark:text-blue-500 transition-colors cursor-pointer select-none text-xs"
     >
-      <.icon name="hero-arrows-up-down" class="w-3.5 h-3.5 shrink-0" />
+      <.icon name="pi-arrows-down-up" class="w-3.5 h-3.5 shrink-0" />
       <span class="text-[11px] font-medium">Expand {@row.count} hidden lines</span>
     </button>
     """
@@ -246,7 +247,7 @@ defmodule RailWeb.Components.DiffPane do
     ~H"""
     <div
       data-qa="diff_hunk_header"
-      class="h-7 px-4 flex items-center bg-[var(--color-surface-container-high)] font-mono text-[11px] text-[var(--color-on-surface-variant)] truncate select-none border-y border-[var(--color-border)]/20"
+      class="h-7 px-4 flex items-center bg-slate-100 dark:bg-slate-700 font-mono text-[11px] text-slate-600 dark:text-slate-300 truncate select-none border-y border-slate-200 dark:border-slate-700/20"
     >
       <span class="truncate">{@text}</span>
     </div>
@@ -258,7 +259,7 @@ defmodule RailWeb.Components.DiffPane do
       case row.line.kind do
         :added -> {"bg-[#262ea043] text-emerald-400", "text-emerald-500", "+"}
         :deleted -> {"bg-[#26f85149] text-rose-400", "text-rose-500", "-"}
-        :context -> {"bg-transparent text-[var(--color-on-surface)]", "text-[var(--color-outline)]", " "}
+        :context -> {"bg-transparent text-slate-900 dark:text-slate-100", "text-slate-500 dark:text-slate-400", " "}
       end
 
     assigns = %{
@@ -275,12 +276,12 @@ defmodule RailWeb.Components.DiffPane do
       class={["h-[22px] flex items-stretch leading-[22px] font-mono text-xs select-text", @bg_class]}
     >
       <!-- Gutter: Old line number (44px) -->
-      <div class="w-11 min-w-[44px] shrink-0 pr-1.5 text-right font-mono text-[11px] text-[var(--color-outline)] bg-[var(--color-surface-container)] select-none tabular-nums">
+      <div class="w-11 min-w-[44px] shrink-0 pr-1.5 text-right font-mono text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 select-none tabular-nums">
         {@row.line.old_line_number || ""}
       </div>
 
       <!-- Gutter: New line number (44px) -->
-      <div class="w-11 min-w-[44px] shrink-0 pr-1.5 text-right font-mono text-[11px] text-[var(--color-outline)] bg-[var(--color-surface-container)] select-none tabular-nums">
+      <div class="w-11 min-w-[44px] shrink-0 pr-1.5 text-right font-mono text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 select-none tabular-nums">
         {@row.line.new_line_number || ""}
       </div>
 

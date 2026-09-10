@@ -153,27 +153,27 @@ defmodule RailWeb.Components.Markdown do
   end
 
   defp render_block({:h1, text}),
-    do: "<h1 class=\"text-xl font-bold my-2 text-[var(--color-on-surface)]\">#{inline_format(text)}</h1>"
+    do: "<h1 class=\"text-xl font-bold my-2 text-slate-900 dark:text-slate-100\">#{inline_format(text)}</h1>"
 
   defp render_block({:h2, text}),
-    do: "<h2 class=\"text-lg font-bold my-2 text-[var(--color-on-surface)]\">#{inline_format(text)}</h2>"
+    do: "<h2 class=\"text-lg font-bold my-2 text-slate-900 dark:text-slate-100\">#{inline_format(text)}</h2>"
 
   defp render_block({:h3, text}),
-    do: "<h3 class=\"text-base font-semibold my-1.5 text-[var(--color-on-surface)]\">#{inline_format(text)}</h3>"
+    do: "<h3 class=\"text-base font-semibold my-1.5 text-slate-900 dark:text-slate-100\">#{inline_format(text)}</h3>"
 
   defp render_block({:h4, text}),
-    do: "<h4 class=\"text-sm font-semibold my-1 text-[var(--color-on-surface)]\">#{inline_format(text)}</h4>"
+    do: "<h4 class=\"text-sm font-semibold my-1 text-slate-900 dark:text-slate-100\">#{inline_format(text)}</h4>"
 
   defp render_block({:p, text}),
-    do: "<p class=\"my-1.5 leading-relaxed text-[var(--color-on-surface)]\">#{inline_format(text)}</p>"
+    do: "<p class=\"my-1.5 leading-relaxed text-slate-900 dark:text-slate-100\">#{inline_format(text)}</p>"
 
   defp render_block({:blockquote, text}),
     do:
-      "<blockquote class=\"border-l-4 border-[var(--color-outline-variant)] pl-3 my-2 italic text-[var(--color-outline)]\">#{inline_format(text)}</blockquote>"
+      "<blockquote class=\"border-l-4 border-slate-300 dark:border-slate-600 pl-3 my-2 italic text-slate-500 dark:text-slate-400\">#{inline_format(text)}</blockquote>"
 
   defp render_block({:code_block, code}),
     do:
-      "<pre class=\"p-3 my-2 rounded-lg bg-[var(--color-surface-container-highest)] font-mono text-xs overflow-x-auto text-[var(--color-on-surface)]\"><code>#{escape_html(code)}</code></pre>"
+      "<pre class=\"p-3 my-2 rounded-lg bg-slate-200 dark:bg-slate-600 font-mono text-xs overflow-x-auto text-slate-900 dark:text-slate-100\"><code>#{escape_html(code)}</code></pre>"
 
   defp render_block({:ul, items}) do
     rendered_items =
@@ -181,7 +181,7 @@ defmodule RailWeb.Components.Markdown do
         "<li class=\"my-0.5\">#{inline_format(item)}</li>"
       end)
 
-    "<ul class=\"list-disc list-inside space-y-0.5 my-2 text-[var(--color-on-surface)]\">#{rendered_items}</ul>"
+    "<ul class=\"list-disc list-inside space-y-0.5 my-2 text-slate-900 dark:text-slate-100\">#{rendered_items}</ul>"
   end
 
   defp render_block({:ol, items}) do
@@ -190,7 +190,7 @@ defmodule RailWeb.Components.Markdown do
         "<li class=\"my-0.5\">#{inline_format(item)}</li>"
       end)
 
-    "<ol class=\"list-decimal list-inside space-y-0.5 my-2 text-[var(--color-on-surface)]\">#{rendered_items}</ol>"
+    "<ol class=\"list-decimal list-inside space-y-0.5 my-2 text-slate-900 dark:text-slate-100\">#{rendered_items}</ol>"
   end
 
   defp inline_format(text) do
@@ -205,7 +205,7 @@ defmodule RailWeb.Components.Markdown do
         replaced = String.replace(acc, full, placeholder, global: false)
 
         code_html =
-          "<code class=\"px-1 py-0.5 rounded bg-[var(--color-surface-container-highest)] font-mono text-xs\">#{code}</code>"
+          "<code class=\"px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-600 font-mono text-xs\">#{code}</code>"
 
         {replaced, Map.put(map, placeholder, code_html)}
       end)
@@ -219,7 +219,7 @@ defmodule RailWeb.Components.Markdown do
         replaced = String.replace(acc, full, placeholder, global: false)
 
         link_html =
-          "<a href=\"#{url}\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-[var(--color-primary)] hover:underline\">#{label}</a>"
+          "<a href=\"#{url}\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-blue-600 dark:text-blue-500 hover:underline\">#{label}</a>"
 
         {replaced, Map.put(map, placeholder, link_html)}
       end)

@@ -16,6 +16,12 @@ config :logger, :default_formatter,
 
 config :phoenix, :json_library, Jason
 
+config :rail, Rail.Cache,
+  gc_interval: to_timeout(hour: 12),
+  max_size: 100_000,
+  allocated_memory: 100_000_000,
+  gc_memory_check_interval: to_timeout(second: 30)
+
 config :rail, Rail.Repo,
   migration_primary_key: [type: :text],
   migration_timestamps: [type: :utc_datetime_usec]

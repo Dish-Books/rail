@@ -31,8 +31,10 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
       id="connected-accounts-settings"
     >
       <div>
-        <h1 class="text-2xl font-bold tracking-tight text-zinc-900">Connected Accounts</h1>
-        <p class="mt-1 text-sm text-zinc-500">
+        <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+          Connected Accounts
+        </h1>
+        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Manage third-party services connected to your account.
         </p>
       </div>
@@ -41,35 +43,35 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
 
       <!-- GitHub Identity Section -->
       <section
-        class="bg-white shadow rounded-lg p-6 border border-zinc-200"
+        class="bg-slate-50 dark:bg-slate-800 shadow rounded-lg p-6 border border-slate-200 dark:border-slate-700"
         id="github-account-section"
       >
-        <div class="flex items-center justify-between pb-4 border-b border-zinc-100">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-700">
           <div class="flex items-center space-x-4">
             <img
               :if={@current_user && @current_user.avatar_url}
               src={@current_user.avatar_url}
               alt={@current_user.name || @current_user.login}
-              class="h-12 w-12 rounded-full ring-2 ring-zinc-200"
+              class="h-12 w-12 rounded-full ring-2 ring-slate-200 dark:ring-slate-700"
               id="github-avatar"
             />
             <div
               :if={!@current_user || is_nil(@current_user.avatar_url)}
-              class="h-12 w-12 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400 font-bold"
+              class="h-12 w-12 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold"
               id="github-avatar-placeholder"
             >
               GH
             </div>
             <div>
-              <h2 class="text-lg font-medium text-zinc-900">GitHub</h2>
-              <p :if={@current_user} class="text-sm text-zinc-500">
+              <h2 class="text-lg font-medium text-slate-900 dark:text-slate-100">GitHub</h2>
+              <p :if={@current_user} class="text-sm text-slate-500 dark:text-slate-400">
                 Connected as
-                <span class="font-semibold text-zinc-800" id="github-login">{@current_user.login}</span>
-                <span :if={@current_user.name} class="text-zinc-400"> ({@current_user.name})</span>
+                <span class="font-semibold text-slate-900 dark:text-slate-100" id="github-login">{@current_user.login}</span>
+                <span :if={@current_user.name} class="text-slate-500 dark:text-slate-400"> ({@current_user.name})</span>
               </p>
               <p
                 :if={@current_user && @current_user.email}
-                class="text-xs text-zinc-400"
+                class="text-xs text-slate-500 dark:text-slate-400"
                 id="github-email"
               >
                 {@current_user.email}
@@ -89,27 +91,30 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
 
       <!-- Linear Connection Section -->
       <section
-        class="bg-white shadow rounded-lg p-6 border border-zinc-200"
+        class="bg-slate-50 dark:bg-slate-800 shadow rounded-lg p-6 border border-slate-200 dark:border-slate-700"
         id="linear-account-section"
       >
         <div class="flex items-center justify-between">
           <div>
-            <h2 class="text-lg font-medium text-zinc-900">Linear</h2>
+            <h2 class="text-lg font-medium text-slate-900 dark:text-slate-100">Linear</h2>
             <div :if={@linear_connected} id="linear-connected-details">
-              <p class="text-sm text-zinc-600 mt-1">
+              <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
                 Connected as
-                <span class="font-semibold text-zinc-900" id="linear-user-name">{@linear_name ||
+                <span class="font-semibold text-slate-900 dark:text-slate-100" id="linear-user-name">{@linear_name ||
                   "Linear User"}</span>
               </p>
-              <p class="text-xs text-zinc-400 mt-0.5">
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Issues and comments created by you will be attributed to your Linear user.
               </p>
             </div>
             <div :if={!@linear_connected} id="linear-disconnected-details">
-              <p class="text-sm text-zinc-500 mt-1" id="linear-disconnected-message">
+              <p
+                class="text-sm text-slate-500 dark:text-slate-400 mt-1"
+                id="linear-disconnected-message"
+              >
                 Linear is not connected.
               </p>
-              <p class="text-xs text-zinc-400 mt-0.5">
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Connect Linear to author issues and comments with your identity.
               </p>
             </div>
@@ -121,7 +126,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
               type="button"
               phx-click="disconnect"
               id="disconnect-linear-button"
-              class="rounded-md bg-white px-3 py-2 text-sm font-semibold text-red-600 shadow-sm ring-1 ring-inset ring-red-300 hover:bg-red-50 focus-visible:outline-red-600"
+              class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-red-600 shadow-sm ring-1 ring-inset ring-red-300 hover:bg-red-50 focus-visible:outline-red-600"
             >
               Disconnect
             </button>

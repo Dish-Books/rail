@@ -6,7 +6,7 @@ defmodule RailWeb.Components.AppShellTest do
   alias Rail.Projects.Schemas.Project
   alias RailWeb.Components.AppShell
 
-  test "nav_rail renders 4 destinations in exact order with extended labels" do
+  test "nav_rail renders 3 destinations in exact order with extended labels" do
     html =
       render_component(&AppShell.nav_rail/1,
         current_section: :overview,
@@ -22,14 +22,12 @@ defmodule RailWeb.Components.AppShellTest do
 
     assert html =~ "id=\"nav-overview\""
     assert html =~ "id=\"nav-issues\""
-    assert html =~ "id=\"nav-cli-accounts\""
     assert html =~ "id=\"nav-settings\""
 
     # Active highlighting on overview
     assert html =~ "data-active=\"true\""
     assert html =~ "Overview"
     assert html =~ "Issues"
-    assert html =~ "CLI Accounts"
     assert html =~ "Settings"
 
     # Collapse sidebar tooltip
@@ -76,7 +74,7 @@ defmodule RailWeb.Components.AppShellTest do
   end
 
   test "nav_rail active state matches current section" do
-    for section <- [:overview, :issues, :cli_accounts, :settings] do
+    for section <- [:overview, :issues, :settings] do
       html =
         render_component(&AppShell.nav_rail/1,
           current_section: section,
@@ -85,13 +83,7 @@ defmodule RailWeb.Components.AppShellTest do
           current_project_id: ""
         )
 
-      slug =
-        case section do
-          :cli_accounts -> "cli-accounts"
-          other -> to_string(other)
-        end
-
-      assert html =~ "id=\"nav-#{slug}\""
+      assert html =~ "id=\"nav-#{section}\""
     end
 
     # Test settings sub-sections highlight Settings nav
@@ -157,7 +149,7 @@ defmodule RailWeb.Components.AppShellTest do
 
     html =
       render_component(&AppShell.top_app_bar/1,
-        current_section: :cli_accounts,
+        current_section: :backends,
         current_project_id: "prj_1",
         projects: [p1],
         theme: "dark",
@@ -193,7 +185,7 @@ defmodule RailWeb.Components.AppShellTest do
     titles = [
       {:overview, "Overview"},
       {:issues, "Issues"},
-      {:cli_accounts, "CLI Accounts"},
+      {:backends, "Backends"},
       {:settings, "Settings"},
       {:connected_accounts, "Settings"},
       {:projects, "Settings"},
@@ -217,53 +209,15 @@ defmodule RailWeb.Components.AppShellTest do
     end
   end
 
-  test "icon component renders SVGs for each supported icon" do
-    names = [
-      "layers",
-      "dashboard",
-      "dashboard_outlined",
-      "lightbulb",
-      "lightbulb_outline",
-      "account_circle",
-      "account_circle_outlined",
-      "settings",
-      "settings_outlined",
-      "chevron_left",
-      "chevron_right",
-      "folder",
-      "folder_outlined",
-      "unfold_more",
-      "add_circle",
-      "light_mode",
-      "dark_mode",
-      "chat_bubble_outline",
-      "call_split",
-      "play_circle_outline",
-      "schedule",
-      "help_outline",
-      "merge_type",
-      "rate_review_outlined",
-      "error_outline",
-      "radio_button_unchecked",
-      "open_in_new",
-      "flag_outlined",
-      "account_tree_outlined"
-    ]
+  test "icon component renders a Phosphor class, directly and through CoreComponents" do
+    html = render_component(&AppShell.icon/1, name: "pi-squares-four-fill", class: "h-5 w-5")
+    assert html =~ "pi-squares-four-fill"
+    assert html =~ "shrink-0"
 
-    for name <- names do
-      html = render_component(&AppShell.icon/1, name: name, class: "h-5 w-5")
-      assert html =~ "<svg"
-      assert html =~ "width=\"24\""
-      assert html =~ "height=\"24\""
-      assert html =~ "viewBox=\"0 0 24 24\""
-      assert html =~ "shrink-0"
-    end
+    core_html =
+      render_component(&RailWeb.CoreComponents.icon/1, name: "pi-gear", class: "h-5 w-5")
 
-    # Test delegated CoreComponents.icon
-    core_html = render_component(&RailWeb.CoreComponents.icon/1, name: "dashboard", class: "h-5 w-5")
-    assert core_html =~ "<svg"
-    assert core_html =~ "width=\"24\""
-    assert core_html =~ "height=\"24\""
+    assert core_html =~ "pi-gear"
   end
 
   test "nav_destination supports custom section id falling back to to_string" do
@@ -273,8 +227,8 @@ defmodule RailWeb.Components.AppShellTest do
         active: false,
         is_extended: true,
         label: "Custom Section",
-        icon_active: "dashboard",
-        icon_inactive: "dashboard_outlined",
+        icon_active: "pi-squares-four-fill",
+        icon_inactive: "pi-squares-four",
         href: "/custom",
         attention_count: 0
       )

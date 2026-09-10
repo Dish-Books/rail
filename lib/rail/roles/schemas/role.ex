@@ -15,8 +15,7 @@ defmodule Rail.Roles.Schemas.Role do
     :qa_lead,
     :demo,
     :debugger,
-    :designer,
-    :rebase
+    :designer
   ]
   @allowed_stages @canonical_stages ++ [:design, :ready_to_merge, :merged]
 
@@ -89,7 +88,7 @@ defmodule Rail.Roles.Schemas.Role do
       stage: :engineer,
       name: "Engineer #{id}",
       description: "Writes tested code for issue #{id}",
-      icon_name: "hero-cpu-chip",
+      icon_name: "pi-cpu",
       cli_backend: :claude,
       model: "claude-3-7-sonnet",
       reasoning_effort: :high,

@@ -29,6 +29,14 @@ config :rail, RailWeb.Endpoint,
   watchers: [
     esbuild: {Esbuild, :install_and_run, [:rail, ~w(--sourcemap=inline --watch)]},
     tailwind: {Tailwind, :install_and_run, [:rail, ~w(--watch)]}
+  ],
+  live_reload: [
+    web_console_logger: true,
+    patterns: [
+      ~r"priv/static/(?!uploads/).*(js|css|png|jpeg|jpg|gif|svg)$",
+      ~r"lib/rail_web/(controllers|live|components|hooks)/.*(ex|heex)$",
+      ~r"lib/rail_web/(router|endpoint)\.ex$"
+    ]
   ]
 
 config :rail, dev_routes: true

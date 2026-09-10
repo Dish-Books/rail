@@ -5,7 +5,6 @@ defmodule Rail.Backends.Probes.AgyUsageProbe do
 
   alias Rail.Backends.Probes
   alias Rail.Backends.ProcessRunner
-  alias Rail.ToolEnv
 
   @auth_regex ~r/applyAuthResult:\s*email=([^,]*),\s*authMethod=([^,\s]*)/
 
@@ -16,8 +15,7 @@ defmodule Rail.Backends.Probes.AgyUsageProbe do
     executable =
       Keyword.get(opts, :executable_path) ||
         Keyword.get(opts, :executable) ||
-        ToolEnv.find_executable("agy") ||
-        "agy"
+        Probes.configured_path(:agy)
 
     path_validator = Keyword.get(opts, :path_validator, &Probes.default_path_validator/1)
     runner = Keyword.get(opts, :runner, &ProcessRunner.run/3)

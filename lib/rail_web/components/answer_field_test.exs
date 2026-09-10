@@ -43,7 +43,7 @@ defmodule RailWeb.Components.AnswerFieldTest do
 
     html = render_component(&AnswerField.answer_field/1, question: question, answer_text: "Staging")
 
-    assert html =~ "bg-[var(--color-primary-container)] text-[var(--color-on-primary-container)]"
+    assert html =~ "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200"
     assert html =~ "Staging"
   end
 

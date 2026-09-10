@@ -90,12 +90,6 @@ defmodule RailWeb.Hooks.NavHook do
     {:halt, socket}
   end
 
-  defp handle_nav_events("toggle_theme", _params, socket) do
-    new_theme = if socket.assigns.theme == "dark", do: "light", else: "dark"
-    socket = assign(socket, :theme, new_theme)
-    {:halt, socket}
-  end
-
   defp handle_nav_events("theme_changed", %{"theme" => theme}, socket) do
     socket = assign(socket, :theme, theme)
     {:halt, socket}

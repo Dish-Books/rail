@@ -5,8 +5,8 @@ defmodule Rail.Runs.ArgvBuilder do
   Enforces exact flag order, read-only mode permissions, and resume flags per spec 03 §2.
   """
 
-  @default_claude_path "/Users/michael/.local/bin/claude"
-  @default_agy_path "/Users/michael/.local/bin/agy"
+  alias Rail.Backends.Probes
+
   @default_print_timeout "6h"
   @default_effort "high"
 
@@ -21,13 +21,9 @@ defmodule Rail.Runs.ArgvBuilder do
 
   def executable_path(backend, opts) when is_map(opts) do
     if claude?(backend) do
-      opts[:claude_path] ||
-        System.get_env("RAIL_CLAUDE_PATH") ||
-        @default_claude_path
+      opts[:claude_path] || Probes.configured_path(:claude)
     else
-      opts[:agy_path] ||
-        System.get_env("RAIL_AGY_PATH") ||
-        @default_agy_path
+      opts[:agy_path] || Probes.configured_path(:agy)
     end
   end
 

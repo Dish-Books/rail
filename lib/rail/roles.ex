@@ -30,15 +30,6 @@ defmodule Rail.Roles do
   @decorate can?(resource: :roles, action: :manage)
   defdelegate delete_role(scope, role), to: Actions.DeleteRole
 
-  @decorate can?(resource: :roles, action: :view)
-  defdelegate export_roles(scope, project_id), to: Actions.ExportRoles
-
-  @decorate can?(resource: :roles, action: :manage)
-  defdelegate import_roles(scope, project_or_id, roles_data), to: Actions.ImportRoles
-
-  @decorate can?(resource: :roles, action: :manage)
-  defdelegate import_roles(scope, project_or_id, roles_data, opts), to: Actions.ImportRoles
-
   @decorate can?(resource: :roles, action: :manage)
   defdelegate copy_roles(scope, target_project_or_id, source_project_id), to: Actions.CopyRoles
 

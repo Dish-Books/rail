@@ -27,10 +27,13 @@ defmodule RailWeb.Settings.AppearanceLive do
     ~H"""
     <div class="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="appearance-settings">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight text-zinc-900" id="appearance-title">
+        <h1
+          class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
+          id="appearance-title"
+        >
           Appearance
         </h1>
-        <p class="mt-1 text-sm text-zinc-500" id="appearance-subtitle">
+        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400" id="appearance-subtitle">
           Customize the interface appearance and theme mode.
         </p>
       </div>
@@ -39,22 +42,25 @@ defmodule RailWeb.Settings.AppearanceLive do
 
       <!-- Appearance Card -->
       <section
-        class="bg-white shadow rounded-lg p-6 border border-zinc-200 space-y-4"
+        class="bg-slate-50 dark:bg-slate-800 shadow rounded-lg p-6 border border-slate-200 dark:border-slate-700 space-y-4"
         id="appearance-card"
         data-qa="appearance_card"
       >
         <div>
-          <h2 class="text-base font-semibold text-zinc-900" id="appearance-card-title">
+          <h2
+            class="text-base font-semibold text-slate-900 dark:text-slate-100"
+            id="appearance-card-title"
+          >
             Appearance
           </h2>
-          <p class="text-xs text-zinc-500 mt-0.5">
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             Select how Rail displays on your device.
           </p>
         </div>
 
         <!-- Segmented Button for System, Light, Dark -->
         <div
-          class="inline-flex rounded-lg border border-zinc-200 bg-zinc-50 p-1 space-x-1 select-none"
+          class="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700 p-1 space-x-1 select-none"
           role="group"
           aria-label="Theme selection"
           id="theme-segmented-button"
@@ -67,11 +73,13 @@ defmodule RailWeb.Settings.AppearanceLive do
             phx-value-theme="system"
             class={[
               "flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-medium transition-colors",
-              @selected_theme == "system" && "bg-white text-zinc-900 shadow-xs font-semibold",
-              @selected_theme != "system" && "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
+              @selected_theme == "system" &&
+                "bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs font-semibold",
+              @selected_theme != "system" &&
+                "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
             ]}
           >
-            <.icon name="brightness_auto" class="h-4 w-4" />
+            <.icon name="pi-circle-half" class="h-4 w-4" />
             <span>System</span>
           </button>
 
@@ -83,11 +91,13 @@ defmodule RailWeb.Settings.AppearanceLive do
             phx-value-theme="light"
             class={[
               "flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-medium transition-colors",
-              @selected_theme == "light" && "bg-white text-zinc-900 shadow-xs font-semibold",
-              @selected_theme != "light" && "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
+              @selected_theme == "light" &&
+                "bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs font-semibold",
+              @selected_theme != "light" &&
+                "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
             ]}
           >
-            <.icon name="light_mode" class="h-4 w-4 text-amber-500" />
+            <.icon name="pi-sun" class="h-4 w-4 text-amber-500" />
             <span>Light</span>
           </button>
 
@@ -99,11 +109,13 @@ defmodule RailWeb.Settings.AppearanceLive do
             phx-value-theme="dark"
             class={[
               "flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-medium transition-colors",
-              @selected_theme == "dark" && "bg-white text-zinc-900 shadow-xs font-semibold",
-              @selected_theme != "dark" && "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
+              @selected_theme == "dark" &&
+                "bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs font-semibold",
+              @selected_theme != "dark" &&
+                "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
             ]}
           >
-            <.icon name="dark_mode" class="h-4 w-4 text-indigo-500" />
+            <.icon name="pi-moon" class="h-4 w-4 text-indigo-500" />
             <span>Dark</span>
           </button>
         </div>

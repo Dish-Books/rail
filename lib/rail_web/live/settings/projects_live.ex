@@ -30,8 +30,8 @@ defmodule RailWeb.Settings.ProjectsLive do
     ~H"""
     <div class="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="projects-settings">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight text-zinc-900">Projects</h1>
-        <p class="mt-1 text-sm text-zinc-500">
+        <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Projects</h1>
+        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Manage repositories, Linear team links, and project configurations.
         </p>
       </div>
@@ -40,8 +40,10 @@ defmodule RailWeb.Settings.ProjectsLive do
 
       <div class="flex items-center justify-between">
         <div>
-          <h2 class="text-lg font-medium text-zinc-900">Registered Projects</h2>
-          <p class="text-xs text-zinc-500">All codebases configured for agent runs.</p>
+          <h2 class="text-lg font-medium text-slate-900 dark:text-slate-100">Registered Projects</h2>
+          <p class="text-xs text-slate-500 dark:text-slate-400">
+            All codebases configured for agent runs.
+          </p>
         </div>
         <button
           type="button"
@@ -55,12 +57,12 @@ defmodule RailWeb.Settings.ProjectsLive do
 
       <!-- Projects List -->
       <section
-        class="bg-white shadow rounded-lg border border-zinc-200 overflow-hidden"
+        class="bg-slate-50 dark:bg-slate-800 shadow rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
         id="projects-list-section"
       >
         <div
           :if={Enum.empty?(@projects)}
-          class="p-8 text-center text-zinc-500 text-sm"
+          class="p-8 text-center text-slate-500 dark:text-slate-400 text-sm"
           id="empty-projects-message"
         >
           No projects registered yet. Click "New Project" to add one.
@@ -69,17 +71,20 @@ defmodule RailWeb.Settings.ProjectsLive do
         <ul
           :if={not Enum.empty?(@projects)}
           role="list"
-          class="divide-y divide-zinc-200"
+          class="divide-y divide-slate-200 dark:divide-slate-700"
           id="projects-list"
         >
           <li
             :for={project <- @projects}
-            class="p-6 flex items-center justify-between hover:bg-zinc-50"
+            class="p-6 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700"
             id={"project-item-#{project.id}"}
           >
             <div class="space-y-1">
               <div class="flex items-center space-x-3">
-                <span class="text-base font-semibold text-zinc-900" id={"project-name-#{project.id}"}>
+                <span
+                  class="text-base font-semibold text-slate-900 dark:text-slate-100"
+                  id={"project-name-#{project.id}"}
+                >
                   {project.name}
                 </span>
                 <span
@@ -91,23 +96,26 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </span>
                 <span
                   :if={!project.active}
-                  class="inline-flex items-center rounded-md bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-600 ring-1 ring-inset ring-zinc-500/20"
+                  class="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-700 px-2 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-inset ring-zinc-500/20"
                   id={"project-status-#{project.id}"}
                 >
                   Inactive
                 </span>
               </div>
-              <div class="flex items-center space-x-4 text-xs text-zinc-500">
+              <div class="flex items-center space-x-4 text-xs text-slate-500 dark:text-slate-400">
                 <span id={"project-repo-#{project.id}"}>
-                  Repo: <span class="font-mono text-zinc-700">{project.github_repo}</span>
+                  Repo:
+                  <span class="font-mono text-slate-900 dark:text-slate-100">{project.github_repo}</span>
                 </span>
                 <span>•</span>
                 <span id={"project-team-key-#{project.id}"}>
-                  Team Key: <span class="font-semibold text-zinc-700">{project.linear_team_key}</span>
+                  Team Key:
+                  <span class="font-semibold text-slate-900 dark:text-slate-100">{project.linear_team_key}</span>
                 </span>
                 <span>•</span>
                 <span id={"project-branch-#{project.id}"}>
-                  Branch: <span class="font-mono text-zinc-700">{project.default_branch}</span>
+                  Branch:
+                  <span class="font-mono text-slate-900 dark:text-slate-100">{project.default_branch}</span>
                 </span>
               </div>
             </div>
@@ -118,7 +126,7 @@ defmodule RailWeb.Settings.ProjectsLive do
                 phx-click="edit_project"
                 phx-value-project_id={project.id}
                 id={"edit-project-#{project.id}"}
-                class="rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 shadow-sm ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+                class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-sm ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
               >
                 Edit
               </button>
@@ -133,16 +141,16 @@ defmodule RailWeb.Settings.ProjectsLive do
         class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
         id="project-modal"
       >
-        <div class="w-full max-w-xl rounded-lg bg-white p-6 shadow-xl space-y-6">
-          <div class="flex items-center justify-between border-b border-zinc-200 pb-4">
-            <h2 class="text-lg font-semibold text-zinc-900" id="modal-title">
+        <div class="w-full max-w-xl rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-6">
+          <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-4">
+            <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100" id="modal-title">
               {@modal_title}
             </h2>
             <button
               type="button"
               phx-click="close_modal"
               id="close-modal-button"
-              class="text-zinc-400 hover:text-zinc-600 font-bold"
+              class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
             >
               ✕
             </button>
@@ -156,13 +164,13 @@ defmodule RailWeb.Settings.ProjectsLive do
             class="space-y-4"
           >
             <div>
-              <label class="block text-sm font-medium text-zinc-700">Project Name</label>
+              <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Project Name</label>
               <input
                 type="text"
                 name="project[name]"
                 id="project-name-input"
                 value={Ecto.Changeset.get_field(@changeset, :name)}
-                class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
               />
               <span
                 :if={@changeset.errors[:name]}
@@ -174,14 +182,14 @@ defmodule RailWeb.Settings.ProjectsLive do
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-zinc-700">GitHub Repository</label>
+              <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">GitHub Repository</label>
               <input
                 type="text"
                 name="project[github_repo]"
                 id="project-github-repo-input"
                 value={Ecto.Changeset.get_field(@changeset, :github_repo)}
                 placeholder="owner/repository"
-                class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
               />
               <span
                 :if={@changeset.errors[:github_repo]}
@@ -194,13 +202,13 @@ defmodule RailWeb.Settings.ProjectsLive do
 
             <div class="grid grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-medium text-zinc-700">Installation ID</label>
+                <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Installation ID</label>
                 <input
                   type="number"
                   name="project[github_installation_id]"
                   id="project-installation-id-input"
                   value={Ecto.Changeset.get_field(@changeset, :github_installation_id)}
-                  class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 />
                 <span
                   :if={@changeset.errors[:github_installation_id]}
@@ -212,13 +220,13 @@ defmodule RailWeb.Settings.ProjectsLive do
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-zinc-700">Default Branch</label>
+                <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Default Branch</label>
                 <input
                   type="text"
                   name="project[default_branch]"
                   id="project-default-branch-input"
                   value={Ecto.Changeset.get_field(@changeset, :default_branch)}
-                  class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 />
                 <span
                   :if={@changeset.errors[:default_branch]}
@@ -232,13 +240,13 @@ defmodule RailWeb.Settings.ProjectsLive do
 
             <div class="grid grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-medium text-zinc-700">Linear Team ID</label>
+                <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Linear Team ID</label>
                 <input
                   type="text"
                   name="project[linear_team_id]"
                   id="project-linear-team-id-input"
                   value={Ecto.Changeset.get_field(@changeset, :linear_team_id)}
-                  class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 />
                 <span
                   :if={@changeset.errors[:linear_team_id]}
@@ -250,14 +258,14 @@ defmodule RailWeb.Settings.ProjectsLive do
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-zinc-700">Linear Team Key</label>
+                <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Linear Team Key</label>
                 <input
                   type="text"
                   name="project[linear_team_key]"
                   id="project-linear-team-key-input"
                   value={Ecto.Changeset.get_field(@changeset, :linear_team_key)}
                   placeholder="e.g. RAIL"
-                  class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 />
                 <span
                   :if={@changeset.errors[:linear_team_key]}
@@ -270,14 +278,14 @@ defmodule RailWeb.Settings.ProjectsLive do
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-zinc-700">Clone Path</label>
+              <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Clone Path</label>
               <input
                 type="text"
                 name="project[clone_path]"
                 id="project-clone-path-input"
                 value={Ecto.Changeset.get_field(@changeset, :clone_path)}
                 placeholder="/path/to/local/clone"
-                class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
               />
               <span
                 :if={@changeset.errors[:clone_path]}
@@ -296,19 +304,22 @@ defmodule RailWeb.Settings.ProjectsLive do
                 id="project-active-input"
                 value="true"
                 checked={Ecto.Changeset.get_field(@changeset, :active) == true}
-                class="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                class="h-4 w-4 rounded border-slate-200 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
               />
-              <label for="project-active-input" class="text-sm text-zinc-700 font-medium">
+              <label
+                for="project-active-input"
+                class="text-sm text-slate-900 dark:text-slate-100 font-medium"
+              >
                 Active project
               </label>
             </div>
 
-            <div class="flex items-center justify-end space-x-3 pt-4 border-t border-zinc-100">
+            <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
               <button
                 type="button"
                 phx-click="close_modal"
                 id="cancel-project-button"
-                class="rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-900 shadow-sm ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+                class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-sm ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
               >
                 Cancel
               </button>

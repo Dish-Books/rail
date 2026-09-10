@@ -17,12 +17,12 @@ defmodule RailWeb.Components.IssueEditorModal do
       data-qa="issue-editor-dialog"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
     >
-      <div class="w-full max-w-2xl rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6 shadow-2xl space-y-4">
+      <div class="w-full max-w-2xl rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-2xl space-y-4">
         <!-- Modal Header -->
-        <div class="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
+        <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
           <div class="flex items-center gap-2">
             <h2
-              class="text-base font-semibold text-[var(--color-on-surface)]"
+              class="text-base font-semibold text-slate-900 dark:text-slate-100"
               id="editor-dialog-title"
             >
               Edit {@issue.identifier}
@@ -32,10 +32,10 @@ defmodule RailWeb.Components.IssueEditorModal do
               href={@issue.url}
               target="_blank"
               rel="noopener noreferrer"
-              class="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+              class="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-500 hover:underline"
             >
               <span>Linear</span>
-              <.icon name="open_in_new" class="h-3.5 w-3.5" />
+              <.icon name="pi-arrow-square-out" class="h-3.5 w-3.5" />
             </a>
           </div>
 
@@ -44,7 +44,7 @@ defmodule RailWeb.Components.IssueEditorModal do
             id="close-editor-button"
             data-qa="close-editor-button"
             phx-click="close_editor"
-            class="text-[var(--color-outline)] hover:text-[var(--color-on-surface)] text-sm font-bold p-1 cursor-pointer"
+            class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 text-sm font-bold p-1 cursor-pointer"
           >
             ✕
           </button>
@@ -62,7 +62,7 @@ defmodule RailWeb.Components.IssueEditorModal do
           <div>
             <label
               for="editor-title-input"
-              class="block text-xs font-semibold text-[var(--color-on-surface)] mb-1"
+              class="block text-xs font-semibold text-slate-900 dark:text-slate-100 mb-1"
             >
               Title
             </label>
@@ -73,14 +73,14 @@ defmodule RailWeb.Components.IssueEditorModal do
               data-qa="editor-title-input"
               value={@issue.title}
               required
-              class="w-full px-3 py-2 text-sm rounded-lg border border-[var(--color-outline)] bg-[var(--color-surface)] text-[var(--color-on-surface)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+              class="w-full px-3 py-2 text-sm rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
             />
           </div>
 
           <div>
             <label
               for="editor-description-input"
-              class="block text-xs font-semibold text-[var(--color-on-surface)] mb-1"
+              class="block text-xs font-semibold text-slate-900 dark:text-slate-100 mb-1"
             >
               Description (Markdown issue body)
             </label>
@@ -89,7 +89,7 @@ defmodule RailWeb.Components.IssueEditorModal do
               id="editor-description-input"
               data-qa="editor-description-input"
               rows="6"
-              class="w-full px-3 py-2 text-xs rounded-lg border border-[var(--color-outline)] bg-[var(--color-surface)] text-[var(--color-on-surface)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] font-mono"
+              class="w-full px-3 py-2 text-xs rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500 font-mono"
             >{@issue.description}</textarea>
           </div>
 
@@ -97,7 +97,7 @@ defmodule RailWeb.Components.IssueEditorModal do
             <div>
               <label
                 for="editor-priority-select"
-                class="block text-xs font-semibold text-[var(--color-on-surface)] mb-1"
+                class="block text-xs font-semibold text-slate-900 dark:text-slate-100 mb-1"
               >
                 Priority
               </label>
@@ -105,7 +105,7 @@ defmodule RailWeb.Components.IssueEditorModal do
                 name="priority"
                 id="editor-priority-select"
                 data-qa="editor-priority-select"
-                class="w-full px-3 py-2 text-xs rounded-lg border border-[var(--color-outline)] bg-[var(--color-surface)] text-[var(--color-on-surface)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+                class="w-full px-3 py-2 text-xs rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
               >
                 <%= for p <- Issue.priorities() do %>
                   <option value={to_string(p)} selected={to_string(@issue.priority) == to_string(p)}>
@@ -118,7 +118,7 @@ defmodule RailWeb.Components.IssueEditorModal do
             <div>
               <label
                 for="editor-state-select"
-                class="block text-xs font-semibold text-[var(--color-on-surface)] mb-1"
+                class="block text-xs font-semibold text-slate-900 dark:text-slate-100 mb-1"
               >
                 State
               </label>
@@ -126,7 +126,7 @@ defmodule RailWeb.Components.IssueEditorModal do
                 name="state"
                 id="editor-state-select"
                 data-qa="editor-state-select"
-                class="w-full px-3 py-2 text-xs rounded-lg border border-[var(--color-outline)] bg-[var(--color-surface)] text-[var(--color-on-surface)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+                class="w-full px-3 py-2 text-xs rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
               >
                 <%= for s <- Issue.states() do %>
                   <option value={to_string(s)} selected={to_string(@issue.state) == to_string(s)}>
@@ -138,7 +138,7 @@ defmodule RailWeb.Components.IssueEditorModal do
           </div>
 
           <!-- Modal Footer -->
-          <div class="flex items-center justify-between pt-4 border-t border-[var(--color-border)]">
+          <div class="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-700">
             <button
               type="button"
               id="editor-archive-button"
@@ -156,7 +156,7 @@ defmodule RailWeb.Components.IssueEditorModal do
                 id="editor-cancel-button"
                 data-qa="editor-cancel-button"
                 phx-click="close_editor"
-                class="px-3 py-1.5 rounded-lg border border-[var(--color-outline)] text-xs font-semibold text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container)] cursor-pointer"
+                class="px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
               >
                 Cancel
               </button>
@@ -165,7 +165,7 @@ defmodule RailWeb.Components.IssueEditorModal do
                 type="submit"
                 id="editor-save-button"
                 data-qa="editor-save-button"
-                class="px-3 py-1.5 rounded-lg bg-[var(--color-primary)] text-[var(--color-on-primary)] text-xs font-semibold hover:opacity-90 cursor-pointer shadow-xs"
+                class="px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer shadow-xs"
               >
                 Save Changes
               </button>

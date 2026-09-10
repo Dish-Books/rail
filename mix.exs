@@ -90,16 +90,22 @@ defmodule Rail.MixProject do
   defp aliases do
     [
       credo: ["credo --config-file .credo.exs"],
-      setup: ["deps.get", "ecto.setup"],
+      setup: ["deps.get", "ecto.setup", "assets.setup"],
       "ecto.setup": ["ecto.create", "ecto.migrate"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test --warnings-as-errors"],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"],
       "assets.setup": [
         "tailwind.install --if-missing",
-        "esbuild.install --if-missing"
+        "esbuild.install --if-missing",
+        "cmd --cd assets pnpm install"
       ],
-      "assets.deploy": ["tailwind rail --minify", "esbuild rail --minify", "phx.digest"]
+      "assets.deploy": [
+        "cmd --cd assets pnpm install --frozen-lockfile",
+        "tailwind rail --minify",
+        "esbuild rail --minify",
+        "phx.digest"
+      ]
     ]
   end
 end

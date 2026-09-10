@@ -142,7 +142,7 @@ defmodule RailWeb.Components.DemoPanelTest do
     html = render_component(&DemoPanel.demo_panel/1, demo: demo, task: task)
 
     assert html =~ "Out of date (stale999)"
-    assert html =~ "bg-[var(--color-error-container)]"
+    assert html =~ "bg-red-100 dark:bg-red-900"
 
     # Play all is disabled
     assert html =~ "id=\"demo-play-all-btn\""

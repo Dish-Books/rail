@@ -1,8 +1,6 @@
 defmodule Rail.Backends.RefreshServerTest do
   use Rail.DataCase, async: false
 
-  import RailTest.BackendsHelpers
-
   alias Rail.Backends.RefreshServer
   alias Rail.Backends.Schemas.CliAccount
 
@@ -59,11 +57,13 @@ defmodule Rail.Backends.RefreshServerTest do
 
       case exe do
         "claude" ->
-          auth = sample_claude_auth_json()
+          auth = ~s({"loggedIn":true,"email":"alice@example.com","subscriptionType":"Pro"})
           {:ok, auth, 0}
 
         _agy ->
-          usage = sample_agy_usage_json()
+          usage =
+            ~s({"status":"SUCCESS","command":{"data":{"groups":[{"name":"Gemini Models","buckets":[{"window":"5h","remaining_fraction":0.85,"reset_time":"2026-09-09T20:00:00Z"},{"window":"weekly","remaining_fraction":0.6,"reset_time":"2026-09-16T20:00:00Z"}]}]}}})
+
           {:ok, usage, 0}
       end
     end
@@ -75,13 +75,18 @@ defmodule Rail.Backends.RefreshServerTest do
         path_validator: fn _path -> true end,
         runner: runner,
         custom_config_path: "/test/claude.json",
-        config_file_reader: fn _path -> {:ok, sample_claude_config_json()} end
+        config_file_reader: fn _path ->
+          {:ok,
+           ~s({"cachedUsageUtilization":{"fetchedAtMs":1725894000000,"utilization":{"limits":[{"group":"session","kind":"session","percent":20.0,"resets_at":"2026-09-10T12:00:00Z"},{"group":"weekly","kind":"weekly_all","scope":{"model":{"display_name":"Sonnet 3.7"}},"percent":35.5,"resets_at":"2026-09-15T12:00:00Z"}]}}})}
+        end
       ],
       agy_opts: [
         executable: "agy",
         path_validator: fn _path -> true end,
         runner: runner,
-        file_reader: fn _path -> {:ok, sample_agy_scratch_log()} end
+        file_reader: fn _path ->
+          {:ok, ~s(2026-09-09T15:00:00.123Z INFO [Auth] applyAuthResult: email=alice@example.com, authMethod=oauth\n)}
+        end
       ]
     ]
 
@@ -158,7 +163,10 @@ defmodule Rail.Backends.RefreshServerTest do
     runner = fn exe, _args, _opts ->
       send(caller, {:probe_started, exe})
       Process.sleep(80)
-      {:ok, sample_agy_usage_json(), 0}
+
+      {:ok,
+       ~s({"status":"SUCCESS","command":{"data":{"groups":[{"name":"Gemini Models","buckets":[{"window":"5h","remaining_fraction":0.85,"reset_time":"2026-09-09T20:00:00Z"},{"window":"weekly","remaining_fraction":0.6,"reset_time":"2026-09-16T20:00:00Z"}]}]}}}),
+       0}
     end
 
     refresh_opts = [
@@ -168,7 +176,9 @@ defmodule Rail.Backends.RefreshServerTest do
         executable: "agy",
         path_validator: fn _path -> true end,
         runner: runner,
-        file_reader: fn _path -> {:ok, sample_agy_scratch_log()} end
+        file_reader: fn _path ->
+          {:ok, ~s(2026-09-09T15:00:00.123Z INFO [Auth] applyAuthResult: email=alice@example.com, authMethod=oauth\n)}
+        end
       ]
     ]
 

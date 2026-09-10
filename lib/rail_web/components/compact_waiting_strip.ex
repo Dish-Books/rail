@@ -14,13 +14,13 @@ defmodule RailWeb.Components.CompactWaitingStrip do
     ~H"""
     <div
       data-qa="compact-waiting-strip"
-      class="mb-3 rounded-lg border border-[var(--color-border)] border-l-4 border-l-amber-600 bg-[var(--color-surface)] shadow-xs divide-y divide-[var(--color-border)]"
+      class="mb-3 rounded-lg border border-slate-200 dark:border-slate-700 border-l-4 border-l-amber-600 bg-white dark:bg-slate-900 shadow-xs divide-y divide-slate-200 dark:divide-slate-700"
     >
       <div
         :for={row <- @rows}
         id={"compact-row-#{item_key_to_id(row.item)}"}
         data-qa="compact-waiting-row"
-        class="flex items-center justify-between gap-3 px-4 py-3 hover:bg-[var(--color-surface-container-high)]/40 transition-colors"
+        class="flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-100 dark:hover:bg-slate-700/40 transition-colors"
       >
         <!-- Left: Status Chip + Project Badge + Title & Error Line -->
         <div class="flex items-center space-x-3 min-w-0 flex-1">
@@ -40,7 +40,7 @@ defmodule RailWeb.Components.CompactWaitingStrip do
             <.link
               navigate={~p"/tasks/#{row.task.id}"}
               data-qa="compact-row-title"
-              class="text-sm font-medium text-[var(--color-on-surface)] hover:underline truncate block"
+              class="text-sm font-medium text-slate-900 dark:text-slate-100 hover:underline truncate block"
             >
               {task_title_line(row.task)}
             </.link>
@@ -62,7 +62,7 @@ defmodule RailWeb.Components.CompactWaitingStrip do
             phx-hook="Elapsed"
             data-started-at={format_started_at(row.waiting_since)}
             data-qa="elapsed-text"
-            class="text-xs text-[var(--color-outline)] font-mono"
+            class="text-xs text-slate-500 dark:text-slate-400 font-mono"
           >
             {format_elapsed(row.waiting_since)}
           </span>
@@ -73,7 +73,7 @@ defmodule RailWeb.Components.CompactWaitingStrip do
               navigate={~p"/tasks/#{row.task.id}"}
               id={"action-open-log-#{row.task.id}"}
               data-qa="action-open-log"
-              class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:opacity-90 shadow-xs inline-block"
+              class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 shadow-xs inline-block"
             >
               Open log
             </.link>

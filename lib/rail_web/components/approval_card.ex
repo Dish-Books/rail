@@ -39,7 +39,7 @@ defmodule RailWeb.Components.ApprovalCard do
     <div
       id={"approval-card-#{@card_id}"}
       data-qa="overview-card approval-card"
-      class="mb-3 rounded-lg border border-[var(--color-border)] border-l-4 border-l-amber-600 bg-[var(--color-surface)] p-4 shadow-xs"
+      class="mb-3 rounded-lg border border-slate-200 dark:border-slate-700 border-l-4 border-l-amber-600 bg-white dark:bg-slate-900 p-4 shadow-xs"
     >
       <!-- Header Row -->
       <div class="flex items-center justify-between gap-2 mb-2">
@@ -57,7 +57,7 @@ defmodule RailWeb.Components.ApprovalCard do
             navigate={~p"/tasks/#{@task.id}"}
             id={"approval-task-link-#{@card_id}"}
             data-qa="approval-task-link"
-            class="text-xs font-semibold text-[var(--color-on-surface-variant)] hover:underline truncate"
+            class="text-xs font-semibold text-slate-600 dark:text-slate-300 hover:underline truncate"
           >
             {@header_label}
           </.link>
@@ -68,14 +68,14 @@ defmodule RailWeb.Components.ApprovalCard do
           phx-hook="Elapsed"
           data-started-at={@started_at}
           data-qa="elapsed-text"
-          class="text-xs text-[var(--color-outline)] font-mono shrink-0"
+          class="text-xs text-slate-500 dark:text-slate-400 font-mono shrink-0"
         >
           {@elapsed_text}
         </span>
       </div>
 
       <!-- Task Title -->
-      <h3 class="text-base font-semibold text-[var(--color-on-surface)] mb-1">
+      <h3 class="text-base font-semibold text-slate-900 dark:text-slate-100 mb-1">
         <.link
           navigate={~p"/tasks/#{@task.id}"}
           id={"approval-title-link-#{@card_id}"}
@@ -91,18 +91,18 @@ defmodule RailWeb.Components.ApprovalCard do
         :if={is_binary(@detail) and @detail != ""}
         id={"approval-detail-#{@card_id}"}
         data-qa="approval-detail"
-        class="text-xs text-[var(--color-outline)] truncate mb-3"
+        class="text-xs text-slate-500 dark:text-slate-400 truncate mb-3"
       >
         {@detail}
       </p>
 
       <!-- Action Buttons -->
-      <div class="flex items-center space-x-2.5 mt-3 pt-2 border-t border-[var(--color-border)]">
+      <div class="flex items-center space-x-2.5 mt-3 pt-2 border-t border-slate-200 dark:border-slate-700">
         <.link
           navigate={~p"/tasks/#{@task.id}?tab=#{@primary_tab}"}
           id={"approval-primary-action-#{@card_id}"}
           data-qa="approval-primary-action"
-          class="inline-flex items-center px-3 py-1.5 rounded-lg bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:opacity-90 text-xs font-semibold shadow-xs"
+          class="inline-flex items-center px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 text-xs font-semibold shadow-xs"
         >
           {@primary_label}
         </.link>
@@ -113,7 +113,7 @@ defmodule RailWeb.Components.ApprovalCard do
           data-qa="send-back-button"
           phx-click="open_send_back"
           phx-value-task_id={@task.id}
-          class="inline-flex items-center px-3 py-1.5 rounded-lg border border-[var(--color-outline)] text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-high)] text-xs font-semibold cursor-pointer"
+          class="inline-flex items-center px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold cursor-pointer"
         >
           Send back with comments
         </button>

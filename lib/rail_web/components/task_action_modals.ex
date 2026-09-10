@@ -26,14 +26,17 @@ defmodule RailWeb.Components.TaskActionModals do
         :if={@active_modal[:type] == :confirm_merge}
         id="confirm-merge-modal"
         data-qa="confirm-merge-modal"
-        class="w-full max-w-[460px] rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6 shadow-2xl space-y-4"
+        class="w-full max-w-[460px] rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-2xl space-y-4"
       >
-        <h2 class="text-base font-semibold text-[var(--color-on-surface)]" id="confirm-merge-title">
+        <h2
+          class="text-base font-semibold text-slate-900 dark:text-slate-100"
+          id="confirm-merge-title"
+        >
           Merge this pull request?
         </h2>
 
         <div
-          class="text-xs text-[var(--color-outline)] space-y-2 leading-relaxed"
+          class="text-xs text-slate-500 dark:text-slate-400 space-y-2 leading-relaxed"
           id="confirm-merge-body"
         >
           <p
@@ -53,7 +56,7 @@ defmodule RailWeb.Components.TaskActionModals do
             id="cancel-merge-button"
             data-qa="cancel-merge-button"
             phx-click="close_modal"
-            class="px-3 py-1.5 rounded-lg border border-[var(--color-outline)] text-xs font-semibold text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container)] cursor-pointer"
+            class="px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
           >
             Cancel
           </button>
@@ -65,7 +68,7 @@ defmodule RailWeb.Components.TaskActionModals do
             phx-click="submit_modal"
             phx-value-action="merge"
             phx-value-ignore_conflicts={to_string(@active_modal[:ignore_conflicts] || false)}
-            class="px-3 py-1.5 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 text-[var(--color-on-primary)] text-xs font-semibold cursor-pointer shadow-xs"
+            class="px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 hover:bg-blue-600 dark:hover:bg-blue-500/90 text-white text-xs font-semibold cursor-pointer shadow-xs"
           >
             Merge
           </button>
@@ -77,14 +80,17 @@ defmodule RailWeb.Components.TaskActionModals do
         :if={@active_modal[:type] == :confirm_rebase}
         id="confirm-rebase-modal"
         data-qa="confirm-rebase-modal"
-        class="w-full max-w-[460px] rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6 shadow-2xl space-y-4"
+        class="w-full max-w-[460px] rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-2xl space-y-4"
       >
-        <h2 class="text-base font-semibold text-[var(--color-on-surface)]" id="confirm-rebase-title">
+        <h2
+          class="text-base font-semibold text-slate-900 dark:text-slate-100"
+          id="confirm-rebase-title"
+        >
           Rebase this branch?
         </h2>
 
         <div
-          class="text-xs text-[var(--color-outline)] space-y-2 leading-relaxed"
+          class="text-xs text-slate-500 dark:text-slate-400 space-y-2 leading-relaxed"
           id="confirm-rebase-body"
         >
           <p>
@@ -103,7 +109,7 @@ defmodule RailWeb.Components.TaskActionModals do
             id="cancel-rebase-button"
             data-qa="cancel-rebase-button"
             phx-click="close_modal"
-            class="px-3 py-1.5 rounded-lg border border-[var(--color-outline)] text-xs font-semibold text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container)] cursor-pointer"
+            class="px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
           >
             Cancel
           </button>
@@ -114,7 +120,7 @@ defmodule RailWeb.Components.TaskActionModals do
             data-qa="confirm-rebase-button"
             phx-click="submit_modal"
             phx-value-action="rebase"
-            class="px-3 py-1.5 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 text-[var(--color-on-primary)] text-xs font-semibold cursor-pointer shadow-xs"
+            class="px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 hover:bg-blue-600 dark:hover:bg-blue-500/90 text-white text-xs font-semibold cursor-pointer shadow-xs"
           >
             Rebase
           </button>
@@ -126,13 +132,19 @@ defmodule RailWeb.Components.TaskActionModals do
         :if={@active_modal[:type] == :confirm_cleanup}
         id="confirm-cleanup-modal"
         data-qa="confirm-cleanup-modal"
-        class="w-full max-w-[460px] rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6 shadow-2xl space-y-4"
+        class="w-full max-w-[460px] rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-2xl space-y-4"
       >
-        <h2 class="text-base font-semibold text-[var(--color-on-surface)]" id="confirm-cleanup-title">
+        <h2
+          class="text-base font-semibold text-slate-900 dark:text-slate-100"
+          id="confirm-cleanup-title"
+        >
           Clean up this task?
         </h2>
 
-        <p class="text-xs text-[var(--color-outline)] leading-relaxed" id="confirm-cleanup-body">
+        <p
+          class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed"
+          id="confirm-cleanup-body"
+        >
           Removes the worktree and its branch, every role transcript, and the task record. Merging does none of that - the transcripts are what Improve Roles learns from - so this is how a task you are finished with goes away. The GitHub issue and any pull request are left alone. This cannot be undone.
         </p>
 
@@ -142,7 +154,7 @@ defmodule RailWeb.Components.TaskActionModals do
             id="cancel-cleanup-button"
             data-qa="cancel-cleanup-button"
             phx-click="close_modal"
-            class="px-3 py-1.5 rounded-lg border border-[var(--color-outline)] text-xs font-semibold text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container)] cursor-pointer"
+            class="px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
           >
             Cancel
           </button>
@@ -165,9 +177,12 @@ defmodule RailWeb.Components.TaskActionModals do
         :if={@active_modal[:type] == :prompt_send_back}
         id="prompt-send-back-modal"
         data-qa="prompt-send-back-modal"
-        class="w-full max-w-[520px] rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6 shadow-2xl space-y-4"
+        class="w-full max-w-[520px] rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-2xl space-y-4"
       >
-        <h2 class="text-base font-semibold text-[var(--color-on-surface)]" id="prompt-send-back-title">
+        <h2
+          class="text-base font-semibold text-slate-900 dark:text-slate-100"
+          id="prompt-send-back-title"
+        >
           Comment to {@active_modal[:role_name] || @current_role_name || "the agent"}
         </h2>
 
@@ -186,7 +201,7 @@ defmodule RailWeb.Components.TaskActionModals do
               rows="4"
               autofocus
               placeholder="What should change?"
-              class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-container)] p-3 text-xs text-[var(--color-on-surface)] placeholder:text-[var(--color-outline)] focus:border-[var(--color-primary)] focus:outline-hidden"
+              class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:border-blue-600 dark:focus:border-blue-500 focus:outline-hidden"
             ></textarea>
           </div>
 
@@ -196,7 +211,7 @@ defmodule RailWeb.Components.TaskActionModals do
               id="cancel-send-back-button"
               data-qa="cancel-send-back-button"
               phx-click="close_modal"
-              class="px-3 py-1.5 rounded-lg border border-[var(--color-outline)] text-xs font-semibold text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container)] cursor-pointer"
+              class="px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
             >
               Cancel
             </button>
@@ -205,7 +220,7 @@ defmodule RailWeb.Components.TaskActionModals do
               type="submit"
               id="submit-send-back-button"
               data-qa="submit-send-back-button"
-              class="px-3 py-1.5 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 text-[var(--color-on-primary)] text-xs font-semibold cursor-pointer shadow-xs"
+              class="px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 hover:bg-blue-600 dark:hover:bg-blue-500/90 text-white text-xs font-semibold cursor-pointer shadow-xs"
             >
               Send back
             </button>
@@ -218,16 +233,19 @@ defmodule RailWeb.Components.TaskActionModals do
         :if={@active_modal[:type] == :prompt_send_back_to_engineer}
         id="prompt-send-back-engineer-modal"
         data-qa="prompt-send-back-engineer-modal"
-        class="w-full max-w-[520px] rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6 shadow-2xl space-y-4"
+        class="w-full max-w-[520px] rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-2xl space-y-4"
       >
         <div class="space-y-1">
           <h2
-            class="text-base font-semibold text-[var(--color-on-surface)]"
+            class="text-base font-semibold text-slate-900 dark:text-slate-100"
             id="prompt-send-back-engineer-title"
           >
             Send back to Engineer
           </h2>
-          <p class="text-xs text-[var(--color-outline)]" id="prompt-send-back-engineer-subtitle">
+          <p
+            class="text-xs text-slate-500 dark:text-slate-400"
+            id="prompt-send-back-engineer-subtitle"
+          >
             The findings already on this change go back with it. Add anything of your own here.
           </p>
         </div>
@@ -247,7 +265,7 @@ defmodule RailWeb.Components.TaskActionModals do
               rows="4"
               autofocus
               placeholder="Optional - anything else it should do?"
-              class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-container)] p-3 text-xs text-[var(--color-on-surface)] placeholder:text-[var(--color-outline)] focus:border-[var(--color-primary)] focus:outline-hidden"
+              class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:border-blue-600 dark:focus:border-blue-500 focus:outline-hidden"
             ></textarea>
           </div>
 
@@ -257,7 +275,7 @@ defmodule RailWeb.Components.TaskActionModals do
               id="cancel-send-back-engineer-button"
               data-qa="cancel-send-back-engineer-button"
               phx-click="close_modal"
-              class="px-3 py-1.5 rounded-lg border border-[var(--color-outline)] text-xs font-semibold text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container)] cursor-pointer"
+              class="px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
             >
               Cancel
             </button>
@@ -266,7 +284,7 @@ defmodule RailWeb.Components.TaskActionModals do
               type="submit"
               id="submit-send-back-engineer-button"
               data-qa="submit-send-back-engineer-button"
-              class="px-3 py-1.5 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 text-[var(--color-on-primary)] text-xs font-semibold cursor-pointer shadow-xs"
+              class="px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 hover:bg-blue-600 dark:hover:bg-blue-500/90 text-white text-xs font-semibold cursor-pointer shadow-xs"
             >
               Send back
             </button>
@@ -279,16 +297,16 @@ defmodule RailWeb.Components.TaskActionModals do
         :if={@active_modal[:type] == :prompt_decline_demo}
         id="prompt-decline-demo-modal"
         data-qa="prompt-decline-demo-modal"
-        class="w-full max-w-[520px] rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6 shadow-2xl space-y-4"
+        class="w-full max-w-[520px] rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-2xl space-y-4"
       >
         <div class="space-y-1">
           <h2
-            class="text-base font-semibold text-[var(--color-on-surface)]"
+            class="text-base font-semibold text-slate-900 dark:text-slate-100"
             id="prompt-decline-demo-title"
           >
             Continue without a demo
           </h2>
-          <p class="text-xs text-[var(--color-outline)]" id="prompt-decline-demo-subtitle">
+          <p class="text-xs text-slate-500 dark:text-slate-400" id="prompt-decline-demo-subtitle">
             A demo will not be recorded for this task. Provide a one-line reason why (e.g. non-UI change, background refactor).
           </p>
         </div>
@@ -308,7 +326,7 @@ defmodule RailWeb.Components.TaskActionModals do
               name="reason"
               autofocus
               placeholder="One-line reason (e.g. non-UI change, verified in CLI)"
-              class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-container)] p-3 text-xs text-[var(--color-on-surface)] placeholder:text-[var(--color-outline)] focus:border-[var(--color-primary)] focus:outline-hidden"
+              class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:border-blue-600 dark:focus:border-blue-500 focus:outline-hidden"
             />
           </div>
 
@@ -318,7 +336,7 @@ defmodule RailWeb.Components.TaskActionModals do
               id="cancel-decline-demo-button"
               data-qa="cancel-decline-demo-button"
               phx-click="close_modal"
-              class="px-3 py-1.5 rounded-lg border border-[var(--color-outline)] text-xs font-semibold text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container)] cursor-pointer"
+              class="px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
             >
               Cancel
             </button>
@@ -327,7 +345,7 @@ defmodule RailWeb.Components.TaskActionModals do
               type="submit"
               id="submit-decline-demo-button"
               data-qa="submit-decline-demo-button"
-              class="px-3 py-1.5 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 text-[var(--color-on-primary)] text-xs font-semibold cursor-pointer shadow-xs"
+              class="px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 hover:bg-blue-600 dark:hover:bg-blue-500/90 text-white text-xs font-semibold cursor-pointer shadow-xs"
             >
               Continue
             </button>

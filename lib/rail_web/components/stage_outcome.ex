@@ -51,14 +51,14 @@ defmodule RailWeb.Components.StageOutcome do
         <h3
           id="stage-failure-heading"
           data-qa="stage_failure_heading"
-          class="text-base font-bold text-[var(--color-error)]"
+          class="text-base font-bold text-red-600 dark:text-red-500"
         >
           {@resolved_role_name} Failure
         </h3>
         <div
           id="stage-failure-box"
           data-qa="stage_failure_box"
-          class="w-full p-4 rounded-lg bg-[var(--color-error-container)] text-[var(--color-on-error-container)] font-mono text-xs whitespace-pre-wrap select-text break-words"
+          class="w-full p-4 rounded-lg bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 font-mono text-xs whitespace-pre-wrap select-text break-words"
         >
           {@error}
         </div>
@@ -69,12 +69,16 @@ defmodule RailWeb.Components.StageOutcome do
         <h3
           id="stage-outcome-heading"
           data-qa="stage_outcome_heading"
-          class="text-base font-bold text-[var(--color-on-surface)]"
+          class="text-base font-bold text-slate-900 dark:text-slate-100"
         >
           {@resolved_role_name} Outcome
         </h3>
-        <div id="stage-outcome-card" data-qa="stage_outcome_card" class="m3-card p-4 select-text">
-          <p :if={@is_pruned} class="text-sm text-[var(--color-outline)]">
+        <div
+          id="stage-outcome-card"
+          data-qa="stage_outcome_card"
+          class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-4 select-text"
+        >
+          <p :if={@is_pruned} class="text-sm text-slate-500 dark:text-slate-400">
             This transcript aged out and was swept.
           </p>
           <.markdown :if={not @is_pruned} content={@output} />

@@ -223,7 +223,10 @@ defmodule Rail.Runs.SpawnerTest do
   test "spawn_run/3 works with 3 arguments and resolves default executable with empty argv", %{
     role_run: role_run
   } do
-    # When argv is empty, resolve_executable_and_args uses ArgvBuilder default executable path
+    # When argv is empty, resolve_executable_and_args uses the configured backend path
+    {:ok, _backend} =
+      Rail.Backends.create_backend(Rail.Scope.for_system(), %{name: :claude, executable_path: "/bin/sleep"})
+
     {:ok, run1} = Spawner.spawn_run(role_run, :stage, [], skip_follower: true)
     assert run1.status == :running
     Spawner.terminate_os_process(run1.os_pid, grace_period: 50)

@@ -51,7 +51,7 @@ defmodule RailWeb.Components.DemoPanel do
     <div
       id="demo-panel"
       data-qa="demo-panel demo_panel"
-      class="p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] space-y-3"
+      class="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-3"
     >
       <!-- Header Wrap -->
       <div
@@ -63,7 +63,7 @@ defmodule RailWeb.Components.DemoPanel do
         <h3
           id="demo-panel-title"
           data-qa="demo_panel_title"
-          class="text-base font-bold text-[var(--color-on-surface)]"
+          class="text-base font-bold text-slate-900 dark:text-slate-100"
         >
           {if @is_declined, do: "Demo declined", else: "Recorded demo"}
         </h3>
@@ -72,7 +72,7 @@ defmodule RailWeb.Components.DemoPanel do
         <span
           id="demo-version-pill"
           data-qa="demo_version_pill"
-          class="bg-[var(--color-secondary-container)] text-[var(--color-on-secondary-container)] rounded-full px-2 py-0.5 text-xs font-bold"
+          class="bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-full px-2 py-0.5 text-xs font-bold"
         >
           {"v#{@version}"}
         </span>
@@ -82,7 +82,7 @@ defmodule RailWeb.Components.DemoPanel do
           :if={not @is_declined}
           id="demo-recorded-count-pill"
           data-qa="demo_recorded_count_pill"
-          class="bg-[var(--color-surface-container-highest)] text-[var(--color-on-surface-variant)] rounded-full px-2 py-0.5 text-xs"
+          class="bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-full px-2 py-0.5 text-xs"
         >
           {"#{@shown_count}/#{@criteria_count} recorded"}
         </span>
@@ -95,9 +95,9 @@ defmodule RailWeb.Components.DemoPanel do
           class={[
             "rounded-full px-2 py-0.5 text-xs",
             @stale &&
-              "bg-[var(--color-error-container)] text-[var(--color-on-error-container)] font-bold",
+              "bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 font-bold",
             not @stale &&
-              "bg-[var(--color-surface-container-highest)] text-[var(--color-on-surface-variant)]"
+              "bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300"
           ]}
         >
           {if @stale, do: "Out of date (#{@commit})", else: "Matches #{@commit}"}
@@ -117,12 +117,12 @@ defmodule RailWeb.Components.DemoPanel do
             class={[
               "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors",
               @stale &&
-                "bg-[var(--color-surface-container-highest)] text-[var(--color-outline)] cursor-not-allowed opacity-60",
+                "bg-slate-200 dark:bg-slate-600 text-slate-500 dark:text-slate-400 cursor-not-allowed opacity-60",
               not @stale &&
-                "bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:bg-[var(--color-primary)]/90 cursor-pointer shadow-xs"
+                "bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-600 dark:hover:bg-blue-500/90 cursor-pointer shadow-xs"
             ]}
           >
-            <.icon name="play_arrow" class="h-4 w-4 shrink-0" />
+            <.icon name="pi-play-fill" class="h-4 w-4 shrink-0" />
             <span>Play all</span>
           </button>
 
@@ -133,9 +133,9 @@ defmodule RailWeb.Components.DemoPanel do
             id="demo-rerecord-btn"
             data-qa="demo_rerecord_btn"
             phx-click="rerecord_demo"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-[var(--color-outline)] text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-highest)] transition-colors cursor-pointer"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-500 dark:border-slate-400 text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors cursor-pointer"
           >
-            <.icon name="videocam_outlined" class="h-4 w-4 shrink-0" />
+            <.icon name="pi-video-camera" class="h-4 w-4 shrink-0" />
             <span>Re-record</span>
           </button>
         </div>
@@ -146,9 +146,9 @@ defmodule RailWeb.Components.DemoPanel do
         :if={@is_declined and is_binary(@note) and @note != ""}
         id="demo-declined-card"
         data-qa="demo_declined_card"
-        class="p-3 rounded-lg bg-[var(--color-surface-container-highest)] flex items-center gap-2 text-xs text-[var(--color-on-surface)]"
+        class="p-3 rounded-lg bg-slate-200 dark:bg-slate-600 flex items-center gap-2 text-xs text-slate-900 dark:text-slate-100"
       >
-        <.icon name="info_outline" class="h-4 w-4 shrink-0 text-[var(--color-outline)]" />
+        <.icon name="pi-info" class="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
         <span class="font-medium">{"Demo declined: #{@note}"}</span>
       </div>
 
@@ -169,7 +169,7 @@ defmodule RailWeb.Components.DemoPanel do
             id={"demo-criterion-card-#{idx}"}
             data-qa="demo-card demo_criterion_card"
             class={[
-              "p-3 rounded-xl border border-[var(--color-outline-variant)]/50 bg-[var(--color-surface)] flex items-start gap-3.5 transition-opacity",
+              "p-3 rounded-xl border border-slate-300 dark:border-slate-600/50 bg-white dark:bg-slate-900 flex items-start gap-3.5 transition-opacity",
               @stale && "opacity-50"
             ]}
           >
@@ -204,7 +204,7 @@ defmodule RailWeb.Components.DemoPanel do
                   ]}
                 >
                   <span class="p-1 rounded-full bg-black/60 text-white flex items-center justify-center">
-                    <.icon name="play_arrow" class="h-5 w-5" />
+                    <.icon name="pi-play-fill" class="h-5 w-5" />
                   </span>
                 </button>
 
@@ -215,9 +215,9 @@ defmodule RailWeb.Components.DemoPanel do
               <% else %>
                 <!-- Non-recorded State Icons -->
                 <%= if seg_outcome in ["not_filmable", "notFilmable"] do %>
-                  <.icon name="visibility_off_outlined" class="h-7 w-7 text-white/55" />
+                  <.icon name="pi-eye-slash" class="h-7 w-7 text-white/55" />
                 <% else %>
-                  <.icon name="error_outline" class="h-7 w-7 text-white/55" />
+                  <.icon name="pi-warning-circle" class="h-7 w-7 text-white/55" />
                 <% end %>
               <% end %>
             </div>
@@ -226,35 +226,35 @@ defmodule RailWeb.Components.DemoPanel do
             <div class="flex-1 min-w-0 space-y-1">
               <!-- Criterion index & outcome badge -->
               <div class="flex items-center gap-2">
-                <span class="text-xs font-bold text-[var(--color-outline)]">
+                <span class="text-xs font-bold text-slate-500 dark:text-slate-400">
                   {"Criterion #{criterion_idx}"}
                 </span>
 
                 <%= case seg_outcome do %>
                   <% "recorded" -> %>
-                    <span class="bg-[var(--color-primary-container)] text-[var(--color-on-primary-container)] rounded-md px-1.5 py-0.5 text-xs font-bold">
+                    <span class="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-md px-1.5 py-0.5 text-xs font-bold">
                       Recorded
                     </span>
                   <% o when o in ["not_filmable", "notFilmable"] -> %>
-                    <span class="bg-[var(--color-surface-container-highest)] text-[var(--color-on-surface-variant)] rounded-md px-1.5 py-0.5 text-xs font-bold">
+                    <span class="bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-md px-1.5 py-0.5 text-xs font-bold">
                       Not filmable
                     </span>
                   <% _ -> %>
-                    <span class="bg-[var(--color-error-container)] text-[var(--color-on-error-container)] rounded-md px-1.5 py-0.5 text-xs font-bold">
+                    <span class="bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 rounded-md px-1.5 py-0.5 text-xs font-bold">
                       Failed
                     </span>
                 <% end %>
               </div>
 
               <!-- Criterion Text -->
-              <p class="text-sm font-medium text-[var(--color-on-surface)] leading-snug">
+              <p class="text-sm font-medium text-slate-900 dark:text-slate-100 leading-snug">
                 {criterion_text}
               </p>
 
               <!-- Note -->
               <p
                 :if={is_binary(seg_note) and seg_note != ""}
-                class="text-xs text-[var(--color-outline)] leading-relaxed"
+                class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed"
               >
                 {seg_note}
               </p>
@@ -262,7 +262,7 @@ defmodule RailWeb.Components.DemoPanel do
               <!-- Frames & duration subtext -->
               <p
                 :if={seg_outcome == "recorded" and frames != []}
-                class="text-xs text-[var(--color-outline)]"
+                class="text-xs text-slate-500 dark:text-slate-400"
               >
                 {"#{length(frames)} frames • #{duration_str}"}
               </p>

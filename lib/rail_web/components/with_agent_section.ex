@@ -14,7 +14,7 @@ defmodule RailWeb.Components.WithAgentSection do
       <h2
         id="with-agent-header"
         data-qa="with-agent-header"
-        class="text-xs font-bold uppercase tracking-wider text-[var(--color-outline)] mb-2"
+        class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2"
       >
         WITH AN AGENT · {length(@rows)} · RECENTLY UPDATED
       </h2>
@@ -24,7 +24,7 @@ defmodule RailWeb.Components.WithAgentSection do
           :for={row <- @rows}
           id={"with-agent-card-#{row.task.id}"}
           data-qa="with-agent-card"
-          class="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3.5 hover:bg-[var(--color-surface-container-high)]/30 transition-colors shadow-xs"
+          class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3.5 hover:bg-slate-100 dark:hover:bg-slate-700/30 transition-colors shadow-xs"
         >
           <div class="flex items-center justify-between gap-3">
             <div class="min-w-0 flex-1">
@@ -35,14 +35,14 @@ defmodule RailWeb.Components.WithAgentSection do
                   navigate={~p"/tasks/#{row.task.id}"}
                   id={"with-agent-title-#{row.task.id}"}
                   data-qa="with-agent-title"
-                  class="text-sm font-semibold text-[var(--color-on-surface)] hover:underline truncate"
+                  class="text-sm font-semibold text-slate-900 dark:text-slate-100 hover:underline truncate"
                 >
                   {row.task.title}
                 </.link>
               </div>
 
               <!-- Subtitle: State Pill + taskKey · roleName -->
-              <div class="flex items-center space-x-2 text-xs text-[var(--color-outline)]">
+              <div class="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400">
                 <span
                   data-qa="with-agent-state-pill"
                   class={[
@@ -65,7 +65,7 @@ defmodule RailWeb.Components.WithAgentSection do
               phx-hook="Elapsed"
               data-started-at={format_started_at(row.task.updated_at)}
               data-qa="elapsed-text"
-              class="text-xs text-[var(--color-outline)] font-mono shrink-0"
+              class="text-xs text-slate-500 dark:text-slate-400 font-mono shrink-0"
             >
               {format_elapsed(row.task.updated_at)}
             </span>

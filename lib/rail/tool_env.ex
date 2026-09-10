@@ -96,23 +96,6 @@ defmodule Rail.ToolEnv do
   end
 
   @doc """
-  Finds the absolute path of an executable on PATH, returning `nil` if not found.
-  """
-  def find_executable(executable) when is_binary(executable) do
-    if String.contains?(executable, "/") do
-      if executable?(executable), do: executable
-    else
-      sep = separator()
-      dirs = String.split(path(), sep)
-
-      Enum.find_value(dirs, fn dir ->
-        candidate = Path.join(dir, executable)
-        if executable?(candidate), do: candidate
-      end)
-    end
-  end
-
-  @doc """
   Generates a merged environment map including PATH and any extra variables.
   """
   def env(extra \\ %{})

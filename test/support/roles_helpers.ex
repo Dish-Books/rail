@@ -38,7 +38,7 @@ defmodule RailTest.RolesHelpers do
     default_attrs = %{
       name: "Role #{id}",
       description: "Description for role #{id}",
-      icon_name: "hero-command-line",
+      icon_name: "pi-terminal-window",
       cli_backend: :claude,
       model: "claude-3-7-sonnet",
       reasoning_effort: :high,

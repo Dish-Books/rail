@@ -68,8 +68,8 @@ defmodule RailWeb.Components.StageStepper do
 
         <.icon
           :if={idx < length(@stages) - 1}
-          name="chevron_right"
-          class="h-4 w-4 text-[var(--color-outline-variant)] shrink-0 hidden sm:inline-block"
+          name="pi-caret-right"
+          class="h-4 w-4 text-slate-300 dark:text-slate-600 shrink-0 hidden sm:inline-block"
         />
       <% end %>
     </div>
@@ -91,26 +91,26 @@ defmodule RailWeb.Components.StageStepper do
   end
 
   defp stage_icon(_stage, _is_current, true = _is_done, _task) do
-    "check_circle"
+    "pi-check-circle-fill"
   end
 
   defp stage_icon(_stage, _is_current, _is_done, _task) do
-    "radio_button_unchecked"
+    "pi-circle"
   end
 
   defp stage_chip_classes(true = _is_current, _is_done, task) do
     case Formatters.stage_state_color(task) do
       :primary ->
-        "bg-[var(--color-primary-container)] text-[var(--color-on-primary-container)] border-[var(--color-primary)] font-semibold shadow-xs"
+        "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border-blue-600 dark:border-blue-500 font-semibold shadow-xs"
 
       :amber ->
         "bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 border-amber-500 font-semibold shadow-xs"
 
       :error ->
-        "bg-[var(--color-error-container)] text-[var(--color-on-error-container)] border-[var(--color-error)] font-semibold shadow-xs"
+        "bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 border-red-600 dark:border-red-500 font-semibold shadow-xs"
 
       _outline ->
-        "bg-[var(--color-surface-container-high)] text-[var(--color-on-surface)] border-[var(--color-outline)] font-semibold shadow-xs"
+        "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 border-slate-500 dark:border-slate-400 font-semibold shadow-xs"
     end
   end
 
@@ -119,7 +119,7 @@ defmodule RailWeb.Components.StageStepper do
   end
 
   defp stage_chip_classes(_is_current, _is_done, _task) do
-    "bg-[var(--color-surface-container-low)] text-[var(--color-outline)] border-[var(--color-outline-variant)]"
+    "bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600"
   end
 
   defp stage_atom(%{stage: stage}) when is_atom(stage), do: stage

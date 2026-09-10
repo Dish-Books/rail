@@ -65,7 +65,7 @@ defmodule RailWeb.Components.DemoPlayerModal do
         id="demo-player-modal"
         data-qa="demo-player-modal demo_player_modal"
         phx-hook="DemoPlayer"
-        class="bg-[var(--color-surface)] rounded-2xl shadow-2xl flex flex-col overflow-hidden max-w-[960px] max-h-[720px] w-full h-[720px] border border-[var(--color-border)]"
+        class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-w-[960px] max-h-[720px] w-full h-[720px] border border-slate-200 dark:border-slate-700"
       >
         <%= if @segments == [] do %>
           <!-- Empty State -->
@@ -74,8 +74,8 @@ defmodule RailWeb.Components.DemoPlayerModal do
             data-qa="demo_player_empty_state"
             class="p-8 flex flex-col items-center justify-center h-full gap-4 text-center"
           >
-            <.icon name="videocam_off_outlined" class="h-12 w-12 text-[var(--color-outline)]" />
-            <p class="text-sm font-semibold text-[var(--color-on-surface)]">
+            <.icon name="pi-video-camera-slash" class="h-12 w-12 text-slate-500 dark:text-slate-400" />
+            <p class="text-sm font-semibold text-slate-900 dark:text-slate-100">
               No demo segments available.
             </p>
             <button
@@ -83,7 +83,7 @@ defmodule RailWeb.Components.DemoPlayerModal do
               id="demo-player-empty-close-btn"
               data-qa="demo_player_close_btn"
               phx-click="close_demo_player"
-              class="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-[var(--color-on-primary)] text-xs font-semibold hover:bg-[var(--color-primary)]/90 transition-colors cursor-pointer"
+              class="px-4 py-2 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:bg-blue-600 dark:hover:bg-blue-500/90 transition-colors cursor-pointer"
             >
               Close
             </button>
@@ -93,22 +93,22 @@ defmodule RailWeb.Components.DemoPlayerModal do
           <div
             id="demo-player-header"
             data-qa="demo_player_header"
-            class="pl-5 pt-4 pr-3 pb-3 flex items-center gap-3 border-b border-[var(--color-border)] shrink-0"
+            class="pl-5 pt-4 pr-3 pb-3 flex items-center gap-3 border-b border-slate-200 dark:border-slate-700 shrink-0"
           >
-            <.icon name="play_circle_outline" class="h-5 w-5 shrink-0 text-[var(--color-primary)]" />
+            <.icon name="pi-play-circle" class="h-5 w-5 shrink-0 text-blue-600 dark:text-blue-500" />
 
             <div class="flex-1 min-w-0">
               <p
                 id="demo-player-criterion-index"
                 data-qa="demo_player_criterion_index"
-                class="text-xs text-[var(--color-outline)] font-medium"
+                class="text-xs text-slate-500 dark:text-slate-400 font-medium"
               >
                 {"Criterion #{@criterion_idx} of #{length(@segments)}"}
               </p>
               <h3
                 id="demo-player-criterion-text"
                 data-qa="demo_player_criterion_text"
-                class="text-sm font-bold text-[var(--color-on-surface)] line-clamp-2"
+                class="text-sm font-bold text-slate-900 dark:text-slate-100 line-clamp-2"
                 title={@criterion_text}
               >
                 {@criterion_text}
@@ -121,9 +121,9 @@ defmodule RailWeb.Components.DemoPlayerModal do
               data-qa="demo_player_close_btn"
               phx-click="close_demo_player"
               title="Close"
-              class="p-1.5 rounded-lg text-[var(--color-outline)] hover:text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-highest)] transition-colors cursor-pointer"
+              class="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors cursor-pointer"
             >
-              <.icon name="close" class="h-5 w-5" />
+              <.icon name="pi-x" class="h-5 w-5" />
             </button>
           </div>
 
@@ -144,12 +144,12 @@ defmodule RailWeb.Components.DemoPlayerModal do
                 onerror="this.classList.add('hidden'); if(this.nextElementSibling) this.nextElementSibling.classList.remove('hidden');"
               />
               <div class="hidden flex flex-col items-center justify-center gap-2 text-white/55">
-                <.icon name="broken_image_outlined" class="h-12 w-12" />
+                <.icon name="pi-image-broken" class="h-12 w-12" />
                 <span class="text-xs">Error loading frame</span>
               </div>
             <% else %>
               <div class="flex flex-col items-center justify-center gap-2 text-white/55">
-                <.icon name="image_not_supported_outlined" class="h-12 w-12" />
+                <.icon name="pi-image-broken" class="h-12 w-12" />
               </div>
             <% end %>
 
@@ -168,10 +168,10 @@ defmodule RailWeb.Components.DemoPlayerModal do
           <div
             id="demo-player-controls"
             data-qa="demo_player_controls"
-            class="pl-4 pt-2 pr-4 pb-3 bg-[var(--color-surface)] border-t border-[var(--color-border)] space-y-2 shrink-0"
+            class="pl-4 pt-2 pr-4 pb-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 space-y-2 shrink-0"
           >
             <!-- Scrubber Row -->
-            <div class="flex items-center gap-3 text-xs text-[var(--color-on-surface-variant)]">
+            <div class="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
               <span id="demo-player-elapsed-text" class="w-10 font-mono">
                 {format_duration(@player.elapsed_ms)}
               </span>
@@ -190,7 +190,7 @@ defmodule RailWeb.Components.DemoPlayerModal do
                   min="0"
                   max={max(@total_ms, 1)}
                   value={@player.elapsed_ms}
-                  class="w-full h-1.5 bg-[var(--color-surface-container-highest)] accent-[var(--color-primary)] rounded cursor-pointer"
+                  class="w-full h-1.5 bg-slate-200 dark:bg-slate-600 accent-blue-600 dark:accent-blue-500 rounded cursor-pointer"
                 />
               </form>
 
@@ -212,12 +212,12 @@ defmodule RailWeb.Components.DemoPlayerModal do
                 class={[
                   "p-2 rounded-full transition-colors",
                   @has_prev_seg &&
-                    "text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-highest)] cursor-pointer",
+                    "text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-600 cursor-pointer",
                   not @has_prev_seg &&
-                    "text-[var(--color-outline)]/40 cursor-not-allowed"
+                    "text-slate-500 dark:text-slate-400/40 cursor-not-allowed"
                 ]}
               >
-                <.icon name="skip_previous" class="h-5 w-5" />
+                <.icon name="pi-skip-back" class="h-5 w-5" />
               </button>
 
               <!-- Previous Frame -->
@@ -231,12 +231,12 @@ defmodule RailWeb.Components.DemoPlayerModal do
                 class={[
                   "p-2 rounded-full transition-colors",
                   @has_prev_f &&
-                    "text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-highest)] cursor-pointer",
+                    "text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-600 cursor-pointer",
                   not @has_prev_f &&
-                    "text-[var(--color-outline)]/40 cursor-not-allowed"
+                    "text-slate-500 dark:text-slate-400/40 cursor-not-allowed"
                 ]}
               >
-                <.icon name="fast_rewind" class="h-5 w-5" />
+                <.icon name="pi-rewind" class="h-5 w-5" />
               </button>
 
               <!-- Play / Pause Circular Button -->
@@ -247,10 +247,10 @@ defmodule RailWeb.Components.DemoPlayerModal do
                 data-playing={if @player.is_playing, do: "true", else: "false"}
                 phx-click="player_toggle_play"
                 title={if @player.is_playing, do: "Pause", else: "Play"}
-                class="p-3 rounded-full bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:bg-[var(--color-primary)]/90 transition-transform active:scale-95 cursor-pointer shadow-md mx-2"
+                class="p-3 rounded-full bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-600 dark:hover:bg-blue-500/90 transition-transform active:scale-95 cursor-pointer shadow-md mx-2"
               >
                 <.icon
-                  name={if @player.is_playing, do: "pause", else: "play_arrow"}
+                  name={if @player.is_playing, do: "pi-pause", else: "pi-play-fill"}
                   class="h-7 w-7"
                 />
               </button>
@@ -266,12 +266,12 @@ defmodule RailWeb.Components.DemoPlayerModal do
                 class={[
                   "p-2 rounded-full transition-colors",
                   @has_next_f &&
-                    "text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-highest)] cursor-pointer",
+                    "text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-600 cursor-pointer",
                   not @has_next_f &&
-                    "text-[var(--color-outline)]/40 cursor-not-allowed"
+                    "text-slate-500 dark:text-slate-400/40 cursor-not-allowed"
                 ]}
               >
-                <.icon name="fast_forward" class="h-5 w-5" />
+                <.icon name="pi-fast-forward-fill" class="h-5 w-5" />
               </button>
 
               <!-- Next Criterion -->
@@ -285,12 +285,12 @@ defmodule RailWeb.Components.DemoPlayerModal do
                 class={[
                   "p-2 rounded-full transition-colors",
                   @has_next_seg &&
-                    "text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-highest)] cursor-pointer",
+                    "text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-600 cursor-pointer",
                   not @has_next_seg &&
-                    "text-[var(--color-outline)]/40 cursor-not-allowed"
+                    "text-slate-500 dark:text-slate-400/40 cursor-not-allowed"
                 ]}
               >
-                <.icon name="skip_next" class="h-5 w-5" />
+                <.icon name="pi-skip-forward" class="h-5 w-5" />
               </button>
 
               <!-- Loop Toggle Button -->
@@ -303,12 +303,12 @@ defmodule RailWeb.Components.DemoPlayerModal do
                 class={[
                   "p-2 rounded-full transition-colors ml-4",
                   @player.loop &&
-                    "text-[var(--color-primary)] bg-[var(--color-primary)]/10 hover:bg-[var(--color-primary)]/20 cursor-pointer",
+                    "text-blue-600 dark:text-blue-500 bg-blue-600 dark:bg-blue-500/10 hover:bg-blue-600 dark:hover:bg-blue-500/20 cursor-pointer",
                   not @player.loop &&
-                    "text-[var(--color-outline)] hover:bg-[var(--color-surface-container-highest)] cursor-pointer"
+                    "text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 cursor-pointer"
                 ]}
               >
-                <.icon name="repeat" class="h-5 w-5" />
+                <.icon name="pi-repeat" class="h-5 w-5" />
               </button>
             </div>
           </div>

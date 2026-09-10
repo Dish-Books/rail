@@ -136,7 +136,7 @@ defmodule RailWeb.TaskDetailLive do
         <!-- Deleted / Cleaned Up State -->
         <div class="flex items-center justify-between" id="task-detail-header">
           <h1
-            class="text-2xl font-bold tracking-tight text-[var(--color-on-surface)]"
+            class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
             id="task-detail-title"
             data-qa="task_detail_title"
           >
@@ -147,9 +147,9 @@ defmodule RailWeb.TaskDetailLive do
         <div
           id="task-cleaned-up"
           data-qa="task-cleaned-up"
-          class="flex flex-col items-center justify-center min-h-[300px] text-center p-8 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] shadow-xs"
+          class="flex flex-col items-center justify-center min-h-[300px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
         >
-          <p class="text-base font-medium text-[var(--color-outline)]">
+          <p class="text-base font-medium text-slate-500 dark:text-slate-400">
             This task has been cleaned up.
           </p>
         </div>
@@ -158,12 +158,12 @@ defmodule RailWeb.TaskDetailLive do
         <div
           id="task-header"
           data-qa="task-header"
-          class="space-y-4 border-b border-[var(--color-border)] pb-0"
+          class="space-y-4 border-b border-slate-200 dark:border-slate-700 pb-0"
         >
           <div class="flex items-center gap-3">
             <.project_badge project={@task.project} />
             <h1
-              class="text-2xl font-bold tracking-tight text-[var(--color-on-surface)] truncate"
+              class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 truncate"
               id="task-detail-title"
               data-qa="task_detail_title"
               title={@task.title}
@@ -186,9 +186,9 @@ defmodule RailWeb.TaskDetailLive do
               class={[
                 "pb-3 border-b-2 transition-colors cursor-pointer",
                 @active_tab == :overview &&
-                  "border-[var(--color-primary)] text-[var(--color-primary)] font-bold",
+                  "border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-bold",
                 @active_tab != :overview &&
-                  "border-transparent text-[var(--color-outline)] hover:text-[var(--color-on-surface)] hover:border-[var(--color-outline-variant)]"
+                  "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-600"
               ]}
             >
               Overview
@@ -202,9 +202,9 @@ defmodule RailWeb.TaskDetailLive do
               class={[
                 "pb-3 border-b-2 transition-colors cursor-pointer",
                 @active_tab == :plan &&
-                  "border-[var(--color-primary)] text-[var(--color-primary)] font-bold",
+                  "border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-bold",
                 @active_tab != :plan &&
-                  "border-transparent text-[var(--color-outline)] hover:text-[var(--color-on-surface)] hover:border-[var(--color-outline-variant)]"
+                  "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-600"
               ]}
             >
               Plan
@@ -218,9 +218,9 @@ defmodule RailWeb.TaskDetailLive do
               class={[
                 "pb-3 border-b-2 transition-colors cursor-pointer",
                 @active_tab == :conversation &&
-                  "border-[var(--color-primary)] text-[var(--color-primary)] font-bold",
+                  "border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-bold",
                 @active_tab != :conversation &&
-                  "border-transparent text-[var(--color-outline)] hover:text-[var(--color-on-surface)] hover:border-[var(--color-outline-variant)]"
+                  "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-600"
               ]}
             >
               Conversation
@@ -234,9 +234,9 @@ defmodule RailWeb.TaskDetailLive do
               class={[
                 "pb-3 border-b-2 transition-colors cursor-pointer",
                 @active_tab == :diff &&
-                  "border-[var(--color-primary)] text-[var(--color-primary)] font-bold",
+                  "border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-bold",
                 @active_tab != :diff &&
-                  "border-transparent text-[var(--color-outline)] hover:text-[var(--color-on-surface)] hover:border-[var(--color-outline-variant)]"
+                  "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-600"
               ]}
             >
               Diff
@@ -257,7 +257,7 @@ defmodule RailWeb.TaskDetailLive do
           <div
             id="task-metadata-wrap"
             data-qa="task-metadata-wrap"
-            class="flex flex-wrap items-center gap-4 py-2 text-xs text-[var(--color-outline)]"
+            class="flex flex-wrap items-center gap-4 py-2 text-xs text-slate-500 dark:text-slate-400"
           >
             <!-- Stage Status Chip -->
             <span
@@ -279,7 +279,7 @@ defmodule RailWeb.TaskDetailLive do
               data-qa="meta-branch"
               class="flex items-center gap-1.5 shrink-0 font-mono"
             >
-              <.icon name="account_tree_outlined" class="h-4 w-4 shrink-0" />
+              <.icon name="pi-tree-structure" class="h-4 w-4 shrink-0" />
               <span>{branch_name_for(@task)}</span>
             </div>
 
@@ -290,7 +290,7 @@ defmodule RailWeb.TaskDetailLive do
               data-qa="meta-issue"
               class="flex items-center gap-1.5 shrink-0"
             >
-              <.icon name="lightbulb_outline" class="h-4 w-4 shrink-0" />
+              <.icon name="pi-lightbulb" class="h-4 w-4 shrink-0" />
               <span>{issue_identifier_for(@task)}</span>
             </div>
 
@@ -302,11 +302,11 @@ defmodule RailWeb.TaskDetailLive do
               href={pr_url_for(@task)}
               target="_blank"
               rel="noopener noreferrer"
-              class="inline-flex items-center gap-1 text-[var(--color-primary)] hover:underline shrink-0 font-semibold"
+              class="inline-flex items-center gap-1 text-blue-600 dark:text-blue-500 hover:underline shrink-0 font-semibold"
             >
-              <.icon name="merge_type" class="h-4 w-4 shrink-0" />
+              <.icon name="pi-git-merge" class="h-4 w-4 shrink-0" />
               <span>{"PR ##{@task.pr_number}"}</span>
-              <.icon name="open_in_new" class="h-3.5 w-3.5 shrink-0" />
+              <.icon name="pi-arrow-square-out" class="h-3.5 w-3.5 shrink-0" />
             </a>
 
             <!-- Priority Meta -->
@@ -315,7 +315,7 @@ defmodule RailWeb.TaskDetailLive do
               data-qa="meta-priority"
               class="flex items-center gap-1.5 shrink-0"
             >
-              <.icon name="flag_outlined" class="h-4 w-4 shrink-0" />
+              <.icon name="pi-flag" class="h-4 w-4 shrink-0" />
               <span>{task_priority_label(@task)}</span>
             </div>
           </div>
@@ -328,7 +328,7 @@ defmodule RailWeb.TaskDetailLive do
             class="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200"
           >
             <div class="flex items-start gap-3">
-              <.icon name="call_split" class="h-5 w-5 shrink-0 mt-0.5" />
+              <.icon name="pi-git-branch" class="h-5 w-5 shrink-0 mt-0.5" />
               <p class="text-xs leading-relaxed">
                 GitHub cannot merge {if @task.pr_number,
                   do: "PR ##{@task.pr_number}",
@@ -342,7 +342,7 @@ defmodule RailWeb.TaskDetailLive do
             :if={is_binary(@task.error) and @task.error != ""}
             id="task-error-card"
             data-qa="task_error_card"
-            class="p-4 rounded-xl bg-[var(--color-error-container)] border border-[var(--color-error)] text-[var(--color-on-error-container)]"
+            class="p-4 rounded-xl bg-red-100 dark:bg-red-900 border border-red-600 dark:border-red-500 text-red-800 dark:text-red-200"
           >
             <p class="text-xs font-mono whitespace-pre-wrap leading-relaxed">{@task.error}</p>
           </div>
@@ -381,10 +381,10 @@ defmodule RailWeb.TaskDetailLive do
 
           <!-- Ticket Section (Always Last on Overview) -->
           <div id="ticket-section" data-qa="ticket_section" class="space-y-2 pt-2">
-            <h3 class="text-base font-bold text-[var(--color-on-surface)]">
+            <h3 class="text-base font-bold text-slate-900 dark:text-slate-100">
               Ticket
             </h3>
-            <div class="m3-card p-4 select-text">
+            <div class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-4 select-text">
               <.markdown content={@ticket_content} />
             </div>
           </div>
@@ -400,15 +400,15 @@ defmodule RailWeb.TaskDetailLive do
             <div
               id="plan-empty-state"
               data-qa="plan_empty_state"
-              class="flex items-center justify-center min-h-[300px] text-center p-8 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] shadow-xs"
+              class="flex items-center justify-center min-h-[300px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
             >
-              <p class="text-sm font-medium text-[var(--color-outline)]">
+              <p class="text-sm font-medium text-slate-500 dark:text-slate-400">
                 No plan has been written yet.
               </p>
             </div>
           <% else %>
             <div id="plan-content" data-qa="plan_content" class="space-y-4">
-              <div class="m3-card p-6 select-text">
+              <div class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-6 select-text">
                 <.markdown content={@plan_content} />
               </div>
             </div>
@@ -448,9 +448,9 @@ defmodule RailWeb.TaskDetailLive do
             <div
               id="diff-empty-state"
               data-qa="diff_empty_state"
-              class="flex items-center justify-center min-h-[300px] text-center p-8 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] shadow-xs"
+              class="flex items-center justify-center min-h-[300px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
             >
-              <p class="text-sm font-medium text-[var(--color-outline)]">
+              <p class="text-sm font-medium text-slate-500 dark:text-slate-400">
                 This task has no worktree.
               </p>
             </div>
@@ -462,7 +462,7 @@ defmodule RailWeb.TaskDetailLive do
                 class="flex items-center justify-center min-h-[300px]"
               >
                 <div
-                  class="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-e-transparent align-[-0.125em] text-[var(--color-primary)] motion-reduce:animate-[spin_1.5s_linear_infinite]"
+                  class="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-e-transparent align-[-0.125em] text-blue-600 dark:text-blue-500 motion-reduce:animate-[spin_1.5s_linear_infinite]"
                   role="status"
                 >
                   <span class="sr-only">Loading diff...</span>
@@ -471,7 +471,7 @@ defmodule RailWeb.TaskDetailLive do
             <% else %>
               <div class="space-y-3">
                 <div class="flex items-center justify-between gap-4 px-1 text-xs">
-                  <div class="truncate text-[var(--color-on-surface-variant)] font-mono">
+                  <div class="truncate text-slate-600 dark:text-slate-300 font-mono">
                     {@task.worktree_path}
                   </div>
                   <button
@@ -479,9 +479,9 @@ defmodule RailWeb.TaskDetailLive do
                     id="btn-refresh-diff"
                     data-qa="btn_refresh_diff"
                     phx-click="refresh_diff"
-                    class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-high)] transition-colors cursor-pointer"
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                   >
-                    <.icon name="hero-arrow-path" class="w-3.5 h-3.5" />
+                    <.icon name="pi-arrows-clockwise" class="w-3.5 h-3.5" />
                     <span>Refresh</span>
                   </button>
                 </div>
@@ -1489,9 +1489,9 @@ defmodule RailWeb.TaskDetailLive do
   defp resolve_role(role_id, roles_map) do
     if is_map(roles_map) and Map.has_key?(roles_map, role_id) do
       role = Map.get(roles_map, role_id)
-      %{id: role_id, name: role.name, icon_name: Map.get(role, :icon_name, "terminal")}
+      %{id: role_id, name: role.name, icon_name: Map.get(role, :icon_name, "pi-terminal-window")}
     else
-      %{id: role_id, name: format_role_id(role_id), icon_name: "terminal"}
+      %{id: role_id, name: format_role_id(role_id), icon_name: "pi-terminal-window"}
     end
   end
 

@@ -206,9 +206,16 @@ defmodule Rail.Runs.ArgvBuilderTest do
     refute "--conversation" in argv
   end
 
-  test "executable_path/2 resolves defaults and overrides" do
-    assert ArgvBuilder.executable_path(:claude) == "/Users/michael/.local/bin/claude"
-    assert ArgvBuilder.executable_path(:agy) == "/Users/michael/.local/bin/agy"
+  test "executable_path/2 reads the configured backend and honours overrides" do
+    assert ArgvBuilder.executable_path(:claude) == ""
+    assert ArgvBuilder.executable_path(:agy) == ""
+
+    scope = Rail.Scope.for_system()
+    {:ok, _claude} = Rail.Backends.create_backend(scope, %{name: :claude, executable_path: "/configured/claude"})
+    {:ok, _agy} = Rail.Backends.create_backend(scope, %{name: :agy, executable_path: "/configured/agy"})
+
+    assert ArgvBuilder.executable_path(:claude) == "/configured/claude"
+    assert ArgvBuilder.executable_path(:agy) == "/configured/agy"
 
     assert ArgvBuilder.executable_path(:claude, claude_path: "/custom/claude") == "/custom/claude"
     assert ArgvBuilder.executable_path(:agy, agy_path: "/custom/agy") == "/custom/agy"

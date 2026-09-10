@@ -1,8 +1,6 @@
 defmodule Rail.Backends.Schemas.CliAccountTest do
   use Rail.DataCase, async: true
 
-  import RailTest.BackendsHelpers
-
   alias Rail.Backends.Schemas.CliAccount
   alias Rail.Domain.Embeds.CliAccountGroup
   alias Rail.Repo
@@ -61,17 +59,20 @@ defmodule Rail.Backends.Schemas.CliAccountTest do
 
   test "changeset/2 casts embedded groups and persists to database" do
     account =
-      create_test_cli_account(%{
-        backend: :agy,
-        status: "ready",
-        groups: [
-          %{
-            name: "Antigravity Limits",
-            count: 2,
-            details: %{"windows" => [%{"label" => "5-Hour", "remaining_percent" => 95.0}]}
-          }
-        ]
-      })
+      Repo.insert!(
+        CliAccount.changeset(%CliAccount{}, %{
+          node: "local",
+          backend: :agy,
+          status: "ready",
+          groups: [
+            %{
+              name: "Antigravity Limits",
+              count: 2,
+              details: %{"windows" => [%{"label" => "5-Hour", "remaining_percent" => 95.0}]}
+            }
+          ]
+        })
+      )
 
     assert account.id =~ ~r/^cli_/
     assert account.backend == :agy
@@ -81,10 +82,10 @@ defmodule Rail.Backends.Schemas.CliAccountTest do
 
   test "unique constraint enforced on [:node, :backend]" do
     node_name = "test-node-#{System.unique_integer([:positive])}"
-    create_test_cli_account(%{node: node_name, backend: :claude})
+    attrs = %{node: node_name, backend: :claude, status: "ready"}
+    Repo.insert!(CliAccount.changeset(%CliAccount{}, attrs))
 
-    duplicate_changeset =
-      CliAccount.changeset(%CliAccount{}, valid_cli_account_attrs(%{node: node_name, backend: :claude}))
+    duplicate_changeset = CliAccount.changeset(%CliAccount{}, attrs)
 
     assert {:error, changeset} = Repo.insert(duplicate_changeset)
     assert %{node: ["has already been taken"]} = errors_on(changeset)

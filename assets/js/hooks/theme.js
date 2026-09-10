@@ -1,16 +1,40 @@
+const STORAGE_KEY = "theme";
+
+// The chosen theme lives on <html data-theme>, which the CSS `dark` variant keys off.
+// "system" is stored as the absence of a preference, so the OS setting keeps winning.
+export function applyTheme(theme) {
+  if (theme === "system") {
+    localStorage.removeItem(STORAGE_KEY);
+  } else {
+    localStorage.setItem(STORAGE_KEY, theme);
+  }
+
+  document.documentElement.setAttribute("data-theme", resolveTheme(theme));
+}
+
+export function storedTheme() {
+  return localStorage.getItem(STORAGE_KEY) || "system";
+}
+
+function resolveTheme(theme) {
+  if (theme === "light" || theme === "dark") return theme;
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
 export const Theme = {
   mounted() {
-    this.initTheme();
+    // The server renders a default theme it cannot know; tell it what the browser holds.
+    applyTheme(storedTheme());
+    this.pushEvent("theme_changed", { theme: storedTheme() });
+
     this.handleToggle = () => this.toggleTheme();
     this.el.addEventListener("click", this.handleToggle);
-
     window.addEventListener("phx:toggle-theme", this.handleToggle);
 
     this.mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    this.handleSystemThemeChange = (e) => {
-      if (!localStorage.getItem("theme")) {
-        document.documentElement.setAttribute("data-theme", e.matches ? "dark" : "light");
-      }
+    this.handleSystemThemeChange = () => {
+      if (storedTheme() === "system") applyTheme("system");
     };
     this.mediaQuery.addEventListener("change", this.handleSystemThemeChange);
   },
@@ -23,21 +47,11 @@ export const Theme = {
     }
   },
 
-  initTheme() {
-    const saved = localStorage.getItem("theme");
-    if (saved) {
-      document.documentElement.setAttribute("data-theme", saved);
-    } else {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      document.documentElement.setAttribute("data-theme", prefersDark ? "dark" : "light");
-    }
-  },
-
   toggleTheme() {
-    const current = document.documentElement.getAttribute("data-theme") || "dark";
-    const next = current === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("theme", next);
+    const next =
+      document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+
+    applyTheme(next);
     this.pushEvent("theme_changed", { theme: next });
   }
 };
