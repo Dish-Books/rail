@@ -2,6 +2,7 @@ defmodule RailWeb.CoreComponents do
   @moduledoc false
   use RailWeb, :html
 
+  defdelegate button(assigns), to: RailWeb.Components.Button
   defdelegate settings_nav(assigns), to: RailWeb.Components.SettingsNav
   defdelegate icon(assigns), to: RailWeb.Components.Icon
   defdelegate project_badge(assigns), to: RailWeb.Components.ProjectBadge

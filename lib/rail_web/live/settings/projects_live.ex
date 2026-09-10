@@ -141,15 +141,14 @@ defmodule RailWeb.Settings.ProjectsLive do
               </div>
 
               <div>
-                <button
-                  type="button"
+                <.button
+                  size="sm"
                   phx-click="edit_project"
                   phx-value-project_id={project.id}
                   id={"edit-project-#{project.id}"}
-                  class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-sm ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
                 >
-                  Edit
-                </button>
+                  <.icon name="pi-pencil-simple" class="h-3.5 w-3.5" /> Edit
+                </.button>
               </div>
             </li>
           </ul>
@@ -335,21 +334,12 @@ defmodule RailWeb.Settings.ProjectsLive do
               </div>
 
               <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                <button
-                  type="button"
-                  phx-click="close_modal"
-                  id="cancel-project-button"
-                  class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-sm ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
-                >
+                <.button phx-click="close_modal" id="cancel-project-button">
                   Cancel
-                </button>
-                <button
-                  type="submit"
-                  id="save-project-button"
-                  class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-                >
+                </.button>
+                <.button variant="primary" type="submit" id="save-project-button">
                   Save
-                </button>
+                </.button>
               </div>
             </.form>
           </div>

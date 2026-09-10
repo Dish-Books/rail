@@ -137,24 +137,23 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
             </div>
 
             <div>
-              <button
+              <.button
                 :if={@linear_connected}
-                type="button"
+                variant="danger"
                 phx-click="disconnect"
                 id="disconnect-linear-button"
-                class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-red-600 shadow-sm ring-1 ring-inset ring-red-300 hover:bg-red-50 focus-visible:outline-red-600"
               >
                 Disconnect
-              </button>
+              </.button>
 
-              <.link
+              <.button
                 :if={!@linear_connected}
+                variant="primary"
                 href={~p"/auth/linear"}
                 id="connect-linear-button"
-                class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
               >
                 Connect Linear
-              </.link>
+              </.button>
             </div>
           </div>
         </section>

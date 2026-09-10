@@ -147,18 +147,18 @@ defmodule RailWeb.Settings.RolesLive do
           </div>
 
           <div class="flex flex-wrap items-center gap-2" id="roles-top-actions">
-            <button
-              type="button"
+            <.button
+              size="sm"
               phx-click="open_copy_modal"
               id="copy-roles-button"
               disabled={is_nil(@current_project_id) or length(@projects) < 2}
-              class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
             >
-              <.icon name="pi-copy" class="h-3.5 w-3.5 mr-1" /> Copy From...
-            </button>
+              <.icon name="pi-copy" class="h-3.5 w-3.5" /> Copy From...
+            </.button>
 
-            <button
-              type="button"
+            <.button
+              variant="primary"
+              size="sm"
               phx-click="open_create_modal"
               id="add-custom-role-button"
               disabled={
@@ -169,10 +169,9 @@ defmodule RailWeb.Settings.RolesLive do
                   do: "Every stage already has a role",
                   else: nil
               }
-              class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-indigo-500 disabled:opacity-50"
             >
-              <.icon name="pi-plus" class="h-3.5 w-3.5 mr-1" /> Add Role
-            </button>
+              <.icon name="pi-plus" class="h-3.5 w-3.5" /> Add Role
+            </.button>
           </div>
         </div>
 
@@ -270,53 +269,54 @@ defmodule RailWeb.Settings.RolesLive do
 
               <div class="flex items-center gap-1">
                 <div :if={bound_role} class="flex items-center gap-1">
-                  <button
-                    type="button"
+                  <.button
+                    variant="accent"
+                    size="sm"
+                    class="h-7"
                     id={"improve-role-button-#{bound_role.id}"}
                     data-qa={"improve_role_button_#{bound_role.id}"}
                     phx-click="open_improve_modal"
                     phx-value-role_id={bound_role.id}
-                    class={role_action_button_class(:accent)}
                   >
                     <.icon name="pi-magic-wand" class="h-3.5 w-3.5" /> Improve
-                  </button>
+                  </.button>
 
-                  <button
-                    type="button"
+                  <.button
+                    size="sm"
+                    class="h-7"
                     id={"edit-role-button-#{bound_role.id}"}
                     data-qa={"edit_role_button_#{bound_role.id}"}
                     phx-click="open_edit_modal"
                     phx-value-role_id={bound_role.id}
-                    class={role_action_button_class(:neutral)}
                   >
                     Edit Role
-                  </button>
+                  </.button>
 
-                  <button
-                    type="button"
+                  <.button
+                    variant="ghost_danger"
+                    size="icon"
                     id={"delete-role-button-#{bound_role.id}"}
                     data-qa={"delete_role_button_#{bound_role.id}"}
                     phx-click="open_delete_modal"
                     phx-value-role_id={bound_role.id}
-                    class={role_action_button_class(:danger)}
                     title="Delete role"
                     aria-label="Delete role"
                   >
                     <.icon name="pi-trash" class="h-3.5 w-3.5" />
-                  </button>
+                  </.button>
                 </div>
 
                 <div :if={is_nil(bound_role)}>
-                  <button
-                    type="button"
+                  <.button
+                    size="sm"
+                    class="h-7"
                     id={"assign-stage-button-#{stage}"}
                     data-qa={"assign_stage_button_#{stage}"}
                     phx-click="open_create_modal"
                     phx-value-stage={stage}
-                    class={role_action_button_class(:neutral)}
                   >
                     Assign or Create
-                  </button>
+                  </.button>
                 </div>
               </div>
             </li>
@@ -342,14 +342,15 @@ defmodule RailWeb.Settings.RolesLive do
                   do: "Create New Role",
                   else: "Edit Role: #{@modal_role.name}"}
               </h2>
-              <button
-                type="button"
+              <.button
+                variant="ghost"
+                size="icon"
                 phx-click="close_modal"
                 id="close-role-modal-button"
-                class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
+                aria-label="Close"
               >
-                ✕
-              </button>
+                <.icon name="pi-x" class="h-4 w-4" />
+              </.button>
             </div>
 
             <form phx-change="validate_role" phx-submit="save_role" id="role-form" class="space-y-4">
@@ -531,21 +532,12 @@ defmodule RailWeb.Settings.RolesLive do
 
               <!-- Modal Footer -->
               <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                <button
-                  type="button"
-                  phx-click="close_modal"
-                  id="cancel-role-button"
-                  class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
-                >
+                <.button phx-click="close_modal" id="cancel-role-button">
                   Cancel
-                </button>
-                <button
-                  type="submit"
-                  id="save-role-button"
-                  class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500"
-                >
+                </.button>
+                <.button variant="primary" type="submit" id="save-role-button">
                   Save Role Config
-                </button>
+                </.button>
               </div>
             </form>
           </div>
@@ -569,22 +561,12 @@ defmodule RailWeb.Settings.RolesLive do
             </p>
 
             <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-              <button
-                type="button"
-                phx-click="close_modal"
-                id="cancel-delete-button"
-                class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
-              >
+              <.button phx-click="close_modal" id="cancel-delete-button">
                 Cancel
-              </button>
-              <button
-                type="button"
-                phx-click="delete_role"
-                id="confirm-delete-button"
-                class="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-red-500"
-              >
+              </.button>
+              <.button variant="danger_solid" phx-click="delete_role" id="confirm-delete-button">
                 Delete Role
-              </button>
+              </.button>
             </div>
           </div>
         </div>
@@ -600,13 +582,9 @@ defmodule RailWeb.Settings.RolesLive do
               <h2 class="text-base font-semibold text-slate-900 dark:text-slate-100">
                 Copy Roles from Project
               </h2>
-              <button
-                type="button"
-                phx-click="close_modal"
-                class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
-              >
-                ✕
-              </button>
+              <.button variant="ghost" size="icon" phx-click="close_modal" aria-label="Close">
+                <.icon name="pi-x" class="h-4 w-4" />
+              </.button>
             </div>
 
             <form
@@ -648,21 +626,12 @@ defmodule RailWeb.Settings.RolesLive do
               </div>
 
               <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-slate-700">
-                <button
-                  type="button"
-                  phx-click="close_modal"
-                  id="cancel-copy-button"
-                  class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
-                >
+                <.button phx-click="close_modal" id="cancel-copy-button">
                   Cancel
-                </button>
-                <button
-                  type="submit"
-                  id="confirm-copy-button"
-                  class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500"
-                >
+                </.button>
+                <.button variant="primary" type="submit" id="confirm-copy-button">
                   Copy Roles
-                </button>
+                </.button>
               </div>
             </form>
           </div>
@@ -691,14 +660,15 @@ defmodule RailWeb.Settings.RolesLive do
                   end}
                 </h2>
               </div>
-              <button
-                type="button"
+              <.button
+                variant="ghost"
+                size="icon"
                 phx-click="cancel_improvement"
                 id="close-improve-modal-button"
-                class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
+                aria-label="Close"
               >
-                ✕
-              </button>
+                <.icon name="pi-x" class="h-4 w-4" />
+              </.button>
             </div>
 
             <!-- Error Banner if any -->
@@ -946,46 +916,41 @@ defmodule RailWeb.Settings.RolesLive do
 
             <!-- Improve Modal Footer -->
             <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-slate-700 shrink-0">
-              <button
+              <.button
                 :if={@improve_step in [:setup, :proposal]}
-                type="button"
                 phx-click="cancel_improvement"
                 id="improve-cancel-button"
-                class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
               >
                 {if @improve_step == :proposal, do: "Reject", else: "Cancel"}
-              </button>
+              </.button>
 
-              <button
+              <.button
                 :if={@improve_step == :running}
-                type="button"
+                variant="danger"
                 phx-click="cancel_improvement"
                 id="running-cancel-button"
-                class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-red-600 shadow-xs ring-1 ring-inset ring-red-300 hover:bg-red-50"
               >
                 Cancel
-              </button>
+              </.button>
 
-              <button
+              <.button
                 :if={@improve_step == :setup && not Enum.empty?(@improve_runs)}
-                type="button"
+                variant="primary"
                 phx-click="start_improvement"
                 id="start-improvement-button"
-                class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500"
               >
-                <.icon name="pi-magic-wand" class="h-4 w-4 mr-1 text-white" /> Start
-              </button>
+                <.icon name="pi-magic-wand" class="h-4 w-4" /> Start
+              </.button>
 
-              <button
+              <.button
                 :if={@improve_step == :proposal}
-                type="button"
+                variant="success"
                 phx-click="approve_proposal"
                 id="approve-proposal-button"
                 disabled={is_nil(Enum.find(@roles, &(&1.id == @modal_role.id)))}
-                class="rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-green-500 disabled:opacity-50"
               >
                 Approve
-              </button>
+              </.button>
             </div>
           </div>
         </div>
@@ -1419,34 +1384,6 @@ defmodule RailWeb.Settings.RolesLive do
     |> String.split("_")
     |> Enum.map_join(&String.first/1)
     |> String.upcase()
-  end
-
-  @role_action_base "inline-flex items-center gap-1.5 rounded-md h-7 text-xs font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-800"
-
-  defp role_action_button_class(:accent) do
-    [
-      @role_action_base,
-      " px-2.5 text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-500/10",
-      " ring-1 ring-inset ring-indigo-200 dark:ring-indigo-400/30",
-      " hover:bg-indigo-100 dark:hover:bg-indigo-500/20"
-    ]
-  end
-
-  defp role_action_button_class(:neutral) do
-    [
-      @role_action_base,
-      " px-2.5 text-slate-700 dark:text-slate-200",
-      " ring-1 ring-inset ring-slate-300 dark:ring-slate-600",
-      " hover:bg-slate-100 dark:hover:bg-slate-700"
-    ]
-  end
-
-  defp role_action_button_class(:danger) do
-    [
-      @role_action_base,
-      " w-7 justify-center text-slate-500 dark:text-slate-400",
-      " hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10"
-    ]
   end
 
   defp parse_effort(val), do: Map.get(@effort_map, val, :high)

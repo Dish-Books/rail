@@ -180,22 +180,20 @@ defmodule RailWeb.Settings.UsersLive do
                 </span>
 
                 <!-- Toggle Admin Button -->
-                <button
-                  type="button"
+                <.button
+                  size="sm"
+                  variant={if user.admin, do: "danger", else: "accent"}
                   id={"toggle-admin-button-#{user.id}"}
                   data-qa={"toggle_admin_button_#{user.id}"}
                   phx-click="toggle_admin"
                   phx-value-user_id={user.id}
-                  class={[
-                    "rounded px-2.5 py-1.5 text-xs font-semibold shadow-xs ring-1 ring-inset",
-                    user.admin &&
-                      "bg-slate-50 dark:bg-slate-800 text-red-600 ring-red-300 hover:bg-red-50",
-                    !user.admin &&
-                      "bg-indigo-50 text-indigo-600 ring-indigo-300 hover:bg-indigo-100"
-                  ]}
                 >
+                  <.icon
+                    name={if user.admin, do: "pi-shield-slash", else: "pi-shield-check"}
+                    class="h-3.5 w-3.5"
+                  />
                   {if user.admin, do: "Revoke Admin", else: "Make Admin"}
-                </button>
+                </.button>
               </div>
             </li>
           </ul>

@@ -68,23 +68,18 @@ defmodule RailWeb.Settings.BackendsLive do
             </p>
           </div>
 
-          <button
-            type="button"
+          <.button
             phx-click="refresh_quotas"
             id="refresh-quotas-button"
             data-qa="refresh_quotas_button"
             disabled={@is_refreshing}
-            class="inline-flex items-center gap-2 rounded-md bg-slate-50 dark:bg-slate-800 px-3.5 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors"
           >
             <.icon
               name="pi-arrows-clockwise"
-              class={[
-                "h-4 w-4 text-slate-500 dark:text-slate-400",
-                @is_refreshing && "animate-spin"
-              ]}
+              class={["h-4 w-4", @is_refreshing && "animate-spin"]}
             />
             <span>Refresh Quotas</span>
-          </button>
+          </.button>
         </div>
 
         <.settings_nav current_scope={@current_scope} active_tab={:backends} />
