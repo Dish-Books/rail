@@ -33,3 +33,51 @@ body {
 .nav-rail-transition {
   transition: width 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/*
+ * Tailwind v4's preflight strips form controls back to transparent, border-0
+ * text. Restore a themed default here so every input/select/textarea has a
+ * visible field; utility classes still win over these base rules.
+ */
+@layer base {
+  input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="submit"], [type="button"], [type="reset"])),
+  select,
+  textarea {
+    padding: 0.375rem 0.625rem;
+    border-width: 1px;
+    border-style: solid;
+    border-color: var(--color-slate-300);
+    background-color: var(--color-white);
+    color: var(--color-slate-900);
+  }
+
+  [data-theme="dark"] input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="submit"], [type="button"], [type="reset"])),
+  [data-theme="dark"] select,
+  [data-theme="dark"] textarea {
+    border-color: var(--color-slate-600);
+    background-color: var(--color-slate-900);
+    color: var(--color-slate-100);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-slate-400);
+  }
+
+  input:where([type="checkbox"], [type="radio"]) {
+    border-width: 1px;
+    border-style: solid;
+    border-color: var(--color-slate-400);
+  }
+
+  [data-theme="dark"] input:where([type="checkbox"], [type="radio"]) {
+    border-color: var(--color-slate-500);
+  }
+
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+}

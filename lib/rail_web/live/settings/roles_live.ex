@@ -17,8 +17,7 @@ defmodule RailWeb.Settings.RolesLive do
     :qa_lead,
     :demo,
     :debugger,
-    :designer,
-    :rebase
+    :designer
   ]
 
   @default_models %{
@@ -44,9 +43,6 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:modal_form, nil)
       |> assign(:modal_errors, %{})
       |> assign(:available_models, [])
-      |> assign(:is_custom_model, false)
-      |> assign(:export_json, nil)
-      |> assign(:import_error, nil)
       |> assign(:improve_step, :setup)
       |> assign(:improve_runs, [])
       |> assign(:improve_model, nil)
@@ -134,26 +130,6 @@ defmodule RailWeb.Settings.RolesLive do
         <div class="flex flex-wrap items-center gap-2" id="roles-top-actions">
           <button
             type="button"
-            phx-click="open_export_modal"
-            id="export-roles-button"
-            disabled={is_nil(@current_project_id) or Enum.empty?(@roles)}
-            class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
-          >
-            <.icon name="pi-download-simple" class="h-3.5 w-3.5 mr-1" /> Export Roles
-          </button>
-
-          <button
-            type="button"
-            phx-click="open_import_modal"
-            id="import-roles-button"
-            disabled={is_nil(@current_project_id)}
-            class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
-          >
-            <.icon name="pi-upload-simple" class="h-3.5 w-3.5 mr-1" /> Import Roles
-          </button>
-
-          <button
-            type="button"
             phx-click="open_copy_modal"
             id="copy-roles-button"
             disabled={is_nil(@current_project_id) or length(@projects) < 2}
@@ -166,10 +142,15 @@ defmodule RailWeb.Settings.RolesLive do
             type="button"
             phx-click="open_create_modal"
             id="add-custom-role-button"
-            disabled={is_nil(@current_project_id)}
+            disabled={is_nil(@current_project_id) or Enum.empty?(unbound_stages(@canonical_stages, @roles))}
+            title={
+              if @current_project_id && Enum.empty?(unbound_stages(@canonical_stages, @roles)),
+                do: "Every stage already has a role",
+                else: nil
+            }
             class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-indigo-500 disabled:opacity-50"
           >
-            <.icon name="pi-plus" class="h-3.5 w-3.5 mr-1" /> Add Custom Role
+            <.icon name="pi-plus" class="h-3.5 w-3.5 mr-1" /> Add Role
           </button>
         </div>
       </div>
@@ -188,18 +169,6 @@ defmodule RailWeb.Settings.RolesLive do
         class="bg-slate-50 dark:bg-slate-800 shadow rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
         id="pipeline-stages-section"
       >
-        <div class="p-6 border-b border-slate-200 dark:border-slate-700">
-          <h2
-            class="text-base font-semibold text-slate-900 dark:text-slate-100"
-            id="pipeline-stages-title"
-          >
-            Pipeline Stage Bindings
-          </h2>
-          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Roles bound to canonical pipeline stages run automatically as tasks advance.
-          </p>
-        </div>
-
         <ul
           role="list"
           class="divide-y divide-slate-200 dark:divide-slate-700"
@@ -278,17 +247,17 @@ defmodule RailWeb.Settings.RolesLive do
               </div>
             </div>
 
-            <div class="flex items-center space-x-2">
-              <div :if={bound_role} class="flex items-center space-x-2">
+            <div class="flex items-center gap-1">
+              <div :if={bound_role} class="flex items-center gap-1">
                 <button
                   type="button"
                   id={"improve-role-button-#{bound_role.id}"}
                   data-qa={"improve_role_button_#{bound_role.id}"}
                   phx-click="open_improve_modal"
                   phx-value-role_id={bound_role.id}
-                  class="rounded bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 shadow-xs"
+                  class={role_action_button_class(:accent)}
                 >
-                  <.icon name="pi-magic-wand" class="h-3.5 w-3.5 mr-1 text-indigo-600" /> Improve
+                  <.icon name="pi-magic-wand" class="h-3.5 w-3.5" /> Improve
                 </button>
 
                 <button
@@ -297,7 +266,7 @@ defmodule RailWeb.Settings.RolesLive do
                   data-qa={"edit_role_button_#{bound_role.id}"}
                   phx-click="open_edit_modal"
                   phx-value-role_id={bound_role.id}
-                  class="rounded bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 shadow-xs"
+                  class={role_action_button_class(:neutral)}
                 >
                   Edit Role
                 </button>
@@ -308,10 +277,11 @@ defmodule RailWeb.Settings.RolesLive do
                   data-qa={"delete_role_button_#{bound_role.id}"}
                   phx-click="open_delete_modal"
                   phx-value-role_id={bound_role.id}
-                  class="rounded bg-slate-50 dark:bg-slate-800 px-2 py-1.5 text-xs font-semibold text-red-600 ring-1 ring-inset ring-red-200 hover:bg-red-50"
+                  class={role_action_button_class(:danger)}
                   title="Delete role"
+                  aria-label="Delete role"
                 >
-                  ✕
+                  <.icon name="pi-trash" class="h-3.5 w-3.5" />
                 </button>
               </div>
 
@@ -322,107 +292,11 @@ defmodule RailWeb.Settings.RolesLive do
                   data-qa={"assign_stage_button_#{stage}"}
                   phx-click="open_create_modal"
                   phx-value-stage={stage}
-                  class="rounded bg-slate-100 dark:bg-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+                  class={role_action_button_class(:neutral)}
                 >
                   Assign or Create
                 </button>
               </div>
-            </div>
-          </li>
-        </ul>
-      </section>
-
-      <!-- Unbound Custom Roles Section -->
-      <section
-        :if={@current_project_id}
-        class="bg-slate-50 dark:bg-slate-800 shadow rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
-        id="unbound-roles-section"
-      >
-        <div class="p-6 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-          <div>
-            <h2
-              class="text-base font-semibold text-slate-900 dark:text-slate-100"
-              id="unbound-roles-title"
-            >
-              Custom / Unbound Roles
-            </h2>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Roles without a pipeline stage binding, available for ad-hoc and background workflows.
-            </p>
-          </div>
-        </div>
-
-        <% unbound_roles = Enum.filter(@roles, &is_nil(&1.stage)) %>
-        <div
-          :if={Enum.empty?(unbound_roles)}
-          class="p-8 text-center text-slate-500 dark:text-slate-400 text-sm italic"
-          id="empty-unbound-roles-notice"
-        >
-          No custom unbound roles configured.
-        </div>
-
-        <ul
-          :if={not Enum.empty?(unbound_roles)}
-          role="list"
-          class="divide-y divide-slate-200 dark:divide-slate-700"
-          id="unbound-roles-list"
-        >
-          <li
-            :for={role <- unbound_roles}
-            id={"unbound-role-row-#{role.id}"}
-            data-qa={"role-card unbound-role-row-#{role.id}"}
-            class="p-5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-          >
-            <div>
-              <div class="flex items-center space-x-2">
-                <span
-                  class="text-sm font-semibold text-slate-900 dark:text-slate-100"
-                  id={"role-name-#{role.id}"}
-                >
-                  {role.name}
-                </span>
-                <span class="text-xs font-mono uppercase text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">
-                  {role.cli_backend}
-                </span>
-                <span class="text-xs font-mono text-slate-500 dark:text-slate-400">
-                  {role.model}
-                </span>
-              </div>
-              <p :if={role.description} class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                {role.description}
-              </p>
-            </div>
-
-            <div class="flex items-center space-x-2">
-              <button
-                type="button"
-                id={"improve-unbound-role-button-#{role.id}"}
-                phx-click="open_improve_modal"
-                phx-value-role_id={role.id}
-                class="rounded bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 shadow-xs"
-              >
-                <.icon name="pi-magic-wand" class="h-3.5 w-3.5 mr-1 text-indigo-600" /> Improve
-              </button>
-
-              <button
-                type="button"
-                id={"edit-unbound-role-button-#{role.id}"}
-                phx-click="open_edit_modal"
-                phx-value-role_id={role.id}
-                class="rounded bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 shadow-xs"
-              >
-                Edit Role
-              </button>
-
-              <button
-                type="button"
-                id={"delete-unbound-role-button-#{role.id}"}
-                phx-click="open_delete_modal"
-                phx-value-role_id={role.id}
-                class="rounded bg-slate-50 dark:bg-slate-800 px-2 py-1.5 text-xs font-semibold text-red-600 ring-1 ring-inset ring-red-200 hover:bg-red-50"
-              >
-                ✕
-              </button>
             </div>
           </li>
         </ul>
@@ -507,17 +381,11 @@ defmodule RailWeb.Settings.RolesLive do
                   class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs capitalize"
                 >
                   <option
-                    value=""
-                    selected={is_nil(@modal_form["stage"]) or @modal_form["stage"] == ""}
-                  >
-                    Unbound
-                  </option>
-                  <option
                     :for={stage <- @canonical_stages}
                     value={to_string(stage)}
                     selected={to_string(@modal_form["stage"]) == to_string(stage)}
                   >
-                    {stage_display_name(stage)} ({stage})
+                    {stage_display_name(stage)}
                   </option>
                 </select>
               </div>
@@ -560,28 +428,13 @@ defmodule RailWeb.Settings.RolesLive do
                 class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
               >
                 <option
-                  :for={model <- @available_models}
+                  :for={model <- model_options(@available_models, @modal_form["model"])}
                   value={model.id}
-                  selected={!@is_custom_model && @modal_form["model"] == model.id}
+                  selected={@modal_form["model"] == model.id}
                 >
                   {model.display_name}
                 </option>
-                <option value="__custom__" selected={@is_custom_model}>
-                  Custom Model...
-                </option>
               </select>
-
-              <div :if={@is_custom_model} id="custom-model-input-container">
-                <label class="block text-[11px] text-slate-500 dark:text-slate-400">Custom Model ID</label>
-                <input
-                  type="text"
-                  name="role[custom_model]"
-                  id="role-custom-model-input"
-                  value={@modal_form["custom_model"]}
-                  placeholder="e.g. claude-3-7-sonnet"
-                  class="mt-0.5 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
-                />
-              </div>
               <span :if={@modal_errors[:model]} class="text-xs text-red-600" id="role-model-error">
                 {@modal_errors[:model]}
               </span>
@@ -706,129 +559,6 @@ defmodule RailWeb.Settings.RolesLive do
               Delete Role
             </button>
           </div>
-        </div>
-      </div>
-
-      <!-- Export Roles Modal -->
-      <div
-        :if={@active_modal == :export_roles}
-        class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
-        id="export-roles-modal"
-      >
-        <div class="w-full max-w-xl rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4">
-          <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
-            <h2 class="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Export Roles (JSON)
-            </h2>
-            <button
-              type="button"
-              phx-click="close_modal"
-              class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
-            >
-              ✕
-            </button>
-          </div>
-
-          <textarea
-            id="export-roles-textarea"
-            readonly
-            rows="16"
-            class="w-full font-mono text-xs rounded-md border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700 p-2 shadow-xs"
-          >{@export_json}</textarea>
-
-          <div class="flex items-center justify-end space-x-3 pt-2">
-            <button
-              type="button"
-              phx-click="close_modal"
-              id="close-export-modal-button"
-              class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Import Roles Modal -->
-      <div
-        :if={@active_modal == :import_roles}
-        class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
-        id="import-roles-modal"
-      >
-        <div class="w-full max-w-xl rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4">
-          <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
-            <h2 class="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Import Roles (JSON)
-            </h2>
-            <button
-              type="button"
-              phx-click="close_modal"
-              class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
-            >
-              ✕
-            </button>
-          </div>
-
-          <form
-            phx-submit="import_roles"
-            phx-change="validate_import"
-            id="import-roles-form"
-            class="space-y-4"
-          >
-            <div
-              :if={@import_error}
-              class="p-3 bg-red-50 text-xs text-red-700 rounded-md"
-              id="import-error-banner"
-            >
-              {@import_error}
-            </div>
-
-            <div>
-              <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Paste JSON here</label>
-              <textarea
-                name="import_json"
-                id="import-roles-textarea"
-                rows="12"
-                required
-                placeholder="[ { &quot;name&quot;: &quot;...&quot;, &quot;model&quot;: &quot;...&quot; } ]"
-                class="mt-1 w-full font-mono text-xs rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500"
-              ></textarea>
-            </div>
-
-            <div class="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                name="replace_all"
-                value="true"
-                id="import-replace-all-checkbox"
-                class="rounded border-slate-200 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
-              />
-              <label
-                for="import-replace-all-checkbox"
-                class="text-xs text-slate-900 dark:text-slate-100"
-              >
-                Replace all existing roles in this project
-              </label>
-            </div>
-
-            <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-slate-700">
-              <button
-                type="button"
-                phx-click="close_modal"
-                id="cancel-import-button"
-                class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                id="confirm-import-button"
-                class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500"
-              >
-                Import Roles
-              </button>
-            </div>
-          </form>
         </div>
       </div>
 
@@ -1234,7 +964,12 @@ defmodule RailWeb.Settings.RolesLive do
   end
 
   def handle_event("open_create_modal", params, socket) do
-    stage = params["stage"]
+    # Every role is stage-bound, so a create opened from the toolbar (no stage
+    # param) starts on the first stage that has no role yet.
+    stage =
+      params["stage"] ||
+        List.first(unbound_stages(socket.assigns.canonical_stages, socket.assigns.roles))
+
     backend = :claude
     models = fetch_models_for_backend(backend)
     default_model = @default_models[backend]
@@ -1243,10 +978,9 @@ defmodule RailWeb.Settings.RolesLive do
       "role_id" => "",
       "name" => stage_default_name(stage),
       "description" => "",
-      "stage" => stage || "",
+      "stage" => if(stage, do: to_string(stage), else: ""),
       "cli_backend" => to_string(backend),
       "model" => default_model,
-      "custom_model" => "",
       "reasoning_effort" => "high",
       "system_prompt" => "You are an agent persona.",
       "max_concurrent" => 1
@@ -1259,7 +993,6 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:modal_form, form_data)
       |> assign(:modal_errors, %{})
       |> assign(:available_models, models)
-      |> assign(:is_custom_model, false)
 
     {:noreply, socket}
   end
@@ -1270,7 +1003,6 @@ defmodule RailWeb.Settings.RolesLive do
     if role do
       backend = role.cli_backend
       models = fetch_models_for_backend(backend)
-      in_models? = Enum.any?(models, &(&1.id == role.model))
 
       form_data = %{
         "role_id" => role.id,
@@ -1279,7 +1011,6 @@ defmodule RailWeb.Settings.RolesLive do
         "stage" => if(role.stage, do: to_string(role.stage), else: ""),
         "cli_backend" => to_string(role.cli_backend),
         "model" => role.model,
-        "custom_model" => if(in_models?, do: "", else: role.model),
         "reasoning_effort" => if(role.reasoning_effort, do: to_string(role.reasoning_effort), else: "high"),
         "system_prompt" => role.system_prompt,
         "max_concurrent" => role.max_concurrent
@@ -1292,7 +1023,6 @@ defmodule RailWeb.Settings.RolesLive do
         |> assign(:modal_form, form_data)
         |> assign(:modal_errors, %{})
         |> assign(:available_models, models)
-        |> assign(:is_custom_model, not in_models?)
 
       {:noreply, socket}
     else
@@ -1335,62 +1065,6 @@ defmodule RailWeb.Settings.RolesLive do
     end
   end
 
-  def handle_event("open_export_modal", _params, socket) do
-    scope = socket.assigns.current_scope
-    project_id = socket.assigns.current_project_id
-
-    case Roles.export_roles(scope, project_id) do
-      {:ok, roles_data} ->
-        json_str = Jason.encode!(roles_data, pretty: true)
-
-        socket =
-          socket
-          |> assign(:active_modal, :export_roles)
-          |> assign(:export_json, json_str)
-
-        {:noreply, socket}
-
-      {:error, _reason} ->
-        {:noreply, socket}
-    end
-  end
-
-  def handle_event("open_import_modal", _params, socket) do
-    socket =
-      socket
-      |> assign(:active_modal, :import_roles)
-      |> assign(:import_error, nil)
-
-    {:noreply, socket}
-  end
-
-  def handle_event("validate_import", _params, socket) do
-    {:noreply, socket}
-  end
-
-  def handle_event("import_roles", %{"import_json" => json_str} = params, socket) do
-    scope = socket.assigns.current_scope
-    project_id = socket.assigns.current_project_id
-    replace_all = params["replace_all"] in ["true", true]
-
-    case Roles.import_roles(scope, project_id, json_str, replace_all: replace_all) do
-      {:ok, _imported} ->
-        refreshed = Roles.list_roles(scope, project_id)
-
-        socket =
-          socket
-          |> assign(:roles, refreshed)
-          |> assign(:active_modal, nil)
-          |> assign(:import_error, nil)
-
-        {:noreply, socket}
-
-      {:error, reason} ->
-        error_text = "Failed to import roles: #{inspect(reason)}"
-        {:noreply, assign(socket, :import_error, error_text)}
-    end
-  end
-
   def handle_event("open_copy_modal", _params, socket) do
     socket = assign(socket, :active_modal, :copy_roles)
     {:noreply, socket}
@@ -1424,29 +1098,14 @@ defmodule RailWeb.Settings.RolesLive do
   def handle_event("validate_role", %{"role" => role_params}, socket) do
     backend = String.to_existing_atom(role_params["cli_backend"] || "claude")
     model_choice = role_params["model_choice"]
-    custom_model = role_params["custom_model"] || ""
-
-    is_custom = model_choice == "__custom__"
-
-    chosen_model =
-      if is_custom do
-        custom_model
-      else
-        model_choice || @default_models[backend]
-      end
+    chosen_model = model_choice || @default_models[backend]
 
     updated_form =
       socket.assigns.modal_form
       |> Map.merge(role_params)
       |> Map.put("model", chosen_model)
-      |> Map.put("custom_model", custom_model)
 
-    socket =
-      socket
-      |> assign(:modal_form, updated_form)
-      |> assign(:is_custom_model, is_custom)
-
-    {:noreply, socket}
+    {:noreply, assign(socket, :modal_form, updated_form)}
   end
 
   def handle_event("change_backend", %{"role" => %{"cli_backend" => backend_str}}, socket) do
@@ -1458,13 +1117,11 @@ defmodule RailWeb.Settings.RolesLive do
       socket.assigns.modal_form
       |> Map.put("cli_backend", backend_str)
       |> Map.put("model", default_model)
-      |> Map.put("custom_model", "")
 
     socket =
       socket
       |> assign(:modal_form, updated_form)
       |> assign(:available_models, models)
-      |> assign(:is_custom_model, false)
 
     {:noreply, socket}
   end
@@ -1644,11 +1301,28 @@ defmodule RailWeb.Settings.RolesLive do
     {:noreply, socket}
   end
 
+  # A role can hold a model that is no longer in its backend's configured list
+  # (renamed model, hand-seeded role). Keep it selectable so opening the edit
+  # modal never silently rewrites the stored model.
+  defp model_options(available_models, current_model) do
+    current = String.trim(to_string(current_model || ""))
+
+    if current == "" or Enum.any?(available_models, &(&1.id == current)) do
+      available_models
+    else
+      available_models ++ [%{id: current, display_name: current}]
+    end
+  end
+
   defp fetch_models_for_backend(backend) do
     case Backends.get_backend(backend) do
       %Backend{models: models} -> models
       _unconfigured -> []
     end
+  end
+
+  defp unbound_stages(canonical_stages, roles) do
+    Enum.reject(canonical_stages, &role_for_stage(roles, &1))
   end
 
   defp role_for_stage(roles, stage) do
@@ -1671,8 +1345,7 @@ defmodule RailWeb.Settings.RolesLive do
     qa_lead: "QA Lead",
     demo: "Demo Recorder",
     debugger: "Debugger",
-    designer: "Designer",
-    rebase: "Rebase Agent"
+    designer: "Designer"
   }
 
   @effort_map %{
@@ -1717,6 +1390,34 @@ defmodule RailWeb.Settings.RolesLive do
     |> String.upcase()
   end
 
+  @role_action_base "inline-flex items-center gap-1.5 rounded-md h-7 text-xs font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-800"
+
+  defp role_action_button_class(:accent) do
+    [
+      @role_action_base,
+      " px-2.5 text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-500/10",
+      " ring-1 ring-inset ring-indigo-200 dark:ring-indigo-400/30",
+      " hover:bg-indigo-100 dark:hover:bg-indigo-500/20"
+    ]
+  end
+
+  defp role_action_button_class(:neutral) do
+    [
+      @role_action_base,
+      " px-2.5 text-slate-700 dark:text-slate-200",
+      " ring-1 ring-inset ring-slate-300 dark:ring-slate-600",
+      " hover:bg-slate-100 dark:hover:bg-slate-700"
+    ]
+  end
+
+  defp role_action_button_class(:danger) do
+    [
+      @role_action_base,
+      " w-7 justify-center text-slate-500 dark:text-slate-400",
+      " hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10"
+    ]
+  end
+
   defp parse_effort(val), do: Map.get(@effort_map, val, :high)
 
   defp parse_int(val, default) do
@@ -1728,15 +1429,7 @@ defmodule RailWeb.Settings.RolesLive do
 
   defp build_role_attrs(role_params, existing_role, roles_count) do
     backend = String.to_existing_atom(role_params["cli_backend"] || "claude")
-    model_choice = role_params["model_choice"]
-    custom_model = role_params["custom_model"] || ""
-
-    final_model =
-      if model_choice == "__custom__" do
-        custom_model
-      else
-        model_choice || @default_models[backend]
-      end
+    final_model = role_params["model_choice"] || @default_models[backend]
 
     stage =
       case role_params["stage"] do

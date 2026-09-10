@@ -63,7 +63,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#no-projects-message")
   end
 
-  test "renders stage list, bound roles, and unbound roles", %{
+  test "renders stage list and bound roles", %{
     admin_conn: conn,
     admin_user: admin_user
   } do
@@ -81,17 +81,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "You are an engineer."
              })
 
-    assert {:ok, %Role{id: custom_id}} =
-             Roles.create_role(scope, project.id, %{
-               name: "Documentation Specialist",
-               description: "Writes technical docs",
-               stage: nil,
-               cli_backend: :agy,
-               model: "gemini-3.8-flash-high",
-               reasoning_effort: :low,
-               system_prompt: "You write documentation."
-             })
-
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
     # Stage list checks
@@ -101,10 +90,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#stage-row-product")
     assert has_element?(view, "#unbound-stage-notice-product", "No role bound")
     assert has_element?(view, "#assign-stage-button-product")
-
-    # Unbound section checks
-    assert has_element?(view, "#unbound-roles-list")
-    assert has_element?(view, "#role-name-#{custom_id}", "Documentation Specialist")
+    refute has_element?(view, "#unbound-roles-section")
 
     # Change project via selector
     project2 = create_test_project(name: "Secondary Project")
@@ -123,7 +109,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#role-editor-modal")
     assert has_element?(view, "#role-modal-title", "Create New Role")
 
-    # Validate form change with backend change and custom model
+    # Validate form change with backend change
     view
     |> element("#role-backend-select")
     |> render_change(%{"role" => %{"cli_backend" => "agy"}})
@@ -133,12 +119,12 @@ defmodule RailWeb.Settings.RolesLiveTest do
     |> render_change(%{
       "role" => %{
         "cli_backend" => "agy",
-        "model_choice" => "__custom__",
-        "custom_model" => "gemini-ultra-custom"
+        "model_choice" => "gemini-ultra-custom"
       }
     })
 
-    assert has_element?(view, "#custom-model-input-container")
+    # agy has no configured models, so the chosen model stays selectable on its own
+    assert has_element?(view, "#role-model-select option[value='gemini-ultra-custom']")
 
     # Models are managed in backend settings
     assert has_element?(view, "#manage-models-link")
@@ -153,7 +139,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "stage" => "product",
         "cli_backend" => "agy",
         "model_choice" => "gemini-3.8-flash-high",
-        "custom_model" => "",
         "reasoning_effort" => "medium",
         "system_prompt" => "",
         "max_concurrent" => "2"
@@ -172,7 +157,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "stage" => "product",
         "cli_backend" => "agy",
         "model_choice" => "gemini-3.8-flash-high",
-        "custom_model" => "",
         "reasoning_effort" => "medium",
         "system_prompt" => "You are product lead.",
         "max_concurrent" => "2"
@@ -183,14 +167,16 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#bound-role-name-product", "Product Lead")
   end
 
-  test "creates an unbound custom role", %{
+  test "toolbar add button creates a role on the first free stage", %{
     admin_conn: conn
   } do
     project = create_test_project()
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
+    # No stage param: defaults to the first canonical stage with no role bound
     view |> element("#add-custom-role-button") |> render_click()
     assert has_element?(view, "#role-editor-modal")
+    assert has_element?(view, "#role-stage-select option[value='product'][selected]")
 
     view
     |> element("#role-form")
@@ -198,10 +184,9 @@ defmodule RailWeb.Settings.RolesLiveTest do
       "role" => %{
         "name" => "Security Auditor",
         "description" => "Audits code",
-        "stage" => "",
+        "stage" => "product",
         "cli_backend" => "claude",
         "model_choice" => "claude-3-7-sonnet",
-        "custom_model" => "",
         "reasoning_effort" => "max",
         "system_prompt" => "You audit security.",
         "max_concurrent" => "1"
@@ -209,7 +194,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     })
 
     refute has_element?(view, "#role-editor-modal")
-    assert has_element?(view, "#unbound-roles-section", "Security Auditor")
+    assert has_element?(view, "#bound-role-name-product", "Security Auditor")
   end
 
   test "edits an existing role", %{
@@ -235,6 +220,9 @@ defmodule RailWeb.Settings.RolesLiveTest do
     view |> element("#edit-role-button-#{role_id}") |> render_click()
     assert has_element?(view, "#role-modal-title", "Edit Role: QA Lead")
 
+    # A stored model outside the backend's configured list stays selected
+    assert has_element?(view, "#role-model-select option[value='claude-3-7-sonnet']")
+
     # Update description and prompt
     view
     |> element("#role-form")
@@ -245,7 +233,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "stage" => "qa_lead",
         "cli_backend" => "claude",
         "model_choice" => "claude-3-7-sonnet",
-        "custom_model" => "",
         "reasoning_effort" => "xhigh",
         "system_prompt" => "You are chief quality officer.",
         "max_concurrent" => "1"
@@ -296,69 +283,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
     view |> element("#confirm-delete-button") |> render_click()
     refute has_element?(view, "#delete-role-modal")
     refute has_element?(view, "#bound-role-name-review")
-  end
-
-  test "exports roles to JSON modal", %{
-    admin_conn: conn,
-    admin_user: admin_user
-  } do
-    project = create_test_project()
-    scope = Rail.Scope.for_user(admin_user)
-
-    assert {:ok, %Role{}} =
-             Roles.create_role(scope, project.id, %{
-               name: "Architect Role",
-               stage: :architect,
-               cli_backend: :claude,
-               model: "claude-3-7-sonnet",
-               system_prompt: "Design systems."
-             })
-
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
-
-    view |> element("#export-roles-button") |> render_click()
-    assert has_element?(view, "#export-roles-modal")
-    assert has_element?(view, "#export-roles-textarea")
-
-    view |> element("#close-export-modal-button") |> render_click()
-    refute has_element?(view, "#export-roles-modal")
-  end
-
-  test "imports roles from JSON modal", %{
-    admin_conn: conn
-  } do
-    project = create_test_project()
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
-
-    view |> element("#import-roles-button") |> render_click()
-    assert has_element?(view, "#import-roles-modal")
-
-    # Invalid JSON
-    view
-    |> element("#import-roles-form")
-    |> render_submit(%{"import_json" => "{not valid json}"})
-
-    assert has_element?(view, "#import-error-banner")
-
-    # Valid JSON import
-    valid_json =
-      Jason.encode!([
-        %{
-          "name" => "Imported QA",
-          "stage" => "qa",
-          "cli_backend" => "agy",
-          "model" => "gemini-3.8-flash-high",
-          "system_prompt" => "QA tests",
-          "reasoning_effort" => "medium"
-        }
-      ])
-
-    view
-    |> element("#import-roles-form")
-    |> render_submit(%{"import_json" => valid_json, "replace_all" => "false"})
-
-    refute has_element?(view, "#import-roles-modal")
-    assert has_element?(view, "#bound-role-name-qa", "Imported QA")
   end
 
   test "copies roles from another project", %{
@@ -499,10 +423,10 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert {:ok, %Role{id: role_id}} =
              Roles.create_role(scope, project.id, %{
                name: "Test Role",
-               stage: :rebase,
+               stage: :debugger,
                cli_backend: :claude,
                model: "claude-3-7-sonnet",
-               system_prompt: "Rebase branches"
+               system_prompt: "Debug failures"
              })
 
     create_test_role_run(role_id: role_id, status: :finished, output: "Output")
@@ -548,7 +472,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert_patched(view, ~p"/settings/roles?project=#{project2.id}")
   end
 
-  test "renders available models dropdown and validates custom model and name in create modal", %{
+  test "renders available models dropdown and validates model and name in create modal", %{
     admin_conn: conn,
     admin_user: _admin_user
   } do
@@ -556,34 +480,24 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
-    # Open create modal without stage
-    view |> element("#add-custom-role-button") |> render_click()
+    # Open create modal from a stage row
+    view |> element("#assign-stage-button-product") |> render_click()
     assert has_element?(view, "#role-editor-modal")
 
     # Options from available_models are rendered
     assert has_element?(view, "#role-model-select option[value='claude-sonnet-5']")
 
-    # Select custom model option
-    view
-    |> form("#role-form", %{
-      "role" => %{
-        "model_choice" => "__custom__"
-      }
-    })
-    |> render_change()
+    refute has_element?(view, "#role-model-select option[value='__custom__']")
 
-    assert has_element?(view, "#custom-model-input-container")
-
-    # Submit invalid form with empty name and custom model choice with empty custom_model
+    # Submit invalid form with empty name and a blank model choice
     view
     |> form("#role-form", %{
       "role" => %{
         "name" => "",
         "description" => "A description",
-        "stage" => "",
+        "stage" => "product",
         "cli_backend" => "claude",
-        "model_choice" => "__custom__",
-        "custom_model" => "",
+        "model_choice" => "",
         "reasoning_effort" => "high",
         "system_prompt" => "Prompt",
         "max_concurrent" => "invalid"
@@ -598,8 +512,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     render_hook(view, "validate_role", %{
       "role" => %{
         "cli_backend" => "claude",
-        "model_choice" => nil,
-        "custom_model" => ""
+        "model_choice" => nil
       }
     })
 
@@ -680,7 +593,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     refute has_element?(view, "#delete-role-modal")
   end
 
-  test "handles export, import, and copy modal edge cases", %{
+  test "handles copy modal edge cases", %{
     admin_conn: conn,
     admin_user: _admin_user
   } do
@@ -696,15 +609,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
     assert_patched(view, ~p"/settings/roles?project=#{other_project.id}")
 
-    # Validate import event
-    view |> element("#import-roles-button") |> render_click()
-    assert has_element?(view, "#import-roles-modal")
-    render_change(element(view, "#import-roles-form"), %{"import_json" => "[]"})
-
-    # Close import modal
-    view |> element("#cancel-import-button") |> render_click()
-    refute has_element?(view, "#import-roles-modal")
-
     # Validate copy event
     view |> element("#copy-roles-button") |> render_click()
     assert has_element?(view, "#copy-roles-modal")
@@ -713,11 +617,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
     # Trigger copy_roles error branch
     stub(Roles, :copy_roles, fn _scope, _target, _source, _opts -> {:error, :failed} end)
     render_hook(view, "copy_roles", %{"source_project_id" => project.id})
-
-    # Trigger export_roles error branch
-    stub(Roles, :export_roles, fn _scope, _project_id -> {:error, :failed} end)
-    render_hook(view, "open_export_modal", %{})
-    refute has_element?(view, "#export-roles-modal")
   end
 
   test "improve role displays error banner when improve_role fails", %{
@@ -853,10 +752,10 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert {:ok, %Role{id: new_role_id}} =
              Roles.create_role(scope, project.id, %{
                name: "Another Role",
-               stage: :rebase,
+               stage: :debugger,
                cli_backend: :claude,
                model: "claude-sonnet-5",
-               system_prompt: "Rebase instructions"
+               system_prompt: "Debugger instructions"
              })
 
     create_test_role_run(role_id: new_role_id, status: :finished, output: "Output")

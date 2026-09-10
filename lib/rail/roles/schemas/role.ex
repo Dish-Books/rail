@@ -15,8 +15,7 @@ defmodule Rail.Roles.Schemas.Role do
     :qa_lead,
     :demo,
     :debugger,
-    :designer,
-    :rebase
+    :designer
   ]
   @allowed_stages @canonical_stages ++ [:design, :ready_to_merge, :merged]
 
