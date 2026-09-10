@@ -234,10 +234,15 @@ defmodule Rail.Pipeline.DispatcherTest do
     GenServer.cast(pid, :pump)
 
     # Allow cast to process
-    Process.sleep(30)
-
-    updated_task = Repo.get!(Task, task.id)
-    assert updated_task.stage_state == :running
+    # Wait for the asynchronous pump to dispatch the task.
+    assert Enum.reduce_while(1..200, false, fn _i, _acc ->
+             if Repo.get!(Task, task.id).stage_state == :running do
+               {:halt, true}
+             else
+               Process.sleep(10)
+               {:cont, false}
+             end
+           end)
   end
 
   test "debounces pipeline_changed event before pumping", %{dispatcher: pid, task: task, roles: roles} do
@@ -301,9 +306,15 @@ defmodule Rail.Pipeline.DispatcherTest do
       })
 
     send(pid, :tick)
-    Process.sleep(25)
-
-    assert Repo.get!(Task, task.id).stage_state == :running
+    # Wait for the asynchronous pump to dispatch the task.
+    assert Enum.reduce_while(1..200, false, fn _i, _acc ->
+             if Repo.get!(Task, task.id).stage_state == :running do
+               {:halt, true}
+             else
+               Process.sleep(10)
+               {:cont, false}
+             end
+           end)
 
     GenServer.stop(pid)
   end
@@ -646,7 +657,15 @@ defmodule Rail.Pipeline.DispatcherTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     send(pid, {:retry_timer_expired, task_id})
-    Process.sleep(30)
+    # Wait for the asynchronous pump to dispatch the task.
+    assert Enum.reduce_while(1..200, false, fn _i, _acc ->
+             if Repo.get!(Task, task_id).stage_state == :running do
+               {:halt, true}
+             else
+               Process.sleep(10)
+               {:cont, false}
+             end
+           end)
 
     updated_task = Repo.get!(Task, task_id)
     assert updated_task.retry_after == nil
