@@ -3,21 +3,15 @@ defmodule Rail.Roles.Actions.ImproveRole do
 
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs.ArgvBuilder
-  alias Rail.Scope
   alias Rail.ToolEnv
-  alias Rail.Users
 
   def improve_role(scope, %Role{} = role, chosen_model, opts \\ []) when is_binary(chosen_model) do
-    if Scope.admin?(scope) or Users.can?(scope, :manage_roles) do
-      case Rail.Roles.recent_finished_runs(scope, role.id, opts) do
-        [] ->
-          {:error, :no_evidence}
+    case Rail.Roles.recent_finished_runs(scope, role.id, opts) do
+      [] ->
+        {:error, :no_evidence}
 
-        sources when is_list(sources) ->
-          run_improvement(role, chosen_model, sources, opts)
-      end
-    else
-      {:error, :not_authorized}
+      sources when is_list(sources) ->
+        run_improvement(role, chosen_model, sources, opts)
     end
   end
 

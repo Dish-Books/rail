@@ -53,6 +53,7 @@ defmodule Rail.MixProject do
       {:credo, "~> 1.7", only: :dev, runtime: false},
       {:rail_credo, path: "credo", only: :dev},
       {:decimal, "~> 3.0"},
+      {:decorator, "~> 1.4"},
       {:dotenv, "~> 3.1", only: [:dev, :test]},
       {:ecto_sql, "~> 3.13"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},

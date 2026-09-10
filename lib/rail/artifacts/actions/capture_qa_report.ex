@@ -11,21 +11,12 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
-  alias Rail.Scope
   alias Rail.Users.Schemas.User
 
   def capture_qa_report(scope, target, scratch_dir_or_opts, opts \\ []) do
-    if authorized?(scope) do
-      {task, task_id, scratch_dir, combined_opts} = normalize_args(target, scratch_dir_or_opts, opts)
-      do_capture_qa_report(scope, task, task_id, scratch_dir, combined_opts)
-    else
-      {:error, :not_authorized}
-    end
+    {task, task_id, scratch_dir, combined_opts} = normalize_args(target, scratch_dir_or_opts, opts)
+    do_capture_qa_report(scope, task, task_id, scratch_dir, combined_opts)
   end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
 
   defp normalize_args(target, scratch_dir, opts) when is_binary(scratch_dir) do
     {task, task_id} = resolve_task_and_id(target)

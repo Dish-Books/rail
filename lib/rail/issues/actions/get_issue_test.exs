@@ -44,6 +44,9 @@ defmodule Rail.Issues.Actions.GetIssueTest do
     scope = Scope.for_system()
     assert %Issue{id: ^issue_id} = Issues.get_issue!(scope, issue_id)
 
+    user_scope = Scope.for_user(%{admin: false})
+    assert %Issue{id: ^issue_id} = Issues.get_issue!(user_scope, issue_id)
+
     assert_raise Ecto.NoResultsError, fn ->
       Issues.get_issue!(scope, "iss_missing_123")
     end

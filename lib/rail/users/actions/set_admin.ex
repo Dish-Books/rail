@@ -17,17 +17,12 @@ defmodule Rail.Users.Actions.SetAdmin do
   end
 
   defp do_set_admin(scope, %User{} = user, admin_bool) do
-    cond do
-      not Scope.admin?(scope) ->
-        {:error, :not_authorized}
-
-      not admin_bool and removing_self_admin?(scope, user) and sole_admin?() ->
-        {:error, :cannot_remove_sole_admin}
-
-      true ->
-        user
-        |> User.admin_changeset(%{admin: admin_bool})
-        |> Repo.update()
+    if not admin_bool and removing_self_admin?(scope, user) and sole_admin?() do
+      {:error, :cannot_remove_sole_admin}
+    else
+      user
+      |> User.admin_changeset(%{admin: admin_bool})
+      |> Repo.update()
     end
   end
 

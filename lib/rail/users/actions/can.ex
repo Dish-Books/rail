@@ -35,6 +35,7 @@ defmodule Rail.Users.Actions.Can do
   end
 
   def can?(%Scope{user: %{}}, _action), do: true
+  def can?(_scope, _action), do: false
 
   def can?(%Scope{system: true}, _resource, _action), do: true
   def can?(nil, _resource, _action), do: false
@@ -61,4 +62,5 @@ defmodule Rail.Users.Actions.Can do
   end
 
   def can?(%Scope{user: %{}}, _resource, _action), do: true
+  def can?(_scope, _resource, _action), do: false
 end

@@ -7,21 +7,8 @@ defmodule Rail.Issues.Actions.SyncIssues do
   alias Rail.Issues.Clients.Linear
   alias Rail.Issues.Schemas.Issue
   alias Rail.Repo
-  alias Rail.Scope
 
-  def sync_issues(scope, project) do
-    if authorized?(scope) do
-      do_sync_issues(project)
-    else
-      {:error, :not_authorized}
-    end
-  end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
-
-  defp do_sync_issues(project) do
+  def sync_issues(_scope, project) do
     with {:ok, token} <- workspace_token(project),
          {:ok, nodes} <- fetch_linear_issues(token, project) do
       upsert_nodes(project.id, nodes)

@@ -10,15 +10,9 @@ defmodule Rail.Roles.Actions.RoleForStage do
     role_for_stage(Scope.for_system(), project_id, stage)
   end
 
-  def role_for_stage(%Scope{system: true}, project_id, stage) when is_binary(project_id) do
+  def role_for_stage(_scope, project_id, stage) do
     find_role_for_stage(project_id, stage)
   end
-
-  def role_for_stage(%Scope{user: %{}}, project_id, stage) when is_binary(project_id) do
-    find_role_for_stage(project_id, stage)
-  end
-
-  def role_for_stage(_scope, _project_id, _stage), do: {:error, :not_authorized}
 
   def role_for_stage!(project_id, stage) when is_binary(project_id) do
     role_for_stage!(Scope.for_system(), project_id, stage)

@@ -7,21 +7,8 @@ defmodule Rail.Issues.Actions.ArchiveIssue do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
-  alias Rail.Scope
 
   def archive_issue(scope, %Issue{} = issue) do
-    if authorized?(scope) do
-      do_archive_issue(scope, issue)
-    else
-      {:error, :not_authorized}
-    end
-  end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
-
-  defp do_archive_issue(scope, %Issue{} = issue) do
     project = Repo.get(Project, issue.project_id)
 
     with {:ok, token, _identity} <- resolve_token(scope, project) do

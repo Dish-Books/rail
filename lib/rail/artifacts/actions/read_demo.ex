@@ -2,20 +2,11 @@ defmodule Rail.Artifacts.Actions.ReadDemo do
   @moduledoc false
 
   alias Rail.Artifacts.Validators.DemoValidator
-  alias Rail.Scope
 
-  def read_demo(scope, target, opts \\ []) do
-    if authorized?(scope) do
-      demo_dir = resolve_demo_dir(target, opts)
-      DemoValidator.validate(demo_dir, opts)
-    else
-      {:error, :not_authorized}
-    end
+  def read_demo(_scope, target, opts \\ []) do
+    demo_dir = resolve_demo_dir(target, opts)
+    DemoValidator.validate(demo_dir, opts)
   end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
 
   defp resolve_demo_dir(%{worktree_path: path}, opts) when is_binary(path) and path != "" do
     dir = Keyword.get(opts, :scratch_dir, path)

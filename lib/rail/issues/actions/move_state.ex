@@ -7,21 +7,8 @@ defmodule Rail.Issues.Actions.MoveState do
   alias Rail.Issues.Clients.Linear
   alias Rail.Issues.Schemas.Issue
   alias Rail.Repo
-  alias Rail.Scope
 
   def move_state(scope, project, %Issue{} = issue, state_type, owner_user \\ nil) do
-    if authorized?(scope) do
-      do_move_state(scope, project, issue, state_type, owner_user)
-    else
-      {:error, :not_authorized}
-    end
-  end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
-
-  defp do_move_state(scope, project, issue, state_type, owner_user) do
     user_target = owner_user || scope
 
     with {:ok, token, _identity} <- resolve_token(user_target, project),

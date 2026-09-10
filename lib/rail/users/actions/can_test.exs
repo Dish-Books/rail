@@ -22,6 +22,7 @@ defmodule Rail.Users.Actions.CanTest do
       refute Users.can?(nil, :any_action)
       refute Users.can?(%Scope{user: nil}, :list_users)
       refute Users.can?(%Scope{user: nil}, :create_project)
+      refute Users.can?(:invalid_scope, :list_users)
     end
 
     test "admin scope can perform admin actions" do

@@ -6,25 +6,16 @@ defmodule Rail.Issues.Actions.ListIssues do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
-  alias Rail.Scope
 
   def list_issues(scope, project_or_opts \\ [])
 
-  def list_issues(%Scope{system: true}, project_or_opts) do
+  def list_issues(_scope, project_or_opts) do
     fetch_issues(project_or_opts)
   end
 
-  def list_issues(%Scope{user: %{}}, project_or_opts) do
-    fetch_issues(project_or_opts)
-  end
-
-  def list_issues(_scope, _project_or_opts), do: []
-
-  def list_issues(%Scope{} = scope, %Project{id: project_id}, opts) when is_list(opts) do
+  def list_issues(scope, %Project{id: project_id}, opts) when is_list(opts) do
     list_issues(scope, Keyword.put(opts, :project_id, project_id))
   end
-
-  def list_issues(_scope, _project, _opts), do: []
 
   defp fetch_issues(%Project{id: project_id}) do
     fetch_issues(project_id: project_id)

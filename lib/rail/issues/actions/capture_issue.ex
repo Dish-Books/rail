@@ -8,21 +8,8 @@ defmodule Rail.Issues.Actions.CaptureIssue do
   alias Rail.Issues.Clients.Linear
   alias Rail.Issues.Schemas.Issue
   alias Rail.Repo
-  alias Rail.Scope
 
   def capture_issue(scope, project, ask, opts \\ []) do
-    if authorized?(scope) do
-      do_capture_issue(scope, project, ask, opts)
-    else
-      {:error, :not_authorized}
-    end
-  end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
-
-  defp do_capture_issue(scope, project, ask, opts) do
     with {:ok, token, _identity} <- resolve_token(scope, project) do
       title = Formatters.summarize_ask(ask)
       triage_state_id = project.linear_state_ids["triage"] || project.linear_state_ids[:triage]
