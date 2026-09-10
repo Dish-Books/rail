@@ -470,7 +470,18 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
         worktree_path: worktree
       })
 
-    demo_manifest_9501 =
+    demo_scratch_9501 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+
+    demo_scratch_dir_9501 = Path.join([demo_scratch_9501, "demo"])
+
+    File.mkdir_p!(demo_scratch_dir_9501)
+
+    on_exit(fn -> File.rm_rf(demo_scratch_9501) end)
+
+    File.write!(Path.join(demo_scratch_dir_9501, "frame-1.png"), "fake demo frame")
+
+    File.write!(
+      Path.join(demo_scratch_dir_9501, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -483,14 +494,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
           }
         ]
       })
-
-    expect(File, :exists?, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, demo_manifest_9501} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
+    )
 
     mock_demo_uploads(1)
 
@@ -501,7 +505,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     })
 
     {:ok, _demo} =
-      Artifacts.capture_demo(system_scope(), task, "/tmp/rail_scratch/demo_9501", head_sha: "old_head_sha")
+      Artifacts.capture_demo(system_scope(), task, demo_scratch_9501, head_sha: "old_head_sha")
 
     mock_pull_request_state_success("testorg/testrepo", 99, mergeable: true, draft: false)
 

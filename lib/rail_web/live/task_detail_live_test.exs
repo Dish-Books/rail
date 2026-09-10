@@ -5,6 +5,7 @@ defmodule RailWeb.TaskDetailLiveTest do
   import Phoenix.LiveViewTest
   import RailTest.PipelineHelpers
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias Phoenix.LiveView.Socket
   alias Rail.Artifacts
   alias Rail.Issues
@@ -863,6 +864,12 @@ defmodule RailWeb.TaskDetailLiveTest do
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+
+    # The LiveView process issues the GitHub call, so lend it the stubs.
+
+    Req.Test.allow(Rail.GitHub, self(), view.pid)
+
+    Sandbox.allow(Rail.Repo, self(), view.pid)
     assert has_element?(view, "#meta-branch", "rail/existing-prefix")
     assert has_element?(view, "#meta-issue", "EC-1")
     assert has_element?(view, "#meta-priority", "High")
@@ -961,6 +968,12 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
 
+    # The LiveView process issues the GitHub call, so lend it the stubs.
+
+    Req.Test.allow(Rail.GitHub, self(), view.pid)
+
+    Sandbox.allow(Rail.Repo, self(), view.pid)
+
     # Click chat
     view |> element("#action-chat") |> render_click()
     assert_patched(view, ~p"/tasks/#{task_id}?tab=conversation")
@@ -974,9 +987,6 @@ defmodule RailWeb.TaskDetailLiveTest do
     conn: conn,
     project: project
   } do
-    Req.Test.set_req_test_to_shared(Rail.GitHub)
-    on_exit(fn -> Req.Test.set_req_test_to_private(Rail.GitHub) end)
-
     Req.Test.stub(Rail.GitHub, fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
@@ -1033,6 +1043,12 @@ defmodule RailWeb.TaskDetailLiveTest do
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+
+    # The LiveView process issues the GitHub call, so lend it the stubs.
+
+    Req.Test.allow(Rail.GitHub, self(), view.pid)
+
+    Sandbox.allow(Rail.Repo, self(), view.pid)
 
     # Click Merge pull request button
     view |> element("#action-merge") |> render_click()
@@ -1130,6 +1146,12 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
 
+    # The LiveView process issues the GitHub call, so lend it the stubs.
+
+    Req.Test.allow(Rail.GitHub, self(), view.pid)
+
+    Sandbox.allow(Rail.Repo, self(), view.pid)
+
     # Click Rebase
     view |> element("#action-rebase") |> render_click()
     assert has_element?(view, "#confirm-rebase-modal")
@@ -1192,6 +1214,12 @@ defmodule RailWeb.TaskDetailLiveTest do
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+
+    # The LiveView process issues the GitHub call, so lend it the stubs.
+
+    Req.Test.allow(Rail.GitHub, self(), view.pid)
+
+    Sandbox.allow(Rail.Repo, self(), view.pid)
 
     # Open cleanup modal
     view |> element("#action-cleanup") |> render_click()
@@ -1280,6 +1308,12 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
 
+    # The LiveView process issues the GitHub call, so lend it the stubs.
+
+    Req.Test.allow(Rail.GitHub, self(), view.pid)
+
+    Sandbox.allow(Rail.Repo, self(), view.pid)
+
     # Open modal
     view |> element("#action-send-back") |> render_click()
     assert has_element?(view, "#prompt-send-back-modal")
@@ -1347,6 +1381,12 @@ defmodule RailWeb.TaskDetailLiveTest do
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+
+    # The LiveView process issues the GitHub call, so lend it the stubs.
+
+    Req.Test.allow(Rail.GitHub, self(), view.pid)
+
+    Sandbox.allow(Rail.Repo, self(), view.pid)
 
     # Open modal
     view |> element("#action-send-back-to-engineer") |> render_click()
@@ -1436,6 +1476,12 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
 
+    # The LiveView process issues the GitHub call, so lend it the stubs.
+
+    Req.Test.allow(Rail.GitHub, self(), view.pid)
+
+    Sandbox.allow(Rail.Repo, self(), view.pid)
+
     # Open modal
     view |> element("#action-decline-demo") |> render_click()
     assert has_element?(view, "#prompt-decline-demo-modal")
@@ -1475,9 +1521,6 @@ defmodule RailWeb.TaskDetailLiveTest do
   end
 
   test "direct action buttons dispatch corresponding pipeline actions", %{conn: conn, project: project} do
-    Req.Test.set_req_test_to_shared(Rail.GitHub)
-    on_exit(fn -> Req.Test.set_req_test_to_private(Rail.GitHub) end)
-
     Req.Test.stub(Rail.GitHub, fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
@@ -1845,6 +1888,12 @@ defmodule RailWeb.TaskDetailLiveTest do
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+
+    # The LiveView process issues the GitHub call, so lend it the stubs.
+
+    Req.Test.allow(Rail.GitHub, self(), view.pid)
+
+    Sandbox.allow(Rail.Repo, self(), view.pid)
     assert has_element?(view, "#task-error-card", "Previous error message")
 
     # Broadcast task_action_started -> clears error and sets spinner
@@ -1919,6 +1968,12 @@ defmodule RailWeb.TaskDetailLiveTest do
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+
+    # The LiveView process issues the GitHub call, so lend it the stubs.
+
+    Req.Test.allow(Rail.GitHub, self(), view.pid)
+
+    Sandbox.allow(Rail.Repo, self(), view.pid)
 
     # Form change event does nothing
     render_hook(view, "modal_form_change", %{})

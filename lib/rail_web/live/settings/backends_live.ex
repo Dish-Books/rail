@@ -425,6 +425,11 @@ defmodule RailWeb.Settings.BackendsLive do
     {:noreply, assign(socket, :now, DateTime.utc_now())}
   end
 
+  # The navigation hook subscribes this view to pipeline events it does not use.
+  def handle_info(_message, socket) do
+    {:noreply, socket}
+  end
+
   def handle_async(:refresh_quotas_task, {:ok, {:ok, accounts}}, socket) do
     socket =
       socket

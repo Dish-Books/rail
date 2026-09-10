@@ -138,7 +138,18 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
         worktree_path: worktree
       })
 
-    demo_manifest_10001 =
+    demo_scratch_10001 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+
+    demo_scratch_dir_10001 = Path.join([demo_scratch_10001, "demo"])
+
+    File.mkdir_p!(demo_scratch_dir_10001)
+
+    on_exit(fn -> File.rm_rf(demo_scratch_10001) end)
+
+    File.write!(Path.join(demo_scratch_dir_10001, "frame-1.png"), "fake demo frame")
+
+    File.write!(
+      Path.join(demo_scratch_dir_10001, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -151,14 +162,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
           }
         ]
       })
-
-    expect(File, :exists?, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, demo_manifest_10001} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
+    )
 
     mock_demo_uploads(1)
 
@@ -169,7 +173,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     })
 
     {:ok, _demo} =
-      Artifacts.capture_demo(system_scope(), task, "/tmp/rail_scratch/demo_10001",
+      Artifacts.capture_demo(system_scope(), task, demo_scratch_10001,
         head_sha: "old_sha",
         dirty_digest: "old_digest"
       )
@@ -197,7 +201,18 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
         worktree_path: "/tmp/nonexistent_#{System.unique_integer([:positive])}"
       })
 
-    demo_manifest_10002 =
+    demo_scratch_10002 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+
+    demo_scratch_dir_10002 = Path.join([demo_scratch_10002, "demo"])
+
+    File.mkdir_p!(demo_scratch_dir_10002)
+
+    on_exit(fn -> File.rm_rf(demo_scratch_10002) end)
+
+    File.write!(Path.join(demo_scratch_dir_10002, "frame-1.png"), "fake demo frame")
+
+    File.write!(
+      Path.join(demo_scratch_dir_10002, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -210,14 +225,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
           }
         ]
       })
-
-    expect(File, :exists?, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, demo_manifest_10002} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
+    )
 
     mock_demo_uploads(1)
 
@@ -228,7 +236,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     })
 
     {:ok, _demo} =
-      Artifacts.capture_demo(system_scope(), task_missing_dir, "/tmp/rail_scratch/demo_10002",
+      Artifacts.capture_demo(system_scope(), task_missing_dir, demo_scratch_10002,
         head_sha: "some_sha",
         dirty_digest: "some_digest"
       )
@@ -259,7 +267,18 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
         worktree_path: scratch_dir
       })
 
-    demo_manifest_10003 =
+    demo_scratch_10003 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+
+    demo_scratch_dir_10003 = Path.join([demo_scratch_10003, "demo"])
+
+    File.mkdir_p!(demo_scratch_dir_10003)
+
+    on_exit(fn -> File.rm_rf(demo_scratch_10003) end)
+
+    File.write!(Path.join(demo_scratch_dir_10003, "frame-1.png"), "fake demo frame")
+
+    File.write!(
+      Path.join(demo_scratch_dir_10003, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -272,14 +291,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
           }
         ]
       })
-
-    expect(File, :exists?, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, demo_manifest_10003} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
+    )
 
     mock_demo_uploads(1)
 
@@ -290,7 +302,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     })
 
     {:ok, _demo} =
-      Artifacts.capture_demo(system_scope(), task_non_git, "/tmp/rail_scratch/demo_10003",
+      Artifacts.capture_demo(system_scope(), task_non_git, demo_scratch_10003,
         head_sha: "some_sha",
         dirty_digest: "some_digest"
       )
@@ -317,7 +329,18 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
         worktree_path: nil
       })
 
-    demo_manifest_10004 =
+    demo_scratch_10004 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+
+    demo_scratch_dir_10004 = Path.join([demo_scratch_10004, "demo"])
+
+    File.mkdir_p!(demo_scratch_dir_10004)
+
+    on_exit(fn -> File.rm_rf(demo_scratch_10004) end)
+
+    File.write!(Path.join(demo_scratch_dir_10004, "frame-1.png"), "fake demo frame")
+
+    File.write!(
+      Path.join(demo_scratch_dir_10004, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -330,14 +353,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
           }
         ]
       })
-
-    expect(File, :exists?, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, demo_manifest_10004} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
+    )
 
     mock_demo_uploads(1)
 
@@ -348,7 +364,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     })
 
     {:ok, _demo} =
-      Artifacts.capture_demo(system_scope(), task_nil_worktree, "/tmp/rail_scratch/demo_10004",
+      Artifacts.capture_demo(system_scope(), task_nil_worktree, demo_scratch_10004,
         head_sha: "some_sha",
         dirty_digest: "some_digest"
       )
@@ -369,7 +385,18 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
         worktree_path: worktree
       })
 
-    demo_manifest_10005 =
+    demo_scratch_10005 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+
+    demo_scratch_dir_10005 = Path.join([demo_scratch_10005, "demo"])
+
+    File.mkdir_p!(demo_scratch_dir_10005)
+
+    on_exit(fn -> File.rm_rf(demo_scratch_10005) end)
+
+    File.write!(Path.join(demo_scratch_dir_10005, "frame-1.png"), "fake demo frame")
+
+    File.write!(
+      Path.join(demo_scratch_dir_10005, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -382,14 +409,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
           }
         ]
       })
-
-    expect(File, :exists?, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, demo_manifest_10005} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
+    )
 
     mock_demo_uploads(1)
 
@@ -400,7 +420,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     })
 
     {:ok, demo} =
-      Artifacts.capture_demo(system_scope(), task, "/tmp/rail_scratch/demo_10005",
+      Artifacts.capture_demo(system_scope(), task, demo_scratch_10005,
         head_sha: sha,
         dirty_digest: digest
       )
@@ -423,7 +443,18 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
         worktree_path: worktree
       })
 
-    demo_manifest_10006 =
+    demo_scratch_10006 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+
+    demo_scratch_dir_10006 = Path.join([demo_scratch_10006, "demo"])
+
+    File.mkdir_p!(demo_scratch_dir_10006)
+
+    on_exit(fn -> File.rm_rf(demo_scratch_10006) end)
+
+    File.write!(Path.join(demo_scratch_dir_10006, "frame-1.png"), "fake demo frame")
+
+    File.write!(
+      Path.join(demo_scratch_dir_10006, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -436,14 +467,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
           }
         ]
       })
-
-    expect(File, :exists?, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, demo_manifest_10006} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
+    )
 
     mock_demo_uploads(1)
 
@@ -454,7 +478,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     })
 
     {:ok, demo} =
-      Artifacts.capture_demo(system_scope(), task, "/tmp/rail_scratch/demo_10006",
+      Artifacts.capture_demo(system_scope(), task, demo_scratch_10006,
         head_sha: "old_commit_sha",
         dirty_digest: current_digest
       )
@@ -485,7 +509,18 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
         worktree_path: worktree
       })
 
-    demo_manifest_10007 =
+    demo_scratch_10007 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+
+    demo_scratch_dir_10007 = Path.join([demo_scratch_10007, "demo"])
+
+    File.mkdir_p!(demo_scratch_dir_10007)
+
+    on_exit(fn -> File.rm_rf(demo_scratch_10007) end)
+
+    File.write!(Path.join(demo_scratch_dir_10007, "frame-1.png"), "fake demo frame")
+
+    File.write!(
+      Path.join(demo_scratch_dir_10007, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -498,14 +533,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
           }
         ]
       })
-
-    expect(File, :exists?, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, demo_manifest_10007} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
+    )
 
     mock_demo_uploads(1)
 
@@ -516,7 +544,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     })
 
     {:ok, demo} =
-      Artifacts.capture_demo(system_scope(), task, "/tmp/rail_scratch/demo_10007",
+      Artifacts.capture_demo(system_scope(), task, demo_scratch_10007,
         head_sha: current_sha,
         dirty_digest: "outdated_digest"
       )
@@ -537,7 +565,18 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
         worktree_path: worktree
       })
 
-    demo_manifest_10008 =
+    demo_scratch_10008 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+
+    demo_scratch_dir_10008 = Path.join([demo_scratch_10008, "demo"])
+
+    File.mkdir_p!(demo_scratch_dir_10008)
+
+    on_exit(fn -> File.rm_rf(demo_scratch_10008) end)
+
+    File.write!(Path.join(demo_scratch_dir_10008, "frame-1.png"), "fake demo frame")
+
+    File.write!(
+      Path.join(demo_scratch_dir_10008, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -550,14 +589,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
           }
         ]
       })
-
-    expect(File, :exists?, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, demo_manifest_10008} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
+    )
 
     mock_demo_uploads(1)
 
@@ -568,7 +600,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     })
 
     {:ok, demo} =
-      Artifacts.capture_demo(system_scope(), task, "/tmp/rail_scratch/demo_10008",
+      Artifacts.capture_demo(system_scope(), task, demo_scratch_10008,
         head_sha: "previous_commit",
         dirty_digest: "previous_digest"
       )
@@ -593,7 +625,18 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
         worktree_path: worktree
       })
 
-    demo_manifest_10009 =
+    demo_scratch_10009 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+
+    demo_scratch_dir_10009 = Path.join([demo_scratch_10009, "demo"])
+
+    File.mkdir_p!(demo_scratch_dir_10009)
+
+    on_exit(fn -> File.rm_rf(demo_scratch_10009) end)
+
+    File.write!(Path.join(demo_scratch_dir_10009, "frame-1.png"), "fake demo frame")
+
+    File.write!(
+      Path.join(demo_scratch_dir_10009, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -606,14 +649,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
           }
         ]
       })
-
-    expect(File, :exists?, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, demo_manifest_10009} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
+    )
 
     mock_demo_uploads(1)
 
@@ -624,7 +660,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     })
 
     {:ok, demo} =
-      Artifacts.capture_demo(system_scope(), task, "/tmp/rail_scratch/demo_10009",
+      Artifacts.capture_demo(system_scope(), task, demo_scratch_10009,
         head_sha: "different_sha",
         dirty_digest: "different_digest"
       )
