@@ -6,6 +6,7 @@ defmodule Rail.ToolEnv do
 
   @path_term {__MODULE__, :path}
   @cache_term {__MODULE__, :cache}
+  @path_override {__MODULE__, :path_override}
 
   @fallback_dirs [
     "/opt/homebrew/bin",
@@ -44,30 +45,32 @@ defmodule Rail.ToolEnv do
   Returns the merged PATH, computing it lazily if `init/0` never ran.
   """
   def path do
-    case :persistent_term.get(@path_term, nil) do
+    case override_path() do
       path when is_binary(path) ->
         path
 
       nil ->
-        merged = calculate_path(nil)
-        :persistent_term.put(@path_term, merged)
-        merged
+        global_path()
     end
   end
 
   @doc """
-  Overrides the PATH for testing and clears the resolution cache.
+  Overrides the PATH for testing.
+
+  The override lives in the calling process (and processes it spawns through
+  `Task`), so async tests cannot clobber each other's PATH. Resolution skips
+  the shared cache while an override is in effect.
   """
   def debug_set_path(new_path) do
-    :persistent_term.put(@path_term, new_path)
-    :persistent_term.put(@cache_term, %{})
+    Process.put(@path_override, new_path)
     :ok
   end
 
   @doc """
-  Resets the stored PATH and cache.
+  Resets the stored PATH and cache, including any process-local override.
   """
   def reset do
+    Process.delete(@path_override)
     :persistent_term.erase(@path_term)
     :persistent_term.put(@cache_term, %{})
     :ok
@@ -78,20 +81,15 @@ defmodule Rail.ToolEnv do
   Falls back to the bare name if not found.
   """
   def resolve(executable) when is_binary(executable) do
-    if String.contains?(executable, "/") or windows?() do
-      executable
-    else
-      cache = :persistent_term.get(@cache_term, %{})
+    cond do
+      String.contains?(executable, "/") or windows?() ->
+        executable
 
-      case Map.fetch(cache, executable) do
-        {:ok, resolved} ->
-          resolved
+      is_binary(override_path()) ->
+        do_resolve(executable)
 
-        :error ->
-          resolved = do_resolve(executable)
-          :persistent_term.put(@cache_term, Map.put(cache, executable, resolved))
-          resolved
-      end
+      true ->
+        resolve_cached(executable)
     end
   end
 
@@ -224,6 +222,43 @@ defmodule Rail.ToolEnv do
             nil
         end
       end
+    end
+  end
+
+  defp global_path do
+    case :persistent_term.get(@path_term, nil) do
+      path when is_binary(path) ->
+        path
+
+      nil ->
+        merged = calculate_path(nil)
+        :persistent_term.put(@path_term, merged)
+        merged
+    end
+  end
+
+  defp override_path do
+    Enum.find_value([self() | Process.get(:"$callers", [])], fn pid ->
+      with {:dictionary, dictionary} <- Process.info(pid, :dictionary),
+           {_key, path} <- List.keyfind(dictionary, @path_override, 0) do
+        path
+      else
+        _other -> nil
+      end
+    end)
+  end
+
+  defp resolve_cached(executable) do
+    cache = :persistent_term.get(@cache_term, %{})
+
+    case Map.fetch(cache, executable) do
+      {:ok, resolved} ->
+        resolved
+
+      :error ->
+        resolved = do_resolve(executable)
+        :persistent_term.put(@cache_term, Map.put(cache, executable, resolved))
+        resolved
     end
   end
 
