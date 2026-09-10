@@ -5,6 +5,7 @@ defmodule Rail.Issues.Schemas.Issue do
   alias Rail.Domain.Enums.IssueState
   alias Rail.Projects.Schemas.Project
 
+  @derive {LiveSync.Watch, subscription_key: :project_id, table: "issues"}
   @primary_key {:id, UXID, autogenerate: true, prefix: "iss"}
   schema "issues" do
     belongs_to :project, Project

@@ -96,6 +96,7 @@ defmodule Rail.PeriodicTest do
 
     # Task 1: active with PR -> should be refreshed
     %Task{id: t1_id} =
+      t1 =
       Repo.insert!(%{
         Task.factory()
         | project_id: project.id,
@@ -107,6 +108,7 @@ defmodule Rail.PeriodicTest do
 
     # Task 2: active with PR -> should be refreshed
     %Task{id: t2_id} =
+      t2 =
       Repo.insert!(%{
         Task.factory()
         | project_id: project.id,
@@ -144,22 +146,32 @@ defmodule Rail.PeriodicTest do
           merged_at: DateTime.utc_now()
       })
 
-    mock_pull_request_state_success("org/merge-tick-repo", 10, mergeable: true, draft: false)
-    mock_pull_request_state_success("org/merge-tick-repo", 20, mergeable: false, draft: false)
+    tasks = Enum.sort_by([t1, t2], & &1.id)
+
+    for task <- tasks do
+      if task.id == t1_id do
+        mock_pull_request_state_success("org/merge-tick-repo", 10, mergeable: true, draft: false)
+      else
+        mock_pull_request_state_success("org/merge-tick-repo", 20, mergeable: false, draft: false)
+      end
+    end
 
     assert {:ok, %{processed: 2, results: results}} =
              Periodic.trigger_tick(server, :mergeability_demo_freshness, token: "mock_tok")
 
-    assert [
-             {^t1_id, {:ok, {:ok, %Task{mergeability: :mergeable}}, {:ok, %Task{}}}},
-             {^t2_id, {:ok, {:ok, %Task{mergeability: :conflicting}}, {:ok, %Task{}}}}
-           ] = results
+    results_map = Map.new(results)
+
+    assert %{
+             ^t1_id => {:ok, {:ok, %Task{mergeability: :mergeable}}, {:ok, %Task{}}},
+             ^t2_id => {:ok, {:ok, %Task{mergeability: :conflicting}}, {:ok, %Task{}}}
+           } = results_map
   end
 
   test "tick 1: error on one task does not stop execution of remaining tasks", %{server: server} do
     project = Repo.insert!(%{Project.factory() | github_repo: "org/error-tick-repo"})
 
     %Task{id: err_id} =
+      err_task =
       Repo.insert!(%{
         Task.factory()
         | project_id: project.id,
@@ -169,6 +181,7 @@ defmodule Rail.PeriodicTest do
       })
 
     %Task{id: ok_id} =
+      ok_task =
       Repo.insert!(%{
         Task.factory()
         | project_id: project.id,
@@ -177,16 +190,25 @@ defmodule Rail.PeriodicTest do
           mergeability: :unknown
       })
 
-    mock_pull_request_state_error("org/error-tick-repo", 77, 404, "Not Found")
-    mock_pull_request_state_success("org/error-tick-repo", 88, mergeable: true, draft: false)
+    tasks = Enum.sort_by([err_task, ok_task], & &1.id)
+
+    for task <- tasks do
+      if task.id == err_id do
+        mock_pull_request_state_error("org/error-tick-repo", 77, 404, "Not Found")
+      else
+        mock_pull_request_state_success("org/error-tick-repo", 88, mergeable: true, draft: false)
+      end
+    end
 
     assert {:ok, %{processed: 2, results: results}} =
              Periodic.trigger_tick(server, :mergeability, token: "mock_tok")
 
-    assert [
-             {^err_id, {:ok, {:error, {:github_api_error, 404, _body}}, {:ok, %Task{}}}},
-             {^ok_id, {:ok, {:ok, %Task{mergeability: :mergeable}}, {:ok, %Task{}}}}
-           ] = results
+    results_map = Map.new(results)
+
+    assert %{
+             ^err_id => {:ok, {:error, {:github_api_error, 404, _body}}, {:ok, %Task{}}},
+             ^ok_id => {:ok, {:ok, %Task{mergeability: :mergeable}}, {:ok, %Task{}}}
+           } = results_map
   end
 
   test "tick 2: linear sync syncs configured active projects", %{server: server} do
