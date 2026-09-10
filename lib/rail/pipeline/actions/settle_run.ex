@@ -67,7 +67,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
         default_scratch_path(task.project_id, task.id)
 
     {:ok, task} =
-      if task.stage == :design do
+      if task.stage in [:design, :demo] do
         {:ok, task}
       else
         capture(task.stage, task, scratch_dir)
@@ -83,6 +83,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :run_settled})
     Rail.Pipeline.maybe_dispatch_queued_pending_chat(updated_task, opts)
     final_task = maybe_refresh_rebase_mergeability(updated_task, task, exit_code, opts)
+    final_task = maybe_trigger_demo_freshness(final_task, opts)
 
     {:ok, final_task, updated_role_run}
   end
@@ -259,6 +260,44 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   defp handle_clean_exit(%Task{stage: stage} = task, role_run, _scratch_dir, _opts)
        when stage in [:review, :qa, :qa_lead] do
     handle_gate_exit(task, role_run)
+  end
+
+  defp handle_clean_exit(%Task{stage: :demo} = task, role_run, scratch_dir, opts) do
+    scope = Scope.for_system()
+    demo_target = resolve_demo_target(task, scratch_dir, opts)
+
+    criteria =
+      case Keyword.get(opts, :criteria) do
+        explicit when explicit != nil ->
+          explicit
+
+        nil ->
+          case Rail.Domain.TicketBody.acceptance_criteria(task.description || "") do
+            list when is_list(list) and list != [] -> list
+            _empty_or_nil -> nil
+          end
+      end
+
+    read_opts =
+      opts
+      |> Keyword.take([:scratch_dir, :req_options])
+      |> Keyword.put(:criteria, criteria)
+
+    with {:ok, manifest} <- Artifacts.read_demo(scope, demo_target, read_opts),
+         :ok <- validate_demo_worktree_stability(task, role_run) do
+      capture_and_advance_demo(scope, task, role_run, demo_target, manifest, opts, criteria)
+    else
+      {:error, reason} ->
+        err_msg = if is_binary(reason), do: reason, else: inspect(reason)
+
+        attrs = %{
+          stage_state: :failed,
+          error: err_msg,
+          retry_after: nil
+        }
+
+        {attrs, role_run}
+    end
   end
 
   defp handle_clean_exit(%Task{} = _task, role_run, _scratch_dir, _opts) do
@@ -648,5 +687,152 @@ defmodule Rail.Pipeline.Actions.SettleRun do
 
   defp direction_present?(directions, key) when is_binary(key) do
     is_list(directions) and Enum.any?(directions, fn d -> Map.get(d, :key) == key end)
+  end
+
+  defp maybe_trigger_demo_freshness(%Task{} = task, opts) do
+    {:ok, refreshed} = Rail.Pipeline.refresh_demo_freshness(task, opts)
+    refreshed
+  end
+
+  defp validate_demo_worktree_stability(%Task{worktree_path: path}, role_run) when is_binary(path) and path != "" do
+    if File.dir?(path) and
+         (role_run.stage_fingerprint_head_sha != nil or
+            role_run.stage_fingerprint_dirty_digest != nil) do
+      case Git.branch_fingerprint(path, ignore_axis: true) do
+        %{head_sha: current_sha, dirty_digest: current_digest} ->
+          cond do
+            role_run.stage_fingerprint_head_sha != nil and
+                current_sha != role_run.stage_fingerprint_head_sha ->
+              {:error, "The worktree moved during the demo run."}
+
+            role_run.stage_fingerprint_dirty_digest != nil and
+                current_digest != role_run.stage_fingerprint_dirty_digest ->
+              {:error, "Worktree code outside .axis/ was modified during recording."}
+
+            true ->
+              :ok
+          end
+
+        _fingerprint_nil ->
+          :ok
+      end
+    else
+      :ok
+    end
+  end
+
+  defp validate_demo_worktree_stability(_task, _role_run), do: :ok
+
+  defp capture_and_advance_demo(scope, task, role_run, demo_target, manifest, opts, criteria) do
+    capture_opts = build_demo_capture_opts(task, role_run, opts, criteria)
+
+    case manifest.outcome || manifest[:outcome] do
+      outcome when outcome in ["recorded", "declined"] ->
+        advance_captured_demo(scope, task, role_run, demo_target, capture_opts)
+
+      "failed" ->
+        advance_failed_demo(scope, task, role_run, demo_target, manifest, capture_opts)
+    end
+  end
+
+  defp build_demo_capture_opts(task, role_run, opts, criteria) do
+    {head_sha, dirty_digest} = resolve_demo_fingerprint(task, role_run)
+    issue = Keyword.get(opts, :issue) || (task.issue_id && Repo.get(Rail.Issues.Schemas.Issue, task.issue_id))
+    owner_user = Keyword.get(opts, :owner_user) || (task.owner_user_id && Repo.get(User, task.owner_user_id))
+
+    opts
+    |> Keyword.take([:scratch_dir, :req_options])
+    |> Keyword.put(:criteria, criteria)
+    |> Keyword.put(:head_sha, head_sha)
+    |> Keyword.put(:commit, head_sha)
+    |> Keyword.put(:dirty_digest, dirty_digest)
+    |> Keyword.put(:issue, issue)
+    |> Keyword.put(:owner_user, owner_user)
+  end
+
+  defp resolve_demo_fingerprint(%Task{worktree_path: path}, role_run) when is_binary(path) and path != "" do
+    if File.dir?(path) do
+      case Git.branch_fingerprint(path, ignore_axis: true) do
+        %{head_sha: sha, dirty_digest: digest} -> {sha, digest}
+        _fingerprint_nil -> {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
+      end
+    else
+      {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
+    end
+  end
+
+  defp resolve_demo_fingerprint(_task, role_run) do
+    {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
+  end
+
+  defp advance_captured_demo(scope, task, role_run, demo_target, capture_opts) do
+    case Artifacts.capture_demo(scope, task, demo_target, capture_opts) do
+      {:ok, _demo} ->
+        {:ok, updated_role_run} =
+          role_run
+          |> RoleRun.changeset(%{auto_retries: 0})
+          |> Repo.update()
+
+        attrs = %{
+          stage: :ready_to_merge,
+          stage_state: :awaiting_approval,
+          retry_after: nil,
+          error: nil
+        }
+
+        {attrs, updated_role_run}
+
+      {:error, reason} ->
+        err_msg = if is_binary(reason), do: reason, else: inspect(reason)
+
+        attrs = %{
+          stage_state: :failed,
+          error: err_msg,
+          retry_after: nil
+        }
+
+        {attrs, role_run}
+    end
+  end
+
+  defp advance_failed_demo(scope, task, role_run, demo_target, manifest, capture_opts) do
+    _capture_result = Artifacts.capture_demo(scope, task, demo_target, capture_opts)
+
+    {:ok, updated_role_run} =
+      role_run
+      |> RoleRun.changeset(%{auto_retries: 0})
+      |> Repo.update()
+
+    attrs = %{
+      stage: :demo,
+      stage_state: :failed,
+      error: manifest.note || "Demo recording failed.",
+      retry_after: nil
+    }
+
+    {attrs, updated_role_run}
+  end
+
+  defp resolve_demo_target(task, scratch_dir, opts) do
+    cond do
+      is_binary(opts[:scratch_dir]) ->
+        opts[:scratch_dir]
+
+      is_binary(opts[:scratch_path]) ->
+        opts[:scratch_path]
+
+      File.exists?(Path.join([scratch_dir, "demo", "manifest.json"])) or
+          File.exists?(Path.join([scratch_dir, "manifest.json"])) ->
+        scratch_dir
+
+      is_binary(task.worktree_path) and
+          (File.exists?(Path.join([task.worktree_path, ".axis", "demo", "manifest.json"])) or
+             File.exists?(Path.join([task.worktree_path, "demo", "manifest.json"])) or
+             File.exists?(Path.join([task.worktree_path, "manifest.json"]))) ->
+        task.worktree_path
+
+      true ->
+        scratch_dir
+    end
   end
 end

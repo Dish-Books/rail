@@ -158,4 +158,31 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     assert {:error, {:github_api_error, 404, _body}} =
              Pipeline.refresh_mergeability(task, token: "tok_test")
   end
+
+  test "checks demo staleness and re-queues ready_to_merge task when commit drifted" do
+    project = Repo.insert!(%{Project.factory() | github_repo: "testorg/testrepo"})
+    worktree = create_temp_git_repo()
+
+    task =
+      Repo.insert!(%{
+        Task.factory()
+        | project_id: project.id,
+          stage: :ready_to_merge,
+          stage_state: :awaiting_approval,
+          pr_number: 99,
+          worktree_path: worktree
+      })
+
+    create_test_demo(%{
+      task_id: task.id,
+      version: 1,
+      stale: false,
+      head_sha: "old_head_sha"
+    })
+
+    mock_pull_request_state_success("testorg/testrepo", 99, mergeable: true, draft: false)
+
+    assert {:ok, %Task{stage: :demo, stage_state: :queued, mergeability: :mergeable}} =
+             Pipeline.refresh_mergeability(task, token: "tok_test")
+  end
 end

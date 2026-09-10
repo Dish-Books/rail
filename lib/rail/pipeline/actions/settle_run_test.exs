@@ -3,7 +3,9 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
   import RailTest.Mocks.GitHub
 
+  alias Rail.Artifacts.Schemas.Demo
   alias Rail.Domain.TaskUsage
+  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Question
@@ -128,7 +130,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     project = create_test_project()
 
     %Task{id: task_id} =
-      task = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running})
+      task = create_test_task(%{project_id: project.id, stage: :ready_to_merge, stage_state: :running})
 
     role_run = create_test_role_run(%{task_id: task_id, status: :running})
 
@@ -221,7 +223,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     project = create_test_project()
 
     %Task{id: task_id} =
-      task = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running})
+      task = create_test_task(%{project_id: project.id, stage: :ready_to_merge, stage_state: :running})
 
     role_run =
       create_test_role_run(%{
@@ -1073,6 +1075,456 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
                  scratch_dir: worktree_dir,
                  url_probe: fn _uri -> true end
                )
+    end
+  end
+
+  describe "settle_run at demo stage" do
+    test "demo run settlement fails when manifest is missing" do
+      project = create_test_project()
+      task = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage: :demo, stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+
+      assert err =~ "Demo manifest not found at"
+    end
+
+    test "demo run settlement fails when worktree moved during recording" do
+      project = create_test_project()
+      worktree = create_temp_git_repo()
+      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree, ignore_axis: true)
+
+      demo_dir = Path.join([worktree, ".axis", "demo"])
+      File.mkdir_p!(demo_dir)
+      File.write!(Path.join(demo_dir, "frame-1.png"), "frame")
+
+      File.write!(
+        Path.join(demo_dir, "manifest.json"),
+        Jason.encode!(%{
+          "version" => 1,
+          "outcome" => "recorded",
+          "segments" => [
+            %{
+              "criterionIndex" => 1,
+              "criterion" => "AC 1",
+              "outcome" => "recorded",
+              "frames" => [%{"path" => "frame-1.png", "holdMs" => 1000, "caption" => "Step 1"}]
+            }
+          ]
+        })
+      )
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: worktree
+        })
+
+      role_run =
+        create_test_role_run(%{
+          task_id: task.id,
+          status: :running,
+          stage_fingerprint_head_sha: "prior_sha_before_move_#{original_sha}",
+          stage_fingerprint_dirty_digest: original_digest
+        })
+
+      expected_err = "The worktree moved during the demo run."
+
+      assert {:ok, %Task{stage_state: :failed, error: ^expected_err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+    end
+
+    test "demo run settlement fails when worktree code outside .axis/ was modified during recording" do
+      project = create_test_project()
+      worktree = create_temp_git_repo()
+      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree, ignore_axis: true)
+
+      demo_dir = Path.join([worktree, ".axis", "demo"])
+      File.mkdir_p!(demo_dir)
+      File.write!(Path.join(demo_dir, "frame-1.png"), "frame")
+
+      File.write!(
+        Path.join(demo_dir, "manifest.json"),
+        Jason.encode!(%{
+          "version" => 1,
+          "outcome" => "recorded",
+          "segments" => [
+            %{
+              "criterionIndex" => 1,
+              "criterion" => "AC 1",
+              "outcome" => "recorded",
+              "frames" => [%{"path" => "frame-1.png", "holdMs" => 1000, "caption" => "Step 1"}]
+            }
+          ]
+        })
+      )
+
+      File.write!(Path.join(worktree, "uncommitted.txt"), "dirtied worktree")
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: worktree
+        })
+
+      role_run =
+        create_test_role_run(%{
+          task_id: task.id,
+          status: :running,
+          stage_fingerprint_head_sha: original_sha,
+          stage_fingerprint_dirty_digest: original_digest
+        })
+
+      expected_err = "Worktree code outside .axis/ was modified during recording."
+
+      assert {:ok, %Task{stage_state: :failed, error: ^expected_err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+    end
+
+    test "demo run settlement succeeds when untracked frames exist in .axis/demo/" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree = create_temp_git_repo()
+      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree, ignore_axis: true)
+
+      demo_dir = Path.join([worktree, ".axis", "demo"])
+      File.mkdir_p!(demo_dir)
+      File.write!(Path.join(demo_dir, "frame-1.png"), "frame")
+
+      File.write!(
+        Path.join(demo_dir, "manifest.json"),
+        Jason.encode!(%{
+          "version" => 1,
+          "outcome" => "recorded",
+          "segments" => [
+            %{
+              "criterionIndex" => 1,
+              "criterion" => "AC 1",
+              "outcome" => "recorded",
+              "frames" => [%{"path" => "frame-1.png", "holdMs" => 1000, "caption" => "Step 1"}]
+            }
+          ]
+        })
+      )
+
+      mock_demo_uploads(1)
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: worktree
+        })
+
+      role_run =
+        create_test_role_run(%{
+          task_id: task.id,
+          status: :running,
+          stage_fingerprint_head_sha: original_sha,
+          stage_fingerprint_dirty_digest: original_digest
+        })
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil},
+              %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+
+      assert %Demo{version: 1, outcome: "recorded", stale: false} =
+               Repo.one(from d in Demo, where: d.task_id == ^task.id)
+    end
+
+    test "recorded outcome increments version, captures demo, and advances to ready_to_merge" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_demo_dir(version: 2)
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: worktree_dir
+        })
+
+      create_test_demo(%{task_id: task.id, version: 1, outcome: "recorded", stale: true})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+      mock_demo_uploads(1)
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil},
+              %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+
+      demos = Repo.all(from d in Demo, where: d.task_id == ^task.id, order_by: [asc: d.version])
+      assert length(demos) == 2
+      latest = List.last(demos)
+      assert latest.version == 2
+      assert latest.outcome == "recorded"
+      refute latest.stale
+    end
+
+    test "declined outcome records demo with note and advances to ready_to_merge" do
+      project = create_test_project()
+      worktree_dir = create_test_demo_dir(version: 1, outcome: "declined", note: "Not suitable for demo recording")
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: worktree_dir
+        })
+
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil},
+              %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+
+      assert %Demo{version: 1, outcome: "declined", note: "Not suitable for demo recording"} =
+               Repo.one(from d in Demo, where: d.task_id == ^task.id)
+    end
+
+    test "failed outcome records failure and stops at demo failed" do
+      project = create_test_project()
+      worktree_dir = create_test_demo_dir(version: 1, outcome: "failed", note: "UI timed out during demo recording")
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: worktree_dir
+        })
+
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage: :demo, stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+
+      assert err =~ "UI timed out during demo recording"
+
+      assert %Demo{version: 1, outcome: "failed", note: "UI timed out during demo recording"} =
+               Repo.one(from d in Demo, where: d.task_id == ^task.id)
+    end
+
+    test "demo run non-zero exit code fails stage" do
+      project = create_test_project()
+      task = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running, auto_retries: 0})
+
+      assert {:ok, %Task{stage: :demo, stage_state: :failed, error: "Demo process crashed"}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 1, error: "Demo process crashed"})
+    end
+
+    test "supports settling demo with scratch_path and scratch_dir options" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      scratch_1 = create_test_demo_dir(version: 1)
+      scratch_2 = create_test_demo_dir(version: 2)
+
+      task1 = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running, worktree_path: nil})
+      role_run1 = create_test_role_run(%{task_id: task1.id, status: :running})
+      mock_demo_uploads(1)
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task1, role_run1, %{exit_code: 0}, scratch_path: scratch_1)
+
+      task2 = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running, worktree_path: nil})
+      role_run2 = create_test_role_run(%{task_id: task2.id, status: :running})
+      mock_demo_uploads(1)
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task2, role_run2, %{exit_code: 0}, scratch_dir: scratch_2)
+    end
+
+    test "fails when manifest format is invalid during capture" do
+      project = create_test_project()
+      scratch_dir = create_temp_scratch_dir()
+      demo_dir = Path.join([scratch_dir, ".axis", "demo"])
+      File.mkdir_p!(demo_dir)
+
+      File.write!(
+        Path.join(demo_dir, "manifest.json"),
+        Jason.encode!(%{"version" => 1, "outcome" => "recorded"})
+      )
+
+      task = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running, worktree_path: nil})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, scratch_dir: scratch_dir)
+
+      assert err =~ "segments"
+    end
+
+    test "fails when capture_demo fails during demo settlement" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      scratch_dir = create_temp_scratch_dir()
+      demo_dir = Path.join([scratch_dir, ".axis", "demo"])
+      File.mkdir_p!(demo_dir)
+      frame = Path.join(demo_dir, "frame-1.png")
+      File.write!(frame, "frame")
+
+      File.write!(
+        Path.join(demo_dir, "manifest.json"),
+        Jason.encode!(%{
+          "version" => 1,
+          "outcome" => "recorded",
+          "segments" => [
+            %{
+              "criterionIndex" => 1,
+              "criterion" => "AC 1",
+              "outcome" => "recorded",
+              "frames" => [%{"path" => "frame-1.png", "holdMs" => 1000, "caption" => "Step 1"}]
+            }
+          ]
+        })
+      )
+
+      RailTest.Mocks.Linear.mock_file_upload_success(put_status: 500)
+
+      task = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running, worktree_path: nil})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, scratch_dir: scratch_dir)
+
+      assert byte_size(err) > 0
+    end
+
+    test "resolves criteria from task description and handles nonexistent worktree path" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      scratch_dir = create_test_demo_dir(version: 1, criterion: "First criterion")
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          description: "Feature details\n\n## Acceptance criteria\n- First criterion",
+          worktree_path: "/tmp/nonexistent_wt_#{System.unique_integer([:positive])}"
+        })
+
+      role_run =
+        create_test_role_run(%{
+          task_id: task.id,
+          status: :running,
+          stage_fingerprint_head_sha: "head_fallback",
+          stage_fingerprint_dirty_digest: "digest_fallback"
+        })
+
+      mock_demo_uploads(1)
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, scratch_dir: scratch_dir)
+    end
+
+    test "handles non-git worktree directory gracefully during demo settlement" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      scratch_dir = create_temp_scratch_dir()
+      demo_dir = Path.join([scratch_dir, ".axis", "demo"])
+      File.mkdir_p!(demo_dir)
+      frame = Path.join(demo_dir, "frame-1.png")
+      File.write!(frame, "frame")
+
+      File.write!(
+        Path.join(demo_dir, "manifest.json"),
+        Jason.encode!(%{
+          "version" => 1,
+          "outcome" => "recorded",
+          "segments" => [
+            %{
+              "criterionIndex" => 1,
+              "criterion" => "AC 1",
+              "outcome" => "recorded",
+              "frames" => [%{"path" => "frame-1.png", "holdMs" => 1000, "caption" => "Step 1"}]
+            }
+          ]
+        })
+      )
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: scratch_dir
+        })
+
+      role_run =
+        create_test_role_run(%{
+          task_id: task.id,
+          status: :running,
+          stage_fingerprint_head_sha: "some_sha",
+          stage_fingerprint_dirty_digest: "some_digest"
+        })
+
+      mock_demo_uploads(1)
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+    end
+
+    test "resolves demo target from scratch_dir when task has no worktree_path" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      task = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running, worktree_path: nil})
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+
+      scratch_dir = Path.join([System.tmp_dir!(), "axis", task.project_id, "scratch", task.id])
+      demo_dir = Path.join([scratch_dir, "demo"])
+      File.mkdir_p!(demo_dir)
+      frame = Path.join(demo_dir, "frame-1.png")
+      File.write!(frame, "frame")
+
+      File.write!(
+        Path.join(demo_dir, "manifest.json"),
+        Jason.encode!(%{
+          "version" => 1,
+          "outcome" => "recorded",
+          "segments" => [
+            %{
+              "criterionIndex" => 1,
+              "criterion" => "AC 1",
+              "outcome" => "recorded",
+              "frames" => [%{"path" => "frame-1.png", "holdMs" => 1000, "caption" => "Step 1"}]
+            }
+          ]
+        })
+      )
+
+      mock_demo_uploads(1)
+
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0})
+    end
+
+    test "supports explicit criteria in opts when settling demo" do
+      project = create_test_project()
+      create_test_linear_workspace(%{project_id: project.id})
+      worktree_dir = create_test_demo_dir(version: 1, criterion: "Explicit criterion")
+
+      task =
+        create_test_task(%{
+          project_id: project.id,
+          stage: :demo,
+          stage_state: :running,
+          worktree_path: worktree_dir
+        })
+
+      role_run = create_test_role_run(%{task_id: task.id, status: :running})
+      mock_demo_uploads(1)
+
+      assert {:ok, %Task{stage: :ready_to_merge}, %RoleRun{status: :finished}} =
+               Pipeline.settle_run(task, role_run, %{exit_code: 0}, criteria: ["Explicit criterion"])
     end
   end
 end

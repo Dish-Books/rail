@@ -3,6 +3,7 @@ defmodule RailTest.PipelineHelpers do
 
   import Ecto.Query
 
+  alias Rail.Artifacts.Schemas.Demo
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Plan
@@ -10,6 +11,7 @@ defmodule RailTest.PipelineHelpers do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Repo
+  alias RailTest.Mocks.Linear
 
   def create_test_project(attrs \\ %{}) do
     RailTest.RolesHelpers.create_test_project(attrs)
@@ -282,10 +284,111 @@ defmodule RailTest.PipelineHelpers do
 
   def mock_design_uploads(count \\ 1) do
     Enum.each(1..count, fn i ->
-      RailTest.Mocks.Linear.mock_file_upload_success(
+      Linear.mock_file_upload_success(
         upload_url: "https://api.linear.app/upload/dsg_#{i}",
         asset_url: "https://uploads.linear.app/dsg_#{i}/dir-#{i}.png",
         asset_id: "ast_dsg_#{i}"
+      )
+    end)
+  end
+
+  def create_test_demo(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    id = System.unique_integer([:positive])
+    task_id = attrs[:task_id] || attrs["task_id"] || create_test_task().id
+
+    default_attrs = %{
+      task_id: task_id,
+      version: 1,
+      recorded_at: DateTime.utc_now(),
+      commit: "commit_#{id}",
+      head_sha: "head_#{id}",
+      dirty_digest: "digest_#{id}",
+      outcome: "recorded",
+      note: nil,
+      stale: false,
+      segments: [
+        %{
+          criterion_index: 1,
+          criterion: "Feature works as expected",
+          outcome: :recorded,
+          note: nil,
+          frames: [
+            %{
+              path: "frame_1.png",
+              resolved_path: "/tmp/frame_1.png",
+              url: "https://uploads.linear.app/demo_#{id}/frame_1.png",
+              linear_asset_id: "ast_demo_#{id}",
+              hold_ms: 1000,
+              caption: "Initial state",
+              size: 1024
+            }
+          ]
+        }
+      ]
+    }
+
+    merged = Map.merge(default_attrs, attrs)
+
+    %Demo{}
+    |> Demo.changeset(merged)
+    |> Repo.insert!()
+  end
+
+  def create_test_demo_dir(opts \\ []) do
+    worktree_dir = create_temp_scratch_dir()
+    sub_path = Keyword.get(opts, :sub_path, [".axis", "demo"])
+    demo_dir = Path.join([worktree_dir | List.wrap(sub_path)])
+    File.mkdir_p!(demo_dir)
+
+    version = Keyword.get(opts, :version, 1)
+    outcome = Keyword.get(opts, :outcome, "recorded")
+    note = Keyword.get(opts, :note)
+
+    frame_1 = Path.join(demo_dir, "frame-1.png")
+    File.write!(frame_1, "fake demo frame content 1")
+
+    default_segments = [
+      %{
+        "criterionIndex" => 1,
+        "criterion" => Keyword.get(opts, :criterion, "Feature works as expected"),
+        "outcome" => "recorded",
+        "frames" => [
+          %{
+            "path" => Path.relative_to(frame_1, demo_dir),
+            "holdMs" => 1000,
+            "caption" => "Step 1"
+          }
+        ]
+      }
+    ]
+
+    segments =
+      case outcome do
+        "recorded" -> Keyword.get(opts, :segments, default_segments)
+        _declined_or_failed -> Keyword.get(opts, :segments, [])
+      end
+
+    manifest_map = %{
+      "version" => version,
+      "outcome" => outcome,
+      "note" => note,
+      "segments" => segments
+    }
+
+    manifest_content =
+      Keyword.get(opts, :raw_manifest) || Jason.encode!(manifest_map)
+
+    File.write!(Path.join(demo_dir, "manifest.json"), manifest_content)
+    worktree_dir
+  end
+
+  def mock_demo_uploads(count \\ 1) do
+    Enum.each(1..count, fn i ->
+      Linear.mock_file_upload_success(
+        upload_url: "https://api.linear.app/upload/dmo_#{i}",
+        asset_url: "https://uploads.linear.app/dmo_#{i}/frame-#{i}.png",
+        asset_id: "ast_dmo_#{i}"
       )
     end)
   end

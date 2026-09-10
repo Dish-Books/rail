@@ -122,4 +122,75 @@ defmodule Rail.PipelineTest do
     # apply_design_manifest with 3 args
     assert {:error, _reason} = Pipeline.apply_design_manifest(scope, task, [])
   end
+
+  test "delegates demo stage actions and helpers" do
+    project = create_test_project()
+    _demo_role = create_test_role(%{project_id: project.id, stage: :demo})
+    scope = Scope.for_system()
+    worktree = create_temp_scratch_dir()
+
+    task =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :ready_to_merge,
+        stage_state: :awaiting_approval,
+        worktree_path: worktree
+      })
+
+    _demo =
+      create_test_demo(%{
+        task_id: task.id,
+        version: 1,
+        outcome: "recorded",
+        stale: false
+      })
+
+    # can_rerecord_demo?
+    assert Pipeline.can_rerecord_demo?(task)
+
+    # rerecord_demo with task
+    assert {:ok, %Task{stage: :demo, stage_state: :queued}} =
+             Pipeline.rerecord_demo(task)
+
+    # rerecord_demo with 3 args (scope, id, opts)
+    task2 =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :ready_to_merge,
+        stage_state: :awaiting_approval,
+        worktree_path: worktree
+      })
+
+    create_test_demo(%{task_id: task2.id, version: 1, outcome: "recorded"})
+
+    assert {:ok, %Task{stage: :demo, stage_state: :queued}} =
+             Pipeline.rerecord_demo(scope, task2.id, [])
+
+    # decline_demo with task
+    task3 =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :demo,
+        stage_state: :queued
+      })
+
+    assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}} =
+             Pipeline.decline_demo(task3, "Skipping demo recording")
+
+    # decline_demo with 3 args (scope, id, opts)
+    task4 =
+      create_test_task(%{
+        project_id: project.id,
+        stage: :demo,
+        stage_state: :queued
+      })
+
+    assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}} =
+             Pipeline.decline_demo(scope, task4.id, reason: "3 arg decline")
+
+    # refresh_demo_freshness arities
+    assert {:ok, %Task{}} = Pipeline.refresh_demo_freshness(task)
+    assert {:ok, %Task{}} = Pipeline.refresh_demo_freshness(task, [])
+    assert {:ok, %Task{}} = Pipeline.refresh_demo_freshness(scope, task.id, [])
+  end
 end

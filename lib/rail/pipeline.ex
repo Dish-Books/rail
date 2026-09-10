@@ -48,6 +48,19 @@ defmodule Rail.Pipeline do
   defdelegate design_manifest_stamp(target), to: Actions.RecheckDesign
   defdelegate apply_design_manifest(scope, task, opts \\ []), to: Actions.RecheckDesign
 
+  defdelegate decline_demo(scope_or_task, task_or_note, note), to: Actions.DeclineDemo
+  defdelegate decline_demo(scope_or_task, task_or_note), to: Actions.DeclineDemo
+  defdelegate decline_demo(task_or_id), to: Actions.DeclineDemo
+
+  defdelegate rerecord_demo(scope_or_task, task_or_opts, opts), to: Actions.RerecordDemo
+  defdelegate rerecord_demo(scope_or_task, task_or_opts), to: Actions.RerecordDemo
+  defdelegate rerecord_demo(task_or_id), to: Actions.RerecordDemo
+  defdelegate can_rerecord_demo?(task), to: Actions.RerecordDemo
+
+  defdelegate refresh_demo_freshness(scope_or_task, task_or_opts, opts), to: Actions.RefreshDemoFreshness
+  defdelegate refresh_demo_freshness(scope_or_task, task_or_opts), to: Actions.RefreshDemoFreshness
+  defdelegate refresh_demo_freshness(task_or_id), to: Actions.RefreshDemoFreshness
+
   defdelegate send_back_to_engineer(scope, task_or_id, opts), to: Actions.SendBackToEngineer
   defdelegate send_back_to_engineer(scope_or_task, task_or_opts), to: Actions.SendBackToEngineer
   defdelegate send_back_to_engineer(task_or_id), to: Actions.SendBackToEngineer

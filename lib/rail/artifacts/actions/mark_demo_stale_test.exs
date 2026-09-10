@@ -9,6 +9,7 @@ defmodule Rail.Artifacts.Actions.MarkDemoStaleTest do
     test "rejects unauthorized scope" do
       scope = %Scope{user: nil, system: false}
       assert {:error, :not_authorized} = Artifacts.mark_demo_stale(scope, "tsk_1")
+      assert {:error, :not_authorized} = Artifacts.mark_demo_stale(:bad_scope, "tsk_1")
     end
 
     test "returns :not_found when task has no demos" do

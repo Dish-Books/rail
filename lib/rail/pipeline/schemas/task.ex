@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Schemas.Task do
 
   import Ecto.Query
 
+  alias Rail.Artifacts.Schemas.Demo
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Domain.Enums.Mergeability
   alias Rail.Domain.Enums.TaskStage
@@ -51,6 +52,7 @@ defmodule Rail.Pipeline.Schemas.Task do
     has_many :plans, Plan
     has_many :role_runs, RoleRun
     has_many :designs, Design
+    has_many :demos, Demo
 
     timestamps()
   end

@@ -49,6 +49,16 @@ defmodule Rail.Artifacts.Actions.ReadDemoTest do
       assert {:ok, %{outcome: "recorded"}} = Artifacts.read_demo(scope, "tsk_1", scratch_dir: dir)
     end
 
+    test "reads demo from .axis/demo directory and task struct with worktree_path", %{dir: dir} do
+      scope = Scope.for_system()
+      axis_demo_dir = Path.join([dir, ".axis", "demo"])
+      File.mkdir_p!(axis_demo_dir)
+      ArtifactHelpers.write_demo_manifest(axis_demo_dir)
+
+      assert {:ok, %{outcome: "recorded"}} = Artifacts.read_demo(scope, dir)
+      assert {:ok, %{outcome: "recorded"}} = Artifacts.read_demo(scope, %{id: "tsk_2", worktree_path: dir})
+    end
+
     test "returns validation failure when manifest is invalid", %{demo_dir: demo_dir} do
       scope = Scope.for_system()
       File.write!(Path.join(demo_dir, "manifest.json"), "{bad_json")
@@ -61,6 +71,10 @@ defmodule Rail.Artifacts.Actions.ReadDemoTest do
       scope = Scope.for_system()
       assert {:error, msg} = Artifacts.read_demo(scope, "/nonexistent/demo/dir")
       assert msg =~ "Demo manifest not found"
+    end
+
+    test "rejects non-scope caller", %{demo_dir: demo_dir} do
+      assert {:error, :not_authorized} = Artifacts.read_demo(:not_a_scope, demo_dir, [])
     end
   end
 end
