@@ -97,7 +97,7 @@ defmodule Rail.Runs.SpawnerTest do
       Enum.reduce_while(1..200, "", fn _i, _acc ->
         content = if File.exists?(stream_path), do: File.read!(stream_path), else: ""
 
-        if content =~ "gh_test_123" do
+        if content =~ "gh_test_123" and content =~ scratch_dir and content =~ stream_path do
           {:halt, content}
         else
           Process.sleep(10)
