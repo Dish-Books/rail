@@ -47,21 +47,6 @@ defmodule Rail.Domain.Embeds.QaRow do
     |> cast_embed(:artifacts, required: false)
   end
 
-  @doc "Builds a valid fixture struct for testing."
-  def factory do
-    %__MODULE__{
-      id: "check_1",
-      check: "Login flow succeeds",
-      result: :pass,
-      severity: :blocker,
-      caused_by_change: true,
-      command: "mix test",
-      exit_code: 0,
-      note: nil,
-      artifacts: [QaArtifact.factory()]
-    }
-  end
-
   def results, do: @results
   def severities, do: @severities
 end

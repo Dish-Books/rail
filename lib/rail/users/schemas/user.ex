@@ -65,18 +65,4 @@ defmodule Rail.Users.Schemas.User do
       linear_token_expires_at: nil
     })
   end
-
-  def factory do
-    id = System.unique_integer([:positive])
-
-    %__MODULE__{
-      github_id: "#{id}",
-      login: "user#{id}",
-      name: "User #{id}",
-      email: "user#{id}@example.com",
-      avatar_url: "https://avatars.githubusercontent.com/u/#{id}",
-      admin: false,
-      github_token: "gho_token_#{id}"
-    }
-  end
 end

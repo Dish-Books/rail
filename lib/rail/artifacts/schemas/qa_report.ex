@@ -28,17 +28,4 @@ defmodule Rail.Artifacts.Schemas.QaReport do
     |> validate_required(@required_fields)
     |> cast_embed(:rows)
   end
-
-  @doc "Builds a valid fixture struct for testing."
-  def factory do
-    id = System.unique_integer([:positive])
-
-    %__MODULE__{
-      task_id: "tsk_#{id}",
-      role_run_id: "rr_#{id}",
-      commit: "commit_#{id}",
-      session: %{"url" => "http://localhost:4000", "port" => 4000},
-      rows: [QaRow.factory()]
-    }
-  end
 end

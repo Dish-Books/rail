@@ -5,11 +5,11 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
   alias Rail.Artifacts.Schemas.Demo
   alias Rail.Domain.Embeds.DemoFrame
   alias Rail.Domain.Embeds.DemoSegment
-  alias Rail.Issues.Schemas.Issue
-  alias Rail.Projects.Schemas.LinearWorkspace
-  alias Rail.Projects.Schemas.Project
+  alias Rail.Issues
+  alias Rail.Pipeline
+  alias Rail.Projects
   alias Rail.Scope
-  alias Rail.Users.Schemas.User
+  alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
   alias RailTest.Support.ArtifactHelpers
 
@@ -18,9 +18,40 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
   setup do
     dir = Path.join(@tmp_base, "demo_#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
-    ws = Repo.insert!(LinearWorkspace.factory())
-    project = Repo.insert!(%{Project.factory() | linear_workspace_id: ws.id})
-    issue = Repo.insert!(%{Issue.factory() | project_id: project.id, external_id: "lin_demo_iss"})
+
+    {:ok, ws} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Capture Demo Workspace 12203",
+        external_id: "lin_ws_capture_demo_12203",
+        token: "lin_api_token_capture_demo_12203",
+        webhook_secret: "whsec_capture_demo_12203"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Capture Demo Project 12204",
+        github_repo: "org/capture-demo-12204",
+        github_installation_id: 12_204,
+        linear_team_id: "team_capture_demo_12204",
+        linear_team_key: "P12204",
+        clone_path: "/tmp/repos/capture-demo-12204",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws.id
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_demo_iss",
+      "identifier" => "ISS-12205",
+      "title" => "Capture Demo Issue 12205"
+    })
+
+    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Capture Demo Issue 12205")
 
     on_exit(fn -> File.rm_rf(dir) end)
     {:ok, dir: dir, project: project, issue: issue, ws: ws}
@@ -38,7 +69,15 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
       project: project
     } do
       scope = Scope.for_system()
-      owner = Repo.insert!(User.factory())
+
+      {:ok, owner} =
+        Users.register_oauth_user(%{
+          github_id: "gh_capture_demo_12206",
+          login: "capture_demo_user_12206",
+          email: "capture_demo_user_12206@example.com",
+          github_token: "gho_token_12206"
+        })
+
       ArtifactHelpers.write_demo_manifest(dir)
 
       LinearMock.mock_file_upload_success(
@@ -237,11 +276,29 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
       issue: issue
     } do
       scope = Scope.for_system()
-      owner = Repo.insert!(User.factory())
 
-      task =
-        create_test_task(%{
-          project_id: project.id,
+      {:ok, owner} =
+        Users.register_oauth_user(%{
+          github_id: "gh_capture_demo_12207",
+          login: "capture_demo_user_12207",
+          email: "capture_demo_user_12207@example.com",
+          github_token: "gho_token_12207"
+        })
+
+      LinearMock.mock_create_issue_success(%{
+        "id" => "lin_task_capture_demo_12202",
+        "identifier" => "TSK-12202",
+        "title" => "Task 12202"
+      })
+
+      {:ok, issue_12202} = Issues.capture_issue(system_scope(), project, "Task 12202")
+
+      LinearMock.mock_update_issue_success(%{"id" => "lin_task_capture_demo_12202"})
+
+      {:ok, task} = Pipeline.bring_local(system_scope(), issue_12202)
+
+      {:ok, task} =
+        Pipeline.update_task(system_scope(), task.id, %{
           issue_id: issue.id,
           owner_user_id: owner.id
         })

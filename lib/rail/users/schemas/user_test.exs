@@ -4,14 +4,6 @@ defmodule Rail.Users.Schemas.UserTest do
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
-  test "factory builds a valid user struct" do
-    user = User.factory()
-    assert byte_size(user.github_id) > 0
-    assert byte_size(user.login) > 0
-    assert byte_size(user.email) > 0
-    assert user.admin == false
-  end
-
   test "oauth_changeset validates required fields" do
     changeset = User.oauth_changeset(%User{}, %{})
 

@@ -46,15 +46,6 @@ defmodule Rail.Domain.StageVerdict do
     |> validate_required([:verdict])
   end
 
-  @doc "Builds a valid StageVerdict fixture struct for testing."
-  def factory do
-    %__MODULE__{
-      verdict: :passed,
-      status: :passed,
-      explanation: nil
-    }
-  end
-
   @doc """
   Reads the verdict out of a role's final stdout or report text.
 

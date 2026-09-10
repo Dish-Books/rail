@@ -1,5 +1,5 @@
 defmodule Rail.ToolEnvTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
   alias Rail.ToolEnv
 

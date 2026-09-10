@@ -1,20 +1,110 @@
 defmodule Rail.Pipeline.TaskActionRunnerTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
+  alias Rail.Issues
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.TaskActionRunner
-  alias Rail.Projects.Schemas.Project
+  alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Roles
+  alias RailTest.Mocks.Linear, as: LinearMock
 
-  test "tracks running action, clears error on start, enforces single-flight, and finishes" do
+  setup do
+    scope = system_scope()
+
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Task Runner Workspace",
+        external_id: "lin_ws_task_runner",
+        token: "lin_api_token_task_runner",
+        webhook_secret: "whsec_task_runner"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Task Runner Project 10301",
+        github_repo: "org/task-runner-10301",
+        github_installation_id: 10_301,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_task_runner_10301",
+        linear_team_key: "P10301",
+        clone_path: "/tmp/repos/task-runner-10301",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    roles =
+      Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
+        {:ok, role} =
+          Roles.create_role(scope, project, %{
+            stage: stage,
+            name: "#{stage} role",
+            model: "claude-3-7-sonnet",
+            system_prompt: "You are the #{stage} agent."
+          })
+
+        {stage, role}
+      end)
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_runner_1",
+      "identifier" => "TAR-1",
+      "title" => "Task Runner Issue"
+    })
+
+    {:ok, issue} = Issues.capture_issue(scope, project, "Task Runner Issue")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_runner_1"})
+
+    {:ok, task} = Pipeline.bring_local(scope, issue)
+
+    %{project: project, issue: issue, task: task, roles: roles}
+  end
+
+  test "tracks running action, clears error on start, enforces single-flight, and finishes", %{
+    project: _project,
+    task: _task
+  } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-    project = Repo.insert!(Project.factory())
 
-    %Task{id: task_id} =
-      Repo.insert!(%{
-        Task.factory()
-        | project_id: project.id,
-          error: "Existing error to be cleared"
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Task Runner Project 10302",
+        github_repo: "org/task-runner-10302",
+        github_installation_id: 10_302,
+        linear_team_id: "team_task_runner_10302",
+        linear_team_key: "P10302",
+        clone_path: "/tmp/repos/task-runner-10302",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_task_runner_10303",
+      "identifier" => "TSK-10303",
+      "title" => "Task 10303"
+    })
+
+    {:ok, issue_10303} = Issues.capture_issue(system_scope(), project, "Task 10303")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_runner_10303"})
+
+    {:ok, %Task{id: task_id}} = Pipeline.bring_local(system_scope(), issue_10303)
+
+    {:ok, %Task{id: task_id}} =
+      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+        error: "Existing error to be cleared"
       })
 
     refute TaskActionRunner.is_busy?(task_id)
@@ -40,9 +130,40 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :action_finished, kind: :merge}}
   end
 
-  test "finish_action with error or timeout writes error message to task" do
-    project = Repo.insert!(Project.factory())
-    %Task{id: task_id} = Repo.insert!(%{Task.factory() | project_id: project.id, error: nil})
+  test "finish_action with error or timeout writes error message to task", %{project: _project, task: _task} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Task Runner Project 10304",
+        github_repo: "org/task-runner-10304",
+        github_installation_id: 10_304,
+        linear_team_id: "team_task_runner_10304",
+        linear_team_key: "P10304",
+        clone_path: "/tmp/repos/task-runner-10304",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_task_runner_10305",
+      "identifier" => "TSK-10305",
+      "title" => "Task 10305"
+    })
+
+    {:ok, issue_10305} = Issues.capture_issue(system_scope(), project, "Task 10305")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_runner_10305"})
+
+    {:ok, %Task{id: task_id}} = Pipeline.bring_local(system_scope(), issue_10305)
+
+    {:ok, %Task{id: task_id}} =
+      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+        error: nil
+      })
 
     # Finish with standard error
     assert :ok = TaskActionRunner.start_action(task_id, :rebase)
@@ -55,9 +176,40 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     assert %Task{error: "Action merge timed out"} = Repo.get!(Task, task_id)
   end
 
-  test "forget/2 releases lock without writing error" do
-    project = Repo.insert!(Project.factory())
-    %Task{id: task_id} = Repo.insert!(%{Task.factory() | project_id: project.id, error: nil})
+  test "forget/2 releases lock without writing error", %{project: _project, task: _task} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Task Runner Project 10306",
+        github_repo: "org/task-runner-10306",
+        github_installation_id: 10_306,
+        linear_team_id: "team_task_runner_10306",
+        linear_team_key: "P10306",
+        clone_path: "/tmp/repos/task-runner-10306",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_task_runner_10307",
+      "identifier" => "TSK-10307",
+      "title" => "Task 10307"
+    })
+
+    {:ok, issue_10307} = Issues.capture_issue(system_scope(), project, "Task 10307")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_runner_10307"})
+
+    {:ok, %Task{id: task_id}} = Pipeline.bring_local(system_scope(), issue_10307)
+
+    {:ok, %Task{id: task_id}} =
+      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+        error: nil
+      })
 
     assert :ok = TaskActionRunner.start_action(task_id, :cleanup)
     assert TaskActionRunner.is_busy?(task_id)
@@ -67,9 +219,40 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     assert %Task{error: nil} = Repo.get!(Task, task_id)
   end
 
-  test "run/5 executes work single-flight and cleans up lock" do
-    project = Repo.insert!(Project.factory())
-    %Task{id: task_id} = Repo.insert!(%{Task.factory() | project_id: project.id, error: nil})
+  test "run/5 executes work single-flight and cleans up lock", %{project: _project, task: _task} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Task Runner Project 10308",
+        github_repo: "org/task-runner-10308",
+        github_installation_id: 10_308,
+        linear_team_id: "team_task_runner_10308",
+        linear_team_key: "P10308",
+        clone_path: "/tmp/repos/task-runner-10308",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_task_runner_10309",
+      "identifier" => "TSK-10309",
+      "title" => "Task 10309"
+    })
+
+    {:ok, issue_10309} = Issues.capture_issue(system_scope(), project, "Task 10309")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_runner_10309"})
+
+    {:ok, %Task{id: task_id}} = Pipeline.bring_local(system_scope(), issue_10309)
+
+    {:ok, %Task{id: task_id}} =
+      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+        error: nil
+      })
 
     assert {:ok, :success} =
              TaskActionRunner.run(task_id, :approve, fn ->
@@ -79,9 +262,40 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     refute TaskActionRunner.is_busy?(task_id)
   end
 
-  test "run/5 enforces single-flight and rejects re-entry" do
-    project = Repo.insert!(Project.factory())
-    %Task{id: task_id} = Repo.insert!(%{Task.factory() | project_id: project.id, error: nil})
+  test "run/5 enforces single-flight and rejects re-entry", %{project: _project, task: _task} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Task Runner Project 10310",
+        github_repo: "org/task-runner-10310",
+        github_installation_id: 10_310,
+        linear_team_id: "team_task_runner_10310",
+        linear_team_key: "P10310",
+        clone_path: "/tmp/repos/task-runner-10310",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_task_runner_10311",
+      "identifier" => "TSK-10311",
+      "title" => "Task 10311"
+    })
+
+    {:ok, issue_10311} = Issues.capture_issue(system_scope(), project, "Task 10311")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_runner_10311"})
+
+    {:ok, %Task{id: task_id}} = Pipeline.bring_local(system_scope(), issue_10311)
+
+    {:ok, %Task{id: task_id}} =
+      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+        error: nil
+      })
 
     assert :ok = TaskActionRunner.start_action(task_id, :cleanup)
 
@@ -93,9 +307,40 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     TaskActionRunner.forget(task_id)
   end
 
-  test "run/5 handles timeout and failure" do
-    project = Repo.insert!(Project.factory())
-    %Task{id: task_id} = Repo.insert!(%{Task.factory() | project_id: project.id, error: nil})
+  test "run/5 handles timeout and failure", %{project: _project, task: _task} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Task Runner Project 10312",
+        github_repo: "org/task-runner-10312",
+        github_installation_id: 10_312,
+        linear_team_id: "team_task_runner_10312",
+        linear_team_key: "P10312",
+        clone_path: "/tmp/repos/task-runner-10312",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_task_runner_10313",
+      "identifier" => "TSK-10313",
+      "title" => "Task 10313"
+    })
+
+    {:ok, issue_10313} = Issues.capture_issue(system_scope(), project, "Task 10313")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_runner_10313"})
+
+    {:ok, %Task{id: task_id}} = Pipeline.bring_local(system_scope(), issue_10313)
+
+    {:ok, %Task{id: task_id}} =
+      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+        error: nil
+      })
 
     # Timeout
     assert {:error, :timeout} =

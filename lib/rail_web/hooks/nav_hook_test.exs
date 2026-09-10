@@ -1,35 +1,69 @@
 defmodule RailWeb.Hooks.NavHookTest do
-  use RailWeb.ConnCase, async: false
+  use RailWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
-  alias Rail.Projects.Schemas.Project
-  alias Rail.Repo
+  alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
   test "open_new_issue sets default project to current_project_id when active", %{conn: conn} do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-
-    _project1 =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          name: "Project One",
-          linear_team_key: "ONE",
-          active: true
+    {:ok, %LinearWorkspace{id: ws_id}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Nav Hook Workspace 13101",
+        external_id: "lin_ws_nav_hook_13101",
+        token: "lin_api_token_nav_hook_13101",
+        webhook_secret: "whsec_nav_hook_13101"
       })
 
-    project2 =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          name: "Project Two",
-          linear_team_key: "TWO",
-          active: true
+    {:ok, _project1} =
+      Projects.create_project(system_scope(), %{
+        name: "Project One",
+        github_repo: "org/nav-hook-13102",
+        github_installation_id: 13_102,
+        linear_team_id: "team_nav_hook_13102",
+        linear_team_key: "ONE",
+        clone_path: "/tmp/repos/nav-hook-13102",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws_id,
+        active: true
       })
 
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, project2} =
+      Projects.create_project(system_scope(), %{
+        name: "Project Two",
+        github_repo: "org/nav-hook-13103",
+        github_installation_id: 13_103,
+        linear_team_id: "team_nav_hook_13103",
+        linear_team_key: "TWO",
+        clone_path: "/tmp/repos/nav-hook-13103",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws_id,
+        active: true
+      })
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_nav_hook_1",
+        login: "nav_hook_user_1",
+        email: "nav_hook_user_1@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues?project=#{project2.id}")
 
@@ -47,26 +81,61 @@ defmodule RailWeb.Hooks.NavHookTest do
   test "open_new_issue falls back to first active project when current_project_id is not set or inactive", %{
     conn: conn
   } do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-
-    _inactive =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          name: "Inactive Project",
-          active: false
+    {:ok, %LinearWorkspace{id: ws_id}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Nav Hook Workspace 13104",
+        external_id: "lin_ws_nav_hook_13104",
+        token: "lin_api_token_nav_hook_13104",
+        webhook_secret: "whsec_nav_hook_13104"
       })
 
-    active =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          name: "Active First",
-          linear_team_key: "ACT",
-          active: true
+    {:ok, _inactive} =
+      Projects.create_project(system_scope(), %{
+        name: "Inactive Project",
+        github_repo: "org/nav-hook-13105",
+        github_installation_id: 13_105,
+        linear_team_id: "team_nav_hook_13105",
+        linear_team_key: "P13105",
+        clone_path: "/tmp/repos/nav-hook-13105",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws_id,
+        active: false
       })
 
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, active} =
+      Projects.create_project(system_scope(), %{
+        name: "Active First",
+        github_repo: "org/nav-hook-13106",
+        github_installation_id: 13_106,
+        linear_team_id: "team_nav_hook_13106",
+        linear_team_key: "ACT",
+        clone_path: "/tmp/repos/nav-hook-13106",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws_id,
+        active: true
+      })
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_nav_hook_2",
+        login: "nav_hook_user_2",
+        email: "nav_hook_user_2@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
@@ -79,10 +148,42 @@ defmodule RailWeb.Hooks.NavHookTest do
   end
 
   test "close_new_issue dismisses the modal", %{conn: conn} do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-    _project = Repo.insert!(%{Project.factory() | linear_workspace_id: ws_id, active: true})
+    {:ok, %LinearWorkspace{id: ws_id}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Nav Hook Workspace 13107",
+        external_id: "lin_ws_nav_hook_13107",
+        token: "lin_api_token_nav_hook_13107",
+        webhook_secret: "whsec_nav_hook_13107"
+      })
 
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, _project} =
+      Projects.create_project(system_scope(), %{
+        name: "Nav Hook Project 13108",
+        github_repo: "org/nav-hook-13108",
+        github_installation_id: 13_108,
+        linear_team_id: "team_nav_hook_13108",
+        linear_team_key: "P13108",
+        clone_path: "/tmp/repos/nav-hook-13108",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws_id,
+        active: true
+      })
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_nav_hook_3",
+        login: "nav_hook_user_3",
+        email: "nav_hook_user_3@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
@@ -94,15 +195,61 @@ defmodule RailWeb.Hooks.NavHookTest do
   end
 
   test "capture_form_change updates form values and enables submit button", %{conn: conn} do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
+    {:ok, %LinearWorkspace{id: ws_id}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Nav Hook Workspace 13109",
+        external_id: "lin_ws_nav_hook_13109",
+        token: "lin_api_token_nav_hook_13109",
+        webhook_secret: "whsec_nav_hook_13109"
+      })
 
-    _project1 =
-      Repo.insert!(%{Project.factory() | linear_workspace_id: ws_id, name: "Prj 1", active: true})
+    {:ok, _project1} =
+      Projects.create_project(system_scope(), %{
+        name: "Prj 1",
+        github_repo: "org/nav-hook-13110",
+        github_installation_id: 13_110,
+        linear_team_id: "team_nav_hook_13110",
+        linear_team_key: "P13110",
+        clone_path: "/tmp/repos/nav-hook-13110",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws_id,
+        active: true
+      })
 
-    project2 =
-      Repo.insert!(%{Project.factory() | linear_workspace_id: ws_id, name: "Prj 2", active: true})
+    {:ok, project2} =
+      Projects.create_project(system_scope(), %{
+        name: "Prj 2",
+        github_repo: "org/nav-hook-13111",
+        github_installation_id: 13_111,
+        linear_team_id: "team_nav_hook_13111",
+        linear_team_key: "P13111",
+        clone_path: "/tmp/repos/nav-hook-13111",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws_id,
+        active: true
+      })
 
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_nav_hook_4",
+        login: "nav_hook_user_4",
+        email: "nav_hook_user_4@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
@@ -124,10 +271,42 @@ defmodule RailWeb.Hooks.NavHookTest do
   end
 
   test "capture_form_submit does nothing when ask is blank", %{conn: conn} do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-    project = Repo.insert!(%{Project.factory() | linear_workspace_id: ws_id, active: true})
+    {:ok, %LinearWorkspace{id: ws_id}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Nav Hook Workspace 13112",
+        external_id: "lin_ws_nav_hook_13112",
+        token: "lin_api_token_nav_hook_13112",
+        webhook_secret: "whsec_nav_hook_13112"
+      })
 
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Nav Hook Project 13113",
+        github_repo: "org/nav-hook-13113",
+        github_installation_id: 13_113,
+        linear_team_id: "team_nav_hook_13113",
+        linear_team_key: "P13113",
+        clone_path: "/tmp/repos/nav-hook-13113",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws_id,
+        active: true
+      })
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_nav_hook_5",
+        login: "nav_hook_user_5",
+        email: "nav_hook_user_5@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
@@ -144,7 +323,15 @@ defmodule RailWeb.Hooks.NavHookTest do
   end
 
   test "capture_form_submit fails gracefully when project is not found", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_nav_hook_6",
+        login: "nav_hook_user_6",
+        email: "nav_hook_user_6@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
@@ -163,18 +350,36 @@ defmodule RailWeb.Hooks.NavHookTest do
   test "capture_form_submit creates issue, resets form, and broadcasts pipeline_changed", %{
     conn: conn
   } do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-
-    project =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          linear_team_id: "team_nav_ok",
-          linear_state_ids: %{"triage" => "st_triage_ok"},
-          active: true
+    {:ok, %LinearWorkspace{id: ws_id}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Nav Hook Workspace 13114",
+        external_id: "lin_ws_nav_hook_13114",
+        token: "lin_api_token_nav_hook_13114",
+        webhook_secret: "whsec_nav_hook_13114"
       })
 
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Nav Hook Project 13115",
+        github_repo: "org/nav-hook-13115",
+        github_installation_id: 13_115,
+        linear_team_id: "team_nav_ok",
+        linear_team_key: "P13115",
+        clone_path: "/tmp/repos/nav-hook-13115",
+        linear_state_ids: %{"triage" => "st_triage_ok"},
+        linear_workspace_id: ws_id,
+        active: true
+      })
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_nav_hook_7",
+        login: "nav_hook_user_7",
+        email: "nav_hook_user_7@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline_changed")
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
@@ -212,18 +417,36 @@ defmodule RailWeb.Hooks.NavHookTest do
   end
 
   test "capture_form_submit keeps modal open and preserves ask text on error", %{conn: conn} do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-
-    project =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          linear_team_id: "team_nav_err",
-          linear_state_ids: %{"triage" => "st_triage_err"},
-          active: true
+    {:ok, %LinearWorkspace{id: ws_id}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Nav Hook Workspace 13116",
+        external_id: "lin_ws_nav_hook_13116",
+        token: "lin_api_token_nav_hook_13116",
+        webhook_secret: "whsec_nav_hook_13116"
       })
 
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Nav Hook Project 13117",
+        github_repo: "org/nav-hook-13117",
+        github_installation_id: 13_117,
+        linear_team_id: "team_nav_err",
+        linear_team_key: "P13117",
+        clone_path: "/tmp/repos/nav-hook-13117",
+        linear_state_ids: %{"triage" => "st_triage_err"},
+        linear_workspace_id: ws_id,
+        active: true
+      })
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_nav_hook_8",
+        login: "nav_hook_user_8",
+        email: "nav_hook_user_8@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     LinearMock.mock_mutation_failure("issueCreate")
 
@@ -248,10 +471,42 @@ defmodule RailWeb.Hooks.NavHookTest do
   end
 
   test "handles switcher, theme, and rail toggle events", %{conn: conn} do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-    project = Repo.insert!(%{Project.factory() | linear_workspace_id: ws_id, active: true})
+    {:ok, %LinearWorkspace{id: ws_id}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Nav Hook Workspace 13118",
+        external_id: "lin_ws_nav_hook_13118",
+        token: "lin_api_token_nav_hook_13118",
+        webhook_secret: "whsec_nav_hook_13118"
+      })
 
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Nav Hook Project 13119",
+        github_repo: "org/nav-hook-13119",
+        github_installation_id: 13_119,
+        linear_team_id: "team_nav_hook_13119",
+        linear_team_key: "P13119",
+        clone_path: "/tmp/repos/nav-hook-13119",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws_id,
+        active: true
+      })
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_nav_hook_9",
+        login: "nav_hook_user_9",
+        email: "nav_hook_user_9@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
@@ -271,7 +526,15 @@ defmodule RailWeb.Hooks.NavHookTest do
   end
 
   test "handles live_sync and pipeline_changed info messages", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_nav_hook_10",
+        login: "nav_hook_user_10",
+        email: "nav_hook_user_10@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
@@ -286,7 +549,15 @@ defmodule RailWeb.Hooks.NavHookTest do
   test "open_new_issue sets default_project_id to nil when no active projects exist", %{
     conn: conn
   } do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_nav_hook_11",
+        login: "nav_hook_user_11",
+        email: "nav_hook_user_11@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
@@ -295,7 +566,15 @@ defmodule RailWeb.Hooks.NavHookTest do
   end
 
   test "capture_form_submit with empty project_id fails with project not found", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_nav_hook_12",
+        login: "nav_hook_user_12",
+        email: "nav_hook_user_12@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
@@ -313,19 +592,38 @@ defmodule RailWeb.Hooks.NavHookTest do
   test "capture_form_submit falls back to medium on invalid priority and fetches project from database", %{
     conn: conn
   } do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, %LinearWorkspace{id: ws_id}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Nav Hook Workspace 13120",
+        external_id: "lin_ws_nav_hook_13120",
+        token: "lin_api_token_nav_hook_13120",
+        webhook_secret: "whsec_nav_hook_13120"
+      })
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_nav_hook_13",
+        login: "nav_hook_user_13",
+        email: "nav_hook_user_13@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
     # Project created after mount so it must be fetched from DB via fetch_project
-    late_project =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          linear_team_id: "team_late",
-          linear_state_ids: %{"triage" => "st_triage_late"},
-          active: true
+    {:ok, late_project} =
+      Projects.create_project(system_scope(), %{
+        name: "Nav Hook Project 13121",
+        github_repo: "org/nav-hook-13121",
+        github_installation_id: 13_121,
+        linear_team_id: "team_late",
+        linear_team_key: "P13121",
+        clone_path: "/tmp/repos/nav-hook-13121",
+        linear_state_ids: %{"triage" => "st_triage_late"},
+        linear_workspace_id: ws_id,
+        active: true
       })
 
     LinearMock.mock_create_issue_success(%{
@@ -352,10 +650,42 @@ defmodule RailWeb.Hooks.NavHookTest do
   end
 
   test "capture_form_submit handles string error and atom error correctly", %{conn: conn} do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-    project = Repo.insert!(%{Project.factory() | linear_workspace_id: ws_id, active: true})
+    {:ok, %LinearWorkspace{id: ws_id}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Nav Hook Workspace 13122",
+        external_id: "lin_ws_nav_hook_13122",
+        token: "lin_api_token_nav_hook_13122",
+        webhook_secret: "whsec_nav_hook_13122"
+      })
 
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Nav Hook Project 13123",
+        github_repo: "org/nav-hook-13123",
+        github_installation_id: 13_123,
+        linear_team_id: "team_nav_hook_13123",
+        linear_team_key: "P13123",
+        clone_path: "/tmp/repos/nav-hook-13123",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws_id,
+        active: true
+      })
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_nav_hook_14",
+        login: "nav_hook_user_14",
+        email: "nav_hook_user_14@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 

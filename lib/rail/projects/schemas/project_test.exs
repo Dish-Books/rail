@@ -5,19 +5,6 @@ defmodule Rail.Projects.Schemas.ProjectTest do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
 
-  test "factory builds a valid project struct" do
-    project = Project.factory()
-    assert byte_size(project.name) > 0
-    assert byte_size(project.github_repo) > 0
-    assert project.github_installation_id > 0
-    assert project.default_branch == "main"
-    assert byte_size(project.linear_team_id) > 0
-    assert byte_size(project.linear_team_key) > 0
-    assert %{"triage" => _triage} = project.linear_state_ids
-    assert byte_size(project.clone_path) > 0
-    assert project.active == true
-  end
-
   test "changeset validates required fields" do
     changeset = Project.changeset(%Project{}, %{})
 

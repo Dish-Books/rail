@@ -5,17 +5,6 @@ defmodule Rail.Backends.Schemas.CliAccountTest do
   alias Rail.Domain.Embeds.CliAccountGroup
   alias Rail.Repo
 
-  test "factory/0 builds a valid struct" do
-    account = CliAccount.factory()
-    assert account.backend == :claude
-    assert account.status == "ready"
-    assert account.account_label == "test@example.com"
-    assert account.account_detail == "max"
-    assert [%CliAccountGroup{}] = account.groups
-    assert %DateTime{} = account.fetched_at
-    assert byte_size(account.node) > 0
-  end
-
   test "changeset/2 validates required fields and status inclusion" do
     changeset = CliAccount.changeset(%CliAccount{}, %{backend: nil, status: nil})
     refute changeset.valid?

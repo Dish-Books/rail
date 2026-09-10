@@ -1,16 +1,9 @@
 defmodule Rail.Projects.Schemas.LinearWorkspaceTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Repo
-
-  test "factory builds a valid linear workspace struct" do
-    workspace = LinearWorkspace.factory()
-    assert byte_size(workspace.name) > 0
-    assert byte_size(workspace.external_id) > 0
-    assert byte_size(workspace.token) > 0
-    assert byte_size(workspace.webhook_secret) > 0
-  end
 
   test "changeset validates required fields" do
     changeset = LinearWorkspace.changeset(%LinearWorkspace{}, %{})
@@ -62,7 +55,14 @@ defmodule Rail.Projects.Schemas.LinearWorkspaceTest do
   end
 
   test "token and webhook_secret are redacted in inspect" do
-    workspace = LinearWorkspace.factory()
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Redacted Workspace",
+        external_id: "lin_ws_redacted",
+        token: "lin_api_token_redacted",
+        webhook_secret: "whsec_redacted"
+      })
+
     inspected = inspect(workspace, limit: :infinity)
 
     refute String.contains?(inspected, workspace.token)

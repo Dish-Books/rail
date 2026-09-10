@@ -1,5 +1,5 @@
 defmodule RailWeb.DevLoginControllerTest do
-  use RailWeb.ConnCase, async: false
+  use RailWeb.ConnCase, async: true
   use Mimic
 
   alias Rail.Users

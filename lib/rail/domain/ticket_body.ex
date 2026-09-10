@@ -33,14 +33,6 @@ defmodule Rail.Domain.TicketBody do
     |> validate_required([:title])
   end
 
-  @doc "Builds a valid TicketBody struct fixture for testing."
-  def factory do
-    %__MODULE__{
-      title: "Add user profile settings",
-      description: "Users should be able to update their email and avatar."
-    }
-  end
-
   @doc """
   Parses a ticket specification markdown string into a `TicketBody` struct.
 

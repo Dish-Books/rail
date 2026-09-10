@@ -4,7 +4,7 @@ defmodule RailWeb.AssetControllerTest do
   alias Rail.Artifacts.Schemas.Demo
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Artifacts.Schemas.QaReport
-  alias Rail.Projects.Schemas.LinearWorkspace
+  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Users
   alias Rail.Users.Schemas.User
@@ -65,7 +65,13 @@ defmodule RailWeb.AssetControllerTest do
     end
 
     test "proxies design asset with correct content-type", %{authed_conn: conn} do
-      _ws = Repo.insert!(LinearWorkspace.factory())
+      {:ok, _ws} =
+        Projects.upsert_linear_workspace(system_scope(), %{
+          name: "Asset Controller Workspace 12801",
+          external_id: "lin_ws_asset_controller_12801",
+          token: "lin_api_token_asset_controller_12801",
+          webhook_secret: "whsec_asset_controller_12801"
+        })
 
       {:ok, _design} =
         %Design{}
@@ -99,7 +105,13 @@ defmodule RailWeb.AssetControllerTest do
     end
 
     test "proxies demo frame asset", %{authed_conn: conn} do
-      _ws = Repo.insert!(LinearWorkspace.factory())
+      {:ok, _ws} =
+        Projects.upsert_linear_workspace(system_scope(), %{
+          name: "Asset Controller Workspace 12802",
+          external_id: "lin_ws_asset_controller_12802",
+          token: "lin_api_token_asset_controller_12802",
+          webhook_secret: "whsec_asset_controller_12802"
+        })
 
       {:ok, _demo} =
         %Demo{}
@@ -138,7 +150,13 @@ defmodule RailWeb.AssetControllerTest do
     end
 
     test "proxies QA artifact asset", %{authed_conn: conn} do
-      _ws = Repo.insert!(LinearWorkspace.factory())
+      {:ok, _ws} =
+        Projects.upsert_linear_workspace(system_scope(), %{
+          name: "Asset Controller Workspace 12803",
+          external_id: "lin_ws_asset_controller_12803",
+          token: "lin_api_token_asset_controller_12803",
+          webhook_secret: "whsec_asset_controller_12803"
+        })
 
       {:ok, _qa} =
         %QaReport{}
@@ -176,7 +194,13 @@ defmodule RailWeb.AssetControllerTest do
     end
 
     test "returns 502 when upstream Linear returns non-200", %{authed_conn: conn} do
-      _ws = Repo.insert!(LinearWorkspace.factory())
+      {:ok, _ws} =
+        Projects.upsert_linear_workspace(system_scope(), %{
+          name: "Asset Controller Workspace 12804",
+          external_id: "lin_ws_asset_controller_12804",
+          token: "lin_api_token_asset_controller_12804",
+          webhook_secret: "whsec_asset_controller_12804"
+        })
 
       {:ok, _design} =
         %Design{}
@@ -204,7 +228,13 @@ defmodule RailWeb.AssetControllerTest do
     end
 
     test "returns 502 on transport error", %{authed_conn: conn} do
-      _ws = Repo.insert!(LinearWorkspace.factory())
+      {:ok, _ws} =
+        Projects.upsert_linear_workspace(system_scope(), %{
+          name: "Asset Controller Workspace 12805",
+          external_id: "lin_ws_asset_controller_12805",
+          token: "lin_api_token_asset_controller_12805",
+          webhook_secret: "whsec_asset_controller_12805"
+        })
 
       {:ok, _design} =
         %Design{}
@@ -232,7 +262,13 @@ defmodule RailWeb.AssetControllerTest do
     end
 
     test "handles system scope and unauthorized scope directly", %{conn: conn} do
-      _ws = Repo.insert!(LinearWorkspace.factory())
+      {:ok, _ws} =
+        Projects.upsert_linear_workspace(system_scope(), %{
+          name: "Asset Controller Workspace 12806",
+          external_id: "lin_ws_asset_controller_12806",
+          token: "lin_api_token_asset_controller_12806",
+          webhook_secret: "whsec_asset_controller_12806"
+        })
 
       {:ok, _design} =
         %Design{}

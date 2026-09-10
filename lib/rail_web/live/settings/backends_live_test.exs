@@ -1,5 +1,5 @@
 defmodule RailWeb.Settings.BackendsLiveTest do
-  use RailWeb.ConnCase, async: false
+  use RailWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
 
@@ -8,6 +8,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
   alias Rail.Domain.Embeds.CliAccountGroup
   alias Rail.Repo
   alias Rail.Scope
+  alias Rail.Users
 
   test "redirects unauthenticated user to /auth/github", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/auth/github"}}} = live(conn, ~p"/settings/backends")
@@ -15,14 +16,39 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
   test "redirects non-admin user to /", %{conn: conn} do
     # The first registered user is promoted to admin, so seed one before the regular user
-    {_admin_conn, _admin} = log_in_test_user(conn)
-    {regular_conn, _user} = log_in_test_user(conn, nil, %{admin: false})
+    {:ok, _admin} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_1",
+        login: "backends_live_user_1",
+        email: "backends_live_user_1@example.com",
+        admin: true
+      })
+
+    _admin_conn = log_in_user(conn, _admin)
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_2",
+        login: "backends_live_user_2",
+        email: "backends_live_user_2@example.com",
+        admin: false
+      })
+
+    regular_conn = log_in_user(conn, user)
 
     assert {:error, {:redirect, %{to: "/"}}} = live(regular_conn, ~p"/settings/backends")
   end
 
   test "renders a card per backend, unconfigured by default", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_3",
+        login: "backends_live_user_3",
+        email: "backends_live_user_3@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
@@ -42,7 +68,15 @@ defmodule RailWeb.Settings.BackendsLiveTest do
   end
 
   test "saves an executable path and models, then renders them back", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_4",
+        login: "backends_live_user_4",
+        email: "backends_live_user_4@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
@@ -72,7 +106,15 @@ defmodule RailWeb.Settings.BackendsLiveTest do
   end
 
   test "an empty display name falls back to the model id", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_5",
+        login: "backends_live_user_5",
+        email: "backends_live_user_5@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
@@ -88,7 +130,15 @@ defmodule RailWeb.Settings.BackendsLiveTest do
   end
 
   test "updates an existing backend rather than inserting a second row", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_6",
+        login: "backends_live_user_6",
+        email: "backends_live_user_6@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     {:ok, _backend} =
       Backends.create_backend(Scope.for_system(), %{
@@ -114,7 +164,15 @@ defmodule RailWeb.Settings.BackendsLiveTest do
   end
 
   test "removing a model row drops it from the saved models", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_7",
+        login: "backends_live_user_7",
+        email: "backends_live_user_7@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     {:ok, _backend} =
       Backends.create_backend(Scope.for_system(), %{
@@ -140,7 +198,15 @@ defmodule RailWeb.Settings.BackendsLiveTest do
   end
 
   test "surfaces a validation error when the executable path is blank", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_8",
+        login: "backends_live_user_8",
+        email: "backends_live_user_8@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
@@ -153,7 +219,15 @@ defmodule RailWeb.Settings.BackendsLiveTest do
   end
 
   test "renders account status, quota windows, and banners", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_9",
+        login: "backends_live_user_9",
+        email: "backends_live_user_9@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     now = DateTime.utc_now()
     reset_today = DateTime.to_iso8601(DateTime.shift(now, minute: 30))
     reset_tomorrow = DateTime.to_iso8601(DateTime.shift(now, day: 1))
@@ -218,7 +292,15 @@ defmodule RailWeb.Settings.BackendsLiveTest do
   end
 
   test "renders signed_out, unavailable, and empty quota window states", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_10",
+        login: "backends_live_user_10",
+        email: "backends_live_user_10@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     node = CliAccount.default_node()
 
     Repo.insert!(
@@ -253,7 +335,15 @@ defmodule RailWeb.Settings.BackendsLiveTest do
   end
 
   test "handles refresh_quotas, pubsub updates, ticks, and async failure", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_11",
+        login: "backends_live_user_11",
+        email: "backends_live_user_11@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     now = DateTime.utc_now()
     node = CliAccount.default_node()
 
@@ -304,7 +394,15 @@ defmodule RailWeb.Settings.BackendsLiveTest do
   end
 
   test "formats fetched ages and reset dates across units", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_12",
+        login: "backends_live_user_12",
+        email: "backends_live_user_12@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     now = DateTime.utc_now()
     node = CliAccount.default_node()
 

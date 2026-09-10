@@ -1,52 +1,128 @@
 defmodule Rail.Pipeline.Actions.RetryStageTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
+  alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
+  alias Rail.Repo
+  alias Rail.Roles
+  alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Scope
+  alias RailTest.Mocks.Linear, as: LinearMock
+
+  setup do
+    scope = system_scope()
+
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Retry Stage Workspace",
+        external_id: "lin_ws_retry_stage",
+        token: "lin_api_token_retry_stage",
+        webhook_secret: "whsec_retry_stage"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Retry Stage Project 8001",
+        github_repo: "org/retry-stage-8001",
+        github_installation_id: 8001,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_retry_stage_8001",
+        linear_team_key: "P8001",
+        clone_path: "/tmp/repos/retry-stage-8001",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    roles =
+      Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
+        {:ok, role} =
+          Roles.create_role(scope, project, %{
+            stage: stage,
+            name: "#{stage} role",
+            model: "claude-3-7-sonnet",
+            system_prompt: "You are the #{stage} agent."
+          })
+
+        {stage, role}
+      end)
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_retry_stage_1",
+      "identifier" => "RTS-1",
+      "title" => "Retry Stage Issue"
+    })
+
+    {:ok, issue} = Issues.capture_issue(scope, project, "Retry Stage Issue")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_retry_stage_1"})
+
+    {:ok, task} = Pipeline.bring_local(scope, issue)
+
+    %{project: project, issue: issue, task: task, roles: roles}
+  end
 
   test "returns not_found when task cannot be resolved" do
     assert {:error, :not_found} = Pipeline.retry_stage("tsk_000000000000000000000000")
   end
 
-  test "returns not_authorized when scope lacks permission" do
-    task = create_test_task(%{stage: :engineer, stage_state: :failed})
+  test "returns not_authorized when scope lacks permission", %{task: task} do
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :engineer,
+        stage_state: :failed
+      })
+
     unauth_scope = %Scope{user: nil, system: false}
 
     assert {:error, :not_authorized} = Pipeline.retry_stage(unauth_scope, task.id)
   end
 
-  test "returns no_role_for_stage when stage lacks a configured role" do
-    project = create_test_project()
-    task = create_test_task(%{project_id: project.id, stage: :engineer, stage_state: :failed})
+  test "returns no_role_for_stage when stage lacks a configured role", %{task: task, roles: roles} do
+    {:ok, _deleted} = Roles.delete_role(system_scope(), roles[:engineer])
+
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :engineer,
+        stage_state: :failed
+      })
 
     assert {:error, {:no_role_for_stage, :engineer}} = Pipeline.retry_stage(task)
   end
 
-  test "clears retry_after and error, sets stage_state to queued, and resets auto_retries" do
+  test "clears retry_after and error, sets stage_state to queued, and resets auto_retries", %{task: task, roles: roles} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-    project = create_test_project()
-    role_eng = create_test_role(%{project_id: project.id, stage: :engineer, name: "Engineer"})
+
+    {:ok, role_eng} =
+      Roles.update_role(system_scope(), roles[:engineer], %{
+        name: "Engineer"
+      })
 
     retry_time = DateTime.shift(DateTime.utc_now(), minute: 1)
 
-    %Task{id: task_id} =
-      task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :engineer,
         stage_state: :failed,
         retry_after: retry_time,
         error: "Transient socket hang up"
       })
 
-    create_test_role_run(%{
-      task_id: task_id,
-      role_id: role_eng.id,
-      status: :finished,
-      auto_retries: 2
-    })
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_eng.id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        auto_retries: 2
+      })
 
     assert {:ok,
             %Task{
@@ -62,26 +138,28 @@ defmodule Rail.Pipeline.Actions.RetryStageTest do
     assert eng_run.auto_retries == 0
   end
 
-  test "resolves engineer role when task is rebasing" do
-    project = create_test_project()
-    role_eng = create_test_role(%{project_id: project.id, stage: :engineer, name: "Engineer"})
+  test "resolves engineer role when task is rebasing", %{task: task, roles: roles} do
+    {:ok, role_eng} =
+      Roles.update_role(system_scope(), roles[:engineer], %{
+        name: "Engineer"
+      })
 
-    %Task{id: task_id} =
-      task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :ready_to_merge,
         stage_state: :failed,
         is_rebasing: true,
         error: "Merge conflict"
       })
 
-    create_test_role_run(%{
-      task_id: task_id,
-      role_id: role_eng.id,
-      status: :finished,
-      auto_retries: 1
-    })
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_eng.id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        auto_retries: 1
+      })
 
     assert {:ok, %Task{id: ^task_id, stage_state: :queued, error: nil}} =
              Pipeline.retry_stage(task)
@@ -90,13 +168,11 @@ defmodule Rail.Pipeline.Actions.RetryStageTest do
     assert eng_run.auto_retries == 0
   end
 
-  test "handles retry when role_run row does not exist yet" do
-    project = create_test_project()
-    _role = create_test_role(%{project_id: project.id, stage: :product})
+  test "handles retry when role_run row does not exist yet", %{task: task, roles: roles} do
+    _role = roles[:product]
 
-    task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :product,
         stage_state: :failed,
         error: "Initial startup error"
@@ -106,19 +182,28 @@ defmodule Rail.Pipeline.Actions.RetryStageTest do
              Pipeline.retry_stage(task)
   end
 
-  test "supports scope-based invocation with task id" do
-    project = create_test_project()
-    _role = create_test_role(%{project_id: project.id, stage: :product})
-    task = create_test_task(%{project_id: project.id, stage: :product, stage_state: :failed})
+  test "supports scope-based invocation with task id", %{task: task, roles: roles} do
+    _role = roles[:product]
+
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :product,
+        stage_state: :failed
+      })
 
     scope = Scope.for_system()
     assert {:ok, %Task{stage_state: :queued}} = Pipeline.retry_stage(scope, task.id)
   end
 
-  test "authorizes scope with user and handles invalid task argument" do
-    project = create_test_project()
-    _role = create_test_role(%{project_id: project.id, stage: :product})
-    task = create_test_task(%{project_id: project.id, stage: :product, stage_state: :failed})
+  test "authorizes scope with user and handles invalid task argument", %{task: task, roles: roles} do
+    _role = roles[:product]
+
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :product,
+        stage_state: :failed
+      })
+
     user_scope = %Scope{user: %{id: "usr_test"}, system: false}
 
     assert {:ok, %Task{stage_state: :queued}} = Pipeline.retry_stage(user_scope, task.id)

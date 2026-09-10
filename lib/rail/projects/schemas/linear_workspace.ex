@@ -22,15 +22,4 @@ defmodule Rail.Projects.Schemas.LinearWorkspace do
     |> validate_required([:name, :external_id, :token, :webhook_secret])
     |> unique_constraint(:external_id)
   end
-
-  def factory do
-    id = System.unique_integer([:positive])
-
-    %__MODULE__{
-      name: "Workspace #{id}",
-      external_id: "lin_ws_#{id}",
-      token: "lin_api_token_#{id}",
-      webhook_secret: "whsec_#{id}"
-    }
-  end
 end

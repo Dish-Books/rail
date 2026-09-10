@@ -18,14 +18,6 @@ defmodule Rail.Domain.HandoffLineTest do
     assert "can't be blank" in errors_on(invalid_changeset).role_id
   end
 
-  test "factory/0 returns a valid struct" do
-    handoff = HandoffLine.factory()
-    assert handoff.role_id == "architect"
-    assert handoff.direction == :received
-    assert handoff.summary =~ "Implementation plan"
-    assert %DateTime{} = handoff.timestamp
-  end
-
   test "from/2 and to/2 format lines" do
     assert HandoffLine.from("architect", "Implementation plan") ==
              "[handoff ← architect] Implementation plan"

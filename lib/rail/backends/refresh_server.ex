@@ -5,7 +5,9 @@ defmodule Rail.Backends.RefreshServer do
   """
   use GenServer
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Backends
+  alias Rail.Repo
 
   @default_interval 15 * 60 * 1000
 
@@ -75,7 +77,8 @@ defmodule Rail.Backends.RefreshServer do
         {:noreply, %{state | waiters: [from | state.waiters]}}
 
       nil ->
-        task = Task.async(fn -> Backends.refresh_usage(Keyword.put(opts, :direct, true)) end)
+        {caller_pid, _tag} = from
+        task = spawn_refresh(opts, [self(), caller_pid])
         {:noreply, %{state | in_flight: task, waiters: [from]}}
     end
   end
@@ -112,8 +115,30 @@ defmodule Rail.Backends.RefreshServer do
         {:noreply, state}
 
       nil ->
-        task = Task.async(fn -> Backends.refresh_usage(Keyword.put(state.default_opts, :direct, true)) end)
+        task = spawn_refresh(state.default_opts, [self()])
         {:noreply, %{state | in_flight: task, waiters: []}}
     end
   end
+
+  defp spawn_refresh(opts, pids) do
+    Task.async(fn ->
+      allow_sandbox(pids)
+      Backends.refresh_usage(Keyword.put(opts, :direct, true))
+    end)
+  end
+
+  # coveralls-ignore-start (test sandbox fallback)
+  defp allow_sandbox(pids) do
+    if Code.ensure_loaded?(Sandbox) do
+      Enum.each(pids, fn pid -> if is_pid(pid), do: allow_one(pid) end)
+    end
+  end
+
+  defp allow_one(pid) do
+    Sandbox.allow(Repo, pid, self())
+  rescue
+    _error -> :ok
+  end
+
+  # coveralls-ignore-stop
 end

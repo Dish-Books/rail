@@ -3,17 +3,6 @@ defmodule Rail.Domain.TaskUsageTest do
 
   alias Rail.Domain.TaskUsage
 
-  test "factory/0 builds a valid struct" do
-    usage = TaskUsage.factory()
-
-    assert usage.input_tokens == 1_000
-    assert usage.output_tokens == 500
-    assert usage.cache_read_input_tokens == 200
-    assert usage.cache_creation_input_tokens == 100
-    assert Decimal.equal?(usage.total_cost, Decimal.new("0.025"))
-    assert usage.currency == "USD"
-  end
-
   test "zero/0 and zero?/1" do
     zero = TaskUsage.zero()
     assert TaskUsage.zero?(zero)
@@ -158,7 +147,15 @@ defmodule Rail.Domain.TaskUsageTest do
   end
 
   test "serializes to JSON via Jason" do
-    usage = TaskUsage.factory()
+    usage = %TaskUsage{
+      input_tokens: 1_000,
+      output_tokens: 500,
+      cache_read_input_tokens: 200,
+      cache_creation_input_tokens: 100,
+      total_cost: Decimal.new("0.025"),
+      currency: "USD"
+    }
+
     assert {:ok, json} = Jason.encode(usage)
     assert {:ok, decoded} = Jason.decode(json)
     assert decoded["input_tokens"] == 1_000

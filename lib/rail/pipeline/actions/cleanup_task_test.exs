@@ -1,67 +1,190 @@
 defmodule Rail.Pipeline.Actions.CleanupTaskTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
   alias Rail.Git
+  alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects.Schemas.Project
-  alias Rail.Repo
+  alias Rail.Projects
+  alias Rail.Roles
   alias Rail.Scope
-  alias Rail.Users.Schemas.User
+  alias Rail.Users
+  alias RailTest.Mocks.Linear, as: LinearMock
 
-  test "refuses to clean up when task is busy" do
-    project = Repo.insert!(Project.factory())
+  setup do
+    scope = system_scope()
 
-    task =
-      Repo.insert!(%{
-        Task.factory()
-        | project_id: project.id,
-          stage: :engineer,
-          stage_state: :running
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Cleanup Task Workspace",
+        external_id: "lin_ws_cleanup_task",
+        token: "lin_api_token_cleanup_task",
+        webhook_secret: "whsec_cleanup_task"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Cleanup Task Project 8701",
+        github_repo: "org/cleanup-task-8701",
+        github_installation_id: 8701,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_cleanup_task_8701",
+        linear_team_key: "P8701",
+        clone_path: "/tmp/repos/cleanup-task-8701",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    roles =
+      Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
+        {:ok, role} =
+          Roles.create_role(scope, project, %{
+            stage: stage,
+            name: "#{stage} role",
+            model: "claude-3-7-sonnet",
+            system_prompt: "You are the #{stage} agent."
+          })
+
+        {stage, role}
+      end)
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_cleanup_task_1",
+      "identifier" => "CLT-1",
+      "title" => "Cleanup Task Issue"
+    })
+
+    {:ok, issue} = Issues.capture_issue(scope, project, "Cleanup Task Issue")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_cleanup_task_1"})
+
+    {:ok, task} = Pipeline.bring_local(scope, issue)
+
+    %{project: project, issue: issue, task: task, roles: roles}
+  end
+
+  test "refuses to clean up when task is busy", %{project: _project, task: _task} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Cleanup Task Project 8702",
+        github_repo: "org/cleanup-task-8702",
+        github_installation_id: 8702,
+        linear_team_id: "team_cleanup_task_8702",
+        linear_team_key: "P8702",
+        clone_path: "/tmp/repos/cleanup-task-8702",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_cleanup_task_8703",
+      "identifier" => "TSK-8703",
+      "title" => "Task 8703"
+    })
+
+    {:ok, issue_8703} = Issues.capture_issue(system_scope(), project, "Task 8703")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cleanup_task_8703"})
+
+    {:ok, task} = Pipeline.bring_local(system_scope(), issue_8703)
+
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :engineer,
+        stage_state: :running
       })
 
     assert {:error, :task_busy} = Pipeline.cleanup_task(task)
 
-    task_chat =
-      Repo.insert!(%{
-        Task.factory()
-        | project_id: project.id,
-          stage: :qa,
-          stage_state: :awaiting_approval,
-          active_chat_role_id: "qa"
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_cleanup_task_8704",
+      "identifier" => "TSK-8704",
+      "title" => "Task 8704"
+    })
+
+    {:ok, issue_8704} = Issues.capture_issue(system_scope(), project, "Task 8704")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cleanup_task_8704"})
+
+    {:ok, task_chat} = Pipeline.bring_local(system_scope(), issue_8704)
+
+    {:ok, task_chat} =
+      Pipeline.update_task(system_scope(), task_chat.id, %{
+        stage: :qa,
+        stage_state: :awaiting_approval,
+        active_chat_role_id: "qa"
       })
 
     assert {:error, :task_busy} = Pipeline.cleanup_task(task_chat)
   end
 
-  test "cleans up worktree, branch, scratch directory, updates worktree_path to nil, and broadcasts" do
+  test "cleans up worktree, branch, scratch directory, updates worktree_path to nil, and broadcasts", %{
+    project: _project,
+    task: _task
+  } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     clone_path = create_temp_git_repo(prefix: "rail_cleanup_main")
     wt_dir = Path.join(System.tmp_dir!(), "rail_cleanup_wt_#{System.unique_integer([:positive])}")
     {:ok, worktree_path} = Git.get_or_create_worktree(clone_path, wt_dir, "cleanup-branch")
 
-    project =
-      Repo.insert!(%{
-        Project.factory()
-        | clone_path: clone_path
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Cleanup Task Project 8705",
+        github_repo: "org/cleanup-task-8705",
+        github_installation_id: 8705,
+        linear_team_id: "team_cleanup_task_8705",
+        linear_team_key: "P8705",
+        clone_path: clone_path,
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
       })
 
     scratch_dir = Path.join(System.tmp_dir!(), "rail_cleanup_scratch_#{System.unique_integer([:positive])}")
     File.mkdir_p!(scratch_dir)
     File.write!(Path.join(scratch_dir, "scratch.txt"), "temporary content")
 
-    user = Repo.insert!(User.factory())
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_cleanup_task_8706",
+        login: "cleanup_task_user_8706",
+        email: "cleanup_task_user_8706@example.com"
+      })
+
     scope = Scope.for_user(user)
 
-    %Task{id: task_id} =
-      task =
-      Repo.insert!(%{
-        Task.factory()
-        | project_id: project.id,
-          stage: :merged,
-          stage_state: :queued,
-          worktree_name: "cleanup-branch",
-          worktree_path: worktree_path
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_cleanup_task_8707",
+      "identifier" => "TSK-8707",
+      "title" => "Task 8707"
+    })
+
+    {:ok, issue_8707} = Issues.capture_issue(system_scope(), project, "Task 8707")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cleanup_task_8707"})
+
+    {:ok, %Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_8707)
+
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :merged,
+        stage_state: :queued,
+        worktree_name: "cleanup-branch",
+        worktree_path: worktree_path
       })
 
     assert {:ok, %Task{worktree_path: nil}} =
@@ -73,16 +196,41 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :task_cleaned_up}}
   end
 
-  test "handles cleanup gracefully when worktree_path is already nil" do
-    project = Repo.insert!(Project.factory())
+  test "handles cleanup gracefully when worktree_path is already nil", %{project: _project, task: _task} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Cleanup Task Project 8708",
+        github_repo: "org/cleanup-task-8708",
+        github_installation_id: 8708,
+        linear_team_id: "team_cleanup_task_8708",
+        linear_team_key: "P8708",
+        clone_path: "/tmp/repos/cleanup-task-8708",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
 
-    task =
-      Repo.insert!(%{
-        Task.factory()
-        | project_id: project.id,
-          stage: :merged,
-          worktree_name: nil,
-          worktree_path: nil
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_cleanup_task_8709",
+      "identifier" => "TSK-8709",
+      "title" => "Task 8709"
+    })
+
+    {:ok, issue_8709} = Issues.capture_issue(system_scope(), project, "Task 8709")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cleanup_task_8709"})
+
+    {:ok, task} = Pipeline.bring_local(system_scope(), issue_8709)
+
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :merged,
+        worktree_name: nil,
+        worktree_path: nil
       })
 
     assert {:ok, %Task{worktree_path: nil}} = Pipeline.cleanup_task(task)
@@ -97,16 +245,41 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert {:error, :not_found} = Pipeline.cleanup_task(123)
   end
 
-  test "accepts nil scope and task with opts" do
-    project = Repo.insert!(Project.factory())
+  test "accepts nil scope and task with opts", %{project: _project, task: _task} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Cleanup Task Project 8710",
+        github_repo: "org/cleanup-task-8710",
+        github_installation_id: 8710,
+        linear_team_id: "team_cleanup_task_8710",
+        linear_team_key: "P8710",
+        clone_path: "/tmp/repos/cleanup-task-8710",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
 
-    task =
-      Repo.insert!(%{
-        Task.factory()
-        | project_id: project.id,
-          stage: :merged,
-          worktree_name: nil,
-          worktree_path: nil
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_cleanup_task_8711",
+      "identifier" => "TSK-8711",
+      "title" => "Task 8711"
+    })
+
+    {:ok, issue_8711} = Issues.capture_issue(system_scope(), project, "Task 8711")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cleanup_task_8711"})
+
+    {:ok, task} = Pipeline.bring_local(system_scope(), issue_8711)
+
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :merged,
+        worktree_name: nil,
+        worktree_path: nil
       })
 
     assert {:ok, %Task{worktree_path: nil}} = Pipeline.cleanup_task(nil, task)

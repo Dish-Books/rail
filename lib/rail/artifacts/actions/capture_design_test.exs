@@ -4,9 +4,8 @@ defmodule Rail.Artifacts.Actions.CaptureDesignTest do
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Domain.Embeds.DesignDirection
-  alias Rail.Issues.Schemas.Issue
-  alias Rail.Projects.Schemas.LinearWorkspace
-  alias Rail.Projects.Schemas.Project
+  alias Rail.Issues
+  alias Rail.Projects
   alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
   alias RailTest.Support.ArtifactHelpers
@@ -16,9 +15,40 @@ defmodule Rail.Artifacts.Actions.CaptureDesignTest do
   setup do
     dir = Path.join(@tmp_base, "design_#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
-    ws = Repo.insert!(LinearWorkspace.factory())
-    project = Repo.insert!(%{Project.factory() | linear_workspace_id: ws.id})
-    issue = Repo.insert!(%{Issue.factory() | project_id: project.id, external_id: "lin_dsg_iss"})
+
+    {:ok, ws} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Capture Design Workspace 12102",
+        external_id: "lin_ws_capture_design_12102",
+        token: "lin_api_token_capture_design_12102",
+        webhook_secret: "whsec_capture_design_12102"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Capture Design Project 12103",
+        github_repo: "org/capture-design-12103",
+        github_installation_id: 12_103,
+        linear_team_id: "team_capture_design_12103",
+        linear_team_key: "P12103",
+        clone_path: "/tmp/repos/capture-design-12103",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws.id
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_dsg_iss",
+      "identifier" => "ISS-12104",
+      "title" => "Capture Design Issue 12104"
+    })
+
+    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Capture Design Issue 12104")
 
     on_exit(fn -> File.rm_rf(dir) end)
     {:ok, dir: dir, project: project, issue: issue, ws: ws}

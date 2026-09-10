@@ -1,16 +1,22 @@
 defmodule RailWeb.OverviewLiveTest do
-  use RailWeb.ConnCase, async: false
+  use RailWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline
   alias Rail.Pipeline.Dispatcher
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
+  alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Runs
   alias Rail.Scope
+  alias Rail.Users
+  alias RailTest.Mocks.Linear, as: LinearMock
   alias RailWeb.Components.ApprovalCard
   alias RailWeb.Components.ProjectBadge
   alias RailWeb.Components.QuestionCard
@@ -20,7 +26,15 @@ defmodule RailWeb.OverviewLiveTest do
   end
 
   test "renders Overview view and navigation rail with active Overview destination", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_1",
+        login: "overview_live_user_1",
+        email: "overview_live_user_1@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
 
@@ -45,7 +59,15 @@ defmodule RailWeb.OverviewLiveTest do
   test "project switcher displays active projects count and switches projects via handle_params", %{
     conn: conn
   } do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_2",
+        login: "overview_live_user_2",
+        email: "overview_live_user_2@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
     assert {:ok, %Project{id: p1_id, name: p1_name}} =
@@ -56,7 +78,8 @@ defmodule RailWeb.OverviewLiveTest do
                linear_team_id: "t1",
                linear_team_key: "P1",
                clone_path: "/tmp/p1",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
     assert {:ok, %Project{id: p2_id, name: p2_name}} =
@@ -67,7 +90,8 @@ defmodule RailWeb.OverviewLiveTest do
                linear_team_id: "t2",
                linear_team_key: "P2",
                clone_path: "/tmp/p2",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
@@ -100,8 +124,24 @@ defmodule RailWeb.OverviewLiveTest do
   end
 
   test "mount with ?project=<id> in query params sets current_project_id", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_3",
+        login: "overview_live_user_3",
+        email: "overview_live_user_3@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
+
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Overview Live Workspace",
+        external_id: "lin_ws_overview_live",
+        token: "lin_api_token_overview_live",
+        webhook_secret: "whsec_overview_live"
+      })
 
     assert {:ok, %Project{id: project_id, name: project_name}} =
              Projects.create_project(scope, %{
@@ -111,7 +151,8 @@ defmodule RailWeb.OverviewLiveTest do
                linear_team_id: "tp",
                linear_team_key: "PRE",
                clone_path: "/tmp/preset",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/?project=#{project_id}")
@@ -119,7 +160,15 @@ defmodule RailWeb.OverviewLiveTest do
   end
 
   test "toggles navigation rail expanded and collapsed state", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_4",
+        login: "overview_live_user_4",
+        email: "overview_live_user_4@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
     assert has_element?(view, "#brand-name", "Rail")
@@ -136,7 +185,15 @@ defmodule RailWeb.OverviewLiveTest do
   # The Theme hook flips <html data-theme> itself and reports the result back, so the
   # server only ever reacts to "theme_changed".
   test "follows the theme the client reports", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_5",
+        login: "overview_live_user_5",
+        email: "overview_live_user_5@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
     assert has_element?(view, "#theme-toggle-button[phx-hook='Theme']")
@@ -150,7 +207,15 @@ defmodule RailWeb.OverviewLiveTest do
   end
 
   test "opens and closes new issue modal", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_6",
+        login: "overview_live_user_6",
+        email: "overview_live_user_6@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
     refute has_element?(view, "#new-issue-modal")
@@ -166,7 +231,15 @@ defmodule RailWeb.OverviewLiveTest do
   end
 
   test "close_project_switcher event closes open dialog", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_7",
+        login: "overview_live_user_7",
+        email: "overview_live_user_7@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
     view |> element("#project-switcher-button") |> render_click()
@@ -179,10 +252,26 @@ defmodule RailWeb.OverviewLiveTest do
   test "renders attention badge when tasks require attention and reacts to pipeline_changed", %{
     conn: conn
   } do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_8",
+        login: "overview_live_user_8",
+        email: "overview_live_user_8@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Overview Live Workspace",
+        external_id: "lin_ws_overview_live",
+        token: "lin_api_token_overview_live",
+        webhook_secret: "whsec_overview_live"
+      })
+
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Attention App",
                github_repo: "example/att",
@@ -190,12 +279,24 @@ defmodule RailWeb.OverviewLiveTest do
                linear_team_id: "t_att",
                linear_team_key: "ATT",
                clone_path: "/tmp/att",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    _task =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13416",
+      "identifier" => "TSK-13416",
+      "title" => "Task 13416"
+    })
+
+    {:ok, issue_13416} = Issues.capture_issue(system_scope(), project, "Task 13416")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13416"})
+
+    {:ok, _task} = Pipeline.bring_local(system_scope(), issue_13416)
+
+    {:ok, _task} =
+      Pipeline.update_task(system_scope(), _task.id, %{
         stage: :engineer,
         stage_state: :failed
       })
@@ -215,10 +316,26 @@ defmodule RailWeb.OverviewLiveTest do
   end
 
   test "renders singular running agent label when running_count is 1", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_9",
+        login: "overview_live_user_9",
+        email: "overview_live_user_9@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Overview Live Workspace",
+        external_id: "lin_ws_overview_live",
+        token: "lin_api_token_overview_live",
+        webhook_secret: "whsec_overview_live"
+      })
+
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Running Project",
                github_repo: "example/running",
@@ -226,12 +343,24 @@ defmodule RailWeb.OverviewLiveTest do
                linear_team_id: "t_run",
                linear_team_key: "RUN",
                clone_path: "/tmp/running",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    _task =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13417",
+      "identifier" => "TSK-13417",
+      "title" => "Task 13417"
+    })
+
+    {:ok, issue_13417} = Issues.capture_issue(system_scope(), project, "Task 13417")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13417"})
+
+    {:ok, _task} = Pipeline.bring_local(system_scope(), issue_13417)
+
+    {:ok, _task} =
+      Pipeline.update_task(system_scope(), _task.id, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -240,9 +369,20 @@ defmodule RailWeb.OverviewLiveTest do
     assert has_element?(view, "#running-agent-count-pill", "1 agent running")
 
     # Verify handle_info updates running count when new task runs
-    _task2 =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13418",
+      "identifier" => "TSK-13418",
+      "title" => "Task 13418"
+    })
+
+    {:ok, issue_13418} = Issues.capture_issue(system_scope(), project, "Task 13418")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13418"})
+
+    {:ok, _task2} = Pipeline.bring_local(system_scope(), issue_13418)
+
+    {:ok, _task2} =
+      Pipeline.update_task(system_scope(), _task2.id, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -256,10 +396,26 @@ defmodule RailWeb.OverviewLiveTest do
   end
 
   test "running count with project filter updates via live_sync and pipeline_changed", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Overview Live Workspace",
+        external_id: "lin_ws_overview_live",
+        token: "lin_api_token_overview_live",
+        webhook_secret: "whsec_overview_live"
+      })
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_10",
+        login: "overview_live_user_10",
+        email: "overview_live_user_10@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: p1_id}} =
+    assert {:ok, %Project{id: p1_id} = p1} =
              Projects.create_project(scope, %{
                name: "Project P1",
                github_repo: "example/p1-run",
@@ -267,10 +423,11 @@ defmodule RailWeb.OverviewLiveTest do
                linear_team_id: "t_p1",
                linear_team_key: "P1R",
                clone_path: "/tmp/p1-run",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    assert {:ok, %Project{id: p2_id}} =
+    assert {:ok, %Project{id: _p2_id} = p2} =
              Projects.create_project(scope, %{
                name: "Project P2",
                github_repo: "example/p2-run",
@@ -278,19 +435,42 @@ defmodule RailWeb.OverviewLiveTest do
                linear_team_id: "t_p2",
                linear_team_key: "P2R",
                clone_path: "/tmp/p2-run",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    _task1 =
-      create_test_task(%{
-        project_id: p1_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13419",
+      "identifier" => "TSK-13419",
+      "title" => "Task 13419"
+    })
+
+    {:ok, issue_13419} = Issues.capture_issue(system_scope(), p1, "Task 13419")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13419"})
+
+    {:ok, _task1} = Pipeline.bring_local(system_scope(), issue_13419)
+
+    {:ok, _task1} =
+      Pipeline.update_task(system_scope(), _task1.id, %{
         stage: :engineer,
         stage_state: :running
       })
 
-    _task2 =
-      create_test_task(%{
-        project_id: p2_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13420",
+      "identifier" => "TSK-13420",
+      "title" => "Task 13420"
+    })
+
+    {:ok, issue_13420} = Issues.capture_issue(system_scope(), p2, "Task 13420")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13420"})
+
+    {:ok, _task2} = Pipeline.bring_local(system_scope(), issue_13420)
+
+    {:ok, _task2} =
+      Pipeline.update_task(system_scope(), _task2.id, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -309,10 +489,26 @@ defmodule RailWeb.OverviewLiveTest do
   end
 
   test "renders empty state 'All clear' when no tasks wait and no agents run, hiding merged tasks", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_11",
+        login: "overview_live_user_11",
+        email: "overview_live_user_11@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Overview Live Workspace",
+        external_id: "lin_ws_overview_live",
+        token: "lin_api_token_overview_live",
+        webhook_secret: "whsec_overview_live"
+      })
+
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Empty App",
                github_repo: "example/empty",
@@ -320,15 +516,26 @@ defmodule RailWeb.OverviewLiveTest do
                linear_team_id: "t_empty",
                linear_team_key: "EMP",
                clone_path: "/tmp/empty",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    %Task{id: merged_id, title: merged_title} =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13421",
+      "identifier" => "TSK-13421",
+      "title" => "Already Merged Task"
+    })
+
+    {:ok, issue_13421} = Issues.capture_issue(system_scope(), project, "Already Merged Task")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13421"})
+
+    {:ok, %Task{id: merged_id, title: merged_title}} = Pipeline.bring_local(system_scope(), issue_13421)
+
+    {:ok, %Task{id: merged_id, title: merged_title}} =
+      Pipeline.update_task(system_scope(), %Task{id: merged_id, title: merged_title}.id, %{
         stage: :merged,
-        stage_state: :queued,
-        title: "Already Merged Task"
+        stage_state: :queued
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
@@ -345,7 +552,15 @@ defmodule RailWeb.OverviewLiveTest do
   end
 
   test "renders dispatch banner when RAIL_NO_DISPATCH=1 and when Dispatcher is disabled", %{conn: conn} do
-    {authed_conn, _user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_12",
+        login: "overview_live_user_12",
+        email: "overview_live_user_12@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
 
     System.put_env("RAIL_NO_DISPATCH", "1")
     on_exit(fn -> System.delete_env("RAIL_NO_DISPATCH") end)
@@ -362,18 +577,31 @@ defmodule RailWeb.OverviewLiveTest do
     assert {:ok, view2, _html} = live(authed_conn, ~p"/")
     assert has_element?(view2, "#dispatch-disabled-banner")
 
-    Dispatcher.set_dispatch_disabled(false)
-    assert {:ok, view3, _html} = live(authed_conn, ~p"/")
-    refute has_element?(view3, "#dispatch-disabled-banner")
-
-    Dispatcher.set_dispatch_disabled(true)
+    # Enabling dispatch would mutate the globally registered Dispatcher, which every
+    # other test shares, so the enabled case is covered in Rail.Pipeline.DispatcherTest.
   end
 
   test "renders question card with options, handles answer clicks, text submission, and dismissal", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_13",
+        login: "overview_live_user_13",
+        email: "overview_live_user_13@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Overview Live Workspace",
+        external_id: "lin_ws_overview_live",
+        token: "lin_api_token_overview_live",
+        webhook_secret: "whsec_overview_live"
+      })
+
+    assert {:ok, %Project{id: project_id} = project} =
              Projects.create_project(scope, %{
                name: "Question App",
                github_repo: "example/qapp",
@@ -381,48 +609,72 @@ defmodule RailWeb.OverviewLiveTest do
                linear_team_id: "t_q",
                linear_team_key: "QST",
                clone_path: "/tmp/qapp",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    %Role{id: role_id} =
-      create_test_role(%{
-        project_id: project_id,
-        stage: :engineer,
-        name: "Backend Engineer"
+    {:ok, %Role{id: role_id}} =
+      Roles.create_role(system_scope(), project_id, %{
+        name: "Backend Engineer",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 13401.",
+        stage: :engineer
       })
 
-    %Task{id: task_id, title: _task_title} =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13422",
+      "identifier" => "TSK-13422",
+      "title" => "Build Graph API"
+    })
+
+    {:ok, issue_13422} = Issues.capture_issue(system_scope(), project, "Build Graph API")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13422"})
+
+    {:ok, %Task{id: task_id, title: _task_title}} = Pipeline.bring_local(system_scope(), issue_13422)
+
+    {:ok, %Task{id: task_id, title: _task_title}} =
+      Pipeline.update_task(system_scope(), %Task{id: task_id, title: _task_title}.id, %{
         stage: :engineer,
-        stage_state: :blocked,
-        title: "Build Graph API"
+        stage_state: :blocked
       })
 
-    _role_run = create_test_role_run(%{task_id: task_id, role_id: role_id, status: :blocked_on_input})
-
-    %Question{id: _q1_id, prompt: q1_prompt} =
-      create_test_question(%{
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_id,
-        prompt: "Which database adapter?",
-        options: ["Postgres", "SQLite"],
-        context_summary: "We need persistent storage for logs",
-        status: :pending
+        status: :blocked_on_input,
+        started_at: DateTime.utc_now()
       })
 
-    %Question{id: q_orphan_id, prompt: q_orphan_prompt} =
-      create_test_question(%{
-        task_id: nil,
+    {:ok, %Question{id: _q1_id, prompt: q1_prompt}} =
+      Pipeline.register_question(task_id, %{
+        prompt: "Which database adapter?",
+        role_id: role_id,
+        options: ["Postgres", "SQLite"],
+        context_summary: "We need persistent storage for logs"
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_overview_orphan",
+      "identifier" => "OVL-ORPHAN",
+      "title" => "Orphan question task"
+    })
+
+    {:ok, orphan_issue} = Issues.capture_issue(system_scope(), project, "Orphan question task")
+    LinearMock.mock_update_issue_success(%{"id" => "lin_overview_orphan"})
+    {:ok, %Task{id: orphan_task_id} = orphan_task} = Pipeline.bring_local(system_scope(), orphan_issue)
+
+    {:ok, %Question{prompt: q_orphan_prompt}} =
+      Pipeline.register_question(orphan_task, %{
         prompt: "Orphan clarification prompt?",
-        options: ["Option Alpha", "Option Beta"],
-        status: :pending
+        options: ["Option Alpha", "Option Beta"]
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
 
     assert has_element?(view, "#question-card-task-#{task_id}")
-    assert has_element?(view, "#question-card-question-#{q_orphan_id}")
+    assert has_element?(view, "#question-card-task-#{orphan_task_id}")
     assert has_element?(view, "#waiting-header", "WAITING ON YOU · 2")
     assert render(view) =~ q1_prompt
     assert render(view) =~ "We need persistent storage for logs"
@@ -434,28 +686,44 @@ defmodule RailWeb.OverviewLiveTest do
     |> render_click()
 
     refute has_element?(view, "#question-card-task-#{task_id}")
-    assert has_element?(view, "#question-card-question-#{q_orphan_id}")
+    assert has_element?(view, "#question-card-task-#{orphan_task_id}")
 
     # Empty answer text submission guard
     view
-    |> form("#answer-form-question-#{q_orphan_id}", %{"question_id" => q_orphan_id, "answer" => "   "})
+    |> form("#answer-form-task-#{orphan_task_id}", %{"answer" => "   "})
     |> render_submit()
 
-    assert has_element?(view, "#question-card-question-#{q_orphan_id}")
+    assert has_element?(view, "#question-card-task-#{orphan_task_id}")
 
     # Dismiss question
     view
-    |> element("#dismiss-question-question-#{q_orphan_id}")
+    |> element("#dismiss-question-task-#{orphan_task_id}")
     |> render_click()
 
-    refute has_element?(view, "#question-card-question-#{q_orphan_id}")
+    refute has_element?(view, "#question-card-task-#{orphan_task_id}")
   end
 
   test "submits question answer text via form", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_14",
+        login: "overview_live_user_14",
+        email: "overview_live_user_14@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Overview Live Workspace",
+        external_id: "lin_ws_overview_live",
+        token: "lin_api_token_overview_live",
+        webhook_secret: "whsec_overview_live"
+      })
+
+    assert {:ok, %Project{id: project_id} = project} =
              Projects.create_project(scope, %{
                name: "Form Q App",
                github_repo: "example/formq",
@@ -463,33 +731,49 @@ defmodule RailWeb.OverviewLiveTest do
                linear_team_id: "t_fq",
                linear_team_key: "FQA",
                clone_path: "/tmp/formq",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    %Role{id: role_id} =
-      create_test_role(%{
-        project_id: project_id,
-        stage: :engineer,
-        name: "Form Engineer"
+    {:ok, %Role{id: role_id}} =
+      Roles.create_role(system_scope(), project_id, %{
+        name: "Form Engineer",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 13402.",
+        stage: :engineer
       })
 
-    %Task{id: task_id} =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13423",
+      "identifier" => "TSK-13423",
+      "title" => "Freeform Task"
+    })
+
+    {:ok, issue_13423} = Issues.capture_issue(system_scope(), project, "Freeform Task")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13423"})
+
+    {:ok, %Task{id: task_id}} = Pipeline.bring_local(system_scope(), issue_13423)
+
+    {:ok, %Task{id: task_id}} =
+      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
         stage: :engineer,
-        stage_state: :blocked,
-        title: "Freeform Task"
+        stage_state: :blocked
       })
 
-    _role_run = create_test_role_run(%{task_id: task_id, role_id: role_id, status: :blocked_on_input})
-
-    %Question{id: q_id} =
-      create_test_question(%{
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_id,
+        status: :blocked_on_input,
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, %Question{id: q_id}} =
+      Pipeline.register_question(task_id, %{
         prompt: "What port number?",
-        options: [],
-        status: :pending
+        role_id: role_id,
+        options: []
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
@@ -503,10 +787,26 @@ defmodule RailWeb.OverviewLiveTest do
   end
 
   test "renders approval cards for stages and handles send back comments flow", %{conn: conn} do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_15",
+        login: "overview_live_user_15",
+        email: "overview_live_user_15@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Overview Live Workspace",
+        external_id: "lin_ws_overview_live",
+        token: "lin_api_token_overview_live",
+        webhook_secret: "whsec_overview_live"
+      })
+
+    assert {:ok, %Project{id: project_id} = project} =
              Projects.create_project(scope, %{
                name: "Approval App",
                github_repo: "example/approval",
@@ -514,36 +814,87 @@ defmodule RailWeb.OverviewLiveTest do
                linear_team_id: "t_appr",
                linear_team_key: "APR",
                clone_path: "/tmp/approval",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    _role_arch = create_test_role(%{project_id: project_id, stage: :architect, name: "Architect"})
-    _role_prod = create_test_role(%{project_id: project_id, stage: :product, name: "Product"})
-    _role_eng = create_test_role(%{project_id: project_id, stage: :engineer, name: "Engineer"})
+    {:ok, _role_arch} =
+      Roles.create_role(system_scope(), project_id, %{
+        name: "Architect",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 13403.",
+        stage: :architect
+      })
 
-    %Task{id: arch_id, title: arch_title} =
-      create_test_task(%{
-        project_id: project_id,
+    {:ok, _role_prod} =
+      Roles.create_role(system_scope(), project_id, %{
+        name: "Product",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 13404.",
+        stage: :product
+      })
+
+    {:ok, _role_eng} =
+      Roles.create_role(system_scope(), project_id, %{
+        name: "Engineer",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 13405.",
+        stage: :engineer
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13424",
+      "identifier" => "TSK-13424",
+      "title" => "Architect Approval Task"
+    })
+
+    {:ok, issue_13424} = Issues.capture_issue(system_scope(), project, "Architect Approval Task")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13424"})
+
+    {:ok, %Task{id: arch_id, title: arch_title}} = Pipeline.bring_local(system_scope(), issue_13424)
+
+    {:ok, %Task{id: arch_id, title: arch_title}} =
+      Pipeline.update_task(system_scope(), %Task{id: arch_id, title: arch_title}.id, %{
         stage: :architect,
         stage_state: :awaiting_approval,
-        title: "Architect Approval Task",
         error: "Architect notes here"
       })
 
-    %Task{id: prod_id, title: prod_title} =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13425",
+      "identifier" => "TSK-13425",
+      "title" => "Product Approval Task"
+    })
+
+    {:ok, issue_13425} = Issues.capture_issue(system_scope(), project, "Product Approval Task")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13425"})
+
+    {:ok, %Task{id: prod_id, title: prod_title}} = Pipeline.bring_local(system_scope(), issue_13425)
+
+    {:ok, %Task{id: prod_id, title: prod_title}} =
+      Pipeline.update_task(system_scope(), %Task{id: prod_id, title: prod_title}.id, %{
         stage: :product,
-        stage_state: :awaiting_approval,
-        title: "Product Approval Task"
+        stage_state: :awaiting_approval
       })
 
-    %Task{id: eng_id, title: eng_title} =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13426",
+      "identifier" => "TSK-13426",
+      "title" => "Engineer Approval Task"
+    })
+
+    {:ok, issue_13426} = Issues.capture_issue(system_scope(), project, "Engineer Approval Task")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13426"})
+
+    {:ok, %Task{id: eng_id, title: eng_title}} = Pipeline.bring_local(system_scope(), issue_13426)
+
+    {:ok, %Task{id: eng_id, title: eng_title}} =
+      Pipeline.update_task(system_scope(), %Task{id: eng_id, title: eng_title}.id, %{
         stage: :engineer,
-        stage_state: :awaiting_approval,
-        title: "Engineer Approval Task"
+        stage_state: :awaiting_approval
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
@@ -595,10 +946,26 @@ defmodule RailWeb.OverviewLiveTest do
        %{
          conn: conn
        } do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_16",
+        login: "overview_live_user_16",
+        email: "overview_live_user_16@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Overview Live Workspace",
+        external_id: "lin_ws_overview_live",
+        token: "lin_api_token_overview_live",
+        webhook_secret: "whsec_overview_live"
+      })
+
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Compact App",
                github_repo: "example/compact",
@@ -606,34 +973,65 @@ defmodule RailWeb.OverviewLiveTest do
                linear_team_id: "t_c",
                linear_team_key: "CMP",
                clone_path: "/tmp/compact",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    %Task{id: failed_id, title: failed_title} =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13427",
+      "identifier" => "TSK-13427",
+      "title" => "Failed Build Task"
+    })
+
+    {:ok, issue_13427} = Issues.capture_issue(system_scope(), project, "Failed Build Task")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13427"})
+
+    {:ok, %Task{id: failed_id, title: failed_title}} = Pipeline.bring_local(system_scope(), issue_13427)
+
+    {:ok, %Task{id: failed_id, title: failed_title}} =
+      Pipeline.update_task(system_scope(), %Task{id: failed_id, title: failed_title}.id, %{
         stage: :engineer,
         stage_state: :failed,
-        title: "Failed Build Task",
         error: "Compilation error in worker.ex"
       })
 
-    %Task{id: merge_id, title: merge_title} =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13428",
+      "identifier" => "TSK-13428",
+      "title" => "Ready PR Task"
+    })
+
+    {:ok, issue_13428} = Issues.capture_issue(system_scope(), project, "Ready PR Task")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13428"})
+
+    {:ok, %Task{id: merge_id, title: merge_title}} = Pipeline.bring_local(system_scope(), issue_13428)
+
+    {:ok, %Task{id: merge_id, title: merge_title}} =
+      Pipeline.update_task(system_scope(), %Task{id: merge_id, title: merge_title}.id, %{
         stage: :ready_to_merge,
         stage_state: :queued,
-        title: "Ready PR Task",
         pr_number: nil
       })
 
-    %Task{id: conflict_id, title: conflict_title} =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13429",
+      "identifier" => "TSK-13429",
+      "title" => "Conflicted Branch Task"
+    })
+
+    {:ok, issue_13429} = Issues.capture_issue(system_scope(), project, "Conflicted Branch Task")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13429"})
+
+    {:ok, %Task{id: conflict_id, title: conflict_title}} = Pipeline.bring_local(system_scope(), issue_13429)
+
+    {:ok, %Task{id: conflict_id, title: conflict_title}} =
+      Pipeline.update_task(system_scope(), %Task{id: conflict_id, title: conflict_title}.id, %{
         stage: :engineer,
         stage_state: :queued,
-        mergeability: :conflicting,
-        title: "Conflicted Branch Task"
+        mergeability: :conflicting
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
@@ -694,10 +1092,26 @@ defmodule RailWeb.OverviewLiveTest do
   test "renders with-an-agent section with running, queued, rebasing, and blocked tasks sorted by updated_at", %{
     conn: conn
   } do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_17",
+        login: "overview_live_user_17",
+        email: "overview_live_user_17@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Overview Live Workspace",
+        external_id: "lin_ws_overview_live",
+        token: "lin_api_token_overview_live",
+        webhook_secret: "whsec_overview_live"
+      })
+
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Agent App",
                github_repo: "example/agentapp",
@@ -705,32 +1119,63 @@ defmodule RailWeb.OverviewLiveTest do
                linear_team_id: "t_ag",
                linear_team_key: "AGP",
                clone_path: "/tmp/agentapp",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    %Task{id: t_queued_id} =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13430",
+      "identifier" => "TSK-13430",
+      "title" => "Queued Design Task"
+    })
+
+    {:ok, issue_13430} = Issues.capture_issue(system_scope(), project, "Queued Design Task")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13430"})
+
+    {:ok, %Task{id: t_queued_id}} = Pipeline.bring_local(system_scope(), issue_13430)
+
+    {:ok, %Task{id: t_queued_id}} =
+      Pipeline.update_task(system_scope(), %Task{id: t_queued_id}.id, %{
         stage: :design,
-        stage_state: :queued,
-        title: "Queued Design Task"
+        stage_state: :queued
       })
 
-    %Task{id: t_rebase_id} =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13431",
+      "identifier" => "TSK-13431",
+      "title" => "Active Rebasing Task"
+    })
+
+    {:ok, issue_13431} = Issues.capture_issue(system_scope(), project, "Active Rebasing Task")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13431"})
+
+    {:ok, %Task{id: t_rebase_id}} = Pipeline.bring_local(system_scope(), issue_13431)
+
+    {:ok, %Task{id: t_rebase_id}} =
+      Pipeline.update_task(system_scope(), %Task{id: t_rebase_id}.id, %{
         stage: :engineer,
         stage_state: :running,
-        is_rebasing: true,
-        title: "Active Rebasing Task"
+        is_rebasing: true
       })
 
-    %Task{id: t_running_id} =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13432",
+      "identifier" => "TSK-13432",
+      "title" => "Active Coding Task"
+    })
+
+    {:ok, issue_13432} = Issues.capture_issue(system_scope(), project, "Active Coding Task")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13432"})
+
+    {:ok, %Task{id: t_running_id}} = Pipeline.bring_local(system_scope(), issue_13432)
+
+    {:ok, %Task{id: t_running_id}} =
+      Pipeline.update_task(system_scope(), %Task{id: t_running_id}.id, %{
         stage: :engineer,
-        stage_state: :running,
-        title: "Active Coding Task"
+        stage_state: :running
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
@@ -758,10 +1203,26 @@ defmodule RailWeb.OverviewLiveTest do
        %{
          conn: conn
        } do
-    {authed_conn, user} = log_in_test_user(conn)
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_18",
+        login: "overview_live_user_18",
+        email: "overview_live_user_18@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id, name: project_name}} =
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Overview Live Workspace",
+        external_id: "lin_ws_overview_live",
+        token: "lin_api_token_overview_live",
+        webhook_secret: "whsec_overview_live"
+      })
+
+    assert {:ok, %Project{id: project_id, name: project_name} = project} =
              Projects.create_project(scope, %{
                name: "Roster Project",
                github_repo: "example/roster",
@@ -769,95 +1230,141 @@ defmodule RailWeb.OverviewLiveTest do
                linear_team_id: "t_rst",
                linear_team_key: "RST",
                clone_path: "/tmp/roster",
-               active: true
+               active: true,
+               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    %Role{id: r_eng_id} =
-      create_test_role(%{
-        project_id: project_id,
-        stage: :engineer,
+    {:ok, %Role{id: r_eng_id}} =
+      Roles.create_role(system_scope(), project_id, %{
         name: "Software Engineer",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 13406.",
+        stage: :engineer,
         icon_name: nil
       })
 
-    %Role{id: r_arch_id} =
-      create_test_role(%{
-        project_id: project_id,
-        stage: :architect,
+    {:ok, %Role{id: r_arch_id}} =
+      Roles.create_role(system_scope(), project_id, %{
         name: "System Architect",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 13407.",
+        stage: :architect,
         icon_name: nil
       })
 
-    %Role{id: r_des_id} =
-      create_test_role(%{
-        project_id: project_id,
-        stage: :design,
+    {:ok, %Role{id: r_des_id}} =
+      Roles.create_role(system_scope(), project_id, %{
         name: "UI Designer",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 13408.",
+        stage: :design,
         icon_name: nil
       })
 
-    %Role{id: r_qa_id} =
-      create_test_role(%{
-        project_id: project_id,
-        stage: :qa,
+    {:ok, %Role{id: r_qa_id}} =
+      Roles.create_role(system_scope(), project_id, %{
         name: "QA Specialist",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 13409.",
+        stage: :qa,
         icon_name: nil
       })
 
-    %Role{id: r_demo_id} =
-      create_test_role(%{
-        project_id: project_id,
-        stage: :demo,
+    {:ok, %Role{id: r_demo_id}} =
+      Roles.create_role(system_scope(), project_id, %{
         name: "Demo Recorder",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 13410.",
+        stage: :demo,
         icon_name: nil
       })
 
-    %Role{id: r_custom_id} =
-      create_test_role(%{
-        project_id: project_id,
-        stage: nil,
+    {:ok, %Role{id: r_custom_id}} =
+      Roles.create_role(system_scope(), project_id, %{
         name: "Custom Bot",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 13411.",
+        stage: nil,
         icon_name: "pi-robot"
       })
 
-    %Role{id: r_prod_id} =
-      create_test_role(%{
-        project_id: project_id,
-        stage: :product,
+    {:ok, %Role{id: r_prod_id}} =
+      Roles.create_role(system_scope(), project_id, %{
         name: "Product Manager",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 13412.",
+        stage: :product,
         icon_name: nil
       })
 
-    %Issue{id: issue_id, identifier: issue_identifier} =
-      create_test_issue(%{project_id: project_id, identifier: "ENG-101"})
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_overview_live_13415",
+      "identifier" => "ENG-101",
+      "title" => "Overview Live Issue 13415"
+    })
+
+    {:ok, %Issue{id: issue_id, identifier: issue_identifier}} =
+      Issues.capture_issue(system_scope(), project, "Overview Live Issue 13415")
 
     # Running task for Engineer with associated issue
-    %Task{id: t_eng_id} =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13433",
+      "identifier" => "TSK-13433",
+      "title" => "Writing Tests"
+    })
+
+    {:ok, issue_13433} = Issues.capture_issue(system_scope(), project, "Writing Tests")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13433"})
+
+    {:ok, %Task{id: t_eng_id}} = Pipeline.bring_local(system_scope(), issue_13433)
+
+    {:ok, %Task{id: t_eng_id}} =
+      Pipeline.update_task(system_scope(), %Task{id: t_eng_id}.id, %{
         issue_id: issue_id,
         stage: :engineer,
-        stage_state: :running,
-        title: "Writing Tests"
+        stage_state: :running
       })
 
     # Chatting task for Architect
-    %Task{id: t_arch_id} =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13434",
+      "identifier" => "TSK-13434",
+      "title" => "Brainstorming Architecture"
+    })
+
+    {:ok, issue_13434} = Issues.capture_issue(system_scope(), project, "Brainstorming Architecture")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13434"})
+
+    {:ok, %Task{id: t_arch_id}} = Pipeline.bring_local(system_scope(), issue_13434)
+
+    {:ok, %Task{id: t_arch_id}} =
+      Pipeline.update_task(system_scope(), %Task{id: t_arch_id}.id, %{
+        issue_id: nil,
         stage: :architect,
         stage_state: :running,
-        active_chat_role_id: r_arch_id,
-        title: "Brainstorming Architecture"
+        active_chat_role_id: r_arch_id
       })
 
     # Waiting task for QA
-    %Task{id: t_qa_id} =
-      create_test_task(%{
-        project_id: project_id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_overview_live_13435",
+      "identifier" => "TSK-13435",
+      "title" => "Verify Slice 5.2"
+    })
+
+    {:ok, issue_13435} = Issues.capture_issue(system_scope(), project, "Verify Slice 5.2")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13435"})
+
+    {:ok, %Task{id: t_qa_id}} = Pipeline.bring_local(system_scope(), issue_13435)
+
+    {:ok, %Task{id: t_qa_id}} =
+      Pipeline.update_task(system_scope(), %Task{id: t_qa_id}.id, %{
+        issue_id: nil,
         stage: :qa,
-        stage_state: :awaiting_approval,
-        title: "Verify Slice 5.2"
+        stage_state: :awaiting_approval
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
@@ -910,8 +1417,14 @@ defmodule RailWeb.OverviewLiveTest do
   end
 
   test "compact waiting strip renders with issue identifier and fallback label for other kind" do
-    task = create_test_task(%{title: "Other Kind Task"})
-    task_with_issue = %{task | issue: %Issue{identifier: "ISS-42"}}
+    task_with_issue = %Task{
+      id: "tsk_compact_strip",
+      title: "Other Kind Task",
+      stage: :engineer,
+      stage_state: :awaiting_approval,
+      issue: %Issue{identifier: "ISS-42"}
+    }
+
     row = %{item: %{key: "custom-1"}, kind: :custom, task: task_with_issue, waiting_since: DateTime.utc_now()}
     block = %Rail.Domain.CompactStripBlock{rows: [row]}
     html = render_component(&RailWeb.Components.CompactWaitingStrip.compact_waiting_strip/1, block: block)

@@ -1,5 +1,5 @@
 defmodule Rail.Backends.Actions.ListAccountsTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
   alias Rail.Backends
   alias Rail.Backends.Schemas.CliAccount

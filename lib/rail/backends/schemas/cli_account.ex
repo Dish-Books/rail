@@ -46,19 +46,6 @@ defmodule Rail.Backends.Schemas.CliAccount do
     |> unique_constraint([:node, :backend], name: :cli_accounts_node_backend_index)
   end
 
-  @doc "Builds a valid fixture struct for testing."
-  def factory do
-    %__MODULE__{
-      node: default_node(),
-      backend: :claude,
-      status: "ready",
-      account_label: "test@example.com",
-      account_detail: "max",
-      groups: [CliAccountGroup.factory()],
-      fetched_at: DateTime.utc_now()
-    }
-  end
-
   @doc "Returns the supported backends list."
   def backends, do: @backends
 

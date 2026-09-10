@@ -1,11 +1,13 @@
 defmodule RailWeb.Settings.RolesLiveTest do
-  use RailWeb.ConnCase, async: false
+  use RailWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Roles.RoleInstructionProposal
   alias Rail.Roles.Schemas.Role
+  alias Rail.Runs
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
@@ -28,7 +30,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         models: [%{id: "claude-sonnet-5", display_name: "claude-sonnet-5"}]
       })
 
-    {admin_conn, _logged_admin} = log_in_test_user(conn, admin_user)
+    admin_conn = log_in_user(conn, admin_user)
 
     assert {:ok, %User{} = regular_user} =
              Users.register_oauth_user(%{
@@ -39,7 +41,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
                admin: false
              })
 
-    {regular_conn, _logged_regular} = log_in_test_user(conn, regular_user)
+    regular_conn = log_in_user(conn, regular_user)
 
     %{
       conn: conn,
@@ -67,7 +69,23 @@ defmodule RailWeb.Settings.RolesLiveTest do
     admin_conn: conn,
     admin_user: admin_user
   } do
-    project = create_test_project()
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13001",
+        github_repo: "org/roles-live-13001",
+        github_installation_id: 13_001,
+        linear_team_id: "team_roles_live_13001",
+        linear_team_key: "P13001",
+        clone_path: "/tmp/repos/roles-live-13001",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
     scope = Rail.Scope.for_user(admin_user)
 
     assert {:ok, %Role{id: _eng_id}} =
@@ -93,7 +111,23 @@ defmodule RailWeb.Settings.RolesLiveTest do
     refute has_element?(view, "#unbound-roles-section")
 
     # Change project via selector
-    project2 = create_test_project(name: "Secondary Project")
+    {:ok, project2} =
+      Projects.create_project(system_scope(), %{
+        name: "Secondary Project",
+        github_repo: "org/roles-live-13002",
+        github_installation_id: 13_002,
+        linear_team_id: "team_roles_live_13002",
+        linear_team_key: "P13002",
+        clone_path: "/tmp/repos/roles-live-13002",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
     view |> element("#project-selector-form") |> render_change(%{"project_id" => project2.id})
     assert_patched(view, ~p"/settings/roles?project=#{project2.id}")
   end
@@ -101,7 +135,23 @@ defmodule RailWeb.Settings.RolesLiveTest do
   test "creates a new role with stage binding", %{
     admin_conn: conn
   } do
-    project = create_test_project()
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13003",
+        github_repo: "org/roles-live-13003",
+        github_installation_id: 13_003,
+        linear_team_id: "team_roles_live_13003",
+        linear_team_key: "P13003",
+        clone_path: "/tmp/repos/roles-live-13003",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
     # Open create modal for product stage
@@ -170,7 +220,23 @@ defmodule RailWeb.Settings.RolesLiveTest do
   test "toolbar add button creates a role on the first free stage", %{
     admin_conn: conn
   } do
-    project = create_test_project()
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13004",
+        github_repo: "org/roles-live-13004",
+        github_installation_id: 13_004,
+        linear_team_id: "team_roles_live_13004",
+        linear_team_key: "P13004",
+        clone_path: "/tmp/repos/roles-live-13004",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
     # No stage param: defaults to the first canonical stage with no role bound
@@ -201,7 +267,23 @@ defmodule RailWeb.Settings.RolesLiveTest do
     admin_conn: conn,
     admin_user: admin_user
   } do
-    project = create_test_project()
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13005",
+        github_repo: "org/roles-live-13005",
+        github_installation_id: 13_005,
+        linear_team_id: "team_roles_live_13005",
+        linear_team_key: "P13005",
+        clone_path: "/tmp/repos/roles-live-13005",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
     scope = Rail.Scope.for_user(admin_user)
 
     assert {:ok, %Role{id: role_id}} =
@@ -253,7 +335,23 @@ defmodule RailWeb.Settings.RolesLiveTest do
     admin_conn: conn,
     admin_user: admin_user
   } do
-    project = create_test_project()
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13006",
+        github_repo: "org/roles-live-13006",
+        github_installation_id: 13_006,
+        linear_team_id: "team_roles_live_13006",
+        linear_team_key: "P13006",
+        clone_path: "/tmp/repos/roles-live-13006",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
     scope = Rail.Scope.for_user(admin_user)
 
     assert {:ok, %Role{id: role_id}} =
@@ -290,7 +388,23 @@ defmodule RailWeb.Settings.RolesLiveTest do
     admin_user: admin_user
   } do
     scope = Rail.Scope.for_user(admin_user)
-    source_project = create_test_project(name: "Source Project")
+
+    {:ok, source_project} =
+      Projects.create_project(system_scope(), %{
+        name: "Source Project",
+        github_repo: "org/roles-live-13007",
+        github_installation_id: 13_007,
+        linear_team_id: "team_roles_live_13007",
+        linear_team_key: "P13007",
+        clone_path: "/tmp/repos/roles-live-13007",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
 
     assert {:ok, %Role{}} =
              Roles.create_role(scope, source_project.id, %{
@@ -301,7 +415,23 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "Record demos"
              })
 
-    target_project = create_test_project(name: "Target Project")
+    {:ok, target_project} =
+      Projects.create_project(system_scope(), %{
+        name: "Target Project",
+        github_repo: "org/roles-live-13008",
+        github_installation_id: 13_008,
+        linear_team_id: "team_roles_live_13008",
+        linear_team_key: "P13008",
+        clone_path: "/tmp/repos/roles-live-13008",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{target_project.id}")
 
     view |> element("#copy-roles-button") |> render_click()
@@ -319,7 +449,23 @@ defmodule RailWeb.Settings.RolesLiveTest do
     admin_conn: conn,
     admin_user: admin_user
   } do
-    project = create_test_project()
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13009",
+        github_repo: "org/roles-live-13009",
+        github_installation_id: 13_009,
+        linear_team_id: "team_roles_live_13009",
+        linear_team_key: "P13009",
+        clone_path: "/tmp/repos/roles-live-13009",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
     scope = Rail.Scope.for_user(admin_user)
 
     assert {:ok, %Role{id: role_id}} =
@@ -347,7 +493,23 @@ defmodule RailWeb.Settings.RolesLiveTest do
     admin_conn: conn,
     admin_user: admin_user
   } do
-    project = create_test_project()
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13010",
+        github_repo: "org/roles-live-13010",
+        github_installation_id: 13_010,
+        linear_team_id: "team_roles_live_13010",
+        linear_team_key: "P13010",
+        clone_path: "/tmp/repos/roles-live-13010",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
     scope = Rail.Scope.for_user(admin_user)
 
     assert {:ok, %Role{id: role_id}} =
@@ -360,11 +522,14 @@ defmodule RailWeb.Settings.RolesLiveTest do
              })
 
     # Create a finished role run with output for evidence
-    create_test_role_run(
-      role_id: role_id,
-      status: :finished,
-      output: "Completed task implementation successfully."
-    )
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: UXID.generate!(prefix: "tsk"),
+        role_id: role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        output: "Completed task implementation successfully."
+      })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
@@ -417,7 +582,23 @@ defmodule RailWeb.Settings.RolesLiveTest do
     admin_conn: conn,
     admin_user: admin_user
   } do
-    project = create_test_project()
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13011",
+        github_repo: "org/roles-live-13011",
+        github_installation_id: 13_011,
+        linear_team_id: "team_roles_live_13011",
+        linear_team_key: "P13011",
+        clone_path: "/tmp/repos/roles-live-13011",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
     scope = Rail.Scope.for_user(admin_user)
 
     assert {:ok, %Role{id: role_id}} =
@@ -429,7 +610,14 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "Debug failures"
              })
 
-    create_test_role_run(role_id: role_id, status: :finished, output: "Output")
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: UXID.generate!(prefix: "tsk"),
+        role_id: role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        output: "Output"
+      })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
@@ -445,7 +633,23 @@ defmodule RailWeb.Settings.RolesLiveTest do
     admin_conn: conn,
     admin_user: _admin_user
   } do
-    project = create_test_project(%{active: true})
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13012",
+        github_repo: "org/roles-live-13012",
+        github_installation_id: 13_012,
+        linear_team_id: "team_roles_live_13012",
+        linear_team_key: "P13012",
+        clone_path: "/tmp/repos/roles-live-13012",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        active: true
+      })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles")
     assert has_element?(view, "#project-selector option[selected]", project.name)
@@ -459,8 +663,39 @@ defmodule RailWeb.Settings.RolesLiveTest do
     admin_conn: conn,
     admin_user: _admin_user
   } do
-    project1 = create_test_project(%{name: "Project One"})
-    project2 = create_test_project(%{name: "Project Two"})
+    {:ok, project1} =
+      Projects.create_project(system_scope(), %{
+        name: "Project One",
+        github_repo: "org/roles-live-13013",
+        github_installation_id: 13_013,
+        linear_team_id: "team_roles_live_13013",
+        linear_team_key: "P13013",
+        clone_path: "/tmp/repos/roles-live-13013",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    {:ok, project2} =
+      Projects.create_project(system_scope(), %{
+        name: "Project Two",
+        github_repo: "org/roles-live-13014",
+        github_installation_id: 13_014,
+        linear_team_id: "team_roles_live_13014",
+        linear_team_key: "P13014",
+        clone_path: "/tmp/repos/roles-live-13014",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project1.id}")
     assert has_element?(view, "#project-selector option[selected]", "Project One")
@@ -476,7 +711,22 @@ defmodule RailWeb.Settings.RolesLiveTest do
     admin_conn: conn,
     admin_user: _admin_user
   } do
-    project = create_test_project()
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13015",
+        github_repo: "org/roles-live-13015",
+        github_installation_id: 13_015,
+        linear_team_id: "team_roles_live_13015",
+        linear_team_key: "P13015",
+        clone_path: "/tmp/repos/roles-live-13015",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
@@ -525,7 +775,22 @@ defmodule RailWeb.Settings.RolesLiveTest do
     admin_conn: conn,
     admin_user: _admin_user
   } do
-    project = create_test_project()
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13016",
+        github_repo: "org/roles-live-13016",
+        github_installation_id: 13_016,
+        linear_team_id: "team_roles_live_13016",
+        linear_team_key: "P13016",
+        clone_path: "/tmp/repos/roles-live-13016",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
@@ -582,7 +847,22 @@ defmodule RailWeb.Settings.RolesLiveTest do
     admin_conn: conn,
     admin_user: _admin_user
   } do
-    project = create_test_project()
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13017",
+        github_repo: "org/roles-live-13017",
+        github_installation_id: 13_017,
+        linear_team_id: "team_roles_live_13017",
+        linear_team_key: "P13017",
+        clone_path: "/tmp/repos/roles-live-13017",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
@@ -597,8 +877,39 @@ defmodule RailWeb.Settings.RolesLiveTest do
     admin_conn: conn,
     admin_user: _admin_user
   } do
-    project = create_test_project()
-    other_project = create_test_project()
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13018",
+        github_repo: "org/roles-live-13018",
+        github_installation_id: 13_018,
+        linear_team_id: "team_roles_live_13018",
+        linear_team_key: "P13018",
+        clone_path: "/tmp/repos/roles-live-13018",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    {:ok, other_project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13019",
+        github_repo: "org/roles-live-13019",
+        github_installation_id: 13_019,
+        linear_team_id: "team_roles_live_13019",
+        linear_team_key: "P13019",
+        clone_path: "/tmp/repos/roles-live-13019",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
@@ -625,7 +936,23 @@ defmodule RailWeb.Settings.RolesLiveTest do
   } do
     stub(Roles, :improve_role, fn _scope, _role, _model -> {:error, :stubbed_failure} end)
 
-    project = create_test_project()
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13020",
+        github_repo: "org/roles-live-13020",
+        github_installation_id: 13_020,
+        linear_team_id: "team_roles_live_13020",
+        linear_team_key: "P13020",
+        clone_path: "/tmp/repos/roles-live-13020",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
     scope = Rail.Scope.for_user(admin_user)
 
     assert {:ok, %Role{id: role_id}} =
@@ -637,7 +964,15 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "QA instructions"
              })
 
-    role_run = create_test_role_run(role_id: role_id, status: :finished, completed_at: nil, output: "Output")
+    {:ok, role_run} =
+      Runs.create_role_run(%{
+        task_id: UXID.generate!(prefix: "tsk"),
+        role_id: role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        completed_at: nil,
+        output: "Output"
+      })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
@@ -670,7 +1005,23 @@ defmodule RailWeb.Settings.RolesLiveTest do
        }}
     end)
 
-    project = create_test_project()
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13021",
+        github_repo: "org/roles-live-13021",
+        github_installation_id: 13_021,
+        linear_team_id: "team_roles_live_13021",
+        linear_team_key: "P13021",
+        clone_path: "/tmp/repos/roles-live-13021",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
     scope = Rail.Scope.for_user(admin_user)
 
     assert {:ok, %Role{id: role_id}} =
@@ -682,7 +1033,14 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "QA instructions"
              })
 
-    create_test_role_run(role_id: role_id, status: :finished, output: "Output")
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: UXID.generate!(prefix: "tsk"),
+        role_id: role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        output: "Output"
+      })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
@@ -705,7 +1063,23 @@ defmodule RailWeb.Settings.RolesLiveTest do
     admin_conn: conn,
     admin_user: admin_user
   } do
-    project = create_test_project()
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13022",
+        github_repo: "org/roles-live-13022",
+        github_installation_id: 13_022,
+        linear_team_id: "team_roles_live_13022",
+        linear_team_key: "P13022",
+        clone_path: "/tmp/repos/roles-live-13022",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
     scope = Rail.Scope.for_user(admin_user)
 
     assert {:ok, %Role{id: role_id} = role} =
@@ -717,7 +1091,14 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "QA instructions"
              })
 
-    create_test_role_run(role_id: role_id, status: :finished, output: "Output")
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: UXID.generate!(prefix: "tsk"),
+        role_id: role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        output: "Output"
+      })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
@@ -758,7 +1139,15 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "Debugger instructions"
              })
 
-    create_test_role_run(role_id: new_role_id, status: :finished, output: "Output")
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: UXID.generate!(prefix: "tsk"),
+        role_id: new_role_id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        output: "Output"
+      })
+
     assert {:ok, view2, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
     view2 |> element("#improve-role-button-#{new_role_id}") |> render_click()

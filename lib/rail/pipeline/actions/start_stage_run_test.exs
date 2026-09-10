@@ -1,29 +1,102 @@
 defmodule Rail.Pipeline.Actions.StartStageRunTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.Scratch, only: [capture: 3]
+
+  alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
+  alias RailTest.Mocks.Linear, as: LinearMock
+
+  setup do
+    scope = system_scope()
+
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Start Stage Workspace",
+        external_id: "lin_ws_start_stage",
+        token: "lin_api_token_start_stage",
+        webhook_secret: "whsec_start_stage"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Start Stage Project 10701",
+        github_repo: "org/start-stage-10701",
+        github_installation_id: 10_701,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_start_stage_10701",
+        linear_team_key: "P10701",
+        clone_path: create_temp_git_repo(),
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    roles =
+      Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
+        {:ok, role} =
+          Roles.create_role(scope, project, %{
+            stage: stage,
+            name: "#{stage} role",
+            model: "claude-3-7-sonnet",
+            system_prompt: "You are the #{stage} agent."
+          })
+
+        {stage, role}
+      end)
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_start_stage_1",
+      "identifier" => "SSR-1",
+      "title" => "Start Stage Issue"
+    })
+
+    {:ok, issue} = Issues.capture_issue(scope, project, "Start Stage Issue")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_start_stage_1"})
+
+    {:ok, task} = Pipeline.bring_local(scope, issue)
+
+    # These tests exercise the runner, not Linear publishing, so detach the issue.
+    {:ok, task} = Pipeline.update_task(scope, task.id, %{issue_id: nil})
+
+    %{project: project, issue: issue, task: task, roles: roles}
+  end
 
   test "returns not_found when task ID does not exist" do
     assert {:error, :not_found} =
              Pipeline.start_stage_run("tsk_000000000000000000000000")
   end
 
-  test "returns project_not_found when task project does not exist" do
+  test "returns project_not_found when task project does not exist", %{task: _task} do
     task = %Task{id: UXID.generate!(prefix: "tsk"), project_id: "prj_000000000000000000000000"}
 
     assert {:error, :project_not_found} = Pipeline.start_stage_run(task)
   end
 
-  test "fails and marks task failed when no role is configured for stage" do
+  test "fails and marks task failed when no role is configured for stage", %{task: task, roles: roles} do
+    {:ok, _deleted} = Roles.delete_role(system_scope(), roles[:product])
+
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-    project = create_test_project()
-    %Task{id: task_id} = task = create_test_task(%{project_id: project.id, stage: :product, stage_state: :queued})
+
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :product,
+        stage_state: :queued
+      })
 
     assert {:error, {:no_role_for_stage, :product}} = Pipeline.start_stage_run(task)
 
@@ -33,13 +106,21 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
     assert error_msg =~ "No role is configured"
   end
 
-  test "fails and marks task failed when worktree creation fails" do
+  test "fails and marks task failed when worktree creation fails", %{project: project, task: task, roles: roles} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-    not_a_repo = Path.join(System.tmp_dir!(), "not_a_repo_#{System.unique_integer([:positive])}")
+    not_a_repo = Path.join("/tmp", "not_a_repo_#{System.unique_integer([:positive])}")
     File.mkdir_p!(not_a_repo)
-    project = create_test_project(%{clone_path: not_a_repo})
-    _role = create_test_role(%{project_id: project.id, stage: :product})
-    %Task{id: task_id} = task = create_test_task(%{project_id: project.id, stage: :product, stage_state: :queued})
+    on_exit(fn -> File.rm_rf(not_a_repo) end)
+
+    _role = roles[:product]
+
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{clone_path: not_a_repo})
+
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :product,
+        stage_state: :queued
+      })
 
     assert {:error, {:worktree_failed, _reason}} = Pipeline.start_stage_run(task)
 
@@ -49,17 +130,21 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
     assert error_msg =~ "Failed to create worktree"
   end
 
-  test "successfully starts stage run, initializes RoleRun, updates task, and broadcasts" do
+  test "successfully starts stage run, initializes RoleRun, updates task, and broadcasts", %{
+    task: task,
+    roles: roles
+  } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-    repo_dir = create_temp_git_repo()
-    project = create_test_project(%{clone_path: repo_dir, default_branch: "main"})
-    %Role{id: role_id} = create_test_role(%{project_id: project.id, stage: :product, cli_backend: :claude})
-    scratch_dir = create_temp_scratch_dir()
 
-    %Task{id: task_id} =
-      task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, %Role{id: role_id}} =
+      Roles.update_role(system_scope(), roles[:product], %{
+        cli_backend: :claude
+      })
+
+    scratch_dir = create_temp_git_repo()
+
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :product,
         stage_state: :queued,
         worktree_name: "test-wt-#{System.unique_integer([:positive])}"
@@ -92,29 +177,37 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
     assert File.dir?(wt_path)
   end
 
-  test "starts stage run by task ID, increments existing RoleRun attempts, and retains worktree" do
+  test "starts stage run by task ID, increments existing RoleRun attempts, and retains worktree", %{
+    project: project,
+    task: task,
+    roles: roles
+  } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-    repo_dir = create_temp_git_repo()
-    project = create_test_project(%{clone_path: repo_dir, default_branch: "main"})
-    role = create_test_role(%{project_id: project.id, stage: :product, cli_backend: :claude})
-    scratch_dir = create_temp_scratch_dir()
+
+    {:ok, role} =
+      Roles.update_role(system_scope(), roles[:product], %{
+        cli_backend: :claude
+      })
+
+    scratch_dir = create_temp_git_repo()
 
     wt_name = "existing-wt-#{System.unique_integer([:positive])}"
-    wt_path = Path.join(repo_dir, ".worktrees/#{wt_name}")
+    wt_path = Path.join(project.clone_path, ".worktrees/#{wt_name}")
 
-    task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :product,
         stage_state: :queued,
         worktree_name: wt_name,
         worktree_path: wt_path
       })
 
-    _existing_role_run =
-      create_test_role_run(%{
+    {:ok, _existing_role_run} =
+      Runs.create_role_run(%{
         task_id: task.id,
         role_id: role.id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
         attempts: 2,
         pending_answer: "clarification answered",
         attempt_log_lines: 50
@@ -138,14 +231,11 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
              )
   end
 
-  test "resolves engineer role when task.is_rebasing is true" do
-    repo_dir = create_temp_git_repo()
-    project = create_test_project(%{clone_path: repo_dir})
-    %Role{id: engineer_role_id} = create_test_role(%{project_id: project.id, stage: :engineer})
+  test "resolves engineer role when task.is_rebasing is true", %{task: task, roles: roles} do
+    %Role{id: engineer_role_id} = roles[:engineer]
 
-    task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :ready_to_merge,
         stage_state: :queued,
         is_rebasing: true,
@@ -161,24 +251,29 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
              )
   end
 
-  test "includes latest plan content and passes read_only flag for review stage" do
-    repo_dir = create_temp_git_repo()
-    project = create_test_project(%{clone_path: repo_dir})
-    _role = create_test_role(%{project_id: project.id, stage: :review})
+  test "includes latest plan content and passes read_only flag for review stage", %{
+    task: task,
+    roles: roles
+  } do
+    _role = roles[:review]
 
-    task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :review,
         stage_state: :queued,
         worktree_name: "review-wt-#{System.unique_integer([:positive])}"
       })
 
-    %Plan{} =
-      create_test_plan(%{
-        task_id: task.id,
-        content: "# Architectural Plan\nSteps to implement."
-      })
+    # This test also spawns a real binary, so the plan is captured from a real scratch dir
+    # rather than through File expectations.
+    scratch_dir = Path.join("/tmp", "rail_plan_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(scratch_dir)
+    File.write!(Path.join(scratch_dir, "plan.md"), "# Architectural Plan\nSteps to implement.")
+    on_exit(fn -> File.rm_rf(scratch_dir) end)
+
+    {:ok, _captured} = capture(:architect, task, scratch_dir)
+
+    {:ok, %Plan{}} = Pipeline.get_plan(system_scope(), task)
 
     true_bin = System.find_executable("true") || "/usr/bin/true"
 
@@ -189,16 +284,13 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
              )
   end
 
-  test "handles spawn failure when runner binary cannot be executed" do
+  test "handles spawn failure when runner binary cannot be executed", %{task: task, roles: roles} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-    repo_dir = create_temp_git_repo()
-    project = create_test_project(%{clone_path: repo_dir})
-    _role = create_test_role(%{project_id: project.id, stage: :product})
 
-    %Task{id: task_id} =
-      task =
-      create_test_task(%{
-        project_id: project.id,
+    _role = roles[:product]
+
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :product,
         stage_state: :queued,
         worktree_name: "spawn-fail-wt-#{System.unique_integer([:positive])}"
@@ -216,15 +308,11 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
     assert error_msg =~ "Failed to spawn runner"
   end
 
-  test "invokes default on_finished callback which settles run" do
-    repo_dir = create_temp_git_repo()
-    project = create_test_project(%{clone_path: repo_dir})
-    _role = create_test_role(%{project_id: project.id, stage: :product})
+  test "invokes default on_finished callback which settles run", %{task: task, roles: roles} do
+    _role = roles[:product]
 
-    %Task{id: task_id} =
-      task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :product,
         stage_state: :queued,
         worktree_name: "cb-wt-#{System.unique_integer([:positive])}"
@@ -255,15 +343,17 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
     assert {:error, :not_found} = Pipeline.start_stage_run(:invalid_identifier)
   end
 
-  test "defaults fingerprints to nil when worktree directory is not a git repo" do
-    repo_dir = create_temp_git_repo()
-    project = create_test_project(%{clone_path: repo_dir})
-    _role = create_test_role(%{project_id: project.id, stage: :product})
-    non_git_dir = create_temp_scratch_dir()
+  test "defaults fingerprints to nil when worktree directory is not a git repo", %{
+    task: task,
+    roles: roles
+  } do
+    _role = roles[:product]
+    non_git_dir = Path.join("/tmp", "rail_non_git_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(non_git_dir)
+    on_exit(fn -> File.rm_rf(non_git_dir) end)
 
-    task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :product,
         stage_state: :queued,
         worktree_path: non_git_dir
@@ -278,16 +368,14 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
              )
   end
 
-  test "executes default on_finished callback when Follower completes" do
+  test "executes default on_finished callback when Follower completes", %{task: task, roles: roles} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-    repo_dir = create_temp_git_repo()
-    project = create_test_project(%{clone_path: repo_dir})
-    _role = create_test_role(%{project_id: project.id, stage: :product})
 
-    %Task{id: task_id} =
-      task =
-      create_test_task(%{
-        project_id: project.id,
+    _role = roles[:product]
+    {:ok, _deleted} = Roles.delete_role(system_scope(), roles[:design])
+
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :product,
         stage_state: :queued,
         worktree_name: "live-follower-wt-#{System.unique_integer([:positive])}"

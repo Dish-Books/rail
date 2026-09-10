@@ -10,17 +10,28 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
   alias Rail.Domain.Embeds.DesignDirection
   alias Rail.Domain.Embeds.QaArtifact
   alias Rail.Domain.Embeds.QaRow
-  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Issues
+  alias Rail.Pipeline
+  alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
+  alias Rail.Repo
   alias Rail.Scope
+  alias RailTest.Mocks.Linear, as: LinearMock
 
   @tmp_base "tmp/test_materialize"
 
   setup do
     dest_dir = Path.join(@tmp_base, "dest_#{System.unique_integer([:positive])}")
     File.mkdir_p!(dest_dir)
-    ws = Repo.insert!(LinearWorkspace.factory())
+
+    {:ok, ws} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Materialize Workspace 12402",
+        external_id: "lin_ws_materialize_12402",
+        token: "lin_api_token_materialize_12402",
+        webhook_secret: "whsec_materialize_12402"
+      })
 
     on_exit(fn -> File.rm_rf(dest_dir) end)
     {:ok, dest_dir: dest_dir, ws: ws}
@@ -170,8 +181,36 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
       ws: ws
     } do
       scope = Scope.for_system()
-      project = Repo.insert!(%{Project.factory() | linear_workspace_id: ws.id})
-      task = Repo.insert!(%{Task.factory() | project_id: project.id})
+
+      {:ok, project} =
+        Projects.create_project(system_scope(), %{
+          name: "Materialize Project 12403",
+          github_repo: "org/materialize-12403",
+          github_installation_id: 12_403,
+          linear_team_id: "team_materialize_12403",
+          linear_team_key: "P12403",
+          clone_path: "/tmp/repos/materialize-12403",
+          linear_state_ids: %{
+            "triage" => "st_triage",
+            "backlog" => "st_backlog",
+            "in_progress" => "st_in_progress",
+            "done" => "st_done",
+            "canceled" => "st_canceled"
+          },
+          linear_workspace_id: ws.id
+        })
+
+      LinearMock.mock_create_issue_success(%{
+        "id" => "lin_task_materialize_12404",
+        "identifier" => "TSK-12404",
+        "title" => "Task 12404"
+      })
+
+      {:ok, issue_12404} = Issues.capture_issue(system_scope(), project, "Task 12404")
+
+      LinearMock.mock_update_issue_success(%{"id" => "lin_task_materialize_12404"})
+
+      {:ok, task} = Pipeline.bring_local(system_scope(), issue_12404)
 
       {:ok, _qa} =
         %QaReport{}
@@ -331,7 +370,24 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
       scope = Scope.for_system()
 
       project_loaded = %Project{linear_workspace: ws}
-      project_with_id = Repo.insert!(%{Project.factory() | linear_workspace_id: ws.id})
+
+      {:ok, project_with_id} =
+        Projects.create_project(system_scope(), %{
+          name: "Materialize Project 12405",
+          github_repo: "org/materialize-12405",
+          github_installation_id: 12_405,
+          linear_team_id: "team_materialize_12405",
+          linear_team_key: "P12405",
+          clone_path: "/tmp/repos/materialize-12405",
+          linear_state_ids: %{
+            "triage" => "st_triage",
+            "backlog" => "st_backlog",
+            "in_progress" => "st_in_progress",
+            "done" => "st_done",
+            "canceled" => "st_canceled"
+          },
+          linear_workspace_id: ws.id
+        })
 
       demo = %Demo{
         version: 1,
@@ -353,7 +409,14 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
 
     test "handles download failures across design, demo, and QA", %{dest_dir: dest_dir} do
       scope = Scope.for_system()
-      _ws = Repo.insert!(LinearWorkspace.factory())
+
+      {:ok, _ws} =
+        Projects.upsert_linear_workspace(system_scope(), %{
+          name: "Materialize Workspace 12406",
+          external_id: "lin_ws_materialize_12406",
+          token: "lin_api_token_materialize_12406",
+          webhook_secret: "whsec_materialize_12406"
+        })
 
       design = %Design{
         version: 1,

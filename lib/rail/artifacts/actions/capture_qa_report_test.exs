@@ -5,11 +5,12 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
   alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Domain.Embeds.QaArtifact
   alias Rail.Domain.Embeds.QaRow
-  alias Rail.Issues.Schemas.Issue
-  alias Rail.Projects.Schemas.LinearWorkspace
-  alias Rail.Projects.Schemas.Project
+  alias Rail.Issues
+  alias Rail.Pipeline
+  alias Rail.Projects
+  alias Rail.Repo
   alias Rail.Scope
-  alias Rail.Users.Schemas.User
+  alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
   alias RailTest.Support.ArtifactHelpers
 
@@ -18,9 +19,40 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
   setup do
     dir = Path.join(@tmp_base, "qa_#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
-    ws = Repo.insert!(LinearWorkspace.factory())
-    project = Repo.insert!(%{Project.factory() | linear_workspace_id: ws.id})
-    issue = Repo.insert!(%{Issue.factory() | project_id: project.id, external_id: "lin_qa_iss"})
+
+    {:ok, ws} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Capture QA Workspace 12302",
+        external_id: "lin_ws_capture_qa_12302",
+        token: "lin_api_token_capture_qa_12302",
+        webhook_secret: "whsec_capture_qa_12302"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Capture QA Project 12303",
+        github_repo: "org/capture-qa-12303",
+        github_installation_id: 12_303,
+        linear_team_id: "team_capture_qa_12303",
+        linear_team_key: "P12303",
+        clone_path: "/tmp/repos/capture-qa-12303",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws.id
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_qa_iss",
+      "identifier" => "ISS-12304",
+      "title" => "Capture QA Issue 12304"
+    })
+
+    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Capture QA Issue 12304")
 
     on_exit(fn -> File.rm_rf(dir) end)
     {:ok, dir: dir, project: project, issue: issue, ws: ws}
@@ -210,15 +242,30 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
       scope = Scope.for_system()
       ArtifactHelpers.write_qa_manifest(dir)
 
-      user = Repo.insert!(User.factory())
+      {:ok, user} =
+        Users.register_oauth_user(%{
+          github_id: "gh_capture_qa_12305",
+          login: "capture_qa_user_12305",
+          email: "capture_qa_user_12305@example.com",
+          github_token: "gho_token_12305"
+        })
 
-      %Rail.Pipeline.Schemas.Task{id: task_id} =
-        task =
-        Repo.insert!(%{
-          Rail.Pipeline.Schemas.Task.factory()
-          | project_id: project.id,
-            issue_id: issue.id,
-            owner_user_id: user.id
+      LinearMock.mock_create_issue_success(%{
+        "id" => "lin_task_capture_qa_12306",
+        "identifier" => "TSK-12306",
+        "title" => "Task 12306"
+      })
+
+      {:ok, issue_12306} = Issues.capture_issue(system_scope(), project, "Task 12306")
+
+      LinearMock.mock_update_issue_success(%{"id" => "lin_task_capture_qa_12306"})
+
+      {:ok, %Rail.Pipeline.Schemas.Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_12306)
+
+      {:ok, %Rail.Pipeline.Schemas.Task{id: task_id} = task} =
+        Pipeline.update_task(system_scope(), task.id, %{
+          issue_id: issue.id,
+          owner_user_id: user.id
         })
 
       LinearMock.mock_file_upload_success(
@@ -261,8 +308,17 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
       scope = Scope.for_system()
       ArtifactHelpers.write_qa_manifest(dir)
 
-      %Rail.Pipeline.Schemas.Task{id: task_id} =
-        task = Repo.insert!(%{Rail.Pipeline.Schemas.Task.factory() | project_id: project.id})
+      LinearMock.mock_create_issue_success(%{
+        "id" => "lin_task_capture_qa_12307",
+        "identifier" => "TSK-12307",
+        "title" => "Task 12307"
+      })
+
+      {:ok, issue_12307} = Issues.capture_issue(system_scope(), project, "Task 12307")
+
+      LinearMock.mock_update_issue_success(%{"id" => "lin_task_capture_qa_12307"})
+
+      {:ok, %Rail.Pipeline.Schemas.Task{id: task_id} = task} = Pipeline.bring_local(system_scope(), issue_12307)
 
       task_with_proj = %{task | project: project}
 
@@ -271,6 +327,12 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
         asset_url: "https://uploads.linear.app/qa_proj_test/screenshot.png",
         asset_id: "ast_qa_proj_test"
       )
+
+      LinearMock.mock_create_comment_success(%{
+        "id" => "cmt_qa_proj_test",
+        "body" => "QA report",
+        "createdAt" => "2026-09-05T12:00:00.000Z"
+      })
 
       assert {:ok, %QaReport{task_id: ^task_id}} =
                Artifacts.capture_qa_report(scope, task_with_proj, dir)
@@ -333,7 +395,14 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
     } do
       scope = Scope.for_system()
       ArtifactHelpers.write_qa_manifest(dir)
-      user = Repo.insert!(User.factory())
+
+      {:ok, user} =
+        Users.register_oauth_user(%{
+          github_id: "gh_capture_qa_12308",
+          login: "capture_qa_user_12308",
+          email: "capture_qa_user_12308@example.com",
+          github_token: "gho_token_12308"
+        })
 
       LinearMock.mock_file_upload_success(
         upload_url: "https://api.linear.app/upload/qa_owner_opt",

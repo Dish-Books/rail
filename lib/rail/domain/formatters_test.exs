@@ -1,7 +1,57 @@
 defmodule Rail.Domain.FormattersTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.Scratch, only: [capture: 3]
+
   alias Rail.Domain.Formatters
+  alias Rail.Issues
+  alias Rail.Pipeline
+  alias Rail.Projects
+  alias RailTest.Mocks.Linear, as: LinearMock
+
+  setup do
+    scope = system_scope()
+
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Formatters Workspace",
+        external_id: "lin_ws_formatters",
+        token: "lin_api_token_formatters",
+        webhook_secret: "whsec_formatters"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Formatters Project 7701",
+        github_repo: "org/formatters-7701",
+        github_installation_id: 7701,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_formatters_7701",
+        linear_team_key: "P7701",
+        clone_path: "/tmp/repos/formatters-7701",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_formatters_1",
+      "identifier" => "FMT-1",
+      "title" => "Formatters Issue"
+    })
+
+    {:ok, issue} = Issues.capture_issue(scope, project, "Formatters Issue")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_formatters_1"})
+
+    {:ok, task} = Pipeline.bring_local(scope, issue)
+
+    %{project: project, issue: issue, task: task}
+  end
 
   describe "summarize_ask/1" do
     test "returns empty string on nil or blank input" do
@@ -59,7 +109,7 @@ defmodule Rail.Domain.FormattersTest do
       assert is_nil(Formatters.overview_detail_for(task_normal))
     end
 
-    test "picks first non-blank line of task.error" do
+    test "picks first non-blank line of task.error", %{task: _task} do
       task = %{
         error: "\n   \nFirst non-blank error line\nSecond error line",
         stage: :engineer,
@@ -69,7 +119,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.overview_detail_for(task) == "First non-blank error line"
     end
 
-    test "falls back to failed run error when task.error is absent or blank" do
+    test "falls back to failed run error when task.error is absent or blank", %{task: _task} do
       task = %{
         error: "   ",
         stage: :engineer,
@@ -86,7 +136,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.overview_detail_for(task) == "Run failed with compiler crash"
     end
 
-    test "uses passed runs map when provided" do
+    test "uses passed runs map when provided", %{task: _task} do
       task = %{
         stage: :engineer,
         stage_state: :failed,
@@ -100,7 +150,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.overview_detail_for(task, runs) == "External runs map error"
     end
 
-    test "collapses consecutive whitespace and trims line" do
+    test "collapses consecutive whitespace and trims line", %{task: _task} do
       task = %{
         error: "   Failed   to    build    target    main.dart   ",
         stage: :engineer,
@@ -110,7 +160,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.overview_detail_for(task) == "Failed to build target main.dart"
     end
 
-    test "caps at 140 characters with ellipsis when line exceeds 140 chars" do
+    test "caps at 140 characters with ellipsis when line exceeds 140 chars", %{task: _task} do
       long_line = String.duplicate("A", 200)
       task = %{error: long_line, stage: :engineer, stage_state: :failed}
 
@@ -118,7 +168,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.overview_detail_for(task) == expected
     end
 
-    test "does not append ellipsis when line is 140 characters or fewer" do
+    test "does not append ellipsis when line is 140 characters or fewer", %{task: _task} do
       exact_140 = String.duplicate("B", 140)
       task = %{error: exact_140, stage: :engineer, stage_state: :failed}
 
@@ -132,7 +182,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.stage_label(%{stage_state: :unknown_state}) == "Waiting on you"
     end
 
-    test "active chat role has highest precedence" do
+    test "active chat role has highest precedence", %{task: _task} do
       task = %{
         active_chat_role_id: "engineer",
         stage: :architect,
@@ -340,7 +390,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.stage_label(t_merge_str) == "Conflicts - needs a rebase"
     end
 
-    test "stage_label and get_field handle struct, string keys, and invalid atoms" do
+    test "stage_label and get_field handle struct, string keys, and invalid atoms", %{task: _task} do
       # Struct task
       uri_task = %URI{scheme: "https", host: "example.com"}
       assert Formatters.stage_label(uri_task) == "Waiting on you"
@@ -470,12 +520,23 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.ticket_for(nil) == "_No ticket body yet._"
     end
 
-    test "plan_for returns stored plan or plan from description split" do
-      task = create_test_task(%{description: "Ticket text\n\n## Implementation plan\nStep 1\nStep 2"})
+    test "plan_for returns stored plan or plan from description split", %{task: task} do
+      {:ok, task} =
+        Pipeline.update_task(system_scope(), task.id, %{
+          description: "Ticket text\n\n## Implementation plan\nStep 1\nStep 2"
+        })
+
       assert Formatters.plan_for(task) == "## Implementation plan\nStep 1\nStep 2"
 
       # Stored plan takes precedence
-      _plan = create_test_plan(%{task_id: task.id, content: "# Database Plan"})
+      plan_scratch_33706 = Path.join("/tmp", "rail_plan_scratch_#{System.unique_integer([:positive])}")
+      File.mkdir_p!(plan_scratch_33706)
+      on_exit(fn -> File.rm_rf(plan_scratch_33706) end)
+      File.write!(Path.join(plan_scratch_33706, "plan.md"), "# Database Plan")
+
+      {:ok, _captured} = capture(:architect, task, plan_scratch_33706)
+
+      {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
       assert Formatters.plan_for(task) == "# Database Plan"
 
       # Task with plans association loaded

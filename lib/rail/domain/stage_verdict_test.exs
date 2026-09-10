@@ -12,13 +12,6 @@ defmodule Rail.Domain.StageVerdictTest do
     assert "can't be blank" in errors_on(invalid_changeset).verdict
   end
 
-  test "factory/0 returns a valid struct" do
-    verdict = StageVerdict.factory()
-    assert verdict.verdict == :passed
-    assert verdict.status == :passed
-    assert is_nil(verdict.explanation)
-  end
-
   test "reads the verdict line the stage brief asks for" do
     assert %StageVerdict{verdict: :passed} = StageVerdict.parse("findings...\n\nVERDICT: APPROVED")
     assert %StageVerdict{verdict: :changes_requested} = StageVerdict.parse("findings...\n\nVERDICT: CHANGES REQUESTED")

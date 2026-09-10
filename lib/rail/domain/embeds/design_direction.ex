@@ -26,15 +26,4 @@ defmodule Rail.Domain.Embeds.DesignDirection do
     |> cast(attrs, @fields)
     |> validate_required(@required_fields)
   end
-
-  @doc "Builds a valid fixture struct for testing."
-  def factory do
-    %__MODULE__{
-      key: "direction_a",
-      title: "Direction A",
-      notes: "Minimalist modern UI",
-      still_url: "https://linear.app/assets/still_a.png",
-      linear_asset_id: "asset_dir_a"
-    }
-  end
 end

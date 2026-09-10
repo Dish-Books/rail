@@ -32,16 +32,6 @@ defmodule Rail.Domain.ChatTranscript do
     |> sync_messages_and_turns()
   end
 
-  @doc "Builds a valid ChatTranscript fixture struct for testing."
-  def factory do
-    turn = ChatTurn.factory()
-
-    %__MODULE__{
-      turns: [turn],
-      messages: [turn]
-    }
-  end
-
   @doc "Returns true if the transcript contains no turns."
   def empty?(%__MODULE__{turns: turns}), do: turns == []
   def empty?(_other), do: true

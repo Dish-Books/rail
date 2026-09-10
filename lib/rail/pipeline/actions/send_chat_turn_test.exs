@@ -1,39 +1,84 @@
 defmodule Rail.Pipeline.Actions.SendChatTurnTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
+  import RailTest.PipelineHelpers
+
+  alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
   alias Rail.Scope
+  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Send Chat Workspace",
+        external_id: "lin_ws_send_chat",
+        token: "lin_api_token_send_chat",
+        webhook_secret: "whsec_send_chat"
+      })
+
     repo_dir = create_temp_git_repo()
-    project = create_test_project(%{clone_path: repo_dir, default_branch: "main"})
 
-    role =
-      create_test_role(%{
-        project_id: project.id,
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        linear_workspace_id: workspace.id,
+        name: "Send Chat Project 11202",
+        github_repo: "org/send-chat-11202",
+        github_installation_id: 11_202,
+        linear_team_id: "team_send_chat_11202",
+        linear_team_key: "P11202",
+        clone_path: repo_dir,
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        default_branch: "main"
+      })
+
+    {:ok, role} =
+      Roles.create_role(system_scope(), project, %{
+        name: "Role 11204",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 11204.",
         stage: :engineer,
-        cli_backend: :claude,
-        model: "claude-3-7-sonnet"
+        cli_backend: :claude
       })
 
-    reviewer_role =
-      create_test_role(%{
-        project_id: project.id,
+    {:ok, reviewer_role} =
+      Roles.create_role(system_scope(), project, %{
+        name: "Role 11205",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 11205.",
         stage: :review,
-        cli_backend: :claude,
-        model: "claude-3-7-sonnet"
+        cli_backend: :claude
       })
 
-    task =
-      create_test_task(%{
-        project_id: project.id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_send_chat_11227",
+      "identifier" => "TSK-11227",
+      "title" => "Task 11227"
+    })
+
+    {:ok, issue_11227} = Issues.capture_issue(system_scope(), project, "Task 11227")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_send_chat_11227"})
+
+    {:ok, task} = Pipeline.bring_local(system_scope(), issue_11227)
+
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :engineer,
         stage_state: :queued,
         worktree_path: repo_dir
@@ -42,6 +87,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     stub_bin = create_chat_stub_cli(conversation_id: "sess-chat-1")
 
     %{
+      workspace: workspace,
       project: project,
       role: role,
       reviewer_role: reviewer_role,
@@ -73,8 +119,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     assert {:error, :chat_unavailable} =
              Pipeline.send_chat_turn(task.id, role.id, "Hello")
 
-    _role_run =
-      create_test_role_run(%{
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :finished,
@@ -88,8 +134,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
   end
 
   test "returns empty_message when text is blank", %{task: task, role: role} do
-    _role_run =
-      create_test_role_run(%{
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :finished,
@@ -103,8 +149,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
   end
 
   test "returns invalid_delivery_mode for unsupported mode", %{task: task, role: role} do
-    _role_run =
-      create_test_role_run(%{
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :finished,
@@ -124,8 +170,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
-    %RoleRun{id: role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_id,
         status: :finished,
@@ -186,8 +232,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
-    %RoleRun{id: role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_id,
         status: :running,
@@ -230,8 +276,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     task: %Task{id: task_id} = task,
     role: %Role{id: role_id}
   } do
-    %RoleRun{id: role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_id,
         status: :running,
@@ -254,8 +300,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     reviewer_role: %Role{id: rev_role_id},
     stub_bin: stub_bin
   } do
-    %RoleRun{id: eng_role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: eng_role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: eng_role_id,
         status: :running,
@@ -264,8 +310,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
         conversation_id: "sess-eng"
       })
 
-    %RoleRun{id: rev_role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: rev_role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -305,8 +351,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     reviewer_role: %Role{id: role_b_id},
     stub_bin: stub_bin
   } do
-    %RoleRun{id: role_a_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_a_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_a_id,
         status: :finished,
@@ -316,8 +362,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
         pending_chat: "old pending for A"
       })
 
-    %RoleRun{id: role_b_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_b_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_b_id,
         status: :finished,
@@ -359,8 +405,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     role: %Role{id: role_a_id},
     stub_bin: stub_bin
   } do
-    %RoleRun{id: role_a_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_a_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_a_id,
         status: :finished,
@@ -392,12 +438,11 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
            end)
   end
 
-  test "handles worktree creation failure during chat turn", %{task: task, role: role} do
+  test "handles worktree creation failure during chat turn", %{task: task, role: role, workspace: workspace} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
-    %RoleRun{} =
-      role_run =
-      create_test_role_run(%{
+    {:ok, %RoleRun{} = role_run} =
+      Runs.create_role_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :finished,
@@ -416,19 +461,51 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     bad_repo = Path.join(System.tmp_dir!(), "bad_clone_#{System.unique_integer([:positive])}")
     File.mkdir_p!(bad_repo)
-    bad_project = create_test_project(%{clone_path: bad_repo})
-    bad_role = create_test_role(%{project_id: bad_project.id, stage: :engineer})
 
-    %Task{id: bad_task_id} =
-      bad_task =
-      create_test_task(%{
-        project_id: bad_project.id,
+    {:ok, bad_project} =
+      Projects.create_project(system_scope(), %{
+        linear_workspace_id: workspace.id,
+        name: "Send Chat Project 11203",
+        github_repo: "org/send-chat-11203",
+        github_installation_id: 11_203,
+        linear_team_id: "team_send_chat_11203",
+        linear_team_key: "P11203",
+        clone_path: bad_repo,
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    {:ok, bad_role} =
+      Roles.create_role(system_scope(), bad_project, %{
+        name: "Role 11206",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 11206.",
+        stage: :engineer
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_send_chat_bad",
+      "identifier" => "SDC-BAD",
+      "title" => "Bad Worktree Task"
+    })
+
+    {:ok, bad_issue} = Issues.capture_issue(system_scope(), bad_project, "Bad Worktree Task")
+    LinearMock.mock_update_issue_success(%{"id" => "lin_send_chat_bad"})
+    {:ok, bad_task} = Pipeline.bring_local(system_scope(), bad_issue)
+
+    {:ok, %Task{id: bad_task_id} = bad_task} =
+      Pipeline.update_task(system_scope(), bad_task.id, %{
         stage: :engineer,
         stage_state: :queued
       })
 
-    %RoleRun{id: bad_role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: bad_role_run_id}} =
+      Runs.create_role_run(%{
         task_id: bad_task.id,
         role_id: bad_role.id,
         status: :finished,
@@ -455,8 +532,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
   test "handles spawn failure during chat turn", %{task: %Task{id: task_id}, role: role} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
-    %RoleRun{id: role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: role.id,
         status: :finished,
@@ -490,8 +567,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
-    %RoleRun{id: role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_id,
         status: :finished,
@@ -524,13 +601,14 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
   test "invalid targets and missing worktree fingerprint handling", %{
     task: %Task{} = task,
-    role: role
+    role: role,
+    project: project
   } do
     assert {:error, :not_found} = Pipeline.send_chat_turn(12_345, role.id, "Hi")
     assert {:error, :role_not_found} = Pipeline.send_chat_turn(task.id, 12_345, "Hi")
 
-    role_run =
-      create_test_role_run(%{
+    {:ok, role_run} =
+      Runs.create_role_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :finished,
@@ -564,10 +642,20 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     assert :ok = Pipeline.maybe_dispatch_queued_pending_chat(busy_task)
 
     # maybe_dispatch_queued_pending_chat when role is missing in DB
-    missing_role_task = create_test_task(%{project_id: task.project_id})
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_send_chat_11228",
+      "identifier" => "TSK-11228",
+      "title" => "Task 11228"
+    })
 
-    missing_role_rr =
-      create_test_role_run(%{
+    {:ok, issue_11228} = Issues.capture_issue(system_scope(), project, "Task 11228")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_send_chat_11228"})
+
+    {:ok, missing_role_task} = Pipeline.bring_local(system_scope(), issue_11228)
+
+    {:ok, missing_role_rr} =
+      Runs.create_role_run(%{
         task_id: missing_role_task.id,
         role_id: "rol_000000000000000000000000",
         status: :finished,
@@ -582,10 +670,11 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
   test "stop_and_send to same role during stage run, missing chat runs, and empty pending_chat", %{
     task: task,
     role: %Role{id: target_role_id} = role,
-    stub_bin: stub_bin
+    stub_bin: stub_bin,
+    project: project
   } do
-    %RoleRun{id: role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task.id,
         role_id: target_role_id,
         status: :running,
@@ -618,12 +707,43 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
              )
 
     # Missing stopped role runs in DB
-    orphan_same_task = create_test_task(%{project_id: task.project_id, active_chat_role_id: role.id})
-    orphan_other_task = create_test_task(%{project_id: task.project_id, active_chat_role_id: "rol_other_missing"})
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_send_chat_11229",
+      "identifier" => "TSK-11229",
+      "title" => "Task 11229"
+    })
+
+    {:ok, issue_11229} = Issues.capture_issue(system_scope(), project, "Task 11229")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_send_chat_11229"})
+
+    {:ok, orphan_same_task} = Pipeline.bring_local(system_scope(), issue_11229)
+
+    {:ok, orphan_same_task} =
+      Pipeline.update_task(system_scope(), orphan_same_task.id, %{
+        active_chat_role_id: role.id
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_send_chat_11230",
+      "identifier" => "TSK-11230",
+      "title" => "Task 11230"
+    })
+
+    {:ok, issue_11230} = Issues.capture_issue(system_scope(), project, "Task 11230")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_send_chat_11230"})
+
+    {:ok, orphan_other_task} = Pipeline.bring_local(system_scope(), issue_11230)
+
+    {:ok, orphan_other_task} =
+      Pipeline.update_task(system_scope(), orphan_other_task.id, %{
+        active_chat_role_id: "rol_other_missing"
+      })
 
     # Creates role run for target so can_chat passes
-    _target_rr1 =
-      create_test_role_run(%{
+    {:ok, _target_rr1} =
+      Runs.create_role_run(%{
         task_id: orphan_same_task.id,
         role_id: role.id,
         status: :finished,
@@ -631,8 +751,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
         conversation_id: "sess-t1"
       })
 
-    _target_rr2 =
-      create_test_role_run(%{
+    {:ok, _target_rr2} =
+      Runs.create_role_run(%{
         task_id: orphan_other_task.id,
         role_id: role.id,
         status: :finished,

@@ -2,15 +2,8 @@ defmodule Rail.Artifacts.Schemas.DemoTest do
   use Rail.DataCase, async: true
 
   alias Rail.Artifacts.Schemas.Demo
-  alias Rail.Domain.Embeds.DemoSegment
 
-  describe "changeset/2 and factory/0" do
-    test "factory generates valid demo" do
-      demo = Demo.factory()
-      assert %Demo{version: 1, outcome: "recorded"} = demo
-      assert [%DemoSegment{criterion_index: 1}] = demo.segments
-    end
-
+  describe "changeset/2" do
     test "valid changeset succeeds" do
       attrs = %{
         task_id: "tsk_demo_1",

@@ -45,17 +45,6 @@ defmodule Rail.Domain.HandoffLine do
     |> validate_required([:role_id, :summary, :direction])
   end
 
-  @doc "Builds a valid HandoffLine fixture struct for testing."
-  def factory do
-    %__MODULE__{
-      role_id: "architect",
-      summary: "Implementation plan ready for review",
-      direction: :received,
-      timestamp: DateTime.utc_now(),
-      note: nil
-    }
-  end
-
   @doc "The line for the run being handed the work (received)."
   def from(role_id, summary) when is_binary(role_id) and is_binary(summary) do
     "[handoff #{@received_marker} #{role_id}] #{summary}"

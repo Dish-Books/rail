@@ -84,22 +84,6 @@ defmodule Rail.Runs.Schemas.RoleRun do
     |> handle_embed(:chat_usage, attrs)
   end
 
-  @doc """
-  Builds a valid fixture struct for tests.
-  """
-  def factory do
-    %__MODULE__{
-      task_id: UXID.generate!(prefix: "tsk"),
-      role_id: UXID.generate!(prefix: "rol"),
-      status: :running,
-      started_at: DateTime.utc_now(),
-      attempts: 0,
-      attempt_log_lines: 0,
-      auto_retries: 0,
-      pruned: false
-    }
-  end
-
   def statuses, do: @statuses
 
   @doc """

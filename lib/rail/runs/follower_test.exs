@@ -1,8 +1,14 @@
 defmodule Rail.Runs.FollowerTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Domain.TaskUsage
+  alias Rail.Issues
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task, as: PipelineTask
+  alias Rail.Projects
+  alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Runs
   alias Rail.Runs.Follower
   alias Rail.Runs.FollowerSupervisor
@@ -10,8 +16,17 @@ defmodule Rail.Runs.FollowerTest do
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
   alias Rail.Runs.Spawner
+  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Follower Workspace",
+        external_id: "lin_ws_follower",
+        token: "lin_api_token_follower",
+        webhook_secret: "whsec_follower"
+      })
+
     tmp_dir = Path.join(System.tmp_dir!(), "follower_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp_dir)
 
@@ -47,7 +62,7 @@ defmodule Rail.Runs.FollowerTest do
       File.rm_rf(tmp_dir)
     end)
 
-    %{role_run: role_run, run: run, stream_path: stream_path, tmp_dir: tmp_dir}
+    %{workspace: workspace, role_run: role_run, run: run, stream_path: stream_path, tmp_dir: tmp_dir}
   end
 
   test "tail polling, partial-line hold, and event parsing", %{
@@ -68,6 +83,10 @@ defmodule Rail.Runs.FollowerTest do
         tail_interval_ms: 30,
         batch_interval_ms: 50
       )
+
+    # The follower runs in its own process, so lend it this test's DB connection.
+
+    Sandbox.allow(Repo, self(), follower_pid)
 
     # Write partial line
     File.write!(stream_path, ~s({"type":"system","sub))
@@ -115,6 +134,10 @@ defmodule Rail.Runs.FollowerTest do
         tail_interval_ms: 20,
         batch_interval_ms: 50
       )
+
+    # The follower runs in its own process, so lend it this test's DB connection.
+
+    Sandbox.allow(Repo, self(), follower_pid)
 
     line1 = ~s({"type":"system","subtype":"init","session_id":"sess-batch-1"})
     line2 = ~s({"type":"assistant","message":{"content":[{"type":"text","text":"step 1"}]}})
@@ -168,6 +191,10 @@ defmodule Rail.Runs.FollowerTest do
         end
       )
 
+    # The follower runs in its own process, so lend it this test's DB connection.
+
+    Sandbox.allow(Repo, self(), follower_pid)
+
     follower_ref = Process.monitor(follower_pid)
 
     # Wait for process exit and follower settlement
@@ -207,6 +234,10 @@ defmodule Rail.Runs.FollowerTest do
         tail_interval_ms: 30
       )
 
+    # The follower runs in its own process, so lend it this test's DB connection.
+
+    Sandbox.allow(Repo, self(), _follower_pid)
+
     assert Spawner.process_alive?(pid)
 
     {:ok, stopped_run} = Runs.stop_run(run.id, grace_period: 100)
@@ -230,6 +261,10 @@ defmodule Rail.Runs.FollowerTest do
         os_pid: pid,
         tail_interval_ms: 20
       )
+
+    # The follower runs in its own process, so lend it this test's DB connection.
+
+    Sandbox.allow(Repo, self(), follower_pid)
 
     invalid_utf8_line =
       <<(~s({"type":"assistant","message":{"content":[{"type":"text","text":"bad )), 255, " byte\"}]}}\n">>
@@ -271,9 +306,19 @@ defmodule Rail.Runs.FollowerTest do
         batch_interval_ms: 40
       )
 
-    Process.sleep(100)
+    # The follower runs in its own process, so lend it this test's DB connection.
 
-    events = Runs.list_run_events(role_run.id)
+    Sandbox.allow(Repo, self(), follower_pid)
+
+    # Wait for the follower to flush its batch.
+    events =
+      Enum.reduce_while(1..100, [], fn _i, _acc ->
+        case Runs.list_run_events(role_run.id) do
+          [_first, _second] = events -> {:halt, events}
+          _other -> Process.sleep(10) && {:cont, []}
+        end
+      end)
+
     # Total events: 1 pre-existing + 1 new (line1 skipped)
     assert length(events) == 2
     assert Enum.at(events, 0).line == "already saved line"
@@ -302,6 +347,10 @@ defmodule Rail.Runs.FollowerTest do
         name: custom_name,
         tail_interval_ms: 50_000
       )
+
+    # The follower runs in its own process, so lend it this test's DB connection.
+
+    Sandbox.allow(Repo, self(), follower_pid)
 
     state = GenServer.call(follower_pid, :get_state)
     assert state.run_id == run.id
@@ -332,6 +381,10 @@ defmodule Rail.Runs.FollowerTest do
         os_pid: pid,
         tail_interval_ms: 30
       )
+
+    # The follower runs in its own process, so lend it this test's DB connection.
+
+    Sandbox.allow(Repo, self(), _follower_pid)
 
     # Stop via role_run_id
     {:ok, stopped} = Follower.stop_run(role_run.id)
@@ -392,6 +445,10 @@ defmodule Rail.Runs.FollowerTest do
         on_finished: fn r, outcome -> send(test_pid, {:clean_finished, r, outcome}) end
       )
 
+    # The follower runs in its own process, so lend it this test's DB connection.
+
+    Sandbox.allow(Repo, self(), follower_pid)
+
     follower_ref = Process.monitor(follower_pid)
     Process.unlink(port)
 
@@ -451,6 +508,10 @@ defmodule Rail.Runs.FollowerTest do
         on_finished: fn r, outcome -> send(test_pid, {:err_only_finished, r, outcome}) end
       )
 
+    # The follower runs in its own process, so lend it this test's DB connection.
+
+    Sandbox.allow(Repo, self(), _follower_pid)
+
     Process.unlink(port1)
 
     assert_receive {:err_only_finished, _r1, outcome1}, 1_000
@@ -498,6 +559,10 @@ defmodule Rail.Runs.FollowerTest do
         tail_interval_ms: 10,
         on_finished: fn r, outcome -> send(test_pid, {:both_finished, r, outcome}) end
       )
+
+    # The follower runs in its own process, so lend it this test's DB connection.
+
+    Sandbox.allow(Repo, self(), _follower_pid)
 
     Process.unlink(port2)
 
@@ -550,6 +615,10 @@ defmodule Rail.Runs.FollowerTest do
         on_finished: fn r, outcome -> send(test_pid, {:port_exit_finished, r, outcome}) end
       )
 
+    # The follower runs in its own process, so lend it this test's DB connection.
+
+    Sandbox.allow(Repo, self(), follower_pid)
+
     send(follower_pid, {nil, {:exit_status, 0}})
 
     assert_receive {:port_exit_finished, _r, outcome}, 1_000
@@ -583,17 +652,59 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "detects question in stream and registers it to block task", %{
-    tmp_dir: tmp_dir
+    tmp_dir: tmp_dir,
+    workspace: workspace
   } do
-    project = create_test_project()
-    role = create_test_role(%{project_id: project.id, stage: :engineer})
-    task = create_test_task(%{project_id: project.id, stage: :engineer, stage_state: :running})
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        linear_workspace_id: workspace.id,
+        name: "Follower Project 12502",
+        github_repo: "org/follower-12502",
+        github_installation_id: 12_502,
+        linear_team_id: "team_follower_12502",
+        linear_team_key: "P12502",
+        clone_path: "/tmp/repos/follower-12502",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
 
-    role_run =
-      create_test_role_run(%{
+    {:ok, role} =
+      Roles.create_role(system_scope(), project, %{
+        name: "Role 12503",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 12503.",
+        stage: :engineer
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_follower_12505",
+      "identifier" => "TSK-12505",
+      "title" => "Task 12505"
+    })
+
+    {:ok, issue_12505} = Issues.capture_issue(system_scope(), project, "Task 12505")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_follower_12505"})
+
+    {:ok, task} = Pipeline.bring_local(system_scope(), issue_12505)
+
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :engineer,
+        stage_state: :running
+      })
+
+    {:ok, role_run} =
+      Runs.create_role_run(%{
         task_id: task.id,
         role_id: role.id,
-        status: :running
+        status: :running,
+        started_at: DateTime.utc_now()
       })
 
     stream = Path.join(tmp_dir, "question_stream.ndjson")
@@ -624,6 +735,10 @@ defmodule Rail.Runs.FollowerTest do
         tail_interval_ms: 20,
         batch_interval_ms: 30
       )
+
+    # The follower runs in its own process, so lend it this test's DB connection.
+
+    Sandbox.allow(Repo, self(), _follower_pid)
 
     question_line =
       ~s({"type":"assistant","message":{"content":[{"type":"text","text":"[QUESTION: Which db to choose?] [OPTIONS: PG, MySQL]"}]}}\n)
@@ -691,6 +806,10 @@ defmodule Rail.Runs.FollowerTest do
         end
       )
 
+    # The follower runs in its own process, so lend it this test's DB connection.
+
+    Sandbox.allow(Repo, self(), follower_pid)
+
     follower_ref = Process.monitor(follower_pid)
 
     assert_receive {:chat_finished, _run, _outcome}, 2_000
@@ -751,6 +870,10 @@ defmodule Rail.Runs.FollowerTest do
         end
       )
 
+    # The follower runs in its own process, so lend it this test's DB connection.
+
+    Sandbox.allow(Repo, self(), follower_pid)
+
     follower_ref = Process.monitor(follower_pid)
 
     assert_receive {:same_chat_finished, _run, _outcome}, 2_000
@@ -806,6 +929,10 @@ defmodule Rail.Runs.FollowerTest do
           send(test_pid, {:stage_no_usage_finished, finished_run, outcome})
         end
       )
+
+    # The follower runs in its own process, so lend it this test's DB connection.
+
+    Sandbox.allow(Repo, self(), follower_pid)
 
     follower_ref = Process.monitor(follower_pid)
 

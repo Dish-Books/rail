@@ -1,10 +1,13 @@
 defmodule RailWeb.LinearWebhookControllerTest do
   use RailWeb.ConnCase, async: true
 
+  alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias RailTest.Mocks.Linear, as: LinearMock
 
   test "returns 404 when workspace does not exist", %{conn: conn} do
     body = Jason.encode!(%{"type" => "Issue", "action" => "create"})
@@ -19,7 +22,14 @@ defmodule RailWeb.LinearWebhookControllerTest do
   end
 
   test "returns 401 when signature is missing or invalid or workspace has no secret", %{conn: conn} do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
+    {:ok, %LinearWorkspace{id: ws_id}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Webhook Workspace 12901",
+        external_id: "lin_ws_webhook_12901",
+        token: "lin_api_token_webhook_12901",
+        webhook_secret: "whsec_webhook_12901"
+      })
+
     body = Jason.encode!(%{"type" => "Issue", "action" => "create"})
 
     conn_no_sig =
@@ -39,10 +49,31 @@ defmodule RailWeb.LinearWebhookControllerTest do
   end
 
   test "handles Issue create event and mirrors issue locally", %{conn: conn} do
-    %LinearWorkspace{id: ws_id, webhook_secret: secret} = workspace = Repo.insert!(LinearWorkspace.factory())
+    {:ok, %LinearWorkspace{id: ws_id, webhook_secret: secret} = workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Webhook Workspace 12902",
+        external_id: "lin_ws_webhook_12902",
+        token: "lin_api_token_webhook_12902",
+        webhook_secret: "whsec_webhook_12902"
+      })
 
-    %Project{id: project_id} =
-      Repo.insert!(%{Project.factory() | linear_workspace_id: ws_id, linear_team_id: "team_wh_1"})
+    {:ok, %Project{id: project_id}} =
+      Projects.create_project(system_scope(), %{
+        name: "Webhook Project 12903",
+        github_repo: "org/webhook-12903",
+        github_installation_id: 12_903,
+        linear_team_id: "team_wh_1",
+        linear_team_key: "P12903",
+        clone_path: "/tmp/repos/webhook-12903",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws_id
+      })
 
     payload = %{
       "type" => "Issue",
@@ -88,10 +119,31 @@ defmodule RailWeb.LinearWebhookControllerTest do
   end
 
   test "handles default project fallback and maps various state types", %{conn: conn} do
-    %LinearWorkspace{id: ws_id, webhook_secret: secret} = Repo.insert!(LinearWorkspace.factory())
+    {:ok, %LinearWorkspace{id: ws_id, webhook_secret: secret}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Webhook Workspace 12904",
+        external_id: "lin_ws_webhook_12904",
+        token: "lin_api_token_webhook_12904",
+        webhook_secret: "whsec_webhook_12904"
+      })
 
-    %Project{id: project_id} =
-      Repo.insert!(%{Project.factory() | linear_workspace_id: ws_id, linear_team_id: "team_wh_default"})
+    {:ok, %Project{id: project_id}} =
+      Projects.create_project(system_scope(), %{
+        name: "Webhook Project 12905",
+        github_repo: "org/webhook-12905",
+        github_installation_id: 12_905,
+        linear_team_id: "team_wh_default",
+        linear_team_key: "P12905",
+        clone_path: "/tmp/repos/webhook-12905",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws_id
+      })
 
     states_to_test = [
       {"lin_wh_tri", "triage", :triage},
@@ -133,7 +185,13 @@ defmodule RailWeb.LinearWebhookControllerTest do
   end
 
   test "returns ok and skips upsert when workspace has no projects", %{conn: conn} do
-    %LinearWorkspace{id: ws_id, webhook_secret: secret} = Repo.insert!(LinearWorkspace.factory())
+    {:ok, %LinearWorkspace{id: ws_id, webhook_secret: secret}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Webhook Workspace 12906",
+        external_id: "lin_ws_webhook_12906",
+        token: "lin_api_token_webhook_12906",
+        webhook_secret: "whsec_webhook_12906"
+      })
 
     payload = %{
       "type" => "Issue",
@@ -159,18 +217,35 @@ defmodule RailWeb.LinearWebhookControllerTest do
   end
 
   test "handles Issue update and remove events", %{conn: conn} do
-    %LinearWorkspace{id: ws_id, webhook_secret: secret} = Repo.insert!(LinearWorkspace.factory())
-    project = Repo.insert!(%{Project.factory() | linear_workspace_id: ws_id, linear_team_id: "team_wh_2"})
-
-    existing_issue =
-      Repo.insert!(%{
-        Issue.factory()
-        | project_id: project.id,
-          external_id: "lin_wh_iss_2",
-          identifier: "ENG-888",
-          title: "Initial Title",
-          state: :triage
+    {:ok, %LinearWorkspace{id: ws_id, webhook_secret: secret}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Webhook Workspace 12907",
+        external_id: "lin_ws_webhook_12907",
+        token: "lin_api_token_webhook_12907",
+        webhook_secret: "whsec_webhook_12907"
       })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Webhook Project 12908",
+        github_repo: "org/webhook-12908",
+        github_installation_id: 12_908,
+        linear_team_id: "team_wh_2",
+        linear_team_key: "P12908",
+        clone_path: "/tmp/repos/webhook-12908",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: ws_id
+      })
+
+    LinearMock.mock_create_issue_success(%{"id" => "lin_wh_iss_2", "identifier" => "ENG-888", "title" => "Initial Title"})
+
+    {:ok, existing_issue} = Issues.capture_issue(system_scope(), project, "Initial Title")
 
     update_payload = %{
       "type" => "Issue",
@@ -244,7 +319,13 @@ defmodule RailWeb.LinearWebhookControllerTest do
   end
 
   test "ignores non-Issue events gracefully", %{conn: conn} do
-    %LinearWorkspace{id: ws_id, webhook_secret: secret} = Repo.insert!(LinearWorkspace.factory())
+    {:ok, %LinearWorkspace{id: ws_id, webhook_secret: secret}} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Webhook Workspace 12910",
+        external_id: "lin_ws_webhook_12910",
+        token: "lin_api_token_webhook_12910",
+        webhook_secret: "whsec_webhook_12910"
+      })
 
     payload = %{"type" => "Comment", "action" => "create", "data" => %{"body" => "hello"}}
     raw = Jason.encode!(payload)

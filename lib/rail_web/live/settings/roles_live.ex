@@ -1286,6 +1286,11 @@ defmodule RailWeb.Settings.RolesLive do
     {:noreply, socket}
   end
 
+  # The navigation hook subscribes this view to pipeline events it does not use.
+  def handle_info(_message, socket) do
+    {:noreply, socket}
+  end
+
   # A role can hold a model that is no longer in its backend's configured list
   # (renamed model, hand-seeded role). Keep it selectable so opening the edit
   # modal never silently rewrites the stored model.

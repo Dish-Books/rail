@@ -31,18 +31,4 @@ defmodule Rail.Artifacts.Schemas.Design do
     |> cast_embed(:directions)
     |> unique_constraint([:task_id, :version])
   end
-
-  @doc "Builds a valid fixture struct for testing."
-  def factory do
-    id = System.unique_integer([:positive])
-
-    %__MODULE__{
-      task_id: "tsk_#{id}",
-      version: 1,
-      canvas_url: "https://canvas.example.com/designs/#{id}",
-      picked_key: "direction_a",
-      directions: [DesignDirection.factory()],
-      linear_comment_id: "lin_cmt_#{id}"
-    }
-  end
 end

@@ -13,7 +13,7 @@ defmodule RailTest.GitHelpers do
     initial_commit? = Keyword.get(opts, :initial_commit, true)
 
     unique_id = System.unique_integer([:positive])
-    dir = Path.join(System.tmp_dir!(), "#{prefix}_#{unique_id}")
+    dir = Path.join("/tmp", "#{prefix}_#{unique_id}")
     File.mkdir_p!(dir)
 
     git!(dir, ["init", "-b", branch])

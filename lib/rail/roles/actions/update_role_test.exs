@@ -1,13 +1,37 @@
 defmodule Rail.Roles.Actions.UpdateRoleTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
 
-  test "updates role attributes with admin scope" do
+  setup do
+    scope = system_scope()
+
+    {:ok, project} =
+      Projects.create_project(scope, %{
+        name: "Update Role Project",
+        github_repo: "org/update-role",
+        github_installation_id: 4103,
+        linear_team_id: "team_update_role",
+        linear_team_key: "UPR",
+        clone_path: "/tmp/repos/update-role"
+      })
+
+    {:ok, role} =
+      Roles.create_role(scope, project, %{
+        name: "Old Name",
+        stage: :engineer,
+        model: "claude-3-7-sonnet",
+        system_prompt: "Old prompt"
+      })
+
+    %{project: project, role: role}
+  end
+
+  test "updates role attributes with admin scope", %{role: role} do
     scope = Scope.for_user(%{admin: true})
-    role = create_test_role(name: "Old Name", system_prompt: "Old prompt")
 
     attrs = %{
       name: "New Name",
@@ -20,17 +44,15 @@ defmodule Rail.Roles.Actions.UpdateRoleTest do
              Roles.update_role(scope, role, attrs)
   end
 
-  test "updates role attributes with system scope" do
+  test "updates role attributes with system scope", %{role: role} do
     scope = Scope.for_system()
-    role = create_test_role()
 
     assert {:ok, %Role{model: "claude-next"}} =
              Roles.update_role(scope, role, %{model: "claude-next"})
   end
 
-  test "returns validation errors on invalid updates" do
+  test "returns validation errors on invalid updates", %{role: role} do
     scope = Scope.for_user(%{admin: true})
-    role = create_test_role()
 
     assert {:error, changeset} = Roles.update_role(scope, role, %{max_concurrent: 0, model: nil})
 
@@ -40,15 +62,13 @@ defmodule Rail.Roles.Actions.UpdateRoleTest do
            } = errors_on(changeset)
   end
 
-  test "returns not authorized for non-admin scope" do
+  test "returns not authorized for non-admin scope", %{role: role} do
     scope = Scope.for_user(%{admin: false})
-    role = create_test_role()
 
     assert {:error, :not_authorized} = Roles.update_role(scope, role, %{name: "Updated"})
   end
 
-  test "returns not authorized for nil scope" do
-    role = create_test_role()
+  test "returns not authorized for nil scope", %{role: role} do
     assert {:error, :not_authorized} = Roles.update_role(nil, role, %{name: "Updated"})
   end
 end

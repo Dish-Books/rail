@@ -39,19 +39,6 @@ defmodule Rail.Pipeline.Schemas.Plan do
     |> foreign_key_constraint(:task_id)
   end
 
-  @doc """
-  Builds a valid fixture struct for testing.
-  """
-  def factory do
-    id = System.unique_integer([:positive])
-
-    %__MODULE__{
-      task_id: UXID.generate!(prefix: "tsk"),
-      content: "# Implementation Plan #{id}\n\n1. Step one\n2. Step two",
-      captured_at: DateTime.utc_now()
-    }
-  end
-
   defp maybe_put_task_id(changeset, nil), do: changeset
   defp maybe_put_task_id(changeset, task_id), do: put_change(changeset, :task_id, task_id)
 end

@@ -12,6 +12,7 @@ defmodule Rail.Pipeline do
   defdelegate bring_local(scope, issue, owner_user), to: Actions.BringLocal
   defdelegate list_tasks(scope, project_id), to: Actions.ListTasks
   defdelegate list_tasks(scope, project_id, opts), to: Actions.ListTasks
+  defdelegate update_task(scope, task_or_id, attrs), to: Actions.UpdateTask
   defdelegate get_task(scope, id), to: Actions.GetTask
   defdelegate get_task!(scope, id), to: Actions.GetTask
   defdelegate get_plan(scope, task_or_id), to: Actions.GetPlan

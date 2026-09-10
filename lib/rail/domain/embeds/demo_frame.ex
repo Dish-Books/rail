@@ -26,14 +26,4 @@ defmodule Rail.Domain.Embeds.DemoFrame do
     |> validate_required(@required_fields)
     |> validate_number(:hold_ms, greater_than: 0)
   end
-
-  @doc "Builds a valid fixture struct for testing."
-  def factory do
-    %__MODULE__{
-      url: "https://linear.app/assets/frame_1.png",
-      linear_asset_id: "asset_f1",
-      hold_ms: 1000,
-      caption: "Sign-in screen displayed"
-    }
-  end
 end

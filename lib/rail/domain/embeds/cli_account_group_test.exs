@@ -3,13 +3,6 @@ defmodule Rail.Domain.Embeds.CliAccountGroupTest do
 
   alias Rail.Domain.Embeds.CliAccountGroup
 
-  test "factory/0 builds a valid struct" do
-    group = CliAccountGroup.factory()
-    assert group.name == "Gemini Models"
-    assert group.count == 3
-    assert group.details == %{"window" => "5-hour", "remaining_percent" => 100.0}
-  end
-
   test "changeset/2 validates required name and non-negative count" do
     changeset = CliAccountGroup.changeset(%CliAccountGroup{}, %{})
     refute changeset.valid?
@@ -38,7 +31,15 @@ defmodule Rail.Domain.Embeds.CliAccountGroupTest do
   end
 
   test "serializes to JSON" do
-    group = CliAccountGroup.factory()
+    group =
+      %CliAccountGroup{}
+      |> CliAccountGroup.changeset(%{
+        name: "Gemini Models",
+        count: 3,
+        details: %{"window" => "5-hour", "remaining_percent" => 100.0}
+      })
+      |> apply_changes()
+
     assert {:ok, json} = Jason.encode(group)
     assert {:ok, decoded} = Jason.decode(json)
     assert decoded["name"] == "Gemini Models"
