@@ -1,47 +1,93 @@
 defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
+
+  import RailTest.PipelineHelpers
 
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Domain.TaskUsage
+  alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
+  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Settle Chat Workspace",
+        external_id: "lin_ws_settle_chat",
+        token: "lin_api_token_settle_chat",
+        webhook_secret: "whsec_settle_chat"
+      })
+
     repo_dir = create_temp_git_repo()
-    project = create_test_project(%{clone_path: repo_dir, default_branch: "main"})
 
-    eng_role =
-      create_test_role(%{
-        project_id: project.id,
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        linear_workspace_id: workspace.id,
+        name: "Settle Chat Project 11002",
+        github_repo: "org/settle-chat-11002",
+        github_installation_id: 11_002,
+        linear_team_id: "team_settle_chat_11002",
+        linear_team_key: "P11002",
+        clone_path: repo_dir,
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        default_branch: "main"
+      })
+
+    {:ok, eng_role} =
+      Roles.create_role(system_scope(), project, %{
+        name: "Role 11006",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 11006.",
         stage: :engineer,
-        cli_backend: :claude,
-        model: "claude-3-7-sonnet"
+        cli_backend: :claude
       })
 
-    rev_role =
-      create_test_role(%{
-        project_id: project.id,
+    {:ok, rev_role} =
+      Roles.create_role(system_scope(), project, %{
+        name: "Role 11007",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 11007.",
         stage: :review,
-        cli_backend: :claude,
-        model: "claude-3-7-sonnet"
+        cli_backend: :claude
       })
 
-    task =
-      create_test_task(%{
-        project_id: project.id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_settle_chat_11030",
+      "identifier" => "TSK-11030",
+      "title" => "Task 11030"
+    })
+
+    {:ok, issue_11030} = Issues.capture_issue(system_scope(), project, "Task 11030")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_chat_11030"})
+
+    {:ok, task} = Pipeline.bring_local(system_scope(), issue_11030)
+
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :review,
         stage_state: :awaiting_approval,
         worktree_path: repo_dir
       })
 
     %{
+      workspace: workspace,
       project: project,
       eng_role: eng_role,
       rev_role: rev_role,
@@ -63,8 +109,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
     initial_usage = %TaskUsage{input_tokens: 50, output_tokens: 25, total_cost: Decimal.new("0.01")}
 
-    %RoleRun{id: role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -80,13 +126,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
     {:ok, task} = task |> Task.changeset(%{active_chat_role_id: rev_role_id}) |> Repo.update()
 
-    run =
-      create_test_run(%{
-        role_run_id: role_run_id,
-        task_id: task_id,
-        kind: :chat,
-        status: :running
-      })
+    {:ok, run} =
+      Runs.start_run(role_run_id, :chat, ["/bin/sleep", "5"], skip_follower: true)
 
     turn_usage = %TaskUsage{input_tokens: 100, output_tokens: 50, total_cost: Decimal.new("0.05")}
 
@@ -130,8 +171,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     task: %Task{id: task_id} = task,
     rev_role: %Role{id: rev_role_id}
   } do
-    %RoleRun{id: role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -165,8 +206,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     task: %Task{id: task_id} = task,
     rev_role: %Role{id: rev_role_id}
   } do
-    %RoleRun{id: role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -198,8 +239,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   } do
     before_fp = Rail.Git.branch_fingerprint(repo_dir)
 
-    %RoleRun{id: role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: eng_role_id,
         status: :finished,
@@ -251,8 +292,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   } do
     before_fp = Rail.Git.branch_fingerprint(repo_dir)
 
-    %RoleRun{id: eng_role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: eng_role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: eng_role_id,
         status: :finished,
@@ -263,8 +304,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         chat_fingerprint_dirty_digest: before_fp.dirty_digest
       })
 
-    %RoleRun{id: rev_role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: rev_role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -321,8 +362,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   } do
     before_fp = Rail.Git.branch_fingerprint(repo_dir)
 
-    %RoleRun{id: role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -369,8 +410,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     task: %Task{id: task_id} = task,
     rev_role: %Role{id: rev_role_id}
   } do
-    %RoleRun{id: role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -410,8 +451,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   } do
     stub_bin = create_chat_stub_cli(conversation_id: "sess-rev-queued")
 
-    %RoleRun{id: eng_role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: eng_role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: eng_role_id,
         status: :finished,
@@ -420,8 +461,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         conversation_id: "sess-eng-current"
       })
 
-    %RoleRun{id: rev_role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: rev_role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -458,8 +499,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     task: %Task{id: task_id} = task,
     rev_role: %Role{id: rev_role_id}
   } do
-    %RoleRun{id: role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -470,13 +511,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
     {:ok, task} = task |> Task.changeset(%{active_chat_role_id: rev_role_id}) |> Repo.update()
 
-    run =
-      create_test_run(%{
-        role_run_id: role_run_id,
-        task_id: task_id,
-        kind: :chat,
-        status: :running
-      })
+    {:ok, run} =
+      Runs.start_run(role_run_id, :chat, ["/bin/sleep", "5"], skip_follower: true)
 
     outcome = %{
       exit_code: 0,
@@ -497,8 +533,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   } do
     stub_bin = create_chat_stub_cli(conversation_id: "sess-rev-stage-finish")
 
-    %RoleRun{id: eng_role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: eng_role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: eng_role_id,
         status: :running,
@@ -507,8 +543,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         conversation_id: "sess-eng-stage"
       })
 
-    %RoleRun{id: rev_role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: rev_role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -523,13 +559,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       |> Task.changeset(%{stage: :engineer, stage_state: :running})
       |> Repo.update()
 
-    stage_run =
-      create_test_run(%{
-        role_run_id: eng_role_run_id,
-        task_id: task_id,
-        kind: :stage,
-        status: :running
-      })
+    {:ok, stage_run} =
+      Runs.start_run(eng_role_run_id, :stage, ["/bin/sleep", "5"], skip_follower: true)
 
     outcome = %{
       exit_code: 0,
@@ -557,8 +588,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     task: task,
     eng_role: eng_role
   } do
-    %RoleRun{id: eng_role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: eng_role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task.id,
         role_id: eng_role.id,
         status: :finished,
@@ -582,31 +613,58 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   end
 
   test "settle_chat_turn when branch modified and project has no review role", %{
-    task: orig_task
+    task: orig_task,
+    workspace: workspace
   } do
-    proj_no_rev =
-      create_test_project(%{
+    {:ok, proj_no_rev} =
+      Projects.create_project(system_scope(), %{
+        linear_workspace_id: workspace.id,
+        name: "Settle Chat Project 11003",
+        github_repo: "org/settle-chat-11003",
+        github_installation_id: 11_003,
+        linear_team_id: "team_settle_chat_11003",
+        linear_team_key: "P11003",
         clone_path: orig_task.worktree_path,
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
         default_branch: "main"
       })
 
-    task_no_rev =
-      create_test_task(%{
-        project_id: proj_no_rev.id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_settle_chat_11031",
+      "identifier" => "TSK-11031",
+      "title" => "Task 11031"
+    })
+
+    {:ok, issue_11031} = Issues.capture_issue(system_scope(), proj_no_rev, "Task 11031")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_chat_11031"})
+
+    {:ok, task_no_rev} = Pipeline.bring_local(system_scope(), issue_11031)
+
+    {:ok, task_no_rev} =
+      Pipeline.update_task(system_scope(), task_no_rev.id, %{
         stage: :review,
         stage_state: :queued,
         worktree_path: orig_task.worktree_path,
         rework_cycles: 1
       })
 
-    eng_role_no_rev =
-      create_test_role(%{
-        project_id: proj_no_rev.id,
+    {:ok, eng_role_no_rev} =
+      Roles.create_role(system_scope(), proj_no_rev, %{
+        name: "Role 11008",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 11008.",
         stage: :engineer
       })
 
-    role_run =
-      create_test_role_run(%{
+    {:ok, role_run} =
+      Runs.create_role_run(%{
         task_id: task_no_rev.id,
         role_id: eng_role_no_rev.id,
         status: :finished,
@@ -625,8 +683,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     task: task,
     eng_role: eng_role
   } do
-    role_run =
-      create_test_role_run(%{
+    {:ok, role_run} =
+      Runs.create_role_run(%{
         task_id: task.id,
         role_id: eng_role.id,
         status: :finished,
@@ -635,13 +693,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         error: "role run error"
       })
 
-    in_flight_run =
-      create_test_run(%{
-        role_run_id: role_run.id,
-        task_id: task.id,
-        kind: :chat,
-        status: :running
-      })
+    {:ok, in_flight_run} =
+      Runs.start_run(role_run.id, :chat, ["/bin/sleep", "5"], skip_follower: true)
 
     # Finishing in_flight_run when passed as %Run{}
     assert {:ok, %Task{}, %RoleRun{}} =
@@ -675,8 +728,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
              Pipeline.settle_chat_turn(task, role_run)
 
     # Fallback exit code 0 when neither outcome nor role_run has integer exit code
-    role_run_nil_code =
-      create_test_role_run(%{
+    {:ok, role_run_nil_code} =
+      Runs.create_role_run(%{
         task_id: task.id,
         role_id: eng_role.id,
         status: :finished,
@@ -693,26 +746,72 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   end
 
   describe "settle_chat_turn at design stage" do
-    test "a chat turn that rewrites the manifest lands the design" do
-      project = create_test_project()
-      create_test_linear_workspace(%{project_id: project.id})
-      designer_role = create_test_role(%{project_id: project.id, stage: :design, name: "Designer"})
-      worktree_dir = create_test_design_dir(canvas_url: "https://claude.ai/design/abc")
+    test "a chat turn that rewrites the manifest lands the design", %{project: project, task: task, workspace: workspace} do
+      {:ok, project} =
+        Projects.create_project(system_scope(), %{
+          linear_workspace_id: workspace.id,
+          name: "Settle Chat Project 11004",
+          github_repo: "org/settle-chat-11004",
+          github_installation_id: 11_004,
+          linear_team_id: "team_settle_chat_11004",
+          linear_team_key: "P11004",
+          clone_path: "/tmp/repos/settle-chat-11004",
+          linear_state_ids: %{
+            "triage" => "st_triage",
+            "backlog" => "st_backlog",
+            "in_progress" => "st_in_progress",
+            "done" => "st_done",
+            "canceled" => "st_canceled"
+          }
+        })
 
-      task =
-        create_test_task(%{
-          project_id: project.id,
+      {:ok, _workspace} =
+        Projects.upsert_linear_workspace(system_scope(), %{
+          name: "Settle Chat Workspace 11032",
+          external_id: "lin_ws_settle_chat_11032",
+          token: "lin_api_token_settle_chat_11032",
+          webhook_secret: "whsec_settle_chat_11032"
+        })
+
+      {:ok, designer_role} =
+        Roles.create_role(system_scope(), project, %{
+          name: "Designer",
+          model: "claude-3-7-sonnet",
+          system_prompt: "You are an expert agent for role 11009.",
+          stage: :design
+        })
+
+      design_manifest =
+        Jason.encode!(%{
+          "canvasUrl" => "https://claude.ai/design/abc",
+          "version" => 1,
+          "pickedKey" => nil,
+          "directions" => [
+            %{"key" => "dir-1", "title" => "Minimal Light", "notes" => "Clean", "stillPath" => "dir-1.png"},
+            %{"key" => "dir-2", "title" => "Bold Dark", "notes" => "Contrast", "stillPath" => "dir-2.png"}
+          ]
+        })
+
+      worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
+
+      expect(File, :read, 4, fn _path -> {:ok, design_manifest} end)
+      expect(File, :exists?, 7, fn _path -> true end)
+      expect(File, :stat, 4, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
+
+      {:ok, task} =
+        Pipeline.update_task(system_scope(), task.id, %{
           stage: :design,
           stage_state: :failed,
           error: "Initial canvas 404",
           worktree_path: worktree_dir
         })
 
-      role_run =
-        create_test_role_run(%{
+      {:ok, role_run} =
+        Runs.create_role_run(%{
           task_id: task.id,
           role_id: designer_role.id,
-          status: :finished
+          status: :finished,
+          started_at: DateTime.utc_now()
         })
 
       mock_design_uploads(2)
@@ -734,25 +833,67 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       assert design.canvas_url == "https://claude.ai/design/abc"
     end
 
-    test "a chat turn that leaves the manifest alone changes nothing" do
-      project = create_test_project()
-      designer_role = create_test_role(%{project_id: project.id, stage: :design, name: "Designer"})
-      worktree_dir = create_test_design_dir(canvas_url: "invalid-url")
+    test "a chat turn that leaves the manifest alone changes nothing", %{
+      project: project,
+      task: task,
+      workspace: workspace
+    } do
+      {:ok, project} =
+        Projects.create_project(system_scope(), %{
+          linear_workspace_id: workspace.id,
+          name: "Settle Chat Project 11005",
+          github_repo: "org/settle-chat-11005",
+          github_installation_id: 11_005,
+          linear_team_id: "team_settle_chat_11005",
+          linear_team_key: "P11005",
+          clone_path: "/tmp/repos/settle-chat-11005",
+          linear_state_ids: %{
+            "triage" => "st_triage",
+            "backlog" => "st_backlog",
+            "in_progress" => "st_in_progress",
+            "done" => "st_done",
+            "canceled" => "st_canceled"
+          }
+        })
 
-      task =
-        create_test_task(%{
-          project_id: project.id,
+      {:ok, designer_role} =
+        Roles.create_role(system_scope(), project, %{
+          name: "Designer",
+          model: "claude-3-7-sonnet",
+          system_prompt: "You are an expert agent for role 11010.",
+          stage: :design
+        })
+
+      design_manifest =
+        Jason.encode!(%{
+          "canvasUrl" => "invalid-url",
+          "version" => 1,
+          "pickedKey" => nil,
+          "directions" => [
+            %{"key" => "dir-1", "title" => "Minimal Light", "notes" => "Clean", "stillPath" => "dir-1.png"},
+            %{"key" => "dir-2", "title" => "Bold Dark", "notes" => "Contrast", "stillPath" => "dir-2.png"}
+          ]
+        })
+
+      worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
+
+      expect(File, :read, 1, fn _path -> {:ok, design_manifest} end)
+      expect(File, :exists?, 2, fn _path -> true end)
+
+      {:ok, task} =
+        Pipeline.update_task(system_scope(), task.id, %{
           stage: :design,
           stage_state: :failed,
           error: "Design manifest canvasUrl must be an absolute https URL.",
           worktree_path: worktree_dir
         })
 
-      role_run =
-        create_test_role_run(%{
+      {:ok, role_run} =
+        Runs.create_role_run(%{
           task_id: task.id,
           role_id: designer_role.id,
-          status: :finished
+          status: :finished,
+          started_at: DateTime.utc_now()
         })
 
       # Manifest was modified during chat from older stamp, but is invalid
