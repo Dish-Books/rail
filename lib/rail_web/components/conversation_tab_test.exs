@@ -105,7 +105,7 @@ defmodule RailWeb.Components.ConversationTabTest do
     assert html =~ ~s(data-qa="raw_log_container")
   end
 
-  test "renders ChatPane messages by kind: human, role, activity, handoff, and axis events" do
+  test "renders ChatPane messages by kind: human, role, activity, handoff, and rail events" do
     task = %Task{id: "tsk_456", stage: :engineer}
 
     run = %RoleRun{
@@ -134,7 +134,7 @@ defmodule RailWeb.Components.ConversationTabTest do
       "[tool read_file] lib/rail_web/user_auth.ex",
       "[handoff ← architect] Ready for engineer implementation",
       "Follow the schema plan closely.",
-      "[axis] Automated check completed"
+      "[rail] Automated check completed"
     ]
 
     transcript = ChatTranscript.parse(raw_logs)
@@ -175,9 +175,9 @@ defmodule RailWeb.Components.ConversationTabTest do
     assert html_collapsed =~ ~s(data-qa="open-role-conversation")
     assert html_collapsed =~ "Open Architect conversation"
 
-    # Axis event & system event
-    assert html_collapsed =~ ~s(data-qa="axis-event")
-    assert html_collapsed =~ "[axis] Automated check completed"
+    # Rail event & system event
+    assert html_collapsed =~ ~s(data-qa="rail-event")
+    assert html_collapsed =~ "[rail] Automated check completed"
     assert html_collapsed =~ ~s(data-qa="system-event")
     assert html_collapsed =~ "[run] Runner started execution"
 
@@ -342,7 +342,7 @@ defmodule RailWeb.Components.ConversationTabTest do
       "[error] something failed",
       "[tool bash] mix test",
       "[human] please retry",
-      "[axis] pipeline healthy",
+      "[rail] pipeline healthy",
       "[handoff → architect] Handoff back to architect",
       "normal debug line"
     ]
@@ -363,7 +363,7 @@ defmodule RailWeb.Components.ConversationTabTest do
     assert html =~ "text-amber-300"
     assert html =~ "[human] please retry"
     assert html =~ "text-green-400"
-    assert html =~ "[axis] pipeline healthy"
+    assert html =~ "[rail] pipeline healthy"
     assert html =~ ~s(data-qa="raw-log-handoff")
     assert html =~ ~s(data-qa="open-role-log")
     assert html =~ "Open Architect log"

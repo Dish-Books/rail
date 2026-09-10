@@ -83,7 +83,7 @@ env:
   PORT: "4000"
   PHX_SERVER: "true"
   POOL_SIZE: "10"
-  AXIS_NO_DISPATCH: "0"
+  RAIL_NO_DISPATCH: "0"
 
 secrets:
   databaseUrl: "ecto://postgres:postgrespassword@postgres:5432/rail_prod"

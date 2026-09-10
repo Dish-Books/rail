@@ -4,7 +4,7 @@ defmodule Rail.Pipeline.Dispatcher do
   and task dispatching.
 
   Subscribes to `"pipeline:changed"` PubSub events and runs periodic queue sweeps.
-  When `AXIS_NO_DISPATCH=1` is set in the environment (or `:no_dispatch` in config),
+  When `RAIL_NO_DISPATCH=1` is set in the environment (or `:no_dispatch` in config),
   runs are not started, but the process maintains state and responds to pumps.
   """
   use GenServer
@@ -78,7 +78,7 @@ defmodule Rail.Pipeline.Dispatcher do
   end
 
   @doc """
-  Returns whether dispatch is currently disabled (via `AXIS_NO_DISPATCH=1` or config).
+  Returns whether dispatch is currently disabled (via `RAIL_NO_DISPATCH=1` or config).
   """
   def dispatch_disabled?(server \\ __MODULE__) do
     GenServer.call(server, :dispatch_disabled?)
@@ -155,12 +155,12 @@ defmodule Rail.Pipeline.Dispatcher do
       Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     end
 
-    env_disabled = System.get_env("AXIS_NO_DISPATCH") == "1"
+    env_disabled = System.get_env("RAIL_NO_DISPATCH") == "1"
     config_disabled = Application.get_env(:rail, :no_dispatch, false)
     dispatch_disabled = Keyword.get(opts, :dispatch_disabled, env_disabled or config_disabled)
 
     if dispatch_disabled do
-      Logger.info("AXIS_NO_DISPATCH=1 is set. Dispatching is disabled.")
+      Logger.info("RAIL_NO_DISPATCH=1 is set. Dispatching is disabled.")
     end
 
     tick_interval_ms = Keyword.get(opts, :tick_interval_ms, @default_tick_interval_ms)
@@ -397,7 +397,7 @@ defmodule Rail.Pipeline.Dispatcher do
   end
 
   defp do_pump(%__MODULE__{dispatch_disabled: true}) do
-    Logger.info("AXIS_NO_DISPATCH=1 is set. Dispatching is disabled.")
+    Logger.info("RAIL_NO_DISPATCH=1 is set. Dispatching is disabled.")
     {:disabled, []}
   end
 

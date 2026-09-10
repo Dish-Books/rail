@@ -1,6 +1,6 @@
 defmodule Rail.Pipeline.Utils.Scratch do
   @moduledoc """
-  Utilities for preparing and capturing `$AXIS_SCRATCH` directory artifacts for agent tasks.
+  Utilities for preparing and capturing `$RAIL_SCRATCH` directory artifacts for agent tasks.
   """
 
   import Ecto.Query
@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Utils.Scratch do
   @subdirs ["tickets", "plans", "design", "qa", "demo"]
 
   @doc """
-  Prepares `$AXIS_SCRATCH` directory tree and materializes stage-specific inputs.
+  Prepares `$RAIL_SCRATCH` directory tree and materializes stage-specific inputs.
   """
   def prepare(%Task{} = task, scratch_dir) when is_binary(scratch_dir) do
     ensure_directories(scratch_dir)
@@ -50,7 +50,7 @@ defmodule Rail.Pipeline.Utils.Scratch do
   end
 
   @doc """
-  Captures stage outputs from `$AXIS_SCRATCH` back into Postgres and Linear.
+  Captures stage outputs from `$RAIL_SCRATCH` back into Postgres and Linear.
   """
   def capture(stage, %Task{} = task, scratch_dir) when is_binary(scratch_dir) do
     stage_atom = normalize_stage(stage)
@@ -91,8 +91,8 @@ defmodule Rail.Pipeline.Utils.Scratch do
     task_id = extract_id(task_or_id)
 
     workspace_root =
-      System.get_env("AXIS_WORKSPACE_ROOT") ||
-        Path.join(System.tmp_dir!(), "axis")
+      System.get_env("RAIL_WORKSPACE_ROOT") ||
+        Path.join(System.tmp_dir!(), "rail")
 
     Path.join([workspace_root, project_id, "scratch", task_id])
   end

@@ -19,10 +19,10 @@
 #   tool/qa/qa pid                PID of the Phoenix server process
 #   tool/qa/qa session            prints session directory path
 #
-# The app it starts runs with AXIS_NO_DISPATCH=1: the queue and every screen
+# The app it starts runs with RAIL_NO_DISPATCH=1: the queue and every screen
 # work, and no agent is ever spawned.
 #
-# State lives in $AXIS_QA_DIR (default $TMPDIR/axis-qa/<worktree>).
+# State lives in $RAIL_QA_DIR (default $TMPDIR/rail-qa/<worktree>).
 set -euo pipefail
 
 # ---------------------------------------------------------------- environment
@@ -57,15 +57,15 @@ if [ "${1:-}" = "start" ]; then
   for i in 2 3; do
     arg="${!i:-}"
     if [ -n "$arg" ] && [ -d "$arg" ]; then
-      AXIS_QA_WORKTREE="$(cd "$arg" && pwd)"
+      RAIL_QA_WORKTREE="$(cd "$arg" && pwd)"
       set -- "${@:1:$((i - 1))}" "${@:$((i + 1))}"
       break
     fi
   done
 fi
 
-WORKTREE="${AXIS_QA_WORKTREE:-$(cd "$HERE/../.." && pwd)}"
-SESSION="${AXIS_QA_DIR:-${TMPDIR:-/tmp/}axis-qa/$(basename "$WORKTREE")}"
+WORKTREE="${RAIL_QA_WORKTREE:-$(cd "$HERE/../.." && pwd)}"
+SESSION="${RAIL_QA_DIR:-${TMPDIR:-/tmp/}rail-qa/$(basename "$WORKTREE")}"
 mkdir -p "$SESSION"
 
 SOCKET="$SESSION/driver.sock"
@@ -125,7 +125,7 @@ cmd_start() {
 
   rm -f "$SOCKET" "$DRIVER_PID_FILE"
 
-  export AXIS_NO_DISPATCH="${AXIS_NO_DISPATCH:-1}"
+  export RAIL_NO_DISPATCH="${RAIL_NO_DISPATCH:-1}"
   local port="${PORT:-4002}"
   echo "$port" > "$PORT_FILE"
   local base_url="http://127.0.0.1:$port"
@@ -133,11 +133,11 @@ cmd_start() {
 
   # Check if a server is already listening on port
   if ! curl -s -f "$login_url" >/dev/null 2>&1; then
-    echo "qa: starting Phoenix server on $base_url (AXIS_NO_DISPATCH=$AXIS_NO_DISPATCH)..."
+    echo "qa: starting Phoenix server on $base_url (RAIL_NO_DISPATCH=$RAIL_NO_DISPATCH)..."
     : > "$SERVER_LOG"
     (
       cd "$WORKTREE"
-      PORT="$port" AXIS_NO_DISPATCH="$AXIS_NO_DISPATCH" MIX_ENV=dev mix phx.server >> "$SERVER_LOG" 2>&1
+      PORT="$port" RAIL_NO_DISPATCH="$RAIL_NO_DISPATCH" MIX_ENV=dev mix phx.server >> "$SERVER_LOG" 2>&1
     ) &
     local s_pid=$!
     echo "$s_pid" > "$SERVER_PID_FILE"

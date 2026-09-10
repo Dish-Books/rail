@@ -87,7 +87,7 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
                  Issues.capture_issue(scope, project, "Fallback ask title")
       end)
 
-    assert log =~ "[axis] pushed to Linear as the workspace"
+    assert log =~ "[rail] pushed to Linear as the workspace"
   end
 
   test "capture_issue/3 returns error when Linear creation fails" do

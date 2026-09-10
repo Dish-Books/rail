@@ -244,7 +244,7 @@ defmodule RailTest.PipelineHelpers do
 
   def create_test_design_dir(opts \\ []) do
     worktree_dir = create_temp_scratch_dir()
-    design_dir = Path.join([worktree_dir, ".axis", "design"])
+    design_dir = Path.join([worktree_dir, ".rail", "design"])
     File.mkdir_p!(design_dir)
 
     canvas_url = Keyword.get(opts, :canvas_url, "https://claude.ai/design/canvas-1")
@@ -261,13 +261,13 @@ defmodule RailTest.PipelineHelpers do
         "key" => "dir-1",
         "title" => "Minimal Light",
         "notes" => "Clean aesthetic with spacious white layout",
-        "stillPath" => ".axis/design/dir-1.png"
+        "stillPath" => ".rail/design/dir-1.png"
       },
       %{
         "key" => "dir-2",
         "title" => "Bold Dark",
         "notes" => "Dark mode with high contrast neon highlights",
-        "stillPath" => ".axis/design/dir-2.png"
+        "stillPath" => ".rail/design/dir-2.png"
       }
     ]
 
@@ -341,7 +341,7 @@ defmodule RailTest.PipelineHelpers do
 
   def create_test_demo_dir(opts \\ []) do
     worktree_dir = create_temp_scratch_dir()
-    sub_path = Keyword.get(opts, :sub_path, [".axis", "demo"])
+    sub_path = Keyword.get(opts, :sub_path, [".rail", "demo"])
     demo_dir = Path.join([worktree_dir | List.wrap(sub_path)])
     File.mkdir_p!(demo_dir)
 

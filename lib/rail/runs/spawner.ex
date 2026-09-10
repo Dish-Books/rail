@@ -133,8 +133,8 @@ defmodule Rail.Runs.Spawner do
       _other ->
         state_dir =
           Keyword.get(opts, :state_dir) ||
-            System.get_env("AXIS_STATE_DIR") ||
-            Path.join(System.tmp_dir!(), "axis")
+            System.get_env("RAIL_STATE_DIR") ||
+            Path.join(System.tmp_dir!(), "rail")
 
         streams_dir = Path.join(state_dir, "streams")
         File.mkdir_p!(streams_dir)
@@ -156,7 +156,7 @@ defmodule Rail.Runs.Spawner do
 
   defp launch_and_follow(run, role_run, executable, args, stream_path, backend, opts) do
     env_list = build_environment(stream_path, opts)
-    sh_script = ~s(trap "" HUP INT; exec "$0" "$@" </dev/null >>"$AXIS_STREAM" 2>>"$AXIS_STREAM_ERR")
+    sh_script = ~s(trap "" HUP INT; exec "$0" "$@" </dev/null >>"$RAIL_STREAM" 2>>"$RAIL_STREAM_ERR")
     port_args = ["-c", sh_script, executable | args]
 
     cd =
@@ -270,7 +270,7 @@ defmodule Rail.Runs.Spawner do
   defp build_environment(stream_path, opts) do
     scratch_path =
       Keyword.get(opts, :scratch_path) ||
-        Keyword.get(opts, :axis_scratch) ||
+        Keyword.get(opts, :rail_scratch) ||
         ""
 
     gh_token =
@@ -281,9 +281,9 @@ defmodule Rail.Runs.Spawner do
     extra_env =
       Map.merge(
         %{
-          "AXIS_STREAM" => stream_path,
-          "AXIS_STREAM_ERR" => "#{stream_path}.err",
-          "AXIS_SCRATCH" => scratch_path,
+          "RAIL_STREAM" => stream_path,
+          "RAIL_STREAM_ERR" => "#{stream_path}.err",
+          "RAIL_SCRATCH" => scratch_path,
           "GH_TOKEN" => gh_token
         },
         Keyword.get(opts, :env, %{})

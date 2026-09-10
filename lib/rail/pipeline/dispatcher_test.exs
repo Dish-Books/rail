@@ -38,8 +38,8 @@ defmodule Rail.Pipeline.DispatcherTest do
     refute Dispatcher.dispatch_disabled?(pid)
   end
 
-  test "initializes with dispatch_disabled true when AXIS_NO_DISPATCH=1 is set" do
-    System.put_env("AXIS_NO_DISPATCH", "1")
+  test "initializes with dispatch_disabled true when RAIL_NO_DISPATCH=1 is set" do
+    System.put_env("RAIL_NO_DISPATCH", "1")
 
     {:ok, pid} =
       Dispatcher.start_link(
@@ -50,7 +50,7 @@ defmodule Rail.Pipeline.DispatcherTest do
 
     assert Dispatcher.dispatch_disabled?(pid)
 
-    System.delete_env("AXIS_NO_DISPATCH")
+    System.delete_env("RAIL_NO_DISPATCH")
     GenServer.stop(pid)
   end
 

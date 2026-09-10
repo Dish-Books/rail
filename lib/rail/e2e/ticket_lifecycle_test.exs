@@ -19,16 +19,12 @@ defmodule Rail.E2E.TicketLifecycleTest do
     old_path = System.get_env("PATH") || ""
     new_path = "#{shim_dir}:#{old_path}"
     System.put_env("PATH", new_path)
-    System.put_env("AXIS_CLAUDE_PATH", Path.join(shim_dir, "claude"))
-    System.put_env("AXIS_AGY_PATH", Path.join(shim_dir, "agy"))
     System.put_env("RAIL_CLAUDE_PATH", Path.join(shim_dir, "claude"))
     System.put_env("RAIL_AGY_PATH", Path.join(shim_dir, "agy"))
     Rail.ToolEnv.debug_set_path(new_path)
 
     on_exit(fn ->
       System.put_env("PATH", old_path)
-      System.delete_env("AXIS_CLAUDE_PATH")
-      System.delete_env("AXIS_AGY_PATH")
       System.delete_env("RAIL_CLAUDE_PATH")
       System.delete_env("RAIL_AGY_PATH")
       Rail.ToolEnv.reset()

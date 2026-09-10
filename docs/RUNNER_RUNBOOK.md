@@ -18,12 +18,12 @@ flowchart TD
         LB[Load Balancer / Ingress]
     end
 
-    subgraph WebNodes ["Web Instances (AXIS_NO_DISPATCH=1)"]
+    subgraph WebNodes ["Web Instances (RAIL_NO_DISPATCH=1)"]
         W1[Web Node 1<br/>Phoenix LiveView]
         W2[Web Node 2<br/>Phoenix LiveView]
     end
 
-    subgraph RunnerNode ["Runner Node (AXIS_NO_DISPATCH=0)"]
+    subgraph RunnerNode ["Runner Node (RAIL_NO_DISPATCH=0)"]
         R1[Runner Coordinator<br/>Dispatcher + Periodic + Followers]
         SP[Spawner<br/>Task.Supervisor]
         CL1[CLI Runner: Claude]
@@ -53,13 +53,13 @@ flowchart TD
     CL2 --> SC
 ```
 
-- **Single Runner Node (`AXIS_NO_DISPATCH=0` or unset)**:
+- **Single Runner Node (`RAIL_NO_DISPATCH=0` or unset)**:
   - Executes `Rail.Pipeline.Dispatcher`, which polls eligible queued tasks and starts stage runs.
   - Runs `Rail.Runs.Boot` to adopt or reconcile orphan runs on startup.
   - Spawns CLI processes (Anthropic Claude Code or Google Antigravity) via `Rail.Runs.Spawner`.
   - Runs `Rail.Runs.Follower` to stream NDJSON events from scratch files into the database.
   - Runs `Rail.Periodic` for periodic cron tasks (retries, PR mergeability checks, model refreshing).
-- **Web Nodes (`AXIS_NO_DISPATCH=1`)**:
+- **Web Nodes (`RAIL_NO_DISPATCH=1`)**:
   - Scale horizontally behind an ingress/load balancer.
   - Serve Phoenix LiveView UI and HTTP/API endpoints (`/_health`, OAuth callbacks, Webhooks).
   - Do not pump the pipeline or launch background CLI processes, preventing duplicate coordinators and race conditions.
@@ -155,7 +155,7 @@ Sensitive configuration is loaded at runtime via environment variables (`config/
 | `PORT` | Listening HTTP port | `4000` |
 | `PHX_SERVER` | Enable Phoenix HTTP endpoint | `true` |
 | `POOL_SIZE` | Ecto database connection pool size | `10` (default) to `30` |
-| `AXIS_NO_DISPATCH` | Disable runner coordination (web nodes) | `1` (web nodes), `0` (runner node) |
+| `RAIL_NO_DISPATCH` | Disable runner coordination (web nodes) | `1` (web nodes), `0` (runner node) |
 | `GITHUB_APP_ID` | GitHub App numerical ID | `123456` |
 | `GITHUB_APP_PRIVATE_KEY` | GitHub App PEM private key | `-----BEGIN RSA PRIVATE KEY-----...` |
 | `LINEAR_CLIENT_ID` | Linear OAuth application client ID | `lin_client_...` |

@@ -73,7 +73,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
 
   defp drop_question(role_run) do
     msg =
-      "[axis] Question asked before the human reply reached this role; " <>
+      "[rail] Question asked before the human reply reached this role; " <>
         "it goes to the resumed run, not the inbox."
 
     Logger.info(msg)

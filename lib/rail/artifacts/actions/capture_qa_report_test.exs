@@ -162,18 +162,18 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
       File.chmod!(img_file, 0o644)
     end
 
-    test "reads text artifact content from file on disk and captures from worktree .axis/qa", %{
+    test "reads text artifact content from file on disk and captures from worktree .rail/qa", %{
       dir: dir,
       project: project
     } do
       scope = Scope.for_system()
-      axis_qa = Path.join([dir, ".axis", "qa"])
-      File.mkdir_p!(axis_qa)
+      rail_qa = Path.join([dir, ".rail", "qa"])
+      File.mkdir_p!(rail_qa)
 
-      log_path = Path.join(axis_qa, "system_check.txt")
+      log_path = Path.join(rail_qa, "system_check.txt")
       File.write!(log_path, "TEST_SYSTEM_LOG_CONTENT")
 
-      ArtifactHelpers.write_qa_manifest(axis_qa, %{
+      ArtifactHelpers.write_qa_manifest(rail_qa, %{
         "commit" => "wt_commit",
         "session" => %{"pid" => 1234},
         "rows" => [

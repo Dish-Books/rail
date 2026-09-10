@@ -66,7 +66,7 @@ defmodule Rail.Artifacts.Actions.CaptureDesign do
     cond do
       File.exists?(Path.join(path, "manifest.json")) -> path
       File.exists?(Path.join([path, "design", "manifest.json"])) -> Path.join(path, "design")
-      File.exists?(Path.join([path, ".axis", "design", "manifest.json"])) -> Path.join([path, ".axis", "design"])
+      File.exists?(Path.join([path, ".rail", "design", "manifest.json"])) -> Path.join([path, ".rail", "design"])
       true -> Path.join(path, "design")
     end
   end

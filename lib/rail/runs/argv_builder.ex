@@ -23,12 +23,10 @@ defmodule Rail.Runs.ArgvBuilder do
     if claude?(backend) do
       opts[:claude_path] ||
         System.get_env("RAIL_CLAUDE_PATH") ||
-        System.get_env("AXIS_CLAUDE_PATH") ||
         @default_claude_path
     else
       opts[:agy_path] ||
         System.get_env("RAIL_AGY_PATH") ||
-        System.get_env("AXIS_AGY_PATH") ||
         @default_agy_path
     end
   end

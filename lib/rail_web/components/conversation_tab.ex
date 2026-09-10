@@ -385,10 +385,10 @@ defmodule RailWeb.Components.ConversationTab do
           </div>
         <% else %>
           <!-- 4.8 _EventTile (event without handoff) -->
-          <%= if String.starts_with?(@text, "[axis]") do %>
+          <%= if String.starts_with?(@text, "[rail]") do %>
             <div
               id={"msg-#{@idx}"}
-              data-qa="axis-event"
+              data-qa="rail-event"
               class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 font-mono text-[11px] my-1"
             >
               <.icon name="info_outline" class="h-3.5 w-3.5 shrink-0" />
@@ -788,7 +788,7 @@ defmodule RailWeb.Components.ConversationTab do
       String.starts_with?(line, ["[human", "[USER_ANSWER"]) ->
         "text-amber-300"
 
-      String.starts_with?(line, ["[axis", "[run", "[init", "[result", "[reattach"]) ->
+      String.starts_with?(line, ["[rail", "[run", "[init", "[result", "[reattach"]) ->
         "text-green-400"
 
       true ->

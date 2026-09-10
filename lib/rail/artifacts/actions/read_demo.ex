@@ -23,8 +23,8 @@ defmodule Rail.Artifacts.Actions.ReadDemo do
       File.exists?(Path.join([dir, "demo", "manifest.json"])) ->
         Path.join(dir, "demo")
 
-      File.exists?(Path.join([dir, ".axis", "demo", "manifest.json"])) ->
-        Path.join([dir, ".axis", "demo"])
+      File.exists?(Path.join([dir, ".rail", "demo", "manifest.json"])) ->
+        Path.join([dir, ".rail", "demo"])
 
       true ->
         dir

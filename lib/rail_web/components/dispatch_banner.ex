@@ -17,7 +17,7 @@ defmodule RailWeb.Components.DispatchBanner do
     >
       <.icon name="info_outline" class="h-4.5 w-4.5 shrink-0 text-amber-600 dark:text-amber-400" />
       <span>
-        AXIS_NO_DISPATCH=1 is set. The app will inspect and display tasks, but will not invoke agent CLI tools.
+        RAIL_NO_DISPATCH=1 is set. The app will inspect and display tasks, but will not invoke agent CLI tools.
       </span>
     </div>
     """

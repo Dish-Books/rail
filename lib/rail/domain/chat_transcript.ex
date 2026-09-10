@@ -15,7 +15,7 @@ defmodule Rail.Domain.ChatTranscript do
   @derive Jason.Encoder
 
   @human_prefix ~r/^\[human\]\s*/
-  @system_prefix ~r/^\[(run|init|tool|tool error|result|axis|handoff|denied|recovered|error|rate limit|stderr|human)(\s|\]|:)/
+  @system_prefix ~r/^\[(run|init|tool|tool error|result|rail|handoff|denied|recovered|error|rate limit|stderr|human)(\s|\]|:)/
 
   @primary_key false
   embedded_schema do

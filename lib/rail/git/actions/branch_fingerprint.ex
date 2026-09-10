@@ -10,7 +10,7 @@ defmodule Rail.Git.Actions.BranchFingerprint do
   Returns nil if git cannot answer.
   """
   def branch_fingerprint(worktree_path, opts \\ []) when is_binary(worktree_path) do
-    ignore_axis? = Keyword.get(opts, :ignore_axis, false)
+    ignore_rail? = Keyword.get(opts, :ignore_rail, false)
 
     with {head_out, 0} <- git_cmd(["rev-parse", "HEAD"], cd: worktree_path, stderr_to_stdout: true),
          head_sha = String.trim(head_out),
@@ -21,8 +21,8 @@ defmodule Rail.Git.Actions.BranchFingerprint do
              stderr_to_stdout: true
            ) do
       effective_status =
-        if ignore_axis? do
-          filter_axis_status(status_out)
+        if ignore_rail? do
+          filter_rail_status(status_out)
         else
           status_out
         end
@@ -42,7 +42,7 @@ defmodule Rail.Git.Actions.BranchFingerprint do
     end
   end
 
-  defp filter_axis_status(status_out) do
+  defp filter_rail_status(status_out) do
     status_out
     |> String.split(~r/\r?\n/)
     |> Enum.filter(&keep_status_line?/1)
@@ -61,7 +61,7 @@ defmodule Rail.Git.Actions.BranchFingerprint do
           |> String.trim()
           |> String.replace("\"", "")
 
-        not String.starts_with?(path, ".axis/") and path != ".axis"
+        not String.starts_with?(path, ".rail/") and path != ".rail"
     end
   end
 end

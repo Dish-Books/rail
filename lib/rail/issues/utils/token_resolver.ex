@@ -18,7 +18,7 @@ defmodule Rail.Issues.Utils.TokenResolver do
       {:error, _reason} ->
         case workspace_token(project) do
           {:ok, token} ->
-            Logger.warning("[axis] pushed to Linear as the workspace")
+            Logger.warning("[rail] pushed to Linear as the workspace")
             {:ok, token, :workspace}
 
           {:error, reason} ->

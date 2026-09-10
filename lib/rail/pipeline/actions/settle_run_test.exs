@@ -496,28 +496,28 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
              )
   end
 
-  test "settles clean exit 0 for qa stage resolving manifest from worktree .axis/qa, worktree qa, and root" do
+  test "settles clean exit 0 for qa stage resolving manifest from worktree .rail/qa, worktree qa, and root" do
     project = create_test_project()
     role_qa = create_test_role(%{project_id: project.id, stage: :qa, name: "QA Tester"})
     _role_lead = create_test_role(%{project_id: project.id, stage: :qa_lead, name: "QA Lead"})
 
-    # Case A: Worktree with .axis/qa
-    worktree_axis = create_test_qa_dir(sub_path: [".axis", "qa"], commit: "axis_sha")
+    # Case A: Worktree with .rail/qa
+    worktree_rail = create_test_qa_dir(sub_path: [".rail", "qa"], commit: "rail_sha")
 
-    task_axis =
+    task_rail =
       create_test_task(%{
         project_id: project.id,
         stage: :qa,
         stage_state: :running,
-        worktree_path: worktree_axis
+        worktree_path: worktree_rail
       })
 
-    role_run_axis = create_test_role_run(%{task_id: task_axis.id, role_id: role_qa.id, status: :running})
+    role_run_rail = create_test_role_run(%{task_id: task_rail.id, role_id: role_qa.id, status: :running})
 
     assert {:ok, %Task{stage: :qa_lead}, %RoleRun{}} =
-             Pipeline.settle_run(task_axis, role_run_axis, %{exit_code: 0, output: "VERDICT: PASS"})
+             Pipeline.settle_run(task_rail, role_run_rail, %{exit_code: 0, output: "VERDICT: PASS"})
 
-    assert %QaReport{commit: "axis_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task_axis.id)
+    assert %QaReport{commit: "rail_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task_rail.id)
 
     # Case B: Worktree with qa/
     worktree_qa = create_test_qa_dir(sub_path: ["qa"], commit: "wt_qa_sha")
@@ -1317,7 +1317,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
           "key" => "dir-other",
           "title" => "Other",
           "notes" => "Notes",
-          "stillPath" => ".axis/design/dir-1.png"
+          "stillPath" => ".rail/design/dir-1.png"
         }
       ]
 
@@ -1446,9 +1446,9 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     test "demo run settlement fails when worktree moved during recording" do
       project = create_test_project()
       worktree = create_temp_git_repo()
-      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree, ignore_axis: true)
+      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree, ignore_rail: true)
 
-      demo_dir = Path.join([worktree, ".axis", "demo"])
+      demo_dir = Path.join([worktree, ".rail", "demo"])
       File.mkdir_p!(demo_dir)
       File.write!(Path.join(demo_dir, "frame-1.png"), "frame")
 
@@ -1490,12 +1490,12 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
                Pipeline.settle_run(task, role_run, %{exit_code: 0})
     end
 
-    test "demo run settlement fails when worktree code outside .axis/ was modified during recording" do
+    test "demo run settlement fails when worktree code outside .rail/ was modified during recording" do
       project = create_test_project()
       worktree = create_temp_git_repo()
-      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree, ignore_axis: true)
+      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree, ignore_rail: true)
 
-      demo_dir = Path.join([worktree, ".axis", "demo"])
+      demo_dir = Path.join([worktree, ".rail", "demo"])
       File.mkdir_p!(demo_dir)
       File.write!(Path.join(demo_dir, "frame-1.png"), "frame")
 
@@ -1533,19 +1533,19 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
           stage_fingerprint_dirty_digest: original_digest
         })
 
-      expected_err = "Worktree code outside .axis/ was modified during recording."
+      expected_err = "Worktree code outside .rail/ was modified during recording."
 
       assert {:ok, %Task{stage_state: :failed, error: ^expected_err}, %RoleRun{status: :finished}} =
                Pipeline.settle_run(task, role_run, %{exit_code: 0})
     end
 
-    test "demo run settlement succeeds when untracked frames exist in .axis/demo/" do
+    test "demo run settlement succeeds when untracked frames exist in .rail/demo/" do
       project = create_test_project()
       create_test_linear_workspace(%{project_id: project.id})
       worktree = create_temp_git_repo()
-      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree, ignore_axis: true)
+      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree, ignore_rail: true)
 
-      demo_dir = Path.join([worktree, ".axis", "demo"])
+      demo_dir = Path.join([worktree, ".rail", "demo"])
       File.mkdir_p!(demo_dir)
       File.write!(Path.join(demo_dir, "frame-1.png"), "frame")
 
@@ -1698,7 +1698,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     test "fails when manifest format is invalid during capture" do
       project = create_test_project()
       scratch_dir = create_temp_scratch_dir()
-      demo_dir = Path.join([scratch_dir, ".axis", "demo"])
+      demo_dir = Path.join([scratch_dir, ".rail", "demo"])
       File.mkdir_p!(demo_dir)
 
       File.write!(
@@ -1719,7 +1719,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       project = create_test_project()
       create_test_linear_workspace(%{project_id: project.id})
       scratch_dir = create_temp_scratch_dir()
-      demo_dir = Path.join([scratch_dir, ".axis", "demo"])
+      demo_dir = Path.join([scratch_dir, ".rail", "demo"])
       File.mkdir_p!(demo_dir)
       frame = Path.join(demo_dir, "frame-1.png")
       File.write!(frame, "frame")
@@ -1783,7 +1783,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       project = create_test_project()
       create_test_linear_workspace(%{project_id: project.id})
       scratch_dir = create_temp_scratch_dir()
-      demo_dir = Path.join([scratch_dir, ".axis", "demo"])
+      demo_dir = Path.join([scratch_dir, ".rail", "demo"])
       File.mkdir_p!(demo_dir)
       frame = Path.join(demo_dir, "frame-1.png")
       File.write!(frame, "frame")
@@ -1832,7 +1832,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       task = create_test_task(%{project_id: project.id, stage: :demo, stage_state: :running, worktree_path: nil})
       role_run = create_test_role_run(%{task_id: task.id, status: :running})
 
-      scratch_dir = Path.join([System.tmp_dir!(), "axis", task.project_id, "scratch", task.id])
+      scratch_dir = Path.join([System.tmp_dir!(), "rail", task.project_id, "scratch", task.id])
       demo_dir = Path.join([scratch_dir, "demo"])
       File.mkdir_p!(demo_dir)
       frame = Path.join(demo_dir, "frame-1.png")

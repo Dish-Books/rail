@@ -105,7 +105,7 @@ defmodule Rail.Artifacts.Validators.DesignValidatorTest do
       )
 
       assert {:error, esc_err} = DesignValidator.validate(dir)
-      assert esc_err =~ "Design still image path must stay inside .axis/design/"
+      assert esc_err =~ "Design still image path must stay inside .rail/design/"
 
       File.write!(
         Path.join(dir, "manifest.json"),

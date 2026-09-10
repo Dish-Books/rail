@@ -365,31 +365,31 @@ defmodule Rail.GitHub.ClientTest do
 
   describe "pull_request_number_for_branch/4" do
     test "returns pull request number when PR for branch exists" do
-      mock_pull_request_number_for_branch_success("owner/repo", "axis/feature-1", 77, user_token: "token_123")
+      mock_pull_request_number_for_branch_success("owner/repo", "rail/feature-1", 77, user_token: "token_123")
 
       assert {:ok, 77} =
-               Client.pull_request_number_for_branch("owner/repo", "axis/feature-1", "token_123")
+               Client.pull_request_number_for_branch("owner/repo", "rail/feature-1", "token_123")
     end
 
     test "handles branch that already has owner prefix" do
-      mock_pull_request_number_for_branch_success("owner/repo", "owner:axis/feature-1", 78)
+      mock_pull_request_number_for_branch_success("owner/repo", "owner:rail/feature-1", 78)
 
       assert {:ok, 78} =
-               Client.pull_request_number_for_branch("owner/repo", "owner:axis/feature-1", "token")
+               Client.pull_request_number_for_branch("owner/repo", "owner:rail/feature-1", "token")
     end
 
     test "returns nil when no pull request exists for branch" do
-      mock_pull_request_number_for_branch_success("owner/repo", "axis/no-pr", nil)
+      mock_pull_request_number_for_branch_success("owner/repo", "rail/no-pr", nil)
 
       assert {:ok, nil} =
-               Client.pull_request_number_for_branch("owner/repo", "axis/no-pr", "token")
+               Client.pull_request_number_for_branch("owner/repo", "rail/no-pr", "token")
     end
 
     test "returns error on API failure" do
-      mock_pull_request_number_for_branch_error("owner/repo", "axis/fail", 500)
+      mock_pull_request_number_for_branch_error("owner/repo", "rail/fail", 500)
 
       assert {:error, {:github_api_error, 500, %{"message" => "Internal Server Error"}}} =
-               Client.pull_request_number_for_branch("owner/repo", "axis/fail", "token")
+               Client.pull_request_number_for_branch("owner/repo", "rail/fail", "token")
     end
 
     test "returns error on transport failure" do
@@ -398,28 +398,28 @@ defmodule Rail.GitHub.ClientTest do
       end)
 
       assert {:error, %Req.TransportError{reason: :nxdomain}} =
-               Client.pull_request_number_for_branch("owner/repo", "axis/fail", "token")
+               Client.pull_request_number_for_branch("owner/repo", "rail/fail", "token")
     end
   end
 
   describe "delete_remote_branch/4" do
     test "deletes remote branch successfully" do
-      mock_delete_remote_branch_success("owner/repo", "axis/done-feature", user_token: "user_tok")
+      mock_delete_remote_branch_success("owner/repo", "rail/done-feature", user_token: "user_tok")
 
-      assert :ok = Client.delete_remote_branch("owner/repo", "axis/done-feature", "user_tok")
+      assert :ok = Client.delete_remote_branch("owner/repo", "rail/done-feature", "user_tok")
     end
 
     test "strips refs/heads/ prefix if provided" do
-      mock_delete_remote_branch_success("owner/repo", "axis/done-feature")
+      mock_delete_remote_branch_success("owner/repo", "rail/done-feature")
 
       assert :ok =
-               Client.delete_remote_branch("owner/repo", "refs/heads/axis/done-feature", "user_tok")
+               Client.delete_remote_branch("owner/repo", "refs/heads/rail/done-feature", "user_tok")
     end
 
     test "idempotently succeeds when branch does not exist (404)" do
-      mock_delete_remote_branch_not_found("owner/repo", "axis/already-gone")
+      mock_delete_remote_branch_not_found("owner/repo", "rail/already-gone")
 
-      assert :ok = Client.delete_remote_branch("owner/repo", "axis/already-gone", "user_tok")
+      assert :ok = Client.delete_remote_branch("owner/repo", "rail/already-gone", "user_tok")
     end
 
     test "returns error on other API failures (e.g. 403 Forbidden)" do
@@ -435,7 +435,7 @@ defmodule Rail.GitHub.ClientTest do
       end)
 
       assert {:error, %Req.TransportError{reason: :econnrefused}} =
-               Client.delete_remote_branch("owner/repo", "axis/fail", "user_tok")
+               Client.delete_remote_branch("owner/repo", "rail/fail", "user_tok")
     end
   end
 

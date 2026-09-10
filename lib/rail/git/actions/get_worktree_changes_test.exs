@@ -6,7 +6,7 @@ defmodule Rail.Git.Actions.GetWorktreeChangesTest do
 
   test "counts committed work on the branch against main" do
     repo = create_temp_git_repo()
-    git!(repo, ["checkout", "-b", "axis/feature"])
+    git!(repo, ["checkout", "-b", "rail/feature"])
 
     File.write!(Path.join(repo, "added.txt"), "a\nb\nc\n")
     File.write!(Path.join(repo, "tracked.txt"), "one\n")
@@ -23,7 +23,7 @@ defmodule Rail.Git.Actions.GetWorktreeChangesTest do
 
   test "falls back to uncommitted working tree before first commit" do
     repo = create_temp_git_repo()
-    git!(repo, ["checkout", "-b", "axis/wip"])
+    git!(repo, ["checkout", "-b", "rail/wip"])
 
     File.write!(Path.join(repo, "wip.txt"), "line1\nline2\n")
 
@@ -35,7 +35,7 @@ defmodule Rail.Git.Actions.GetWorktreeChangesTest do
 
   test "a branch with no changes reads as empty" do
     repo = create_temp_git_repo()
-    git!(repo, ["checkout", "-b", "axis/clean"])
+    git!(repo, ["checkout", "-b", "rail/clean"])
 
     changes = Git.get_worktree_changes(repo)
 

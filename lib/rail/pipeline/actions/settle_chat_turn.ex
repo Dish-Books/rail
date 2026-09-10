@@ -117,7 +117,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
           |> Task.changeset(%{stage_state: :awaiting_approval, error: nil})
           |> Repo.update()
 
-        Runs.append_run_event(role_run.id, "[axis] Design manifest changed during chat; design accepted.")
+        Runs.append_run_event(role_run.id, "[rail] Design manifest changed during chat; design accepted.")
         {updated_task, role_run}
 
       {:error, reason} ->
@@ -130,7 +130,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
 
         Runs.append_run_event(
           role_run.id,
-          "[axis] Design manifest changed during chat, but was turned down: #{err_msg}"
+          "[rail] Design manifest changed during chat, but was turned down: #{err_msg}"
         )
 
         {updated_task, role_run}
@@ -139,7 +139,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
 
   defp handle_failed_chat_exit(task, role_run, error, exit_code) do
     err_msg = error || "exit code #{exit_code}"
-    Runs.append_run_event(role_run.id, "[axis] That turn was not delivered: #{err_msg}")
+    Runs.append_run_event(role_run.id, "[rail] That turn was not delivered: #{err_msg}")
     {task, role_run}
   end
 
@@ -174,7 +174,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
         |> Repo.update()
 
       if has_been_reworked do
-        Runs.append_run_event(role_run.id, "[axis] Branch modified during chat; queued for review.")
+        Runs.append_run_event(role_run.id, "[rail] Branch modified during chat; queued for review.")
 
         maybe_append_reviewer_pending_answer(task, after_fp.head_sha)
 
@@ -189,7 +189,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
 
         {updated_task, updated_role_run}
       else
-        Runs.append_run_event(role_run.id, "[axis] Branch modified during chat; reset pipeline to Engineer.")
+        Runs.append_run_event(role_run.id, "[rail] Branch modified during chat; reset pipeline to Engineer.")
 
         {:ok, updated_task} =
           task
@@ -205,7 +205,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
     else
       Runs.append_run_event(
         role_run.id,
-        "[axis] Changes were made to the branch, but only Engineer changes reset the pipeline."
+        "[rail] Changes were made to the branch, but only Engineer changes reset the pipeline."
       )
 
       {task, role_run}

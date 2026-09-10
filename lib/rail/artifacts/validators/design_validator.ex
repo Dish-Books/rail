@@ -121,8 +121,8 @@ defmodule Rail.Artifacts.Validators.DesignValidator do
   defp validate_still_path(design_dir, key, title, notes, raw_still_path) do
     worktree_dir =
       cond do
-        String.ends_with?(design_dir, "/.axis/design") ->
-          String.replace_suffix(design_dir, "/.axis/design", "")
+        String.ends_with?(design_dir, "/.rail/design") ->
+          String.replace_suffix(design_dir, "/.rail/design", "")
 
         String.ends_with?(design_dir, "/design") ->
           String.replace_suffix(design_dir, "/design", "")
@@ -161,7 +161,7 @@ defmodule Rail.Artifacts.Validators.DesignValidator do
         end
 
       {:error, :escapes_confinement} ->
-        {:error, "Design still image path must stay inside .axis/design/: #{raw_still_path}."}
+        {:error, "Design still image path must stay inside .rail/design/: #{raw_still_path}."}
     end
   end
 

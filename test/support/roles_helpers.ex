@@ -110,7 +110,7 @@ defmodule RailTest.RolesHelpers do
       role_run_id: role_run_id,
       task_id: task_id,
       kind: :stage,
-      stream_path: "/tmp/axis/streams/test_#{System.unique_integer([:positive])}.ndjson",
+      stream_path: "/tmp/rail/streams/test_#{System.unique_integer([:positive])}.ndjson",
       node: to_string(Node.self()),
       boot_id: UXID.generate!(),
       status: :running,

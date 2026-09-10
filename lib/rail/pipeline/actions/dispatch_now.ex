@@ -86,7 +86,7 @@ defmodule Rail.Pipeline.Actions.DispatchNow do
 
       :error ->
         Application.get_env(:rail, :no_dispatch, false) ||
-          System.get_env("AXIS_NO_DISPATCH") == "1"
+          System.get_env("RAIL_NO_DISPATCH") == "1"
     end
   end
 

@@ -15,7 +15,7 @@ function getArg(flag, defaultValue = null) {
 }
 const hasFlag = (flag) => args.includes(flag);
 
-const sessionDir = getArg('--session') || process.env.AXIS_QA_DIR || '/tmp/rail-qa/default';
+const sessionDir = getArg('--session') || process.env.RAIL_QA_DIR || '/tmp/rail-qa/default';
 const initialUrl = getArg('--url') || 'http://127.0.0.1:4002/dev/login';
 const foreground = hasFlag('--foreground');
 const socketPath = path.join(sessionDir, 'driver.sock');

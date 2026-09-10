@@ -54,7 +54,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurn do
         })
         |> Repo.update!()
 
-        Runs.append_run_event(role_run.id, "[axis] Chat turn stopped by user.")
+        Runs.append_run_event(role_run.id, "[rail] Chat turn stopped by user.")
 
       nil ->
         :ok

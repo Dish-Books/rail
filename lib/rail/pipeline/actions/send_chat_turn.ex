@@ -267,7 +267,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
   defp record_same_role_chat_stop(task_id, role_id) do
     case Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_id) do
       %RoleRun{} = run ->
-        Runs.append_run_event(run.id, "[axis] Chat turn stopped by user.")
+        Runs.append_run_event(run.id, "[rail] Chat turn stopped by user.")
 
       # coveralls-ignore-start
       nil ->
@@ -289,7 +289,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
 
         Runs.append_run_event(
           stopped_run.id,
-          "[axis] Chat turn stopped by user to send chat to #{target_role.name || target_role.id}."
+          "[rail] Chat turn stopped by user to send chat to #{target_role.name || target_role.id}."
         )
 
       nil ->
@@ -317,11 +317,11 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
 
   defp record_stage_interrupt_event(stage_role, stage_role_run, target_role) do
     if stage_role.id == target_role.id do
-      Runs.append_run_event(stage_role_run.id, "[axis] Run stopped by user to restart with message.")
+      Runs.append_run_event(stage_role_run.id, "[rail] Run stopped by user to restart with message.")
     else
       Runs.append_run_event(
         stage_role_run.id,
-        "[axis] Run stopped by user to send chat to #{target_role.name || target_role.id}."
+        "[rail] Run stopped by user to send chat to #{target_role.name || target_role.id}."
       )
     end
   end
@@ -418,7 +418,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
         })
         |> Repo.update!()
 
-        Runs.append_run_event(updated_role_run.id, "[axis] That turn was not delivered: #{inspect(reason)}")
+        Runs.append_run_event(updated_role_run.id, "[rail] That turn was not delivered: #{inspect(reason)}")
         Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :chat_failed})
 
         {:error, {:spawn_failed, reason}}
@@ -437,7 +437,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
     })
     |> Repo.update!()
 
-    Runs.append_run_event(role_run.id, "[axis] That turn was not delivered: #{inspect(reason)}")
+    Runs.append_run_event(role_run.id, "[rail] That turn was not delivered: #{inspect(reason)}")
     Rail.Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :chat_failed})
 
     {:error, {:worktree_failed, reason}}

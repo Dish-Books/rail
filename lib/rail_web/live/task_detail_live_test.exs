@@ -82,7 +82,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     # Metadata Wrap
     assert has_element?(view, "#task-metadata-wrap")
     assert has_element?(view, "#metadata-status-chip")
-    assert has_element?(view, "#meta-branch", "axis/login-flow")
+    assert has_element?(view, "#meta-branch", "rail/login-flow")
     assert has_element?(view, "#meta-issue", "DET-42")
     assert has_element?(view, "#meta-pr", "PR #101")
     assert has_element?(view, "#meta-priority")
@@ -503,7 +503,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       create_test_issue(%{
         project_id: project_id,
         identifier: "FB-99",
-        branch_name: "axis/issue-branch",
+        branch_name: "rail/issue-branch",
         priority: :urgent
       })
 
@@ -522,7 +522,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
-    assert has_element?(view, "#meta-branch", "axis/issue-branch")
+    assert has_element?(view, "#meta-branch", "rail/issue-branch")
     assert has_element?(view, "#meta-issue", "FB-99")
     assert has_element?(view, "#meta-pr", "PR #55")
     assert has_element?(view, "#meta-priority", "Urgent")
@@ -559,13 +559,13 @@ defmodule RailWeb.TaskDetailLiveTest do
         description: "Edge case description",
         stage: :demo,
         stage_state: :running,
-        worktree_name: "axis/existing-prefix",
+        worktree_name: "rail/existing-prefix",
         pr_number: 99,
         pr_url: nil
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
-    assert has_element?(view, "#meta-branch", "axis/existing-prefix")
+    assert has_element?(view, "#meta-branch", "rail/existing-prefix")
     assert has_element?(view, "#meta-issue", "EC-1")
     assert has_element?(view, "#meta-priority", "High")
 

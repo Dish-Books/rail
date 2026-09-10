@@ -17,14 +17,14 @@ defmodule Rail.Pipeline.Actions.DispatchNowTest do
              Pipeline.dispatch_now(task, dispatch_disabled: true)
   end
 
-  test "returns dispatch_disabled when AXIS_NO_DISPATCH=1 is set in env" do
+  test "returns dispatch_disabled when RAIL_NO_DISPATCH=1 is set in env" do
     Application.put_env(:rail, :no_dispatch, false)
-    System.put_env("AXIS_NO_DISPATCH", "1")
+    System.put_env("RAIL_NO_DISPATCH", "1")
 
     task = create_test_task(%{stage: :product, stage_state: :queued})
     assert {:error, :dispatch_disabled} = Pipeline.dispatch_now(task)
 
-    System.delete_env("AXIS_NO_DISPATCH")
+    System.delete_env("RAIL_NO_DISPATCH")
     Application.put_env(:rail, :no_dispatch, true)
   end
 
