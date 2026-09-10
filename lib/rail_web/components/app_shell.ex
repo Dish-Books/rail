@@ -74,7 +74,15 @@ defmodule RailWeb.Components.AppShell do
           <.nav_destination
             section={:settings}
             active={
-              @current_section in [:settings, :connected_accounts, :projects, :linear_workspace]
+              @current_section in [
+                :settings,
+                :connected_accounts,
+                :projects,
+                :linear_workspace,
+                :appearance,
+                :users,
+                :roles
+              ]
             }
             is_extended={@is_rail_extended}
             label="Settings"

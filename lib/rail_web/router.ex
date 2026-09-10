@@ -74,6 +74,7 @@ defmodule RailWeb.Router do
       live "/cli-accounts", CliAccountsLive
       live "/tasks/:id", TaskDetailLive
       live "/settings/connected-accounts", Settings.ConnectedAccountsLive
+      live "/settings/appearance", Settings.AppearanceLive
     end
 
     live_session :require_admin_user,
@@ -86,6 +87,8 @@ defmodule RailWeb.Router do
       ] do
       live "/settings/projects", Settings.ProjectsLive
       live "/settings/linear-workspace", Settings.LinearWorkspaceLive
+      live "/settings/users", Settings.UsersLive
+      live "/settings/roles", Settings.RolesLive
     end
   end
 

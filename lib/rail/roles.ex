@@ -2,7 +2,9 @@ defmodule Rail.Roles do
   @moduledoc false
 
   alias Rail.Roles.Actions
+  alias Rail.Roles.Schemas
 
+  defdelegate canonical_stages(), to: Schemas.Role
   defdelegate list_roles(scope, project_id), to: Actions.ListRoles
   defdelegate get_role(scope, id), to: Actions.GetRole
   defdelegate get_role!(scope, id), to: Actions.GetRole

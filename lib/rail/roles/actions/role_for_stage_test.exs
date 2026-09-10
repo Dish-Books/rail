@@ -60,4 +60,29 @@ defmodule Rail.Roles.Actions.RoleForStageTest do
       Roles.role_for_stage!(project.id, :qa)
     end
   end
+
+  test "resolves debugger and rebase stages" do
+    project = create_test_project()
+    %Role{id: deb_id} = create_test_role(project_id: project.id, stage: :debugger)
+    %Role{id: reb_id} = create_test_role(project_id: project.id, stage: :rebase)
+
+    assert {:ok, %Role{id: ^deb_id}} = Roles.role_for_stage(project.id, :debugger)
+    assert {:ok, %Role{id: ^deb_id}} = Roles.role_for_stage(project.id, "debugger")
+    assert {:ok, %Role{id: ^reb_id}} = Roles.role_for_stage(project.id, :rebase)
+  end
+
+  test "resolves fallback between design and designer" do
+    project1 = create_test_project()
+    %Role{id: des_id1} = create_test_role(project_id: project1.id, stage: :designer)
+    assert {:ok, %Role{id: ^des_id1}} = Roles.role_for_stage(project1.id, :design)
+
+    project2 = create_test_project()
+    %Role{id: des_id2} = create_test_role(project_id: project2.id, stage: :design)
+    assert {:ok, %Role{id: ^des_id2}} = Roles.role_for_stage(project2.id, :designer)
+
+    project3 = create_test_project()
+    assert {:error, :not_found} = Roles.role_for_stage(project3.id, :designer)
+    assert {:error, :not_found} = Roles.role_for_stage(project3.id, :design)
+    assert length(Roles.canonical_stages()) == 10
+  end
 end

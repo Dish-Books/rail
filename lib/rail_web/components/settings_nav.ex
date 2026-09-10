@@ -25,6 +25,19 @@ defmodule RailWeb.Components.SettingsNav do
         </.link>
 
         <.link
+          navigate={~p"/settings/appearance"}
+          class={[
+            @active_tab == :appearance && "border-indigo-500 text-indigo-600 font-semibold",
+            @active_tab != :appearance &&
+              "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-700",
+            "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
+          ]}
+          id="tab-appearance"
+        >
+          Appearance
+        </.link>
+
+        <.link
           :if={Scope.admin?(@current_scope)}
           navigate={~p"/settings/projects"}
           class={[
@@ -50,6 +63,34 @@ defmodule RailWeb.Components.SettingsNav do
           id="tab-linear-workspace"
         >
           Linear Workspace
+        </.link>
+
+        <.link
+          :if={Scope.admin?(@current_scope)}
+          navigate={~p"/settings/users"}
+          class={[
+            @active_tab == :users && "border-indigo-500 text-indigo-600 font-semibold",
+            @active_tab != :users &&
+              "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-700",
+            "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
+          ]}
+          id="tab-users"
+        >
+          Users
+        </.link>
+
+        <.link
+          :if={Scope.admin?(@current_scope)}
+          navigate={~p"/settings/roles"}
+          class={[
+            @active_tab == :roles && "border-indigo-500 text-indigo-600 font-semibold",
+            @active_tab != :roles &&
+              "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-700",
+            "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
+          ]}
+          id="tab-roles"
+        >
+          Roles
         </.link>
       </nav>
     </div>

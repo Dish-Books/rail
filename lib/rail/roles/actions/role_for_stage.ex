@@ -36,23 +36,50 @@ defmodule Rail.Roles.Actions.RoleForStage do
 
     if stage_atom do
       case Repo.get_by(Role, project_id: project_id, stage: stage_atom) do
-        %Role{} = role -> {:ok, role}
-        nil -> {:error, :not_found}
+        %Role{} = role ->
+          {:ok, role}
+
+        nil ->
+          find_fallback_stage_role(project_id, stage_atom)
       end
     else
       {:error, :not_found}
     end
   end
 
+  defp find_fallback_stage_role(project_id, :design) do
+    case Repo.get_by(Role, project_id: project_id, stage: :designer) do
+      %Role{} = role -> {:ok, role}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  defp find_fallback_stage_role(project_id, :designer) do
+    case Repo.get_by(Role, project_id: project_id, stage: :design) do
+      %Role{} = role -> {:ok, role}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  defp find_fallback_stage_role(_project_id, _stage), do: {:error, :not_found}
+
   defp normalize_stage(stage) when is_atom(stage) do
-    if stage in TaskStage.values(), do: stage
+    cond do
+      stage in Role.canonical_stages() -> stage
+      stage in TaskStage.values() -> stage
+      true -> nil
+    end
   end
 
   defp normalize_stage(stage) when is_binary(stage) do
-    case TaskStage.cast(stage) do
-      {:ok, atom_val} -> atom_val
-      _error -> nil
-    end
+    atom =
+      try do
+        String.to_existing_atom(stage)
+      rescue
+        ArgumentError -> nil
+      end
+
+    normalize_stage(atom)
   end
 
   defp normalize_stage(_other), do: nil

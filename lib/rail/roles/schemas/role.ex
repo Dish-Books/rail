@@ -6,14 +6,27 @@ defmodule Rail.Roles.Schemas.Role do
 
   alias Rail.Domain.Enums.CliBackend
   alias Rail.Domain.Enums.ReasoningEffort
-  alias Rail.Domain.Enums.TaskStage
   alias Rail.Projects.Schemas.Project
 
   @derive {LiveSync.Watch, subscription_key: :project_id, table: "roles"}
+  @canonical_stages [
+    :product,
+    :architect,
+    :engineer,
+    :review,
+    :qa,
+    :qa_lead,
+    :demo,
+    :debugger,
+    :designer,
+    :rebase
+  ]
+  @allowed_stages @canonical_stages ++ [:design, :ready_to_merge, :merged]
+
   @primary_key {:id, UXID, autogenerate: true, prefix: "rol"}
   schema "roles" do
     belongs_to :project, Project, type: UXID
-    field :stage, TaskStage
+    field :stage, Ecto.Enum, values: @allowed_stages
     field :name, :string
     field :description, :string
     field :icon_name, :string
@@ -49,6 +62,9 @@ defmodule Rail.Roles.Schemas.Role do
     :max_concurrent,
     :position
   ]
+
+  @doc "Returns the list of canonical pipeline stages for agent roles."
+  def canonical_stages, do: @canonical_stages
 
   def changeset(role, attrs, project_id \\ nil) do
     role
