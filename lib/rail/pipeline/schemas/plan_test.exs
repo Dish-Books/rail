@@ -1,9 +1,57 @@
 defmodule Rail.Pipeline.Schemas.PlanTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Issues
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Repo
+  alias RailTest.Mocks.Linear, as: LinearMock
+
+  setup do
+    scope = system_scope()
+
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Plan Schema Workspace",
+        external_id: "lin_ws_plan_schema",
+        token: "lin_api_token_plan_schema",
+        webhook_secret: "whsec_plan_schema"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Plan Schema Project 7601",
+        github_repo: "org/plan-schema-7601",
+        github_installation_id: 7601,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_plan_schema_7601",
+        linear_team_key: "P7601",
+        clone_path: "/tmp/repos/plan-schema-7601",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_plan_schema_1",
+      "identifier" => "PSC-1",
+      "title" => "Plan Schema Issue"
+    })
+
+    {:ok, issue} = Issues.capture_issue(scope, project, "Plan Schema Issue")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_plan_schema_1"})
+
+    {:ok, task} = Pipeline.bring_local(scope, issue)
+
+    %{project: project, issue: issue, task: task}
+  end
 
   test "changeset validates required fields" do
     assert %{
@@ -13,8 +61,7 @@ defmodule Rail.Pipeline.Schemas.PlanTest do
            } = errors_on(Plan.changeset(%Plan{}, %{}))
   end
 
-  test "changeset accepts valid attributes" do
-    task = create_test_task()
+  test "changeset accepts valid attributes", %{task: task} do
     now = DateTime.utc_now()
 
     attrs = %{
@@ -42,8 +89,8 @@ defmodule Rail.Pipeline.Schemas.PlanTest do
              |> Repo.insert()
   end
 
-  test "preloads belongs_to task" do
-    %Task{id: task_id} = task = create_test_task()
+  test "preloads belongs_to task", %{task: task} do
+    %Task{id: task_id} = task = task
 
     plan =
       Repo.insert!(

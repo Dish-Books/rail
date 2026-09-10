@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Roles
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -48,9 +49,22 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_dismiss_question_1"})
 
+    roles =
+      Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
+        {:ok, role} =
+          Roles.create_role(scope, project, %{
+            stage: stage,
+            name: "#{stage} role",
+            model: "claude-3-7-sonnet",
+            system_prompt: "You are the #{stage} agent."
+          })
+
+        {stage, role}
+      end)
+
     {:ok, task} = Pipeline.bring_local(scope, issue)
 
-    %{project: project, issue: issue, task: task}
+    %{project: project, issue: issue, task: task, roles: roles}
   end
 
   test "dismisses a pending question and releases blocked task", %{task: task} do
@@ -83,15 +97,14 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     assert is_nil(reloaded_task.question_id)
   end
 
-  test "returns error when dismissing already resolved question", %{task: task} do
+  test "returns error when dismissing an answered question", %{task: task} do
     {:ok, q_answered} = Pipeline.register_question(task, %{prompt: "Answered question?"})
     {:ok, q_answered} = Pipeline.answer_question(q_answered, "Yes")
 
     assert {:error, :already_resolved} = Pipeline.dismiss_question(q_answered.id)
+  end
 
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{stage_state: :running, question_id: nil})
-
+  test "returns error when dismissing an already dismissed question", %{task: task} do
     {:ok, q_dismissed} = Pipeline.register_question(task, %{prompt: "Dismissed question?"})
     {:ok, q_dismissed} = Pipeline.dismiss_question(q_dismissed)
 

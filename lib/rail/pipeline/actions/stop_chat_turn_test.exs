@@ -1,29 +1,97 @@
 defmodule Rail.Pipeline.Actions.StopChatTurnTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
+  alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.RunEvent
   alias Rail.Scope
+  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
-    project = create_test_project()
+    scope = system_scope()
 
-    role =
-      create_test_role(%{
-        project_id: project.id,
-        stage: :engineer,
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Stop Chat Workspace",
+        external_id: "lin_ws_stop_chat",
+        token: "lin_api_token_stop_chat",
+        webhook_secret: "whsec_stop_chat"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Stop Chat Project 8301",
+        github_repo: "org/stop-chat-8301",
+        github_installation_id: 8301,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_stop_chat_8301",
+        linear_team_key: "P8301",
+        clone_path: "/tmp/repos/stop-chat-8301",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    roles =
+      Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
+        {:ok, role} =
+          Roles.create_role(scope, project, %{
+            stage: stage,
+            name: "#{stage} role",
+            model: "claude-3-7-sonnet",
+            system_prompt: "You are the #{stage} agent."
+          })
+
+        {stage, role}
+      end)
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_stop_chat_1",
+      "identifier" => "SCT-1",
+      "title" => "Stop Chat Issue"
+    })
+
+    {:ok, issue} = Issues.capture_issue(scope, project, "Stop Chat Issue")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_stop_chat_1"})
+
+    {:ok, task} = Pipeline.bring_local(scope, issue)
+
+    %{project: project, issue: issue, task: task, roles: roles}
+  end
+
+  setup %{project: project, task: setup_task, roles: roles} do
+    {:ok, role} =
+      Roles.update_role(system_scope(), roles[:engineer], %{
         cli_backend: :claude,
         model: "claude-3-7-sonnet"
       })
 
-    task =
-      create_test_task(%{
-        project_id: project.id,
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_stop_chat_8304",
+      "identifier" => "TSK-8304",
+      "title" => "Task 8304"
+    })
+
+    {:ok, issue_8304} = Issues.capture_issue(system_scope(), project, "Task 8304")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_stop_chat_8304"})
+
+    {:ok, task} = Pipeline.bring_local(system_scope(), issue_8304)
+
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :engineer,
         stage_state: :queued
       })
@@ -56,8 +124,8 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
-    %RoleRun{id: role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_id,
         status: :finished,
@@ -71,13 +139,8 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
 
     {:ok, task} = task |> Task.changeset(%{active_chat_role_id: role_id}) |> Repo.update()
 
-    _run =
-      create_test_run(%{
-        role_run_id: role_run_id,
-        task_id: task_id,
-        kind: :chat,
-        status: :running
-      })
+    {:ok, _run} =
+      Runs.start_run(role_run_id, :chat, ["/bin/sleep", "5"], skip_follower: true)
 
     assert {:ok, %Task{active_chat_role_id: nil}} = Pipeline.stop_chat_turn(task.id)
 
@@ -104,8 +167,8 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
-    %RoleRun{id: role_run_id} =
-      create_test_role_run(%{
+    {:ok, %RoleRun{id: role_run_id}} =
+      Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_id,
         status: :finished,

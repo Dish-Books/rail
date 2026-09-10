@@ -1,10 +1,59 @@
 defmodule Rail.Pipeline.Schemas.QuestionTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Issues
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias RailTest.Mocks.Linear, as: LinearMock
+
+  setup do
+    scope = system_scope()
+
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Question Schema Workspace",
+        external_id: "lin_ws_question_schema",
+        token: "lin_api_token_question_schema",
+        webhook_secret: "whsec_question_schema"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Question Schema Project 7501",
+        github_repo: "org/question-schema-7501",
+        github_installation_id: 7501,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_question_schema_7501",
+        linear_team_key: "P7501",
+        clone_path: "/tmp/repos/question-schema-7501",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_question_schema_1",
+      "identifier" => "QSC-1",
+      "title" => "Question Schema Issue"
+    })
+
+    {:ok, issue} = Issues.capture_issue(scope, project, "Question Schema Issue")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_question_schema_1"})
+
+    {:ok, task} = Pipeline.bring_local(scope, issue)
+
+    %{project: project, issue: issue, task: task}
+  end
 
   test "changeset validates required fields" do
     assert %{
@@ -17,9 +66,7 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
            } = errors_on(Question.changeset(%Question{}, %{status: nil}))
   end
 
-  test "changeset accepts valid attributes and sets defaults" do
-    task = create_test_task()
-
+  test "changeset accepts valid attributes and sets defaults", %{task: task} do
     attrs = %{
       prompt: "Which approach should we take?",
       options: ["Approach 1", "Approach 2"],
@@ -37,9 +84,7 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
     assert get_field(changeset, :options) == ["Approach 1", "Approach 2"]
   end
 
-  test "changeset validates status enum" do
-    task = create_test_task()
-
+  test "changeset validates status enum", %{task: task} do
     assert %{status: ["is invalid"]} =
              errors_on(
                Question.changeset(
@@ -70,7 +115,7 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
     refute Question.resolved?(123)
   end
 
-  test "validates foreign key on task_id" do
+  test "validates foreign key on task_id", %{task: task} do
     assert {:error, %{errors: [task_id: {"does not exist", _details}]}} =
              %Question{}
              |> Question.changeset(
@@ -80,9 +125,15 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
              |> Repo.insert()
   end
 
-  test "preloads belongs_to task and role" do
-    %Task{id: task_id} = task = create_test_task()
-    %Role{id: role_id} = role = create_test_role(%{project_id: task.project_id})
+  test "preloads belongs_to task and role", %{task: task} do
+    %Task{id: task_id} = task = task
+
+    {:ok, %Role{id: role_id} = role} =
+      Roles.create_role(system_scope(), task.project_id, %{
+        name: "Role 7502",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 7502."
+      })
 
     question =
       Repo.insert!(

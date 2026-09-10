@@ -2,17 +2,67 @@ defmodule Rail.Pipeline.Actions.LoadDiffTest do
   use Rail.DataCase, async: true
 
   alias Rail.Domain.Diff.FileDiff
+  alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Projects
   alias Rail.Scope
+  alias RailTest.Mocks.Linear, as: LinearMock
 
-  test "returns {:error, :no_worktree} when task worktree_path is nil" do
-    task = create_test_task(%{worktree_path: nil})
+  setup do
+    scope = system_scope()
+
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Load Diff Workspace",
+        external_id: "lin_ws_load_diff",
+        token: "lin_api_token_load_diff",
+        webhook_secret: "whsec_load_diff"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Load Diff Project 7401",
+        github_repo: "org/load-diff-7401",
+        github_installation_id: 7401,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_load_diff_7401",
+        linear_team_key: "P7401",
+        clone_path: "/tmp/repos/load-diff-7401",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_load_diff_1",
+      "identifier" => "LDF-1",
+      "title" => "Load Diff Issue"
+    })
+
+    {:ok, issue} = Issues.capture_issue(scope, project, "Load Diff Issue")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_load_diff_1"})
+
+    {:ok, task} = Pipeline.bring_local(scope, issue)
+
+    %{project: project, issue: issue, task: task}
+  end
+
+  test "returns {:error, :no_worktree} when task worktree_path is nil", %{task: task} do
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        worktree_path: nil
+      })
 
     assert {:error, :no_worktree} = Pipeline.load_diff(task)
     assert {:error, :no_worktree} = Pipeline.load_diff(Scope.for_system(), task)
   end
 
-  test "loads branch changes against main with diff_rev HEAD and reconciles viewed files" do
+  test "loads branch changes against main with diff_rev HEAD and reconciles viewed files", %{task: task} do
     repo = create_temp_git_repo()
     git!(repo, ["checkout", "-b", "feature-work"])
 
@@ -20,8 +70,8 @@ defmodule Rail.Pipeline.Actions.LoadDiffTest do
     git!(repo, ["add", "."])
     git!(repo, ["commit", "-m", "commit feature"])
 
-    task =
-      create_test_task(%{
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         worktree_path: repo,
         viewed_diff_files: %{"stale.txt" => "old_digest"}
       })
@@ -37,11 +87,15 @@ defmodule Rail.Pipeline.Actions.LoadDiffTest do
     assert {:ok, ^files, "HEAD"} = Pipeline.load_diff(Scope.for_system(), task)
   end
 
-  test "loads uncommitted changes with diff_rev nil when no branch commits against main" do
+  test "loads uncommitted changes with diff_rev nil when no branch commits against main", %{task: task} do
     repo = create_temp_git_repo()
     File.write!(Path.join(repo, "uncommitted.txt"), "uncommitted work\n")
 
-    task = create_test_task(%{worktree_path: repo, viewed_diff_files: %{}})
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        worktree_path: repo,
+        viewed_diff_files: %{}
+      })
 
     assert {:ok, [file | _rest], nil} = Pipeline.load_diff(task)
     assert %FileDiff{path: "uncommitted.txt"} = file
