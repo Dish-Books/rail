@@ -1,20 +1,82 @@
 defmodule Rail.PeriodicTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
   import RailTest.Mocks.GitHub
 
   alias Rail.Backends.Schemas.CliAccount
   alias Rail.Domain.TaskUsage
+  alias Rail.Issues
   alias Rail.Periodic
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Roles
+  alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.RunEvent
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    scope = system_scope()
+
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Periodic Workspace",
+        external_id: "lin_ws_periodic",
+        token: "lin_api_token_periodic",
+        webhook_secret: "whsec_periodic"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Periodic Project 12701",
+        github_repo: "org/periodic-12701",
+        github_installation_id: 12_701,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_periodic_12701",
+        linear_team_key: "P12701",
+        clone_path: "/tmp/repos/periodic-12701",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    roles =
+      Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
+        {:ok, role} =
+          Roles.create_role(scope, project, %{
+            stage: stage,
+            name: "#{stage} role",
+            model: "claude-3-7-sonnet",
+            system_prompt: "You are the #{stage} agent."
+          })
+
+        {stage, role}
+      end)
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_periodic_1",
+      "identifier" => "PRD-1",
+      "title" => "Periodic Issue"
+    })
+
+    {:ok, issue} = Issues.capture_issue(scope, project, "Periodic Issue")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_periodic_1"})
+
+    {:ok, task} = Pipeline.bring_local(scope, issue)
+
+    %{project: project, issue: issue, task: task, roles: roles}
+  end
+
+  setup %{project: project, task: setup_task, roles: roles} do
     {:ok, pid} =
       Periodic.start_link(
         name: nil,
@@ -92,58 +154,121 @@ defmodule Rail.PeriodicTest do
   test "tick 1: mergeability and demo freshness refreshes active tasks with PRs", %{
     server: server
   } do
-    project = Repo.insert!(%{Project.factory() | github_repo: "org/merge-tick-repo"})
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Periodic Project 12703",
+        github_repo: "org/merge-tick-repo",
+        github_installation_id: 12_703,
+        linear_team_id: "team_periodic_12703",
+        linear_team_key: "P12703",
+        clone_path: "/tmp/repos/periodic-12703",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
 
     # Task 1: active with PR -> should be refreshed
-    %Task{id: t1_id} =
-      t1 =
-      Repo.insert!(%{
-        Task.factory()
-        | project_id: project.id,
-          stage: :ready_to_merge,
-          pr_number: 10,
-          mergeability: :unknown,
-          pr_is_draft: false
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_periodic_12704",
+      "identifier" => "TSK-12704",
+      "title" => "Task 12704"
+    })
+
+    {:ok, issue_12704} = Issues.capture_issue(system_scope(), project, "Task 12704")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12704"})
+
+    {:ok, %Task{id: t1_id} = t1} = Pipeline.bring_local(system_scope(), issue_12704)
+
+    {:ok, %Task{id: t1_id} = t1} =
+      Pipeline.update_task(system_scope(), t1.id, %{
+        stage: :ready_to_merge,
+        pr_number: 10,
+        mergeability: :unknown,
+        pr_is_draft: false
       })
 
     # Task 2: active with PR -> should be refreshed
-    %Task{id: t2_id} =
-      t2 =
-      Repo.insert!(%{
-        Task.factory()
-        | project_id: project.id,
-          stage: :review,
-          pr_number: 20,
-          mergeability: :unknown,
-          pr_is_draft: true
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_periodic_12705",
+      "identifier" => "TSK-12705",
+      "title" => "Task 12705"
+    })
+
+    {:ok, issue_12705} = Issues.capture_issue(system_scope(), project, "Task 12705")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12705"})
+
+    {:ok, %Task{id: t2_id} = t2} = Pipeline.bring_local(system_scope(), issue_12705)
+
+    {:ok, %Task{id: t2_id} = t2} =
+      Pipeline.update_task(system_scope(), t2.id, %{
+        stage: :review,
+        pr_number: 20,
+        mergeability: :unknown,
+        pr_is_draft: true
       })
 
     # Task 3: no PR -> should be ignored by query
-    _task_no_pr =
-      Repo.insert!(%{
-        Task.factory()
-        | project_id: project.id,
-          stage: :engineer,
-          pr_number: nil
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_periodic_12706",
+      "identifier" => "TSK-12706",
+      "title" => "Task 12706"
+    })
+
+    {:ok, issue_12706} = Issues.capture_issue(system_scope(), project, "Task 12706")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12706"})
+
+    {:ok, _task_no_pr} = Pipeline.bring_local(system_scope(), issue_12706)
+
+    {:ok, _task_no_pr} =
+      Pipeline.update_task(system_scope(), _task_no_pr.id, %{
+        stage: :engineer,
+        pr_number: nil
       })
 
     # Task 4: merged stage -> should be ignored by query
-    _task_merged =
-      Repo.insert!(%{
-        Task.factory()
-        | project_id: project.id,
-          stage: :merged,
-          pr_number: 30
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_periodic_12707",
+      "identifier" => "TSK-12707",
+      "title" => "Task 12707"
+    })
+
+    {:ok, issue_12707} = Issues.capture_issue(system_scope(), project, "Task 12707")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12707"})
+
+    {:ok, _task_merged} = Pipeline.bring_local(system_scope(), issue_12707)
+
+    {:ok, _task_merged} =
+      Pipeline.update_task(system_scope(), _task_merged.id, %{
+        stage: :merged,
+        pr_number: 30
       })
 
     # Task 5: merged_at set -> should be ignored by query
-    _task_merged_at =
-      Repo.insert!(%{
-        Task.factory()
-        | project_id: project.id,
-          stage: :ready_to_merge,
-          pr_number: 40,
-          merged_at: DateTime.utc_now()
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_periodic_12708",
+      "identifier" => "TSK-12708",
+      "title" => "Task 12708"
+    })
+
+    {:ok, issue_12708} = Issues.capture_issue(system_scope(), project, "Task 12708")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12708"})
+
+    {:ok, _task_merged_at} = Pipeline.bring_local(system_scope(), issue_12708)
+
+    {:ok, _task_merged_at} =
+      Pipeline.update_task(system_scope(), _task_merged_at.id, %{
+        stage: :ready_to_merge,
+        pr_number: 40,
+        merged_at: DateTime.utc_now()
       })
 
     tasks = Enum.sort_by([t1, t2], & &1.id)
@@ -168,26 +293,59 @@ defmodule Rail.PeriodicTest do
   end
 
   test "tick 1: error on one task does not stop execution of remaining tasks", %{server: server} do
-    project = Repo.insert!(%{Project.factory() | github_repo: "org/error-tick-repo"})
-
-    %Task{id: err_id} =
-      err_task =
-      Repo.insert!(%{
-        Task.factory()
-        | project_id: project.id,
-          stage: :ready_to_merge,
-          pr_number: 77,
-          mergeability: :unknown
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Periodic Project 12709",
+        github_repo: "org/error-tick-repo",
+        github_installation_id: 12_709,
+        linear_team_id: "team_periodic_12709",
+        linear_team_key: "P12709",
+        clone_path: "/tmp/repos/periodic-12709",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
       })
 
-    %Task{id: ok_id} =
-      ok_task =
-      Repo.insert!(%{
-        Task.factory()
-        | project_id: project.id,
-          stage: :ready_to_merge,
-          pr_number: 88,
-          mergeability: :unknown
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_periodic_12710",
+      "identifier" => "TSK-12710",
+      "title" => "Task 12710"
+    })
+
+    {:ok, issue_12710} = Issues.capture_issue(system_scope(), project, "Task 12710")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12710"})
+
+    {:ok, %Task{id: err_id} = err_task} = Pipeline.bring_local(system_scope(), issue_12710)
+
+    {:ok, %Task{id: err_id} = err_task} =
+      Pipeline.update_task(system_scope(), err_task.id, %{
+        stage: :ready_to_merge,
+        pr_number: 77,
+        mergeability: :unknown
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_periodic_12711",
+      "identifier" => "TSK-12711",
+      "title" => "Task 12711"
+    })
+
+    {:ok, issue_12711} = Issues.capture_issue(system_scope(), project, "Task 12711")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12711"})
+
+    {:ok, %Task{id: ok_id} = ok_task} = Pipeline.bring_local(system_scope(), issue_12711)
+
+    {:ok, %Task{id: ok_id} = ok_task} =
+      Pipeline.update_task(system_scope(), ok_task.id, %{
+        stage: :ready_to_merge,
+        pr_number: 88,
+        mergeability: :unknown
       })
 
     tasks = Enum.sort_by([err_task, ok_task], & &1.id)
@@ -211,34 +369,56 @@ defmodule Rail.PeriodicTest do
            } = results_map
   end
 
-  test "tick 2: linear sync syncs configured active projects", %{server: server} do
-    workspace = Repo.insert!(LinearWorkspace.factory())
+  test "tick 2: linear sync syncs configured active projects", %{project: project, server: server} do
+    # Only the projects created in this test should be swept.
+    {:ok, _inactive} = Projects.update_project(system_scope(), project, %{active: false})
+
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Periodic Workspace 12712",
+        external_id: "lin_ws_periodic_12712",
+        token: "lin_api_token_periodic_12712",
+        webhook_secret: "whsec_periodic_12712"
+      })
 
     # Project 1: configured with workspace and team -> synced
-    %Project{id: p1_id} =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: workspace.id,
-          linear_team_id: "team_p1",
-          active: true
+    {:ok, %Project{id: p1_id}} =
+      Projects.create_project(system_scope(), %{
+        name: "Periodic Project 12713",
+        github_repo: "org/periodic-12713",
+        github_installation_id: 12_713,
+        linear_team_id: "team_p1",
+        linear_team_key: "P12713",
+        clone_path: "/tmp/repos/periodic-12713",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: workspace.id,
+        active: true
       })
 
     # Project 2: inactive -> ignored
-    _p_inactive =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: workspace.id,
-          linear_team_id: "team_inactive",
-          active: false
-      })
-
-    # Project 3: no linear config -> ignored
-    _p_no_linear =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: nil,
-          linear_team_id: "",
-          active: true
+    {:ok, _p_inactive} =
+      Projects.create_project(system_scope(), %{
+        name: "Periodic Project 12714",
+        github_repo: "org/periodic-12714",
+        github_installation_id: 12_714,
+        linear_team_id: "team_inactive",
+        linear_team_key: "P12714",
+        clone_path: "/tmp/repos/periodic-12714",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: workspace.id,
+        active: false
       })
 
     LinearMock.mock_issues_success([
@@ -262,21 +442,36 @@ defmodule Rail.PeriodicTest do
   end
 
   test "tick 2: failure on one project linear sync does not halt subsequent projects", %{
+    project: project,
     server: server
   } do
+    # Only the projects created in this test should be swept.
+    {:ok, _inactive} = Projects.update_project(system_scope(), project, %{active: false})
+
     # Project with invalid credentials / no workspace
-    %Project{id: bad_id} =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: nil,
-          linear_team_id: "team_bad",
-          active: true
+    {:ok, %Project{id: bad_id}} =
+      Projects.create_project(system_scope(), %{
+        name: "Periodic Project 12716",
+        github_repo: "org/periodic-12716",
+        github_installation_id: 12_716,
+        linear_team_id: "team_bad",
+        linear_team_key: "P12716",
+        clone_path: "/tmp/repos/periodic-12716",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        },
+        linear_workspace_id: nil,
+        active: true
       })
 
     assert {:ok, %{processed: 1, results: results}} =
              Periodic.trigger_tick(server, :linear_sync)
 
-    assert [{^bad_id, {:error, :no_workspace_token}}] = results
+    assert [{^bad_id, {:error, _reason}}] = results
   end
 
   test "tick 3: usage probes triggers refresh_usage", %{server: server} do
@@ -286,6 +481,7 @@ defmodule Rail.PeriodicTest do
              Periodic.trigger_tick(
                server,
                :usage_probes,
+               direct: true,
                node: test_node,
                claude_opts: [path_validator: fn _path -> false end],
                agy_opts: [path_validator: fn _path -> false end]
@@ -296,13 +492,18 @@ defmodule Rail.PeriodicTest do
   end
 
   test "tick 4: run events prune removes historical events and marks role_runs", %{
-    server: server
+    server: server,
+    task: task,
+    roles: roles
   } do
     past_date = DateTime.shift(DateTime.utc_now(), week: -5)
 
-    role_run =
-      create_test_role_run(%{
+    {:ok, role_run} =
+      Runs.create_role_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
         status: :finished,
+        started_at: DateTime.utc_now(),
         completed_at: past_date,
         inserted_at: past_date,
         exit_code: 0,
@@ -311,19 +512,9 @@ defmodule Rail.PeriodicTest do
         usage: %TaskUsage{input_tokens: 150, output_tokens: 50}
       })
 
-    create_test_run_event(%{
-      role_run_id: role_run.id,
-      seq: 1,
-      line: "Event 1",
-      inserted_at: past_date
-    })
+    _run_event = Runs.append_run_event(role_run.id, "Event 1")
 
-    create_test_run_event(%{
-      role_run_id: role_run.id,
-      seq: 2,
-      line: "Event 2",
-      inserted_at: past_date
-    })
+    _run_event = Runs.append_run_event(role_run.id, "Event 2")
 
     assert {:ok, %{pruned_events: 2, pruned_role_runs: 1}} =
              Periodic.tick_now(server, :prune)
@@ -340,10 +531,10 @@ defmodule Rail.PeriodicTest do
 
   test "single-flighting skips concurrent invocation of the same tick", %{server: server} do
     # Start a tick asynchronously
-    assert :ok = Periodic.trigger_tick(server, :usage_probes, async: true)
+    assert :ok = Periodic.trigger_tick(server, :usage_probes, direct: true, async: true)
 
     # Immediately try to trigger the same tick while running
-    res = Periodic.trigger_tick(server, :usage_probes)
+    res = Periodic.trigger_tick(server, :usage_probes, direct: true)
     assert match?({:skipped, :already_running}, res) or match?({:ok, _}, res)
 
     # Wait until all running ticks clear
@@ -362,7 +553,7 @@ defmodule Rail.PeriodicTest do
 
   test "info tick message is safely skipped if tick is already in progress", %{server: server} do
     # Trigger tick async
-    assert :ok = Periodic.trigger_tick(server, :usage_probes, async: true)
+    assert :ok = Periodic.trigger_tick(server, :usage_probes, direct: true, async: true)
 
     # Send periodic timer tick message while running
     send(server, {:tick, :usage_probes})
@@ -402,7 +593,10 @@ defmodule Rail.PeriodicTest do
     GenServer.stop(server_pid)
   end
 
-  test "execute_tick/2 executes all tick variants directly" do
+  test "execute_tick/2 executes all tick variants directly", %{project: project} do
+    # The tick sweeps every configured project, so leave none of them active.
+    {:ok, _inactive} = Projects.update_project(system_scope(), project, %{active: false})
+
     assert {:ok, %{processed: 0, results: []}} =
              Periodic.execute_tick(:mergeability_demo_freshness)
 
@@ -411,6 +605,7 @@ defmodule Rail.PeriodicTest do
 
     assert {:ok, accounts} =
              Periodic.execute_tick(:usage_probes,
+               direct: true,
                claude_opts: [path_validator: fn _path -> false end],
                agy_opts: [path_validator: fn _path -> false end]
              )

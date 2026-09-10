@@ -1,29 +1,82 @@
 defmodule Rail.Pipeline.Schemas.TaskTest do
   use Rail.DataCase, async: true
 
+  import RailTest.PipelineHelpers
+
+  alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Design
+  alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Utils.Scratch
+  alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Roles
+  alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Users
   alias Rail.Users.Schemas.User
+  alias RailTest.Mocks.Linear, as: LinearMock
 
-  test "factory builds a valid task struct" do
-    assert %Task{
-             project_id: "prj_" <> _id,
-             title: "Task " <> _title,
-             stage: :product,
-             stage_state: :queued,
-             is_rebasing: false,
-             rework_cycles: 0,
-             rework_budget_base: 0,
-             rework_cycles_by_gate: %{},
-             outstanding_reports: [],
-             viewed_diff_files: %{}
-           } = Task.factory()
+  setup do
+    scope = system_scope()
+
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Task Schema Workspace",
+        external_id: "lin_ws_task_schema",
+        token: "lin_api_token_task_schema",
+        webhook_secret: "whsec_task_schema"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Task Schema Project 12601",
+        github_repo: "org/task-schema-12601",
+        github_installation_id: 12_601,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_task_schema_12601",
+        linear_team_key: "P12601",
+        clone_path: "/tmp/repos/task-schema-12601",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    roles =
+      Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
+        {:ok, role} =
+          Roles.create_role(scope, project, %{
+            stage: stage,
+            name: "#{stage} role",
+            model: "claude-3-7-sonnet",
+            system_prompt: "You are the #{stage} agent."
+          })
+
+        {stage, role}
+      end)
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_schema_1",
+      "identifier" => "TSK-1",
+      "title" => "Task Schema Issue"
+    })
+
+    {:ok, issue} = Issues.capture_issue(scope, project, "Task Schema Issue")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_schema_1"})
+
+    {:ok, task} = Pipeline.bring_local(scope, issue)
+
+    %{project: project, issue: issue, task: task, roles: roles}
   end
 
   test "changeset validates required fields" do
@@ -38,9 +91,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
            } = errors_on(Task.changeset(%Task{}, %{stage: nil, stage_state: nil}))
   end
 
-  test "changeset accepts valid attributes and sets defaults" do
-    project = create_test_project()
-
+  test "changeset accepts valid attributes and sets defaults", %{project: project} do
     attrs = %{
       title: "Core Pipeline Feature",
       description: "Build pipeline core logic",
@@ -66,9 +117,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     assert get_field(changeset, :mergeability) == :mergeable
   end
 
-  test "changeset validates enum types" do
-    project = create_test_project()
-
+  test "changeset validates enum types", %{project: project} do
     attrs = %{
       title: "Task with Invalid Enums",
       stage: "invalid_stage",
@@ -85,8 +134,24 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
            } = errors_on(Task.changeset(%Task{}, attrs, project.id))
   end
 
-  test "ignores project_id passed in attrs to prevent unverified overrides" do
-    project1 = create_test_project()
+  test "ignores project_id passed in attrs to prevent unverified overrides", %{task: task} do
+    {:ok, project1} =
+      Projects.create_project(system_scope(), %{
+        name: "Task Schema Project 12604",
+        github_repo: "org/task-schema-12604",
+        github_installation_id: 12_604,
+        linear_team_id: "team_task_schema_12604",
+        linear_team_key: "P12604",
+        clone_path: "/tmp/repos/task-schema-12604",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
     other_project_id = "prj_000000000000000000000000"
 
     attrs = %{
@@ -105,10 +170,39 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
              |> Repo.insert()
   end
 
-  test "preloads belongs_to project, issue, and owner_user" do
-    %Project{id: project_id} = project = create_test_project()
-    %User{id: user_id} = user = Repo.insert!(User.factory())
-    %Issue{id: issue_id} = issue = Repo.insert!(Issue.changeset(Issue.factory(), %{}, project.id))
+  test "preloads belongs_to project, issue, and owner_user", %{project: project, issue: issue, task: task} do
+    {:ok, %Project{id: project_id} = project} =
+      Projects.create_project(system_scope(), %{
+        name: "Task Schema Project 12605",
+        github_repo: "org/task-schema-12605",
+        github_installation_id: 12_605,
+        linear_team_id: "team_task_schema_12605",
+        linear_team_key: "P12605",
+        clone_path: "/tmp/repos/task-schema-12605",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    {:ok, %User{id: user_id} = user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_task_schema_12610",
+        login: "task_schema_user_12610",
+        email: "task_schema_user_12610@example.com",
+        github_token: "gho_token_12610"
+      })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_schema_12611",
+      "identifier" => "ISS-12611",
+      "title" => "Task Schema Issue 12611"
+    })
+
+    {:ok, %Issue{id: issue_id} = issue} = Issues.capture_issue(system_scope(), project, "Task Schema Issue 12611")
 
     task =
       Repo.insert!(
@@ -132,12 +226,52 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
            } = preloaded
   end
 
-  test "preloads has_many questions, plans, role_runs, and designs" do
-    %Task{id: task_id} = task = create_test_task()
-    _question = create_test_question(%{task_id: task.id})
-    _plan = create_test_plan(%{task_id: task.id})
-    _role_run = create_test_role_run(%{task_id: task.id})
-    _design = create_test_design(%{task_id: task.id})
+  test "preloads has_many questions, plans, role_runs, and designs", %{task: task, roles: roles} do
+    %Task{id: task_id} = task = task
+
+    {:ok, _question} =
+      Pipeline.register_question(task, %{
+        prompt: "Question prompt 12609?"
+      })
+
+    expect(File, :exists?, 2, fn path -> String.ends_with?(path, "plan.md") end)
+
+    expect(File, :read!, fn _path -> "# Plan 13101" end)
+
+    {:ok, _captured} = Scratch.capture(:architect, task, "/tmp/rail_scratch/plan_13101")
+
+    {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
+
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    design_manifest_13102 =
+      Jason.encode!(%{
+        "canvasUrl" => "https://canvas.example.com/design-13102",
+        "version" => 1,
+        "pickedKey" => nil,
+        "directions" => [
+          %{"key" => "dir-1", "title" => "Direction 1", "notes" => "Notes", "stillPath" => "dir-1.png"}
+        ]
+      })
+
+    expect(File, :exists?, 2, fn _path -> true end)
+
+    expect(File, :read, fn _path -> {:ok, design_manifest_13102} end)
+
+    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
+
+    expect(File, :read, fn _path -> {:ok, "PNG_STILL"} end)
+
+    mock_design_uploads(1)
+
+    {:ok, _design} =
+      Artifacts.capture_design(system_scope(), task, "/tmp/rail_scratch/design_13102", url_probe: fn _url -> true end)
 
     preloaded = Repo.preload(task, [:questions, :plans, :role_runs, :designs])
 
@@ -176,13 +310,38 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       refute Task.uses_design?(task, [%{role_id: "engineer", task_id: "tsk_1"}])
     end
 
-    test "checks database role_runs when task has advanced past design" do
-      project = create_test_project()
-      designer = create_test_role(%{project_id: project.id, stage: :design})
-      task_with_run = create_test_task(%{project_id: project.id, stage: :architect})
-      task_without_run = create_test_task(%{project_id: project.id, stage: :architect})
+    test "checks database role_runs when task has advanced past design", %{project: project, task: task, roles: roles} do
+      designer = roles[:design]
 
-      _run = create_test_role_run(%{task_id: task_with_run.id, role_id: designer.id})
+      {:ok, task_with_run} =
+        Pipeline.update_task(system_scope(), task.id, %{
+          stage: :architect
+        })
+
+      LinearMock.mock_create_issue_success(%{
+        "id" => "lin_task_task_schema_12602",
+        "identifier" => "TSK-12602",
+        "title" => "Task 12602"
+      })
+
+      {:ok, issue_12602} = Issues.capture_issue(system_scope(), project, "Task 12602")
+
+      LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_schema_12602"})
+
+      {:ok, task_without_run} = Pipeline.bring_local(system_scope(), issue_12602)
+
+      {:ok, task_without_run} =
+        Pipeline.update_task(system_scope(), task_without_run.id, %{
+          stage: :architect
+        })
+
+      {:ok, _run} =
+        Runs.create_role_run(%{
+          task_id: task_with_run.id,
+          role_id: designer.id,
+          status: :finished,
+          started_at: DateTime.utc_now()
+        })
 
       assert Task.uses_design?(task_with_run)
       refute Task.uses_design?(task_without_run)
@@ -194,8 +353,40 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       refute Task.uses_design?(task_with_run, [%{task_id: task_with_run.id, role_id: nil}])
 
       # project with no designer role in database
-      project_no_designer = create_test_project()
-      task_no_designer = create_test_task(%{project_id: project_no_designer.id, stage: :architect})
+      {:ok, project_no_designer} =
+        Projects.create_project(system_scope(), %{
+          name: "Task Schema Project 12606",
+          github_repo: "org/task-schema-12606",
+          github_installation_id: 12_606,
+          linear_team_id: "team_task_schema_12606",
+          linear_team_key: "P12606",
+          clone_path: "/tmp/repos/task-schema-12606",
+          linear_state_ids: %{
+            "triage" => "st_triage",
+            "backlog" => "st_backlog",
+            "in_progress" => "st_in_progress",
+            "done" => "st_done",
+            "canceled" => "st_canceled"
+          }
+        })
+
+      LinearMock.mock_create_issue_success(%{
+        "id" => "lin_task_task_schema_12603",
+        "identifier" => "TSK-12603",
+        "title" => "Task 12603"
+      })
+
+      {:ok, issue_12603} = Issues.capture_issue(system_scope(), project_no_designer, "Task 12603")
+
+      LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_schema_12603"})
+
+      {:ok, task_no_designer} = Pipeline.bring_local(system_scope(), issue_12603)
+
+      {:ok, task_no_designer} =
+        Pipeline.update_task(system_scope(), task_no_designer.id, %{
+          stage: :architect
+        })
+
       refute Task.uses_design?(task_no_designer)
     end
 

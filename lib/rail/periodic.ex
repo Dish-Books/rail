@@ -454,10 +454,14 @@ defmodule Rail.Periodic do
     if Code.ensure_loaded?(Sandbox) do
       Enum.each(pids, fn pid ->
         if is_pid(pid) do
-          Sandbox.allow(Repo, pid, self())
+          allow_one(pid)
         end
       end)
     end
+  end
+
+  defp allow_one(pid) do
+    Sandbox.allow(Repo, pid, self())
   rescue
     _error -> :ok
   end
