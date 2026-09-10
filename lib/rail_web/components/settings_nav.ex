@@ -45,6 +45,21 @@ defmodule RailWeb.Components.SettingsNav do
 
         <.link
           :if={Scope.admin?(@current_scope)}
+          navigate={~p"/settings/backends"}
+          class={[
+            @active_tab == :backends && "border-indigo-500 text-indigo-600 font-semibold",
+            @active_tab != :backends &&
+              "border-transparent text-slate-500 dark:text-slate-400 hover:border-slate-500 dark:hover:border-slate-400 hover:text-slate-900 dark:hover:text-slate-100",
+            "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
+          ]}
+          id="tab-backends"
+          data-qa="settings-tab"
+        >
+          Backends
+        </.link>
+
+        <.link
+          :if={Scope.admin?(@current_scope)}
           navigate={~p"/settings/projects"}
           class={[
             @active_tab == :projects && "border-indigo-500 text-indigo-600 font-semibold",

@@ -5,7 +5,6 @@ defmodule Rail.Backends.Probes.ClaudeUsageProbe do
 
   alias Rail.Backends.Probes
   alias Rail.Backends.ProcessRunner
-  alias Rail.ToolEnv
 
   @doc """
   Runs the full probe flow against Claude Code CLI.
@@ -14,8 +13,7 @@ defmodule Rail.Backends.Probes.ClaudeUsageProbe do
     executable =
       Keyword.get(opts, :executable_path) ||
         Keyword.get(opts, :executable) ||
-        ToolEnv.find_executable("claude") ||
-        "claude"
+        Probes.configured_path(:claude)
 
     path_validator = Keyword.get(opts, :path_validator, &Probes.default_path_validator/1)
     runner = Keyword.get(opts, :runner, &ProcessRunner.run/3)

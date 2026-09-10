@@ -71,7 +71,6 @@ defmodule RailWeb.Router do
       ] do
       live "/", OverviewLive
       live "/issues", IssuesLive
-      live "/cli-accounts", CliAccountsLive
       live "/tasks/:id", TaskDetailLive
       live "/settings/connected-accounts", Settings.ConnectedAccountsLive
       live "/settings/appearance", Settings.AppearanceLive
@@ -89,6 +88,7 @@ defmodule RailWeb.Router do
       live "/settings/linear-workspace", Settings.LinearWorkspaceLive
       live "/settings/users", Settings.UsersLive
       live "/settings/roles", Settings.RolesLive
+      live "/settings/backends", Settings.BackendsLive
     end
   end
 

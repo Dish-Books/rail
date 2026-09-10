@@ -3,6 +3,7 @@ Mimic.copy(DateTime)
 Mimic.copy(Rail.Users)
 Mimic.copy(Rail.Issues)
 Mimic.copy(Rail.Backends)
+Mimic.copy(Rail.Backends.ProcessRunner)
 Mimic.copy(Rail.Roles)
 
 # Ensure that all Req calls are mocked by default

@@ -19,14 +19,24 @@ defmodule Rail.E2E.TicketLifecycleTest do
     old_path = System.get_env("PATH") || ""
     new_path = "#{shim_dir}:#{old_path}"
     System.put_env("PATH", new_path)
-    System.put_env("RAIL_CLAUDE_PATH", Path.join(shim_dir, "claude"))
-    System.put_env("RAIL_AGY_PATH", Path.join(shim_dir, "agy"))
     Rail.ToolEnv.debug_set_path(new_path)
+
+    system_scope = Rail.Scope.for_system()
+
+    {:ok, _claude_backend} =
+      Rail.Backends.create_backend(system_scope, %{
+        name: :claude,
+        executable_path: Path.join(shim_dir, "claude")
+      })
+
+    {:ok, _agy_backend} =
+      Rail.Backends.create_backend(system_scope, %{
+        name: :agy,
+        executable_path: Path.join(shim_dir, "agy")
+      })
 
     on_exit(fn ->
       System.put_env("PATH", old_path)
-      System.delete_env("RAIL_CLAUDE_PATH")
-      System.delete_env("RAIL_AGY_PATH")
       Rail.ToolEnv.reset()
     end)
 

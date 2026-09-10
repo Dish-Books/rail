@@ -3,6 +3,7 @@ defmodule RailWeb.Settings.RolesLive do
   use RailWeb, :live_view
 
   alias Rail.Backends
+  alias Rail.Backends.Schemas.Backend
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Roles.RoleInstructionProposal
@@ -43,7 +44,6 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:modal_form, nil)
       |> assign(:modal_errors, %{})
       |> assign(:available_models, [])
-      |> assign(:is_loading_models, false)
       |> assign(:is_custom_model, false)
       |> assign(:export_json, nil)
       |> assign(:import_error, nil)
@@ -545,18 +545,13 @@ defmodule RailWeb.Settings.RolesLive do
             <div class="space-y-2">
               <div class="flex items-center justify-between">
                 <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Model *</label>
-                <button
-                  type="button"
-                  phx-click="refresh_models"
-                  id="refresh-models-button"
-                  class="text-[11px] text-indigo-600 hover:text-indigo-800 flex items-center space-x-1"
+                <.link
+                  navigate={~p"/settings/backends"}
+                  id="manage-models-link"
+                  class="text-[11px] text-indigo-600 hover:text-indigo-800"
                 >
-                  <.icon
-                    name="pi-arrow-clockwise"
-                    class={["h-3 w-3", @is_loading_models && "animate-spin"]}
-                  />
-                  <span>Refresh Models</span>
-                </button>
+                  Manage models
+                </.link>
               </div>
 
               <select
@@ -569,7 +564,7 @@ defmodule RailWeb.Settings.RolesLive do
                   value={model.id}
                   selected={!@is_custom_model && @modal_form["model"] == model.id}
                 >
-                  {model.display_name} ({model.id})
+                  {model.display_name}
                 </option>
                 <option value="__custom__" selected={@is_custom_model}>
                   Custom Model...
@@ -1023,7 +1018,7 @@ defmodule RailWeb.Settings.RolesLive do
                       value={model.id}
                       selected={@improve_model == model.id}
                     >
-                      {model.display_name} ({model.id})
+                      {model.display_name}
                     </option>
                   </select>
                 </form>
@@ -1241,7 +1236,7 @@ defmodule RailWeb.Settings.RolesLive do
   def handle_event("open_create_modal", params, socket) do
     stage = params["stage"]
     backend = :claude
-    models = fetch_models_for_backend(socket.assigns.current_scope, backend)
+    models = fetch_models_for_backend(backend)
     default_model = @default_models[backend]
 
     form_data = %{
@@ -1274,7 +1269,7 @@ defmodule RailWeb.Settings.RolesLive do
 
     if role do
       backend = role.cli_backend
-      models = fetch_models_for_backend(socket.assigns.current_scope, backend)
+      models = fetch_models_for_backend(backend)
       in_models? = Enum.any?(models, &(&1.id == role.model))
 
       form_data = %{
@@ -1456,7 +1451,7 @@ defmodule RailWeb.Settings.RolesLive do
 
   def handle_event("change_backend", %{"role" => %{"cli_backend" => backend_str}}, socket) do
     backend = String.to_existing_atom(backend_str)
-    models = fetch_models_for_backend(socket.assigns.current_scope, backend)
+    models = fetch_models_for_backend(backend)
     default_model = @default_models[backend]
 
     updated_form =
@@ -1470,18 +1465,6 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:modal_form, updated_form)
       |> assign(:available_models, models)
       |> assign(:is_custom_model, false)
-
-    {:noreply, socket}
-  end
-
-  def handle_event("refresh_models", _params, socket) do
-    backend = String.to_existing_atom(socket.assigns.modal_form["cli_backend"] || "claude")
-    models = fetch_models_for_backend(socket.assigns.current_scope, backend, force_refresh: true)
-
-    socket =
-      socket
-      |> assign(:available_models, models)
-      |> assign(:is_loading_models, false)
 
     {:noreply, socket}
   end
@@ -1524,7 +1507,7 @@ defmodule RailWeb.Settings.RolesLive do
     role = Enum.find(socket.assigns.roles, &(&1.id == role_id))
 
     if role do
-      models = fetch_models_for_backend(scope, role.cli_backend)
+      models = fetch_models_for_backend(role.cli_backend)
       runs = Roles.recent_finished_runs(scope, role.id)
 
       selected_model =
@@ -1661,10 +1644,10 @@ defmodule RailWeb.Settings.RolesLive do
     {:noreply, socket}
   end
 
-  defp fetch_models_for_backend(scope, backend, opts \\ []) do
-    case Backends.fetch_available_models(scope, backend, opts) do
-      models when is_list(models) -> models
-      _other -> []
+  defp fetch_models_for_backend(backend) do
+    case Backends.get_backend(backend) do
+      %Backend{models: models} -> models
+      _unconfigured -> []
     end
   end
 

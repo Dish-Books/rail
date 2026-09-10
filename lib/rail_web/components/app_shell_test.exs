@@ -6,7 +6,7 @@ defmodule RailWeb.Components.AppShellTest do
   alias Rail.Projects.Schemas.Project
   alias RailWeb.Components.AppShell
 
-  test "nav_rail renders 4 destinations in exact order with extended labels" do
+  test "nav_rail renders 3 destinations in exact order with extended labels" do
     html =
       render_component(&AppShell.nav_rail/1,
         current_section: :overview,
@@ -22,14 +22,12 @@ defmodule RailWeb.Components.AppShellTest do
 
     assert html =~ "id=\"nav-overview\""
     assert html =~ "id=\"nav-issues\""
-    assert html =~ "id=\"nav-cli-accounts\""
     assert html =~ "id=\"nav-settings\""
 
     # Active highlighting on overview
     assert html =~ "data-active=\"true\""
     assert html =~ "Overview"
     assert html =~ "Issues"
-    assert html =~ "CLI Accounts"
     assert html =~ "Settings"
 
     # Collapse sidebar tooltip
@@ -76,7 +74,7 @@ defmodule RailWeb.Components.AppShellTest do
   end
 
   test "nav_rail active state matches current section" do
-    for section <- [:overview, :issues, :cli_accounts, :settings] do
+    for section <- [:overview, :issues, :settings] do
       html =
         render_component(&AppShell.nav_rail/1,
           current_section: section,
@@ -85,13 +83,7 @@ defmodule RailWeb.Components.AppShellTest do
           current_project_id: ""
         )
 
-      slug =
-        case section do
-          :cli_accounts -> "cli-accounts"
-          other -> to_string(other)
-        end
-
-      assert html =~ "id=\"nav-#{slug}\""
+      assert html =~ "id=\"nav-#{section}\""
     end
 
     # Test settings sub-sections highlight Settings nav
@@ -157,7 +149,7 @@ defmodule RailWeb.Components.AppShellTest do
 
     html =
       render_component(&AppShell.top_app_bar/1,
-        current_section: :cli_accounts,
+        current_section: :backends,
         current_project_id: "prj_1",
         projects: [p1],
         theme: "dark",
@@ -193,7 +185,7 @@ defmodule RailWeb.Components.AppShellTest do
     titles = [
       {:overview, "Overview"},
       {:issues, "Issues"},
-      {:cli_accounts, "CLI Accounts"},
+      {:backends, "Backends"},
       {:settings, "Settings"},
       {:connected_accounts, "Settings"},
       {:projects, "Settings"},

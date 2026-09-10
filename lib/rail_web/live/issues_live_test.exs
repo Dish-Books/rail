@@ -34,7 +34,6 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#navigation-rail")
     assert has_element?(view, "#nav-overview[data-active='false']")
     assert has_element?(view, "#nav-issues[data-active='true']")
-    assert has_element?(view, "#nav-cli-accounts[data-active='false']")
     assert has_element?(view, "#nav-settings[data-active='false']")
 
     # Top app bar checks

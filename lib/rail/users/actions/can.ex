@@ -12,18 +12,21 @@ defmodule Rail.Users.Actions.Can do
     :delete_project,
     :manage_roles,
     :manage_linear_workspace,
+    :manage_backends,
     :upsert_linear_workspace,
     :users,
     :projects,
     :roles,
-    :linear_workspace
+    :linear_workspace,
+    :backends
   ]
 
   @admin_resources [
     :users,
     :roles,
     :projects,
-    :linear_workspace
+    :linear_workspace,
+    :backends
   ]
 
   def can?(%Scope{system: true}, _action), do: true
@@ -57,7 +60,7 @@ defmodule Rail.Users.Actions.Can do
     Scope.admin?(scope)
   end
 
-  def can?(%Scope{user: %{}}, resource, :view) when resource in [:projects, :roles] do
+  def can?(%Scope{user: %{}}, resource, :view) when resource in [:projects, :roles, :backends] do
     true
   end
 

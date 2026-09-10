@@ -1,8 +1,6 @@
 defmodule Rail.Backends.Probes.ClaudeUsageProbeTest do
   use Rail.DataCase, async: true
 
-  import RailTest.BackendsHelpers
-
   alias Rail.Backends.Probes.ClaudeUsageProbe
 
   test "returns not_configured when executable does not pass validation" do
@@ -82,7 +80,7 @@ defmodule Rail.Backends.Probes.ClaudeUsageProbeTest do
   end
 
   test "returns signed_out when auth status indicates logged out" do
-    auth_json = sample_claude_auth_json(%{"loggedIn" => false, "email" => "loggedout@example.com"})
+    auth_json = ~s({"loggedIn":false,"email":"loggedout@example.com","subscriptionType":"Pro"})
 
     result =
       ClaudeUsageProbe.probe(
@@ -100,7 +98,7 @@ defmodule Rail.Backends.Probes.ClaudeUsageProbeTest do
   end
 
   test "returns unavailable when config directory cannot be resolved" do
-    auth_json = sample_claude_auth_json()
+    auth_json = ~s({"loggedIn":true,"email":"alice@example.com","subscriptionType":"Pro"})
 
     # Provide a runner that handles auth status and refresh
     runner = fn _exe, args, _opts ->
@@ -137,7 +135,7 @@ defmodule Rail.Backends.Probes.ClaudeUsageProbeTest do
   end
 
   test "returns unavailable when config file fails to read" do
-    auth_json = sample_claude_auth_json()
+    auth_json = ~s({"loggedIn":true,"email":"alice@example.com","subscriptionType":"Pro"})
 
     runner = fn _exe, args, _opts ->
       case args do
@@ -165,7 +163,7 @@ defmodule Rail.Backends.Probes.ClaudeUsageProbeTest do
   end
 
   test "returns unavailable when config JSON is invalid" do
-    auth_json = sample_claude_auth_json()
+    auth_json = ~s({"loggedIn":true,"email":"alice@example.com","subscriptionType":"Pro"})
 
     runner = fn _exe, args, _opts ->
       case args do
@@ -193,7 +191,7 @@ defmodule Rail.Backends.Probes.ClaudeUsageProbeTest do
   end
 
   test "returns unavailable when cachedUsageUtilization is missing" do
-    auth_json = sample_claude_auth_json()
+    auth_json = ~s({"loggedIn":true,"email":"alice@example.com","subscriptionType":"Pro"})
 
     runner = fn _exe, args, _opts ->
       case args do
@@ -219,8 +217,10 @@ defmodule Rail.Backends.Probes.ClaudeUsageProbeTest do
   end
 
   test "successfully probes and parses quota usage with groups and windows" do
-    auth_json = sample_claude_auth_json(%{"email" => "engineer@example.com", "subscriptionType" => "enterprise"})
-    config_json = sample_claude_config_json()
+    auth_json = ~s({"loggedIn":true,"email":"engineer@example.com","subscriptionType":"enterprise"})
+
+    config_json =
+      ~s({"cachedUsageUtilization":{"fetchedAtMs":1725894000000,"utilization":{"limits":[{"group":"session","kind":"session","percent":20.0,"resets_at":"2026-09-10T12:00:00Z"},{"group":"weekly","kind":"weekly_all","scope":{"model":{"display_name":"Sonnet 3.7"}},"percent":35.5,"resets_at":"2026-09-15T12:00:00Z"}]}}})
 
     runner = fn _exe, args, _opts ->
       case args do
@@ -260,7 +260,7 @@ defmodule Rail.Backends.Probes.ClaudeUsageProbeTest do
   end
 
   test "parse/3 pure function handles window label fallback variations" do
-    auth_json = sample_claude_auth_json()
+    auth_json = ~s({"loggedIn":true,"email":"alice@example.com","subscriptionType":"Pro"})
 
     custom_limits = [
       %{"group" => "session", "kind" => "session", "percent" => 10.0},
@@ -302,7 +302,7 @@ defmodule Rail.Backends.Probes.ClaudeUsageProbeTest do
 
     assert reason =~ "Failed to parse auth status JSON"
 
-    valid_auth = sample_claude_auth_json()
+    valid_auth = ~s({"loggedIn":true,"email":"alice@example.com","subscriptionType":"Pro"})
 
     assert %{status: "unavailable", unavailable_reason: reason2} =
              ClaudeUsageProbe.parse("/bin/claude", valid_auth, "invalid config")
@@ -311,8 +311,10 @@ defmodule Rail.Backends.Probes.ClaudeUsageProbeTest do
   end
 
   test "resolves config path via CLAUDE_CONFIG_DIR and HOME environment variables" do
-    auth_json = sample_claude_auth_json()
-    config_json = sample_claude_config_json()
+    auth_json = ~s({"loggedIn":true,"email":"alice@example.com","subscriptionType":"Pro"})
+
+    config_json =
+      ~s({"cachedUsageUtilization":{"fetchedAtMs":1725894000000,"utilization":{"limits":[{"group":"session","kind":"session","percent":20.0,"resets_at":"2026-09-10T12:00:00Z"},{"group":"weekly","kind":"weekly_all","scope":{"model":{"display_name":"Sonnet 3.7"}},"percent":35.5,"resets_at":"2026-09-15T12:00:00Z"}]}}})
 
     runner = fn _exe, args, _opts ->
       case args do
@@ -357,7 +359,7 @@ defmodule Rail.Backends.Probes.ClaudeUsageProbeTest do
   end
 
   test "parse/3 merges multiple limits in the same group and handles nil group and non-list limits" do
-    auth_json = sample_claude_auth_json()
+    auth_json = ~s({"loggedIn":true,"email":"alice@example.com","subscriptionType":"Pro"})
 
     multi_limit_config =
       Jason.encode!(%{
@@ -396,8 +398,11 @@ defmodule Rail.Backends.Probes.ClaudeUsageProbeTest do
     # warm up runner exception
     raising_runner = fn _exe, args, _opts ->
       case args do
-        ["auth", "status", "--json"] -> {:ok, sample_claude_auth_json(), 0}
-        _usage -> raise "warm up error"
+        ["auth", "status", "--json"] ->
+          {:ok, ~s({"loggedIn":true,"email":"alice@example.com","subscriptionType":"Pro"}), 0}
+
+        _usage ->
+          raise "warm up error"
       end
     end
 
@@ -407,7 +412,10 @@ defmodule Rail.Backends.Probes.ClaudeUsageProbeTest do
         path_validator: fn _path -> true end,
         runner: raising_runner,
         custom_config_path: "/dummy.json",
-        config_file_reader: fn _path -> {:ok, sample_claude_config_json()} end
+        config_file_reader: fn _path ->
+          {:ok,
+           ~s({"cachedUsageUtilization":{"fetchedAtMs":1725894000000,"utilization":{"limits":[{"group":"session","kind":"session","percent":20.0,"resets_at":"2026-09-10T12:00:00Z"},{"group":"weekly","kind":"weekly_all","scope":{"model":{"display_name":"Sonnet 3.7"}},"percent":35.5,"resets_at":"2026-09-15T12:00:00Z"}]}}})}
+        end
       )
 
     assert result.status == "ready"

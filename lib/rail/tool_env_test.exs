@@ -63,17 +63,6 @@ defmodule Rail.ToolEnvTest do
              "definitely_not_a_real_binary_xyz_123"
   end
 
-  test "find_executable/1 finds executable on PATH or returns nil" do
-    resolved_sh = ToolEnv.find_executable("sh")
-    assert byte_size(resolved_sh) > 0
-    assert File.exists?(resolved_sh)
-
-    assert is_nil(ToolEnv.find_executable("non_existent_binary_xyz_123"))
-
-    assert ToolEnv.find_executable(resolved_sh) == resolved_sh
-    assert is_nil(ToolEnv.find_executable("/tmp/non_existent_binary_path_xyz"))
-  end
-
   test "env/0 and env/1 return merged environment map" do
     env0 = ToolEnv.env()
     assert Map.has_key?(env0, "PATH")

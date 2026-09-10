@@ -7,8 +7,7 @@ defmodule Rail.Application do
     children =
       [
         Rail.Vault,
-        Rail.Repo,
-        Rail.Cache
+        Rail.Repo
       ] ++
         livesync_child() ++
         [

@@ -21,6 +21,13 @@ defmodule RailWeb.Settings.RolesLiveTest do
                admin: true
              })
 
+    {:ok, _backend} =
+      Rail.Backends.create_backend(Rail.Scope.for_system(), %{
+        name: :claude,
+        executable_path: "/usr/local/bin/claude",
+        models: [%{id: "claude-sonnet-5", display_name: "claude-sonnet-5"}]
+      })
+
     {admin_conn, _logged_admin} = log_in_test_user(conn, admin_user)
 
     assert {:ok, %User{} = regular_user} =
@@ -133,8 +140,8 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
     assert has_element?(view, "#custom-model-input-container")
 
-    # Refresh models button
-    view |> element("#refresh-models-button") |> render_click()
+    # Models are managed in backend settings
+    assert has_element?(view, "#manage-models-link")
 
     # Form validation error on submit when prompt is empty
     view
@@ -596,9 +603,9 @@ defmodule RailWeb.Settings.RolesLiveTest do
       }
     })
 
-    # Test fetch_models_for_backend error branch
-    stub(Rail.Backends, :fetch_available_models, fn _scope, _backend, _opts -> {:error, :failed} end)
+    # Switching to a backend with no configured row yields no models
     render_hook(view, "change_backend", %{"role" => %{"cli_backend" => "agy"}})
+    refute has_element?(view, "#role-model-select option[value='claude-sonnet-5']")
   end
 
   test "handles stage_default_name and max_concurrent variations in create modal", %{

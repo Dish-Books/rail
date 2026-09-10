@@ -61,17 +61,6 @@ defmodule RailWeb.Components.AppShell do
           />
 
           <.nav_destination
-            section={:cli_accounts}
-            active={@current_section == :cli_accounts}
-            is_extended={@is_rail_extended}
-            label="CLI Accounts"
-            icon_active="pi-user-circle-fill"
-            icon_inactive="pi-user-circle"
-            href={nav_path("/cli-accounts", @current_project_id)}
-            attention_count={0}
-          />
-
-          <.nav_destination
             section={:settings}
             active={
               @current_section in [
@@ -81,7 +70,8 @@ defmodule RailWeb.Components.AppShell do
                 :linear_workspace,
                 :appearance,
                 :users,
-                :roles
+                :roles,
+                :backends
               ]
             }
             is_extended={@is_rail_extended}
@@ -365,13 +355,12 @@ defmodule RailWeb.Components.AppShell do
 
   defp destination_slug(:overview), do: "overview"
   defp destination_slug(:issues), do: "issues"
-  defp destination_slug(:cli_accounts), do: "cli-accounts"
   defp destination_slug(:settings), do: "settings"
   defp destination_slug(other), do: to_string(other)
 
   defp section_title(:overview), do: "Overview"
   defp section_title(:issues), do: "Issues"
-  defp section_title(:cli_accounts), do: "CLI Accounts"
+  defp section_title(:backends), do: "Backends"
   defp section_title(:settings), do: "Settings"
   defp section_title(:connected_accounts), do: "Settings"
   defp section_title(:projects), do: "Settings"

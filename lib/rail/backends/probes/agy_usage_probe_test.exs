@@ -1,8 +1,6 @@
 defmodule Rail.Backends.Probes.AgyUsageProbeTest do
   use Rail.DataCase, async: true
 
-  import RailTest.BackendsHelpers
-
   alias Rail.Backends.Probes.AgyUsageProbe
 
   test "returns not_configured when executable does not pass validation" do
@@ -144,8 +142,10 @@ defmodule Rail.Backends.Probes.AgyUsageProbeTest do
   end
 
   test "successfully probes usage, scrapes identity from scratch log, and cleans up temp dir" do
-    usage_json = sample_agy_usage_json()
-    log_data = sample_agy_scratch_log("dev@google.com", "browser_oauth")
+    usage_json =
+      ~s({"status":"SUCCESS","command":{"data":{"groups":[{"name":"Gemini Models","buckets":[{"window":"5h","remaining_fraction":0.85,"reset_time":"2026-09-09T20:00:00Z"},{"window":"weekly","remaining_fraction":0.6,"reset_time":"2026-09-16T20:00:00Z"}]}]}}})
+
+    log_data = ~s(2026-09-09T15:00:00.123Z INFO [Auth] applyAuthResult: email=dev@google.com, authMethod=browser_oauth\n)
 
     temp_dir = Path.join(System.tmp_dir!(), "agy_test_dir_#{System.unique_integer([:positive])}")
 
