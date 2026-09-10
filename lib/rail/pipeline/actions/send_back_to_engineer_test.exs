@@ -1,51 +1,165 @@
 defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
+  alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
+  alias Rail.Repo
+  alias Rail.Roles
+  alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Scope
+  alias RailTest.Mocks.Linear, as: LinearMock
+
+  setup do
+    scope = system_scope()
+
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Send Back Workspace",
+        external_id: "lin_ws_send_back",
+        token: "lin_api_token_send_back",
+        webhook_secret: "whsec_send_back"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Send Back Project 8401",
+        github_repo: "org/send-back-8401",
+        github_installation_id: 8401,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_send_back_8401",
+        linear_team_key: "P8401",
+        clone_path: "/tmp/repos/send-back-8401",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    roles =
+      Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
+        {:ok, role} =
+          Roles.create_role(scope, project, %{
+            stage: stage,
+            name: "#{stage} role",
+            model: "claude-3-7-sonnet",
+            system_prompt: "You are the #{stage} agent."
+          })
+
+        {stage, role}
+      end)
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_send_back_1",
+      "identifier" => "SBE-1",
+      "title" => "Send Back Issue"
+    })
+
+    {:ok, issue} = Issues.capture_issue(scope, project, "Send Back Issue")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_send_back_1"})
+
+    {:ok, task} = Pipeline.bring_local(scope, issue)
+
+    %{project: project, issue: issue, task: task, roles: roles}
+  end
 
   test "returns not_found when task cannot be resolved" do
     assert {:error, :not_found} = Pipeline.send_back_to_engineer("tsk_000000000000000000000000")
   end
 
-  test "returns not_authorized when scope lacks permission" do
-    task = create_test_task(%{stage: :review, stage_state: :awaiting_approval})
+  test "returns not_authorized when scope lacks permission", %{task: task} do
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :review,
+        stage_state: :awaiting_approval
+      })
+
     unauth_scope = %Scope{user: nil, system: false}
 
     assert {:error, :not_authorized} = Pipeline.send_back_to_engineer(unauth_scope, task.id, [])
   end
 
-  test "returns task_running when task is currently running" do
-    task = create_test_task(%{stage: :review, stage_state: :running})
+  test "returns task_running when task is currently running", %{task: task} do
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :review,
+        stage_state: :running
+      })
 
     assert {:error, :task_running} = Pipeline.send_back_to_engineer(task)
   end
 
-  test "returns stage_before_engineer for product, design, and architect stages" do
-    t_prod = create_test_task(%{stage: :product, stage_state: :awaiting_approval})
+  test "returns stage_before_engineer for product, design, and architect stages", %{project: project, task: task} do
+    {:ok, t_prod} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :product,
+        stage_state: :awaiting_approval
+      })
+
     assert {:error, :stage_before_engineer} = Pipeline.send_back_to_engineer(t_prod)
 
-    t_des = create_test_task(%{stage: :design, stage_state: :awaiting_approval})
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_send_back_8402",
+      "identifier" => "TSK-8402",
+      "title" => "Task 8402"
+    })
+
+    {:ok, issue_8402} = Issues.capture_issue(system_scope(), project, "Task 8402")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_send_back_8402"})
+
+    {:ok, t_des} = Pipeline.bring_local(system_scope(), issue_8402)
+
+    {:ok, t_des} =
+      Pipeline.update_task(system_scope(), t_des.id, %{
+        stage: :design,
+        stage_state: :awaiting_approval
+      })
+
     assert {:error, :stage_before_engineer} = Pipeline.send_back_to_engineer(t_des)
 
-    t_arch = create_test_task(%{stage: :architect, stage_state: :awaiting_approval})
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_task_send_back_8403",
+      "identifier" => "TSK-8403",
+      "title" => "Task 8403"
+    })
+
+    {:ok, issue_8403} = Issues.capture_issue(system_scope(), project, "Task 8403")
+
+    LinearMock.mock_update_issue_success(%{"id" => "lin_task_send_back_8403"})
+
+    {:ok, t_arch} = Pipeline.bring_local(system_scope(), issue_8403)
+
+    {:ok, t_arch} =
+      Pipeline.update_task(system_scope(), t_arch.id, %{
+        stage: :architect,
+        stage_state: :awaiting_approval
+      })
+
     assert {:error, :stage_before_engineer} = Pipeline.send_back_to_engineer(t_arch)
   end
 
-  test "returns task_merged when task is in merged stage" do
-    task = create_test_task(%{stage: :merged, stage_state: :awaiting_approval})
+  test "returns task_merged when task is in merged stage", %{task: task} do
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :merged,
+        stage_state: :awaiting_approval
+      })
 
     assert {:error, :task_merged} = Pipeline.send_back_to_engineer(task)
   end
 
-  test "returns no_engineer_role when project lacks an engineer role" do
-    project = create_test_project()
+  test "returns no_engineer_role when project lacks an engineer role", %{task: task, roles: roles} do
+    {:ok, _deleted} = Roles.delete_role(system_scope(), roles[:engineer])
 
-    task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :review,
         stage_state: :awaiting_approval
       })
@@ -53,16 +167,21 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
     assert {:error, :no_engineer_role} = Pipeline.send_back_to_engineer(task)
   end
 
-  test "grants fresh budget, collects gate reports, and queues engineer with pending answer" do
+  test "grants fresh budget, collects gate reports, and queues engineer with pending answer", %{task: task, roles: roles} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-    project = create_test_project()
-    role_eng = create_test_role(%{project_id: project.id, stage: :engineer, name: "Staff Engineer"})
-    role_rev = create_test_role(%{project_id: project.id, stage: :review, name: "Lead Reviewer"})
 
-    %Task{id: task_id} =
-      task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, role_eng} =
+      Roles.update_role(system_scope(), roles[:engineer], %{
+        name: "Staff Engineer"
+      })
+
+    {:ok, role_rev} =
+      Roles.update_role(system_scope(), roles[:review], %{
+        name: "Lead Reviewer"
+      })
+
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :review,
         stage_state: :awaiting_approval,
         rework_cycles: 4,
@@ -72,12 +191,14 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
         error: "Rework limit reached"
       })
 
-    create_test_role_run(%{
-      task_id: task_id,
-      role_id: role_rev.id,
-      status: :finished,
-      output: "Reviewer finding: memory leak in loop."
-    })
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_rev.id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        output: "Reviewer finding: memory leak in loop."
+      })
 
     expected_empty = %{}
 
@@ -101,14 +222,14 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
     assert eng_run.pending_answer =~ "### Lead Reviewer\n\nReviewer finding: memory leak in loop."
   end
 
-  test "supports string comment directly or empty note" do
-    project = create_test_project()
-    role_eng = create_test_role(%{project_id: project.id, stage: :engineer, name: "Staff Engineer"})
+  test "supports string comment directly or empty note", %{task: task, roles: roles} do
+    {:ok, role_eng} =
+      Roles.update_role(system_scope(), roles[:engineer], %{
+        name: "Staff Engineer"
+      })
 
-    %Task{id: task_id} =
-      task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :qa,
         stage_state: :awaiting_approval
       })
@@ -120,25 +241,31 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
     assert eng_run.pending_answer =~ "What the human asked for:\n\nDirect string comment"
   end
 
-  test "appends to existing engineer pending_answer, authorizes user scope, and handles non-list note" do
-    project = create_test_project()
-    role_eng = create_test_role(%{project_id: project.id, stage: :engineer, name: "Staff Engineer"})
+  test "appends to existing engineer pending_answer, authorizes user scope, and handles non-list note", %{
+    task: task,
+    roles: roles
+  } do
+    {:ok, role_eng} =
+      Roles.update_role(system_scope(), roles[:engineer], %{
+        name: "Staff Engineer"
+      })
+
     user_scope = %Scope{user: %{id: "usr_test"}, system: false}
 
-    %Task{id: task_id} =
-      task =
-      create_test_task(%{
-        project_id: project.id,
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :review,
         stage_state: :awaiting_approval
       })
 
-    create_test_role_run(%{
-      task_id: task_id,
-      role_id: role_eng.id,
-      status: :finished,
-      pending_answer: "Initial engineer instruction"
-    })
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_eng.id,
+        status: :finished,
+        started_at: DateTime.utc_now(),
+        pending_answer: "Initial engineer instruction"
+      })
 
     assert {:ok, %Task{stage: :engineer, stage_state: :queued}} =
              Pipeline.send_back_to_engineer(user_scope, task.id)
