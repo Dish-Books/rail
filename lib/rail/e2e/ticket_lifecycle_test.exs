@@ -1,5 +1,5 @@
 defmodule Rail.E2E.TicketLifecycleTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
   import Ecto.Query
 
@@ -8,7 +8,9 @@ defmodule Rail.E2E.TicketLifecycleTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.RunEvent
   alias RailTest.Mocks.GitHub, as: GitHubMock
@@ -41,20 +43,30 @@ defmodule Rail.E2E.TicketLifecycleTest do
     end)
 
     repo_dir = create_temp_git_repo(initial_commit: true)
-    workspace = create_test_linear_workspace(%{token: "lin_ws_token_123"})
 
-    project =
-      create_test_project(%{
-        clone_path: repo_dir,
-        linear_workspace_id: workspace.id,
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "E2E Workspace 13603",
+        external_id: "lin_ws_e2e_13603",
+        token: "lin_ws_token_123",
+        webhook_secret: "whsec_e2e_13603"
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "E2E Project 13601",
+        github_repo: "org/e2e-13601",
+        github_installation_id: 13_601,
         linear_team_id: "team_test_101",
         linear_team_key: "ISS",
-        default_branch: "main",
+        clone_path: repo_dir,
         linear_state_ids: %{
           "triage" => "state_triage",
           "in_progress" => "state_in_progress",
           "done" => "state_done"
-        }
+        },
+        linear_workspace_id: workspace.id,
+        default_branch: "main"
       })
 
     {:ok, user} =
@@ -68,8 +80,19 @@ defmodule Rail.E2E.TicketLifecycleTest do
       })
 
     scope = %Rail.Scope{user: user, system: false}
-    create_pipeline_roles(project)
-    scratch_dir = create_temp_scratch_dir()
+
+    Enum.each([:product, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
+      {:ok, _role} =
+        Roles.create_role(system_scope(), project, %{
+          stage: stage,
+          name: "#{stage} role",
+          cli_backend: :claude,
+          model: "claude-3-7-sonnet",
+          system_prompt: "You are an expert agent for stage #{stage}."
+        })
+    end)
+
+    scratch_dir = create_temp_git_repo()
 
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
@@ -318,21 +341,33 @@ defmodule Rail.E2E.TicketLifecycleTest do
     scope: scope,
     scratch_dir: scratch_dir
   } do
-    agy_project =
-      create_test_project(%{
-        clone_path: project.clone_path,
-        linear_workspace_id: project.linear_workspace_id,
+    {:ok, agy_project} =
+      Projects.create_project(system_scope(), %{
+        name: "E2E Project 13602",
+        github_repo: "org/e2e-13602",
+        github_installation_id: 13_602,
         linear_team_id: "team_agy_102",
         linear_team_key: "AGY",
-        default_branch: "main",
+        clone_path: project.clone_path,
         linear_state_ids: %{
           "triage" => "state_triage",
           "in_progress" => "state_in_progress",
           "done" => "state_done"
-        }
+        },
+        linear_workspace_id: project.linear_workspace_id,
+        default_branch: "main"
       })
 
-    create_pipeline_roles(agy_project, cli_backend: :agy)
+    Enum.each([:product, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
+      {:ok, _role} =
+        Roles.create_role(system_scope(), agy_project, %{
+          stage: stage,
+          name: "#{stage} role",
+          cli_backend: :agy,
+          model: "claude-3-7-sonnet",
+          system_prompt: "You are an expert agent for stage #{stage}."
+        })
+    end)
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_iss_102",
