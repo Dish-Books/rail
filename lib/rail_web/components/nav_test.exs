@@ -1,14 +1,14 @@
-defmodule RailWeb.Components.AppShellTest do
+defmodule RailWeb.Components.NavTest do
   use RailWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
 
   alias Rail.Projects.Schemas.Project
-  alias RailWeb.Components.AppShell
+  alias RailWeb.Components.Nav
 
   test "nav_rail renders 3 destinations in exact order with extended labels" do
     html =
-      render_component(&AppShell.nav_rail/1,
+      render_component(&Nav.nav/1,
         current_section: :overview,
         is_rail_extended: true,
         attention_count: 0,
@@ -36,7 +36,7 @@ defmodule RailWeb.Components.AppShellTest do
 
   test "nav_rail collapsed hides text labels and shows expand tooltip" do
     html =
-      render_component(&AppShell.nav_rail/1,
+      render_component(&Nav.nav/1,
         current_section: :issues,
         is_rail_extended: false,
         attention_count: 0,
@@ -52,7 +52,7 @@ defmodule RailWeb.Components.AppShellTest do
 
   test "nav_rail renders attention badge on overview when attention_count > 0" do
     html_with_badge =
-      render_component(&AppShell.nav_rail/1,
+      render_component(&Nav.nav/1,
         current_section: :overview,
         is_rail_extended: true,
         attention_count: 4,
@@ -63,7 +63,7 @@ defmodule RailWeb.Components.AppShellTest do
     assert html_with_badge =~ "4"
 
     html_no_badge =
-      render_component(&AppShell.nav_rail/1,
+      render_component(&Nav.nav/1,
         current_section: :overview,
         is_rail_extended: true,
         attention_count: 0,
@@ -76,7 +76,7 @@ defmodule RailWeb.Components.AppShellTest do
   test "nav_rail active state matches current section" do
     for section <- [:overview, :issues, :settings] do
       html =
-        render_component(&AppShell.nav_rail/1,
+        render_component(&Nav.nav/1,
           current_section: section,
           is_rail_extended: true,
           attention_count: 0,
@@ -89,7 +89,7 @@ defmodule RailWeb.Components.AppShellTest do
     # Test settings sub-sections highlight Settings nav
     for sub <- [:connected_accounts, :projects, :linear_workspace] do
       html =
-        render_component(&AppShell.nav_rail/1,
+        render_component(&Nav.nav/1,
           current_section: sub,
           is_rail_extended: true,
           attention_count: 0,
@@ -105,7 +105,7 @@ defmodule RailWeb.Components.AppShellTest do
     p2 = %Project{id: "prj_2", name: "Web UI", active: true, linear_team_key: "WEB"}
 
     html =
-      render_component(&AppShell.top_app_bar/1,
+      render_component(&Nav.top_app_bar/1,
         current_section: :overview,
         current_project_id: nil,
         projects: [p1, p2],
@@ -130,7 +130,7 @@ defmodule RailWeb.Components.AppShellTest do
     p1 = %Project{id: "prj_1", name: "Alpha App", active: true, linear_team_key: "ALP"}
 
     html =
-      render_component(&AppShell.top_app_bar/1,
+      render_component(&Nav.top_app_bar/1,
         current_section: :issues,
         current_project_id: "prj_1",
         projects: [p1],
@@ -148,7 +148,7 @@ defmodule RailWeb.Components.AppShellTest do
     p1 = %Project{id: "prj_1", name: "Beta Project", active: true, linear_team_key: "BET"}
 
     html =
-      render_component(&AppShell.top_app_bar/1,
+      render_component(&Nav.top_app_bar/1,
         current_section: :backends,
         current_project_id: "prj_1",
         projects: [p1],
@@ -166,7 +166,7 @@ defmodule RailWeb.Components.AppShellTest do
 
   test "top_app_bar renders new issue dialog when open" do
     html =
-      render_component(&AppShell.top_app_bar/1,
+      render_component(&Nav.top_app_bar/1,
         current_section: :tasks,
         current_project_id: nil,
         projects: [],
@@ -196,7 +196,7 @@ defmodule RailWeb.Components.AppShellTest do
 
     for {section, expected_title} <- titles do
       html =
-        render_component(&AppShell.top_app_bar/1,
+        render_component(&Nav.top_app_bar/1,
           current_section: section,
           current_project_id: nil,
           projects: [],
@@ -210,7 +210,7 @@ defmodule RailWeb.Components.AppShellTest do
   end
 
   test "icon component renders a Phosphor class, directly and through CoreComponents" do
-    html = render_component(&AppShell.icon/1, name: "pi-squares-four-fill", class: "h-5 w-5")
+    html = render_component(&Nav.icon/1, name: "pi-squares-four-fill", class: "h-5 w-5")
     assert html =~ "pi-squares-four-fill"
     assert html =~ "shrink-0"
 
@@ -222,7 +222,7 @@ defmodule RailWeb.Components.AppShellTest do
 
   test "nav_destination supports custom section id falling back to to_string" do
     html =
-      render_component(&AppShell.nav_destination/1,
+      render_component(&Nav.nav_item/1,
         section: :custom_dest,
         active: false,
         is_extended: true,

@@ -5,8 +5,8 @@ defmodule RailWeb.Components.DiffPane do
   """
   use RailWeb, :html
 
-  import RailWeb.Components.AppShell, only: [icon: 1]
   import RailWeb.Components.DiffStat, only: [diff_stat: 1]
+  import RailWeb.Components.Icon, only: [icon: 1]
 
   alias Rail.Domain.Diff.BinaryNoticeRow
   alias Rail.Domain.Diff.DiffRowModel

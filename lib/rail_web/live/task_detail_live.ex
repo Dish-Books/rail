@@ -131,383 +131,400 @@ defmodule RailWeb.TaskDetailLive do
 
   def render(assigns) do
     ~H"""
-    <div id="task-detail-view" data-qa="task-detail-view" class="space-y-6">
-      <%= if is_nil(@task) do %>
-        <!-- Deleted / Cleaned Up State -->
-        <div class="flex items-center justify-between" id="task-detail-header">
-          <h1
-            class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
-            id="task-detail-title"
-            data-qa="task_detail_title"
-          >
-            Task
-          </h1>
-        </div>
-
-        <div
-          id="task-cleaned-up"
-          data-qa="task-cleaned-up"
-          class="flex flex-col items-center justify-center min-h-[300px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
-        >
-          <p class="text-base font-medium text-slate-500 dark:text-slate-400">
-            This task has been cleaned up.
-          </p>
-        </div>
-      <% else %>
-        <!-- Task Header with Project Badge, Title & 4 Tabs in exact order -->
-        <div
-          id="task-header"
-          data-qa="task-header"
-          class="space-y-4 border-b border-slate-200 dark:border-slate-700 pb-0"
-        >
-          <div class="flex items-center gap-3">
-            <.project_badge project={@task.project} />
+    <Layouts.app
+      flash={@flash}
+      current_section={@current_section}
+      is_rail_extended={@is_rail_extended}
+      attention_count={@attention_count}
+      current_project_id={@current_project_id}
+      projects={@projects}
+      theme={@theme}
+      show_project_switcher={@show_project_switcher}
+      show_new_issue_modal={@show_new_issue_modal}
+      capture_ask={@capture_ask}
+      capture_project_id={@capture_project_id}
+      capture_priority={@capture_priority}
+      capture_error={@capture_error}
+      capture_submitting={@capture_submitting}
+    >
+      <div id="task-detail-view" data-qa="task-detail-view" class="space-y-6">
+        <%= if is_nil(@task) do %>
+          <!-- Deleted / Cleaned Up State -->
+          <div class="flex items-center justify-between" id="task-detail-header">
             <h1
-              class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 truncate"
+              class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
               id="task-detail-title"
               data-qa="task_detail_title"
-              title={@task.title}
             >
-              {@task.title}
+              Task
             </h1>
           </div>
 
-          <!-- Tabs (Overview, Plan, Conversation, Diff) -->
-          <nav
-            id="task-tabs"
-            data-qa="task-tabs"
-            class="flex items-center space-x-6 text-sm font-medium -mb-px"
-          >
-            <.link
-              patch={~p"/tasks/#{@task.id}?tab=overview"}
-              id="tab-overview"
-              data-qa="tab-overview tab_overview"
-              data-active={if @active_tab == :overview, do: "true", else: "false"}
-              class={[
-                "pb-3 border-b-2 transition-colors cursor-pointer",
-                @active_tab == :overview &&
-                  "border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-bold",
-                @active_tab != :overview &&
-                  "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-600"
-              ]}
-            >
-              Overview
-            </.link>
-
-            <.link
-              patch={~p"/tasks/#{@task.id}?tab=plan"}
-              id="tab-plan"
-              data-qa="tab-plan tab_plan"
-              data-active={if @active_tab == :plan, do: "true", else: "false"}
-              class={[
-                "pb-3 border-b-2 transition-colors cursor-pointer",
-                @active_tab == :plan &&
-                  "border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-bold",
-                @active_tab != :plan &&
-                  "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-600"
-              ]}
-            >
-              Plan
-            </.link>
-
-            <.link
-              patch={~p"/tasks/#{@task.id}?tab=conversation"}
-              id="tab-conversation"
-              data-qa="tab-conversation tab_conversation"
-              data-active={if @active_tab == :conversation, do: "true", else: "false"}
-              class={[
-                "pb-3 border-b-2 transition-colors cursor-pointer",
-                @active_tab == :conversation &&
-                  "border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-bold",
-                @active_tab != :conversation &&
-                  "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-600"
-              ]}
-            >
-              Conversation
-            </.link>
-
-            <.link
-              patch={~p"/tasks/#{@task.id}?tab=diff"}
-              id="tab-diff"
-              data-qa="tab-diff tab_diff"
-              data-active={if @active_tab == :diff, do: "true", else: "false"}
-              class={[
-                "pb-3 border-b-2 transition-colors cursor-pointer",
-                @active_tab == :diff &&
-                  "border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-bold",
-                @active_tab != :diff &&
-                  "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-600"
-              ]}
-            >
-              Diff
-            </.link>
-          </nav>
-        </div>
-
-        <!-- Tab 1: Overview Pane -->
-        <div
-          id="tab-overview-pane"
-          data-qa="tab-overview-pane"
-          class={[@active_tab != :overview && "hidden", "space-y-6"]}
-        >
-          <!-- Stage Stepper -->
-          <.stage_stepper task={@task} role_runs={@role_runs} />
-
-          <!-- Metadata Wrap -->
           <div
-            id="task-metadata-wrap"
-            data-qa="task-metadata-wrap"
-            class="flex flex-wrap items-center gap-4 py-2 text-xs text-slate-500 dark:text-slate-400"
+            id="task-cleaned-up"
+            data-qa="task-cleaned-up"
+            class="flex flex-col items-center justify-center min-h-[300px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
           >
-            <!-- Stage Status Chip -->
-            <span
-              id="metadata-status-chip"
-              data-qa="metadata-status-chip"
-              class={[
-                "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shrink-0",
-                Formatters.stage_state_color_class(@task, :chip)
-              ]}
-            >
-              <.icon name={Formatters.stage_state_icon(@task)} class="h-4 w-4 shrink-0" />
-              <span>{Formatters.stage_label(@task)}</span>
-            </span>
-
-            <!-- Branch / Worktree Meta -->
-            <div
-              :if={branch_name_for(@task)}
-              id="meta-branch"
-              data-qa="meta-branch"
-              class="flex items-center gap-1.5 shrink-0 font-mono"
-            >
-              <.icon name="pi-tree-structure" class="h-4 w-4 shrink-0" />
-              <span>{branch_name_for(@task)}</span>
-            </div>
-
-            <!-- Issue Meta -->
-            <div
-              :if={issue_identifier_for(@task)}
-              id="meta-issue"
-              data-qa="meta-issue"
-              class="flex items-center gap-1.5 shrink-0"
-            >
-              <.icon name="pi-lightbulb" class="h-4 w-4 shrink-0" />
-              <span>{issue_identifier_for(@task)}</span>
-            </div>
-
-            <!-- PR Link -->
-            <a
-              :if={@task.pr_number}
-              id="meta-pr"
-              data-qa="meta-pr"
-              href={pr_url_for(@task)}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="inline-flex items-center gap-1 text-blue-600 dark:text-blue-500 hover:underline shrink-0 font-semibold"
-            >
-              <.icon name="pi-git-merge" class="h-4 w-4 shrink-0" />
-              <span>{"PR ##{@task.pr_number}"}</span>
-              <.icon name="pi-arrow-square-out" class="h-3.5 w-3.5 shrink-0" />
-            </a>
-
-            <!-- Priority Meta -->
-            <div
-              id="meta-priority"
-              data-qa="meta-priority"
-              class="flex items-center gap-1.5 shrink-0"
-            >
-              <.icon name="pi-flag" class="h-4 w-4 shrink-0" />
-              <span>{task_priority_label(@task)}</span>
-            </div>
+            <p class="text-base font-medium text-slate-500 dark:text-slate-400">
+              This task has been cleaned up.
+            </p>
           </div>
-
-          <!-- Conflict Banner -->
+        <% else %>
+          <!-- Task Header with Project Badge, Title & 4 Tabs in exact order -->
           <div
-            :if={Formatters.has_merge_conflicts?(@task) and not @task.is_rebasing}
-            id="conflict-banner"
-            data-qa="conflict_banner"
-            class="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200"
+            id="task-header"
+            data-qa="task-header"
+            class="space-y-4 border-b border-slate-200 dark:border-slate-700 pb-0"
           >
-            <div class="flex items-start gap-3">
-              <.icon name="pi-git-branch" class="h-5 w-5 shrink-0 mt-0.5" />
-              <p class="text-xs leading-relaxed">
-                GitHub cannot merge {if @task.pr_number,
-                  do: "PR ##{@task.pr_number}",
-                  else: "this pull request"} into main: the base branch has moved and the change conflicts with it. Rebase to hand it back to the engineer - the task keeps its place in the pipeline.
-              </p>
+            <div class="flex items-center gap-3">
+              <.project_badge project={@task.project} />
+              <h1
+                class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 truncate"
+                id="task-detail-title"
+                data-qa="task_detail_title"
+                title={@task.title}
+              >
+                {@task.title}
+              </h1>
             </div>
-          </div>
 
-          <!-- Error Card -->
-          <div
-            :if={is_binary(@task.error) and @task.error != ""}
-            id="task-error-card"
-            data-qa="task_error_card"
-            class="p-4 rounded-xl bg-red-100 dark:bg-red-900 border border-red-600 dark:border-red-500 text-red-800 dark:text-red-200"
-          >
-            <p class="text-xs font-mono whitespace-pre-wrap leading-relaxed">{@task.error}</p>
-          </div>
-
-          <!-- Task Actions Matrix -->
-          <.task_actions
-            task={@task}
-            running_action={@running_action}
-            design={@design}
-            on_action="action_click"
-          />
-
-          <!-- Pending Question Card on Overview (spec 05 §2.6 / §5) -->
-          <.answer_field
-            :if={@task.stage_state == :blocked and @pending_question != nil}
-            question={@pending_question}
-            answer_text={@answer_text}
-          />
-
-          <!-- Design Panel (spec 05 §2.7 / §10) -->
-          <.design_panel :if={@design != nil} design={@design} />
-
-          <!-- Demo Panel / No-Demo Banner (spec 05 §2.8 / §9) -->
-          <%= if @demo != nil do %>
-            <.demo_panel demo={@demo} task={@task} />
-          <% else %>
-            <.no_demo_banner :if={@task.stage == :ready_to_merge} task={@task} />
-          <% end %>
-
-          <!-- Stage Outcome Component -->
-          <.stage_outcome
-            task={@task}
-            role_run={@current_run}
-            role_name={@current_role_name}
-          />
-
-          <!-- Ticket Section (Always Last on Overview) -->
-          <div id="ticket-section" data-qa="ticket_section" class="space-y-2 pt-2">
-            <h3 class="text-base font-bold text-slate-900 dark:text-slate-100">
-              Ticket
-            </h3>
-            <div class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-4 select-text">
-              <.markdown content={@ticket_content} />
-            </div>
-          </div>
-        </div>
-
-        <!-- Tab 2: Plan Pane -->
-        <div
-          id="tab-plan-pane"
-          data-qa="tab-plan-pane"
-          class={[@active_tab != :plan && "hidden"]}
-        >
-          <%= if is_nil(@plan_content) or @plan_content == "" do %>
-            <div
-              id="plan-empty-state"
-              data-qa="plan_empty_state"
-              class="flex items-center justify-center min-h-[300px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
+            <!-- Tabs (Overview, Plan, Conversation, Diff) -->
+            <nav
+              id="task-tabs"
+              data-qa="task-tabs"
+              class="flex items-center space-x-6 text-sm font-medium -mb-px"
             >
-              <p class="text-sm font-medium text-slate-500 dark:text-slate-400">
-                No plan has been written yet.
-              </p>
-            </div>
-          <% else %>
-            <div id="plan-content" data-qa="plan_content" class="space-y-4">
-              <div class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-6 select-text">
-                <.markdown content={@plan_content} />
+              <.link
+                patch={~p"/tasks/#{@task.id}?tab=overview"}
+                id="tab-overview"
+                data-qa="tab-overview tab_overview"
+                data-active={if @active_tab == :overview, do: "true", else: "false"}
+                class={[
+                  "pb-3 border-b-2 transition-colors cursor-pointer",
+                  @active_tab == :overview &&
+                    "border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-bold",
+                  @active_tab != :overview &&
+                    "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-600"
+                ]}
+              >
+                Overview
+              </.link>
+
+              <.link
+                patch={~p"/tasks/#{@task.id}?tab=plan"}
+                id="tab-plan"
+                data-qa="tab-plan tab_plan"
+                data-active={if @active_tab == :plan, do: "true", else: "false"}
+                class={[
+                  "pb-3 border-b-2 transition-colors cursor-pointer",
+                  @active_tab == :plan &&
+                    "border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-bold",
+                  @active_tab != :plan &&
+                    "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-600"
+                ]}
+              >
+                Plan
+              </.link>
+
+              <.link
+                patch={~p"/tasks/#{@task.id}?tab=conversation"}
+                id="tab-conversation"
+                data-qa="tab-conversation tab_conversation"
+                data-active={if @active_tab == :conversation, do: "true", else: "false"}
+                class={[
+                  "pb-3 border-b-2 transition-colors cursor-pointer",
+                  @active_tab == :conversation &&
+                    "border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-bold",
+                  @active_tab != :conversation &&
+                    "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-600"
+                ]}
+              >
+                Conversation
+              </.link>
+
+              <.link
+                patch={~p"/tasks/#{@task.id}?tab=diff"}
+                id="tab-diff"
+                data-qa="tab-diff tab_diff"
+                data-active={if @active_tab == :diff, do: "true", else: "false"}
+                class={[
+                  "pb-3 border-b-2 transition-colors cursor-pointer",
+                  @active_tab == :diff &&
+                    "border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-bold",
+                  @active_tab != :diff &&
+                    "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-600"
+                ]}
+              >
+                Diff
+              </.link>
+            </nav>
+          </div>
+
+          <!-- Tab 1: Overview Pane -->
+          <div
+            id="tab-overview-pane"
+            data-qa="tab-overview-pane"
+            class={[@active_tab != :overview && "hidden", "space-y-6"]}
+          >
+            <!-- Stage Stepper -->
+            <.stage_stepper task={@task} role_runs={@role_runs} />
+
+            <!-- Metadata Wrap -->
+            <div
+              id="task-metadata-wrap"
+              data-qa="task-metadata-wrap"
+              class="flex flex-wrap items-center gap-4 py-2 text-xs text-slate-500 dark:text-slate-400"
+            >
+              <!-- Stage Status Chip -->
+              <span
+                id="metadata-status-chip"
+                data-qa="metadata-status-chip"
+                class={[
+                  "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shrink-0",
+                  Formatters.stage_state_color_class(@task, :chip)
+                ]}
+              >
+                <.icon name={Formatters.stage_state_icon(@task)} class="h-4 w-4 shrink-0" />
+                <span>{Formatters.stage_label(@task)}</span>
+              </span>
+
+              <!-- Branch / Worktree Meta -->
+              <div
+                :if={branch_name_for(@task)}
+                id="meta-branch"
+                data-qa="meta-branch"
+                class="flex items-center gap-1.5 shrink-0 font-mono"
+              >
+                <.icon name="pi-tree-structure" class="h-4 w-4 shrink-0" />
+                <span>{branch_name_for(@task)}</span>
+              </div>
+
+              <!-- Issue Meta -->
+              <div
+                :if={issue_identifier_for(@task)}
+                id="meta-issue"
+                data-qa="meta-issue"
+                class="flex items-center gap-1.5 shrink-0"
+              >
+                <.icon name="pi-lightbulb" class="h-4 w-4 shrink-0" />
+                <span>{issue_identifier_for(@task)}</span>
+              </div>
+
+              <!-- PR Link -->
+              <a
+                :if={@task.pr_number}
+                id="meta-pr"
+                data-qa="meta-pr"
+                href={pr_url_for(@task)}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1 text-blue-600 dark:text-blue-500 hover:underline shrink-0 font-semibold"
+              >
+                <.icon name="pi-git-merge" class="h-4 w-4 shrink-0" />
+                <span>{"PR ##{@task.pr_number}"}</span>
+                <.icon name="pi-arrow-square-out" class="h-3.5 w-3.5 shrink-0" />
+              </a>
+
+              <!-- Priority Meta -->
+              <div
+                id="meta-priority"
+                data-qa="meta-priority"
+                class="flex items-center gap-1.5 shrink-0"
+              >
+                <.icon name="pi-flag" class="h-4 w-4 shrink-0" />
+                <span>{task_priority_label(@task)}</span>
               </div>
             </div>
-          <% end %>
-        </div>
 
-        <!-- Tab 3: Conversation Pane -->
-        <div
-          id="tab-conversation-pane"
-          data-qa="tab-conversation-pane"
-          class={[@active_tab != :conversation && "hidden"]}
-        >
-          <.conversation_tab
-            task={@task}
-            ordered_runs={@ordered_runs}
-            selected_run={@selected_run}
-            selected_role_id={@selected_role_id}
-            selected_role={@selected_role}
-            roles_map={@roles_map}
-            log_lines={@log_lines}
-            transcript={@transcript}
-            show_raw_log={@show_raw_log}
-            expanded_activities={@expanded_activities}
-            chat_input={@chat_input}
-            chat_sending={@chat_sending}
-            active_delivery_modal={@active_delivery_modal}
-          />
-        </div>
-
-        <!-- Tab 4: Diff Pane -->
-        <div
-          id="tab-diff-pane"
-          data-qa="tab-diff-pane"
-          class={[@active_tab != :diff && "hidden"]}
-        >
-          <%= if is_nil(@task.worktree_path) do %>
+            <!-- Conflict Banner -->
             <div
-              id="diff-empty-state"
-              data-qa="diff_empty_state"
-              class="flex items-center justify-center min-h-[300px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
+              :if={Formatters.has_merge_conflicts?(@task) and not @task.is_rebasing}
+              id="conflict-banner"
+              data-qa="conflict_banner"
+              class="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200"
             >
-              <p class="text-sm font-medium text-slate-500 dark:text-slate-400">
-                This task has no worktree.
-              </p>
+              <div class="flex items-start gap-3">
+                <.icon name="pi-git-branch" class="h-5 w-5 shrink-0 mt-0.5" />
+                <p class="text-xs leading-relaxed">
+                  GitHub cannot merge {if @task.pr_number,
+                    do: "PR ##{@task.pr_number}",
+                    else: "this pull request"} into main: the base branch has moved and the change conflicts with it. Rebase to hand it back to the engineer - the task keeps its place in the pipeline.
+                </p>
+              </div>
             </div>
-          <% else %>
-            <%= if @loading_diff do %>
+
+            <!-- Error Card -->
+            <div
+              :if={is_binary(@task.error) and @task.error != ""}
+              id="task-error-card"
+              data-qa="task_error_card"
+              class="p-4 rounded-xl bg-red-100 dark:bg-red-900 border border-red-600 dark:border-red-500 text-red-800 dark:text-red-200"
+            >
+              <p class="text-xs font-mono whitespace-pre-wrap leading-relaxed">{@task.error}</p>
+            </div>
+
+            <!-- Task Actions Matrix -->
+            <.task_actions
+              task={@task}
+              running_action={@running_action}
+              design={@design}
+              on_action="action_click"
+            />
+
+            <!-- Pending Question Card on Overview (spec 05 §2.6 / §5) -->
+            <.answer_field
+              :if={@task.stage_state == :blocked and @pending_question != nil}
+              question={@pending_question}
+              answer_text={@answer_text}
+            />
+
+            <!-- Design Panel (spec 05 §2.7 / §10) -->
+            <.design_panel :if={@design != nil} design={@design} />
+
+            <!-- Demo Panel / No-Demo Banner (spec 05 §2.8 / §9) -->
+            <%= if @demo != nil do %>
+              <.demo_panel demo={@demo} task={@task} />
+            <% else %>
+              <.no_demo_banner :if={@task.stage == :ready_to_merge} task={@task} />
+            <% end %>
+
+            <!-- Stage Outcome Component -->
+            <.stage_outcome
+              task={@task}
+              role_run={@current_run}
+              role_name={@current_role_name}
+            />
+
+            <!-- Ticket Section (Always Last on Overview) -->
+            <div id="ticket-section" data-qa="ticket_section" class="space-y-2 pt-2">
+              <h3 class="text-base font-bold text-slate-900 dark:text-slate-100">
+                Ticket
+              </h3>
+              <div class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-4 select-text">
+                <.markdown content={@ticket_content} />
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 2: Plan Pane -->
+          <div
+            id="tab-plan-pane"
+            data-qa="tab-plan-pane"
+            class={[@active_tab != :plan && "hidden"]}
+          >
+            <%= if is_nil(@plan_content) or @plan_content == "" do %>
               <div
-                id="diff-loading-spinner"
-                data-qa="diff_loading_spinner"
-                class="flex items-center justify-center min-h-[300px]"
+                id="plan-empty-state"
+                data-qa="plan_empty_state"
+                class="flex items-center justify-center min-h-[300px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
               >
-                <div
-                  class="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-e-transparent align-[-0.125em] text-blue-600 dark:text-blue-500 motion-reduce:animate-[spin_1.5s_linear_infinite]"
-                  role="status"
-                >
-                  <span class="sr-only">Loading diff...</span>
-                </div>
+                <p class="text-sm font-medium text-slate-500 dark:text-slate-400">
+                  No plan has been written yet.
+                </p>
               </div>
             <% else %>
-              <div class="space-y-3">
-                <div class="flex items-center justify-between gap-4 px-1 text-xs">
-                  <div class="truncate text-slate-600 dark:text-slate-300 font-mono">
-                    {@task.worktree_path}
-                  </div>
-                  <button
-                    type="button"
-                    id="btn-refresh-diff"
-                    data-qa="btn_refresh_diff"
-                    phx-click="refresh_diff"
-                    class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                  >
-                    <.icon name="pi-arrows-clockwise" class="w-3.5 h-3.5" />
-                    <span>Refresh</span>
-                  </button>
+              <div id="plan-content" data-qa="plan_content" class="space-y-4">
+                <div class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-6 select-text">
+                  <.markdown content={@plan_content} />
                 </div>
-
-                <.diff_pane
-                  files={@file_diffs}
-                  viewed={@viewed_diff_files}
-                  expanded_gaps={@expanded_gaps}
-                  selected_file={@selected_diff_file}
-                />
               </div>
             <% end %>
-          <% end %>
-        </div>
+          </div>
 
-        <!-- Action Confirmation & Prompt Modals -->
-        <.task_action_modals
-          active_modal={@active_modal}
-          task={@task}
-          current_role_name={@current_role_name}
-        />
+          <!-- Tab 3: Conversation Pane -->
+          <div
+            id="tab-conversation-pane"
+            data-qa="tab-conversation-pane"
+            class={[@active_tab != :conversation && "hidden"]}
+          >
+            <.conversation_tab
+              task={@task}
+              ordered_runs={@ordered_runs}
+              selected_run={@selected_run}
+              selected_role_id={@selected_role_id}
+              selected_role={@selected_role}
+              roles_map={@roles_map}
+              log_lines={@log_lines}
+              transcript={@transcript}
+              show_raw_log={@show_raw_log}
+              expanded_activities={@expanded_activities}
+              chat_input={@chat_input}
+              chat_sending={@chat_sending}
+              active_delivery_modal={@active_delivery_modal}
+            />
+          </div>
 
-        <!-- Demo Player Overlay Modal -->
-        <.demo_player_modal :if={@demo_player != nil} player={@demo_player} />
-      <% end %>
-    </div>
+          <!-- Tab 4: Diff Pane -->
+          <div
+            id="tab-diff-pane"
+            data-qa="tab-diff-pane"
+            class={[@active_tab != :diff && "hidden"]}
+          >
+            <%= if is_nil(@task.worktree_path) do %>
+              <div
+                id="diff-empty-state"
+                data-qa="diff_empty_state"
+                class="flex items-center justify-center min-h-[300px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
+              >
+                <p class="text-sm font-medium text-slate-500 dark:text-slate-400">
+                  This task has no worktree.
+                </p>
+              </div>
+            <% else %>
+              <%= if @loading_diff do %>
+                <div
+                  id="diff-loading-spinner"
+                  data-qa="diff_loading_spinner"
+                  class="flex items-center justify-center min-h-[300px]"
+                >
+                  <div
+                    class="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-e-transparent align-[-0.125em] text-blue-600 dark:text-blue-500 motion-reduce:animate-[spin_1.5s_linear_infinite]"
+                    role="status"
+                  >
+                    <span class="sr-only">Loading diff...</span>
+                  </div>
+                </div>
+              <% else %>
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between gap-4 px-1 text-xs">
+                    <div class="truncate text-slate-600 dark:text-slate-300 font-mono">
+                      {@task.worktree_path}
+                    </div>
+                    <button
+                      type="button"
+                      id="btn-refresh-diff"
+                      data-qa="btn_refresh_diff"
+                      phx-click="refresh_diff"
+                      class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                    >
+                      <.icon name="pi-arrows-clockwise" class="w-3.5 h-3.5" />
+                      <span>Refresh</span>
+                    </button>
+                  </div>
+
+                  <.diff_pane
+                    files={@file_diffs}
+                    viewed={@viewed_diff_files}
+                    expanded_gaps={@expanded_gaps}
+                    selected_file={@selected_diff_file}
+                  />
+                </div>
+              <% end %>
+            <% end %>
+          </div>
+
+          <!-- Action Confirmation & Prompt Modals -->
+          <.task_action_modals
+            active_modal={@active_modal}
+            task={@task}
+            current_role_name={@current_role_name}
+          />
+
+          <!-- Demo Player Overlay Modal -->
+          <.demo_player_modal :if={@demo_player != nil} player={@demo_player} />
+        <% end %>
+      </div>
+    </Layouts.app>
     """
   end
 

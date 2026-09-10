@@ -86,880 +86,911 @@ defmodule RailWeb.Settings.RolesLive do
 
   def render(assigns) do
     ~H"""
-    <div class="max-w-5xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="roles-settings">
-      <div>
-        <h1
-          class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
-          id="roles-title"
-        >
-          Agent Roles
-        </h1>
-        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400" id="roles-subtitle">
-          Configure stage bindings, models, reasoning effort, and system prompts.
-        </p>
-      </div>
-
-      <.settings_nav current_scope={@current_scope} active_tab={:roles} />
-
-      <!-- Project Selector & Actions Bar -->
-      <div
-        class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
-        id="roles-project-bar"
-      >
-        <div class="flex items-center space-x-3">
-          <label class="text-sm font-medium text-slate-900 dark:text-slate-100" for="project-selector">
-            Project:
-          </label>
-          <form phx-change="select_project" id="project-selector-form">
-            <select
-              id="project-selector"
-              name="project_id"
-              class="rounded-md border-slate-200 dark:border-slate-700 py-1.5 pl-3 pr-8 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 font-medium"
-            >
-              <option
-                :for={project <- @projects}
-                value={project.id}
-                selected={project.id == @current_project_id}
-              >
-                {project.name}
-              </option>
-            </select>
-          </form>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2" id="roles-top-actions">
-          <button
-            type="button"
-            phx-click="open_copy_modal"
-            id="copy-roles-button"
-            disabled={is_nil(@current_project_id) or length(@projects) < 2}
-            class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
+    <Layouts.app
+      flash={@flash}
+      current_section={@current_section}
+      is_rail_extended={@is_rail_extended}
+      attention_count={@attention_count}
+      current_project_id={@current_project_id}
+      projects={@projects}
+      theme={@theme}
+      show_project_switcher={@show_project_switcher}
+      show_new_issue_modal={@show_new_issue_modal}
+      capture_ask={@capture_ask}
+      capture_project_id={@capture_project_id}
+      capture_priority={@capture_priority}
+      capture_error={@capture_error}
+      capture_submitting={@capture_submitting}
+    >
+      <div class="max-w-5xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="roles-settings">
+        <div>
+          <h1
+            class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
+            id="roles-title"
           >
-            <.icon name="pi-copy" class="h-3.5 w-3.5 mr-1" /> Copy From...
-          </button>
-
-          <button
-            type="button"
-            phx-click="open_create_modal"
-            id="add-custom-role-button"
-            disabled={is_nil(@current_project_id) or Enum.empty?(unbound_stages(@canonical_stages, @roles))}
-            title={
-              if @current_project_id && Enum.empty?(unbound_stages(@canonical_stages, @roles)),
-                do: "Every stage already has a role",
-                else: nil
-            }
-            class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-indigo-500 disabled:opacity-50"
-          >
-            <.icon name="pi-plus" class="h-3.5 w-3.5 mr-1" /> Add Role
-          </button>
-        </div>
-      </div>
-
-      <div
-        :if={is_nil(@current_project_id)}
-        class="p-8 text-center text-slate-500 dark:text-slate-400 text-sm bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700"
-        id="no-projects-message"
-      >
-        No projects registered yet. Register a project in the Projects tab first.
-      </div>
-
-      <!-- Pipeline Stage List Section -->
-      <section
-        :if={@current_project_id}
-        class="bg-slate-50 dark:bg-slate-800 shadow rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
-        id="pipeline-stages-section"
-      >
-        <ul
-          role="list"
-          class="divide-y divide-slate-200 dark:divide-slate-700"
-          id="pipeline-stages-list"
-        >
-          <li
-            :for={stage <- @canonical_stages}
-            id={"stage-row-#{stage}"}
-            data-qa={"role-card stage-row-#{stage}"}
-            class="p-5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-          >
-            <% bound_role = role_for_stage(@roles, stage) %>
-            <div class="flex items-center space-x-4 min-w-0">
-              <div
-                class="flex items-center justify-center h-10 w-10 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono text-xs font-bold shrink-0 uppercase"
-                id={"stage-avatar-#{stage}"}
-              >
-                {stage_initials(stage)}
-              </div>
-
-              <div class="min-w-0">
-                <div class="flex items-center space-x-2">
-                  <span
-                    class="text-sm font-semibold text-slate-900 dark:text-slate-100 capitalize"
-                    id={"stage-name-#{stage}"}
-                  >
-                    {stage_display_name(stage)}
-                  </span>
-                  <span class="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                    ({stage})
-                  </span>
-                </div>
-
-                <div
-                  :if={bound_role}
-                  class="flex items-center space-x-2 mt-1 text-xs text-slate-500 dark:text-slate-400"
-                  id={"stage-role-details-#{stage}"}
-                >
-                  <span
-                    class="font-semibold text-slate-900 dark:text-slate-100"
-                    id={"bound-role-name-#{stage}"}
-                  >
-                    {bound_role.name}
-                  </span>
-                  <span>•</span>
-                  <span class="font-mono uppercase text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">
-                    {bound_role.cli_backend}
-                  </span>
-                  <span>•</span>
-                  <span class="font-mono text-[11px]">
-                    {bound_role.model}
-                  </span>
-                  <span :if={bound_role.reasoning_effort}>•</span>
-                  <span
-                    :if={bound_role.reasoning_effort}
-                    class="text-slate-500 dark:text-slate-400 capitalize"
-                  >
-                    Effort: {bound_role.reasoning_effort}
-                  </span>
-                </div>
-
-                <p
-                  :if={bound_role && bound_role.description}
-                  class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-md"
-                >
-                  {bound_role.description}
-                </p>
-
-                <p
-                  :if={is_nil(bound_role)}
-                  class="text-xs text-slate-500 dark:text-slate-400 italic mt-0.5"
-                  id={"unbound-stage-notice-#{stage}"}
-                >
-                  No role bound
-                </p>
-              </div>
-            </div>
-
-            <div class="flex items-center gap-1">
-              <div :if={bound_role} class="flex items-center gap-1">
-                <button
-                  type="button"
-                  id={"improve-role-button-#{bound_role.id}"}
-                  data-qa={"improve_role_button_#{bound_role.id}"}
-                  phx-click="open_improve_modal"
-                  phx-value-role_id={bound_role.id}
-                  class={role_action_button_class(:accent)}
-                >
-                  <.icon name="pi-magic-wand" class="h-3.5 w-3.5" /> Improve
-                </button>
-
-                <button
-                  type="button"
-                  id={"edit-role-button-#{bound_role.id}"}
-                  data-qa={"edit_role_button_#{bound_role.id}"}
-                  phx-click="open_edit_modal"
-                  phx-value-role_id={bound_role.id}
-                  class={role_action_button_class(:neutral)}
-                >
-                  Edit Role
-                </button>
-
-                <button
-                  type="button"
-                  id={"delete-role-button-#{bound_role.id}"}
-                  data-qa={"delete_role_button_#{bound_role.id}"}
-                  phx-click="open_delete_modal"
-                  phx-value-role_id={bound_role.id}
-                  class={role_action_button_class(:danger)}
-                  title="Delete role"
-                  aria-label="Delete role"
-                >
-                  <.icon name="pi-trash" class="h-3.5 w-3.5" />
-                </button>
-              </div>
-
-              <div :if={is_nil(bound_role)}>
-                <button
-                  type="button"
-                  id={"assign-stage-button-#{stage}"}
-                  data-qa={"assign_stage_button_#{stage}"}
-                  phx-click="open_create_modal"
-                  phx-value-stage={stage}
-                  class={role_action_button_class(:neutral)}
-                >
-                  Assign or Create
-                </button>
-              </div>
-            </div>
-          </li>
-        </ul>
-      </section>
-
-      <!-- ================= MODALS ================= -->
-
-      <!-- Create / Edit Role Modal -->
-      <div
-        :if={@active_modal in [:create_role, :edit_role]}
-        class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
-        id="role-editor-modal"
-        data-qa="role-editor"
-      >
-        <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-6">
-          <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-4">
-            <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100" id="role-modal-title">
-              {if @active_modal == :create_role,
-                do: "Create New Role",
-                else: "Edit Role: #{@modal_role.name}"}
-            </h2>
-            <button
-              type="button"
-              phx-click="close_modal"
-              id="close-role-modal-button"
-              class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
-            >
-              ✕
-            </button>
-          </div>
-
-          <form phx-change="validate_role" phx-submit="save_role" id="role-form" class="space-y-4">
-            <!-- Identifier -->
-            <div>
-              <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Role Identifier</label>
-              <input
-                type="text"
-                name="role[role_id]"
-                id="role-identifier-input"
-                value={@modal_form["role_id"]}
-                disabled={@active_modal == :edit_role}
-                placeholder="e.g. security_auditor"
-                class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs disabled:bg-slate-100 dark:disabled:bg-slate-700 disabled:text-slate-500 dark:disabled:text-slate-400"
-              />
-            </div>
-
-            <!-- Name -->
-            <div>
-              <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Role Display Name *</label>
-              <input
-                type="text"
-                name="role[name]"
-                id="role-name-input"
-                value={@modal_form["name"]}
-                required
-                class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
-              />
-              <span :if={@modal_errors[:name]} class="text-xs text-red-600" id="role-name-error">
-                {@modal_errors[:name]}
-              </span>
-            </div>
-
-            <!-- Description -->
-            <div>
-              <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Description</label>
-              <input
-                type="text"
-                name="role[description]"
-                id="role-description-input"
-                value={@modal_form["description"]}
-                class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
-              />
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-              <!-- Stage Binding -->
-              <div>
-                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Stage Binding</label>
-                <select
-                  name="role[stage]"
-                  id="role-stage-select"
-                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs capitalize"
-                >
-                  <option
-                    :for={stage <- @canonical_stages}
-                    value={to_string(stage)}
-                    selected={to_string(@modal_form["stage"]) == to_string(stage)}
-                  >
-                    {stage_display_name(stage)}
-                  </option>
-                </select>
-              </div>
-
-              <!-- CLI Backend -->
-              <div>
-                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">CLI Backend</label>
-                <select
-                  name="role[cli_backend]"
-                  id="role-backend-select"
-                  phx-change="change_backend"
-                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
-                >
-                  <option value="claude" selected={@modal_form["cli_backend"] == "claude"}>
-                    Claude Code (claude -p)
-                  </option>
-                  <option value="agy" selected={@modal_form["cli_backend"] == "agy"}>
-                    Antigravity (agy -p)
-                  </option>
-                </select>
-              </div>
-            </div>
-
-            <!-- Model Dropdown + Custom Field -->
-            <div class="space-y-2">
-              <div class="flex items-center justify-between">
-                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Model *</label>
-                <.link
-                  navigate={~p"/settings/backends"}
-                  id="manage-models-link"
-                  class="text-[11px] text-indigo-600 hover:text-indigo-800"
-                >
-                  Manage models
-                </.link>
-              </div>
-
-              <select
-                name="role[model_choice]"
-                id="role-model-select"
-                class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
-              >
-                <option
-                  :for={model <- model_options(@available_models, @modal_form["model"])}
-                  value={model.id}
-                  selected={@modal_form["model"] == model.id}
-                >
-                  {model.display_name}
-                </option>
-              </select>
-              <span :if={@modal_errors[:model]} class="text-xs text-red-600" id="role-model-error">
-                {@modal_errors[:model]}
-              </span>
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-              <!-- Reasoning Effort -->
-              <div>
-                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Reasoning Effort</label>
-                <select
-                  name="role[reasoning_effort]"
-                  id="role-effort-select"
-                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
-                >
-                  <option value="max" selected={@modal_form["reasoning_effort"] == "max"}>
-                    Max (Correctness over cost)
-                  </option>
-                  <option value="xhigh" selected={@modal_form["reasoning_effort"] == "xhigh"}>
-                    X-High (Best for agentic work)
-                  </option>
-                  <option value="high" selected={@modal_form["reasoning_effort"] in ["high", nil, ""]}>
-                    High (Deep reasoning)
-                  </option>
-                  <option value="medium" selected={@modal_form["reasoning_effort"] == "medium"}>
-                    Medium
-                  </option>
-                  <option value="low" selected={@modal_form["reasoning_effort"] == "low"}>
-                    Low (Fast)
-                  </option>
-                </select>
-              </div>
-
-              <!-- Max Concurrent -->
-              <div>
-                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Max Concurrent</label>
-                <input
-                  type="number"
-                  min="1"
-                  name="role[max_concurrent]"
-                  id="role-max-concurrent-input"
-                  value={@modal_form["max_concurrent"] || 1}
-                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
-                />
-              </div>
-            </div>
-
-            <!-- System Prompt Textarea -->
-            <div>
-              <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">
-                System Prompt Instructions & Guidelines *
-              </label>
-              <textarea
-                name="role[system_prompt]"
-                id="role-prompt-input"
-                rows="12"
-                required
-                class="mt-1 block w-full font-mono text-xs rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500"
-              >{@modal_form["system_prompt"]}</textarea>
-              <span
-                :if={@modal_errors[:system_prompt]}
-                class="text-xs text-red-600"
-                id="role-prompt-error"
-              >
-                {@modal_errors[:system_prompt]}
-              </span>
-            </div>
-
-            <!-- Modal Footer -->
-            <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-              <button
-                type="button"
-                phx-click="close_modal"
-                id="cancel-role-button"
-                class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                id="save-role-button"
-                class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500"
-              >
-                Save Role Config
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <!-- Delete Role Modal -->
-      <div
-        :if={@active_modal == :delete_role}
-        class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
-        id="delete-role-modal"
-      >
-        <div class="w-full max-w-md rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4">
-          <h2
-            class="text-base font-semibold text-slate-900 dark:text-slate-100"
-            id="delete-modal-title"
-          >
-            Delete Role
-          </h2>
-          <p class="text-sm text-slate-500 dark:text-slate-400" id="delete-modal-message">
-            Are you sure you want to delete role <strong id="delete-role-name">{@modal_role.name}</strong>? This action cannot be undone.
+            Agent Roles
+          </h1>
+          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400" id="roles-subtitle">
+            Configure stage bindings, models, reasoning effort, and system prompts.
           </p>
-
-          <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-            <button
-              type="button"
-              phx-click="close_modal"
-              id="cancel-delete-button"
-              class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              phx-click="delete_role"
-              id="confirm-delete-button"
-              class="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-red-500"
-            >
-              Delete Role
-            </button>
-          </div>
         </div>
-      </div>
 
-      <!-- Copy from Project Modal -->
-      <div
-        :if={@active_modal == :copy_roles}
-        class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
-        id="copy-roles-modal"
-      >
-        <div class="w-full max-w-md rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4">
-          <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
-            <h2 class="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Copy Roles from Project
-            </h2>
-            <button
-              type="button"
-              phx-click="close_modal"
-              class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
+        <.settings_nav current_scope={@current_scope} active_tab={:roles} />
+
+        <!-- Project Selector & Actions Bar -->
+        <div
+          class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+          id="roles-project-bar"
+        >
+          <div class="flex items-center space-x-3">
+            <label
+              class="text-sm font-medium text-slate-900 dark:text-slate-100"
+              for="project-selector"
             >
-              ✕
-            </button>
-          </div>
-
-          <form
-            phx-submit="copy_roles"
-            phx-change="validate_copy"
-            id="copy-roles-form"
-            class="space-y-4"
-          >
-            <div>
-              <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Source Project</label>
+              Project:
+            </label>
+            <form phx-change="select_project" id="project-selector-form">
               <select
-                name="source_project_id"
-                id="copy-source-project-select"
-                class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                id="project-selector"
+                name="project_id"
+                class="rounded-md border-slate-200 dark:border-slate-700 py-1.5 pl-3 pr-8 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 font-medium"
               >
                 <option
-                  :for={project <- Enum.filter(@projects, &(&1.id != @current_project_id))}
+                  :for={project <- @projects}
                   value={project.id}
+                  selected={project.id == @current_project_id}
                 >
                   {project.name}
                 </option>
               </select>
-            </div>
+            </form>
+          </div>
 
-            <div class="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                name="replace_all"
-                value="true"
-                id="copy-replace-all-checkbox"
-                class="rounded border-slate-200 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
-              />
-              <label
-                for="copy-replace-all-checkbox"
-                class="text-xs text-slate-900 dark:text-slate-100"
+          <div class="flex flex-wrap items-center gap-2" id="roles-top-actions">
+            <button
+              type="button"
+              phx-click="open_copy_modal"
+              id="copy-roles-button"
+              disabled={is_nil(@current_project_id) or length(@projects) < 2}
+              class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
+            >
+              <.icon name="pi-copy" class="h-3.5 w-3.5 mr-1" /> Copy From...
+            </button>
+
+            <button
+              type="button"
+              phx-click="open_create_modal"
+              id="add-custom-role-button"
+              disabled={
+                is_nil(@current_project_id) or Enum.empty?(unbound_stages(@canonical_stages, @roles))
+              }
+              title={
+                if @current_project_id && Enum.empty?(unbound_stages(@canonical_stages, @roles)),
+                  do: "Every stage already has a role",
+                  else: nil
+              }
+              class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-indigo-500 disabled:opacity-50"
+            >
+              <.icon name="pi-plus" class="h-3.5 w-3.5 mr-1" /> Add Role
+            </button>
+          </div>
+        </div>
+
+        <div
+          :if={is_nil(@current_project_id)}
+          class="p-8 text-center text-slate-500 dark:text-slate-400 text-sm bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700"
+          id="no-projects-message"
+        >
+          No projects registered yet. Register a project in the Projects tab first.
+        </div>
+
+        <!-- Pipeline Stage List Section -->
+        <section
+          :if={@current_project_id}
+          class="bg-slate-50 dark:bg-slate-800 shadow rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
+          id="pipeline-stages-section"
+        >
+          <ul
+            role="list"
+            class="divide-y divide-slate-200 dark:divide-slate-700"
+            id="pipeline-stages-list"
+          >
+            <li
+              :for={stage <- @canonical_stages}
+              id={"stage-row-#{stage}"}
+              data-qa={"role-card stage-row-#{stage}"}
+              class="p-5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+            >
+              <% bound_role = role_for_stage(@roles, stage) %>
+              <div class="flex items-center space-x-4 min-w-0">
+                <div
+                  class="flex items-center justify-center h-10 w-10 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono text-xs font-bold shrink-0 uppercase"
+                  id={"stage-avatar-#{stage}"}
+                >
+                  {stage_initials(stage)}
+                </div>
+
+                <div class="min-w-0">
+                  <div class="flex items-center space-x-2">
+                    <span
+                      class="text-sm font-semibold text-slate-900 dark:text-slate-100 capitalize"
+                      id={"stage-name-#{stage}"}
+                    >
+                      {stage_display_name(stage)}
+                    </span>
+                    <span class="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                      ({stage})
+                    </span>
+                  </div>
+
+                  <div
+                    :if={bound_role}
+                    class="flex items-center space-x-2 mt-1 text-xs text-slate-500 dark:text-slate-400"
+                    id={"stage-role-details-#{stage}"}
+                  >
+                    <span
+                      class="font-semibold text-slate-900 dark:text-slate-100"
+                      id={"bound-role-name-#{stage}"}
+                    >
+                      {bound_role.name}
+                    </span>
+                    <span>•</span>
+                    <span class="font-mono uppercase text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">
+                      {bound_role.cli_backend}
+                    </span>
+                    <span>•</span>
+                    <span class="font-mono text-[11px]">
+                      {bound_role.model}
+                    </span>
+                    <span :if={bound_role.reasoning_effort}>•</span>
+                    <span
+                      :if={bound_role.reasoning_effort}
+                      class="text-slate-500 dark:text-slate-400 capitalize"
+                    >
+                      Effort: {bound_role.reasoning_effort}
+                    </span>
+                  </div>
+
+                  <p
+                    :if={bound_role && bound_role.description}
+                    class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-md"
+                  >
+                    {bound_role.description}
+                  </p>
+
+                  <p
+                    :if={is_nil(bound_role)}
+                    class="text-xs text-slate-500 dark:text-slate-400 italic mt-0.5"
+                    id={"unbound-stage-notice-#{stage}"}
+                  >
+                    No role bound
+                  </p>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-1">
+                <div :if={bound_role} class="flex items-center gap-1">
+                  <button
+                    type="button"
+                    id={"improve-role-button-#{bound_role.id}"}
+                    data-qa={"improve_role_button_#{bound_role.id}"}
+                    phx-click="open_improve_modal"
+                    phx-value-role_id={bound_role.id}
+                    class={role_action_button_class(:accent)}
+                  >
+                    <.icon name="pi-magic-wand" class="h-3.5 w-3.5" /> Improve
+                  </button>
+
+                  <button
+                    type="button"
+                    id={"edit-role-button-#{bound_role.id}"}
+                    data-qa={"edit_role_button_#{bound_role.id}"}
+                    phx-click="open_edit_modal"
+                    phx-value-role_id={bound_role.id}
+                    class={role_action_button_class(:neutral)}
+                  >
+                    Edit Role
+                  </button>
+
+                  <button
+                    type="button"
+                    id={"delete-role-button-#{bound_role.id}"}
+                    data-qa={"delete_role_button_#{bound_role.id}"}
+                    phx-click="open_delete_modal"
+                    phx-value-role_id={bound_role.id}
+                    class={role_action_button_class(:danger)}
+                    title="Delete role"
+                    aria-label="Delete role"
+                  >
+                    <.icon name="pi-trash" class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                <div :if={is_nil(bound_role)}>
+                  <button
+                    type="button"
+                    id={"assign-stage-button-#{stage}"}
+                    data-qa={"assign_stage_button_#{stage}"}
+                    phx-click="open_create_modal"
+                    phx-value-stage={stage}
+                    class={role_action_button_class(:neutral)}
+                  >
+                    Assign or Create
+                  </button>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </section>
+
+        <!-- ================= MODALS ================= -->
+
+        <!-- Create / Edit Role Modal -->
+        <div
+          :if={@active_modal in [:create_role, :edit_role]}
+          class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
+          id="role-editor-modal"
+          data-qa="role-editor"
+        >
+          <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-6">
+            <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-4">
+              <h2
+                class="text-lg font-semibold text-slate-900 dark:text-slate-100"
+                id="role-modal-title"
               >
-                Replace all existing roles in current project
-              </label>
-            </div>
-
-            <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                {if @active_modal == :create_role,
+                  do: "Create New Role",
+                  else: "Edit Role: #{@modal_role.name}"}
+              </h2>
               <button
                 type="button"
                 phx-click="close_modal"
-                id="cancel-copy-button"
+                id="close-role-modal-button"
+                class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form phx-change="validate_role" phx-submit="save_role" id="role-form" class="space-y-4">
+              <!-- Identifier -->
+              <div>
+                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Role Identifier</label>
+                <input
+                  type="text"
+                  name="role[role_id]"
+                  id="role-identifier-input"
+                  value={@modal_form["role_id"]}
+                  disabled={@active_modal == :edit_role}
+                  placeholder="e.g. security_auditor"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs disabled:bg-slate-100 dark:disabled:bg-slate-700 disabled:text-slate-500 dark:disabled:text-slate-400"
+                />
+              </div>
+
+              <!-- Name -->
+              <div>
+                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Role Display Name *</label>
+                <input
+                  type="text"
+                  name="role[name]"
+                  id="role-name-input"
+                  value={@modal_form["name"]}
+                  required
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                />
+                <span :if={@modal_errors[:name]} class="text-xs text-red-600" id="role-name-error">
+                  {@modal_errors[:name]}
+                </span>
+              </div>
+
+              <!-- Description -->
+              <div>
+                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Description</label>
+                <input
+                  type="text"
+                  name="role[description]"
+                  id="role-description-input"
+                  value={@modal_form["description"]}
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                />
+              </div>
+
+              <div class="grid grid-cols-2 gap-4">
+                <!-- Stage Binding -->
+                <div>
+                  <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Stage Binding</label>
+                  <select
+                    name="role[stage]"
+                    id="role-stage-select"
+                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs capitalize"
+                  >
+                    <option
+                      :for={stage <- @canonical_stages}
+                      value={to_string(stage)}
+                      selected={to_string(@modal_form["stage"]) == to_string(stage)}
+                    >
+                      {stage_display_name(stage)}
+                    </option>
+                  </select>
+                </div>
+
+                <!-- CLI Backend -->
+                <div>
+                  <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">CLI Backend</label>
+                  <select
+                    name="role[cli_backend]"
+                    id="role-backend-select"
+                    phx-change="change_backend"
+                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                  >
+                    <option value="claude" selected={@modal_form["cli_backend"] == "claude"}>
+                      Claude Code (claude -p)
+                    </option>
+                    <option value="agy" selected={@modal_form["cli_backend"] == "agy"}>
+                      Antigravity (agy -p)
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Model Dropdown + Custom Field -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Model *</label>
+                  <.link
+                    navigate={~p"/settings/backends"}
+                    id="manage-models-link"
+                    class="text-[11px] text-indigo-600 hover:text-indigo-800"
+                  >
+                    Manage models
+                  </.link>
+                </div>
+
+                <select
+                  name="role[model_choice]"
+                  id="role-model-select"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                >
+                  <option
+                    :for={model <- model_options(@available_models, @modal_form["model"])}
+                    value={model.id}
+                    selected={@modal_form["model"] == model.id}
+                  >
+                    {model.display_name}
+                  </option>
+                </select>
+                <span :if={@modal_errors[:model]} class="text-xs text-red-600" id="role-model-error">
+                  {@modal_errors[:model]}
+                </span>
+              </div>
+
+              <div class="grid grid-cols-2 gap-4">
+                <!-- Reasoning Effort -->
+                <div>
+                  <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Reasoning Effort</label>
+                  <select
+                    name="role[reasoning_effort]"
+                    id="role-effort-select"
+                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                  >
+                    <option value="max" selected={@modal_form["reasoning_effort"] == "max"}>
+                      Max (Correctness over cost)
+                    </option>
+                    <option value="xhigh" selected={@modal_form["reasoning_effort"] == "xhigh"}>
+                      X-High (Best for agentic work)
+                    </option>
+                    <option
+                      value="high"
+                      selected={@modal_form["reasoning_effort"] in ["high", nil, ""]}
+                    >
+                      High (Deep reasoning)
+                    </option>
+                    <option value="medium" selected={@modal_form["reasoning_effort"] == "medium"}>
+                      Medium
+                    </option>
+                    <option value="low" selected={@modal_form["reasoning_effort"] == "low"}>
+                      Low (Fast)
+                    </option>
+                  </select>
+                </div>
+
+                <!-- Max Concurrent -->
+                <div>
+                  <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Max Concurrent</label>
+                  <input
+                    type="number"
+                    min="1"
+                    name="role[max_concurrent]"
+                    id="role-max-concurrent-input"
+                    value={@modal_form["max_concurrent"] || 1}
+                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                  />
+                </div>
+              </div>
+
+              <!-- System Prompt Textarea -->
+              <div>
+                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">
+                  System Prompt Instructions & Guidelines *
+                </label>
+                <textarea
+                  name="role[system_prompt]"
+                  id="role-prompt-input"
+                  rows="12"
+                  required
+                  class="mt-1 block w-full font-mono text-xs rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500"
+                >{@modal_form["system_prompt"]}</textarea>
+                <span
+                  :if={@modal_errors[:system_prompt]}
+                  class="text-xs text-red-600"
+                  id="role-prompt-error"
+                >
+                  {@modal_errors[:system_prompt]}
+                </span>
+              </div>
+
+              <!-- Modal Footer -->
+              <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  phx-click="close_modal"
+                  id="cancel-role-button"
+                  class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  id="save-role-button"
+                  class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500"
+                >
+                  Save Role Config
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Delete Role Modal -->
+        <div
+          :if={@active_modal == :delete_role}
+          class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
+          id="delete-role-modal"
+        >
+          <div class="w-full max-w-md rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4">
+            <h2
+              class="text-base font-semibold text-slate-900 dark:text-slate-100"
+              id="delete-modal-title"
+            >
+              Delete Role
+            </h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400" id="delete-modal-message">
+              Are you sure you want to delete role <strong id="delete-role-name">{@modal_role.name}</strong>? This action cannot be undone.
+            </p>
+
+            <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                phx-click="close_modal"
+                id="cancel-delete-button"
                 class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
               >
                 Cancel
               </button>
               <button
-                type="submit"
-                id="confirm-copy-button"
-                class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500"
+                type="button"
+                phx-click="delete_role"
+                id="confirm-delete-button"
+                class="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-red-500"
               >
-                Copy Roles
+                Delete Role
               </button>
             </div>
-          </form>
+          </div>
         </div>
-      </div>
 
-      <!-- Improve Role Modal (3-Step Flow) -->
-      <div
-        :if={@active_modal == :improve_role}
-        class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
-        id="improve-role-modal"
-        data-qa="improve_role_modal"
-      >
-        <div class="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4">
-          <!-- Modal Header -->
-          <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3 shrink-0">
-            <div class="flex items-center space-x-2">
-              <.icon name="pi-magic-wand" class="h-5 w-5 text-indigo-600" />
-              <h2
-                class="text-lg font-semibold text-slate-900 dark:text-slate-100"
-                id="improve-modal-header-title"
-              >
-                {case @improve_step do
-                  :setup -> "Improve #{@modal_role.name} Instructions"
-                  :running -> "Improving #{@modal_role.name} Instructions..."
-                  :proposal -> "Proposed Instructions for #{@modal_role.name}"
-                end}
+        <!-- Copy from Project Modal -->
+        <div
+          :if={@active_modal == :copy_roles}
+          class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
+          id="copy-roles-modal"
+        >
+          <div class="w-full max-w-md rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
+              <h2 class="text-base font-semibold text-slate-900 dark:text-slate-100">
+                Copy Roles from Project
               </h2>
-            </div>
-            <button
-              type="button"
-              phx-click="cancel_improvement"
-              id="close-improve-modal-button"
-              class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
-            >
-              ✕
-            </button>
-          </div>
-
-          <!-- Error Banner if any -->
-          <div
-            :if={@improve_error}
-            class="p-3 bg-red-50 text-xs text-red-700 rounded-md shrink-0"
-            id="improve-error-banner"
-          >
-            {@improve_error}
-          </div>
-
-          <!-- STEP 1: SETUP -->
-          <div
-            :if={@improve_step == :setup}
-            class="space-y-4 overflow-y-auto flex-1"
-            id="improve-step-setup"
-          >
-            <!-- Empty Evidence State -->
-            <div
-              :if={Enum.empty?(@improve_runs)}
-              class="p-8 text-center space-y-3"
-              id="no-runs-evidence-state"
-            >
-              <.icon
-                name="pi-clock-counter-clockwise"
-                class="h-12 w-12 text-slate-500 dark:text-slate-400 mx-auto"
-              />
-              <h3
-                class="text-base font-semibold text-slate-900 dark:text-slate-100"
-                id="no-runs-title"
+              <button
+                type="button"
+                phx-click="close_modal"
+                class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
               >
-                No finished runs for this role yet
-              </h3>
-              <p
-                class="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto"
-                id="no-runs-message"
-              >
-                Run some tasks with {@modal_role.name} to generate evidence for role improvements.
-              </p>
+                ✕
+              </button>
             </div>
 
-            <!-- Populated Evidence State -->
-            <div
-              :if={not Enum.empty?(@improve_runs)}
+            <form
+              phx-submit="copy_roles"
+              phx-change="validate_copy"
+              id="copy-roles-form"
               class="space-y-4"
-              id="populated-runs-evidence-state"
             >
+              <div>
+                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Source Project</label>
+                <select
+                  name="source_project_id"
+                  id="copy-source-project-select"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                >
+                  <option
+                    :for={project <- Enum.filter(@projects, &(&1.id != @current_project_id))}
+                    value={project.id}
+                  >
+                    {project.name}
+                  </option>
+                </select>
+              </div>
+
+              <div class="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  name="replace_all"
+                  value="true"
+                  id="copy-replace-all-checkbox"
+                  class="rounded border-slate-200 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
+                />
+                <label
+                  for="copy-replace-all-checkbox"
+                  class="text-xs text-slate-900 dark:text-slate-100"
+                >
+                  Replace all existing roles in current project
+                </label>
+              </div>
+
+              <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  phx-click="close_modal"
+                  id="cancel-copy-button"
+                  class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  id="confirm-copy-button"
+                  class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500"
+                >
+                  Copy Roles
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Improve Role Modal (3-Step Flow) -->
+        <div
+          :if={@active_modal == :improve_role}
+          class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
+          id="improve-role-modal"
+          data-qa="improve_role_modal"
+        >
+          <div class="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3 shrink-0">
+              <div class="flex items-center space-x-2">
+                <.icon name="pi-magic-wand" class="h-5 w-5 text-indigo-600" />
+                <h2
+                  class="text-lg font-semibold text-slate-900 dark:text-slate-100"
+                  id="improve-modal-header-title"
+                >
+                  {case @improve_step do
+                    :setup -> "Improve #{@modal_role.name} Instructions"
+                    :running -> "Improving #{@modal_role.name} Instructions..."
+                    :proposal -> "Proposed Instructions for #{@modal_role.name}"
+                  end}
+                </h2>
+              </div>
+              <button
+                type="button"
+                phx-click="cancel_improvement"
+                id="close-improve-modal-button"
+                class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <!-- Error Banner if any -->
+            <div
+              :if={@improve_error}
+              class="p-3 bg-red-50 text-xs text-red-700 rounded-md shrink-0"
+              id="improve-error-banner"
+            >
+              {@improve_error}
+            </div>
+
+            <!-- STEP 1: SETUP -->
+            <div
+              :if={@improve_step == :setup}
+              class="space-y-4 overflow-y-auto flex-1"
+              id="improve-step-setup"
+            >
+              <!-- Empty Evidence State -->
               <div
-                class="p-3 bg-indigo-50 border border-indigo-100 rounded-lg flex items-center space-x-2"
-                id="evidence-found-banner"
+                :if={Enum.empty?(@improve_runs)}
+                class="p-8 text-center space-y-3"
+                id="no-runs-evidence-state"
               >
-                <.icon name="pi-chart-line-up" class="h-5 w-5 text-indigo-600 shrink-0" />
-                <span class="text-xs font-semibold text-indigo-900" id="evidence-found-text">
-                  Found {length(@improve_runs)} recent finished {if length(@improve_runs) == 1,
-                    do: "run",
-                    else: "runs"} to learn from.
-                </span>
-              </div>
-
-              <!-- Model Selector -->
-              <div class="space-y-1">
-                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Improvement Model</label>
-                <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                  Select the model to analyze past runs and propose refined instructions:
+                <.icon
+                  name="pi-clock-counter-clockwise"
+                  class="h-12 w-12 text-slate-500 dark:text-slate-400 mx-auto"
+                />
+                <h3
+                  class="text-base font-semibold text-slate-900 dark:text-slate-100"
+                  id="no-runs-title"
+                >
+                  No finished runs for this role yet
+                </h3>
+                <p
+                  class="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto"
+                  id="no-runs-message"
+                >
+                  Run some tasks with {@modal_role.name} to generate evidence for role improvements.
                 </p>
-                <form phx-change="select_improve_model" id="improve-model-form">
-                  <select
-                    name="improve_model"
-                    id="improve-model-select"
-                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
-                  >
-                    <option
-                      :for={model <- @available_models}
-                      value={model.id}
-                      selected={@improve_model == model.id}
+              </div>
+
+              <!-- Populated Evidence State -->
+              <div
+                :if={not Enum.empty?(@improve_runs)}
+                class="space-y-4"
+                id="populated-runs-evidence-state"
+              >
+                <div
+                  class="p-3 bg-indigo-50 border border-indigo-100 rounded-lg flex items-center space-x-2"
+                  id="evidence-found-banner"
+                >
+                  <.icon name="pi-chart-line-up" class="h-5 w-5 text-indigo-600 shrink-0" />
+                  <span class="text-xs font-semibold text-indigo-900" id="evidence-found-text">
+                    Found {length(@improve_runs)} recent finished {if length(@improve_runs) == 1,
+                      do: "run",
+                      else: "runs"} to learn from.
+                  </span>
+                </div>
+
+                <!-- Model Selector -->
+                <div class="space-y-1">
+                  <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Improvement Model</label>
+                  <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                    Select the model to analyze past runs and propose refined instructions:
+                  </p>
+                  <form phx-change="select_improve_model" id="improve-model-form">
+                    <select
+                      name="improve_model"
+                      id="improve-model-select"
+                      class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
                     >
-                      {model.display_name}
-                    </option>
-                  </select>
-                </form>
-              </div>
+                      <option
+                        :for={model <- @available_models}
+                        value={model.id}
+                        selected={@improve_model == model.id}
+                      >
+                        {model.display_name}
+                      </option>
+                    </select>
+                  </form>
+                </div>
 
-              <!-- Evidence Runs List -->
-              <div class="space-y-2">
-                <h4 class="text-xs font-semibold text-slate-900 dark:text-slate-100">
-                  Evidence to be analyzed:
-                </h4>
-                <ul
-                  class="divide-y divide-slate-200 dark:divide-slate-700 border border-slate-200 dark:border-slate-700 rounded-md overflow-hidden"
-                  id="evidence-runs-list"
-                >
-                  <li
-                    :for={run <- @improve_runs}
-                    class="p-3 flex items-center space-x-3 text-xs"
-                    id={"evidence-run-#{run.task_id}"}
+                <!-- Evidence Runs List -->
+                <div class="space-y-2">
+                  <h4 class="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                    Evidence to be analyzed:
+                  </h4>
+                  <ul
+                    class="divide-y divide-slate-200 dark:divide-slate-700 border border-slate-200 dark:border-slate-700 rounded-md overflow-hidden"
+                    id="evidence-runs-list"
                   >
-                    <.icon
-                      name={
-                        if run.status in [:finished, :completed],
-                          do: "pi-check-circle-fill",
-                          else: "pi-x-circle-fill"
-                      }
-                      class={[
-                        "h-4 w-4 shrink-0",
-                        if(run.status in [:finished, :completed],
-                          do: "text-green-600",
-                          else: "text-red-600"
-                        )
-                      ]}
-                    />
-                    <div class="min-w-0 flex-1">
-                      <p class="font-medium text-slate-900 dark:text-slate-100 truncate">
-                        {run.title}
-                      </p>
-                      <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        Finished {format_run_time(run.completed_at)} • Status: {run.status} • Stage: {run.stage}
-                      </p>
-                    </div>
-                  </li>
-                </ul>
+                    <li
+                      :for={run <- @improve_runs}
+                      class="p-3 flex items-center space-x-3 text-xs"
+                      id={"evidence-run-#{run.task_id}"}
+                    >
+                      <.icon
+                        name={
+                          if run.status in [:finished, :completed],
+                            do: "pi-check-circle-fill",
+                            else: "pi-x-circle-fill"
+                        }
+                        class={[
+                          "h-4 w-4 shrink-0",
+                          if(run.status in [:finished, :completed],
+                            do: "text-green-600",
+                            else: "text-red-600"
+                          )
+                        ]}
+                      />
+                      <div class="min-w-0 flex-1">
+                        <p class="font-medium text-slate-900 dark:text-slate-100 truncate">
+                          {run.title}
+                        </p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                          Finished {format_run_time(run.completed_at)} • Status: {run.status} • Stage: {run.stage}
+                        </p>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- STEP 2: RUNNING -->
-          <div
-            :if={@improve_step == :running}
-            class="space-y-4 overflow-y-auto flex-1"
-            id="improve-step-running"
-          >
-            <div class="flex items-center space-x-3 p-3 bg-indigo-50 rounded-lg">
-              <.icon name="pi-arrow-clockwise" class="h-5 w-5 text-indigo-600 animate-spin" />
-              <span class="text-sm font-medium text-indigo-900" id="running-analysis-message">
-                Running analysis and drafting proposed instructions...
-              </span>
-            </div>
-
+            <!-- STEP 2: RUNNING -->
             <div
-              class="p-3 bg-zinc-900 text-zinc-100 rounded-lg font-mono text-xs h-64 overflow-y-auto space-y-1"
-              id="improve-log-box"
+              :if={@improve_step == :running}
+              class="space-y-4 overflow-y-auto flex-1"
+              id="improve-step-running"
             >
-              <div :if={Enum.empty?(@improve_logs)} class="text-slate-500 dark:text-slate-400 italic">
-                Waiting for CLI output...
-              </div>
-              <div :for={log <- @improve_logs} class="whitespace-pre-wrap">{log}</div>
-            </div>
-          </div>
-
-          <!-- STEP 3: PROPOSAL -->
-          <div
-            :if={@improve_step == :proposal && @improve_proposal}
-            class="space-y-4 overflow-y-auto flex-1"
-            id="improve-step-proposal"
-          >
-            <!-- Warnings -->
-            <% is_role_missing = is_nil(Enum.find(@roles, &(&1.id == @modal_role.id))) %>
-            <% current_role = Enum.find(@roles, &(&1.id == @modal_role.id)) %>
-            <% was_modified_on_disk =
-              !is_role_missing && current_role.system_prompt != @improve_proposal.current %>
-
-            <div
-              :if={is_role_missing}
-              class="p-3 bg-red-50 text-xs text-red-700 border border-red-200 rounded-md"
-              id="role-missing-warning"
-            >
-              Role "{@modal_role.name}" was removed on disk. Cannot approve changes.
-            </div>
-
-            <div
-              :if={was_modified_on_disk}
-              class="p-3 bg-amber-50 text-xs text-amber-800 border border-amber-200 rounded-md"
-              id="modified-on-disk-warning"
-            >
-              Role instructions were modified on disk during the run. The diff below is shown against current saved instructions.
-            </div>
-
-            <!-- Sources Chips -->
-            <div
-              :if={@improve_proposal.sources != []}
-              class="p-3 bg-slate-100 dark:bg-slate-700 rounded-md space-y-1.5"
-              id="proposal-sources-box"
-            >
-              <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">
-                Drawn from {length(@improve_proposal.sources)} past {if length(
-                                                                          @improve_proposal.sources
-                                                                        ) == 1,
-                                                                        do: "run",
-                                                                        else: "runs"}:
-              </span>
-              <div class="flex flex-wrap gap-1.5">
-                <span
-                  :for={src <- @improve_proposal.sources}
-                  class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100"
-                >
-                  {src.title}
+              <div class="flex items-center space-x-3 p-3 bg-indigo-50 rounded-lg">
+                <.icon name="pi-arrow-clockwise" class="h-5 w-5 text-indigo-600 animate-spin" />
+                <span class="text-sm font-medium text-indigo-900" id="running-analysis-message">
+                  Running analysis and drafting proposed instructions...
                 </span>
               </div>
-            </div>
 
-            <!-- Token Usage -->
-            <div
-              :if={@improve_proposal.usage && map_size(@improve_proposal.usage) > 0}
-              class="text-xs text-slate-500 dark:text-slate-400 flex items-center space-x-1"
-              id="proposal-usage-chip"
-            >
-              <.icon name="pi-chart-donut" class="h-3.5 w-3.5" />
-              <span>
-                Improvement run cost: {@improve_proposal.usage["input_tokens"] || 0} input, {@improve_proposal.usage[
-                  "output_tokens"
-                ] || 0} output tokens
-              </span>
-            </div>
-
-            <!-- Rationale -->
-            <div
-              :if={@improve_proposal.rationale}
-              class="p-3 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-md"
-              id="proposal-rationale-box"
-            >
-              <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                Rationale
-              </h4>
-              <p
-                class="text-xs text-slate-900 dark:text-slate-100 line-clamp-3"
-                id="proposal-rationale-text"
+              <div
+                class="p-3 bg-zinc-900 text-zinc-100 rounded-lg font-mono text-xs h-64 overflow-y-auto space-y-1"
+                id="improve-log-box"
               >
-                {@improve_proposal.rationale}
-              </p>
+                <div
+                  :if={Enum.empty?(@improve_logs)}
+                  class="text-slate-500 dark:text-slate-400 italic"
+                >
+                  Waiting for CLI output...
+                </div>
+                <div :for={log <- @improve_logs} class="whitespace-pre-wrap">{log}</div>
+              </div>
             </div>
 
-            <!-- Diff Pane -->
-            <div class="space-y-1" id="instruction-diff-container">
-              <h4 class="text-xs font-semibold text-slate-900 dark:text-slate-100">
-                Instruction Changes (Diff)
-              </h4>
-              <pre
-                class="p-3 bg-zinc-900 text-zinc-100 rounded-md font-mono text-xs overflow-x-auto max-h-72"
-                id="instruction-diff-content"
-              >{@improve_proposal.diff || "No changes between current and proposed instructions."}</pre>
+            <!-- STEP 3: PROPOSAL -->
+            <div
+              :if={@improve_step == :proposal && @improve_proposal}
+              class="space-y-4 overflow-y-auto flex-1"
+              id="improve-step-proposal"
+            >
+              <!-- Warnings -->
+              <% is_role_missing = is_nil(Enum.find(@roles, &(&1.id == @modal_role.id))) %>
+              <% current_role = Enum.find(@roles, &(&1.id == @modal_role.id)) %>
+              <% was_modified_on_disk =
+                !is_role_missing && current_role.system_prompt != @improve_proposal.current %>
+
+              <div
+                :if={is_role_missing}
+                class="p-3 bg-red-50 text-xs text-red-700 border border-red-200 rounded-md"
+                id="role-missing-warning"
+              >
+                Role "{@modal_role.name}" was removed on disk. Cannot approve changes.
+              </div>
+
+              <div
+                :if={was_modified_on_disk}
+                class="p-3 bg-amber-50 text-xs text-amber-800 border border-amber-200 rounded-md"
+                id="modified-on-disk-warning"
+              >
+                Role instructions were modified on disk during the run. The diff below is shown against current saved instructions.
+              </div>
+
+              <!-- Sources Chips -->
+              <div
+                :if={@improve_proposal.sources != []}
+                class="p-3 bg-slate-100 dark:bg-slate-700 rounded-md space-y-1.5"
+                id="proposal-sources-box"
+              >
+                <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                  Drawn from {length(@improve_proposal.sources)} past {if length(
+                                                                            @improve_proposal.sources
+                                                                          ) == 1,
+                                                                          do: "run",
+                                                                          else: "runs"}:
+                </span>
+                <div class="flex flex-wrap gap-1.5">
+                  <span
+                    :for={src <- @improve_proposal.sources}
+                    class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100"
+                  >
+                    {src.title}
+                  </span>
+                </div>
+              </div>
+
+              <!-- Token Usage -->
+              <div
+                :if={@improve_proposal.usage && map_size(@improve_proposal.usage) > 0}
+                class="text-xs text-slate-500 dark:text-slate-400 flex items-center space-x-1"
+                id="proposal-usage-chip"
+              >
+                <.icon name="pi-chart-donut" class="h-3.5 w-3.5" />
+                <span>
+                  Improvement run cost: {@improve_proposal.usage["input_tokens"] || 0} input, {@improve_proposal.usage[
+                    "output_tokens"
+                  ] || 0} output tokens
+                </span>
+              </div>
+
+              <!-- Rationale -->
+              <div
+                :if={@improve_proposal.rationale}
+                class="p-3 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-md"
+                id="proposal-rationale-box"
+              >
+                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                  Rationale
+                </h4>
+                <p
+                  class="text-xs text-slate-900 dark:text-slate-100 line-clamp-3"
+                  id="proposal-rationale-text"
+                >
+                  {@improve_proposal.rationale}
+                </p>
+              </div>
+
+              <!-- Diff Pane -->
+              <div class="space-y-1" id="instruction-diff-container">
+                <h4 class="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                  Instruction Changes (Diff)
+                </h4>
+                <pre
+                  class="p-3 bg-zinc-900 text-zinc-100 rounded-md font-mono text-xs overflow-x-auto max-h-72"
+                  id="instruction-diff-content"
+                >{@improve_proposal.diff || "No changes between current and proposed instructions."}</pre>
+              </div>
             </div>
-          </div>
 
-          <!-- Improve Modal Footer -->
-          <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-slate-700 shrink-0">
-            <button
-              :if={@improve_step in [:setup, :proposal]}
-              type="button"
-              phx-click="cancel_improvement"
-              id="improve-cancel-button"
-              class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
-            >
-              {if @improve_step == :proposal, do: "Reject", else: "Cancel"}
-            </button>
+            <!-- Improve Modal Footer -->
+            <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-slate-700 shrink-0">
+              <button
+                :if={@improve_step in [:setup, :proposal]}
+                type="button"
+                phx-click="cancel_improvement"
+                id="improve-cancel-button"
+                class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+              >
+                {if @improve_step == :proposal, do: "Reject", else: "Cancel"}
+              </button>
 
-            <button
-              :if={@improve_step == :running}
-              type="button"
-              phx-click="cancel_improvement"
-              id="running-cancel-button"
-              class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-red-600 shadow-xs ring-1 ring-inset ring-red-300 hover:bg-red-50"
-            >
-              Cancel
-            </button>
+              <button
+                :if={@improve_step == :running}
+                type="button"
+                phx-click="cancel_improvement"
+                id="running-cancel-button"
+                class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-red-600 shadow-xs ring-1 ring-inset ring-red-300 hover:bg-red-50"
+              >
+                Cancel
+              </button>
 
-            <button
-              :if={@improve_step == :setup && not Enum.empty?(@improve_runs)}
-              type="button"
-              phx-click="start_improvement"
-              id="start-improvement-button"
-              class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500"
-            >
-              <.icon name="pi-magic-wand" class="h-4 w-4 mr-1 text-white" /> Start
-            </button>
+              <button
+                :if={@improve_step == :setup && not Enum.empty?(@improve_runs)}
+                type="button"
+                phx-click="start_improvement"
+                id="start-improvement-button"
+                class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500"
+              >
+                <.icon name="pi-magic-wand" class="h-4 w-4 mr-1 text-white" /> Start
+              </button>
 
-            <button
-              :if={@improve_step == :proposal}
-              type="button"
-              phx-click="approve_proposal"
-              id="approve-proposal-button"
-              disabled={is_nil(Enum.find(@roles, &(&1.id == @modal_role.id)))}
-              class="rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-green-500 disabled:opacity-50"
-            >
-              Approve
-            </button>
+              <button
+                :if={@improve_step == :proposal}
+                type="button"
+                phx-click="approve_proposal"
+                id="approve-proposal-button"
+                disabled={is_nil(Enum.find(@roles, &(&1.id == @modal_role.id)))}
+                class="rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-green-500 disabled:opacity-50"
+              >
+                Approve
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </Layouts.app>
     """
   end
 

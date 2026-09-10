@@ -1,4 +1,4 @@
-defmodule RailWeb.Components.AppShell do
+defmodule RailWeb.Components.Nav do
   @moduledoc false
   use RailWeb, :html
 
@@ -9,7 +9,7 @@ defmodule RailWeb.Components.AppShell do
   attr :attention_count, :integer, default: 0
   attr :current_project_id, :string, default: nil
 
-  def nav_rail(assigns) do
+  def nav(assigns) do
     ~H"""
     <aside
       id="navigation-rail"
@@ -38,7 +38,7 @@ defmodule RailWeb.Components.AppShell do
 
         <!-- Destinations List -->
         <nav class="flex flex-col space-y-1" id="nav-destinations" aria-label="Main Navigation">
-          <.nav_destination
+          <.nav_item
             section={:overview}
             active={@current_section == :overview}
             is_extended={@is_rail_extended}
@@ -49,7 +49,7 @@ defmodule RailWeb.Components.AppShell do
             attention_count={@attention_count}
           />
 
-          <.nav_destination
+          <.nav_item
             section={:issues}
             active={@current_section == :issues}
             is_extended={@is_rail_extended}
@@ -60,7 +60,7 @@ defmodule RailWeb.Components.AppShell do
             attention_count={0}
           />
 
-          <.nav_destination
+          <.nav_item
             section={:settings}
             active={
               @current_section in [
@@ -68,7 +68,6 @@ defmodule RailWeb.Components.AppShell do
                 :connected_accounts,
                 :projects,
                 :linear_workspace,
-                :appearance,
                 :users,
                 :roles,
                 :backends
@@ -112,7 +111,7 @@ defmodule RailWeb.Components.AppShell do
   attr :href, :string, required: true
   attr :attention_count, :integer, default: 0
 
-  def nav_destination(assigns) do
+  def nav_item(assigns) do
     ~H"""
     <.link
       navigate={@href}

@@ -60,196 +60,213 @@ defmodule RailWeb.IssuesLive do
 
   def render(assigns) do
     ~H"""
-    <div id="issues-view" data-qa="issues-view" class="space-y-6">
-      <!-- Header row: Title + Subtitle on Left, Sync and New Issue buttons on Right -->
-      <div class="flex items-center justify-between gap-4 flex-wrap" id="issues-header">
-        <div>
-          <h1
-            class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
-            id="issues-title"
-            data-qa="issues_title"
-          >
-            Issues
-          </h1>
-          <p
-            class="text-xs text-slate-500 dark:text-slate-400 mt-1"
-            id="issues-subtitle"
-            data-qa="issues-subtitle"
-          >
-            {subtitle_for(@current_project)}
-          </p>
+    <Layouts.app
+      flash={@flash}
+      current_section={@current_section}
+      is_rail_extended={@is_rail_extended}
+      attention_count={@attention_count}
+      current_project_id={@current_project_id}
+      projects={@projects}
+      theme={@theme}
+      show_project_switcher={@show_project_switcher}
+      show_new_issue_modal={@show_new_issue_modal}
+      capture_ask={@capture_ask}
+      capture_project_id={@capture_project_id}
+      capture_priority={@capture_priority}
+      capture_error={@capture_error}
+      capture_submitting={@capture_submitting}
+    >
+      <div id="issues-view" data-qa="issues-view" class="space-y-6">
+        <!-- Header row: Title + Subtitle on Left, Sync and New Issue buttons on Right -->
+        <div class="flex items-center justify-between gap-4 flex-wrap" id="issues-header">
+          <div>
+            <h1
+              class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
+              id="issues-title"
+              data-qa="issues_title"
+            >
+              Issues
+            </h1>
+            <p
+              class="text-xs text-slate-500 dark:text-slate-400 mt-1"
+              id="issues-subtitle"
+              data-qa="issues-subtitle"
+            >
+              {subtitle_for(@current_project)}
+            </p>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <!-- Sync Issues button -->
+            <button
+              type="button"
+              id="sync-issues-button"
+              data-qa="sync-issues-button"
+              phx-click="sync_issues"
+              disabled={@is_syncing}
+              title="Pulls issues from Linear"
+              class={[
+                "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer",
+                @is_syncing && "opacity-50 cursor-not-allowed"
+              ]}
+            >
+              <.icon :if={not @is_syncing} name="pi-arrows-clockwise" class="h-4 w-4" />
+              <span
+                :if={@is_syncing}
+                class="inline-block animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full mr-1"
+              ></span>
+              <span>{if @is_syncing, do: "Syncing...", else: "Sync Issues"}</span>
+            </button>
+
+            <!-- New Issue button -->
+            <button
+              type="button"
+              id="new-issue-button"
+              data-qa="capture-issue-button new-issue-button"
+              phx-click="open_new_issue"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
+            >
+              <.icon name="pi-plus-circle-fill" class="h-4 w-4" />
+              <span>New Issue</span>
+            </button>
+          </div>
         </div>
 
-        <div class="flex items-center gap-3">
-          <!-- Sync Issues button -->
+        <!-- Filter chips bar: All, Priority chips, Show finished toggle -->
+        <div class="flex items-center gap-2 flex-wrap py-1" id="issues-filters-bar">
+          <!-- All Chip -->
           <button
             type="button"
-            id="sync-issues-button"
-            data-qa="sync-issues-button"
-            phx-click="sync_issues"
-            disabled={@is_syncing}
-            title="Pulls issues from Linear"
-            class={[
-              "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer",
-              @is_syncing && "opacity-50 cursor-not-allowed"
-            ]}
-          >
-            <.icon :if={not @is_syncing} name="pi-arrows-clockwise" class="h-4 w-4" />
-            <span
-              :if={@is_syncing}
-              class="inline-block animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full mr-1"
-            ></span>
-            <span>{if @is_syncing, do: "Syncing...", else: "Sync Issues"}</span>
-          </button>
-
-          <!-- New Issue button -->
-          <button
-            type="button"
-            id="new-issue-button"
-            data-qa="capture-issue-button new-issue-button"
-            phx-click="open_new_issue"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
-          >
-            <.icon name="pi-plus-circle-fill" class="h-4 w-4" />
-            <span>New Issue</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Filter chips bar: All, Priority chips, Show finished toggle -->
-      <div class="flex items-center gap-2 flex-wrap py-1" id="issues-filters-bar">
-        <!-- All Chip -->
-        <button
-          type="button"
-          id="filter-priority-all"
-          data-qa="issues-filter-all"
-          phx-click="filter_priority"
-          phx-value-priority="all"
-          class={[
-            "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer",
-            if(is_nil(@filter_priority),
-              do: "bg-blue-600 dark:bg-blue-500 text-white",
-              else:
-                "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
-            )
-          ]}
-        >
-          All ({length(@visible_issues)})
-        </button>
-
-        <!-- Priority Chips -->
-        <%= for p <- Issue.priorities() do %>
-          <button
-            type="button"
-            id={"filter-priority-#{p}"}
-            data-qa={"issues-filter-#{p}"}
+            id="filter-priority-all"
+            data-qa="issues-filter-all"
             phx-click="filter_priority"
-            phx-value-priority={to_string(p)}
+            phx-value-priority="all"
             class={[
               "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer",
-              if(@filter_priority == p,
+              if(is_nil(@filter_priority),
                 do: "bg-blue-600 dark:bg-blue-500 text-white",
                 else:
                   "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
               )
             ]}
           >
-            {Issue.priority_label(p)} ({Map.get(@priority_counts, p, 0)})
+            All ({length(@visible_issues)})
           </button>
-        <% end %>
 
-        <div class="h-4 w-px bg-slate-300 dark:bg-slate-600 mx-1"></div>
+          <!-- Priority Chips -->
+          <%= for p <- Issue.priorities() do %>
+            <button
+              type="button"
+              id={"filter-priority-#{p}"}
+              data-qa={"issues-filter-#{p}"}
+              phx-click="filter_priority"
+              phx-value-priority={to_string(p)}
+              class={[
+                "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer",
+                if(@filter_priority == p,
+                  do: "bg-blue-600 dark:bg-blue-500 text-white",
+                  else:
+                    "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
+                )
+              ]}
+            >
+              {Issue.priority_label(p)} ({Map.get(@priority_counts, p, 0)})
+            </button>
+          <% end %>
 
-        <!-- Show finished filter chip -->
-        <button
-          type="button"
-          id="issues-show-finished"
-          data-qa="issues-show-finished"
-          phx-click="toggle_show_finished"
-          class={[
-            "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5",
-            if(@show_finished,
-              do:
-                "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border border-blue-600 dark:border-blue-500",
-              else:
-                "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
-            )
-          ]}
-        >
-          <.icon :if={@show_finished} name="pi-check" class="h-3.5 w-3.5" />
-          <span>Show finished</span>
-        </button>
+          <div class="h-4 w-px bg-slate-300 dark:bg-slate-600 mx-1"></div>
 
-        <!-- Search input -->
-        <div class="relative ml-auto">
-          <input
-            type="text"
-            id="issues-search"
-            data-qa="issues-search"
-            placeholder="Search issues..."
-            class="px-3 py-1 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
-          />
-        </div>
-      </div>
-
-      <!-- Issues List or Empty State -->
-      <div id="issues-content">
-        <!-- Empty State -->
-        <div
-          :if={@filtered_issues == []}
-          id="issues-empty-state"
-          data-qa="issues-empty-state"
-          class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-12 flex flex-col items-center justify-center text-center space-y-4"
-        >
-          <.icon
-            name="pi-lightbulb-fill"
-            class="h-14 w-14 text-slate-500 dark:text-slate-400 opacity-70"
-          />
-          <h2
-            class="text-base font-semibold text-slate-500 dark:text-slate-400"
-            data-qa="empty-state-title"
-          >
-            No issues in this view
-          </h2>
+          <!-- Show finished filter chip -->
           <button
             type="button"
-            id="add-first-issue-button"
-            data-qa="empty-add-issue-button"
-            phx-click="open_new_issue"
-            class="px-4 py-2 rounded-lg bg-slate-200 dark:bg-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold text-slate-900 dark:text-slate-100 transition-colors cursor-pointer"
+            id="issues-show-finished"
+            data-qa="issues-show-finished"
+            phx-click="toggle_show_finished"
+            class={[
+              "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5",
+              if(@show_finished,
+                do:
+                  "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border border-blue-600 dark:border-blue-500",
+                else:
+                  "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
+              )
+            ]}
           >
-            Add first issue
+            <.icon :if={@show_finished} name="pi-check" class="h-3.5 w-3.5" />
+            <span>Show finished</span>
           </button>
-        </div>
 
-        <!-- Issues Cards List -->
-        <div
-          :if={@filtered_issues != []}
-          id="issues-list"
-          data-qa="issues-table issues-list"
-          class="space-y-4"
-        >
-          <div :for={issue <- @filtered_issues}>
-            <.issue_card
-              issue={issue}
-              task={Map.get(@tasks_by_issue_id, issue.id)}
+          <!-- Search input -->
+          <div class="relative ml-auto">
+            <input
+              type="text"
+              id="issues-search"
+              data-qa="issues-search"
+              placeholder="Search issues..."
+              class="px-3 py-1 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
             />
           </div>
         </div>
+
+        <!-- Issues List or Empty State -->
+        <div id="issues-content">
+          <!-- Empty State -->
+          <div
+            :if={@filtered_issues == []}
+            id="issues-empty-state"
+            data-qa="issues-empty-state"
+            class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-12 flex flex-col items-center justify-center text-center space-y-4"
+          >
+            <.icon
+              name="pi-lightbulb-fill"
+              class="h-14 w-14 text-slate-500 dark:text-slate-400 opacity-70"
+            />
+            <h2
+              class="text-base font-semibold text-slate-500 dark:text-slate-400"
+              data-qa="empty-state-title"
+            >
+              No issues in this view
+            </h2>
+            <button
+              type="button"
+              id="add-first-issue-button"
+              data-qa="empty-add-issue-button"
+              phx-click="open_new_issue"
+              class="px-4 py-2 rounded-lg bg-slate-200 dark:bg-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold text-slate-900 dark:text-slate-100 transition-colors cursor-pointer"
+            >
+              Add first issue
+            </button>
+          </div>
+
+          <!-- Issues Cards List -->
+          <div
+            :if={@filtered_issues != []}
+            id="issues-list"
+            data-qa="issues-table issues-list"
+            class="space-y-4"
+          >
+            <div :for={issue <- @filtered_issues}>
+              <.issue_card
+                issue={issue}
+                task={Map.get(@tasks_by_issue_id, issue.id)}
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Issue Editor Modal -->
+        <.issue_editor_modal
+          issue={@editing_issue}
+          visible={@editing_issue != nil}
+        />
+
+        <!-- Archive Confirmation Modal -->
+        <.archive_issue_modal
+          issue={@archiving_issue}
+          visible={@archiving_issue != nil}
+        />
       </div>
-
-      <!-- Issue Editor Modal -->
-      <.issue_editor_modal
-        issue={@editing_issue}
-        visible={@editing_issue != nil}
-      />
-
-      <!-- Archive Confirmation Modal -->
-      <.archive_issue_modal
-        issue={@archiving_issue}
-        visible={@archiving_issue != nil}
-      />
-    </div>
+    </Layouts.app>
     """
   end
 

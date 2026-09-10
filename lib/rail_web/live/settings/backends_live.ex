@@ -37,309 +37,326 @@ defmodule RailWeb.Settings.BackendsLive do
 
   def render(assigns) do
     ~H"""
-    <div class="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="backends-settings">
-      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1
-            class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
-            id="backends-title"
-            data-qa="backends_title"
-          >
-            Backends
-          </h1>
-          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400" id="backends-subtitle">
-            CLI executable paths • Selectable models • Account usage windows
-          </p>
-        </div>
-
-        <button
-          type="button"
-          phx-click="refresh_quotas"
-          id="refresh-quotas-button"
-          data-qa="refresh_quotas_button"
-          disabled={@is_refreshing}
-          class="inline-flex items-center gap-2 rounded-md bg-slate-50 dark:bg-slate-800 px-3.5 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors"
-        >
-          <.icon
-            name="pi-arrows-clockwise"
-            class={[
-              "h-4 w-4 text-slate-500 dark:text-slate-400",
-              @is_refreshing && "animate-spin"
-            ]}
-          />
-          <span>Refresh Quotas</span>
-        </button>
-      </div>
-
-      <.settings_nav current_scope={@current_scope} active_tab={:backends} />
-
-      <div
-        :if={@save_error}
-        id="backends-save-error"
-        data-qa="backends_save_error"
-        class="rounded-lg bg-red-50 border border-red-200 text-red-900 text-xs p-4"
-      >
-        {@save_error}
-      </div>
-
-      <div class="space-y-6" id="backends-list">
-        <section
-          :for={name <- Backends.backend_names()}
-          id={"backend-card-#{name}"}
-          data-qa={"backend_card_#{name}"}
-          class="bg-slate-50 dark:bg-slate-800 shadow-xs rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-5"
-        >
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-3 min-w-0">
-              <div class="flex items-center justify-center h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 shrink-0">
-                <.icon name={backend_icon(name)} class="h-6 w-6" />
-              </div>
-
-              <div class="flex flex-wrap items-center gap-2 min-w-0">
-                <span
-                  class="text-base font-bold text-slate-900 dark:text-slate-100"
-                  id={"backend-name-#{name}"}
-                >
-                  {display_name(name)}
-                </span>
-
-                <% account = account_for(@accounts, name) %>
-                <span
-                  :if={account && account.account_label not in [nil, ""]}
-                  class="text-sm text-slate-500 dark:text-slate-400 truncate max-w-xs"
-                  id={"account-label-#{name}"}
-                >
-                  {account.account_label}
-                </span>
-
-                <span
-                  :if={account && account.account_detail not in [nil, ""]}
-                  class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 ring-1 ring-inset ring-slate-200 dark:ring-slate-700"
-                  id={"account-detail-#{name}"}
-                >
-                  {String.upcase(account.account_detail)}
-                </span>
-
-                <% badge = status_badge(account && account.status) %>
-                <span
-                  class={"inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold #{badge.class}"}
-                  id={"status-badge-#{name}"}
-                >
-                  {badge.label}
-                </span>
-              </div>
-            </div>
-
-            <div
-              :if={account && not is_nil(account.fetched_at)}
-              class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 shrink-0"
-              id={"fetched-at-#{name}"}
+    <Layouts.app
+      flash={@flash}
+      current_section={@current_section}
+      is_rail_extended={@is_rail_extended}
+      attention_count={@attention_count}
+      current_project_id={@current_project_id}
+      projects={@projects}
+      theme={@theme}
+      show_project_switcher={@show_project_switcher}
+      show_new_issue_modal={@show_new_issue_modal}
+      capture_ask={@capture_ask}
+      capture_project_id={@capture_project_id}
+      capture_priority={@capture_priority}
+      capture_error={@capture_error}
+      capture_submitting={@capture_submitting}
+    >
+      <div class="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="backends-settings">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1
+              class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
+              id="backends-title"
+              data-qa="backends_title"
             >
-              <.icon name="pi-clock" class="h-3.5 w-3.5" />
-              <span>read {format_age(account.fetched_at, @now)}</span>
-            </div>
+              Backends
+            </h1>
+            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400" id="backends-subtitle">
+              CLI executable paths • Selectable models • Account usage windows
+            </p>
           </div>
 
-          <form phx-change="validate" phx-submit="save" id={"backend-form-#{name}"}>
-            <input type="hidden" name="backend" value={name} />
-
-            <div class="space-y-4">
-              <div>
-                <label
-                  class="block text-xs font-medium text-slate-900 dark:text-slate-100"
-                  for={"executable-path-#{name}"}
-                >
-                  Executable path *
-                </label>
-                <input
-                  type="text"
-                  name="executable_path"
-                  id={"executable-path-#{name}"}
-                  data-qa={"executable_path_#{name}"}
-                  value={draft(@drafts, name)["executable_path"]}
-                  placeholder={"/usr/local/bin/#{name}"}
-                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs font-mono"
-                />
-              </div>
-
-              <div class="space-y-2">
-                <div class="flex items-center justify-between">
-                  <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">
-                    Models
-                  </label>
-                  <button
-                    type="button"
-                    phx-click="add_model"
-                    phx-value-backend={name}
-                    id={"add-model-#{name}"}
-                    data-qa={"add_model_#{name}"}
-                    class="text-[11px] text-indigo-600 hover:text-indigo-800"
-                  >
-                    Add model
-                  </button>
-                </div>
-
-                <p
-                  :if={Enum.empty?(draft(@drafts, name)["models"])}
-                  class="text-xs text-slate-500 dark:text-slate-400 italic"
-                  id={"no-models-#{name}"}
-                >
-                  No models configured. Roles using this backend will have nothing to select.
-                </p>
-
-                <div
-                  :for={{model, index} <- Enum.with_index(draft(@drafts, name)["models"])}
-                  class="flex items-center gap-2"
-                  id={"model-row-#{name}-#{index}"}
-                >
-                  <input
-                    type="text"
-                    name={"models[#{index}][id]"}
-                    id={"model-id-#{name}-#{index}"}
-                    value={model["id"]}
-                    placeholder="model id"
-                    class="block w-1/2 rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs font-mono"
-                  />
-                  <input
-                    type="text"
-                    name={"models[#{index}][display_name]"}
-                    id={"model-name-#{name}-#{index}"}
-                    value={model["display_name"]}
-                    placeholder="display name (optional)"
-                    class="block w-1/2 rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
-                  />
-                  <button
-                    type="button"
-                    phx-click="remove_model"
-                    phx-value-backend={name}
-                    phx-value-index={index}
-                    id={"remove-model-#{name}-#{index}"}
-                    class="text-slate-500 dark:text-slate-400 hover:text-red-600"
-                    aria-label="Remove model"
-                  >
-                    <.icon name="pi-trash" class="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              <div class="flex items-center gap-3">
-                <button
-                  type="submit"
-                  id={"save-backend-#{name}"}
-                  data-qa={"save_backend_#{name}"}
-                  class="rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-xs hover:bg-indigo-500"
-                >
-                  Save
-                </button>
-                <span
-                  :if={@saved_backend == to_string(name)}
-                  class="text-xs text-emerald-700"
-                  id={"saved-#{name}"}
-                  data-qa={"backend_saved_#{name}"}
-                >
-                  Saved
-                </span>
-              </div>
-            </div>
-          </form>
-
-          <div
-            :if={account && account.status in ["not_configured", "signed_out", "unavailable"]}
-            id={"banner-#{name}"}
-            data-qa={"backend_banner_#{name}"}
-            class="flex items-start gap-3 p-4 rounded-lg bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs"
+          <button
+            type="button"
+            phx-click="refresh_quotas"
+            id="refresh-quotas-button"
+            data-qa="refresh_quotas_button"
+            disabled={@is_refreshing}
+            class="inline-flex items-center gap-2 rounded-md bg-slate-50 dark:bg-slate-800 px-3.5 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors"
           >
             <.icon
-              name="pi-warning"
-              class="h-5 w-5 text-slate-500 dark:text-slate-400 shrink-0 mt-0.5"
+              name="pi-arrows-clockwise"
+              class={[
+                "h-4 w-4 text-slate-500 dark:text-slate-400",
+                @is_refreshing && "animate-spin"
+              ]}
             />
-            <div>
-              <p class="font-medium">{status_badge(account.status).label}</p>
-              <p class="mt-0.5 text-slate-500 dark:text-slate-400">
-                {account.unavailable_reason || default_reason(account.status)}
-              </p>
-            </div>
-          </div>
+            <span>Refresh Quotas</span>
+          </button>
+        </div>
 
-          <div
-            :if={account != nil and account.status == "ready" and Enum.empty?(account.groups || [])}
-            id={"no-quota-windows-#{name}"}
-            class="py-3 text-sm text-slate-500 dark:text-slate-400 italic"
-          >
-            No quota windows reported for this account.
-          </div>
+        <.settings_nav current_scope={@current_scope} active_tab={:backends} />
 
-          <div
-            :if={
-              account != nil and account.status == "ready" and not Enum.empty?(account.groups || [])
-            }
-            class="space-y-4"
-            id={"groups-container-#{name}"}
+        <div
+          :if={@save_error}
+          id="backends-save-error"
+          data-qa="backends_save_error"
+          class="rounded-lg bg-red-50 border border-red-200 text-red-900 text-xs p-4"
+        >
+          {@save_error}
+        </div>
+
+        <div class="space-y-6" id="backends-list">
+          <section
+            :for={name <- Backends.backend_names()}
+            id={"backend-card-#{name}"}
+            data-qa={"backend_card_#{name}"}
+            class="bg-slate-50 dark:bg-slate-800 shadow-xs rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-5"
           >
-            <div
-              :for={{group, g_idx} <- Enum.with_index(account.groups || [])}
-              id={"group-section-#{name}-#{g_idx}"}
-              class="rounded-lg bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-700 p-4 space-y-3"
-            >
-              <h3
-                class="text-xs font-bold uppercase tracking-wider text-indigo-700"
-                id={"group-name-#{name}-#{g_idx}"}
-              >
-                {group.name}
-              </h3>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="flex items-center justify-center h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 shrink-0">
+                  <.icon name={backend_icon(name)} class="h-6 w-6" />
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2 min-w-0">
+                  <span
+                    class="text-base font-bold text-slate-900 dark:text-slate-100"
+                    id={"backend-name-#{name}"}
+                  >
+                    {display_name(name)}
+                  </span>
+
+                  <% account = account_for(@accounts, name) %>
+                  <span
+                    :if={account && account.account_label not in [nil, ""]}
+                    class="text-sm text-slate-500 dark:text-slate-400 truncate max-w-xs"
+                    id={"account-label-#{name}"}
+                  >
+                    {account.account_label}
+                  </span>
+
+                  <span
+                    :if={account && account.account_detail not in [nil, ""]}
+                    class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 ring-1 ring-inset ring-slate-200 dark:ring-slate-700"
+                    id={"account-detail-#{name}"}
+                  >
+                    {String.upcase(account.account_detail)}
+                  </span>
+
+                  <% badge = status_badge(account && account.status) %>
+                  <span
+                    class={"inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold #{badge.class}"}
+                    id={"status-badge-#{name}"}
+                  >
+                    {badge.label}
+                  </span>
+                </div>
+              </div>
 
               <div
-                class="divide-y divide-slate-200 dark:divide-slate-700"
-                id={"windows-list-#{name}-#{g_idx}"}
+                :if={account && not is_nil(account.fetched_at)}
+                class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 shrink-0"
+                id={"fetched-at-#{name}"}
               >
-                <div
-                  :for={{window, w_idx} <- Enum.with_index(extract_windows(group))}
-                  id={"window-row-#{name}-#{g_idx}-#{w_idx}"}
-                  class="py-2.5 first:pt-0 last:pb-0"
-                >
-                  <div class="flex items-center justify-between text-xs">
-                    <span
-                      class="font-medium text-slate-900 dark:text-slate-100"
-                      id={"window-label-#{name}-#{g_idx}-#{w_idx}"}
+                <.icon name="pi-clock" class="h-3.5 w-3.5" />
+                <span>read {format_age(account.fetched_at, @now)}</span>
+              </div>
+            </div>
+
+            <form phx-change="validate" phx-submit="save" id={"backend-form-#{name}"}>
+              <input type="hidden" name="backend" value={name} />
+
+              <div class="space-y-4">
+                <div>
+                  <label
+                    class="block text-xs font-medium text-slate-900 dark:text-slate-100"
+                    for={"executable-path-#{name}"}
+                  >
+                    Executable path *
+                  </label>
+                  <input
+                    type="text"
+                    name="executable_path"
+                    id={"executable-path-#{name}"}
+                    data-qa={"executable_path_#{name}"}
+                    value={draft(@drafts, name)["executable_path"]}
+                    placeholder={"/usr/local/bin/#{name}"}
+                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs font-mono"
+                  />
+                </div>
+
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between">
+                    <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">
+                      Models
+                    </label>
+                    <button
+                      type="button"
+                      phx-click="add_model"
+                      phx-value-backend={name}
+                      id={"add-model-#{name}"}
+                      data-qa={"add_model_#{name}"}
+                      class="text-[11px] text-indigo-600 hover:text-indigo-800"
                     >
-                      {window["label"]}
-                    </span>
-
-                    <div class="flex items-center gap-3">
-                      <span
-                        class={"font-semibold #{text_color_class(window["remaining_percent"])}"}
-                        id={"window-remaining-#{name}-#{g_idx}-#{w_idx}"}
-                      >
-                        {format_remaining(window["remaining_percent"], window["unmeasured_reason"])}
-                      </span>
-
-                      <span
-                        class="text-slate-500 dark:text-slate-400"
-                        id={"window-reset-#{name}-#{g_idx}-#{w_idx}"}
-                      >
-                        {format_reset_string(window["resets_at"], @now)}
-                      </span>
-                    </div>
+                      Add model
+                    </button>
                   </div>
 
-                  <div
-                    :if={not is_nil(window["remaining_percent"])}
-                    id={"progress-bar-#{name}-#{g_idx}-#{w_idx}"}
-                    class="mt-2 w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden"
+                  <p
+                    :if={Enum.empty?(draft(@drafts, name)["models"])}
+                    class="text-xs text-slate-500 dark:text-slate-400 italic"
+                    id={"no-models-#{name}"}
                   >
-                    <div
-                      class={"h-1.5 rounded-full #{bar_color_class(window["remaining_percent"])}"}
-                      style={"width: #{clamp_percent(window["remaining_percent"])}%"}
+                    No models configured. Roles using this backend will have nothing to select.
+                  </p>
+
+                  <div
+                    :for={{model, index} <- Enum.with_index(draft(@drafts, name)["models"])}
+                    class="flex items-center gap-2"
+                    id={"model-row-#{name}-#{index}"}
+                  >
+                    <input
+                      type="text"
+                      name={"models[#{index}][id]"}
+                      id={"model-id-#{name}-#{index}"}
+                      value={model["id"]}
+                      placeholder="model id"
+                      class="block w-1/2 rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs font-mono"
+                    />
+                    <input
+                      type="text"
+                      name={"models[#{index}][display_name]"}
+                      id={"model-name-#{name}-#{index}"}
+                      value={model["display_name"]}
+                      placeholder="display name (optional)"
+                      class="block w-1/2 rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                    />
+                    <button
+                      type="button"
+                      phx-click="remove_model"
+                      phx-value-backend={name}
+                      phx-value-index={index}
+                      id={"remove-model-#{name}-#{index}"}
+                      class="text-slate-500 dark:text-slate-400 hover:text-red-600"
+                      aria-label="Remove model"
                     >
+                      <.icon name="pi-trash" class="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                  <button
+                    type="submit"
+                    id={"save-backend-#{name}"}
+                    data-qa={"save_backend_#{name}"}
+                    class="rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-xs hover:bg-indigo-500"
+                  >
+                    Save
+                  </button>
+                  <span
+                    :if={@saved_backend == to_string(name)}
+                    class="text-xs text-emerald-700"
+                    id={"saved-#{name}"}
+                    data-qa={"backend_saved_#{name}"}
+                  >
+                    Saved
+                  </span>
+                </div>
+              </div>
+            </form>
+
+            <div
+              :if={account && account.status in ["not_configured", "signed_out", "unavailable"]}
+              id={"banner-#{name}"}
+              data-qa={"backend_banner_#{name}"}
+              class="flex items-start gap-3 p-4 rounded-lg bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs"
+            >
+              <.icon
+                name="pi-warning"
+                class="h-5 w-5 text-slate-500 dark:text-slate-400 shrink-0 mt-0.5"
+              />
+              <div>
+                <p class="font-medium">{status_badge(account.status).label}</p>
+                <p class="mt-0.5 text-slate-500 dark:text-slate-400">
+                  {account.unavailable_reason || default_reason(account.status)}
+                </p>
+              </div>
+            </div>
+
+            <div
+              :if={account != nil and account.status == "ready" and Enum.empty?(account.groups || [])}
+              id={"no-quota-windows-#{name}"}
+              class="py-3 text-sm text-slate-500 dark:text-slate-400 italic"
+            >
+              No quota windows reported for this account.
+            </div>
+
+            <div
+              :if={
+                account != nil and account.status == "ready" and not Enum.empty?(account.groups || [])
+              }
+              class="space-y-4"
+              id={"groups-container-#{name}"}
+            >
+              <div
+                :for={{group, g_idx} <- Enum.with_index(account.groups || [])}
+                id={"group-section-#{name}-#{g_idx}"}
+                class="rounded-lg bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-700 p-4 space-y-3"
+              >
+                <h3
+                  class="text-xs font-bold uppercase tracking-wider text-indigo-700"
+                  id={"group-name-#{name}-#{g_idx}"}
+                >
+                  {group.name}
+                </h3>
+
+                <div
+                  class="divide-y divide-slate-200 dark:divide-slate-700"
+                  id={"windows-list-#{name}-#{g_idx}"}
+                >
+                  <div
+                    :for={{window, w_idx} <- Enum.with_index(extract_windows(group))}
+                    id={"window-row-#{name}-#{g_idx}-#{w_idx}"}
+                    class="py-2.5 first:pt-0 last:pb-0"
+                  >
+                    <div class="flex items-center justify-between text-xs">
+                      <span
+                        class="font-medium text-slate-900 dark:text-slate-100"
+                        id={"window-label-#{name}-#{g_idx}-#{w_idx}"}
+                      >
+                        {window["label"]}
+                      </span>
+
+                      <div class="flex items-center gap-3">
+                        <span
+                          class={"font-semibold #{text_color_class(window["remaining_percent"])}"}
+                          id={"window-remaining-#{name}-#{g_idx}-#{w_idx}"}
+                        >
+                          {format_remaining(window["remaining_percent"], window["unmeasured_reason"])}
+                        </span>
+
+                        <span
+                          class="text-slate-500 dark:text-slate-400"
+                          id={"window-reset-#{name}-#{g_idx}-#{w_idx}"}
+                        >
+                          {format_reset_string(window["resets_at"], @now)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div
+                      :if={not is_nil(window["remaining_percent"])}
+                      id={"progress-bar-#{name}-#{g_idx}-#{w_idx}"}
+                      class="mt-2 w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden"
+                    >
+                      <div
+                        class={"h-1.5 rounded-full #{bar_color_class(window["remaining_percent"])}"}
+                        style={"width: #{clamp_percent(window["remaining_percent"])}%"}
+                      >
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
       </div>
-    </div>
+    </Layouts.app>
     """
   end
 

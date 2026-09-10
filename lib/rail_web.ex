@@ -89,6 +89,7 @@ defmodule RailWeb do
       import Phoenix.HTML
 
       alias Phoenix.LiveView.JS
+      alias RailWeb.Layouts
 
       unquote(verified_routes())
     end
