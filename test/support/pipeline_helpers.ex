@@ -17,6 +17,10 @@ defmodule RailTest.PipelineHelpers do
     RailTest.RolesHelpers.create_test_project(attrs)
   end
 
+  def create_pipeline_roles(project, opts \\ []) do
+    RailTest.RolesHelpers.create_pipeline_roles(project, opts)
+  end
+
   def create_test_task(attrs \\ %{}) do
     attrs = Map.new(attrs)
     id = System.unique_integer([:positive])

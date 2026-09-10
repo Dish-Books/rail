@@ -4,9 +4,10 @@ defmodule Rail.Pipeline.Schemas.Question do
   """
   use Rail.Schema
 
-  alias Rail.Domain.Enums.QuestionStatus
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
+
+  @statuses [:pending, :unanswered, :answered, :dismissed]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "qst"}
   schema "questions" do
@@ -17,7 +18,7 @@ defmodule Rail.Pipeline.Schemas.Question do
     field :options, {:array, :string}, default: []
     field :context_summary, :string
     field :answer, :string
-    field :status, QuestionStatus, default: :pending
+    field :status, Ecto.Enum, values: @statuses, default: :pending
     field :answered_at, :utc_datetime_usec
 
     timestamps()
@@ -65,6 +66,14 @@ defmodule Rail.Pipeline.Schemas.Question do
       status: :pending
     }
   end
+
+  def statuses, do: @statuses
+
+  def pending?(:pending), do: true
+  def pending?(_other), do: false
+
+  def resolved?(status) when is_atom(status), do: status in [:answered, :dismissed]
+  def resolved?(_other), do: false
 
   defp maybe_put_task_id(changeset, nil), do: changeset
   defp maybe_put_task_id(changeset, task_id), do: put_change(changeset, :task_id, task_id)

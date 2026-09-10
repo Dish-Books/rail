@@ -38,18 +38,19 @@ config :rail, RailWeb.Endpoint,
   live_view: [signing_salt: "rail_lv_salt_1234"]
 
 config :rail, :github,
-  app_id: System.get_env("GITHUB_APP_ID", "test_app_id"),
-  private_key: System.get_env("GITHUB_APP_PRIVATE_KEY")
+  app_id: "test_app_id",
+  private_key: nil
 
-config :rail, :linear, graphql_url: System.get_env("LINEAR_GRAPHQL_URL", "https://api.linear.app/graphql")
+config :rail, :linear, graphql_url: "https://api.linear.app/graphql"
 
 config :rail, :linear_oauth,
-  client_id: System.get_env("LINEAR_CLIENT_ID", "linear_client_id"),
-  client_secret: System.get_env("LINEAR_CLIENT_SECRET", "linear_client_secret"),
-  redirect_uri: System.get_env("LINEAR_REDIRECT_URI", "http://localhost:4000/auth/linear/callback")
+  client_id: "linear_client_id",
+  client_secret: "linear_client_secret",
+  redirect_uri: "http://localhost:4000/auth/linear/callback"
 
 config :rail,
   config_env: config_env(),
+  dev_routes: false,
   ecto_repos: [Rail.Repo],
   generators: [timestamp_type: :utc_datetime_usec]
 
@@ -69,7 +70,7 @@ config :ueberauth, Ueberauth,
   ]
 
 config :ueberauth, Ueberauth.Strategy.Github.OAuth,
-  client_id: System.get_env("GITHUB_CLIENT_ID", "github_client_id"),
-  client_secret: System.get_env("GITHUB_CLIENT_SECRET", "github_client_secret")
+  client_id: "github_client_id",
+  client_secret: "github_client_secret"
 
 import_config "#{config_env()}.exs"

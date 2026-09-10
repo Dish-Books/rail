@@ -1,0 +1,10 @@
+.git
+.gitignore
+_build
+deps
+cover
+test
+tmp
+node_modules
+priv/static/assets/*
+.env*

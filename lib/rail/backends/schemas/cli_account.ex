@@ -5,14 +5,14 @@ defmodule Rail.Backends.Schemas.CliAccount do
   use Rail.Schema
 
   alias Rail.Domain.Embeds.CliAccountGroup
-  alias Rail.Domain.Enums.CliBackend
 
   @statuses ["not_configured", "signed_out", "unavailable", "ready"]
+  @backends [:claude, :agy, :codex]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "cli"}
   schema "cli_accounts" do
     field :node, :string, default: "local"
-    field :backend, CliBackend
+    field :backend, Ecto.Enum, values: @backends
     field :status, :string
     field :account_label, :string
     field :account_detail, :string
@@ -58,6 +58,9 @@ defmodule Rail.Backends.Schemas.CliAccount do
       fetched_at: DateTime.utc_now()
     }
   end
+
+  @doc "Returns the supported backends list."
+  def backends, do: @backends
 
   @doc "Returns the default node string identifier."
   def default_node(node \\ Node.self()) do

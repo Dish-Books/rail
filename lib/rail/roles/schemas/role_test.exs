@@ -21,6 +21,24 @@ defmodule Rail.Roles.Schemas.RoleTest do
            } = role
   end
 
+  test "canonical_stages/0 returns list of 10 stages" do
+    stages = Role.canonical_stages()
+    assert length(stages) == 10
+    assert :debugger in stages
+    assert :designer in stages
+    assert :rebase in stages
+  end
+
+  test "stages/0, backends/0, and reasoning_efforts/0 return allowed values" do
+    stages = Role.stages()
+    assert :product in stages
+    assert :merged in stages
+    assert :debugger in stages
+
+    assert Role.backends() == [:claude, :agy, :codex]
+    assert Role.reasoning_efforts() == [:low, :medium, :high]
+  end
+
   test "changeset validates required fields" do
     changeset = Role.changeset(%Role{}, %{})
 

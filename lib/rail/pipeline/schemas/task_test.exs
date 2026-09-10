@@ -22,7 +22,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
              rework_budget_base: 0,
              rework_cycles_by_gate: %{},
              outstanding_reports: [],
-             viewed_diff_files: []
+             viewed_diff_files: %{}
            } = Task.factory()
   end
 
@@ -203,6 +203,217 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       refute Task.uses_design?(nil)
       refute Task.uses_design?(%{})
       refute Task.uses_design?(%Task{stage: :architect})
+    end
+  end
+
+  describe "schema enums, accessors, and stage lifecycle helpers" do
+    test "stages/0, stage_states/0, mergeabilities/0 return expected lists" do
+      assert length(Task.stages()) == 10
+      assert :product in Task.stages()
+      assert :merged in Task.stages()
+
+      assert length(Task.stage_states()) == 11
+      assert :queued in Task.stage_states()
+      assert :blocked in Task.stage_states()
+
+      assert :clean in Task.mergeabilities()
+      assert :mergeable in Task.mergeabilities()
+      assert :conflicting in Task.mergeabilities()
+      assert :blocked in Task.mergeabilities()
+      assert :unknown in Task.mergeabilities()
+    end
+
+    test "next_stage/1 walks the pipeline sequence correctly" do
+      assert Task.next_stage(:product) == :design
+      assert Task.next_stage(:design) == :architect
+      assert Task.next_stage(:architect) == :engineer
+      assert Task.next_stage(:engineer) == :review
+      assert Task.next_stage(:review) == :qa
+      assert Task.next_stage(:qa) == :qa_lead
+      assert Task.next_stage(:qa_lead) == :demo
+      assert Task.next_stage(:demo) == :ready_to_merge
+      assert Task.next_stage(:ready_to_merge) == :merged
+      assert is_nil(Task.next_stage(:merged))
+      assert is_nil(Task.next_stage(:unknown))
+    end
+
+    test "prev_stage/1 and previous_stage/1 walk backwards" do
+      assert is_nil(Task.prev_stage(:product))
+      assert Task.prev_stage(:design) == :product
+      assert Task.prev_stage(:architect) == :design
+      assert Task.prev_stage(:engineer) == :architect
+      assert Task.prev_stage(:review) == :engineer
+      assert Task.prev_stage(:qa) == :review
+      assert Task.prev_stage(:qa_lead) == :qa
+      assert Task.prev_stage(:demo) == :qa_lead
+      assert Task.prev_stage(:ready_to_merge) == :demo
+      assert Task.prev_stage(:merged) == :ready_to_merge
+      assert is_nil(Task.prev_stage(:unknown))
+
+      assert Task.previous_stage(:design) == :product
+      assert is_nil(Task.previous_stage(:product))
+    end
+
+    test "advanceable?/1 identifies stages that can progress" do
+      for stage <- [:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo, :ready_to_merge] do
+        assert Task.advanceable?(stage)
+      end
+
+      refute Task.advanceable?(:merged)
+      refute Task.advanceable?(:other)
+      refute Task.advanceable?("product")
+    end
+
+    test "gate?/1 identifies review and qa gates" do
+      assert Task.gate?(:review)
+      assert Task.gate?(:qa)
+      assert Task.gate?(:qa_lead)
+      refute Task.gate?(:engineer)
+      refute Task.gate?(:merged)
+      refute Task.gate?(nil)
+      refute Task.gate?("qa")
+      refute Task.gate?(123)
+    end
+
+    test "terminal_stage?/1 and terminal?/1 identify merged stage" do
+      assert Task.terminal_stage?(:merged)
+      refute Task.terminal_stage?(:product)
+      refute Task.terminal_stage?(:ready_to_merge)
+      refute Task.terminal_stage?(nil)
+      refute Task.terminal_stage?("merged")
+      refute Task.terminal_stage?(123)
+
+      assert Task.terminal?(:merged)
+      refute Task.terminal?(:engineer)
+    end
+
+    test "stage_index/1 and index/1 return zero-based pipeline indices" do
+      assert Task.stage_index(:product) == 0
+      assert Task.stage_index(:design) == 1
+      assert Task.stage_index(:architect) == 2
+      assert Task.stage_index(:engineer) == 3
+      assert Task.stage_index(:review) == 4
+      assert Task.stage_index(:qa) == 5
+      assert Task.stage_index(:qa_lead) == 6
+      assert Task.stage_index(:demo) == 7
+      assert Task.stage_index(:ready_to_merge) == 8
+      assert Task.stage_index(:merged) == 9
+      assert is_nil(Task.stage_index(:unknown))
+      assert is_nil(Task.stage_index(123))
+
+      assert Task.index(:product) == 0
+      assert Task.index(:merged) == 9
+      assert is_nil(Task.index(:invalid))
+    end
+
+    test "before?/2 and after?/2 compare pipeline stage positions" do
+      assert Task.before?(:product, :design)
+      assert Task.before?(:architect, :merged)
+      refute Task.before?(:design, :product)
+      refute Task.before?(:product, :invalid)
+      refute Task.before?(:invalid, :product)
+      refute Task.before?(nil, :design)
+      refute Task.before?("product", "design")
+      refute Task.before?(123, 456)
+
+      assert Task.after?(:design, :product)
+      assert Task.after?(:merged, :ready_to_merge)
+      refute Task.after?(:product, :design)
+      refute Task.after?(:design, :invalid)
+      refute Task.after?(:invalid, :design)
+      refute Task.after?("design", "product")
+      refute Task.after?(123, 456)
+    end
+
+    test "stage_label/1 returns human labels for stages" do
+      assert Task.stage_label(:product) == "Product"
+      assert Task.stage_label(:design) == "Design"
+      assert Task.stage_label(:architect) == "Architect"
+      assert Task.stage_label(:engineer) == "Engineer"
+      assert Task.stage_label(:review) == "Review"
+      assert Task.stage_label(:qa) == "QA"
+      assert Task.stage_label(:qa_lead) == "QA Lead"
+      assert Task.stage_label(:demo) == "Demo"
+      assert Task.stage_label(:ready_to_merge) == "Ready to merge"
+      assert Task.stage_label(:merged) == "Merged"
+      assert is_nil(Task.stage_label(:invalid))
+      assert is_nil(Task.stage_label(nil))
+      assert is_nil(Task.stage_label(123))
+    end
+
+    test "cast_stage/1 parses atoms and binary strings" do
+      assert {:ok, :product} = Task.cast_stage(:product)
+      assert {:ok, :design} = Task.cast_stage("design")
+      assert {:ok, :merged} = Task.cast_stage("merged")
+      assert :error = Task.cast_stage(:invalid)
+      assert :error = Task.cast_stage("invalid")
+      assert :error = Task.cast_stage(nil)
+      assert :error = Task.cast_stage(123)
+    end
+
+    test "paused?, running?, and queued? predicate helpers for atoms and Task structs" do
+      # paused?
+      assert Task.paused?(:paused_question)
+      assert Task.paused?(:paused_chat)
+      assert Task.paused?(:blocked)
+      refute Task.paused?(:running)
+      refute Task.paused?(:idle)
+      assert Task.paused?(%Task{stage_state: :blocked})
+      refute Task.paused?(%Task{stage_state: :running})
+      refute Task.paused?(nil)
+      refute Task.paused?("running")
+      refute Task.paused?(123)
+
+      # running?
+      assert Task.running?(:running)
+      refute Task.running?(:queued)
+      assert Task.running?(%Task{stage_state: :running})
+      refute Task.running?(%Task{stage_state: :queued})
+      refute Task.running?(nil)
+      refute Task.running?("running")
+      refute Task.running?(123)
+
+      # queued?
+      assert Task.queued?(:queued)
+      refute Task.queued?(:running)
+      assert Task.queued?(%Task{stage_state: :queued})
+      refute Task.queued?(%Task{stage_state: :running})
+      refute Task.queued?(nil)
+      refute Task.queued?("queued")
+      refute Task.queued?(123)
+    end
+
+    test "awaiting_approval?, active?, and terminal_state? predicate helpers for atoms and Task structs" do
+      # awaiting_approval?
+      assert Task.awaiting_approval?(:awaiting_approval)
+      refute Task.awaiting_approval?(:running)
+      assert Task.awaiting_approval?(%Task{stage_state: :awaiting_approval})
+      refute Task.awaiting_approval?(%Task{stage_state: :running})
+      refute Task.awaiting_approval?(nil)
+      refute Task.awaiting_approval?("awaiting")
+      refute Task.awaiting_approval?(123)
+
+      # active?
+      assert Task.active?(:running)
+      assert Task.active?(:paused_chat)
+      refute Task.active?(:idle)
+      refute Task.active?(:queued)
+      assert Task.active?(%Task{stage_state: :running})
+      assert Task.active?(%Task{stage_state: :paused_chat})
+      refute Task.active?(%Task{stage_state: :idle})
+      refute Task.active?(nil)
+      refute Task.active?("running")
+      refute Task.active?(123)
+
+      # terminal_state?
+      assert Task.terminal_state?(:failed)
+      assert Task.terminal_state?(:canceled)
+      refute Task.terminal_state?(:running)
+      assert Task.terminal_state?(%Task{stage_state: :failed})
+      refute Task.terminal_state?(%Task{stage_state: :running})
+      refute Task.terminal_state?(nil)
+      refute Task.terminal_state?("failed")
+      refute Task.terminal_state?(123)
     end
   end
 end

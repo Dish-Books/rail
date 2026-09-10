@@ -1,20 +1,84 @@
 import Config
 
+alias Ueberauth.Strategy.Github.OAuth
+
+if config_env() == :dev and File.exists?(".env") do
+  Dotenv.load!()
+end
+
 if System.get_env("PHX_SERVER") do
   config :rail, RailWeb.Endpoint, server: true
 end
 
-if client_id = System.get_env("LINEAR_CLIENT_ID") do
-  config :rail, :linear_oauth,
-    client_id: client_id,
-    client_secret: System.get_env("LINEAR_CLIENT_SECRET"),
-    redirect_uri: System.get_env("LINEAR_REDIRECT_URI", "http://localhost:4000/auth/linear/callback")
+# GitHub App
+if app_id = System.get_env("GITHUB_APP_ID") do
+  config :rail, :github, app_id: app_id
 end
 
-if app_id = System.get_env("GITHUB_APP_ID") do
-  config :rail, :github,
-    app_id: app_id,
-    private_key: System.get_env("GITHUB_APP_PRIVATE_KEY")
+if private_key = System.get_env("GITHUB_APP_PRIVATE_KEY") do
+  config :rail, :github, private_key: private_key
+end
+
+# GitHub OAuth
+if client_id = System.get_env("GITHUB_CLIENT_ID") do
+  config :ueberauth, OAuth, client_id: client_id
+end
+
+if client_secret = System.get_env("GITHUB_CLIENT_SECRET") do
+  config :ueberauth, OAuth, client_secret: client_secret
+end
+
+# Linear
+if graphql_url = System.get_env("LINEAR_GRAPHQL_URL") do
+  config :rail, :linear, graphql_url: graphql_url
+end
+
+if client_id = System.get_env("LINEAR_CLIENT_ID") do
+  config :rail, :linear_oauth, client_id: client_id
+end
+
+if client_secret = System.get_env("LINEAR_CLIENT_SECRET") do
+  config :rail, :linear_oauth, client_secret: client_secret
+end
+
+if redirect_uri = System.get_env("LINEAR_REDIRECT_URI") do
+  config :rail, :linear_oauth, redirect_uri: redirect_uri
+end
+
+# Dev overrides
+if config_env() == :dev do
+  if port = System.get_env("PORT") do
+    config :rail, RailWeb.Endpoint, http: [ip: {127, 0, 0, 1}, port: String.to_integer(port)]
+  end
+
+  if db_port = System.get_env("DB_PORT") do
+    config :rail, Rail.Repo, port: String.to_integer(db_port)
+  end
+
+  if db_suffix = System.get_env("DB_SUFFIX") do
+    config :rail, Rail.Repo, database: "rail_dev#{db_suffix}"
+  end
+end
+
+# Test overrides
+if config_env() == :test do
+  if test_port = System.get_env("TEST_PORT") do
+    config :rail, RailWeb.Endpoint, http: [ip: {127, 0, 0, 1}, port: String.to_integer(test_port)]
+  end
+
+  if db_host = System.get_env("DB_HOST") do
+    config :rail, Rail.Repo, hostname: db_host
+  end
+
+  if db_port = System.get_env("DB_PORT") do
+    config :rail, Rail.Repo, port: String.to_integer(db_port)
+  end
+
+  if System.get_env("DB_SUFFIX") || System.get_env("MIX_TEST_PARTITION") do
+    db_suffix = System.get_env("DB_SUFFIX", "")
+    partition = System.get_env("MIX_TEST_PARTITION", "")
+    config :rail, Rail.Repo, database: "rail_test#{db_suffix}#{partition}"
+  end
 end
 
 if config_env() == :prod do

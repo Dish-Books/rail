@@ -4,13 +4,11 @@ defmodule Rail.Roles.Actions.RecentFinishedRuns do
   import Ecto.Query
   import Rail.Roles.Utils.Truncate
 
-  alias Rail.Domain.Enums.RunStatus
-  alias Rail.Domain.Enums.TaskStage
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles.RoleRunRecord
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs.Schemas.RoleRun
-  alias Rail.Scope
 
   @default_limit 5
   @default_max_chars 4000
@@ -18,12 +16,8 @@ defmodule Rail.Roles.Actions.RecentFinishedRuns do
   @default_tail_chars 2000
   @default_statuses [:finished, :adopted_dead]
 
-  def recent_finished_runs(scope, role_id, opts \\ []) when is_binary(role_id) do
-    if Scope.admin?(scope) or match?(%Scope{user: %{}}, scope) do
-      fetch_recent_runs(role_id, opts)
-    else
-      []
-    end
+  def recent_finished_runs(_scope, role_id, opts \\ []) when is_binary(role_id) do
+    fetch_recent_runs(role_id, opts)
   end
 
   defp fetch_recent_runs(role_id, opts) do
@@ -35,7 +29,7 @@ defmodule Rail.Roles.Actions.RecentFinishedRuns do
     statuses =
       opts
       |> Keyword.get(:statuses, @default_statuses)
-      |> Enum.filter(&(&1 in RunStatus.values()))
+      |> Enum.filter(&(&1 in RoleRun.statuses()))
 
     query =
       from(rr in RoleRun,
@@ -145,7 +139,7 @@ defmodule Rail.Roles.Actions.RecentFinishedRuns do
         to_string(opts[:stage])
 
       role && role.stage ->
-        TaskStage.label(role.stage)
+        Task.stage_label(role.stage)
 
       role && role.name ->
         role.name

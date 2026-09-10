@@ -8,19 +8,10 @@ defmodule Rail.Artifacts.Actions.GetAsset do
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Repo
-  alias Rail.Scope
 
-  def get_asset(scope, kind, id) do
-    if authorized?(scope) do
-      do_get_asset(to_string(kind), to_string(id))
-    else
-      {:error, :not_authorized}
-    end
+  def get_asset(_scope, kind, id) do
+    do_get_asset(to_string(kind), to_string(id))
   end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
 
   defp do_get_asset("design", id) do
     query =

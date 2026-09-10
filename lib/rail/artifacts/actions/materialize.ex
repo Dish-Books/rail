@@ -15,19 +15,10 @@ defmodule Rail.Artifacts.Actions.Materialize do
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
-  alias Rail.Scope
 
-  def materialize(scope, target, dest_scratch_dir, opts \\ []) do
-    if authorized?(scope) do
-      do_materialize(target, dest_scratch_dir, opts)
-    else
-      {:error, :not_authorized}
-    end
+  def materialize(_scope, target, dest_scratch_dir, opts \\ []) do
+    do_materialize(target, dest_scratch_dir, opts)
   end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
 
   defp do_materialize(%Demo{} = demo, dest_scratch_dir, opts) do
     materialize_demo(demo, dest_scratch_dir, opts)

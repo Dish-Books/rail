@@ -166,11 +166,11 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
     assert length(records) == 3
   end
 
-  test "returns empty list for unauthenticated scope" do
+  test "returns not authorized for unauthenticated scope" do
     role = create_test_role()
     create_test_role_run(role_id: role.id, status: :finished, output: "Out")
 
-    assert Roles.recent_finished_runs(nil, role.id) == []
+    assert {:error, :not_authorized} = Roles.recent_finished_runs(nil, role.id)
   end
 
   test "resolves title from list of string maps and handles unmatched task" do

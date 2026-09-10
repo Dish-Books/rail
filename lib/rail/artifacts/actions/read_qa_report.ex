@@ -2,20 +2,11 @@ defmodule Rail.Artifacts.Actions.ReadQaReport do
   @moduledoc false
 
   alias Rail.Artifacts.Validators.QaValidator
-  alias Rail.Scope
 
-  def read_qa_report(scope, target, opts \\ []) do
-    if authorized?(scope) do
-      qa_dir = resolve_qa_dir(target, opts)
-      QaValidator.validate(qa_dir, opts)
-    else
-      {:error, :not_authorized}
-    end
+  def read_qa_report(_scope, target, opts \\ []) do
+    qa_dir = resolve_qa_dir(target, opts)
+    QaValidator.validate(qa_dir, opts)
   end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
 
   defp resolve_qa_dir(%{worktree_path: path}, opts) when is_binary(path) and path != "" do
     dir = Keyword.get(opts, :scratch_dir, path)

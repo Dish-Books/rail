@@ -10,9 +10,8 @@ defmodule RailWeb.IssuesLive do
       issue_editor_modal: 1
     ]
 
-  alias Rail.Domain.Enums.IssueState
-  alias Rail.Domain.Enums.TaskPriority
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Projects
 
@@ -107,7 +106,7 @@ defmodule RailWeb.IssuesLive do
           <button
             type="button"
             id="new-issue-button"
-            data-qa="new-issue-button"
+            data-qa="capture-issue-button new-issue-button"
             phx-click="open_new_issue"
             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-primary)] text-[var(--color-on-primary)] text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
           >
@@ -139,7 +138,7 @@ defmodule RailWeb.IssuesLive do
         </button>
 
         <!-- Priority Chips -->
-        <%= for p <- TaskPriority.values() do %>
+        <%= for p <- Issue.priorities() do %>
           <button
             type="button"
             id={"filter-priority-#{p}"}
@@ -155,7 +154,7 @@ defmodule RailWeb.IssuesLive do
               )
             ]}
           >
-            {TaskPriority.label(p)} ({Map.get(@priority_counts, p, 0)})
+            {Issue.priority_label(p)} ({Map.get(@priority_counts, p, 0)})
           </button>
         <% end %>
 
@@ -180,6 +179,17 @@ defmodule RailWeb.IssuesLive do
           <.icon :if={@show_finished} name="check" class="h-3.5 w-3.5" />
           <span>Show finished</span>
         </button>
+
+        <!-- Search input -->
+        <div class="relative ml-auto">
+          <input
+            type="text"
+            id="issues-search"
+            data-qa="issues-search"
+            placeholder="Search issues..."
+            class="px-3 py-1 text-xs rounded-lg border border-[var(--color-outline-variant)] bg-[var(--color-surface)] text-[var(--color-on-surface)] placeholder-[var(--color-outline)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+          />
+        </div>
       </div>
 
       <!-- Issues List or Empty State -->
@@ -210,7 +220,12 @@ defmodule RailWeb.IssuesLive do
         </div>
 
         <!-- Issues Cards List -->
-        <div :if={@filtered_issues != []} id="issues-list" data-qa="issues-list" class="space-y-4">
+        <div
+          :if={@filtered_issues != []}
+          id="issues-list"
+          data-qa="issues-table issues-list"
+          class="space-y-4"
+        >
           <div :for={issue <- @filtered_issues}>
             <.issue_card
               issue={issue}
@@ -242,7 +257,7 @@ defmodule RailWeb.IssuesLive do
           nil
 
         str ->
-          case TaskPriority.cast(str) do
+          case Issue.cast_priority(str) do
             {:ok, priority} ->
               if socket.assigns.filter_priority == priority, do: nil, else: priority
 
@@ -468,7 +483,7 @@ defmodule RailWeb.IssuesLive do
       if show_finished do
         all_issues
       else
-        Enum.reject(all_issues, &IssueState.finished?(&1.state))
+        Enum.reject(all_issues, &Issue.finished_state?(&1.state))
       end
 
     priority_counts =

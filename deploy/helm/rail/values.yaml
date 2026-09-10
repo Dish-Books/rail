@@ -1,0 +1,97 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/rail-ai-dev/rail
+  pullPolicy: IfNotPresent
+  tag: "0.1.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 4000
+  targetPort: 4000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: rail.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+persistence:
+  worktrees:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 20Gi
+    mountPath: /var/rail/worktrees
+  scratch:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 20Gi
+    mountPath: /var/rail/scratch
+
+probes:
+  liveness:
+    path: /_health
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    path: /_health
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+env:
+  PHX_HOST: "rail.example.com"
+  PORT: "4000"
+  PHX_SERVER: "true"
+  POOL_SIZE: "10"
+  AXIS_NO_DISPATCH: "0"
+
+secrets:
+  databaseUrl: "ecto://postgres:postgrespassword@postgres:5432/rail_prod"
+  secretKeyBase: "CHANGEME_BASE64_AT_LEAST_64_BYTES_LONG_SECRET_KEY_BASE"
+  cloakKeyV1: "CHANGEME_32_BYTE_BASE64_ENCODED_CLOAK_KEY_V1=="
+
+existingSecret: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

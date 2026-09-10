@@ -11,7 +11,8 @@ defmodule Rail.Git do
   defdelegate get_or_create_worktree(repo_path, worktree_path, branch, opts \\ []), to: Actions.GetOrCreateWorktree
   defdelegate remove_worktree(repo_path, worktree_path, opts \\ []), to: Actions.RemoveWorktree
   defdelegate delete_branch(repo_path, branch, opts \\ []), to: Actions.DeleteBranch
-  defdelegate get_diff(worktree_path, filter \\ nil), to: Actions.GetDiff
+  defdelegate get_diff(worktree_path), to: Actions.GetDiff
+  defdelegate get_diff(worktree_path, filter), to: Actions.GetDiff
   defdelegate list_untracked_files(worktree_path), to: Actions.ListUntrackedFiles
   defdelegate synthesize_untracked_diff(worktree_path, relative_path), to: Actions.SynthesizeUntrackedDiff
   defdelegate get_worktree_changes(worktree_path, opts \\ []), to: Actions.GetWorktreeChanges

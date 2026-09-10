@@ -7,24 +7,12 @@ defmodule Rail.Issues.Actions.CaptureIssue do
   alias Rail.Issues.Clients.Linear
   alias Rail.Issues.Schemas.Issue
   alias Rail.Repo
-  alias Rail.Scope
 
-  def capture_issue(scope, project, ask) do
-    if authorized?(scope) do
-      do_capture_issue(scope, project, ask)
-    else
-      {:error, :not_authorized}
-    end
-  end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
-
-  defp do_capture_issue(scope, project, ask) do
+  def capture_issue(scope, project, ask, opts \\ []) do
     with {:ok, token, _identity} <- resolve_token(scope, project) do
       title = Formatters.summarize_ask(ask)
       triage_state_id = project.linear_state_ids["triage"] || project.linear_state_ids[:triage]
+      priority = resolve_priority(Keyword.get(opts, :priority, :medium))
 
       issue_attrs = %{
         team_id: project.linear_team_id,
@@ -40,6 +28,7 @@ defmodule Rail.Issues.Actions.CaptureIssue do
             identifier: linear_issue.identifier,
             title: linear_issue.title,
             description: linear_issue.description,
+            priority: priority,
             state: :triage,
             state_name: (linear_issue.state && linear_issue.state.name) || "Triage",
             branch_name: linear_issue.branch_name,
@@ -55,6 +44,15 @@ defmodule Rail.Issues.Actions.CaptureIssue do
         {:error, reason} ->
           {:error, reason}
       end
+    end
+  end
+
+  defp resolve_priority(nil), do: :medium
+
+  defp resolve_priority(val) do
+    case Issue.cast_priority(val) do
+      {:ok, priority} -> priority
+      :error -> :medium
     end
   end
 

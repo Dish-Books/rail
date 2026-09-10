@@ -7,8 +7,9 @@ defmodule Rail.Domain.Embeds.QaRow do
   import Ecto.Changeset
 
   alias Rail.Domain.Embeds.QaArtifact
-  alias Rail.Domain.Enums.CheckResult
-  alias Rail.Domain.Enums.CheckSeverity
+
+  @results [:pass, :fail, :warn, :skip]
+  @severities [:blocker, :critical, :major, :minor, :cosmetic]
 
   @derive Jason.Encoder
 
@@ -16,8 +17,8 @@ defmodule Rail.Domain.Embeds.QaRow do
   embedded_schema do
     field :id, :string
     field :check, :string
-    field :result, CheckResult
-    field :severity, CheckSeverity
+    field :result, Ecto.Enum, values: @results
+    field :severity, Ecto.Enum, values: @severities
     field :caused_by_change, :boolean, default: true
     field :command, :string
     field :exit_code, :integer
@@ -60,4 +61,7 @@ defmodule Rail.Domain.Embeds.QaRow do
       artifacts: [QaArtifact.factory()]
     }
   end
+
+  def results, do: @results
+  def severities, do: @severities
 end

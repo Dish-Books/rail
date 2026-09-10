@@ -45,8 +45,8 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     assert length(Issues.list_issues(system_scope)) == 2
   end
 
-  test "list_issues returns empty list for unauthorized scope" do
-    assert [] == Issues.list_issues(nil, [])
-    assert [] == Issues.list_issues(nil, %Project{id: "prj_test"}, [])
+  test "list_issues returns not authorized for unauthorized scope" do
+    assert {:error, :not_authorized} = Issues.list_issues(nil, [])
+    assert {:error, :not_authorized} = Issues.list_issues(nil, %Project{id: "prj_test"}, [])
   end
 end

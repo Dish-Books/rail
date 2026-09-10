@@ -59,6 +59,26 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
              )
   end
 
+  test "statuses/0, pending?/1, and resolved?/1 helpers" do
+    assert Question.statuses() == [:pending, :unanswered, :answered, :dismissed]
+
+    assert Question.pending?(:pending)
+    refute Question.pending?(:answered)
+    refute Question.pending?(:dismissed)
+    refute Question.pending?(:invalid)
+    refute Question.pending?(nil)
+    refute Question.pending?("pending")
+    refute Question.pending?(123)
+
+    assert Question.resolved?(:answered)
+    assert Question.resolved?(:dismissed)
+    refute Question.resolved?(:pending)
+    refute Question.resolved?(:invalid)
+    refute Question.resolved?(nil)
+    refute Question.resolved?("answered")
+    refute Question.resolved?(123)
+  end
+
   test "validates foreign key on task_id" do
     assert {:error, %{errors: [task_id: {"does not exist", _details}]}} =
              %Question{}

@@ -4,8 +4,7 @@ defmodule RailWeb.Components.IssueEditorModal do
 
   import RailWeb.CoreComponents, only: [icon: 1]
 
-  alias Rail.Domain.Enums.IssueState
-  alias Rail.Domain.Enums.TaskPriority
+  alias Rail.Issues.Schemas.Issue
 
   attr :issue, :map, default: nil
   attr :visible, :boolean, default: false
@@ -108,9 +107,9 @@ defmodule RailWeb.Components.IssueEditorModal do
                 data-qa="editor-priority-select"
                 class="w-full px-3 py-2 text-xs rounded-lg border border-[var(--color-outline)] bg-[var(--color-surface)] text-[var(--color-on-surface)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
               >
-                <%= for p <- TaskPriority.values() do %>
+                <%= for p <- Issue.priorities() do %>
                   <option value={to_string(p)} selected={to_string(@issue.priority) == to_string(p)}>
-                    {TaskPriority.label(p)}
+                    {Issue.priority_label(p)}
                   </option>
                 <% end %>
               </select>
@@ -129,9 +128,9 @@ defmodule RailWeb.Components.IssueEditorModal do
                 data-qa="editor-state-select"
                 class="w-full px-3 py-2 text-xs rounded-lg border border-[var(--color-outline)] bg-[var(--color-surface)] text-[var(--color-on-surface)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
               >
-                <%= for s <- IssueState.values() do %>
+                <%= for s <- Issue.states() do %>
                   <option value={to_string(s)} selected={to_string(@issue.state) == to_string(s)}>
-                    {IssueState.label(s)}
+                    {Issue.state_label(s)}
                   </option>
                 <% end %>
               </select>

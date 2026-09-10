@@ -14,6 +14,11 @@
       theme={assigns[:theme] || "dark"}
       show_project_switcher={assigns[:show_project_switcher] == true}
       show_new_issue_modal={assigns[:show_new_issue_modal] == true}
+      capture_ask={assigns[:capture_ask] || ""}
+      capture_project_id={assigns[:capture_project_id]}
+      capture_priority={assigns[:capture_priority] || :medium}
+      capture_error={assigns[:capture_error]}
+      capture_submitting={assigns[:capture_submitting] == true}
     />
 
     <main class="flex-1 overflow-y-auto p-6" id="main-content">

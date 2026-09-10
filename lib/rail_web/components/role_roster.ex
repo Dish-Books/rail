@@ -11,7 +11,7 @@ defmodule RailWeb.Components.RoleRoster do
     ~H"""
     <aside
       id="role-roster"
-      data-qa="role-roster"
+      data-qa="overview-roster role-roster"
       class="w-[268px] shrink-0 border-l border-[var(--color-border)] pl-6 py-1 select-none hidden lg:block"
     >
       <h2

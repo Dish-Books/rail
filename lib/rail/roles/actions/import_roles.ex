@@ -3,26 +3,20 @@ defmodule Rail.Roles.Actions.ImportRoles do
 
   import Ecto.Query
 
-  alias Rail.Domain.Enums.TaskStage
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
-  alias Rail.Scope
-  alias Rail.Users
 
-  def import_roles(scope, project_or_id, roles_data, opts \\ []) do
-    if Scope.admin?(scope) or Users.can?(scope, :manage_roles) do
-      project_id = extract_project_id(project_or_id)
+  def import_roles(_scope, project_or_id, roles_data, opts \\ []) do
+    project_id = extract_project_id(project_or_id)
 
-      case parse_roles_data(roles_data) do
-        {:ok, items} when is_list(items) ->
-          execute_import(project_id, items, opts)
+    case parse_roles_data(roles_data) do
+      {:ok, items} when is_list(items) ->
+        execute_import(project_id, items, opts)
 
-        {:error, reason} ->
-          {:error, reason}
-      end
-    else
-      {:error, :not_authorized}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -74,7 +68,7 @@ defmodule Rail.Roles.Actions.ImportRoles do
   end
 
   defp unbind_stage(project_id, stage_val) when is_binary(stage_val) do
-    case TaskStage.cast(stage_val) do
+    case Task.cast_stage(stage_val) do
       {:ok, stage_atom} ->
         Repo.update_all(from(r in Role, where: r.project_id == ^project_id and r.stage == ^stage_atom),
           set: [stage: nil]

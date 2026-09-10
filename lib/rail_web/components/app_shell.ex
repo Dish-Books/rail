@@ -2,6 +2,8 @@ defmodule RailWeb.Components.AppShell do
   @moduledoc false
   use RailWeb, :html
 
+  import RailWeb.Components.CaptureIssueModal, only: [capture_issue_modal: 1]
+
   attr :current_section, :atom, required: true
   attr :is_rail_extended, :boolean, default: true
   attr :attention_count, :integer, default: 0
@@ -15,7 +17,7 @@ defmodule RailWeb.Components.AppShell do
       class={[
         "nav-rail-transition flex flex-col justify-between h-full shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface-container)] select-none",
         @is_rail_extended && "w-56",
-        !@is_rail_extended && "w-16"
+        !@is_rail_extended && "w-[68px]"
       ]}
     >
       <!-- Top Group: Logo and Destinations -->
@@ -72,7 +74,15 @@ defmodule RailWeb.Components.AppShell do
           <.nav_destination
             section={:settings}
             active={
-              @current_section in [:settings, :connected_accounts, :projects, :linear_workspace]
+              @current_section in [
+                :settings,
+                :connected_accounts,
+                :projects,
+                :linear_workspace,
+                :appearance,
+                :users,
+                :roles
+              ]
             }
             is_extended={@is_rail_extended}
             label="Settings"
@@ -159,6 +169,11 @@ defmodule RailWeb.Components.AppShell do
   attr :theme, :string, default: "dark"
   attr :show_project_switcher, :boolean, default: false
   attr :show_new_issue_modal, :boolean, default: false
+  attr :capture_ask, :string, default: ""
+  attr :capture_project_id, :string, default: nil
+  attr :capture_priority, :any, default: :medium
+  attr :capture_error, :string, default: nil
+  attr :capture_submitting, :boolean, default: false
 
   def top_app_bar(assigns) do
     active_projects = Enum.filter(assigns.projects, & &1.active)
@@ -314,46 +329,31 @@ defmodule RailWeb.Components.AppShell do
           <.icon :if={@theme == "dark"} name="light_mode" class="h-4 w-4 text-amber-400" />
           <.icon :if={@theme != "dark"} name="dark_mode" class="h-4 w-4 text-slate-700" />
         </button>
+
+        <!-- User Menu Button -->
+        <.link
+          navigate={nav_path("/settings/connected-accounts", @current_project_id)}
+          id="user-menu-button"
+          data-qa="user-menu"
+          title="User menu"
+          aria-label="User menu"
+          class="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-[var(--color-surface-container-high)] text-[var(--color-on-surface)] transition-colors"
+        >
+          <.icon name="account_circle_outlined" class="h-4 w-4 text-[var(--color-outline)]" />
+        </.link>
       </div>
 
-      <!-- New Issue Modal (Placeholder / Shell for Slice 5.1) -->
-      <div
-        :if={@show_new_issue_modal}
-        id="new-issue-modal"
-        data-qa="capture_dialog"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      >
-        <div class="w-full max-w-lg rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6 shadow-2xl space-y-4">
-          <div class="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
-            <h2 class="text-base font-semibold text-[var(--color-on-surface)]" id="modal-headline">
-              New Issue
-            </h2>
-            <button
-              type="button"
-              id="close-new-issue-button"
-              data-qa="close_new_issue_button"
-              phx-click="close_new_issue"
-              class="text-[var(--color-outline)] hover:text-[var(--color-on-surface)] text-sm font-bold p-1"
-            >
-              ✕
-            </button>
-          </div>
-
-          <p class="text-xs text-[var(--color-outline)]">
-            Create an issue in Linear and optionally bring it local to Rail.
-          </p>
-
-          <div class="flex justify-end space-x-3 pt-4">
-            <button
-              type="button"
-              phx-click="close_new_issue"
-              class="px-3 py-1.5 rounded-lg border border-[var(--color-outline)] text-xs font-semibold hover:bg-[var(--color-surface-container)]"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
+      <!-- Capture Issue Modal -->
+      <.capture_issue_modal
+        visible={@show_new_issue_modal}
+        projects={@projects}
+        current_project_id={@current_project_id}
+        capture_ask={@capture_ask}
+        capture_project_id={@capture_project_id}
+        capture_priority={@capture_priority}
+        capture_error={@capture_error}
+        capture_submitting={@capture_submitting}
+      />
     </header>
     """
   end
@@ -363,9 +363,11 @@ defmodule RailWeb.Components.AppShell do
 
   def icon(assigns) do
     ~H"""
-    <span class={@class} aria-hidden="true">
+    <span class={["inline-block shrink-0", @class]} aria-hidden="true">
       <svg
         :if={@name in ["layers"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -374,6 +376,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["dashboard"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -382,6 +386,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["dashboard_outlined"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -390,6 +396,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["lightbulb"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -398,6 +406,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["lightbulb_outline"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -406,6 +416,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["account_circle"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -414,6 +426,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["account_circle_outlined"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -422,6 +436,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["settings"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -430,6 +446,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["settings_outlined"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -438,6 +456,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["chevron_left"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -446,6 +466,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["chevron_right"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -454,6 +476,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["folder"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -462,6 +486,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["folder_outlined"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -470,6 +496,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["unfold_more"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -478,6 +506,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["add_circle"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -486,6 +516,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["light_mode"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -494,6 +526,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["dark_mode"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -502,6 +536,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["info_outline", "info"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -510,6 +546,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["check_circle_outline", "check_circle"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -518,6 +556,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["code", "terminal", "hero-command-line"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -525,7 +565,9 @@ defmodule RailWeb.Components.AppShell do
       </svg>
 
       <svg
-        :if={@name in ["architecture", "account_tree"]}
+        :if={@name in ["architecture", "account_tree", "account_tree_outlined"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -534,6 +576,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["palette", "brush", "design"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -542,6 +586,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["videocam", "movie", "demo"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -550,6 +596,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["fact_check", "checklist", "qa"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -558,6 +606,8 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["chat"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
@@ -566,10 +616,372 @@ defmodule RailWeb.Components.AppShell do
 
       <svg
         :if={@name in ["smart_toy", "robot", "agent"]}
+        width="24"
+        height="24"
         class="w-full h-full fill-current"
         viewBox="0 0 24 24"
       >
         <path d="M20 9V7c0-1.1-.9-2-2-2h-3c0-1.66-1.34-3-3-3S9 3.34 9 5H6c-1.1 0-2 .9-2 2v2c-1.66 0-3 1.34-3 3s1.34 3 3 3v4c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-4c1.66 0 3-1.34 3-3s-1.34-3-3-3zm-2 10H6V7h12v12zm-9-6c-.83 0-1.5-.67-1.5-1.5S8.17 10 9 10s1.5.67 1.5 1.5S9.83 13 9 13zm6 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm-7.5 3h9v1.5h-9V16z" />
+      </svg>
+
+      <svg
+        :if={@name in ["chat_bubble_outline"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
+      </svg>
+
+      <svg
+        :if={@name in ["call_split"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M14 4l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L20 10V4h-6zm-4 0H4v6l2.29-2.29 4.71 4.7V20h2v-8.41l-5.29-5.3L10 4z" />
+      </svg>
+
+      <svg
+        :if={@name in ["play_circle_outline", "play_circle"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-13.5v11l7-5.5-7-5.5z" />
+      </svg>
+
+      <svg
+        :if={@name in ["schedule"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+      </svg>
+
+      <svg
+        :if={@name in ["help_outline"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z" />
+      </svg>
+
+      <svg
+        :if={@name in ["merge", "merge_type"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M17 20.41L18.41 19 15 15.59 13.59 17 17 20.41zM7.5 8H11v5.59L5.59 19 7 20.41l6-6V8h3.5L12 3.5 7.5 8z" />
+      </svg>
+
+      <svg
+        :if={@name in ["undo"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" />
+      </svg>
+
+      <svg
+        :if={@name in ["check"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+      </svg>
+
+      <svg
+        :if={@name in ["fast_forward_outlined", "fast_forward"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z" />
+      </svg>
+
+      <svg
+        :if={@name in ["skip_next"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+      </svg>
+
+      <svg
+        :if={@name in ["reply"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z" />
+      </svg>
+
+      <svg
+        :if={@name in ["refresh"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
+      </svg>
+
+      <svg
+        :if={@name in ["arrow_forward"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" />
+      </svg>
+
+      <svg
+        :if={@name in ["stop_circle_outlined", "stop_circle"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm4-4H8V8h8v8z" />
+      </svg>
+
+      <svg
+        :if={@name in ["play_arrow"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M8 5v14l11-7z" />
+      </svg>
+
+      <svg
+        :if={@name in ["lock_open"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z" />
+      </svg>
+
+      <svg
+        :if={@name in ["difference_outlined", "difference"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M14.5 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V7.5L14.5 2zM18 20H6V4h7v5h5v11zm-7-4.5h2v-2h2v-2h-2v-2h-2v2H9v2h2v2zm-2 4h6v-1.5H9v1.5z" />
+      </svg>
+
+      <svg
+        :if={@name in ["delete_outline", "delete"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z" />
+      </svg>
+
+      <svg
+        :if={@name in ["rate_review_outlined", "rate_review"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12zM14.2 8.7l-4.7 4.7-1.3-.2.2-1.3 4.7-4.7 1.1 1.5zm1.4-1.4l-.8.8-1.5-1.1.8-.8c.2-.2.5-.2.7 0l.8.8c.2.2.2.5 0 .7z" />
+      </svg>
+
+      <svg
+        :if={@name in ["error_outline"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" />
+      </svg>
+
+      <svg
+        :if={@name in ["radio_button_unchecked"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z" />
+      </svg>
+
+      <svg
+        :if={@name in ["open_in_new"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" />
+      </svg>
+
+      <svg
+        :if={@name in ["flag_outlined", "flag"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12.36 6l.4 2H18v6h-3.36l-.4-2H7V6h5.36M14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6L14 4z" />
+      </svg>
+
+      <svg
+        :if={@name in ["send"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+      </svg>
+
+      <svg
+        :if={@name in ["person"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+      </svg>
+
+      <svg
+        :if={@name in ["build_outlined", "build"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z" />
+      </svg>
+
+      <svg
+        :if={@name in ["call_received"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M20 5.41L18.59 4 7 15.59V9H5v10h10v-2H8.41z" />
+      </svg>
+
+      <svg
+        :if={@name in ["call_made"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M9 5v2h6.59L4 18.59 5.41 20 17 8.41V15h2V5z" />
+      </svg>
+
+      <svg
+        :if={@name in ["expand_more"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z" />
+      </svg>
+
+      <svg
+        :if={@name in ["expand_less"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.59L18 14z" />
+      </svg>
+
+      <svg
+        :if={@name in ["stop"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M6 6h12v12H6z" />
+      </svg>
+
+      <svg
+        :if={@name in ["bug_report"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 5 12 5c-.49 0-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z" />
+      </svg>
+
+      <svg
+        :if={@name in ["verified"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M23 12l-2.44-2.79.34-3.69-3.61-.82-1.89-3.2L12 2.96 8.6 1.5 6.71 4.69 3.1 5.5l.34 3.7L1 12l2.44 2.79-.34 3.7 3.61.82L8.6 22.5l3.4-1.47 3.4 1.46 1.89-3.19 3.61-.82-.34-3.69L23 12zm-12.91 4.72l-3.8-3.81 1.48-1.48 2.32 2.33 5.85-5.87 1.48 1.48-7.33 7.35z" />
+      </svg>
+
+      <svg
+        :if={@name in ["alt_route"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M8.71 4.71l-1.42 1.42 2.59 2.59-2.59 2.59 1.42 1.42 4-4-4-4zm6.58 0l-4 4 4 4 1.42-1.42-2.59-2.59 2.59-2.59-1.42-1.42z" />
+      </svg>
+
+      <svg
+        :if={@name in ["travel_explore"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+      </svg>
+
+      <svg
+        :if={@name in ["assignment"]}
+        width="24"
+        height="24"
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z" />
       </svg>
     </span>
     """

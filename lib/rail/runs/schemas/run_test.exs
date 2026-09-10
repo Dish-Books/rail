@@ -59,6 +59,37 @@ defmodule Rail.Runs.Schemas.RunTest do
     assert "can't be blank" in errors.started_at
   end
 
+  test "changeset/2 validates enum fields" do
+    changeset =
+      Run.changeset(%Run{}, %{
+        role_run_id: UXID.generate!(prefix: "rr"),
+        task_id: UXID.generate!(prefix: "tsk"),
+        kind: "invalid_kind",
+        stream_path: "/tmp/axis/streams/test.ndjson",
+        node: "node@host",
+        boot_id: "boot-1",
+        status: "invalid_status",
+        started_at: DateTime.utc_now()
+      })
+
+    refute changeset.valid?
+    errors = errors_on(changeset)
+    assert "is invalid" in errors.kind
+    assert "is invalid" in errors.status
+  end
+
+  test "kinds/0 and statuses/0 return expected lists" do
+    assert :stage in Run.kinds()
+    assert :chat in Run.kinds()
+    assert :rebase in Run.kinds()
+
+    assert :starting in Run.statuses()
+    assert :running in Run.statuses()
+    assert :finished in Run.statuses()
+    assert :adopted_dead in Run.statuses()
+    assert :blocked_on_input in Run.statuses()
+  end
+
   test "insert and retrieve run" do
     role_run =
       %RoleRun{}

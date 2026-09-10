@@ -34,7 +34,7 @@ defmodule RailWeb.Components.QuestionCard do
     ~H"""
     <div
       id={"question-card-#{@card_id}"}
-      data-qa="question-card"
+      data-qa="overview-card question-card"
       class="mb-3 rounded-lg border border-[var(--color-border)] border-l-4 border-l-amber-600 bg-[var(--color-surface)] p-4 shadow-xs"
     >
       <!-- Header Row -->

@@ -6,16 +6,10 @@ defmodule Rail.Roles.Actions.CopyRoles do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
-  alias Rail.Scope
-  alias Rail.Users
 
   def copy_roles(scope, target_project_or_id, source_project_id, opts \\ []) when is_binary(source_project_id) do
-    if Scope.admin?(scope) or Users.can?(scope, :manage_roles) do
-      target_project_id = extract_project_id(target_project_or_id)
-      execute_copy(scope, target_project_id, source_project_id, opts)
-    else
-      {:error, :not_authorized}
-    end
+    target_project_id = extract_project_id(target_project_or_id)
+    execute_copy(scope, target_project_id, source_project_id, opts)
   end
 
   defp extract_project_id(%Project{id: id}), do: id

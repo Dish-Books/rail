@@ -62,7 +62,6 @@ end
 - Fields that should not be user defined such as `project_id` should be set from the parent entity/context and not castable in a changeset.
 - Fields containing sensitive values such as API tokens should use the cloak ecto type and be redacted: `field :token, Rail.Types.EncryptedBinary, redact: true`.
 - Put field logic (casting, nilifying related fields) in changesets, not ad-hoc in action code. This prevents future callers from bypassing the logic.
-- When values come from user input, use `validate_relationships/2` in changesets.
 - Prefer Ecto's built-in validators (`validate_format`, `validate_length`, `validate_number`, ...) over hand-rolled validation logic.
 - Gate privileged fields by permissions or admin status; don't silently drop them.
 - `cast_assoc` is for children resources. Use with caution - it's a way to bypass actions.

@@ -71,7 +71,7 @@ defmodule RailWeb.OverviewLive do
     ~H"""
     <div id="overview-view" data-qa="overview-view" class="space-y-6">
       <!-- Header row: Overview in bold + running agents pill -->
-      <div class="flex items-center space-x-3" id="overview-header">
+      <div class="flex items-center space-x-3" id="overview-header" data-qa="overview-hero">
         <h1
           class="text-2xl font-bold tracking-tight text-[var(--color-on-surface)]"
           id="overview-title"

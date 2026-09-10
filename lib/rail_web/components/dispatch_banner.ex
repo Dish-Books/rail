@@ -11,7 +11,7 @@ defmodule RailWeb.Components.DispatchBanner do
     <div
       :if={@visible}
       id="dispatch-disabled-banner"
-      data-qa="dispatch-disabled-banner"
+      data-qa="no-dispatch-banner dispatch-disabled-banner"
       role="alert"
       class="flex items-center space-x-3 px-4 py-2.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200 text-xs font-medium"
     >

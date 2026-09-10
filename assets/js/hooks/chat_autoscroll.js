@@ -1,10 +1,29 @@
 export const ChatAutoscroll = {
   mounted() {
-    this.el.scrollTop = this.el.scrollHeight;
+    this.follow = true;
+    this.scrollToBottom();
+
+    this.onScroll = () => {
+      const distance = this.el.scrollHeight - this.el.scrollTop - this.el.clientHeight;
+      this.follow = distance <= 40;
+    };
+
+    this.el.addEventListener("scroll", this.onScroll);
   },
+
   updated() {
-    if (this.el.dataset.autoscroll !== "false") {
-      this.el.scrollTop = this.el.scrollHeight;
+    if (this.follow && this.el.dataset.autoscroll !== "false") {
+      this.scrollToBottom();
     }
+  },
+
+  destroyed() {
+    if (this.onScroll) {
+      this.el.removeEventListener("scroll", this.onScroll);
+    }
+  },
+
+  scrollToBottom() {
+    this.el.scrollTop = this.el.scrollHeight;
   }
 };

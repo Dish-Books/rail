@@ -1,6 +1,8 @@
 defmodule Rail.Users do
   @moduledoc false
 
+  use Rail.PermissionsDecorator
+
   alias Rail.Users.Actions
 
   defdelegate register_oauth_user(attrs), to: Actions.RegisterOAuthUser
@@ -9,7 +11,11 @@ defmodule Rail.Users do
   defdelegate get_user_by_session_token(token), to: Actions.GetUserBySessionToken
   defdelegate generate_user_session_token(user), to: Actions.GenerateUserSessionToken
   defdelegate delete_user_session_token(token), to: Actions.DeleteUserSessionToken
+
+  @decorate can?(resource: :users, action: :list)
   defdelegate list_users(scope), to: Actions.ListUsers
+
+  @decorate can?(resource: :users, action: :manage)
   defdelegate set_admin(scope, user, admin_bool), to: Actions.SetAdmin
   defdelegate set_project_filter(scope, project_id), to: Actions.SetProjectFilter
   defdelegate link_linear(scope_or_user, attrs), to: Actions.LinkLinear

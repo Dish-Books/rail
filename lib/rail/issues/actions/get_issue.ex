@@ -7,12 +7,8 @@ defmodule Rail.Issues.Actions.GetIssue do
   alias Rail.Repo
   alias Rail.Scope
 
-  def get_issue(scope, id) do
-    if authorized?(scope) do
-      do_get_issue(id)
-    else
-      {:error, :not_authorized}
-    end
+  def get_issue(_scope, id) do
+    do_get_issue(id)
   end
 
   def get_issue!(scope, id) do

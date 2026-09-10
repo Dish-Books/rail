@@ -10,6 +10,7 @@ defmodule RailTest.Helpers do
   defdelegate git!(dir, args), to: RailTest.GitHelpers
   defdelegate create_test_project(attrs \\ %{}), to: RailTest.RolesHelpers
   defdelegate create_test_role(attrs \\ %{}), to: RailTest.RolesHelpers
+  defdelegate create_pipeline_roles(project, opts \\ []), to: RailTest.RolesHelpers
   defdelegate create_test_role_run(attrs \\ %{}), to: RailTest.RolesHelpers
   defdelegate create_test_run(attrs \\ %{}), to: RailTest.RolesHelpers
   defdelegate create_test_run_event(attrs \\ %{}), to: RailTest.RolesHelpers

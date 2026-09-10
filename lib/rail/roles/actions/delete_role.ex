@@ -3,14 +3,8 @@ defmodule Rail.Roles.Actions.DeleteRole do
 
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
-  alias Rail.Scope
-  alias Rail.Users
 
-  def delete_role(scope, %Role{} = role) do
-    if Scope.admin?(scope) or Users.can?(scope, :manage_roles) do
-      Repo.delete(role)
-    else
-      {:error, :not_authorized}
-    end
+  def delete_role(_scope, %Role{} = role) do
+    Repo.delete(role)
   end
 end

@@ -13,7 +13,13 @@ defmodule Rail.MixProject do
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
       listeners: [Phoenix.CodeReloader],
       test_paths: ["lib"],
-      test_coverage: [tool: ExCoveralls, export: "excoveralls"]
+      test_coverage: [tool: ExCoveralls, export: "excoveralls"],
+      releases: [
+        rail: [
+          include_executables_for: [:unix],
+          applications: [runtime_tools: :permanent]
+        ]
+      ]
     ]
   end
 
@@ -47,6 +53,7 @@ defmodule Rail.MixProject do
       {:credo, "~> 1.7", only: :dev, runtime: false},
       {:rail_credo, path: "credo", only: :dev},
       {:decimal, "~> 3.0"},
+      {:decorator, "~> 1.4"},
       {:dotenv, "~> 3.1", only: [:dev, :test]},
       {:ecto_sql, "~> 3.13"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
@@ -87,7 +94,12 @@ defmodule Rail.MixProject do
       "ecto.setup": ["ecto.create", "ecto.migrate"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test --warnings-as-errors"],
-      precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
+      precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"],
+      "assets.setup": [
+        "tailwind.install --if-missing",
+        "esbuild.install --if-missing"
+      ],
+      "assets.deploy": ["tailwind rail --minify", "esbuild rail --minify", "phx.digest"]
     ]
   end
 end

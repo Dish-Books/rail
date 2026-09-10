@@ -14,6 +14,8 @@ defmodule Rail.Pipeline do
   defdelegate list_tasks(scope, project_id, opts), to: Actions.ListTasks
   defdelegate get_task(scope, id), to: Actions.GetTask
   defdelegate get_task!(scope, id), to: Actions.GetTask
+  defdelegate get_plan(scope, task_or_id), to: Actions.GetPlan
+  defdelegate get_plan(task_or_id), to: Actions.GetPlan
   defdelegate broadcast_pipeline_changed(), to: Actions.BroadcastPipelineChanged
   defdelegate broadcast_pipeline_changed(meta), to: Actions.BroadcastPipelineChanged
   defdelegate list_eligible_tasks(project_or_id, role), to: Queue, as: :eligible_tasks
@@ -71,6 +73,10 @@ defmodule Rail.Pipeline do
   defdelegate retry_stage(scope, task_or_id, opts), to: Actions.RetryStage
   defdelegate retry_stage(scope_or_task, task_or_opts), to: Actions.RetryStage
   defdelegate retry_stage(task_or_id), to: Actions.RetryStage
+
+  defdelegate cancel_task(scope, task_or_id, opts), to: Actions.CancelTask
+  defdelegate cancel_task(scope_or_task, task_or_opts), to: Actions.CancelTask
+  defdelegate cancel_task(task_or_id), to: Actions.CancelTask
 
   defdelegate register_question(task_or_id, role_run_or_id, question_or_attrs, opts), to: Actions.RegisterQuestion
   defdelegate register_question(task_or_id, role_run_or_question, question_or_opts), to: Actions.RegisterQuestion
@@ -137,4 +143,11 @@ defmodule Rail.Pipeline do
   defdelegate cleanup_task(scope_or_task, task_or_opts, opts), to: Actions.CleanupTask
   defdelegate cleanup_task(scope_or_task, task_or_opts), to: Actions.CleanupTask
   defdelegate cleanup_task(task_or_id), to: Actions.CleanupTask
+
+  defdelegate load_diff(scope_or_task, task_or_opts), to: Actions.LoadDiff
+  defdelegate load_diff(task), to: Actions.LoadDiff
+  defdelegate reconcile_viewed_diff_files(task, parsed_files), to: Actions.ReconcileViewedDiffFiles
+  defdelegate set_diff_file_viewed(scope, task, file_path, file_digest, viewed), to: Actions.SetDiffFileViewed
+  defdelegate set_diff_file_viewed(task, file_path, file_digest, viewed), to: Actions.SetDiffFileViewed
+  defdelegate expand_diff_gap(task, file_path, gap_index, start_line, end_line, diff_rev), to: Actions.ExpandDiffGap
 end

@@ -200,7 +200,8 @@ defmodule Rail.Runs.Spawner do
 
           case FollowerSupervisor.start_follower(follower_opts) do
             {:ok, follower_pid} ->
-              allow_sandbox(follower_pid)
+              allow_sandbox(follower_pid, opts)
+              allow_test_mocks(follower_pid, opts)
 
               # coveralls-ignore-start (defensive rescue if port terminates before connect)
               try do
@@ -234,13 +235,37 @@ defmodule Rail.Runs.Spawner do
   end
 
   # coveralls-ignore-start (test sandbox fallback)
-  defp allow_sandbox(pid) do
+  defp allow_sandbox(pid, opts) do
+    owner = Keyword.get(opts, :test_pid, self())
+
     if Code.ensure_loaded?(Sandbox) do
-      Sandbox.allow(Repo, self(), pid)
+      Sandbox.allow(Repo, owner, pid)
     end
   rescue
     _error -> :ok
   end
+
+  defp allow_test_mocks(pid, opts) do
+    owner = Keyword.get(opts, :test_pid, self())
+
+    if Code.ensure_loaded?(Req.Test) do
+      try do
+        Req.Test.allow(Rail.GitHub, owner, pid)
+      rescue
+        _error -> :ok
+      end
+
+      try do
+        Req.Test.allow(Rail.Linear, owner, pid)
+      rescue
+        _error -> :ok
+      end
+    end
+  rescue
+    _error -> :ok
+  end
+
+  # coveralls-ignore-stop
 
   defp build_environment(stream_path, opts) do
     scratch_path =
@@ -268,8 +293,6 @@ defmodule Rail.Runs.Spawner do
       case Keyword.get(opts, :credential_helper) do
         helper when is_binary(helper) and helper != "" ->
           Map.put(extra_env, "GIT_ASKPASS", helper)
-
-        # coveralls-ignore-stop
 
         _other ->
           extra_env

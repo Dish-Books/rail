@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"sess-qalead-001","tools":["read_file"],"mcp_servers":[]}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Grading the QA pass, validating test logs, and reviewing captured evidence..."}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"QA Lead audit confirms thorough coverage and reliable verification.\n\nVERDICT: PASSED"}]}}
+{"type":"result","subtype":"success","session_id":"sess-qalead-001","result":"QA Lead sign-off granted.\nVERDICT: PASSED","num_turns":1,"usage":{"input_tokens":160,"output_tokens":55,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cost_usd":0.003}}

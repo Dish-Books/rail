@@ -7,21 +7,8 @@ defmodule Rail.Issues.Actions.UpdateIssue do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
-  alias Rail.Scope
 
   def update_issue(scope, %Issue{} = issue, attrs) do
-    if authorized?(scope) do
-      do_update_issue(scope, issue, attrs)
-    else
-      {:error, :not_authorized}
-    end
-  end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
-
-  defp do_update_issue(scope, %Issue{} = issue, attrs) do
     attrs_map = normalize_attrs(attrs)
     project = Repo.get(Project, issue.project_id)
 

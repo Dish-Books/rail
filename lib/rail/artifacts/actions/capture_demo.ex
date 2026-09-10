@@ -11,21 +11,12 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
   alias Rail.Issues
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Scope
   alias Rail.Users.Schemas.User
 
   def capture_demo(scope, target, scratch_dir_or_opts, opts \\ []) do
-    if authorized?(scope) do
-      {task, task_id, scratch_dir, combined_opts} = normalize_args(target, scratch_dir_or_opts, opts)
-      do_capture_demo(scope, task, task_id, scratch_dir, combined_opts)
-    else
-      {:error, :not_authorized}
-    end
+    {task, task_id, scratch_dir, combined_opts} = normalize_args(target, scratch_dir_or_opts, opts)
+    do_capture_demo(scope, task, task_id, scratch_dir, combined_opts)
   end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
 
   defp normalize_args(target, scratch_dir, opts) when is_binary(scratch_dir) do
     {task, task_id} = resolve_task_and_id(target)

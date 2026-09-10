@@ -4,9 +4,8 @@ defmodule RailWeb.Components.IssueCard do
 
   import RailWeb.CoreComponents, only: [icon: 1, project_badge: 1]
 
-  alias Rail.Domain.Enums.IssueState
-  alias Rail.Domain.Enums.TaskPriority
   alias Rail.Domain.Formatters
+  alias Rail.Issues.Schemas.Issue
 
   attr :issue, :map, required: true
   attr :task, :map, default: nil
@@ -18,7 +17,7 @@ defmodule RailWeb.Components.IssueCard do
     ~H"""
     <div
       id={"issue-card-#{@issue.id}"}
-      data-qa={"issue-card-#{@issue.id}"}
+      data-qa={"issue-row issue-card-#{@issue.id}"}
       class="m3-card p-5 cursor-pointer hover:border-[var(--color-outline)] transition-colors space-y-3"
       phx-click="open_editor"
       phx-value-issue_id={@issue.id}
@@ -109,7 +108,7 @@ defmodule RailWeb.Components.IssueCard do
           </.link>
 
           <button
-            :if={@task == nil and not IssueState.finished?(@issue.state)}
+            :if={@task == nil and not Issue.finished_state?(@issue.state)}
             type="button"
             id={"bring-local-#{@issue.id}"}
             data-qa={"bring_local_#{@issue.id}"}
@@ -174,11 +173,11 @@ defmodule RailWeb.Components.IssueCard do
   end
 
   def priority_label(priority) do
-    TaskPriority.label(priority) || "Medium"
+    Issue.priority_label(priority) || "Medium"
   end
 
   def status_label(state) do
-    IssueState.label(state) || "Triage"
+    Issue.state_label(state) || "Triage"
   end
 
   defp priority_badge_class(:urgent), do: "border-red-500 text-red-500 bg-red-500/10"

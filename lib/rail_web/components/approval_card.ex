@@ -38,7 +38,7 @@ defmodule RailWeb.Components.ApprovalCard do
     ~H"""
     <div
       id={"approval-card-#{@card_id}"}
-      data-qa="approval-card"
+      data-qa="overview-card approval-card"
       class="mb-3 rounded-lg border border-[var(--color-border)] border-l-4 border-l-amber-600 bg-[var(--color-surface)] p-4 shadow-xs"
     >
       <!-- Header Row -->

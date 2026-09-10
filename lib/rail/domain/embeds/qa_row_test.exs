@@ -69,4 +69,17 @@ defmodule Rail.Domain.Embeds.QaRowTest do
     assert decoded["severity"] == "blocker"
     assert [%{"name" => "test_output.txt"}] = decoded["artifacts"]
   end
+
+  test "results/0 and severities/0 return allowed lists" do
+    assert :pass in QaRow.results()
+    assert :fail in QaRow.results()
+    assert :warn in QaRow.results()
+    assert :skip in QaRow.results()
+
+    assert :blocker in QaRow.severities()
+    assert :critical in QaRow.severities()
+    assert :major in QaRow.severities()
+    assert :minor in QaRow.severities()
+    assert :cosmetic in QaRow.severities()
+  end
 end

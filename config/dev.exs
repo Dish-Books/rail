@@ -14,14 +14,14 @@ config :rail, Rail.Repo,
   username: "postgres",
   password: "postgres",
   hostname: "localhost",
-  port: String.to_integer(System.get_env("DB_PORT") || "5432"),
-  database: "rail_dev#{System.get_env("DB_SUFFIX")}",
+  port: 5432,
+  database: "rail_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
 
 config :rail, RailWeb.Endpoint,
-  http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4000")],
+  http: [ip: {127, 0, 0, 1}, port: 4000],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
@@ -30,3 +30,5 @@ config :rail, RailWeb.Endpoint,
     esbuild: {Esbuild, :install_and_run, [:rail, ~w(--sourcemap=inline --watch)]},
     tailwind: {Tailwind, :install_and_run, [:rail, ~w(--watch)]}
   ]
+
+config :rail, dev_routes: true

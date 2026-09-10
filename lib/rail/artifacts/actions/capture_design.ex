@@ -9,20 +9,11 @@ defmodule Rail.Artifacts.Actions.CaptureDesign do
   alias Rail.Artifacts.Validators.DesignValidator
   alias Rail.Issues
   alias Rail.Repo
-  alias Rail.Scope
 
   def capture_design(scope, target, scratch_dir_or_opts, opts \\ []) do
-    if authorized?(scope) do
-      {task_id, scratch_dir, combined_opts} = normalize_args(target, scratch_dir_or_opts, opts)
-      do_capture_design(scope, task_id, scratch_dir, combined_opts)
-    else
-      {:error, :not_authorized}
-    end
+    {task_id, scratch_dir, combined_opts} = normalize_args(target, scratch_dir_or_opts, opts)
+    do_capture_design(scope, task_id, scratch_dir, combined_opts)
   end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
 
   defp normalize_args(target, scratch_dir, opts) when is_binary(scratch_dir) do
     task_id = extract_task_id(target)

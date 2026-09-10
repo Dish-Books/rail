@@ -3,7 +3,9 @@ defmodule Rail.Domain.Formatters do
   Formatting utilities for task statuses, summaries, tokens, costs, and durations.
   """
 
-  alias Rail.Domain.Enums.TaskStage
+  alias Rail.Domain.TicketBody
+  alias Rail.Pipeline.Schemas.Plan
+  alias Rail.Pipeline.Schemas.Task
 
   @doc """
   Derives an issue title from typed idea ask text.
@@ -78,6 +80,202 @@ defmodule Rail.Domain.Formatters do
   end
 
   @doc """
+  Returns the Material icon name for a task's state per spec 05 §0.6:
+  1. Chat active -> "chat_bubble_outline"
+  2. Conflicted -> "call_split"
+  3. Running -> "play_circle_outline"
+  4. Queued -> "schedule"
+  5. Blocked -> "help_outline"
+  6. Awaiting approval -> "merge_type" if ready_to_merge else "rate_review_outlined"
+  7. Failed -> "error_outline"
+  """
+  def stage_state_icon(task) do
+    cond do
+      get_field(task, :active_chat_role_id) != nil ->
+        "chat_bubble_outline"
+
+      shows_as_conflicted?(task) ->
+        "call_split"
+
+      true ->
+        case stage_state(task) do
+          :running ->
+            "play_circle_outline"
+
+          :queued ->
+            "schedule"
+
+          s when s in [:blocked, :paused_question, :blocked_rework] ->
+            "help_outline"
+
+          :awaiting_approval ->
+            if stage(task) == :ready_to_merge do
+              "merge_type"
+            else
+              "rate_review_outlined"
+            end
+
+          :failed ->
+            "error_outline"
+
+          _other ->
+            "help_outline"
+        end
+    end
+  end
+
+  @doc """
+  Returns the semantic color atom (:primary, :amber, :outline, :error) for a task per spec 05 §0.6:
+  1. Chat active or running -> :primary
+  2. Conflicted, blocked, or awaiting_approval -> :amber
+  3. Queued -> :outline
+  4. Failed -> :error
+  """
+  def stage_state_color(task) do
+    cond do
+      get_field(task, :active_chat_role_id) != nil ->
+        :primary
+
+      shows_as_conflicted?(task) ->
+        :amber
+
+      true ->
+        case stage_state(task) do
+          :running ->
+            :primary
+
+          s when s in [:blocked, :paused_question, :blocked_rework, :awaiting_approval] ->
+            :amber
+
+          :queued ->
+            :outline
+
+          :failed ->
+            :error
+
+          _other ->
+            :outline
+        end
+    end
+  end
+
+  @doc """
+  Returns Tailwind CSS color classes for a task's stage state.
+  """
+  def stage_state_color_class(task, variant \\ :text)
+
+  def stage_state_color_class(task, :text) do
+    case stage_state_color(task) do
+      :primary -> "text-[var(--color-primary)]"
+      :amber -> "text-amber-700 dark:text-amber-300"
+      :outline -> "text-[var(--color-outline)]"
+      :error -> "text-[var(--color-error)]"
+    end
+  end
+
+  def stage_state_color_class(task, :chip) do
+    case stage_state_color(task) do
+      :primary ->
+        "bg-[var(--color-primary-container)] text-[var(--color-on-primary-container)] border-[var(--color-primary)]"
+
+      :amber ->
+        "bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 border-amber-500"
+
+      :outline ->
+        "bg-[var(--color-surface-container-high)] text-[var(--color-on-surface)] border-[var(--color-outline)]"
+
+      :error ->
+        "bg-[var(--color-error-container)] text-[var(--color-on-error-container)] border-[var(--color-error)]"
+    end
+  end
+
+  @doc """
+  Returns true if the task has merge conflicts, is not rebasing, and is in queued or awaiting_approval state.
+  """
+  def shows_as_conflicted?(task) do
+    has_merge_conflicts?(task) and not rebasing?(task) and stage_state(task) in [:queued, :awaiting_approval, nil]
+  end
+
+  @doc """
+  Returns true if the task has merge conflicts.
+  """
+  def has_merge_conflicts?(task) do
+    cond do
+      get_field(task, :shows_as_conflicted) == true -> true
+      get_field(task, :conflicted) == true -> true
+      get_field(task, :has_merge_conflicts) == true -> true
+      get_field(task, :mergeability) in [:conflicts, "conflicts", :conflicting, "conflicting"] -> true
+      true -> false
+    end
+  end
+
+  @doc """
+  Returns whether the task uses the Designer stage per spec 05 §0.1:
+  true while the task is at or before Design (stage in [:product, :design]),
+  or if a designer run exists in its history.
+  """
+  def uses_design?(task, opts \\ [])
+
+  def uses_design?(nil, _opts), do: false
+
+  def uses_design?(task, opts) do
+    current_stage = stage(task)
+
+    cond do
+      current_stage in [:product, :design] ->
+        true
+
+      Keyword.get(opts, :has_designer_run, false) == true ->
+        true
+
+      has_designer_run?(task, opts) ->
+        true
+
+      true ->
+        false
+    end
+  end
+
+  @doc """
+  Returns the ticket specification body for a task, falling back to literal `_No ticket body yet._` if empty.
+  """
+  def ticket_for(task) do
+    desc = get_field(task, :description) || ""
+    %{ticket: ticket} = TicketBody.split(desc)
+    trimmed = String.trim(ticket)
+    if trimmed == "", do: "_No ticket body yet._", else: ticket
+  end
+
+  @doc """
+  Returns the architectural plan for a task, resolving from stored Plan or task description split.
+  """
+  def plan_for(task) do
+    desc = get_field(task, :description) || ""
+
+    stored_plan =
+      case task do
+        %{plans: [%Plan{content: content} | _rest]} when is_binary(content) ->
+          if String.trim(content) == "", do: nil, else: content
+
+        _other ->
+          case Rail.Pipeline.get_plan(task) do
+            {:ok, %Plan{content: content}} when is_binary(content) ->
+              if String.trim(content) == "", do: nil, else: content
+
+            _other ->
+              nil
+          end
+      end
+
+    if stored_plan do
+      stored_plan
+    else
+      %{plan: fallback_plan} = TicketBody.split(desc)
+      if is_binary(fallback_plan) and String.trim(fallback_plan) != "", do: fallback_plan
+    end
+  end
+
+  @doc """
   Formats an integer token count into a compact string:
   - >= 1_000_000: "X.XXM" (e.g. 1_230_000 -> "1.23M", 2_500_000 -> "2.5M")
   - >= 1_000: "X.XK" (e.g. 1_500 -> "1.5K", 2_000 -> "2K")
@@ -115,6 +313,8 @@ defmodule Rail.Domain.Formatters do
   Other: "12.3456 EUR"
   """
   def format_cost(cost, currency_or_opts \\ "USD")
+
+  # Private Helpers
 
   def format_cost(nil, _currency_or_opts), do: ""
 
@@ -158,6 +358,50 @@ defmodule Rail.Domain.Formatters do
       m > 0 -> "#{m}m #{s}s"
       true -> "#{s}s"
     end
+  end
+
+  @doc """
+  Maps a role icon name to a Material icon name per spec 05 §0.6 / §4.3:
+  `code` -> "code", `bug_report` -> "bug_report", `verified` -> "verified",
+  `fact_check` -> "fact_check", `rate_review` -> "rate_review", `alt_route` -> "alt_route",
+  `travel_explore` -> "travel_explore", `assignment` -> "assignment",
+  `architecture` -> "architecture", `palette` -> "palette", `videocam` -> "videocam",
+  default -> "help_outline".
+  """
+  def role_icon_for(icon_name) when is_binary(icon_name) do
+    case icon_name do
+      "code" -> "code"
+      "bug_report" -> "bug_report"
+      "verified" -> "verified"
+      "fact_check" -> "fact_check"
+      "rate_review" -> "rate_review"
+      "alt_route" -> "alt_route"
+      "travel_explore" -> "travel_explore"
+      "assignment" -> "assignment"
+      "architecture" -> "architecture"
+      "palette" -> "palette"
+      "videocam" -> "videocam"
+      _other -> "help_outline"
+    end
+  end
+
+  def role_icon_for(_other), do: "help_outline"
+
+  @doc """
+  Formats a run status atom or string into lowerCamel per spec 05 §4.4:
+  e.g. :running -> "running", :blocked_on_input -> "blockedOnInput", :completed -> "completed".
+  """
+  def format_run_status(nil), do: ""
+
+  def format_run_status(status) when is_atom(status) do
+    status |> Atom.to_string() |> format_run_status()
+  end
+
+  def format_run_status(""), do: ""
+
+  def format_run_status(status) when is_binary(status) do
+    [first | rest] = String.split(status, "_")
+    first <> Enum.map_join(rest, &String.capitalize/1)
   end
 
   # Private Helpers
@@ -324,10 +568,16 @@ defmodule Rail.Domain.Formatters do
   defp rework_cycle_suffix(task, current_stage, opts) do
     rework_cycles = get_field(task, :rework_cycles) || 0
     has_been_reworked = rework_cycles > 0
-    is_before_engineer = TaskStage.before?(current_stage, :engineer)
+    is_before_engineer = Task.before?(current_stage, :engineer)
 
     if has_been_reworked and not is_before_engineer do
-      ceiling = get_field(task, :rework_ceiling) || Keyword.get(opts, :rework_ceiling, 5)
+      rework_budget_base = get_field(task, :rework_budget_base)
+
+      ceiling =
+        get_field(task, :rework_ceiling) ||
+          if(is_integer(rework_budget_base), do: rework_budget_base + 5) ||
+          Keyword.get(opts, :rework_ceiling, 5)
+
       " · rework #{rework_cycles} of #{ceiling}"
     else
       ""
@@ -414,6 +664,35 @@ defmodule Rail.Domain.Formatters do
     end
   end
 
+  defp has_designer_run?(task, opts) do
+    runs =
+      Keyword.get(opts, :role_runs) ||
+        Keyword.get(opts, :runs) ||
+        get_field(task, :role_runs) ||
+        get_field(task, :runs) ||
+        []
+
+    cond do
+      is_list(runs) and runs != [] ->
+        Enum.any?(runs, fn r ->
+          role_id = get_field(r, :role_id)
+          role = get_field(r, :role)
+          role_stage = if is_map(role), do: get_field(role, :stage)
+
+          role_id in ["designer", :designer, "design", :design] or role_stage in [:design, "design"]
+        end)
+
+      is_map(runs) and map_size(runs) > 0 ->
+        Map.has_key?(runs, "designer") or
+          Map.has_key?(runs, :designer) or
+          Map.has_key?(runs, "design") or
+          Map.has_key?(runs, :design)
+
+      true ->
+        false
+    end
+  end
+
   defp role_name_for_chat(role_id, opts) do
     role_id_str = to_string(role_id)
 
@@ -452,7 +731,7 @@ defmodule Rail.Domain.Formatters do
   end
 
   defp stage_label_name(stage) do
-    TaskStage.label(stage) || to_title(stage)
+    Task.stage_label(stage) || to_title(stage)
   end
 
   defp to_title(nil), do: ""
