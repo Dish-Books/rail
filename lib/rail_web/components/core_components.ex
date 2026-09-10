@@ -27,4 +27,6 @@ defmodule RailWeb.CoreComponents do
   defdelegate markdown(assigns), to: RailWeb.Components.Markdown
   defdelegate answer_field(assigns), to: RailWeb.Components.AnswerField
   defdelegate conversation_tab(assigns), to: RailWeb.Components.ConversationTab
+  defdelegate diff_pane(assigns), to: RailWeb.Components.DiffPane
+  defdelegate diff_stat(assigns), to: RailWeb.Components.DiffStat
 end

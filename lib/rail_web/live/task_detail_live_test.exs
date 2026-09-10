@@ -145,8 +145,9 @@ defmodule RailWeb.TaskDetailLiveTest do
     view |> element("#tab-diff") |> render_click()
     assert_patched(view, ~p"/tasks/#{task.id}?tab=diff")
     assert has_element?(view, "#tab-diff[data-active='true']")
-    assert has_element?(view, "#diff-stub-content")
-    assert has_element?(view, "#diff-stub-content", "/tmp/worktree/tab-task")
+    assert has_element?(view, "#tab-diff-pane")
+    assert has_element?(view, "#tab-diff-pane", "/tmp/worktree/tab-task")
+    assert has_element?(view, "#btn-refresh-diff", "Refresh")
 
     # Switch back to Overview tab
     view |> element("#tab-overview") |> render_click()
@@ -1546,5 +1547,145 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     assert {:noreply, %{assigns: %{task: nil}}} =
              RailWeb.TaskDetailLive.handle_event("cancel_pending_chat", %{}, dummy_socket)
+  end
+
+  test "diff tab displays empty state when branch has no changes and refreshes", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+    repo = create_temp_git_repo()
+
+    task =
+      create_test_task(%{
+        worktree_path: repo,
+        owner_user_id: user.id
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=diff")
+
+    assert has_element?(view, "#tab-diff-pane")
+    assert has_element?(view, "#diff-empty-state")
+    assert has_element?(view, "#diff-empty-state", "Nothing has been changed on this branch yet.")
+
+    # Click refresh diff
+    view |> element("#btn-refresh-diff") |> render_click()
+    assert has_element?(view, "#diff-empty-state", "Nothing has been changed on this branch yet.")
+  end
+
+  test "diff tab loads changes, toggles viewed, and selects file in tree", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+    repo = create_temp_git_repo()
+
+    File.write!(Path.join(repo, "example.txt"), "hello world\nline two\n")
+
+    task =
+      create_test_task(%{
+        worktree_path: repo,
+        owner_user_id: user.id
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
+
+    # Switch to diff tab (lazy loading)
+    view |> element("#tab-diff") |> render_click()
+    assert_patched(view, ~p"/tasks/#{task.id}?tab=diff")
+
+    assert has_element?(view, "#diff-file-tree")
+    assert has_element?(view, "#diff-file-tree", "example.txt")
+    assert has_element?(view, "[data-qa='diff_file_header']", "example.txt")
+    assert has_element?(view, "[data-qa='diff_line_row']", "hello world")
+
+    # Select file in tree
+    view |> element("button[phx-click='select_diff_file'][phx-value-path='example.txt']") |> render_click()
+
+    # Toggle viewed -> collapses body rows
+    view
+    |> element("input[phx-click='toggle_viewed'][phx-value-path='example.txt']")
+    |> render_click(%{"value" => "true"})
+
+    refute has_element?(view, "[data-qa='diff_line_row']")
+
+    # Toggle viewed back -> expands body rows
+    view
+    |> element("input[phx-click='toggle_viewed'][phx-value-path='example.txt']")
+    |> render_click(%{"value" => "false"})
+
+    assert has_element?(view, "[data-qa='diff_line_row']", "hello world")
+  end
+
+  test "diff tab expands gaps when clicking expand_gap", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+    repo = create_temp_git_repo()
+
+    lines = Enum.map_join(1..15, "\n", fn i -> "orig line #{i}" end) <> "\n"
+    File.write!(Path.join(repo, "gap_file.txt"), lines)
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "initial gap file"])
+
+    git!(repo, ["checkout", "-b", "feat-gap"])
+    modified = "mod line 1\n" <> Enum.map_join(2..14, "\n", fn i -> "orig line #{i}" end) <> "\nmod line 15\n"
+    File.write!(Path.join(repo, "gap_file.txt"), modified)
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "modify gap file"])
+
+    task =
+      create_test_task(%{
+        worktree_path: repo,
+        owner_user_id: user.id
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=diff")
+
+    assert has_element?(view, "[data-qa='diff_gap_row']")
+    assert has_element?(view, "[data-qa='diff_gap_row']", "Expand 7 hidden lines")
+
+    # Click expand gap
+    view |> element("[data-qa='diff_gap_row']") |> render_click()
+
+    refute has_element?(view, "[data-qa='diff_gap_row']")
+    assert has_element?(view, "[data-qa='diff_line_row']", "orig line 5")
+  end
+
+  test "exercises diff helper functions in TaskDetailLive" do
+    scope = Scope.for_system()
+    task = create_test_task(%{worktree_path: nil})
+
+    dummy_socket = %Socket{
+      assigns: %{
+        __changed__: %{},
+        task: task,
+        task_id: task.id,
+        current_scope: scope,
+        active_tab: :diff,
+        file_diffs: [],
+        loading_diff: false,
+        viewed_diff_files: %{},
+        expanded_gaps: %{},
+        diff_rev: nil,
+        selected_diff_file: nil
+      }
+    }
+
+    # do_load_diff when task has no worktree results in error branch
+    assert {:noreply, %{assigns: %{file_diffs: []}}} =
+             RailWeb.TaskDetailLive.handle_event("refresh_diff", %{}, dummy_socket)
+
+    # select_diff_file
+    assert {:noreply, %{assigns: %{selected_diff_file: "test.ex"}}} =
+             RailWeb.TaskDetailLive.handle_event("select_diff_file", %{"path" => "test.ex"}, dummy_socket)
+
+    # toggle_viewed with toggle logic
+    assert {:noreply, %{assigns: %{viewed_diff_files: %{"test.ex" => "h1"}}}} =
+             RailWeb.TaskDetailLive.handle_event(
+               "toggle_viewed",
+               %{"path" => "test.ex", "digest" => "h1"},
+               dummy_socket
+             )
+
+    # expand_gap with nil lines or missing worktree
+    assert {:noreply, %{assigns: %{expanded_gaps: %{"test.ex:0" => []}}}} =
+             RailWeb.TaskDetailLive.handle_event(
+               "expand_gap",
+               %{"path" => "test.ex", "gap_index" => "0", "start_line" => "1", "end_line" => "5"},
+               dummy_socket
+             )
   end
 end

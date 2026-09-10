@@ -7,18 +7,22 @@ defmodule Rail.Git.Actions.GetDiff do
   Gets the git diff for the worktree according to filter, synthesizing untracked files
   for uncommitted diffs.
   """
-  def get_diff(worktree_path, filter \\ nil) when is_binary(worktree_path) do
-    args =
-      cond do
-        is_nil(filter) or filter == "uncommitted" ->
-          ["diff", "HEAD"]
+  def get_diff(worktree_path) when is_binary(worktree_path) do
+    do_get_diff(worktree_path, nil)
+  end
 
-        filter == "main" ->
-          ["diff", "main...HEAD"]
+  def get_diff(worktree_path, opts) when is_binary(worktree_path) and is_list(opts) do
+    filter = Keyword.get(opts, :filter)
+    do_get_diff(worktree_path, filter)
+  end
 
-        true ->
-          ["diff", filter]
-      end
+  def get_diff(worktree_path, filter) when is_binary(worktree_path) do
+    do_get_diff(worktree_path, filter)
+  end
+
+  defp do_get_diff(worktree_path, filter) do
+    filter_norm = normalize_filter(filter)
+    args = diff_args(filter_norm)
 
     diff_output =
       case git_cmd(args, cd: worktree_path, stderr_to_stdout: true) do
@@ -30,7 +34,7 @@ defmodule Rail.Git.Actions.GetDiff do
           out_fallback
       end
 
-    if is_nil(filter) or filter == "uncommitted" do
+    if is_nil(filter_norm) or filter_norm == "uncommitted" do
       untracked_diffs =
         worktree_path
         |> Rail.Git.list_untracked_files()
@@ -41,4 +45,14 @@ defmodule Rail.Git.Actions.GetDiff do
       diff_output
     end
   end
+
+  defp normalize_filter(:uncommitted), do: "uncommitted"
+  defp normalize_filter(:main), do: "main"
+  defp normalize_filter(binary) when is_binary(binary), do: binary
+  defp normalize_filter(atom) when is_atom(atom) and atom not in [true, false, nil], do: Atom.to_string(atom)
+  defp normalize_filter(_other), do: nil
+
+  defp diff_args(filter) when is_nil(filter) or filter == "uncommitted", do: ["diff", "HEAD"]
+  defp diff_args("main"), do: ["diff", "main...HEAD"]
+  defp diff_args(filter), do: ["diff", filter]
 end

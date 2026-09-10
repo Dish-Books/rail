@@ -12,7 +12,8 @@ defmodule RailWeb.TaskDetailLive do
       task_actions: 1,
       task_action_modals: 1,
       answer_field: 1,
-      conversation_tab: 1
+      conversation_tab: 1,
+      diff_pane: 1
     ]
 
   alias Rail.Domain.ChatTranscript
@@ -55,6 +56,12 @@ defmodule RailWeb.TaskDetailLive do
       |> assign(:chat_sending, false)
       |> assign(:active_delivery_modal, nil)
       |> assign(:subscribed_run_id, nil)
+      |> assign(:file_diffs, [])
+      |> assign(:viewed_diff_files, %{})
+      |> assign(:expanded_gaps, %{})
+      |> assign(:selected_diff_file, nil)
+      |> assign(:loading_diff, false)
+      |> assign(:diff_rev, nil)
 
     {:ok, socket}
   end
@@ -108,6 +115,7 @@ defmodule RailWeb.TaskDetailLive do
       socket
       |> assign(:active_tab, active_tab)
       |> assign(:current_section, :tasks)
+      |> maybe_load_diff(active_tab)
 
     {:noreply, socket}
   end
@@ -407,7 +415,7 @@ defmodule RailWeb.TaskDetailLive do
           />
         </div>
 
-        <!-- Tab 4: Diff Pane (Stub placeholder for 6.4) -->
+        <!-- Tab 4: Diff Pane -->
         <div
           id="tab-diff-pane"
           data-qa="tab-diff-pane"
@@ -424,15 +432,45 @@ defmodule RailWeb.TaskDetailLive do
               </p>
             </div>
           <% else %>
-            <div
-              id="diff-stub-content"
-              data-qa="diff_stub_content"
-              class="p-6 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]"
-            >
-              <p class="text-xs font-mono text-[var(--color-outline)]">
-                Worktree: {@task.worktree_path}
-              </p>
-            </div>
+            <%= if @loading_diff do %>
+              <div
+                id="diff-loading-spinner"
+                data-qa="diff_loading_spinner"
+                class="flex items-center justify-center min-h-[300px]"
+              >
+                <div
+                  class="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-e-transparent align-[-0.125em] text-[var(--color-primary)] motion-reduce:animate-[spin_1.5s_linear_infinite]"
+                  role="status"
+                >
+                  <span class="sr-only">Loading diff...</span>
+                </div>
+              </div>
+            <% else %>
+              <div class="space-y-3">
+                <div class="flex items-center justify-between gap-4 px-1 text-xs">
+                  <div class="truncate text-[var(--color-on-surface-variant)] font-mono">
+                    {@task.worktree_path}
+                  </div>
+                  <button
+                    type="button"
+                    id="btn-refresh-diff"
+                    data-qa="btn_refresh_diff"
+                    phx-click="refresh_diff"
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-high)] transition-colors cursor-pointer"
+                  >
+                    <.icon name="hero-arrow-path" class="w-3.5 h-3.5" />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+
+                <.diff_pane
+                  files={@file_diffs}
+                  viewed={@viewed_diff_files}
+                  expanded_gaps={@expanded_gaps}
+                  selected_file={@selected_diff_file}
+                />
+              </div>
+            <% end %>
           <% end %>
         </div>
 
@@ -690,6 +728,61 @@ defmodule RailWeb.TaskDetailLive do
     end
 
     {:noreply, refresh_task(socket)}
+  end
+
+  def handle_event("refresh_diff", _params, socket) do
+    {:noreply, do_load_diff(socket)}
+  end
+
+  def handle_event("toggle_viewed", %{"path" => path, "digest" => digest} = params, socket) do
+    scope = socket.assigns.current_scope
+    task = socket.assigns.task
+    current_viewed = socket.assigns.viewed_diff_files || %{}
+
+    new_state =
+      case Map.get(params, "value") do
+        "true" -> true
+        "false" -> false
+        _other -> not Map.has_key?(current_viewed, path)
+      end
+
+    {:ok, updated_task} = Pipeline.set_diff_file_viewed(scope, task, path, digest, new_state)
+
+    socket =
+      socket
+      |> assign(:task, updated_task)
+      |> assign(:viewed_diff_files, updated_task.viewed_diff_files || %{})
+
+    {:noreply, socket}
+  end
+
+  def handle_event("expand_gap", params, socket) do
+    path = params["path"]
+    gap_index = String.to_integer(params["gap-index"] || params["gap_index"])
+    start_line = String.to_integer(params["start-line"] || params["start_line"])
+    end_line = String.to_integer(params["end-line"] || params["end_line"])
+
+    {gap_key, lines} =
+      Pipeline.expand_diff_gap(
+        socket.assigns.task,
+        path,
+        gap_index,
+        start_line,
+        end_line,
+        socket.assigns.diff_rev
+      )
+
+    expanded = Map.put(socket.assigns.expanded_gaps || %{}, gap_key, lines)
+    {:noreply, assign(socket, :expanded_gaps, expanded)}
+  end
+
+  def handle_event("select_diff_file", %{"path" => path}, socket) do
+    socket =
+      socket
+      |> assign(:selected_diff_file, path)
+      |> push_event("scroll-to-file", %{path: path})
+
+    {:noreply, socket}
   end
 
   def handle_event(_event, _params, socket), do: {:noreply, socket}
@@ -1133,6 +1226,7 @@ defmodule RailWeb.TaskDetailLive do
     |> assign(:log_lines, log_lines)
     |> assign(:transcript, transcript)
     |> assign(:subscribed_run_id, new_run_id)
+    |> assign(:viewed_diff_files, task.viewed_diff_files || %{})
   end
 
   defp resolve_pending_question(scope, %{stage_state: :blocked, question_id: q_id}) when is_binary(q_id) and q_id != "" do
@@ -1223,5 +1317,40 @@ defmodule RailWeb.TaskDetailLive do
     |> to_string()
     |> String.split("_")
     |> Enum.map_join(" ", &String.capitalize/1)
+  end
+
+  defp maybe_load_diff(socket, :diff) do
+    task = socket.assigns.task
+
+    if task && task.worktree_path && socket.assigns.file_diffs == [] &&
+         not socket.assigns.loading_diff do
+      do_load_diff(socket)
+    else
+      socket
+    end
+  end
+
+  defp maybe_load_diff(socket, _other_tab), do: socket
+
+  defp do_load_diff(socket) do
+    task = socket.assigns.task
+
+    case Pipeline.load_diff(task) do
+      {:ok, parsed_files, diff_rev} ->
+        task = Pipeline.get_task!(socket.assigns.current_scope, task.id)
+
+        socket
+        |> assign(:file_diffs, parsed_files)
+        |> assign(:diff_rev, diff_rev)
+        |> assign(:viewed_diff_files, task.viewed_diff_files || %{})
+        |> assign(:expanded_gaps, %{})
+        |> assign(:loading_diff, false)
+
+      {:error, _reason} ->
+        socket
+        |> assign(:file_diffs, [])
+        |> assign(:diff_rev, nil)
+        |> assign(:loading_diff, false)
+    end
   end
 end

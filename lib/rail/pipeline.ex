@@ -143,4 +143,11 @@ defmodule Rail.Pipeline do
   defdelegate cleanup_task(scope_or_task, task_or_opts, opts), to: Actions.CleanupTask
   defdelegate cleanup_task(scope_or_task, task_or_opts), to: Actions.CleanupTask
   defdelegate cleanup_task(task_or_id), to: Actions.CleanupTask
+
+  defdelegate load_diff(scope_or_task, task_or_opts), to: Actions.LoadDiff
+  defdelegate load_diff(task), to: Actions.LoadDiff
+  defdelegate reconcile_viewed_diff_files(task, parsed_files), to: Actions.ReconcileViewedDiffFiles
+  defdelegate set_diff_file_viewed(scope, task, file_path, file_digest, viewed), to: Actions.SetDiffFileViewed
+  defdelegate set_diff_file_viewed(task, file_path, file_digest, viewed), to: Actions.SetDiffFileViewed
+  defdelegate expand_diff_gap(task, file_path, gap_index, start_line, end_line, diff_rev), to: Actions.ExpandDiffGap
 end

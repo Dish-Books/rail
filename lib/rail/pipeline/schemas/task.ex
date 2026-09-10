@@ -46,7 +46,7 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :rework_budget_base, :integer, default: 0
     field :rework_cycles_by_gate, :map, default: %{}
     field :outstanding_reports, {:array, :string}, default: []
-    field :viewed_diff_files, {:array, :string}, default: []
+    field :viewed_diff_files, Rail.Pipeline.Types.ViewedDiffFiles, default: %{}
     field :merged_at, :utc_datetime_usec
 
     has_many :questions, Question
@@ -124,7 +124,7 @@ defmodule Rail.Pipeline.Schemas.Task do
       rework_budget_base: 0,
       rework_cycles_by_gate: %{},
       outstanding_reports: [],
-      viewed_diff_files: []
+      viewed_diff_files: %{}
     }
   end
 

@@ -22,7 +22,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
              rework_budget_base: 0,
              rework_cycles_by_gate: %{},
              outstanding_reports: [],
-             viewed_diff_files: []
+             viewed_diff_files: %{}
            } = Task.factory()
   end
 
