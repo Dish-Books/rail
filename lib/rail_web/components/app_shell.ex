@@ -499,6 +499,78 @@ defmodule RailWeb.Components.AppShell do
       >
         <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z" />
       </svg>
+
+      <svg
+        :if={@name in ["info_outline", "info"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v-2h-2v2z" />
+      </svg>
+
+      <svg
+        :if={@name in ["check_circle_outline", "check_circle"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm4.59-12.42L10 14.17l-2.59-2.58L6 13l4 4 8-8z" />
+      </svg>
+
+      <svg
+        :if={@name in ["code", "terminal", "hero-command-line"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z" />
+      </svg>
+
+      <svg
+        :if={@name in ["architecture", "account_tree"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M19 15v-3h-2v3h-3v2h3v3h2v-3h3v-2h-3zM7 9h2V6H7v3zm4-5H5v7h6V4zm8 0h-6v7h6V4zM9 18H7v-3h2v3zm2-5H5v7h6v-7z" />
+      </svg>
+
+      <svg
+        :if={@name in ["palette", "brush", "design"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 3a9 9 0 0 0 0 18c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
+      </svg>
+
+      <svg
+        :if={@name in ["videocam", "movie", "demo"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" />
+      </svg>
+
+      <svg
+        :if={@name in ["fact_check", "checklist", "qa"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M20 3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9 14l-4-4 1.41-1.41L11 14.17l6.59-6.59L19 9l-8 8zm0-10H5V5h6v2zm8 0h-6V5h6v2zm0 4h-6V9h6v2z" />
+      </svg>
+
+      <svg
+        :if={@name in ["chat"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z" />
+      </svg>
+
+      <svg
+        :if={@name in ["smart_toy", "robot", "agent"]}
+        class="w-full h-full fill-current"
+        viewBox="0 0 24 24"
+      >
+        <path d="M20 9V7c0-1.1-.9-2-2-2h-3c0-1.66-1.34-3-3-3S9 3.34 9 5H6c-1.1 0-2 .9-2 2v2c-1.66 0-3 1.34-3 3s1.34 3 3 3v4c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-4c1.66 0 3-1.34 3-3s-1.34-3-3-3zm-2 10H6V7h12v12zm-9-6c-.83 0-1.5-.67-1.5-1.5S8.17 10 9 10s1.5.67 1.5 1.5S9.83 13 9 13zm6 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm-7.5 3h9v1.5h-9V16z" />
+      </svg>
     </span>
     """
   end

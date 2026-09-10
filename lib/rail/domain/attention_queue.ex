@@ -13,14 +13,14 @@ defmodule Rail.Domain.TaskAttentionItem do
 
   @doc "Creates a new TaskAttentionItem from a task map or struct."
   def new(task, opts \\ []) do
-    id = task[:id] || (is_struct(task) && Map.get(task, :id))
+    id = (is_map(task) && (Map.get(task, :id) || Map.get(task, "id"))) || nil
     key = Keyword.get(opts, :key, "task:#{id}")
 
     waiting_since =
       Keyword.get(opts, :waiting_since) ||
-        task[:created_at] ||
-        task[:inserted_at] ||
-        (is_struct(task) && (Map.get(task, :created_at) || Map.get(task, :inserted_at))) ||
+        (is_map(task) &&
+           (Map.get(task, :created_at) || Map.get(task, :inserted_at) || Map.get(task, "created_at") ||
+              Map.get(task, "inserted_at"))) ||
         DateTime.utc_now()
 
     %__MODULE__{
@@ -46,14 +46,14 @@ defmodule Rail.Domain.QuestionAttentionItem do
 
   @doc "Creates a new QuestionAttentionItem from a question map or struct."
   def new(question, opts \\ []) do
-    id = question[:id] || (is_struct(question) && Map.get(question, :id))
+    id = (is_map(question) && (Map.get(question, :id) || Map.get(question, "id"))) || nil
     key = Keyword.get(opts, :key, "question:#{id}")
 
     waiting_since =
       Keyword.get(opts, :waiting_since) ||
-        question[:created_at] ||
-        question[:inserted_at] ||
-        (is_struct(question) && (Map.get(question, :created_at) || Map.get(question, :inserted_at))) ||
+        (is_map(question) &&
+           (Map.get(question, :created_at) || Map.get(question, :inserted_at) ||
+              Map.get(question, "created_at") || Map.get(question, "inserted_at"))) ||
         DateTime.utc_now()
 
     %__MODULE__{

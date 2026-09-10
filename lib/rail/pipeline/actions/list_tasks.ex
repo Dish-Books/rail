@@ -12,18 +12,25 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   """
   def list_tasks(scope, project_id, opts \\ [])
 
-  def list_tasks(%Scope{system: true}, project_id, opts) when is_binary(project_id) do
+  def list_tasks(%Scope{system: true}, project_id, opts) when is_binary(project_id) or is_nil(project_id) do
     fetch_tasks(project_id, opts)
   end
 
-  def list_tasks(%Scope{user: %{}}, project_id, opts) when is_binary(project_id) do
+  def list_tasks(%Scope{user: %{}}, project_id, opts) when is_binary(project_id) or is_nil(project_id) do
     fetch_tasks(project_id, opts)
   end
 
   def list_tasks(_scope, _project_id, _opts), do: []
 
   defp fetch_tasks(project_id, opts) do
-    query = from(t in Task, where: t.project_id == ^project_id)
+    query = from(t in Task)
+
+    query =
+      if is_binary(project_id) do
+        from(t in query, where: t.project_id == ^project_id)
+      else
+        query
+      end
 
     query =
       case Keyword.get(opts, :stage) do
@@ -35,6 +42,12 @@ defmodule Rail.Pipeline.Actions.ListTasks do
       case Keyword.get(opts, :stage_state) do
         state when is_atom(state) and state != nil -> from(t in query, where: t.stage_state == ^state)
         nil -> query
+      end
+
+    query =
+      case Keyword.get(opts, :preload) do
+        preloads when is_list(preloads) and preloads != [] -> from(t in query, preload: ^preloads)
+        _other -> query
       end
 
     order = Keyword.get(opts, :order_by, asc: :inserted_at)

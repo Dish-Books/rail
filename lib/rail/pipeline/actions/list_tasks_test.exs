@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.Project
   alias Rail.Scope
 
   test "lists tasks for project under system and user scope" do
@@ -68,5 +69,35 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     assert [%Task{id: ^id2}, %Task{id: ^id1}] =
              Pipeline.list_tasks(scope, project.id, order_by: [desc: :inserted_at])
+  end
+
+  test "lists tasks across all projects when project_id is nil" do
+    p1 = create_test_project()
+    p2 = create_test_project()
+    %Task{id: id1} = create_test_task(%{project_id: p1.id, title: "P1 Task"})
+    %Task{id: id2} = create_test_task(%{project_id: p2.id, title: "P2 Task"})
+
+    system_scope = Scope.for_system()
+    user_scope = Scope.for_user(%{admin: false})
+
+    all_tasks_system = Pipeline.list_tasks(system_scope, nil)
+    all_ids_system = Enum.map(all_tasks_system, & &1.id)
+    assert id1 in all_ids_system
+    assert id2 in all_ids_system
+
+    all_tasks_user = Pipeline.list_tasks(user_scope, nil)
+    all_ids_user = Enum.map(all_tasks_user, & &1.id)
+    assert id1 in all_ids_user
+    assert id2 in all_ids_user
+  end
+
+  test "supports preload option" do
+    %Project{id: expected_project_id} = create_test_project()
+    %Task{id: id1} = create_test_task(%{project_id: expected_project_id, title: "Preload Task"})
+
+    scope = Scope.for_system()
+
+    assert [%Task{id: ^id1, project: %Project{id: ^expected_project_id}}] =
+             Pipeline.list_tasks(scope, expected_project_id, preload: [:project])
   end
 end
