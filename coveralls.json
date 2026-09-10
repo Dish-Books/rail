@@ -16,7 +16,6 @@
   },
   "skip_files": [
     "lib/rail/application.ex",
-    "lib/rail/release.ex",
     "lib/rail_web/endpoint.ex",
     "lib/rail_web/router.ex",
     "lib/rail_web/gettext.ex",

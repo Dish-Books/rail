@@ -1,0 +1,35 @@
+{{- if .Values.persistence.worktrees.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "rail.fullname" . }}-worktrees
+  labels:
+    {{- include "rail.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.worktrees.accessMode | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.worktrees.size | quote }}
+  {{- if .Values.persistence.worktrees.storageClass }}
+  storageClassName: {{ .Values.persistence.worktrees.storageClass | quote }}
+  {{- end }}
+{{- end }}
+---
+{{- if .Values.persistence.scratch.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "rail.fullname" . }}-scratch
+  labels:
+    {{- include "rail.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.scratch.accessMode | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.scratch.size | quote }}
+  {{- if .Values.persistence.scratch.storageClass }}
+  storageClassName: {{ .Values.persistence.scratch.storageClass | quote }}
+  {{- end }}
+{{- end }}

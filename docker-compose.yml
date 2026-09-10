@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: rail_prod
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rail_prod"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rail:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: ecto://postgres:postgrespassword@db:5432/rail_prod
+      SECRET_KEY_BASE: 0B3yT32mC7eE8y9F5v0D2a4B6c8E0f2A4b6C8d0E2f4A6b8C0d2E4f6A8b0C2d4E
+      CLOAK_KEY_V1: L2zKQh+tDxkUH94a2O+oa8Mae3mryHitrR/LrYABeNA=
+      PHX_HOST: localhost
+      PORT: "4000"
+      PHX_SERVER: "true"
+    volumes:
+      - worktrees:/var/rail/worktrees
+      - scratch:/var/rail/scratch
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  worktrees:
+  scratch:
