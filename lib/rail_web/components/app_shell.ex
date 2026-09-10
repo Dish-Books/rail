@@ -2,6 +2,8 @@ defmodule RailWeb.Components.AppShell do
   @moduledoc false
   use RailWeb, :html
 
+  import RailWeb.Components.CaptureIssueModal, only: [capture_issue_modal: 1]
+
   attr :current_section, :atom, required: true
   attr :is_rail_extended, :boolean, default: true
   attr :attention_count, :integer, default: 0
@@ -159,6 +161,11 @@ defmodule RailWeb.Components.AppShell do
   attr :theme, :string, default: "dark"
   attr :show_project_switcher, :boolean, default: false
   attr :show_new_issue_modal, :boolean, default: false
+  attr :capture_ask, :string, default: ""
+  attr :capture_project_id, :string, default: nil
+  attr :capture_priority, :any, default: :medium
+  attr :capture_error, :string, default: nil
+  attr :capture_submitting, :boolean, default: false
 
   def top_app_bar(assigns) do
     active_projects = Enum.filter(assigns.projects, & &1.active)
@@ -316,44 +323,17 @@ defmodule RailWeb.Components.AppShell do
         </button>
       </div>
 
-      <!-- New Issue Modal (Placeholder / Shell for Slice 5.1) -->
-      <div
-        :if={@show_new_issue_modal}
-        id="new-issue-modal"
-        data-qa="capture_dialog"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      >
-        <div class="w-full max-w-lg rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6 shadow-2xl space-y-4">
-          <div class="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
-            <h2 class="text-base font-semibold text-[var(--color-on-surface)]" id="modal-headline">
-              New Issue
-            </h2>
-            <button
-              type="button"
-              id="close-new-issue-button"
-              data-qa="close_new_issue_button"
-              phx-click="close_new_issue"
-              class="text-[var(--color-outline)] hover:text-[var(--color-on-surface)] text-sm font-bold p-1"
-            >
-              ✕
-            </button>
-          </div>
-
-          <p class="text-xs text-[var(--color-outline)]">
-            Create an issue in Linear and optionally bring it local to Rail.
-          </p>
-
-          <div class="flex justify-end space-x-3 pt-4">
-            <button
-              type="button"
-              phx-click="close_new_issue"
-              class="px-3 py-1.5 rounded-lg border border-[var(--color-outline)] text-xs font-semibold hover:bg-[var(--color-surface-container)]"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
+      <!-- Capture Issue Modal -->
+      <.capture_issue_modal
+        visible={@show_new_issue_modal}
+        projects={@projects}
+        current_project_id={@current_project_id}
+        capture_ask={@capture_ask}
+        capture_project_id={@capture_project_id}
+        capture_priority={@capture_priority}
+        capture_error={@capture_error}
+        capture_submitting={@capture_submitting}
+      />
     </header>
     """
   end

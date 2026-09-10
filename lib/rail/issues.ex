@@ -4,7 +4,7 @@ defmodule Rail.Issues do
   alias Rail.Issues.Actions
 
   defdelegate sync_issues(scope, project), to: Actions.SyncIssues
-  defdelegate capture_issue(scope, project, ask), to: Actions.CaptureIssue
+  defdelegate capture_issue(scope, project, ask, opts \\ []), to: Actions.CaptureIssue
   defdelegate get_issue(scope, id), to: Actions.GetIssue
   defdelegate get_issue!(scope, id), to: Actions.GetIssue
   defdelegate list_issues(scope), to: Actions.ListIssues

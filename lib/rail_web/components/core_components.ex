@@ -19,4 +19,5 @@ defmodule RailWeb.CoreComponents do
   defdelegate issue_card(assigns), to: RailWeb.Components.IssueCard
   defdelegate issue_editor_modal(assigns), to: RailWeb.Components.IssueEditorModal
   defdelegate archive_issue_modal(assigns), to: RailWeb.Components.ArchiveIssueModal
+  defdelegate capture_issue_modal(assigns), to: RailWeb.Components.CaptureIssueModal
 end
