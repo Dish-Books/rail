@@ -35,7 +35,7 @@ defmodule Rail.Issues.Utils.TokenResolverTest do
         assert {:ok, "lin_ws_tok_1", :workspace} = resolve_token(scope, project)
       end)
 
-    assert log =~ "[axis] pushed to Linear as the workspace"
+    assert log =~ "[rail] pushed to Linear as the workspace"
   end
 
   test "resolve_token/2 returns error when user unlinked and no workspace token exists" do

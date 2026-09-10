@@ -239,7 +239,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     events = Runs.list_run_events(role_run_id)
 
     assert Enum.any?(events, fn %RunEvent{line: line} ->
-             line == "[axis] Branch modified during chat; reset pipeline to Engineer."
+             line == "[rail] Branch modified during chat; reset pipeline to Engineer."
            end)
   end
 
@@ -305,7 +305,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     eng_events = Runs.list_run_events(eng_role_run_id)
 
     assert Enum.any?(eng_events, fn %RunEvent{line: line} ->
-             line == "[axis] Branch modified during chat; queued for review."
+             line == "[rail] Branch modified during chat; queued for review."
            end)
 
     refreshed_rev = Repo.get!(RoleRun, rev_role_run_id)
@@ -361,7 +361,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     events = Runs.list_run_events(role_run_id)
 
     assert Enum.any?(events, fn %RunEvent{line: line} ->
-             line == "[axis] Changes were made to the branch, but only Engineer changes reset the pipeline."
+             line == "[rail] Changes were made to the branch, but only Engineer changes reset the pipeline."
            end)
   end
 
@@ -399,7 +399,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     events = Runs.list_run_events(role_run_id)
 
     assert Enum.any?(events, fn %RunEvent{line: line} ->
-             line =~ "[axis] That turn was not delivered: Command failed: exit 1"
+             line =~ "[rail] That turn was not delivered: Command failed: exit 1"
            end)
   end
 
@@ -769,7 +769,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       assert Enum.empty?(designs)
 
       events = Repo.all(from e in RunEvent, where: e.role_run_id == ^role_run.id, order_by: [asc: e.seq])
-      assert Enum.any?(events, fn e -> e.line =~ "[axis] Design manifest changed during chat, but was turned down" end)
+      assert Enum.any?(events, fn e -> e.line =~ "[rail] Design manifest changed during chat, but was turned down" end)
     end
   end
 end

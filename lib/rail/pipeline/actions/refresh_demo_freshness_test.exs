@@ -130,7 +130,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
   test "leaves demo fresh and task at ready_to_merge when fingerprint matches" do
     project = create_test_project()
     worktree = create_temp_git_repo()
-    %{head_sha: sha, dirty_digest: digest} = Git.branch_fingerprint(worktree, ignore_axis: true)
+    %{head_sha: sha, dirty_digest: digest} = Git.branch_fingerprint(worktree, ignore_rail: true)
 
     task =
       create_test_task(%{
@@ -159,7 +159,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     project = create_test_project()
     worktree = create_temp_git_repo()
-    %{dirty_digest: current_digest} = Git.branch_fingerprint(worktree, ignore_axis: true)
+    %{dirty_digest: current_digest} = Git.branch_fingerprint(worktree, ignore_rail: true)
 
     task =
       create_test_task(%{
@@ -196,7 +196,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
   test "re-queues ready_to_merge task to demo queued when dirty digest changes" do
     project = create_test_project()
     worktree = create_temp_git_repo()
-    %{head_sha: current_sha} = Git.branch_fingerprint(worktree, ignore_axis: true)
+    %{head_sha: current_sha} = Git.branch_fingerprint(worktree, ignore_rail: true)
 
     task =
       create_test_task(%{

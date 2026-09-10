@@ -6,7 +6,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
   describe "ticket_write_brief/1" do
     test "returns stopped message when task has no issue identifier" do
       assert ticket_write_brief([]) ==
-               "This task has no Linear issue, so there is nowhere to write the ticket. Report that and stop: a target repository has to be set in Axis Settings before this stage can produce anything.\n"
+               "This task has no Linear issue, so there is nowhere to write the ticket. Report that and stop: a target repository has to be set in Rail Settings before this stage can produce anything.\n"
 
       assert ticket_write_brief(identifier: nil) =~ "nowhere to write the ticket"
       assert ticket_write_brief(identifier: "") =~ "no Linear issue"
@@ -14,38 +14,38 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
     end
 
     test "names the issue and the command that writes it without gh issue edit" do
-      brief = ticket_write_brief(identifier: "AXIS-42")
+      brief = ticket_write_brief(identifier: "RAIL-42")
 
-      assert brief =~ "Linear issue AXIS-42"
-      assert brief =~ "cat > $AXIS_SCRATCH/tickets/AXIS-42.md <<'TICKET'"
+      assert brief =~ "Linear issue RAIL-42"
+      assert brief =~ "cat > $RAIL_SCRATCH/tickets/RAIL-42.md <<'TICKET'"
       assert brief =~ "# <the ticket title>"
-      assert brief =~ "mkdir -p $AXIS_SCRATCH/tickets"
-      assert brief =~ "cat > $AXIS_SCRATCH/tickets/split-1.md <<'TICKET'"
+      assert brief =~ "mkdir -p $RAIL_SCRATCH/tickets"
+      assert brief =~ "cat > $RAIL_SCRATCH/tickets/split-1.md <<'TICKET'"
       assert brief =~ "Do not run `gh issue edit`"
-      refute brief =~ "gh issue edit AXIS-42"
+      refute brief =~ "gh issue edit RAIL-42"
     end
 
     test "matches exact golden heredoc formatting for ticket write brief" do
       expected = """
-      The ticket is Linear issue AXIS-101, and its body IS the ticket. Nothing you write in this reply reaches it - Axis captures it from $AXIS_SCRATCH/tickets/AXIS-101.md and updates the issue when your run completes cleanly.
+      The ticket is Linear issue RAIL-101, and its body IS the ticket. Nothing you write in this reply reaches it - Rail captures it from $RAIL_SCRATCH/tickets/RAIL-101.md and updates the issue when your run completes cleanly.
 
       From your worktree, with the heredoc body and its closing TICKET line at column zero:
 
-      mkdir -p $AXIS_SCRATCH/tickets
-      cat > $AXIS_SCRATCH/tickets/AXIS-101.md <<'TICKET'
+      mkdir -p $RAIL_SCRATCH/tickets
+      cat > $RAIL_SCRATCH/tickets/RAIL-101.md <<'TICKET'
       # <the ticket title>
 
       <the whole ticket body, starting at the problem paragraph>
       TICKET
 
       Rules for that write:
-      - A heredoc into $AXIS_SCRATCH/tickets/AXIS-101.md, never an inline string. A ticket is markdown full of quotes, backticks and blank lines, and only a file carries it cleanly.
+      - A heredoc into $RAIL_SCRATCH/tickets/RAIL-101.md, never an inline string. A ticket is markdown full of quotes, backticks and blank lines, and only a file carries it cleanly.
       - The file replaces the ticket body: `# <the ticket title>` must be on the very first line, followed by the complete body with every section the finished ticket should have.
-      - Axis reads $AXIS_SCRATCH/tickets/AXIS-101.md and updates Linear when your run completes cleanly. Do not run `gh issue edit` or any issue editing commands yourself.
+      - Rail reads $RAIL_SCRATCH/tickets/RAIL-101.md and updates Linear when your run completes cleanly. Do not run `gh issue edit` or any issue editing commands yourself.
       - An ask you split out is a new issue of its own, never a second ticket inside this one:
 
-      mkdir -p $AXIS_SCRATCH/tickets
-      cat > $AXIS_SCRATCH/tickets/split-1.md <<'TICKET'
+      mkdir -p $RAIL_SCRATCH/tickets
+      cat > $RAIL_SCRATCH/tickets/split-1.md <<'TICKET'
       # <title>
 
       <the split ticket body>
@@ -54,16 +54,16 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       Name any issue you opened in your report.
       """
 
-      assert ticket_write_brief(identifier: "AXIS-101") == expected
-      assert ticket_write_brief(%{issue_identifier: "AXIS-101"}) == expected
-      assert ticket_write_brief(%{"identifier" => "AXIS-101"}) == expected
+      assert ticket_write_brief(identifier: "RAIL-101") == expected
+      assert ticket_write_brief(%{issue_identifier: "RAIL-101"}) == expected
+      assert ticket_write_brief(%{"identifier" => "RAIL-101"}) == expected
     end
   end
 
   describe "plan_write_brief/1" do
     test "returns stopped message when task has no issue identifier" do
       assert plan_write_brief([]) ==
-               "This task has no Linear issue, so there is nowhere to write the plan. Report that and stop: a target repository has to be set in Axis Settings before this stage can produce anything.\n"
+               "This task has no Linear issue, so there is nowhere to write the plan. Report that and stop: a target repository has to be set in Rail Settings before this stage can produce anything.\n"
 
       assert plan_write_brief(identifier: nil) =~ "nowhere to write the plan"
       assert plan_write_brief(identifier: "") =~ "no Linear issue"
@@ -72,23 +72,23 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
     test "names the file and does not tell the Architect to edit the issue" do
       brief = plan_write_brief(identifier: "30")
 
-      assert brief =~ "$AXIS_SCRATCH/plans/30.md"
+      assert brief =~ "$RAIL_SCRATCH/plans/30.md"
       assert brief =~ "The issue body is the ticket and is not yours to edit"
-      assert brief =~ "mkdir -p $AXIS_SCRATCH/plans"
-      assert brief =~ "cat > $AXIS_SCRATCH/plans/30.md <<'PLAN'"
+      assert brief =~ "mkdir -p $RAIL_SCRATCH/plans"
+      assert brief =~ "cat > $RAIL_SCRATCH/plans/30.md <<'PLAN'"
       assert brief =~ "## Implementation plan"
       refute brief =~ "gh issue edit"
-      refute brief =~ ".axis/knowledge/ticket-style.md"
+      refute brief =~ ".rail/knowledge/ticket-style.md"
     end
 
     test "matches exact golden heredoc formatting for plan write brief" do
       expected = """
-      The plan is Axis's local working document, stored beside the task rather than on Linear. The issue body is the ticket and is not yours to edit.
+      The plan is Rail's local working document, stored beside the task rather than on Linear. The issue body is the ticket and is not yours to edit.
 
       From your worktree, with the heredoc body and its closing PLAN line at column zero:
 
-      mkdir -p $AXIS_SCRATCH/plans
-      cat > $AXIS_SCRATCH/plans/AXIS-200.md <<'PLAN'
+      mkdir -p $RAIL_SCRATCH/plans
+      cat > $RAIL_SCRATCH/plans/RAIL-200.md <<'PLAN'
       ## Implementation plan
 
       <the implementation plan: Approach, File-level changes, Slices, Risks, Decisions for review>
@@ -96,12 +96,12 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
 
       Rules for that write:
       - The issue body is the ticket and is not yours to edit.
-      - A heredoc into $AXIS_SCRATCH/plans/AXIS-200.md, never an inline string. The plan is markdown full of quotes, backticks and blank lines, and Axis captures it from this file when your run completes cleanly.
+      - A heredoc into $RAIL_SCRATCH/plans/RAIL-200.md, never an inline string. The plan is markdown full of quotes, backticks and blank lines, and Rail captures it from this file when your run completes cleanly.
       - Keep the `## Implementation plan` heading at the top of the plan.
       - An ask you split out is a new issue of its own, never a second ticket inside this one:
 
-      mkdir -p $AXIS_SCRATCH/tickets
-      cat > $AXIS_SCRATCH/tickets/split-1.md <<'TICKET'
+      mkdir -p $RAIL_SCRATCH/tickets
+      cat > $RAIL_SCRATCH/tickets/split-1.md <<'TICKET'
       # <title>
 
       <the split ticket body>
@@ -110,22 +110,22 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       Name any issue you opened in your report.
       """
 
-      assert plan_write_brief(identifier: "AXIS-200") == expected
-      assert plan_write_brief(%{issue_number: "AXIS-200"}) == expected
+      assert plan_write_brief(identifier: "RAIL-200") == expected
+      assert plan_write_brief(%{issue_number: "RAIL-200"}) == expected
     end
   end
 
   describe "product_brief/1" do
     test "matches golden product brief with ticket write brief embedded" do
-      brief = product_brief(identifier: "AXIS-10")
+      brief = product_brief(identifier: "RAIL-10")
 
       assert brief =~ "Turn this backlog idea into a ticket the Architect can plan from."
       assert brief =~ "Leave `## Implementation plan` to the Architect."
-      assert brief =~ "cat > $AXIS_SCRATCH/tickets/AXIS-10.md <<'TICKET'"
+      assert brief =~ "cat > $RAIL_SCRATCH/tickets/RAIL-10.md <<'TICKET'"
       assert brief =~ "Findings, competitor comparisons and assumptions are your report to the human"
       assert brief =~ "A human reviews your ticket before anything is planned"
       assert brief =~ "The raw ask follows; quote it verbatim as the ticket's source, never reword it."
-      refute brief =~ ".axis/knowledge"
+      refute brief =~ ".rail/knowledge"
     end
 
     test "matches golden product brief with no identifier" do
@@ -138,7 +138,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
     test "uses plan_write_brief and points at plan file" do
       brief = architect_brief(identifier: "30")
 
-      assert brief =~ "$AXIS_SCRATCH/plans/30.md"
+      assert brief =~ "$RAIL_SCRATCH/plans/30.md"
       assert brief =~ "Plan the implementation of the ticket below."
       assert brief =~ "keeping the ticket's acceptance criteria as your contract."
       assert brief =~ "Stop at the plan - you do not write the code."
@@ -155,20 +155,20 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
             key: "dir-1",
             title: "Direction One",
             notes: "Clean minimal layout",
-            still_path: "$AXIS_SCRATCH/design/dir-1.png"
+            still_path: "$RAIL_SCRATCH/design/dir-1.png"
           }
         ]
       }
 
-      brief = architect_brief(identifier: "AXIS-50", design: design)
+      brief = architect_brief(identifier: "RAIL-50", design: design)
 
       assert brief =~ "An approved design direction has been published for this ticket:"
       assert brief =~ "- Title: Direction One"
       assert brief =~ "- Notes: Clean minimal layout"
       assert brief =~ "- Canvas URL: https://claude.ai/canvas/123"
-      assert brief =~ "- Still screenshot: $AXIS_SCRATCH/design/dir-1.png"
+      assert brief =~ "- Still screenshot: $RAIL_SCRATCH/design/dir-1.png"
       assert brief =~ "Plan the implementation to match this design."
-      assert brief =~ "$AXIS_SCRATCH/plans/AXIS-50.md"
+      assert brief =~ "$RAIL_SCRATCH/plans/RAIL-50.md"
     end
   end
 
@@ -186,8 +186,8 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
         canvas_url: "https://example.com/canvas/abc",
         picked_key: "key-b",
         directions: [
-          %{key: "key-a", title: "Option A", notes: "Notes A", still_path: "$AXIS_SCRATCH/design/a.png"},
-          %{key: "key-b", title: "Option B", notes: "Notes B", still_path: "$AXIS_SCRATCH/design/b.png"}
+          %{key: "key-a", title: "Option A", notes: "Notes A", still_path: "$RAIL_SCRATCH/design/a.png"},
+          %{key: "key-b", title: "Option B", notes: "Notes B", still_path: "$RAIL_SCRATCH/design/b.png"}
         ]
       }
 
@@ -197,7 +197,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
         - Title: Option B
         - Notes: Notes B
         - Canvas URL: https://example.com/canvas/abc
-        - Still screenshot: $AXIS_SCRATCH/design/b.png
+        - Still screenshot: $RAIL_SCRATCH/design/b.png
         Plan the implementation to match this design.
         """)
 
@@ -210,7 +210,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
         canvas_url: "https://example.com/canvas/single",
         picked_key: nil,
         directions: [
-          %{key: "solo", title: "Solo Direction", notes: "Only choice", still_path: "$AXIS_SCRATCH/design/solo.png"}
+          %{key: "solo", title: "Solo Direction", notes: "Only choice", still_path: "$RAIL_SCRATCH/design/solo.png"}
         ]
       }
 
@@ -243,14 +243,14 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       assert brief =~
                "You are designing the user interface, not implementing it: do NOT edit or touch any application code"
 
-      assert brief =~ "save them under `$AXIS_SCRATCH/design/`"
+      assert brief =~ "save them under `$RAIL_SCRATCH/design/`"
       assert brief =~ "--headless"
-      assert brief =~ "--screenshot=$AXIS_SCRATCH/design/<still>.png"
-      assert brief =~ "wkhtmltoimage --width 1280 <url> $AXIS_SCRATCH/design/<still>.png"
-      assert brief =~ "Write the manifest to `$AXIS_SCRATCH/design/manifest.json`"
-      assert brief =~ ~s("stillPath": "$AXIS_SCRATCH/design/<still>.png")
+      assert brief =~ "--screenshot=$RAIL_SCRATCH/design/<still>.png"
+      assert brief =~ "wkhtmltoimage --width 1280 <url> $RAIL_SCRATCH/design/<still>.png"
+      assert brief =~ "Write the manifest to `$RAIL_SCRATCH/design/manifest.json`"
+      assert brief =~ ~s("stillPath": "$RAIL_SCRATCH/design/<still>.png")
       assert brief =~ "Stop once the design is published, the stills are captured, and the manifest is written."
-      refute brief =~ ".axis/design"
+      refute brief =~ ".rail/design"
     end
 
     test "matches exact golden output" do
@@ -262,12 +262,12 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
 
         You are designing the user interface, not implementing it: do NOT edit or touch any application code under lib/, test/, or anywhere in the repository.
 
-        Take a still screenshot of each direction and save them under `$AXIS_SCRATCH/design/`. Use headless Chrome:
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --screenshot=$AXIS_SCRATCH/design/<still>.png --window-size=1280,800 <url>
+        Take a still screenshot of each direction and save them under `$RAIL_SCRATCH/design/`. Use headless Chrome:
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --screenshot=$RAIL_SCRATCH/design/<still>.png --window-size=1280,800 <url>
         or wkhtmltoimage as fallback:
-        wkhtmltoimage --width 1280 <url> $AXIS_SCRATCH/design/<still>.png
+        wkhtmltoimage --width 1280 <url> $RAIL_SCRATCH/design/<still>.png
 
-        Write the manifest to `$AXIS_SCRATCH/design/manifest.json` with this shape:
+        Write the manifest to `$RAIL_SCRATCH/design/manifest.json` with this shape:
         {
           "canvasUrl": "<absolute https URL to the published canvas>",
           "version": 1,
@@ -276,7 +276,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
               "key": "<unique-key>",
               "title": "<title of direction>",
               "notes": "<notes on what it does differently>",
-              "stillPath": "$AXIS_SCRATCH/design/<still>.png"
+              "stillPath": "$RAIL_SCRATCH/design/<still>.png"
             }
           ],
           "pickedKey": null
@@ -295,11 +295,11 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
 
       assert brief =~ ~s{The human picked direction "Direction One" (key: "dir-1").}
       assert brief =~ "Narrow the published canvas to this single direction so the other directions no longer appear."
-      assert brief =~ "Re-shoot the still for this direction under $AXIS_SCRATCH/design/ using a versioned filename"
+      assert brief =~ "Re-shoot the still for this direction under $RAIL_SCRATCH/design/ using a versioned filename"
       assert brief =~ "(e.g. dir-1-v2.png)"
-      assert brief =~ "Update $AXIS_SCRATCH/design/manifest.json with an incremented version"
+      assert brief =~ "Update $RAIL_SCRATCH/design/manifest.json with an incremented version"
       assert brief =~ "with `pickedKey` set to \"dir-1\""
-      refute brief =~ ".axis/design"
+      refute brief =~ ".rail/design"
     end
 
     test "resolves title from design directions when design struct provided" do
@@ -331,10 +331,10 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       assert brief =~ "Revise the design on the canvas to incorporate this feedback."
 
       assert brief =~
-               "Re-shoot the still under $AXIS_SCRATCH/design/ using a versioned filename reflecting this update (e.g. <key>-v<version>.png)."
+               "Re-shoot the still under $RAIL_SCRATCH/design/ using a versioned filename reflecting this update (e.g. <key>-v<version>.png)."
 
-      assert brief =~ "Update $AXIS_SCRATCH/design/manifest.json with an incremented version"
-      refute brief =~ ".axis/design"
+      assert brief =~ "Update $RAIL_SCRATCH/design/manifest.json with an incremented version"
+      refute brief =~ ".rail/design"
     end
   end
 
@@ -342,14 +342,14 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
     test "instructs engineer not to commit scratch plan files" do
       brief = engineer_brief()
 
-      assert brief =~ "$AXIS_SCRATCH/plans/"
+      assert brief =~ "$RAIL_SCRATCH/plans/"
       assert brief =~ "Implement the ticket and plan below, then open a draft pull request."
-      assert brief =~ "Do not commit scratch files under $AXIS_SCRATCH/plans/ (or any scratch dir) into the pull request."
+      assert brief =~ "Do not commit scratch files under $RAIL_SCRATCH/plans/ (or any scratch dir) into the pull request."
 
       assert brief =~
                "Review comments, reviewer findings and QA findings on that pull request come back to you as further turns of this same conversation"
 
-      refute brief =~ ".axis/plans"
+      refute brief =~ ".rail/plans"
     end
 
     test "matches exact golden output" do
@@ -357,7 +357,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
         String.trim("""
         Implement the ticket and plan below, then open a draft pull request.
 
-        Do not commit scratch files under $AXIS_SCRATCH/plans/ (or any scratch dir) into the pull request.
+        Do not commit scratch files under $RAIL_SCRATCH/plans/ (or any scratch dir) into the pull request.
 
         Review comments, reviewer findings and QA findings on that pull request come back to you as further turns of this same conversation, so keep your worktree as you left it.
         """)
@@ -396,12 +396,12 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
 
       assert brief =~ "QA the implementation of the ticket below by driving the running app."
       assert brief =~ "Exercise what the ticket asked for and report what a user would actually see."
-      assert brief =~ "write your evidence to $AXIS_SCRATCH/qa/ with a manifest.json the QA Lead reads"
+      assert brief =~ "write your evidence to $RAIL_SCRATCH/qa/ with a manifest.json the QA Lead reads"
       assert brief =~ "leave the app running with its VM service URL recorded there so the lead can attach"
       assert brief =~ "`VERDICT: PASS` or `VERDICT: FAIL`"
       assert brief =~ "FAIL sends your findings straight back to the engineer"
       assert brief =~ "PASS hands your evidence to the QA Lead"
-      refute brief =~ ".axis/qa"
+      refute brief =~ ".rail/qa"
       refute brief =~ "The change is on branch"
     end
 
@@ -417,13 +417,13 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       brief = qa_lead_brief([])
 
       assert brief =~ "Grade the QA pass on the ticket below."
-      assert brief =~ "The QA engineer's report is above and its evidence is in $AXIS_SCRATCH/qa/."
+      assert brief =~ "The QA engineer's report is above and its evidence is in $RAIL_SCRATCH/qa/."
       assert brief =~ "You are not re-running its checklist"
       assert brief =~ "and you have the running app to settle any of that yourself."
       assert brief =~ "`VERDICT: PASS` or `VERDICT: FAIL`"
       assert brief =~ "FAIL sends your findings and QA's straight back to the engineer"
       assert brief =~ "PASS leaves the change ready to merge."
-      refute brief =~ ".axis/qa"
+      refute brief =~ ".rail/qa"
       refute brief =~ "The change is on branch"
     end
 
@@ -441,10 +441,10 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       assert brief =~ "Record a demo of the ticket below working by driving the app on camera."
       assert brief =~ "do NOT edit application code, never create branches, and never open PRs."
       assert brief =~ "No criteria found in ticket. Capture evidence demonstrating the change."
-      assert brief =~ "Write your frames into $AXIS_SCRATCH/demo/ and the manifest to $AXIS_SCRATCH/demo/manifest.json"
-      assert brief =~ ~s("path": "$AXIS_SCRATCH/demo/<frame>.png")
+      assert brief =~ "Write your frames into $RAIL_SCRATCH/demo/ and the manifest to $RAIL_SCRATCH/demo/manifest.json"
+      assert brief =~ ~s("path": "$RAIL_SCRATCH/demo/<frame>.png")
       assert brief =~ "Stop once the frames and manifest are written."
-      refute brief =~ ".axis/demo"
+      refute brief =~ ".rail/demo"
     end
 
     test "formats criteria list numbered in order" do
@@ -478,9 +478,9 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       assert brief =~ "The human requested that the demo be re-recorded:"
       assert brief =~ "First attempt missed the validation modal"
       assert brief =~ "Re-record the demo of the ticket below working by driving the app on camera."
-      assert brief =~ "Write your frames into $AXIS_SCRATCH/demo/ and the manifest to $AXIS_SCRATCH/demo/manifest.json"
+      assert brief =~ "Write your frames into $RAIL_SCRATCH/demo/ and the manifest to $RAIL_SCRATCH/demo/manifest.json"
       assert brief =~ "\"version\": 2"
-      refute brief =~ ".axis/demo"
+      refute brief =~ ".rail/demo"
     end
 
     test "matches golden output without comment" do
@@ -528,7 +528,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
           worktree_path: "/workspace/proj/wt-1",
           branch: "task-1-feat",
           base_branch: "main",
-          identifier: "AXIS-77",
+          identifier: "RAIL-77",
           role: "architect"
         )
 
@@ -536,7 +536,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       assert brief =~ "- Worktree: /workspace/proj/wt-1 (your working directory; every path you touch is under it)"
       assert brief =~ "- Branch: task-1-feat, already checked out."
       assert brief =~ "- Base branch: main on remote `origin`"
-      assert brief =~ "- Ticket: AXIS-77"
+      assert brief =~ "- Ticket: RAIL-77"
       assert brief =~ "- Other agents share this repository."
       refute brief =~ "Hand the work over when every slice is done"
     end
@@ -547,7 +547,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
           worktree_path: "/workspace/proj/wt-1",
           branch: "task-1-feat",
           base_branch: "main",
-          identifier: "AXIS-77",
+          identifier: "RAIL-77",
           role: :engineer,
           title: "Add \"quick\" search"
         )
@@ -556,7 +556,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       assert brief =~ "git push -u origin task-1-feat"
 
       assert brief =~
-               "gh pr create --draft --base main --head task-1-feat --title \"Add 'quick' search\" --body \"Closes AXIS-77."
+               "gh pr create --draft --base main --head task-1-feat --title \"Add 'quick' search\" --body \"Closes RAIL-77."
 
       assert brief =~ "This task is NOT done until `gh pr create` has returned a pull request URL."
     end
@@ -585,9 +585,9 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
     end
 
     test "dispatches based on stage atom" do
-      assert stage_brief(:product, identifier: "AXIS-1") =~ "Turn this backlog idea into a ticket"
+      assert stage_brief(:product, identifier: "RAIL-1") =~ "Turn this backlog idea into a ticket"
       assert stage_brief(:design) =~ "Invoke the `design` skill by name"
-      assert stage_brief(:architect, identifier: "AXIS-1") =~ "Plan the implementation of the ticket below."
+      assert stage_brief(:architect, identifier: "RAIL-1") =~ "Plan the implementation of the ticket below."
       assert stage_brief(:engineer) =~ "Implement the ticket and plan below"
       assert stage_brief(:review) =~ "Review the implementation of the ticket below."
       assert stage_brief(:qa) =~ "QA the implementation of the ticket below"
@@ -596,9 +596,9 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
     end
 
     test "dispatches based on stage string" do
-      assert stage_brief("product", identifier: "AXIS-2") =~ "Turn this backlog idea into a ticket"
+      assert stage_brief("product", identifier: "RAIL-2") =~ "Turn this backlog idea into a ticket"
       assert stage_brief("design") =~ "Invoke the `design` skill by name"
-      assert stage_brief("architect", identifier: "AXIS-2") =~ "Plan the implementation of the ticket below."
+      assert stage_brief("architect", identifier: "RAIL-2") =~ "Plan the implementation of the ticket below."
       assert stage_brief("engineer") =~ "Implement the ticket and plan below"
       assert stage_brief("review") =~ "Review the implementation of the ticket below."
       assert stage_brief("qa") =~ "QA the implementation of the ticket below"
@@ -613,7 +613,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       task = %{
         stage: :engineer,
         worktree_name: "branch-task",
-        identifier: "AXIS-99"
+        identifier: "RAIL-99"
       }
 
       assert stage_brief(task) =~ "Implement the ticket and plan below"

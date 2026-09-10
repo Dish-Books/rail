@@ -49,11 +49,11 @@ defmodule Rail.Artifacts.Actions.ReadDemoTest do
       assert {:ok, %{outcome: "recorded"}} = Artifacts.read_demo(scope, "tsk_1", scratch_dir: dir)
     end
 
-    test "reads demo from .axis/demo directory and task struct with worktree_path", %{dir: dir} do
+    test "reads demo from .rail/demo directory and task struct with worktree_path", %{dir: dir} do
       scope = Scope.for_system()
-      axis_demo_dir = Path.join([dir, ".axis", "demo"])
-      File.mkdir_p!(axis_demo_dir)
-      ArtifactHelpers.write_demo_manifest(axis_demo_dir)
+      rail_demo_dir = Path.join([dir, ".rail", "demo"])
+      File.mkdir_p!(rail_demo_dir)
+      ArtifactHelpers.write_demo_manifest(rail_demo_dir)
 
       assert {:ok, %{outcome: "recorded"}} = Artifacts.read_demo(scope, dir)
       assert {:ok, %{outcome: "recorded"}} = Artifacts.read_demo(scope, %{id: "tsk_2", worktree_path: dir})

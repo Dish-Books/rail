@@ -56,11 +56,11 @@ defmodule Rail.Artifacts.Actions.ReadQaReportTest do
       assert {:ok, %{commit: "abc1234"}} = Artifacts.read_qa_report(scope, dir)
     end
 
-    test "reads QA report from worktree .axis/qa directory", %{dir: dir} do
+    test "reads QA report from worktree .rail/qa directory", %{dir: dir} do
       scope = Scope.for_system()
-      axis_qa = Path.join([dir, ".axis", "qa"])
-      File.mkdir_p!(axis_qa)
-      ArtifactHelpers.write_qa_manifest(axis_qa)
+      rail_qa = Path.join([dir, ".rail", "qa"])
+      File.mkdir_p!(rail_qa)
+      ArtifactHelpers.write_qa_manifest(rail_qa)
 
       # Via worktree path string
       assert {:ok, %{commit: "abc1234"}} = Artifacts.read_qa_report(scope, dir)

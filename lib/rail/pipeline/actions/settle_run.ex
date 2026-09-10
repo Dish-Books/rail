@@ -707,7 +707,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
         opts[:scratch_path]
 
       is_binary(task.worktree_path) and
-          (File.exists?(Path.join([task.worktree_path, ".axis", "design", "manifest.json"])) or
+          (File.exists?(Path.join([task.worktree_path, ".rail", "design", "manifest.json"])) or
              File.exists?(Path.join([task.worktree_path, "design", "manifest.json"])) or
              File.exists?(Path.join([task.worktree_path, "manifest.json"]))) ->
         task.worktree_path
@@ -752,7 +752,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     if File.dir?(path) and
          (role_run.stage_fingerprint_head_sha != nil or
             role_run.stage_fingerprint_dirty_digest != nil) do
-      case Git.branch_fingerprint(path, ignore_axis: true) do
+      case Git.branch_fingerprint(path, ignore_rail: true) do
         %{head_sha: current_sha, dirty_digest: current_digest} ->
           cond do
             role_run.stage_fingerprint_head_sha != nil and
@@ -761,7 +761,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
 
             role_run.stage_fingerprint_dirty_digest != nil and
                 current_digest != role_run.stage_fingerprint_dirty_digest ->
-              {:error, "Worktree code outside .axis/ was modified during recording."}
+              {:error, "Worktree code outside .rail/ was modified during recording."}
 
             true ->
               :ok
@@ -806,7 +806,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
 
   defp resolve_demo_fingerprint(%Task{worktree_path: path}, role_run) when is_binary(path) and path != "" do
     if File.dir?(path) do
-      case Git.branch_fingerprint(path, ignore_axis: true) do
+      case Git.branch_fingerprint(path, ignore_rail: true) do
         %{head_sha: sha, dirty_digest: digest} -> {sha, digest}
         _fingerprint_nil -> {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
       end
@@ -880,7 +880,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
         scratch_dir
 
       is_binary(task.worktree_path) and
-          (File.exists?(Path.join([task.worktree_path, ".axis", "demo", "manifest.json"])) or
+          (File.exists?(Path.join([task.worktree_path, ".rail", "demo", "manifest.json"])) or
              File.exists?(Path.join([task.worktree_path, "demo", "manifest.json"])) or
              File.exists?(Path.join([task.worktree_path, "manifest.json"]))) ->
         task.worktree_path
@@ -899,7 +899,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
         opts[:scratch_path]
 
       is_binary(task.worktree_path) and
-          (File.exists?(Path.join([task.worktree_path, ".axis", "qa", "manifest.json"])) or
+          (File.exists?(Path.join([task.worktree_path, ".rail", "qa", "manifest.json"])) or
              File.exists?(Path.join([task.worktree_path, "qa", "manifest.json"])) or
              File.exists?(Path.join([task.worktree_path, "manifest.json"]))) ->
         task.worktree_path
@@ -913,6 +913,6 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     is_binary(target) and
       (File.exists?(Path.join(target, "manifest.json")) or
          File.exists?(Path.join([target, "qa", "manifest.json"])) or
-         File.exists?(Path.join([target, ".axis", "qa", "manifest.json"])))
+         File.exists?(Path.join([target, ".rail", "qa", "manifest.json"])))
   end
 end

@@ -79,7 +79,7 @@ defmodule Rail.Runs.SpawnerTest do
     File.mkdir_p!(scratch_dir)
 
     script =
-      ~s(printf '{"stream":"%s","scratch":"%s","gh":"%s"}\n' "$AXIS_STREAM" "$AXIS_SCRATCH" "$GH_TOKEN")
+      ~s(printf '{"stream":"%s","scratch":"%s","gh":"%s"}\n' "$RAIL_STREAM" "$RAIL_SCRATCH" "$GH_TOKEN")
 
     {:ok, run} =
       Spawner.spawn_run(

@@ -195,14 +195,14 @@ defmodule Rail.ToolEnv do
   end
 
   @doc """
-  Parses stdout from login shell probe looking for the __axis_path__ marker.
+  Parses stdout from login shell probe looking for the __rail_path__ marker.
   """
   def parse_shell_path(stdout) when is_binary(stdout) do
     Enum.find_value(String.split(stdout, "\n"), fn line ->
       trimmed = String.trim(line)
 
-      if String.starts_with?(trimmed, "__axis_path__") do
-        String.replace_prefix(trimmed, "__axis_path__", "")
+      if String.starts_with?(trimmed, "__rail_path__") do
+        String.replace_prefix(trimmed, "__rail_path__", "")
       end
     end)
   end
@@ -224,7 +224,7 @@ defmodule Rail.ToolEnv do
         task =
           Task.async(fn ->
             try do
-              System.cmd(shell, ["-lic", ~s(printf "\n__axis_path__%s\n" "$PATH")],
+              System.cmd(shell, ["-lic", ~s(printf "\n__rail_path__%s\n" "$PATH")],
                 env: [],
                 stderr_to_stdout: false
               )

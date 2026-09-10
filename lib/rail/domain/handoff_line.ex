@@ -20,7 +20,7 @@ defmodule Rail.Domain.HandoffLine do
   @received_marker "←"
   @sent_marker "→"
 
-  # Pattern 1: standard Axis arrow syntax: [handoff ← architect] summary
+  # Pattern 1: standard Rail arrow syntax: [handoff ← architect] summary
   @arrow_pattern ~r/^\[handoff ([←→]) ([A-Za-z0-9_-]+)\]\s*(.*)$/u
   # Pattern 2: colon syntax: [handoff: architect] summary
   @colon_pattern ~r/^\[handoff:\s*([A-Za-z0-9_-]+)\]\s*(.*)$/u

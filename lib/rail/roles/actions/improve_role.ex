@@ -17,7 +17,7 @@ defmodule Rail.Roles.Actions.ImproveRole do
 
   defp run_improvement(%Role{} = role, chosen_model, sources, opts) do
     unique_id = System.unique_integer([:positive])
-    temp_cwd = Path.join(System.tmp_dir!(), "axis_improve_#{role.id}_#{unique_id}")
+    temp_cwd = Path.join(System.tmp_dir!(), "rail_improve_#{role.id}_#{unique_id}")
     File.mkdir_p!(temp_cwd)
 
     meta_prompt = Rail.Roles.build_meta_prompt(role, sources)

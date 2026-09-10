@@ -212,10 +212,10 @@ defmodule Rail.Domain.ChatTranscriptTest do
     assert role_msg.text == "I am the engineer addressing the review findings."
   end
 
-  test "recognises [init], [result], [axis], and [error] as events" do
+  test "recognises [init], [result], [rail], and [error] as events" do
     logs = [
       "[init] session 123 · 5 tools · 2 MCP servers",
-      "[axis] Pull request #42 recorded.",
+      "[rail] Pull request #42 recorded.",
       "[result] success · 1.2K tokens",
       "[error] Something broke in the toolchain"
     ]
@@ -253,7 +253,7 @@ defmodule Rail.Domain.ChatTranscriptTest do
       "[human] User question",
       "[tool] run_check",
       "Agent response",
-      "[axis] System event"
+      "[rail] System event"
     ]
 
     transcript = ChatTranscript.parse(logs)
@@ -275,7 +275,7 @@ defmodule Rail.Domain.ChatTranscriptTest do
       "[human] First user question",
       "[tool] some_tool arg: 1",
       "Agent reply",
-      "[axis] Event info"
+      "[rail] Event info"
     ]
 
     transcript = ChatTranscript.parse(logs)
@@ -284,7 +284,7 @@ defmodule Rail.Domain.ChatTranscriptTest do
     assert md =~ "### User\n\nFirst user question"
     assert md =~ "```\n[tool] some_tool arg: 1\n```"
     assert md =~ "### Assistant\n\nAgent reply"
-    assert md =~ "> [axis] Event info"
+    assert md =~ "> [rail] Event info"
 
     resumption = ChatTranscript.format_for_resumption(transcript)
     assert resumption == "[human] First user question\n\nAgent reply"

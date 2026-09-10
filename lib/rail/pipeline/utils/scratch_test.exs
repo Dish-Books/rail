@@ -10,7 +10,7 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
   alias Rail.Repo
   alias RailTest.Mocks.Linear, as: LinearMock
 
-  test "default_scratch_path constructs path from structs, strings, and AXIS_WORKSPACE_ROOT" do
+  test "default_scratch_path constructs path from structs, strings, and RAIL_WORKSPACE_ROOT" do
     project = create_test_project()
     task = create_test_task(%{project_id: project.id})
 
@@ -20,10 +20,10 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
     path2 = default_scratch_path(project.id, task.id)
     assert path2 == path1
 
-    System.put_env("AXIS_WORKSPACE_ROOT", "/custom/workspace")
+    System.put_env("RAIL_WORKSPACE_ROOT", "/custom/workspace")
     path3 = default_scratch_path(123, 456)
     assert path3 == "/custom/workspace/123/scratch/456"
-    System.delete_env("AXIS_WORKSPACE_ROOT")
+    System.delete_env("RAIL_WORKSPACE_ROOT")
   end
 
   test "resolve_identifier extracts identifier from preloaded or un-preloaded issue" do

@@ -84,7 +84,7 @@ defmodule Rail.Backends.Probes.ClaudeUsageProbe do
   end
 
   defp refresh_quota_cache(executable, runner) do
-    temp_dir = Path.join(System.tmp_dir!(), "axis_claude_usage")
+    temp_dir = Path.join(System.tmp_dir!(), "rail_claude_usage")
     File.mkdir_p(temp_dir)
 
     try do

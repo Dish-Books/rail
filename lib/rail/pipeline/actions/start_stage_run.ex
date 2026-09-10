@@ -23,7 +23,7 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
   Initiates a stage run for a given task:
   - Resolves stage role (or engineer role for rebasing).
   - Ensures worktree directory exists.
-  - Prepares `$AXIS_SCRATCH`.
+  - Prepares `$RAIL_SCRATCH`.
   - Records branch fingerprints and increments role run attempt.
   - Generates stage brief and CLI argv/prompt.
   - Spawns runner process and attaches follower.
@@ -86,7 +86,7 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
 
     {:ok, _scratch} = prepare(task, scratch_path)
 
-    fp_opts = if stage == :demo, do: [ignore_axis: true], else: []
+    fp_opts = if stage == :demo, do: [ignore_rail: true], else: []
     {head_sha, dirty_digest} = resolve_fingerprint(worktree_path, fp_opts)
 
     {:ok, role_run} = resolve_or_create_role_run(task, role, head_sha, dirty_digest)

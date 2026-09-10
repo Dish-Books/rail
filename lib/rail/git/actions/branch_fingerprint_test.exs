@@ -47,15 +47,15 @@ defmodule Rail.Git.Actions.BranchFingerprintTest do
     assert fp_clean.dirty_digest != fp_dirty.dirty_digest
   end
 
-  test "with ignore_axis: true excludes .axis directory from dirty digest" do
+  test "with ignore_rail: true excludes .rail directory from dirty digest" do
     repo = create_temp_git_repo()
-    fp_clean = Git.branch_fingerprint(repo, ignore_axis: true)
+    fp_clean = Git.branch_fingerprint(repo, ignore_rail: true)
 
-    File.mkdir_p!(Path.join(repo, ".axis"))
-    File.write!(Path.join(repo, ".axis/settings.json"), "{}\n")
+    File.mkdir_p!(Path.join(repo, ".rail"))
+    File.write!(Path.join(repo, ".rail/settings.json"), "{}\n")
 
-    fp_axis_dirty = Git.branch_fingerprint(repo, ignore_axis: true)
+    fp_rail_dirty = Git.branch_fingerprint(repo, ignore_rail: true)
 
-    assert fp_clean.dirty_digest == fp_axis_dirty.dirty_digest
+    assert fp_clean.dirty_digest == fp_rail_dirty.dirty_digest
   end
 end

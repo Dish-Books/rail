@@ -43,7 +43,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     assert design.canvas_url == "https://claude.ai/design/valid-canvas"
 
     events = Repo.all(from e in RunEvent, where: e.role_run_id == ^role_run.id, order_by: [asc: e.seq])
-    assert Enum.any?(events, fn e -> e.line =~ "[axis] Design re-checked: manifest v1 accepted." end)
+    assert Enum.any?(events, fn e -> e.line =~ "[rail] Design re-checked: manifest v1 accepted." end)
   end
 
   test "reads the same manifest twice without turning it down" do
@@ -110,7 +110,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     events = Repo.all(from e in RunEvent, where: e.role_run_id == ^role_run.id, order_by: [asc: e.seq])
 
     assert Enum.any?(events, fn e ->
-             e.line =~ "[axis] Design re-check turned it down:" and e.line =~ "absolute https URL"
+             e.line =~ "[rail] Design re-check turned it down:" and e.line =~ "absolute https URL"
            end)
   end
 
@@ -181,7 +181,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         "key" => "dir-other",
         "title" => "Other",
         "notes" => "Other notes",
-        "stillPath" => ".axis/design/dir-1.png"
+        "stillPath" => ".rail/design/dir-1.png"
       }
     ]
 

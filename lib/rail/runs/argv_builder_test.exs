@@ -97,7 +97,7 @@ defmodule Rail.Runs.ArgvBuilderTest do
       model: "gemini-2.5-pro",
       effort: "high",
       work_dir: "/Users/michael/Code/rail/.worktrees/task-1",
-      log_file: "/tmp/axis/agy-logs/task-1.log"
+      log_file: "/tmp/rail/agy-logs/task-1.log"
     ]
 
     argv = ArgvBuilder.build_argv(opts)
@@ -119,7 +119,7 @@ defmodule Rail.Runs.ArgvBuilderTest do
              "--add-dir",
              "/Users/michael/Code/rail/.worktrees/task-1",
              "--log-file",
-             "/tmp/axis/agy-logs/task-1.log"
+             "/tmp/rail/agy-logs/task-1.log"
            ]
   end
 

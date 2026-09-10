@@ -94,7 +94,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
     events = Runs.list_run_events(role_run_id)
 
     assert Enum.any?(events, fn %RunEvent{line: line} ->
-             line == "[axis] Chat turn stopped by user."
+             line == "[rail] Chat turn stopped by user."
            end)
   end
 
@@ -126,7 +126,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
     events = Runs.list_run_events(role_run_id)
 
     assert Enum.any?(events, fn %RunEvent{line: line} ->
-             line == "[axis] Queued message cancelled by user."
+             line == "[rail] Queued message cancelled by user."
            end)
 
     assert {:ok, %RoleRun{pending_chat: nil}, %Task{}} =

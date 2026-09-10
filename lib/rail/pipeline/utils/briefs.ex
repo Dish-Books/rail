@@ -41,7 +41,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
   end
 
   @doc """
-  How a role that owns the ticket puts its work where Axis will find it.
+  How a role that owns the ticket puts its work where Rail will find it.
   """
   def ticket_write_brief(opts \\ []) do
     identifier =
@@ -50,16 +50,16 @@ defmodule Rail.Pipeline.Utils.Briefs do
         get_opt(opts, :issue_number)
 
     if is_nil(identifier) or identifier == "" do
-      "This task has no Linear issue, so there is nowhere to write the ticket. Report that and stop: a target repository has to be set in Axis Settings before this stage can produce anything.\n"
+      "This task has no Linear issue, so there is nowhere to write the ticket. Report that and stop: a target repository has to be set in Rail Settings before this stage can produce anything.\n"
     else
-      file = "$AXIS_SCRATCH/tickets/#{identifier}.md"
+      file = "$RAIL_SCRATCH/tickets/#{identifier}.md"
 
       String.trim_trailing("""
-      The ticket is Linear issue #{identifier}, and its body IS the ticket. Nothing you write in this reply reaches it - Axis captures it from #{file} and updates the issue when your run completes cleanly.
+      The ticket is Linear issue #{identifier}, and its body IS the ticket. Nothing you write in this reply reaches it - Rail captures it from #{file} and updates the issue when your run completes cleanly.
 
       From your worktree, with the heredoc body and its closing TICKET line at column zero:
 
-      mkdir -p $AXIS_SCRATCH/tickets
+      mkdir -p $RAIL_SCRATCH/tickets
       cat > #{file} <<'TICKET'
       # <the ticket title>
 
@@ -69,11 +69,11 @@ defmodule Rail.Pipeline.Utils.Briefs do
       Rules for that write:
       - A heredoc into #{file}, never an inline string. A ticket is markdown full of quotes, backticks and blank lines, and only a file carries it cleanly.
       - The file replaces the ticket body: `# <the ticket title>` must be on the very first line, followed by the complete body with every section the finished ticket should have.
-      - Axis reads #{file} and updates Linear when your run completes cleanly. Do not run `gh issue edit` or any issue editing commands yourself.
+      - Rail reads #{file} and updates Linear when your run completes cleanly. Do not run `gh issue edit` or any issue editing commands yourself.
       - An ask you split out is a new issue of its own, never a second ticket inside this one:
 
-      mkdir -p $AXIS_SCRATCH/tickets
-      cat > $AXIS_SCRATCH/tickets/split-1.md <<'TICKET'
+      mkdir -p $RAIL_SCRATCH/tickets
+      cat > $RAIL_SCRATCH/tickets/split-1.md <<'TICKET'
       # <title>
 
       <the split ticket body>
@@ -95,12 +95,12 @@ defmodule Rail.Pipeline.Utils.Briefs do
 
     You are designing the user interface, not implementing it: do NOT edit or touch any application code under lib/, test/, or anywhere in the repository.
 
-    Take a still screenshot of each direction and save them under `$AXIS_SCRATCH/design/`. Use headless Chrome:
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --screenshot=$AXIS_SCRATCH/design/<still>.png --window-size=1280,800 <url>
+    Take a still screenshot of each direction and save them under `$RAIL_SCRATCH/design/`. Use headless Chrome:
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --screenshot=$RAIL_SCRATCH/design/<still>.png --window-size=1280,800 <url>
     or wkhtmltoimage as fallback:
-    wkhtmltoimage --width 1280 <url> $AXIS_SCRATCH/design/<still>.png
+    wkhtmltoimage --width 1280 <url> $RAIL_SCRATCH/design/<still>.png
 
-    Write the manifest to `$AXIS_SCRATCH/design/manifest.json` with this shape:
+    Write the manifest to `$RAIL_SCRATCH/design/manifest.json` with this shape:
     {
       "canvasUrl": "<absolute https URL to the published canvas>",
       "version": 1,
@@ -109,7 +109,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
           "key": "<unique-key>",
           "title": "<title of direction>",
           "notes": "<notes on what it does differently>",
-          "stillPath": "$AXIS_SCRATCH/design/<still>.png"
+          "stillPath": "$RAIL_SCRATCH/design/<still>.png"
         }
       ],
       "pickedKey": null
@@ -147,16 +147,16 @@ defmodule Rail.Pipeline.Utils.Briefs do
         get_opt(opts, :issue_number)
 
     if is_nil(identifier) or identifier == "" do
-      "This task has no Linear issue, so there is nowhere to write the plan. Report that and stop: a target repository has to be set in Axis Settings before this stage can produce anything.\n"
+      "This task has no Linear issue, so there is nowhere to write the plan. Report that and stop: a target repository has to be set in Rail Settings before this stage can produce anything.\n"
     else
-      file = "$AXIS_SCRATCH/plans/#{identifier}.md"
+      file = "$RAIL_SCRATCH/plans/#{identifier}.md"
 
       String.trim_trailing("""
-      The plan is Axis's local working document, stored beside the task rather than on Linear. The issue body is the ticket and is not yours to edit.
+      The plan is Rail's local working document, stored beside the task rather than on Linear. The issue body is the ticket and is not yours to edit.
 
       From your worktree, with the heredoc body and its closing PLAN line at column zero:
 
-      mkdir -p $AXIS_SCRATCH/plans
+      mkdir -p $RAIL_SCRATCH/plans
       cat > #{file} <<'PLAN'
       ## Implementation plan
 
@@ -165,12 +165,12 @@ defmodule Rail.Pipeline.Utils.Briefs do
 
       Rules for that write:
       - The issue body is the ticket and is not yours to edit.
-      - A heredoc into #{file}, never an inline string. The plan is markdown full of quotes, backticks and blank lines, and Axis captures it from this file when your run completes cleanly.
+      - A heredoc into #{file}, never an inline string. The plan is markdown full of quotes, backticks and blank lines, and Rail captures it from this file when your run completes cleanly.
       - Keep the `## Implementation plan` heading at the top of the plan.
       - An ask you split out is a new issue of its own, never a second ticket inside this one:
 
-      mkdir -p $AXIS_SCRATCH/tickets
-      cat > $AXIS_SCRATCH/tickets/split-1.md <<'TICKET'
+      mkdir -p $RAIL_SCRATCH/tickets
+      cat > $RAIL_SCRATCH/tickets/split-1.md <<'TICKET'
       # <title>
 
       <the split ticket body>
@@ -221,7 +221,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
     String.trim("""
     The human picked direction "#{title}" (key: "#{key}").
 
-    Narrow the published canvas to this single direction so the other directions no longer appear. Re-shoot the still for this direction under $AXIS_SCRATCH/design/ using a versioned filename reflecting this update (e.g. #{key}-v2.png). Update $AXIS_SCRATCH/design/manifest.json with an incremented version, the same canvasUrl, and this picked direction as the only direction in `directions`, with `pickedKey` set to "#{key}", and record the updated stillPath and notes.
+    Narrow the published canvas to this single direction so the other directions no longer appear. Re-shoot the still for this direction under $RAIL_SCRATCH/design/ using a versioned filename reflecting this update (e.g. #{key}-v2.png). Update $RAIL_SCRATCH/design/manifest.json with an incremented version, the same canvasUrl, and this picked direction as the only direction in `directions`, with `pickedKey` set to "#{key}", and record the updated stillPath and notes.
     """)
   end
 
@@ -243,7 +243,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
 
     #{comment}
 
-    Revise the design on the canvas to incorporate this feedback. Re-shoot the still under $AXIS_SCRATCH/design/ using a versioned filename reflecting this update (e.g. <key>-v<version>.png). Update $AXIS_SCRATCH/design/manifest.json with an incremented version, keeping the same canvasUrl, and record the updated stillPath and notes for this direction.
+    Revise the design on the canvas to incorporate this feedback. Re-shoot the still under $RAIL_SCRATCH/design/ using a versioned filename reflecting this update (e.g. <key>-v<version>.png). Update $RAIL_SCRATCH/design/manifest.json with an incremented version, keeping the same canvasUrl, and record the updated stillPath and notes for this direction.
     """)
   end
 
@@ -254,7 +254,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
     String.trim("""
     Implement the ticket and plan below, then open a draft pull request.
 
-    Do not commit scratch files under $AXIS_SCRATCH/plans/ (or any scratch dir) into the pull request.
+    Do not commit scratch files under $RAIL_SCRATCH/plans/ (or any scratch dir) into the pull request.
 
     Review comments, reviewer findings and QA findings on that pull request come back to you as further turns of this same conversation, so keep your worktree as you left it.
     """)
@@ -301,7 +301,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
 
     #{branch_line}Exercise what the ticket asked for and report what a user would actually see.
 
-    Leave every check provable: write your evidence to $AXIS_SCRATCH/qa/ with a manifest.json the QA Lead reads, and leave the app running with its VM service URL recorded there so the lead can attach rather than start over.
+    Leave every check provable: write your evidence to $RAIL_SCRATCH/qa/ with a manifest.json the QA Lead reads, and leave the app running with its VM service URL recorded there so the lead can attach rather than start over.
 
     Your last line is your verdict, exactly `VERDICT: PASS` or `VERDICT: FAIL`, and it is read by the pipeline rather than by a human: FAIL sends your findings straight back to the engineer, PASS hands your evidence to the QA Lead, who grades it and can still fail the change. Fail it for any blocker or major finding this change caused; nits and pre-existing problems are reported, not failed on.
     """)
@@ -323,7 +323,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
     String.trim("""
     Grade the QA pass on the ticket below.
 
-    #{branch_line}The QA engineer's report is above and its evidence is in $AXIS_SCRATCH/qa/. You are not re-running its checklist: you are asking what it missed, which green rows its artifacts do not actually support, and whether the riskiest ground got covered at all - and you have the running app to settle any of that yourself.
+    #{branch_line}The QA engineer's report is above and its evidence is in $RAIL_SCRATCH/qa/. You are not re-running its checklist: you are asking what it missed, which green rows its artifacts do not actually support, and whether the riskiest ground got covered at all - and you have the running app to settle any of that yourself.
 
     Your last line is your verdict, exactly `VERDICT: PASS` or `VERDICT: FAIL`, and it is read by the pipeline rather than by a human: FAIL sends your findings and QA's straight back to the engineer, PASS leaves the change ready to merge.
     """)
@@ -354,7 +354,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
     Each part of the recording corresponds to an acceptance criterion from the ticket, in order:
     #{criteria_section}
 
-    Write your frames into $AXIS_SCRATCH/demo/ and the manifest to $AXIS_SCRATCH/demo/manifest.json with this shape:
+    Write your frames into $RAIL_SCRATCH/demo/ and the manifest to $RAIL_SCRATCH/demo/manifest.json with this shape:
     {
       "version": 1,
       "outcome": "recorded",
@@ -365,7 +365,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
           "outcome": "recorded",
           "frames": [
             {
-              "path": "$AXIS_SCRATCH/demo/<frame>.png",
+              "path": "$RAIL_SCRATCH/demo/<frame>.png",
               "holdMs": 1000,
               "caption": "<written caption explaining what is shown>"
             }
@@ -426,7 +426,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
     Each part of the recording corresponds to an acceptance criterion from the ticket, in order:
     #{criteria_section}
 
-    Write your frames into $AXIS_SCRATCH/demo/ and the manifest to $AXIS_SCRATCH/demo/manifest.json with this shape:
+    Write your frames into $RAIL_SCRATCH/demo/ and the manifest to $RAIL_SCRATCH/demo/manifest.json with this shape:
     {
       "version": #{version},
       "outcome": "recorded",
@@ -437,7 +437,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
           "outcome": "recorded",
           "frames": [
             {
-              "path": "$AXIS_SCRATCH/demo/<frame>.png",
+              "path": "$RAIL_SCRATCH/demo/<frame>.png",
               "holdMs": 1000,
               "caption": "<written caption explaining what is shown>"
             }

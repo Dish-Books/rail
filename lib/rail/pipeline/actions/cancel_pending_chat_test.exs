@@ -96,7 +96,7 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
     events = Runs.list_run_events(role_run.id)
 
     assert Enum.any?(events, fn %RunEvent{line: line} ->
-             line == "[axis] Queued message cancelled by user."
+             line == "[rail] Queued message cancelled by user."
            end)
   end
 end

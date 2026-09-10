@@ -101,8 +101,8 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
   def design_manifest_stamp(worktree_path) when is_binary(worktree_path) do
     manifest_path =
       cond do
-        File.exists?(Path.join(worktree_path, ".axis/design/manifest.json")) ->
-          Path.join(worktree_path, ".axis/design/manifest.json")
+        File.exists?(Path.join(worktree_path, ".rail/design/manifest.json")) ->
+          Path.join(worktree_path, ".rail/design/manifest.json")
 
         File.exists?(Path.join(worktree_path, "manifest.json")) ->
           Path.join(worktree_path, "manifest.json")
@@ -147,7 +147,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
           |> Task.changeset(%{stage_state: :awaiting_approval, error: nil})
           |> Repo.update()
 
-        log_designer_event(task, "[axis] Design re-checked: manifest v#{design.version} accepted.")
+        log_designer_event(task, "[rail] Design re-checked: manifest v#{design.version} accepted.")
         Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :design_rechecked})
         {:ok, updated_task}
 
@@ -159,7 +159,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
           |> Task.changeset(%{stage_state: :failed, error: err_msg})
           |> Repo.update()
 
-        log_designer_event(task, "[axis] Design re-check turned it down: #{err_msg}")
+        log_designer_event(task, "[rail] Design re-check turned it down: #{err_msg}")
         Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :design_recheck_failed})
         {:error, err_msg}
     end

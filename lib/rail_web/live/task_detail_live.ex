@@ -1309,10 +1309,10 @@ defmodule RailWeb.TaskDetailLive do
   defp branch_name_for(task) do
     cond do
       is_binary(task.worktree_name) and task.worktree_name != "" ->
-        if String.starts_with?(task.worktree_name, "axis/") do
+        if String.starts_with?(task.worktree_name, "rail/") do
           task.worktree_name
         else
-          "axis/#{task.worktree_name}"
+          "rail/#{task.worktree_name}"
         end
 
       is_map(task.issue) and is_binary(task.issue.branch_name) and task.issue.branch_name != "" ->

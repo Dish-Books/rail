@@ -1,6 +1,6 @@
 defmodule Rail.Domain.TicketBody do
   @moduledoc """
-  Represents a parsed Linear ticket specification written to `$AXIS_SCRATCH/tickets/<identifier>.md`.
+  Represents a parsed Linear ticket specification written to `$RAIL_SCRATCH/tickets/<identifier>.md`.
 
   Also provides utilities for legacy plan extraction, acceptance criteria parsing,
   and split-out ticket management.

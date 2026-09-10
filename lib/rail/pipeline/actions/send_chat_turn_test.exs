@@ -384,7 +384,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     role_a_events = Runs.list_run_events(role_a_run_id)
 
     assert Enum.any?(role_a_events, fn %RunEvent{line: line} ->
-             line == "[axis] Chat turn stopped by user."
+             line == "[rail] Chat turn stopped by user."
            end)
 
     assert Enum.any?(role_a_events, fn %RunEvent{line: line} ->
@@ -448,7 +448,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     bad_events = Runs.list_run_events(bad_role_run_id)
 
     assert Enum.any?(bad_events, fn %RunEvent{line: line} ->
-             line =~ "[axis] That turn was not delivered"
+             line =~ "[rail] That turn was not delivered"
            end)
   end
 
@@ -479,7 +479,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     events = Runs.list_run_events(role_run_id)
 
     assert Enum.any?(events, fn %RunEvent{line: line} ->
-             line =~ "[axis] That turn was not delivered"
+             line =~ "[rail] That turn was not delivered"
            end)
   end
 

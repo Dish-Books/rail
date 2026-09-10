@@ -65,7 +65,7 @@ defmodule Rail.Runs.Schemas.Run do
       role_run_id: UXID.generate!(prefix: "rr"),
       task_id: UXID.generate!(prefix: "tsk"),
       kind: :stage,
-      stream_path: "/tmp/axis/streams/test.ndjson",
+      stream_path: "/tmp/rail/streams/test.ndjson",
       node: to_string(Node.self()),
       boot_id: UXID.generate!(),
       status: :starting,

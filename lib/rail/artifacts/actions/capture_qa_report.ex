@@ -79,8 +79,8 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
       File.exists?(Path.join([path, "qa", "manifest.json"])) ->
         Path.join(path, "qa")
 
-      File.exists?(Path.join([path, ".axis", "qa", "manifest.json"])) ->
-        Path.join([path, ".axis", "qa"])
+      File.exists?(Path.join([path, ".rail", "qa", "manifest.json"])) ->
+        Path.join([path, ".rail", "qa"])
 
       true ->
         Path.join(path, "qa")

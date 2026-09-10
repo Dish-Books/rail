@@ -95,9 +95,9 @@ defmodule Rail.ToolEnvTest do
     assert String.trim(output) == "hello toolenv"
 
     assert {output_env, 0} =
-             ToolEnv.run("sh", ["-c", "echo $CUSTOM_VAR"], env: %{"CUSTOM_VAR" => "axis_test"})
+             ToolEnv.run("sh", ["-c", "echo $CUSTOM_VAR"], env: %{"CUSTOM_VAR" => "rail_test"})
 
-    assert String.trim(output_env) == "axis_test"
+    assert String.trim(output_env) == "rail_test"
 
     # Test with working_directory and into
     assert {output_wd, 0} =
@@ -138,11 +138,11 @@ defmodule Rail.ToolEnvTest do
     assert String.contains?(merged_empty, "/usr/bin")
   end
 
-  test "parse_shell_path extracts path only from __axis_path__ marker" do
+  test "parse_shell_path extracts path only from __rail_path__ marker" do
     stdout = """
     zsh: welcome to test shell
     some other rc noise
-    __axis_path__/custom/shell/path:/usr/bin
+    __rail_path__/custom/shell/path:/usr/bin
     trailing message
     """
 

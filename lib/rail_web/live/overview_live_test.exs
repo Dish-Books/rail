@@ -348,17 +348,17 @@ defmodule RailWeb.OverviewLiveTest do
     refute render(view) =~ merged_title
   end
 
-  test "renders dispatch banner when AXIS_NO_DISPATCH=1 and when Dispatcher is disabled", %{conn: conn} do
+  test "renders dispatch banner when RAIL_NO_DISPATCH=1 and when Dispatcher is disabled", %{conn: conn} do
     {authed_conn, _user} = log_in_test_user(conn)
 
-    System.put_env("AXIS_NO_DISPATCH", "1")
-    on_exit(fn -> System.delete_env("AXIS_NO_DISPATCH") end)
+    System.put_env("RAIL_NO_DISPATCH", "1")
+    on_exit(fn -> System.delete_env("RAIL_NO_DISPATCH") end)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
     assert has_element?(view, "#dispatch-disabled-banner")
-    assert render(view) =~ "AXIS_NO_DISPATCH=1 is set"
+    assert render(view) =~ "RAIL_NO_DISPATCH=1 is set"
 
-    System.delete_env("AXIS_NO_DISPATCH")
+    System.delete_env("RAIL_NO_DISPATCH")
 
     Dispatcher.set_dispatch_disabled(true)
     on_exit(fn -> Dispatcher.set_dispatch_disabled(true) end)

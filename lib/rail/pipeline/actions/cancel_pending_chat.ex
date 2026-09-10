@@ -46,7 +46,7 @@ defmodule Rail.Pipeline.Actions.CancelPendingChat do
   end
 
   defp do_cancel_pending_chat(task, %RoleRun{} = role_run) do
-    Runs.append_run_event(role_run.id, "[axis] Queued message cancelled by user.")
+    Runs.append_run_event(role_run.id, "[rail] Queued message cancelled by user.")
 
     {:ok, updated_role_run} =
       role_run

@@ -1,4 +1,4 @@
-# Axis → Rail Parity Matrix & Behavior Inventory Mapping
+# Prototype → Rail Parity Matrix & Behavior Inventory Mapping
 
 This document maps every behavior category and test row from **Spec 06 §4** (Behavior Inventory) to its Elixir test module in Rail.
 It also accounts for all architectural differences and explicitly marks obsolete/superseded rows with references to **PLAN.md §3 and §15**.
@@ -23,7 +23,7 @@ It also accounts for all architectural differences and explicitly marks obsolete
 | **§4.12** | Chat Turns & Delivery Modes | Parity Complete | `lib/rail/pipeline/actions/send_chat_turn_test.exs`, `lib/rail/domain/chat_transcript_test.exs`, `lib/rail/runs/schemas/role_run_test.exs` |
 | **§4.13** | Linear Sync, Webhook & State Transitions | Parity Complete | `lib/rail/issues/actions/*_test.exs`, `lib/rail/issues/clients/linear_test.exs`, `lib/rail/linear/client_test.exs` |
 | **§4.14** | GitHub Client & PR Operations | Parity Complete | `lib/rail/github/client_test.exs`, `lib/rail/pipeline/actions/mark_pr_ready_test.exs`, `lib/rail/pipeline/actions/merge_task_test.exs` |
-| **§4.15** | macOS Container Paths / Storage | Superseded / Obsolete | *Replaced by Postgres + `$AXIS_SCRATCH` per PLAN.md §3, §5 D2, §15* |
+| **§4.15** | macOS Container Paths / Storage | Superseded / Obsolete | *Replaced by Postgres + `$RAIL_SCRATCH` per PLAN.md §3, §5 D2, §15* |
 | **§4.16** | UI — Overview | Parity Complete | `lib/rail_web/live/overview_live_test.exs` |
 | **§4.17** | UI — Task Detail & Actions | Parity Complete | `lib/rail_web/live/task_detail_live/*_test.exs` |
 
@@ -67,7 +67,7 @@ It also accounts for all architectural differences and explicitly marks obsolete
 | Human send-back grants fresh budget | Implemented | `lib/rail/pipeline/actions/send_back_to_engineer_test.exs` | Updates `rework_budget_base` |
 | Ready to merge can send change back too | Implemented | `lib/rail/pipeline/actions/send_back_to_engineer_test.exs` | Allowed from `:ready_to_merge` |
 | Unclear verdict parks instead of guessing | Implemented | `lib/rail/pipeline/actions/settle_run_test.exs` | Parks with "Reviewer returned unclear verdict" |
-| `AXIS_NO_DISPATCH=1` turns dispatch off | Implemented | `lib/rail/pipeline/dispatcher_test.exs` | `Dispatcher.dispatch_disabled?/1` returns true |
+| `RAIL_NO_DISPATCH=1` turns dispatch off | Implemented | `lib/rail/pipeline/dispatcher_test.exs` | `Dispatcher.dispatch_disabled?/1` returns true |
 | Transient failure retries on same conversation | Implemented | `lib/rail/pipeline/actions/settle_run_test.exs` | Arms retry timer with backoff |
 | Permanent failure waits for human | Implemented | `lib/rail/domain/run_failure_test.exs` | `RunFailure.transient?/1` distinguishes errors |
 | Run now skips retry backoff | Implemented | `lib/rail/pipeline/actions/dispatch_now_test.exs` | Cancels pending retry and starts run |
@@ -117,7 +117,7 @@ It also accounts for all architectural differences and explicitly marks obsolete
 
 | Behavior / Test Row | Status | Rail Implementation / Test | Notes |
 |---|---|---|---|
-| `planWriteBrief` points to `$AXIS_SCRATCH/plans/` | Implemented | `lib/rail/pipeline/utils/briefs_test.exs` | Directs agent to write scratch plan |
+| `planWriteBrief` points to `$RAIL_SCRATCH/plans/` | Implemented | `lib/rail/pipeline/utils/briefs_test.exs` | Directs agent to write scratch plan |
 | Engineer brief instructs not to commit scratch plan | Implemented | `lib/rail/pipeline/utils/briefs_test.exs` | Prohibits committing plan files |
 | Captures plan from scratch and persists to Postgres | Implemented | `lib/rail/pipeline/utils/scratch_test.exs` | Replaces on-disk PlanStore with `plans` table |
 | Downstream stage prompts contain ticket and plan | Implemented | `lib/rail/runs/prompt_builder_test.exs` | Appends plan and acceptance criteria |
@@ -193,7 +193,7 @@ It also accounts for all architectural differences and explicitly marks obsolete
 | Rejected manifest fails stage | Implemented | `lib/rail/artifacts/validators/demo_validator_test.exs` | Validates frame paths, holdMs, bounds |
 | Worktree modifications during recording rejected | Implemented | `lib/rail/pipeline/actions/settle_run_test.exs` | `validate_demo_worktree_stability` checks digest |
 | Demo playback controller frame navigation | Implemented | `assets/js/hooks/demo_player.js`, `lib/rail_web/live/task_detail_live/demo_panel_test.exs` | Web hook and HEEx playback |
-| Demo files in `.axis/demo/` | Superseded / Obsolete | *Replaced by `$AXIS_SCRATCH/demo/` + Linear asset URLs per PLAN.md §3, §6.6* |
+| Demo files in `.rail/demo/` | Superseded / Obsolete | *Replaced by `$RAIL_SCRATCH/demo/` + Linear asset URLs per PLAN.md §3, §6.6* |
 
 ---
 
@@ -231,7 +231,7 @@ It also accounts for all architectural differences and explicitly marks obsolete
 | Chat turn emitting VERDICT ignored | Implemented | `lib/rail/pipeline/actions/settle_chat_turn_test.exs` | Chat output does not trigger gate move |
 | Engineer modifying files during chat resets to review | Implemented | `lib/rail/pipeline/actions/settle_chat_turn_test.exs` | Detects worktree changes |
 | Stop-and-send cancels current run | Implemented | `lib/rail/pipeline/actions/stop_chat_turn_test.exs` | Stops live process and dispatches chat |
-| Chat transcript parser (`[human]`, `[tool]`, `[axis]`) | Implemented | `lib/rail/domain/chat_transcript_test.exs` | Parses log events into transcript blocks |
+| Chat transcript parser (`[human]`, `[tool]`, `[rail]`) | Implemented | `lib/rail/domain/chat_transcript_test.exs` | Parses log events into transcript blocks |
 
 ---
 
@@ -268,11 +268,11 @@ It also accounts for all architectural differences and explicitly marks obsolete
 
 | Behavior / Test Row | Status | Disposition per PLAN.md §3, §15 |
 |---|---|---|
-| `.axis/` directory in repo / worktree | Superseded / Obsolete | Dropped. Agents write to `$AXIS_SCRATCH`. Postgres is source of truth. |
+| `.rail/` directory in repo / worktree | Superseded / Obsolete | Dropped. Agents write to `$RAIL_SCRATCH`. Postgres is source of truth. |
 | `tasks.json` / `runs/*.json` flat-file store | Superseded / Obsolete | Replaced by Postgres `tasks`, `role_runs`, `run_events` tables. |
 | `ideas.json` flat-file mirror | Superseded / Obsolete | Replaced by Postgres `issues` table. |
 | `roles.json` / `settings.json` disk file watcher | Superseded / Obsolete | Roles live entirely in Postgres `roles` table per PLAN.md §5 D11. |
-| macOS Application Support sandbox paths | Superseded / Obsolete | Server runner owns `AXIS_WORKSPACE_ROOT` directory. |
+| macOS Application Support sandbox paths | Superseded / Obsolete | Server runner owns `RAIL_WORKSPACE_ROOT` directory. |
 
 ---
 
@@ -285,7 +285,7 @@ It also accounts for all architectural differences and explicitly marks obsolete
 | Multi-project filtering in top bar | Implemented | `lib/rail_web/live/overview_live_test.exs` | Filter persists on user |
 | Inline question answering card | Implemented | `lib/rail_web/live/overview_live_test.exs` | Answers question without leaving page |
 | Role roster grouped by project | Implemented | `lib/rail_web/live/overview_live_test.exs` | Displays active roles and concurrency |
-| Dispatch disabled banner | Implemented | `lib/rail_web/live/overview_live_test.exs` | Shows banner when `AXIS_NO_DISPATCH=1` |
+| Dispatch disabled banner | Implemented | `lib/rail_web/live/overview_live_test.exs` | Shows banner when `RAIL_NO_DISPATCH=1` |
 
 ---
 
@@ -305,11 +305,11 @@ It also accounts for all architectural differences and explicitly marks obsolete
 
 ## Parity Conclusion
 
-Rail has achieved **100% behavioral parity** with the canonical Dart Axis coordinator across all relevant domains:
+Rail has achieved **100% behavioral parity** with the canonical Dart coordinator across all relevant domains:
 1. Stage machine, rework budgets, gate verdicts, question handling, and retry timers.
 2. CLI runner argv building, NDJSON stream parsing, and process following.
 3. Diff parsing, untracked synthesis, and git worktree lifecycle.
 4. Linear integration for tickets, assets, comments, and state synchronization.
 5. GitHub API client for draft status, pull request merge, and remote branch cleanup.
 6. All 10 steps of the ticket lifecycle verified through integration testing.
-7. All obsolete or superseded features from Dart (e.g. desktop windowing, sleep prevention, `.axis` files in repos) are cleanly documented with architectural justifications in PLAN.md §15.
+7. All obsolete or superseded features from Dart (e.g. desktop windowing, sleep prevention, `.rail` files in repos) are cleanly documented with architectural justifications in PLAN.md §15.
