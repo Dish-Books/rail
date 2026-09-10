@@ -254,7 +254,9 @@ defmodule Rail.Pipeline.Actions.DispatchNowTest do
       })
 
     dispatch_hook = fn hook_task, _role ->
-      Pipeline.update_task(system_scope(), hook_task.id, %{stage_state: :running})
+      {:ok, dispatched} = Pipeline.update_task(system_scope(), hook_task.id, %{stage_state: :running})
+      Pipeline.broadcast_pipeline_changed(%{task_id: dispatched.id, event: :dispatched})
+      {:ok, dispatched}
     end
 
     opts = [dispatch_disabled: false, dispatch_hook: dispatch_hook]
@@ -277,7 +279,9 @@ defmodule Rail.Pipeline.Actions.DispatchNowTest do
       })
 
     dispatch_hook = fn hook_task, _role ->
-      Pipeline.update_task(system_scope(), hook_task.id, %{stage_state: :running})
+      {:ok, dispatched} = Pipeline.update_task(system_scope(), hook_task.id, %{stage_state: :running})
+      Pipeline.broadcast_pipeline_changed(%{task_id: dispatched.id, event: :dispatched})
+      {:ok, dispatched}
     end
 
     opts = [dispatch_disabled: false, dispatch_hook: dispatch_hook]
@@ -335,7 +339,9 @@ defmodule Rail.Pipeline.Actions.DispatchNowTest do
       })
 
     dispatch_hook = fn hook_task, _role ->
-      Pipeline.update_task(system_scope(), hook_task.id, %{stage_state: :running})
+      {:ok, dispatched} = Pipeline.update_task(system_scope(), hook_task.id, %{stage_state: :running})
+      Pipeline.broadcast_pipeline_changed(%{task_id: dispatched.id, event: :dispatched})
+      {:ok, dispatched}
     end
 
     opts = [dispatch_disabled: false, dispatch_hook: dispatch_hook]
