@@ -9,14 +9,18 @@ defmodule RailWeb.Components.SettingsNav do
 
   def settings_nav(assigns) do
     ~H"""
-    <div class="border-b border-zinc-200" id="settings-nav" data-qa="settings-nav">
+    <div
+      class="border-b border-slate-200 dark:border-slate-700"
+      id="settings-nav"
+      data-qa="settings-nav"
+    >
       <nav class="-mb-px flex space-x-8" aria-label="Tabs" id="settings-tabs">
         <.link
           navigate={~p"/settings/connected-accounts"}
           class={[
             @active_tab == :connected_accounts && "border-indigo-500 text-indigo-600 font-semibold",
             @active_tab != :connected_accounts &&
-              "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-700",
+              "border-transparent text-slate-500 dark:text-slate-400 hover:border-slate-500 dark:hover:border-slate-400 hover:text-slate-900 dark:hover:text-slate-100",
             "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
           ]}
           id="tab-connected-accounts"
@@ -30,7 +34,7 @@ defmodule RailWeb.Components.SettingsNav do
           class={[
             @active_tab == :appearance && "border-indigo-500 text-indigo-600 font-semibold",
             @active_tab != :appearance &&
-              "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-700",
+              "border-transparent text-slate-500 dark:text-slate-400 hover:border-slate-500 dark:hover:border-slate-400 hover:text-slate-900 dark:hover:text-slate-100",
             "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
           ]}
           id="tab-appearance"
@@ -45,7 +49,7 @@ defmodule RailWeb.Components.SettingsNav do
           class={[
             @active_tab == :projects && "border-indigo-500 text-indigo-600 font-semibold",
             @active_tab != :projects &&
-              "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-700",
+              "border-transparent text-slate-500 dark:text-slate-400 hover:border-slate-500 dark:hover:border-slate-400 hover:text-slate-900 dark:hover:text-slate-100",
             "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
           ]}
           id="tab-projects"
@@ -60,7 +64,7 @@ defmodule RailWeb.Components.SettingsNav do
           class={[
             @active_tab == :linear_workspace && "border-indigo-500 text-indigo-600 font-semibold",
             @active_tab != :linear_workspace &&
-              "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-700",
+              "border-transparent text-slate-500 dark:text-slate-400 hover:border-slate-500 dark:hover:border-slate-400 hover:text-slate-900 dark:hover:text-slate-100",
             "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
           ]}
           id="tab-linear-workspace"
@@ -75,7 +79,7 @@ defmodule RailWeb.Components.SettingsNav do
           class={[
             @active_tab == :users && "border-indigo-500 text-indigo-600 font-semibold",
             @active_tab != :users &&
-              "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-700",
+              "border-transparent text-slate-500 dark:text-slate-400 hover:border-slate-500 dark:hover:border-slate-400 hover:text-slate-900 dark:hover:text-slate-100",
             "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
           ]}
           id="tab-users"
@@ -90,7 +94,7 @@ defmodule RailWeb.Components.SettingsNav do
           class={[
             @active_tab == :roles && "border-indigo-500 text-indigo-600 font-semibold",
             @active_tab != :roles &&
-              "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-700",
+              "border-transparent text-slate-500 dark:text-slate-400 hover:border-slate-500 dark:hover:border-slate-400 hover:text-slate-900 dark:hover:text-slate-100",
             "whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium"
           ]}
           id="tab-roles"

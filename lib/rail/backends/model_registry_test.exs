@@ -24,7 +24,7 @@ defmodule Rail.Backends.ModelRegistryTest do
     assert %ModelOption{id: "claude-fable-5-1"} = hd(claude_models)
   end
 
-  test "get_cached_models/1, put_cached_models/2, and clear_cache/1 manage ETS cache" do
+  test "get_cached_models/1, put_cached_models/2, and clear_cache/1 manage the Nebulex cache" do
     test_models = [%ModelOption{id: "custom-model", display_name: "Custom Model"}]
     ModelRegistry.put_cached_models("custom_backend", test_models)
 

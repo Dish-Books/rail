@@ -256,7 +256,6 @@ defmodule RailWeb.Hooks.NavHookTest do
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
     render_click(view, "toggle_rail", %{})
-    render_click(view, "toggle_theme", %{})
     render_click(view, "theme_changed", %{"theme" => "light"})
     render_click(view, "toggle_project_switcher", %{})
     assert has_element?(view, "#project-switcher-dialog")

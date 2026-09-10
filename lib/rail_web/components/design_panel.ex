@@ -32,14 +32,14 @@ defmodule RailWeb.Components.DesignPanel do
     <div
       id="design-panel"
       data-qa="design-panel design_panel"
-      class="p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] space-y-3"
+      class="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-3"
     >
       <!-- Header Row -->
       <div class="flex items-center gap-2 flex-wrap" id="design-panel-header">
         <h3
           id="design-panel-title"
           data-qa="design_panel_title"
-          class="text-base font-bold text-[var(--color-on-surface)]"
+          class="text-base font-bold text-slate-900 dark:text-slate-100"
         >
           Design directions
         </h3>
@@ -47,7 +47,7 @@ defmodule RailWeb.Components.DesignPanel do
         <span
           id="design-version-pill"
           data-qa="design_version_pill"
-          class="bg-[var(--color-secondary-container)] text-[var(--color-on-secondary-container)] rounded-full px-2 py-0.5 text-xs font-bold"
+          class="bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-full px-2 py-0.5 text-xs font-bold"
         >
           {"v#{@version}"}
         </span>
@@ -59,9 +59,9 @@ defmodule RailWeb.Components.DesignPanel do
           href={@canvas_url}
           target="_blank"
           rel="noopener noreferrer"
-          class="ml-auto inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline truncate max-w-md"
+          class="ml-auto inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-500 hover:underline truncate max-w-md"
         >
-          <.icon name="open_in_new" class="h-3.5 w-3.5 shrink-0" />
+          <.icon name="pi-arrow-square-out" class="h-3.5 w-3.5 shrink-0" />
           <span class="truncate underline">{@canvas_url}</span>
         </a>
       </div>
@@ -80,14 +80,14 @@ defmodule RailWeb.Components.DesignPanel do
             data-qa="design-card design_direction_card"
             data-picked={if is_picked, do: "true", else: "false"}
             class={[
-              "min-w-[260px] max-w-[340px] flex-1 rounded-xl overflow-hidden bg-[var(--color-surface)] p-3 flex flex-col gap-3",
-              is_picked && "border-2 border-[var(--color-primary)] shadow-sm",
-              not is_picked && "border border-[var(--color-outline-variant)]"
+              "min-w-[260px] max-w-[340px] flex-1 rounded-xl overflow-hidden bg-white dark:bg-slate-900 p-3 flex flex-col gap-3",
+              is_picked && "border-2 border-blue-600 dark:border-blue-500 shadow-sm",
+              not is_picked && "border border-slate-300 dark:border-slate-600"
             ]}
           >
             <!-- Still Container (16/10 Aspect Ratio) -->
             <div
-              class="w-full aspect-[16/10] rounded-lg overflow-hidden bg-[var(--color-surface-container-highest)] relative flex items-center justify-center"
+              class="w-full aspect-[16/10] rounded-lg overflow-hidden bg-slate-200 dark:bg-slate-600 relative flex items-center justify-center"
               id={"design-still-wrap-#{key}"}
             >
               <%= if is_binary(img_url) and img_url != "" do %>
@@ -100,12 +100,12 @@ defmodule RailWeb.Components.DesignPanel do
                   loading="lazy"
                   onerror="this.classList.add('hidden'); if(this.nextElementSibling) this.nextElementSibling.classList.remove('hidden');"
                 />
-                <div class="hidden flex flex-col items-center justify-center w-full h-full text-[var(--color-outline)]">
-                  <.icon name="broken_image_outlined" class="h-8 w-8 shrink-0" />
+                <div class="hidden flex flex-col items-center justify-center w-full h-full text-slate-500 dark:text-slate-400">
+                  <.icon name="pi-image-broken" class="h-8 w-8 shrink-0" />
                 </div>
               <% else %>
-                <div class="flex flex-col items-center justify-center w-full h-full text-[var(--color-outline)]">
-                  <.icon name="broken_image_outlined" class="h-8 w-8 shrink-0" />
+                <div class="flex flex-col items-center justify-center w-full h-full text-slate-500 dark:text-slate-400">
+                  <.icon name="pi-image-broken" class="h-8 w-8 shrink-0" />
                 </div>
               <% end %>
             </div>
@@ -115,7 +115,7 @@ defmodule RailWeb.Components.DesignPanel do
               <h4
                 id={"design-direction-title-#{key}"}
                 data-qa="design_direction_title"
-                class="text-sm font-bold text-[var(--color-on-surface)] flex-1 truncate"
+                class="text-sm font-bold text-slate-900 dark:text-slate-100 flex-1 truncate"
                 title={title}
               >
                 {title}
@@ -125,7 +125,7 @@ defmodule RailWeb.Components.DesignPanel do
                 :if={is_picked}
                 id={"design-direction-picked-#{key}"}
                 data-qa="design_direction_picked"
-                class="bg-[var(--color-primary-container)] text-[var(--color-on-primary-container)] rounded-md px-1.5 py-0.5 text-xs font-bold shrink-0"
+                class="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-md px-1.5 py-0.5 text-xs font-bold shrink-0"
               >
                 Picked
               </span>
@@ -136,7 +136,7 @@ defmodule RailWeb.Components.DesignPanel do
               :if={is_binary(notes) and notes != ""}
               id={"design-direction-notes-#{key}"}
               data-qa="design_direction_notes"
-              class="text-xs text-[var(--color-on-surface-variant)] leading-relaxed whitespace-pre-wrap"
+              class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap"
             >
               {notes}
             </p>

@@ -67,6 +67,8 @@ defmodule Rail.MixProject do
       {:mimic, "~> 2.0", only: :test},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false},
+      {:nebulex, "~> 3.0"},
+      {:nebulex_local, "~> 3.0"},
       {:phoenix_ecto, "~> 4.5"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_dashboard, "~> 0.8.3"},
@@ -90,16 +92,22 @@ defmodule Rail.MixProject do
   defp aliases do
     [
       credo: ["credo --config-file .credo.exs"],
-      setup: ["deps.get", "ecto.setup"],
+      setup: ["deps.get", "ecto.setup", "assets.setup"],
       "ecto.setup": ["ecto.create", "ecto.migrate"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test --warnings-as-errors"],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"],
       "assets.setup": [
         "tailwind.install --if-missing",
-        "esbuild.install --if-missing"
+        "esbuild.install --if-missing",
+        "cmd --cd assets pnpm install"
       ],
-      "assets.deploy": ["tailwind rail --minify", "esbuild rail --minify", "phx.digest"]
+      "assets.deploy": [
+        "cmd --cd assets pnpm install --frozen-lockfile",
+        "tailwind rail --minify",
+        "esbuild rail --minify",
+        "phx.digest"
+      ]
     ]
   end
 end

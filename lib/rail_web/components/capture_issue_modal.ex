@@ -59,12 +59,12 @@ defmodule RailWeb.Components.CaptureIssueModal do
       <div
         id="new-issue-modal"
         data-qa="capture_dialog"
-        class="w-full max-w-lg rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6 shadow-2xl space-y-4"
+        class="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-2xl space-y-4"
       >
         <!-- Modal Header -->
-        <div class="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
+        <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
           <h2
-            class="text-base font-semibold text-[var(--color-on-surface)]"
+            class="text-base font-semibold text-slate-900 dark:text-slate-100"
             id="modal-headline"
             data-qa="capture_modal_title"
           >
@@ -75,7 +75,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
             id="close-new-issue-button"
             data-qa="close_new_issue_button"
             phx-click="close_new_issue"
-            class="text-[var(--color-outline)] hover:text-[var(--color-on-surface)] text-sm font-bold p-1 cursor-pointer"
+            class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 text-sm font-bold p-1 cursor-pointer"
           >
             ✕
           </button>
@@ -92,7 +92,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
           <div>
             <label
               for="capture-project-dropdown"
-              class="block text-xs font-semibold text-[var(--color-on-surface)] mb-1"
+              class="block text-xs font-semibold text-slate-900 dark:text-slate-100 mb-1"
             >
               Project
             </label>
@@ -100,7 +100,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
               id="capture-project-dropdown"
               name="project_id"
               data-qa="capture_project_dropdown"
-              class="w-full px-3 py-2 text-xs rounded-lg border border-[var(--color-outline)] bg-[var(--color-surface)] text-[var(--color-on-surface)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+              class="w-full px-3 py-2 text-xs rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
             >
               <%= for project <- @active_projects do %>
                 <option
@@ -117,7 +117,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
           <div>
             <label
               for="capture-idea-input"
-              class="block text-xs font-semibold text-[var(--color-on-surface)] mb-1"
+              class="block text-xs font-semibold text-slate-900 dark:text-slate-100 mb-1"
             >
               Ask / Idea
             </label>
@@ -128,7 +128,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
               rows="3"
               autofocus
               placeholder="What's the idea?"
-              class="w-full min-h-[90px] px-3 py-2 text-sm rounded-lg border border-[var(--color-outline)] bg-[var(--color-surface)] text-[var(--color-on-surface)] placeholder-[var(--color-outline)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+              class="w-full min-h-[90px] px-3 py-2 text-sm rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
             >{@capture_ask}</textarea>
           </div>
 
@@ -136,7 +136,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
           <div>
             <label
               for="capture-priority-dropdown"
-              class="block text-xs font-semibold text-[var(--color-on-surface)] mb-1"
+              class="block text-xs font-semibold text-slate-900 dark:text-slate-100 mb-1"
             >
               Priority
             </label>
@@ -144,7 +144,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
               id="capture-priority-dropdown"
               name="priority"
               data-qa="capture_priority_dropdown"
-              class="w-full px-3 py-2 text-xs rounded-lg border border-[var(--color-outline)] bg-[var(--color-surface)] text-[var(--color-on-surface)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+              class="w-full px-3 py-2 text-xs rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
             >
               <%= for p <- Issue.priorities() do %>
                 <option
@@ -168,13 +168,13 @@ defmodule RailWeb.Components.CaptureIssueModal do
           </div>
 
           <!-- Modal Footer Actions -->
-          <div class="flex items-center justify-end gap-3 pt-3 border-t border-[var(--color-border)]">
+          <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-700">
             <button
               type="button"
               id="capture-cancel-button"
               data-qa="capture_cancel_button"
               phx-click="close_new_issue"
-              class="px-3 py-1.5 rounded-lg border border-[var(--color-outline)] text-xs font-semibold text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container)] cursor-pointer"
+              class="px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
             >
               Cancel
             </button>
@@ -187,9 +187,9 @@ defmodule RailWeb.Components.CaptureIssueModal do
               class={[
                 "px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-opacity",
                 not @can_submit &&
-                  "bg-[var(--color-outline)] text-[var(--color-surface)] opacity-50 cursor-not-allowed",
+                  "bg-slate-500 dark:bg-slate-400 text-white dark:text-slate-900 opacity-50 cursor-not-allowed",
                 @can_submit &&
-                  "bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:opacity-90 cursor-pointer"
+                  "bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer"
               ]}
             >
               {if @capture_submitting, do: "Adding...", else: "Add to Backlog (⌘Enter)"}

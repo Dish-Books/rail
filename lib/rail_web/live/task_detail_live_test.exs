@@ -1299,7 +1299,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         project_id: project_id,
         name: "Architect",
         stage: :architect,
-        icon_name: "architecture"
+        icon_name: "pi-compass-tool"
       })
 
     role_eng =
@@ -1307,7 +1307,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         project_id: project_id,
         name: "Engineer",
         stage: :engineer,
-        icon_name: "code"
+        icon_name: "pi-code"
       })
 
     task =
@@ -1412,7 +1412,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         project_id: project_id,
         name: "Engineer",
         stage: :engineer,
-        icon_name: "code"
+        icon_name: "pi-code"
       })
 
     task =

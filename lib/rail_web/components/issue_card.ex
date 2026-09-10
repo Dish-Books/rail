@@ -18,7 +18,7 @@ defmodule RailWeb.Components.IssueCard do
     <div
       id={"issue-card-#{@issue.id}"}
       data-qa={"issue-row issue-card-#{@issue.id}"}
-      class="m3-card p-5 cursor-pointer hover:border-[var(--color-outline)] transition-colors space-y-3"
+      class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-5 cursor-pointer hover:border-slate-500 dark:hover:border-slate-400 transition-colors space-y-3"
       phx-click="open_editor"
       phx-value-issue_id={@issue.id}
     >
@@ -27,7 +27,7 @@ defmodule RailWeb.Components.IssueCard do
         <div class="flex items-center gap-2 flex-wrap min-w-0 flex-1">
           <span
             data-qa="issue-identifier"
-            class="px-2 py-0.5 rounded text-xs font-mono font-bold bg-[var(--color-primary-container)] text-[var(--color-on-primary-container)] shrink-0"
+            class="px-2 py-0.5 rounded text-xs font-mono font-bold bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 shrink-0"
           >
             {@issue.identifier}
           </span>
@@ -41,13 +41,16 @@ defmodule RailWeb.Components.IssueCard do
             rel="noopener noreferrer"
             data-qa="issue-external-link"
             title="Open issue in Linear"
-            class="text-[var(--color-outline)] hover:text-[var(--color-on-surface)] transition-colors p-0.5"
+            class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors p-0.5"
             onclick="event.stopPropagation()"
           >
-            <.icon name="open_in_new" class="h-4 w-4" />
+            <.icon name="pi-arrow-square-out" class="h-4 w-4" />
           </a>
 
-          <h3 data-qa="issue-title" class="text-sm font-bold text-[var(--color-on-surface)] truncate">
+          <h3
+            data-qa="issue-title"
+            class="text-sm font-bold text-slate-900 dark:text-slate-100 truncate"
+          >
             {@issue.title}
           </h3>
         </div>
@@ -65,7 +68,7 @@ defmodule RailWeb.Components.IssueCard do
 
           <span
             data-qa="issue-status-badge"
-            class="px-2 py-0.5 rounded bg-[var(--color-surface-container-highest)] text-[var(--color-on-surface-variant)] text-[10px] font-bold uppercase tracking-wider"
+            class="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 text-[10px] font-bold uppercase tracking-wider"
           >
             {status_label(@issue.state)}
           </span>
@@ -76,21 +79,21 @@ defmodule RailWeb.Components.IssueCard do
       <p
         :if={@body != ""}
         data-qa="issue-body"
-        class="text-xs text-[var(--color-outline)] line-clamp-4 whitespace-pre-line leading-relaxed"
+        class="text-xs text-slate-500 dark:text-slate-400 line-clamp-4 whitespace-pre-line leading-relaxed"
       >
         {@body}
       </p>
 
       <!-- Footer row: Dedicated Worktree info, Action button & Archive button -->
       <div
-        class="flex items-center justify-between pt-2 border-t border-[var(--color-border)] text-xs text-[var(--color-outline)]"
+        class="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400"
         onclick="event.stopPropagation()"
       >
         <div
-          class="flex items-center gap-1.5 font-mono text-[11px] text-[var(--color-outline)]"
+          class="flex items-center gap-1.5 font-mono text-[11px] text-slate-500 dark:text-slate-400"
           data-qa="issue-worktree"
         >
-          <.icon name="fork_right" class="h-3.5 w-3.5 text-[var(--color-outline)]" />
+          <.icon name="pi-git-fork" class="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
           <span>Dedicated Worktree: .worktrees/{worktree_name(@issue)}</span>
         </div>
 
@@ -101,10 +104,10 @@ defmodule RailWeb.Components.IssueCard do
             navigate={~p"/tasks/#{@task.id}"}
             id={"task-link-#{@issue.id}"}
             data-qa={"task-link-#{@issue.id}"}
-            class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[var(--color-surface-container-highest)] hover:bg-[var(--color-surface-container-high)] text-[var(--color-on-surface)] text-xs font-semibold transition-colors"
+            class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-200 dark:bg-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-xs font-semibold transition-colors"
           >
             <span>{Formatters.stage_label(@task)}</span>
-            <.icon name="open_in_new" class="h-3.5 w-3.5" />
+            <.icon name="pi-arrow-square-out" class="h-3.5 w-3.5" />
           </.link>
 
           <button
@@ -114,9 +117,9 @@ defmodule RailWeb.Components.IssueCard do
             data-qa={"bring_local_#{@issue.id}"}
             phx-click="bring_local"
             phx-value-issue_id={@issue.id}
-            class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[var(--color-primary)] text-[var(--color-on-primary)] text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
+            class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
           >
-            <.icon name="south_west" class="h-3.5 w-3.5" />
+            <.icon name="pi-arrow-down-left" class="h-3.5 w-3.5" />
             <span>Bring local</span>
           </button>
 
@@ -128,9 +131,9 @@ defmodule RailWeb.Components.IssueCard do
             phx-click="open_archive"
             phx-value-issue_id={@issue.id}
             title="Archive issue"
-            class="p-1.5 rounded-lg text-[var(--color-outline)] hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
+            class="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
           >
-            <.icon name="delete_outline" class="h-4 w-4" />
+            <.icon name="pi-trash" class="h-4 w-4" />
           </button>
         </div>
       </div>

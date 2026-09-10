@@ -65,14 +65,14 @@ defmodule RailWeb.IssuesLive do
       <div class="flex items-center justify-between gap-4 flex-wrap" id="issues-header">
         <div>
           <h1
-            class="text-2xl font-bold tracking-tight text-[var(--color-on-surface)]"
+            class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
             id="issues-title"
             data-qa="issues_title"
           >
             Issues
           </h1>
           <p
-            class="text-xs text-[var(--color-outline)] mt-1"
+            class="text-xs text-slate-500 dark:text-slate-400 mt-1"
             id="issues-subtitle"
             data-qa="issues-subtitle"
           >
@@ -90,11 +90,11 @@ defmodule RailWeb.IssuesLive do
             disabled={@is_syncing}
             title="Pulls issues from Linear"
             class={[
-              "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--color-outline)] text-xs font-semibold text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container)] transition-colors cursor-pointer",
+              "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer",
               @is_syncing && "opacity-50 cursor-not-allowed"
             ]}
           >
-            <.icon :if={not @is_syncing} name="sync" class="h-4 w-4" />
+            <.icon :if={not @is_syncing} name="pi-arrows-clockwise" class="h-4 w-4" />
             <span
               :if={@is_syncing}
               class="inline-block animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full mr-1"
@@ -108,9 +108,9 @@ defmodule RailWeb.IssuesLive do
             id="new-issue-button"
             data-qa="capture-issue-button new-issue-button"
             phx-click="open_new_issue"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-primary)] text-[var(--color-on-primary)] text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
           >
-            <.icon name="add_circle" class="h-4 w-4" />
+            <.icon name="pi-plus-circle-fill" class="h-4 w-4" />
             <span>New Issue</span>
           </button>
         </div>
@@ -128,9 +128,9 @@ defmodule RailWeb.IssuesLive do
           class={[
             "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer",
             if(is_nil(@filter_priority),
-              do: "bg-[var(--color-primary)] text-[var(--color-on-primary)]",
+              do: "bg-blue-600 dark:bg-blue-500 text-white",
               else:
-                "bg-[var(--color-surface-container-highest)] text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-high)]"
+                "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
             )
           ]}
         >
@@ -148,9 +148,9 @@ defmodule RailWeb.IssuesLive do
             class={[
               "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer",
               if(@filter_priority == p,
-                do: "bg-[var(--color-primary)] text-[var(--color-on-primary)]",
+                do: "bg-blue-600 dark:bg-blue-500 text-white",
                 else:
-                  "bg-[var(--color-surface-container-highest)] text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-high)]"
+                  "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
               )
             ]}
           >
@@ -158,7 +158,7 @@ defmodule RailWeb.IssuesLive do
           </button>
         <% end %>
 
-        <div class="h-4 w-px bg-[var(--color-outline-variant)] mx-1"></div>
+        <div class="h-4 w-px bg-slate-300 dark:bg-slate-600 mx-1"></div>
 
         <!-- Show finished filter chip -->
         <button
@@ -170,13 +170,13 @@ defmodule RailWeb.IssuesLive do
             "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5",
             if(@show_finished,
               do:
-                "bg-[var(--color-primary-container)] text-[var(--color-on-primary-container)] border border-[var(--color-primary)]",
+                "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border border-blue-600 dark:border-blue-500",
               else:
-                "bg-[var(--color-surface-container-highest)] text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-high)]"
+                "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
             )
           ]}
         >
-          <.icon :if={@show_finished} name="check" class="h-3.5 w-3.5" />
+          <.icon :if={@show_finished} name="pi-check" class="h-3.5 w-3.5" />
           <span>Show finished</span>
         </button>
 
@@ -187,7 +187,7 @@ defmodule RailWeb.IssuesLive do
             id="issues-search"
             data-qa="issues-search"
             placeholder="Search issues..."
-            class="px-3 py-1 text-xs rounded-lg border border-[var(--color-outline-variant)] bg-[var(--color-surface)] text-[var(--color-on-surface)] placeholder-[var(--color-outline)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+            class="px-3 py-1 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
           />
         </div>
       </div>
@@ -199,11 +199,14 @@ defmodule RailWeb.IssuesLive do
           :if={@filtered_issues == []}
           id="issues-empty-state"
           data-qa="issues-empty-state"
-          class="m3-card p-12 flex flex-col items-center justify-center text-center space-y-4"
+          class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-12 flex flex-col items-center justify-center text-center space-y-4"
         >
-          <.icon name="lightbulb" class="h-14 w-14 text-[var(--color-outline)] opacity-70" />
+          <.icon
+            name="pi-lightbulb-fill"
+            class="h-14 w-14 text-slate-500 dark:text-slate-400 opacity-70"
+          />
           <h2
-            class="text-base font-semibold text-[var(--color-outline)]"
+            class="text-base font-semibold text-slate-500 dark:text-slate-400"
             data-qa="empty-state-title"
           >
             No issues in this view
@@ -213,7 +216,7 @@ defmodule RailWeb.IssuesLive do
             id="add-first-issue-button"
             data-qa="empty-add-issue-button"
             phx-click="open_new_issue"
-            class="px-4 py-2 rounded-lg bg-[var(--color-surface-container-highest)] hover:bg-[var(--color-surface-container-high)] text-xs font-semibold text-[var(--color-on-surface)] transition-colors cursor-pointer"
+            class="px-4 py-2 rounded-lg bg-slate-200 dark:bg-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold text-slate-900 dark:text-slate-100 transition-colors cursor-pointer"
           >
             Add first issue
           </button>

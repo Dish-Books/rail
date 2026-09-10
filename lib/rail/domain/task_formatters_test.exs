@@ -14,9 +14,9 @@ defmodule Rail.Domain.TaskFormattersTest do
     }
 
     assert TaskFormatters.stage_label(task) == "Engineer running · rework 1 of 5"
-    assert TaskFormatters.stage_state_icon(task) == "play_circle_outline"
+    assert TaskFormatters.stage_state_icon(task) == "pi-play-circle"
     assert TaskFormatters.stage_state_color(task) == :primary
-    assert TaskFormatters.stage_state_color_class(task, :text) =~ "text-[var(--color-primary)]"
+    assert TaskFormatters.stage_state_color_class(task, :text) =~ "text-blue-600 dark:text-blue-500"
     refute TaskFormatters.shows_as_conflicted?(task)
     refute TaskFormatters.has_merge_conflicts?(task)
     refute TaskFormatters.uses_design?(task)

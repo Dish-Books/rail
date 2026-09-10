@@ -14,7 +14,7 @@ defmodule RailWeb.Components.ProjectBadge do
       :if={@label != nil}
       data-qa="project-badge"
       class={[
-        "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-[var(--color-surface-container-highest)] text-[var(--color-on-surface-variant)] border border-[var(--color-outline-variant)] shrink-0",
+        "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-600 shrink-0",
         @class
       ]}
     >

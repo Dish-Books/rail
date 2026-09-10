@@ -92,10 +92,13 @@ defmodule RailWeb.Settings.RolesLive do
     ~H"""
     <div class="max-w-5xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="roles-settings">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight text-zinc-900" id="roles-title">
+        <h1
+          class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
+          id="roles-title"
+        >
           Agent Roles
         </h1>
-        <p class="mt-1 text-sm text-zinc-500" id="roles-subtitle">
+        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400" id="roles-subtitle">
           Configure stage bindings, models, reasoning effort, and system prompts.
         </p>
       </div>
@@ -108,14 +111,14 @@ defmodule RailWeb.Settings.RolesLive do
         id="roles-project-bar"
       >
         <div class="flex items-center space-x-3">
-          <label class="text-sm font-medium text-zinc-700" for="project-selector">
+          <label class="text-sm font-medium text-slate-900 dark:text-slate-100" for="project-selector">
             Project:
           </label>
           <form phx-change="select_project" id="project-selector-form">
             <select
               id="project-selector"
               name="project_id"
-              class="rounded-md border-zinc-300 py-1.5 pl-3 pr-8 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 font-medium"
+              class="rounded-md border-slate-200 dark:border-slate-700 py-1.5 pl-3 pr-8 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 font-medium"
             >
               <option
                 :for={project <- @projects}
@@ -134,9 +137,9 @@ defmodule RailWeb.Settings.RolesLive do
             phx-click="open_export_modal"
             id="export-roles-button"
             disabled={is_nil(@current_project_id) or Enum.empty?(@roles)}
-            class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-xs ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50 disabled:opacity-50"
+            class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
           >
-            <.icon name="arrow_down_tray" class="inline h-3.5 w-3.5 mr-1" /> Export Roles
+            <.icon name="pi-download-simple" class="h-3.5 w-3.5 mr-1" /> Export Roles
           </button>
 
           <button
@@ -144,9 +147,9 @@ defmodule RailWeb.Settings.RolesLive do
             phx-click="open_import_modal"
             id="import-roles-button"
             disabled={is_nil(@current_project_id)}
-            class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-xs ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50 disabled:opacity-50"
+            class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
           >
-            <.icon name="arrow_up_tray" class="inline h-3.5 w-3.5 mr-1" /> Import Roles
+            <.icon name="pi-upload-simple" class="h-3.5 w-3.5 mr-1" /> Import Roles
           </button>
 
           <button
@@ -154,9 +157,9 @@ defmodule RailWeb.Settings.RolesLive do
             phx-click="open_copy_modal"
             id="copy-roles-button"
             disabled={is_nil(@current_project_id) or length(@projects) < 2}
-            class="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-xs ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50 disabled:opacity-50"
+            class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
           >
-            <.icon name="square_2_stack" class="inline h-3.5 w-3.5 mr-1" /> Copy From...
+            <.icon name="pi-copy" class="h-3.5 w-3.5 mr-1" /> Copy From...
           </button>
 
           <button
@@ -166,14 +169,14 @@ defmodule RailWeb.Settings.RolesLive do
             disabled={is_nil(@current_project_id)}
             class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-indigo-500 disabled:opacity-50"
           >
-            <.icon name="add" class="inline h-3.5 w-3.5 mr-1" /> Add Custom Role
+            <.icon name="pi-plus" class="h-3.5 w-3.5 mr-1" /> Add Custom Role
           </button>
         </div>
       </div>
 
       <div
         :if={is_nil(@current_project_id)}
-        class="p-8 text-center text-zinc-500 text-sm bg-white rounded-lg border border-zinc-200"
+        class="p-8 text-center text-slate-500 dark:text-slate-400 text-sm bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700"
         id="no-projects-message"
       >
         No projects registered yet. Register a project in the Projects tab first.
@@ -182,29 +185,36 @@ defmodule RailWeb.Settings.RolesLive do
       <!-- Pipeline Stage List Section -->
       <section
         :if={@current_project_id}
-        class="bg-white shadow rounded-lg border border-zinc-200 overflow-hidden"
+        class="bg-slate-50 dark:bg-slate-800 shadow rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
         id="pipeline-stages-section"
       >
-        <div class="p-6 border-b border-zinc-200">
-          <h2 class="text-base font-semibold text-zinc-900" id="pipeline-stages-title">
+        <div class="p-6 border-b border-slate-200 dark:border-slate-700">
+          <h2
+            class="text-base font-semibold text-slate-900 dark:text-slate-100"
+            id="pipeline-stages-title"
+          >
             Pipeline Stage Bindings
           </h2>
-          <p class="text-xs text-zinc-500 mt-0.5">
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             Roles bound to canonical pipeline stages run automatically as tasks advance.
           </p>
         </div>
 
-        <ul role="list" class="divide-y divide-zinc-200" id="pipeline-stages-list">
+        <ul
+          role="list"
+          class="divide-y divide-slate-200 dark:divide-slate-700"
+          id="pipeline-stages-list"
+        >
           <li
             :for={stage <- @canonical_stages}
             id={"stage-row-#{stage}"}
             data-qa={"role-card stage-row-#{stage}"}
-            class="p-5 flex items-center justify-between hover:bg-zinc-50 transition-colors"
+            class="p-5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
           >
             <% bound_role = role_for_stage(@roles, stage) %>
             <div class="flex items-center space-x-4 min-w-0">
               <div
-                class="flex items-center justify-center h-10 w-10 rounded-lg bg-zinc-100 text-zinc-600 font-mono text-xs font-bold shrink-0 uppercase"
+                class="flex items-center justify-center h-10 w-10 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono text-xs font-bold shrink-0 uppercase"
                 id={"stage-avatar-#{stage}"}
               >
                 {stage_initials(stage)}
@@ -213,26 +223,29 @@ defmodule RailWeb.Settings.RolesLive do
               <div class="min-w-0">
                 <div class="flex items-center space-x-2">
                   <span
-                    class="text-sm font-semibold text-zinc-900 capitalize"
+                    class="text-sm font-semibold text-slate-900 dark:text-slate-100 capitalize"
                     id={"stage-name-#{stage}"}
                   >
                     {stage_display_name(stage)}
                   </span>
-                  <span class="text-[11px] font-mono text-zinc-400">
+                  <span class="text-[11px] font-mono text-slate-500 dark:text-slate-400">
                     ({stage})
                   </span>
                 </div>
 
                 <div
                   :if={bound_role}
-                  class="flex items-center space-x-2 mt-1 text-xs text-zinc-500"
+                  class="flex items-center space-x-2 mt-1 text-xs text-slate-500 dark:text-slate-400"
                   id={"stage-role-details-#{stage}"}
                 >
-                  <span class="font-semibold text-zinc-800" id={"bound-role-name-#{stage}"}>
+                  <span
+                    class="font-semibold text-slate-900 dark:text-slate-100"
+                    id={"bound-role-name-#{stage}"}
+                  >
                     {bound_role.name}
                   </span>
                   <span>•</span>
-                  <span class="font-mono uppercase text-[10px] bg-zinc-100 px-1.5 py-0.5 rounded">
+                  <span class="font-mono uppercase text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">
                     {bound_role.cli_backend}
                   </span>
                   <span>•</span>
@@ -240,21 +253,24 @@ defmodule RailWeb.Settings.RolesLive do
                     {bound_role.model}
                   </span>
                   <span :if={bound_role.reasoning_effort}>•</span>
-                  <span :if={bound_role.reasoning_effort} class="text-zinc-500 capitalize">
+                  <span
+                    :if={bound_role.reasoning_effort}
+                    class="text-slate-500 dark:text-slate-400 capitalize"
+                  >
                     Effort: {bound_role.reasoning_effort}
                   </span>
                 </div>
 
                 <p
                   :if={bound_role && bound_role.description}
-                  class="text-xs text-zinc-400 mt-0.5 truncate max-w-md"
+                  class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-md"
                 >
                   {bound_role.description}
                 </p>
 
                 <p
                   :if={is_nil(bound_role)}
-                  class="text-xs text-zinc-400 italic mt-0.5"
+                  class="text-xs text-slate-500 dark:text-slate-400 italic mt-0.5"
                   id={"unbound-stage-notice-#{stage}"}
                 >
                   No role bound
@@ -272,8 +288,7 @@ defmodule RailWeb.Settings.RolesLive do
                   phx-value-role_id={bound_role.id}
                   class="rounded bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 shadow-xs"
                 >
-                  <.icon name="auto_fix_high" class="inline h-3.5 w-3.5 mr-1 text-indigo-600" />
-                  Improve
+                  <.icon name="pi-magic-wand" class="h-3.5 w-3.5 mr-1 text-indigo-600" /> Improve
                 </button>
 
                 <button
@@ -282,7 +297,7 @@ defmodule RailWeb.Settings.RolesLive do
                   data-qa={"edit_role_button_#{bound_role.id}"}
                   phx-click="open_edit_modal"
                   phx-value-role_id={bound_role.id}
-                  class="rounded bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-700 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50 shadow-xs"
+                  class="rounded bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 shadow-xs"
                 >
                   Edit Role
                 </button>
@@ -293,7 +308,7 @@ defmodule RailWeb.Settings.RolesLive do
                   data-qa={"delete_role_button_#{bound_role.id}"}
                   phx-click="open_delete_modal"
                   phx-value-role_id={bound_role.id}
-                  class="rounded bg-white px-2 py-1.5 text-xs font-semibold text-red-600 ring-1 ring-inset ring-red-200 hover:bg-red-50"
+                  class="rounded bg-slate-50 dark:bg-slate-800 px-2 py-1.5 text-xs font-semibold text-red-600 ring-1 ring-inset ring-red-200 hover:bg-red-50"
                   title="Delete role"
                 >
                   ✕
@@ -307,7 +322,7 @@ defmodule RailWeb.Settings.RolesLive do
                   data-qa={"assign_stage_button_#{stage}"}
                   phx-click="open_create_modal"
                   phx-value-stage={stage}
-                  class="rounded bg-zinc-50 px-2.5 py-1.5 text-xs font-semibold text-zinc-700 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-100"
+                  class="rounded bg-slate-100 dark:bg-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
                 >
                   Assign or Create
                 </button>
@@ -320,15 +335,18 @@ defmodule RailWeb.Settings.RolesLive do
       <!-- Unbound Custom Roles Section -->
       <section
         :if={@current_project_id}
-        class="bg-white shadow rounded-lg border border-zinc-200 overflow-hidden"
+        class="bg-slate-50 dark:bg-slate-800 shadow rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
         id="unbound-roles-section"
       >
-        <div class="p-6 border-b border-zinc-200 flex items-center justify-between">
+        <div class="p-6 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
           <div>
-            <h2 class="text-base font-semibold text-zinc-900" id="unbound-roles-title">
+            <h2
+              class="text-base font-semibold text-slate-900 dark:text-slate-100"
+              id="unbound-roles-title"
+            >
               Custom / Unbound Roles
             </h2>
-            <p class="text-xs text-zinc-500 mt-0.5">
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Roles without a pipeline stage binding, available for ad-hoc and background workflows.
             </p>
           </div>
@@ -337,7 +355,7 @@ defmodule RailWeb.Settings.RolesLive do
         <% unbound_roles = Enum.filter(@roles, &is_nil(&1.stage)) %>
         <div
           :if={Enum.empty?(unbound_roles)}
-          class="p-8 text-center text-zinc-400 text-sm italic"
+          class="p-8 text-center text-slate-500 dark:text-slate-400 text-sm italic"
           id="empty-unbound-roles-notice"
         >
           No custom unbound roles configured.
@@ -346,28 +364,31 @@ defmodule RailWeb.Settings.RolesLive do
         <ul
           :if={not Enum.empty?(unbound_roles)}
           role="list"
-          class="divide-y divide-zinc-200"
+          class="divide-y divide-slate-200 dark:divide-slate-700"
           id="unbound-roles-list"
         >
           <li
             :for={role <- unbound_roles}
             id={"unbound-role-row-#{role.id}"}
             data-qa={"role-card unbound-role-row-#{role.id}"}
-            class="p-5 flex items-center justify-between hover:bg-zinc-50 transition-colors"
+            class="p-5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
           >
             <div>
               <div class="flex items-center space-x-2">
-                <span class="text-sm font-semibold text-zinc-900" id={"role-name-#{role.id}"}>
+                <span
+                  class="text-sm font-semibold text-slate-900 dark:text-slate-100"
+                  id={"role-name-#{role.id}"}
+                >
                   {role.name}
                 </span>
-                <span class="text-xs font-mono uppercase text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded">
+                <span class="text-xs font-mono uppercase text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">
                   {role.cli_backend}
                 </span>
-                <span class="text-xs font-mono text-zinc-500">
+                <span class="text-xs font-mono text-slate-500 dark:text-slate-400">
                   {role.model}
                 </span>
               </div>
-              <p :if={role.description} class="text-xs text-zinc-500 mt-0.5">
+              <p :if={role.description} class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 {role.description}
               </p>
             </div>
@@ -380,7 +401,7 @@ defmodule RailWeb.Settings.RolesLive do
                 phx-value-role_id={role.id}
                 class="rounded bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 shadow-xs"
               >
-                <.icon name="auto_fix_high" class="inline h-3.5 w-3.5 mr-1 text-indigo-600" /> Improve
+                <.icon name="pi-magic-wand" class="h-3.5 w-3.5 mr-1 text-indigo-600" /> Improve
               </button>
 
               <button
@@ -388,7 +409,7 @@ defmodule RailWeb.Settings.RolesLive do
                 id={"edit-unbound-role-button-#{role.id}"}
                 phx-click="open_edit_modal"
                 phx-value-role_id={role.id}
-                class="rounded bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-700 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50 shadow-xs"
+                class="rounded bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 shadow-xs"
               >
                 Edit Role
               </button>
@@ -398,7 +419,7 @@ defmodule RailWeb.Settings.RolesLive do
                 id={"delete-unbound-role-button-#{role.id}"}
                 phx-click="open_delete_modal"
                 phx-value-role_id={role.id}
-                class="rounded bg-white px-2 py-1.5 text-xs font-semibold text-red-600 ring-1 ring-inset ring-red-200 hover:bg-red-50"
+                class="rounded bg-slate-50 dark:bg-slate-800 px-2 py-1.5 text-xs font-semibold text-red-600 ring-1 ring-inset ring-red-200 hover:bg-red-50"
               >
                 ✕
               </button>
@@ -416,9 +437,9 @@ defmodule RailWeb.Settings.RolesLive do
         id="role-editor-modal"
         data-qa="role-editor"
       >
-        <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg bg-white p-6 shadow-xl space-y-6">
-          <div class="flex items-center justify-between border-b border-zinc-200 pb-4">
-            <h2 class="text-lg font-semibold text-zinc-900" id="role-modal-title">
+        <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-6">
+          <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-4">
+            <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100" id="role-modal-title">
               {if @active_modal == :create_role,
                 do: "Create New Role",
                 else: "Edit Role: #{@modal_role.name}"}
@@ -427,7 +448,7 @@ defmodule RailWeb.Settings.RolesLive do
               type="button"
               phx-click="close_modal"
               id="close-role-modal-button"
-              class="text-zinc-400 hover:text-zinc-600 font-bold"
+              class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
             >
               ✕
             </button>
@@ -436,7 +457,7 @@ defmodule RailWeb.Settings.RolesLive do
           <form phx-change="validate_role" phx-submit="save_role" id="role-form" class="space-y-4">
             <!-- Identifier -->
             <div>
-              <label class="block text-xs font-medium text-zinc-700">Role Identifier</label>
+              <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Role Identifier</label>
               <input
                 type="text"
                 name="role[role_id]"
@@ -444,20 +465,20 @@ defmodule RailWeb.Settings.RolesLive do
                 value={@modal_form["role_id"]}
                 disabled={@active_modal == :edit_role}
                 placeholder="e.g. security_auditor"
-                class="mt-1 block w-full rounded-md border-zinc-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs disabled:bg-zinc-100 disabled:text-zinc-500"
+                class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs disabled:bg-slate-100 dark:disabled:bg-slate-700 disabled:text-slate-500 dark:disabled:text-slate-400"
               />
             </div>
 
             <!-- Name -->
             <div>
-              <label class="block text-xs font-medium text-zinc-700">Role Display Name *</label>
+              <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Role Display Name *</label>
               <input
                 type="text"
                 name="role[name]"
                 id="role-name-input"
                 value={@modal_form["name"]}
                 required
-                class="mt-1 block w-full rounded-md border-zinc-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
               />
               <span :if={@modal_errors[:name]} class="text-xs text-red-600" id="role-name-error">
                 {@modal_errors[:name]}
@@ -466,24 +487,24 @@ defmodule RailWeb.Settings.RolesLive do
 
             <!-- Description -->
             <div>
-              <label class="block text-xs font-medium text-zinc-700">Description</label>
+              <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Description</label>
               <input
                 type="text"
                 name="role[description]"
                 id="role-description-input"
                 value={@modal_form["description"]}
-                class="mt-1 block w-full rounded-md border-zinc-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
               />
             </div>
 
             <div class="grid grid-cols-2 gap-4">
               <!-- Stage Binding -->
               <div>
-                <label class="block text-xs font-medium text-zinc-700">Stage Binding</label>
+                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Stage Binding</label>
                 <select
                   name="role[stage]"
                   id="role-stage-select"
-                  class="mt-1 block w-full rounded-md border-zinc-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs capitalize"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs capitalize"
                 >
                   <option
                     value=""
@@ -503,12 +524,12 @@ defmodule RailWeb.Settings.RolesLive do
 
               <!-- CLI Backend -->
               <div>
-                <label class="block text-xs font-medium text-zinc-700">CLI Backend</label>
+                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">CLI Backend</label>
                 <select
                   name="role[cli_backend]"
                   id="role-backend-select"
                   phx-change="change_backend"
-                  class="mt-1 block w-full rounded-md border-zinc-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
                 >
                   <option value="claude" selected={@modal_form["cli_backend"] == "claude"}>
                     Claude Code (claude -p)
@@ -523,14 +544,17 @@ defmodule RailWeb.Settings.RolesLive do
             <!-- Model Dropdown + Custom Field -->
             <div class="space-y-2">
               <div class="flex items-center justify-between">
-                <label class="block text-xs font-medium text-zinc-700">Model *</label>
+                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Model *</label>
                 <button
                   type="button"
                   phx-click="refresh_models"
                   id="refresh-models-button"
                   class="text-[11px] text-indigo-600 hover:text-indigo-800 flex items-center space-x-1"
                 >
-                  <.icon name="refresh" class={["h-3 w-3", @is_loading_models && "animate-spin"]} />
+                  <.icon
+                    name="pi-arrow-clockwise"
+                    class={["h-3 w-3", @is_loading_models && "animate-spin"]}
+                  />
                   <span>Refresh Models</span>
                 </button>
               </div>
@@ -538,7 +562,7 @@ defmodule RailWeb.Settings.RolesLive do
               <select
                 name="role[model_choice]"
                 id="role-model-select"
-                class="mt-1 block w-full rounded-md border-zinc-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
               >
                 <option
                   :for={model <- @available_models}
@@ -553,14 +577,14 @@ defmodule RailWeb.Settings.RolesLive do
               </select>
 
               <div :if={@is_custom_model} id="custom-model-input-container">
-                <label class="block text-[11px] text-zinc-500">Custom Model ID</label>
+                <label class="block text-[11px] text-slate-500 dark:text-slate-400">Custom Model ID</label>
                 <input
                   type="text"
                   name="role[custom_model]"
                   id="role-custom-model-input"
                   value={@modal_form["custom_model"]}
                   placeholder="e.g. claude-3-7-sonnet"
-                  class="mt-0.5 block w-full rounded-md border-zinc-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                  class="mt-0.5 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
                 />
               </div>
               <span :if={@modal_errors[:model]} class="text-xs text-red-600" id="role-model-error">
@@ -571,11 +595,11 @@ defmodule RailWeb.Settings.RolesLive do
             <div class="grid grid-cols-2 gap-4">
               <!-- Reasoning Effort -->
               <div>
-                <label class="block text-xs font-medium text-zinc-700">Reasoning Effort</label>
+                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Reasoning Effort</label>
                 <select
                   name="role[reasoning_effort]"
                   id="role-effort-select"
-                  class="mt-1 block w-full rounded-md border-zinc-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
                 >
                   <option value="max" selected={@modal_form["reasoning_effort"] == "max"}>
                     Max (Correctness over cost)
@@ -597,21 +621,21 @@ defmodule RailWeb.Settings.RolesLive do
 
               <!-- Max Concurrent -->
               <div>
-                <label class="block text-xs font-medium text-zinc-700">Max Concurrent</label>
+                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Max Concurrent</label>
                 <input
                   type="number"
                   min="1"
                   name="role[max_concurrent]"
                   id="role-max-concurrent-input"
                   value={@modal_form["max_concurrent"] || 1}
-                  class="mt-1 block w-full rounded-md border-zinc-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
                 />
               </div>
             </div>
 
             <!-- System Prompt Textarea -->
             <div>
-              <label class="block text-xs font-medium text-zinc-700">
+              <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">
                 System Prompt Instructions & Guidelines *
               </label>
               <textarea
@@ -619,7 +643,7 @@ defmodule RailWeb.Settings.RolesLive do
                 id="role-prompt-input"
                 rows="12"
                 required
-                class="mt-1 block w-full font-mono text-xs rounded-md border-zinc-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500"
+                class="mt-1 block w-full font-mono text-xs rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500"
               >{@modal_form["system_prompt"]}</textarea>
               <span
                 :if={@modal_errors[:system_prompt]}
@@ -631,12 +655,12 @@ defmodule RailWeb.Settings.RolesLive do
             </div>
 
             <!-- Modal Footer -->
-            <div class="flex items-center justify-end space-x-3 pt-4 border-t border-zinc-200">
+            <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
               <button
                 type="button"
                 phx-click="close_modal"
                 id="cancel-role-button"
-                class="rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-900 shadow-xs ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+                class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
               >
                 Cancel
               </button>
@@ -658,20 +682,23 @@ defmodule RailWeb.Settings.RolesLive do
         class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
         id="delete-role-modal"
       >
-        <div class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl space-y-4">
-          <h2 class="text-base font-semibold text-zinc-900" id="delete-modal-title">
+        <div class="w-full max-w-md rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4">
+          <h2
+            class="text-base font-semibold text-slate-900 dark:text-slate-100"
+            id="delete-modal-title"
+          >
             Delete Role
           </h2>
-          <p class="text-sm text-zinc-600" id="delete-modal-message">
+          <p class="text-sm text-slate-500 dark:text-slate-400" id="delete-modal-message">
             Are you sure you want to delete role <strong id="delete-role-name">{@modal_role.name}</strong>? This action cannot be undone.
           </p>
 
-          <div class="flex items-center justify-end space-x-3 pt-4 border-t border-zinc-200">
+          <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
             <button
               type="button"
               phx-click="close_modal"
               id="cancel-delete-button"
-              class="rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-900 shadow-xs ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+              class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
             >
               Cancel
             </button>
@@ -693,13 +720,15 @@ defmodule RailWeb.Settings.RolesLive do
         class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
         id="export-roles-modal"
       >
-        <div class="w-full max-w-xl rounded-lg bg-white p-6 shadow-xl space-y-4">
-          <div class="flex items-center justify-between border-b border-zinc-200 pb-3">
-            <h2 class="text-base font-semibold text-zinc-900">Export Roles (JSON)</h2>
+        <div class="w-full max-w-xl rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
+            <h2 class="text-base font-semibold text-slate-900 dark:text-slate-100">
+              Export Roles (JSON)
+            </h2>
             <button
               type="button"
               phx-click="close_modal"
-              class="text-zinc-400 hover:text-zinc-600 font-bold"
+              class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
             >
               ✕
             </button>
@@ -709,7 +738,7 @@ defmodule RailWeb.Settings.RolesLive do
             id="export-roles-textarea"
             readonly
             rows="16"
-            class="w-full font-mono text-xs rounded-md border-zinc-300 bg-zinc-50 p-2 shadow-xs"
+            class="w-full font-mono text-xs rounded-md border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700 p-2 shadow-xs"
           >{@export_json}</textarea>
 
           <div class="flex items-center justify-end space-x-3 pt-2">
@@ -717,7 +746,7 @@ defmodule RailWeb.Settings.RolesLive do
               type="button"
               phx-click="close_modal"
               id="close-export-modal-button"
-              class="rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-900 shadow-xs ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+              class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
             >
               Close
             </button>
@@ -731,13 +760,15 @@ defmodule RailWeb.Settings.RolesLive do
         class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
         id="import-roles-modal"
       >
-        <div class="w-full max-w-xl rounded-lg bg-white p-6 shadow-xl space-y-4">
-          <div class="flex items-center justify-between border-b border-zinc-200 pb-3">
-            <h2 class="text-base font-semibold text-zinc-900">Import Roles (JSON)</h2>
+        <div class="w-full max-w-xl rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
+            <h2 class="text-base font-semibold text-slate-900 dark:text-slate-100">
+              Import Roles (JSON)
+            </h2>
             <button
               type="button"
               phx-click="close_modal"
-              class="text-zinc-400 hover:text-zinc-600 font-bold"
+              class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
             >
               ✕
             </button>
@@ -758,14 +789,14 @@ defmodule RailWeb.Settings.RolesLive do
             </div>
 
             <div>
-              <label class="block text-xs font-medium text-zinc-700">Paste JSON here</label>
+              <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Paste JSON here</label>
               <textarea
                 name="import_json"
                 id="import-roles-textarea"
                 rows="12"
                 required
                 placeholder="[ { &quot;name&quot;: &quot;...&quot;, &quot;model&quot;: &quot;...&quot; } ]"
-                class="mt-1 w-full font-mono text-xs rounded-md border-zinc-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500"
+                class="mt-1 w-full font-mono text-xs rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500"
               ></textarea>
             </div>
 
@@ -775,19 +806,22 @@ defmodule RailWeb.Settings.RolesLive do
                 name="replace_all"
                 value="true"
                 id="import-replace-all-checkbox"
-                class="rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                class="rounded border-slate-200 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
               />
-              <label for="import-replace-all-checkbox" class="text-xs text-zinc-700">
+              <label
+                for="import-replace-all-checkbox"
+                class="text-xs text-slate-900 dark:text-slate-100"
+              >
                 Replace all existing roles in this project
               </label>
             </div>
 
-            <div class="flex items-center justify-end space-x-3 pt-3 border-t border-zinc-200">
+            <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-slate-700">
               <button
                 type="button"
                 phx-click="close_modal"
                 id="cancel-import-button"
-                class="rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-900 shadow-xs ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+                class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
               >
                 Cancel
               </button>
@@ -809,13 +843,15 @@ defmodule RailWeb.Settings.RolesLive do
         class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
         id="copy-roles-modal"
       >
-        <div class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl space-y-4">
-          <div class="flex items-center justify-between border-b border-zinc-200 pb-3">
-            <h2 class="text-base font-semibold text-zinc-900">Copy Roles from Project</h2>
+        <div class="w-full max-w-md rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
+            <h2 class="text-base font-semibold text-slate-900 dark:text-slate-100">
+              Copy Roles from Project
+            </h2>
             <button
               type="button"
               phx-click="close_modal"
-              class="text-zinc-400 hover:text-zinc-600 font-bold"
+              class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
             >
               ✕
             </button>
@@ -828,11 +864,11 @@ defmodule RailWeb.Settings.RolesLive do
             class="space-y-4"
           >
             <div>
-              <label class="block text-xs font-medium text-zinc-700">Source Project</label>
+              <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Source Project</label>
               <select
                 name="source_project_id"
                 id="copy-source-project-select"
-                class="mt-1 block w-full rounded-md border-zinc-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
               >
                 <option
                   :for={project <- Enum.filter(@projects, &(&1.id != @current_project_id))}
@@ -849,19 +885,22 @@ defmodule RailWeb.Settings.RolesLive do
                 name="replace_all"
                 value="true"
                 id="copy-replace-all-checkbox"
-                class="rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                class="rounded border-slate-200 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
               />
-              <label for="copy-replace-all-checkbox" class="text-xs text-zinc-700">
+              <label
+                for="copy-replace-all-checkbox"
+                class="text-xs text-slate-900 dark:text-slate-100"
+              >
                 Replace all existing roles in current project
               </label>
             </div>
 
-            <div class="flex items-center justify-end space-x-3 pt-3 border-t border-zinc-200">
+            <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-slate-700">
               <button
                 type="button"
                 phx-click="close_modal"
                 id="cancel-copy-button"
-                class="rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-900 shadow-xs ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+                class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
               >
                 Cancel
               </button>
@@ -884,12 +923,15 @@ defmodule RailWeb.Settings.RolesLive do
         id="improve-role-modal"
         data-qa="improve_role_modal"
       >
-        <div class="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-lg bg-white p-6 shadow-xl space-y-4">
+        <div class="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4">
           <!-- Modal Header -->
-          <div class="flex items-center justify-between border-b border-zinc-200 pb-3 shrink-0">
+          <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3 shrink-0">
             <div class="flex items-center space-x-2">
-              <.icon name="auto_fix_high" class="h-5 w-5 text-indigo-600" />
-              <h2 class="text-lg font-semibold text-zinc-900" id="improve-modal-header-title">
+              <.icon name="pi-magic-wand" class="h-5 w-5 text-indigo-600" />
+              <h2
+                class="text-lg font-semibold text-slate-900 dark:text-slate-100"
+                id="improve-modal-header-title"
+              >
                 {case @improve_step do
                   :setup -> "Improve #{@modal_role.name} Instructions"
                   :running -> "Improving #{@modal_role.name} Instructions..."
@@ -901,7 +943,7 @@ defmodule RailWeb.Settings.RolesLive do
               type="button"
               phx-click="cancel_improvement"
               id="close-improve-modal-button"
-              class="text-zinc-400 hover:text-zinc-600 font-bold"
+              class="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 font-bold"
             >
               ✕
             </button>
@@ -928,11 +970,20 @@ defmodule RailWeb.Settings.RolesLive do
               class="p-8 text-center space-y-3"
               id="no-runs-evidence-state"
             >
-              <.icon name="history" class="h-12 w-12 text-zinc-400 mx-auto" />
-              <h3 class="text-base font-semibold text-zinc-900" id="no-runs-title">
+              <.icon
+                name="pi-clock-counter-clockwise"
+                class="h-12 w-12 text-slate-500 dark:text-slate-400 mx-auto"
+              />
+              <h3
+                class="text-base font-semibold text-slate-900 dark:text-slate-100"
+                id="no-runs-title"
+              >
                 No finished runs for this role yet
               </h3>
-              <p class="text-xs text-zinc-500 max-w-sm mx-auto" id="no-runs-message">
+              <p
+                class="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto"
+                id="no-runs-message"
+              >
                 Run some tasks with {@modal_role.name} to generate evidence for role improvements.
               </p>
             </div>
@@ -947,7 +998,7 @@ defmodule RailWeb.Settings.RolesLive do
                 class="p-3 bg-indigo-50 border border-indigo-100 rounded-lg flex items-center space-x-2"
                 id="evidence-found-banner"
               >
-                <.icon name="insights" class="h-5 w-5 text-indigo-600 shrink-0" />
+                <.icon name="pi-chart-line-up" class="h-5 w-5 text-indigo-600 shrink-0" />
                 <span class="text-xs font-semibold text-indigo-900" id="evidence-found-text">
                   Found {length(@improve_runs)} recent finished {if length(@improve_runs) == 1,
                     do: "run",
@@ -957,15 +1008,15 @@ defmodule RailWeb.Settings.RolesLive do
 
               <!-- Model Selector -->
               <div class="space-y-1">
-                <label class="block text-xs font-medium text-zinc-700">Improvement Model</label>
-                <p class="text-[11px] text-zinc-500">
+                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Improvement Model</label>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">
                   Select the model to analyze past runs and propose refined instructions:
                 </p>
                 <form phx-change="select_improve_model" id="improve-model-form">
                   <select
                     name="improve_model"
                     id="improve-model-select"
-                    class="mt-1 block w-full rounded-md border-zinc-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
                   >
                     <option
                       :for={model <- @available_models}
@@ -980,9 +1031,11 @@ defmodule RailWeb.Settings.RolesLive do
 
               <!-- Evidence Runs List -->
               <div class="space-y-2">
-                <h4 class="text-xs font-semibold text-zinc-800">Evidence to be analyzed:</h4>
+                <h4 class="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                  Evidence to be analyzed:
+                </h4>
                 <ul
-                  class="divide-y divide-zinc-200 border border-zinc-200 rounded-md overflow-hidden"
+                  class="divide-y divide-slate-200 dark:divide-slate-700 border border-slate-200 dark:border-slate-700 rounded-md overflow-hidden"
                   id="evidence-runs-list"
                 >
                   <li
@@ -992,7 +1045,9 @@ defmodule RailWeb.Settings.RolesLive do
                   >
                     <.icon
                       name={
-                        if run.status in [:finished, :completed], do: "check_circle", else: "error"
+                        if run.status in [:finished, :completed],
+                          do: "pi-check-circle-fill",
+                          else: "pi-x-circle-fill"
                       }
                       class={[
                         "h-4 w-4 shrink-0",
@@ -1003,8 +1058,10 @@ defmodule RailWeb.Settings.RolesLive do
                       ]}
                     />
                     <div class="min-w-0 flex-1">
-                      <p class="font-medium text-zinc-900 truncate">{run.title}</p>
-                      <p class="text-[11px] text-zinc-500 mt-0.5">
+                      <p class="font-medium text-slate-900 dark:text-slate-100 truncate">
+                        {run.title}
+                      </p>
+                      <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                         Finished {format_run_time(run.completed_at)} • Status: {run.status} • Stage: {run.stage}
                       </p>
                     </div>
@@ -1021,7 +1078,7 @@ defmodule RailWeb.Settings.RolesLive do
             id="improve-step-running"
           >
             <div class="flex items-center space-x-3 p-3 bg-indigo-50 rounded-lg">
-              <.icon name="refresh" class="h-5 w-5 text-indigo-600 animate-spin" />
+              <.icon name="pi-arrow-clockwise" class="h-5 w-5 text-indigo-600 animate-spin" />
               <span class="text-sm font-medium text-indigo-900" id="running-analysis-message">
                 Running analysis and drafting proposed instructions...
               </span>
@@ -1031,7 +1088,7 @@ defmodule RailWeb.Settings.RolesLive do
               class="p-3 bg-zinc-900 text-zinc-100 rounded-lg font-mono text-xs h-64 overflow-y-auto space-y-1"
               id="improve-log-box"
             >
-              <div :if={Enum.empty?(@improve_logs)} class="text-zinc-500 italic">
+              <div :if={Enum.empty?(@improve_logs)} class="text-slate-500 dark:text-slate-400 italic">
                 Waiting for CLI output...
               </div>
               <div :for={log <- @improve_logs} class="whitespace-pre-wrap">{log}</div>
@@ -1069,10 +1126,10 @@ defmodule RailWeb.Settings.RolesLive do
             <!-- Sources Chips -->
             <div
               :if={@improve_proposal.sources != []}
-              class="p-3 bg-zinc-50 rounded-md space-y-1.5"
+              class="p-3 bg-slate-100 dark:bg-slate-700 rounded-md space-y-1.5"
               id="proposal-sources-box"
             >
-              <span class="text-xs font-semibold text-zinc-800">
+              <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">
                 Drawn from {length(@improve_proposal.sources)} past {if length(
                                                                           @improve_proposal.sources
                                                                         ) == 1,
@@ -1082,7 +1139,7 @@ defmodule RailWeb.Settings.RolesLive do
               <div class="flex flex-wrap gap-1.5">
                 <span
                   :for={src <- @improve_proposal.sources}
-                  class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-white border border-zinc-200 text-zinc-700"
+                  class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100"
                 >
                   {src.title}
                 </span>
@@ -1092,10 +1149,10 @@ defmodule RailWeb.Settings.RolesLive do
             <!-- Token Usage -->
             <div
               :if={@improve_proposal.usage && map_size(@improve_proposal.usage) > 0}
-              class="text-xs text-zinc-500 flex items-center space-x-1"
+              class="text-xs text-slate-500 dark:text-slate-400 flex items-center space-x-1"
               id="proposal-usage-chip"
             >
-              <.icon name="data_usage" class="h-3.5 w-3.5" />
+              <.icon name="pi-chart-donut" class="h-3.5 w-3.5" />
               <span>
                 Improvement run cost: {@improve_proposal.usage["input_tokens"] || 0} input, {@improve_proposal.usage[
                   "output_tokens"
@@ -1106,18 +1163,25 @@ defmodule RailWeb.Settings.RolesLive do
             <!-- Rationale -->
             <div
               :if={@improve_proposal.rationale}
-              class="p-3 bg-zinc-50 border border-zinc-200 rounded-md"
+              class="p-3 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-md"
               id="proposal-rationale-box"
             >
-              <h4 class="text-xs font-bold uppercase tracking-wider text-zinc-600 mb-1">Rationale</h4>
-              <p class="text-xs text-zinc-700 line-clamp-3" id="proposal-rationale-text">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Rationale
+              </h4>
+              <p
+                class="text-xs text-slate-900 dark:text-slate-100 line-clamp-3"
+                id="proposal-rationale-text"
+              >
                 {@improve_proposal.rationale}
               </p>
             </div>
 
             <!-- Diff Pane -->
             <div class="space-y-1" id="instruction-diff-container">
-              <h4 class="text-xs font-semibold text-zinc-800">Instruction Changes (Diff)</h4>
+              <h4 class="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                Instruction Changes (Diff)
+              </h4>
               <pre
                 class="p-3 bg-zinc-900 text-zinc-100 rounded-md font-mono text-xs overflow-x-auto max-h-72"
                 id="instruction-diff-content"
@@ -1126,13 +1190,13 @@ defmodule RailWeb.Settings.RolesLive do
           </div>
 
           <!-- Improve Modal Footer -->
-          <div class="flex items-center justify-end space-x-3 pt-3 border-t border-zinc-200 shrink-0">
+          <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-slate-700 shrink-0">
             <button
               :if={@improve_step in [:setup, :proposal]}
               type="button"
               phx-click="cancel_improvement"
               id="improve-cancel-button"
-              class="rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-900 shadow-xs ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+              class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
             >
               {if @improve_step == :proposal, do: "Reject", else: "Cancel"}
             </button>
@@ -1142,7 +1206,7 @@ defmodule RailWeb.Settings.RolesLive do
               type="button"
               phx-click="cancel_improvement"
               id="running-cancel-button"
-              class="rounded-md bg-white px-3 py-2 text-sm font-semibold text-red-600 shadow-xs ring-1 ring-inset ring-red-300 hover:bg-red-50"
+              class="rounded-md bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-red-600 shadow-xs ring-1 ring-inset ring-red-300 hover:bg-red-50"
             >
               Cancel
             </button>
@@ -1154,7 +1218,7 @@ defmodule RailWeb.Settings.RolesLive do
               id="start-improvement-button"
               class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500"
             >
-              <.icon name="auto_fix_high" class="inline h-4 w-4 mr-1 text-white" /> Start
+              <.icon name="pi-magic-wand" class="h-4 w-4 mr-1 text-white" /> Start
             </button>
 
             <button

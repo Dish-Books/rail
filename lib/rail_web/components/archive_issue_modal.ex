@@ -13,12 +13,15 @@ defmodule RailWeb.Components.ArchiveIssueModal do
       data-qa="archive-issue-dialog"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
     >
-      <div class="w-full max-w-md rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6 shadow-2xl space-y-4">
-        <h2 class="text-base font-semibold text-[var(--color-on-surface)]" id="archive-modal-title">
+      <div class="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-2xl space-y-4">
+        <h2
+          class="text-base font-semibold text-slate-900 dark:text-slate-100"
+          id="archive-modal-title"
+        >
           Archive {@issue.identifier}?
         </h2>
 
-        <p class="text-xs text-[var(--color-outline)]" id="archive-modal-body">
+        <p class="text-xs text-slate-500 dark:text-slate-400" id="archive-modal-body">
           This archives "{@issue.title}" and marks it as canceled in Linear.
         </p>
 
@@ -28,7 +31,7 @@ defmodule RailWeb.Components.ArchiveIssueModal do
             id="cancel-archive-button"
             data-qa="cancel-archive-button"
             phx-click="close_archive"
-            class="px-3 py-1.5 rounded-lg border border-[var(--color-outline)] text-xs font-semibold text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container)] cursor-pointer"
+            class="px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
           >
             Cancel
           </button>

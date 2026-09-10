@@ -78,7 +78,7 @@ defmodule RailWeb.Components.DesignPanelTest do
 
     assert html =~ "id=\"design-direction-card-minimal\""
     assert html =~ "Minimal Subtle"
-    assert html =~ "border-2 border-[var(--color-primary)]"
+    assert html =~ "border-2 border-blue-600 dark:border-blue-500"
     assert html =~ "id=\"design-direction-picked-minimal\""
     assert html =~ "Picked"
 

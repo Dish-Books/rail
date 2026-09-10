@@ -369,16 +369,16 @@ defmodule Rail.Domain.FormattersTest do
 
   describe "stage_state_icon/1" do
     test "returns expected icon across all states and stages" do
-      assert Formatters.stage_state_icon(%{active_chat_role_id: "engineer"}) == "chat_bubble_outline"
-      assert Formatters.stage_state_icon(%{shows_as_conflicted: true}) == "call_split"
-      assert Formatters.stage_state_icon(%{stage_state: :running}) == "play_circle_outline"
-      assert Formatters.stage_state_icon(%{stage_state: :queued}) == "schedule"
-      assert Formatters.stage_state_icon(%{stage_state: :blocked}) == "help_outline"
-      assert Formatters.stage_state_icon(%{stage_state: :paused_question}) == "help_outline"
-      assert Formatters.stage_state_icon(%{stage_state: :awaiting_approval, stage: :ready_to_merge}) == "merge_type"
-      assert Formatters.stage_state_icon(%{stage_state: :awaiting_approval, stage: :engineer}) == "rate_review_outlined"
-      assert Formatters.stage_state_icon(%{stage_state: :failed}) == "error_outline"
-      assert Formatters.stage_state_icon(%{stage_state: :unknown_state}) == "help_outline"
+      assert Formatters.stage_state_icon(%{active_chat_role_id: "engineer"}) == "pi-chat-circle"
+      assert Formatters.stage_state_icon(%{shows_as_conflicted: true}) == "pi-git-branch"
+      assert Formatters.stage_state_icon(%{stage_state: :running}) == "pi-play-circle"
+      assert Formatters.stage_state_icon(%{stage_state: :queued}) == "pi-clock"
+      assert Formatters.stage_state_icon(%{stage_state: :blocked}) == "pi-question"
+      assert Formatters.stage_state_icon(%{stage_state: :paused_question}) == "pi-question"
+      assert Formatters.stage_state_icon(%{stage_state: :awaiting_approval, stage: :ready_to_merge}) == "pi-git-merge"
+      assert Formatters.stage_state_icon(%{stage_state: :awaiting_approval, stage: :engineer}) == "pi-chat-text"
+      assert Formatters.stage_state_icon(%{stage_state: :failed}) == "pi-warning-circle"
+      assert Formatters.stage_state_icon(%{stage_state: :unknown_state}) == "pi-question"
     end
   end
 
@@ -386,8 +386,8 @@ defmodule Rail.Domain.FormattersTest do
     test "returns semantic color atom and tailwind classes" do
       t_chat = %{active_chat_role_id: "engineer"}
       assert Formatters.stage_state_color(t_chat) == :primary
-      assert Formatters.stage_state_color_class(t_chat, :text) =~ "text-[var(--color-primary)]"
-      assert Formatters.stage_state_color_class(t_chat, :chip) =~ "bg-[var(--color-primary-container)]"
+      assert Formatters.stage_state_color_class(t_chat, :text) =~ "text-blue-600 dark:text-blue-500"
+      assert Formatters.stage_state_color_class(t_chat, :chip) =~ "bg-blue-100 dark:bg-blue-900"
 
       t_conflicted = %{shows_as_conflicted: true}
       assert Formatters.stage_state_color(t_conflicted) == :amber
@@ -405,13 +405,13 @@ defmodule Rail.Domain.FormattersTest do
 
       t_queue = %{stage_state: :queued}
       assert Formatters.stage_state_color(t_queue) == :outline
-      assert Formatters.stage_state_color_class(t_queue, :text) =~ "text-[var(--color-outline)]"
-      assert Formatters.stage_state_color_class(t_queue, :chip) =~ "bg-[var(--color-surface-container-high)]"
+      assert Formatters.stage_state_color_class(t_queue, :text) =~ "text-slate-500 dark:text-slate-400"
+      assert Formatters.stage_state_color_class(t_queue, :chip) =~ "bg-slate-100 dark:bg-slate-700"
 
       t_fail = %{stage_state: :failed}
       assert Formatters.stage_state_color(t_fail) == :error
-      assert Formatters.stage_state_color_class(t_fail, :text) =~ "text-[var(--color-error)]"
-      assert Formatters.stage_state_color_class(t_fail, :chip) =~ "bg-[var(--color-error-container)]"
+      assert Formatters.stage_state_color_class(t_fail, :text) =~ "text-red-600 dark:text-red-500"
+      assert Formatters.stage_state_color_class(t_fail, :chip) =~ "bg-red-100 dark:bg-red-900"
 
       t_other = %{stage_state: :unknown_state}
       assert Formatters.stage_state_color(t_other) == :outline
@@ -494,7 +494,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.stage_label(t_custom) == "Engineer running · rework 1 of 9"
 
       # stage_state_color_class with default 1-arg
-      assert Formatters.stage_state_color_class(t_base) == "text-[var(--color-primary)]"
+      assert Formatters.stage_state_color_class(t_base) == "text-blue-600 dark:text-blue-500"
 
       # uses_design? with atom keys in map
       assert Formatters.uses_design?(%{stage: :engineer}, role_runs: %{design: true})
@@ -503,20 +503,21 @@ defmodule Rail.Domain.FormattersTest do
 
   describe "role_icon_for/1" do
     test "maps known icon names and defaults to help_outline" do
-      assert Formatters.role_icon_for("code") == "code"
-      assert Formatters.role_icon_for("bug_report") == "bug_report"
-      assert Formatters.role_icon_for("verified") == "verified"
-      assert Formatters.role_icon_for("fact_check") == "fact_check"
-      assert Formatters.role_icon_for("rate_review") == "rate_review"
-      assert Formatters.role_icon_for("alt_route") == "alt_route"
-      assert Formatters.role_icon_for("travel_explore") == "travel_explore"
-      assert Formatters.role_icon_for("assignment") == "assignment"
-      assert Formatters.role_icon_for("architecture") == "architecture"
-      assert Formatters.role_icon_for("palette") == "palette"
-      assert Formatters.role_icon_for("videocam") == "videocam"
-      assert Formatters.role_icon_for("terminal") == "help_outline"
-      assert Formatters.role_icon_for("unknown") == "help_outline"
-      assert Formatters.role_icon_for(nil) == "help_outline"
+      assert Formatters.role_icon_for("code") == "pi-code"
+      assert Formatters.role_icon_for("bug_report") == "pi-bug"
+      assert Formatters.role_icon_for("verified") == "pi-seal-check-fill"
+      assert Formatters.role_icon_for("fact_check") == "pi-check-square-fill"
+      assert Formatters.role_icon_for("rate_review") == "pi-chat-text-fill"
+      assert Formatters.role_icon_for("alt_route") == "pi-arrows-split"
+      assert Formatters.role_icon_for("travel_explore") == "pi-globe-hemisphere-west"
+      assert Formatters.role_icon_for("assignment") == "pi-clipboard-text"
+      assert Formatters.role_icon_for("architecture") == "pi-compass-tool"
+      assert Formatters.role_icon_for("palette") == "pi-palette"
+      assert Formatters.role_icon_for("videocam") == "pi-video-camera-fill"
+      assert Formatters.role_icon_for("pi-terminal-window") == "pi-terminal-window"
+      assert Formatters.role_icon_for("terminal") == "pi-question"
+      assert Formatters.role_icon_for("unknown") == "pi-question"
+      assert Formatters.role_icon_for(nil) == "pi-question"
     end
   end
 

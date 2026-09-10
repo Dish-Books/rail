@@ -51,8 +51,8 @@ defmodule RailWeb.Components.ConversationTabTest do
       chat_usage: %TaskUsage{input_tokens: 200, output_tokens: 100}
     }
 
-    role1 = %Role{id: "architect", name: "Architect", icon_name: "architecture"}
-    role2 = %Role{id: "engineer", name: "Engineer", icon_name: "code"}
+    role1 = %Role{id: "architect", name: "Architect", icon_name: "pi-compass-tool"}
+    role2 = %Role{id: "engineer", name: "Engineer", icon_name: "pi-code"}
     roles_map = %{"architect" => role1, "engineer" => role2}
 
     html =
@@ -87,7 +87,7 @@ defmodule RailWeb.Components.ConversationTabTest do
   test "renders toggle button as Show chat when raw log is active" do
     task = %Task{id: "tsk_123", stage: :engineer}
     run = %RoleRun{id: "rr_1", role_id: "engineer", status: :running, started_at: ~U[2026-09-09 10:00:00Z]}
-    role = %Role{id: "engineer", name: "Engineer", icon_name: "code"}
+    role = %Role{id: "engineer", name: "Engineer", icon_name: "pi-code"}
 
     html =
       render_component(&ConversationTab.conversation_tab/1,
@@ -123,8 +123,12 @@ defmodule RailWeb.Components.ConversationTabTest do
       started_at: ~U[2026-09-09 09:00:00Z]
     }
 
-    role = %Role{id: "engineer", name: "Engineer", icon_name: "code"}
-    roles_map = %{"engineer" => role, "architect" => %Role{id: "architect", name: "Architect", icon_name: "architecture"}}
+    role = %Role{id: "engineer", name: "Engineer", icon_name: "pi-code"}
+
+    roles_map = %{
+      "engineer" => role,
+      "architect" => %Role{id: "architect", name: "Architect", icon_name: "pi-compass-tool"}
+    }
 
     raw_logs = [
       "[human] Please implement the OAuth callback handler",
@@ -201,7 +205,7 @@ defmodule RailWeb.Components.ConversationTabTest do
 
   test "renders ChatPane empty state for pruned vs unpruned runs" do
     task = %Task{id: "tsk_empty", stage: :engineer}
-    role = %Role{id: "engineer", name: "Engineer", icon_name: "code"}
+    role = %Role{id: "engineer", name: "Engineer", icon_name: "pi-code"}
     unpruned_run = %RoleRun{id: "rr_unpruned", role_id: "engineer", status: :running, pruned: false}
 
     html_unpruned =
@@ -236,7 +240,7 @@ defmodule RailWeb.Components.ConversationTabTest do
   end
 
   test "renders Composer banners in precedence: thinking > queued > unavailable" do
-    role = %Role{id: "engineer", name: "Engineer", icon_name: "code"}
+    role = %Role{id: "engineer", name: "Engineer", icon_name: "pi-code"}
 
     # 1. Thinking banner
     task_thinking = %Task{id: "tsk_think", active_chat_role_id: "engineer"}
@@ -336,7 +340,7 @@ defmodule RailWeb.Components.ConversationTabTest do
   test "renders Raw Log view with color classes and handoff button" do
     run = %RoleRun{id: "rr_log", role_id: "engineer", status: :completed}
     arch_run = %RoleRun{id: "rr_arch", role_id: "architect", status: :completed}
-    roles_map = %{"architect" => %Role{id: "architect", name: "Architect", icon_name: "architecture"}}
+    roles_map = %{"architect" => %Role{id: "architect", name: "Architect", icon_name: "pi-compass-tool"}}
 
     lines = [
       "[error] something failed",

@@ -3,11 +3,14 @@ defmodule Rail.Backends.ModelRegistry do
   Discovers, normalizes, and caches available models across CLI backends.
   """
 
+  use Nebulex.Caching, cache: Rail.Cache
+
   alias Rail.Backends.ModelOption
   alias Rail.Backends.ProcessRunner
+  alias Rail.Cache
   alias Rail.ToolEnv
 
-  @table :rail_model_registry_cache
+  @ttl to_timeout(hour: 12)
 
   @doc """
   Fetches available models for a backend, querying the CLI tool or grepping binaries.
@@ -15,27 +18,11 @@ defmodule Rail.Backends.ModelRegistry do
   """
   def fetch_available_models(backend, opts \\ []) do
     key = normalize_backend(backend)
-    force_refresh? = Keyword.get(opts, :force_refresh, false)
 
-    case get_cached_models(key) do
-      [_head | _tail] = cached when not force_refresh? ->
-        cached
-
-      _other ->
-        discovered =
-          case key do
-            "agy" ->
-              fetch_agy_models(opts)
-
-            _claude ->
-              fetch_claude_models(opts)
-          end
-
-        if discovered != [] do
-          put_cached_models(key, discovered)
-        end
-
-        discovered
+    if Keyword.get(opts, :force_refresh, false) do
+      refresh_models(key, opts)
+    else
+      cached_models(key, opts)
     end
   end
 
@@ -70,40 +57,41 @@ defmodule Rail.Backends.ModelRegistry do
   Retrieves cached models for a backend key.
   """
   def get_cached_models(backend) do
-    ensure_table()
-    key = normalize_backend(backend)
-
-    case :ets.lookup(@table, key) do
-      [{^key, models}] when is_list(models) -> models
-      _other -> []
-    end
+    Cache.get!(cache_key(backend), [])
   end
 
   @doc """
   Stores cached models for a backend key.
   """
   def put_cached_models(backend, models) when is_list(models) do
-    ensure_table()
-    key = normalize_backend(backend)
-    :ets.insert(@table, {key, models})
-    :ok
+    Cache.put!(cache_key(backend), models, ttl: @ttl)
   end
 
   @doc """
-  Clears cached models for all or specific backends.
+  Clears cached models for a specific backend, or flushes the whole cache when
+  no backend is given.
   """
-  def clear_cache(backend \\ nil) do
-    ensure_table()
+  def clear_cache(backend \\ nil)
 
-    if is_nil(backend) do
-      :ets.delete_all_objects(@table)
-    else
-      key = normalize_backend(backend)
-      :ets.delete(@table, key)
-    end
-
+  def clear_cache(nil) do
+    _deleted = Cache.delete_all!()
     :ok
   end
+
+  def clear_cache(backend) do
+    Cache.delete!(cache_key(backend))
+  end
+
+  @decorate cacheable(key: cache_key(backend), match: &(&1 != []), opts: [ttl: @ttl])
+  defp cached_models(backend, opts), do: discover_models(backend, opts)
+
+  @decorate cache_put(key: cache_key(backend), match: &(&1 != []), opts: [ttl: @ttl])
+  defp refresh_models(backend, opts), do: discover_models(backend, opts)
+
+  defp discover_models("agy", opts), do: fetch_agy_models(opts)
+  defp discover_models(_claude, opts), do: fetch_claude_models(opts)
+
+  defp cache_key(backend), do: {__MODULE__, normalize_backend(backend)}
 
   defp fetch_agy_models(opts) do
     executable =
@@ -259,10 +247,4 @@ defmodule Rail.Backends.ModelRegistry do
   defp normalize_backend(backend) when is_atom(backend), do: backend |> Atom.to_string() |> String.downcase()
   defp normalize_backend(backend) when is_binary(backend), do: String.downcase(backend)
   defp normalize_backend(_other), do: "claude"
-
-  defp ensure_table do
-    :ets.new(@table, [:named_table, :public, :set, read_concurrency: true])
-  rescue
-    ArgumentError -> @table
-  end
 end

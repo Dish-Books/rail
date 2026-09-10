@@ -36,10 +36,13 @@ defmodule RailWeb.Settings.UsersLive do
     ~H"""
     <div class="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="users-settings">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight text-zinc-900" id="users-title">
+        <h1
+          class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
+          id="users-title"
+        >
           Users
         </h1>
-        <p class="mt-1 text-sm text-zinc-500" id="users-subtitle">
+        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400" id="users-subtitle">
           Manage system users and administrative privileges.
         </p>
       </div>
@@ -64,37 +67,40 @@ defmodule RailWeb.Settings.UsersLive do
 
       <!-- Users List Card -->
       <section
-        class="bg-white shadow rounded-lg border border-zinc-200 overflow-hidden"
+        class="bg-slate-50 dark:bg-slate-800 shadow rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
         id="users-list-section"
       >
-        <div class="p-6 border-b border-zinc-200 flex items-center justify-between">
+        <div class="p-6 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
           <div>
-            <h2 class="text-base font-semibold text-zinc-900" id="users-card-header">
+            <h2
+              class="text-base font-semibold text-slate-900 dark:text-slate-100"
+              id="users-card-header"
+            >
               User Directory
             </h2>
-            <p class="text-xs text-zinc-500 mt-0.5">
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {length(@users)} registered {if length(@users) == 1, do: "account", else: "accounts"}
             </p>
           </div>
         </div>
 
-        <ul role="list" class="divide-y divide-zinc-200" id="users-list">
+        <ul role="list" class="divide-y divide-slate-200 dark:divide-slate-700" id="users-list">
           <li
             :for={user <- @users}
             id={"user-row-#{user.id}"}
-            class="p-6 flex items-center justify-between hover:bg-zinc-50 transition-colors"
+            class="p-6 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
           >
             <div class="flex items-center space-x-4">
               <img
                 :if={user.avatar_url}
                 src={user.avatar_url}
                 alt={user.name || user.login}
-                class="h-10 w-10 rounded-full ring-2 ring-zinc-200"
+                class="h-10 w-10 rounded-full ring-2 ring-slate-200 dark:ring-slate-700"
                 id={"user-avatar-#{user.id}"}
               />
               <div
                 :if={!user.avatar_url}
-                class="h-10 w-10 rounded-full bg-zinc-200 flex items-center justify-center text-zinc-600 font-bold text-sm"
+                class="h-10 w-10 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold text-sm"
                 id={"user-placeholder-#{user.id}"}
               >
                 {initials_for(user)}
@@ -102,14 +108,23 @@ defmodule RailWeb.Settings.UsersLive do
 
               <div>
                 <div class="flex items-center space-x-2">
-                  <span class="font-medium text-zinc-900 text-sm" id={"user-name-#{user.id}"}>
+                  <span
+                    class="font-medium text-slate-900 dark:text-slate-100 text-sm"
+                    id={"user-name-#{user.id}"}
+                  >
                     {user.name || user.login}
                   </span>
-                  <span class="text-xs text-zinc-400" id={"user-login-#{user.id}"}>
+                  <span
+                    class="text-xs text-slate-500 dark:text-slate-400"
+                    id={"user-login-#{user.id}"}
+                  >
                     @{user.login}
                   </span>
                 </div>
-                <p class="text-xs text-zinc-500 mt-0.5" id={"user-email-#{user.id}"}>
+                <p
+                  class="text-xs text-slate-500 dark:text-slate-400 mt-0.5"
+                  id={"user-email-#{user.id}"}
+                >
                   {user.email}
                 </p>
               </div>
@@ -127,7 +142,7 @@ defmodule RailWeb.Settings.UsersLive do
               <span
                 :if={!linear_connected?(user)}
                 id={"user-linear-badge-#{user.id}"}
-                class="inline-flex items-center rounded-md bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-500 ring-1 ring-inset ring-zinc-500/10"
+                class="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-700 px-2 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-inset ring-zinc-500/10"
               >
                 Linear: Not Linked
               </span>
@@ -143,7 +158,7 @@ defmodule RailWeb.Settings.UsersLive do
               <span
                 :if={!user.admin}
                 id={"user-role-badge-#{user.id}"}
-                class="inline-flex items-center rounded-md bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600 ring-1 ring-inset ring-zinc-500/20"
+                class="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-700 px-2.5 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-inset ring-zinc-500/20"
               >
                 User
               </span>
@@ -158,7 +173,7 @@ defmodule RailWeb.Settings.UsersLive do
                 class={[
                   "rounded px-2.5 py-1.5 text-xs font-semibold shadow-xs ring-1 ring-inset",
                   user.admin &&
-                    "bg-white text-red-600 ring-red-300 hover:bg-red-50",
+                    "bg-slate-50 dark:bg-slate-800 text-red-600 ring-red-300 hover:bg-red-50",
                   !user.admin &&
                     "bg-indigo-50 text-indigo-600 ring-indigo-300 hover:bg-indigo-100"
                 ]}

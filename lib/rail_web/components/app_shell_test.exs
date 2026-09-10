@@ -217,53 +217,15 @@ defmodule RailWeb.Components.AppShellTest do
     end
   end
 
-  test "icon component renders SVGs for each supported icon" do
-    names = [
-      "layers",
-      "dashboard",
-      "dashboard_outlined",
-      "lightbulb",
-      "lightbulb_outline",
-      "account_circle",
-      "account_circle_outlined",
-      "settings",
-      "settings_outlined",
-      "chevron_left",
-      "chevron_right",
-      "folder",
-      "folder_outlined",
-      "unfold_more",
-      "add_circle",
-      "light_mode",
-      "dark_mode",
-      "chat_bubble_outline",
-      "call_split",
-      "play_circle_outline",
-      "schedule",
-      "help_outline",
-      "merge_type",
-      "rate_review_outlined",
-      "error_outline",
-      "radio_button_unchecked",
-      "open_in_new",
-      "flag_outlined",
-      "account_tree_outlined"
-    ]
+  test "icon component renders a Phosphor class, directly and through CoreComponents" do
+    html = render_component(&AppShell.icon/1, name: "pi-squares-four-fill", class: "h-5 w-5")
+    assert html =~ "pi-squares-four-fill"
+    assert html =~ "shrink-0"
 
-    for name <- names do
-      html = render_component(&AppShell.icon/1, name: name, class: "h-5 w-5")
-      assert html =~ "<svg"
-      assert html =~ "width=\"24\""
-      assert html =~ "height=\"24\""
-      assert html =~ "viewBox=\"0 0 24 24\""
-      assert html =~ "shrink-0"
-    end
+    core_html =
+      render_component(&RailWeb.CoreComponents.icon/1, name: "pi-gear", class: "h-5 w-5")
 
-    # Test delegated CoreComponents.icon
-    core_html = render_component(&RailWeb.CoreComponents.icon/1, name: "dashboard", class: "h-5 w-5")
-    assert core_html =~ "<svg"
-    assert core_html =~ "width=\"24\""
-    assert core_html =~ "height=\"24\""
+    assert core_html =~ "pi-gear"
   end
 
   test "nav_destination supports custom section id falling back to to_string" do
@@ -273,8 +235,8 @@ defmodule RailWeb.Components.AppShellTest do
         active: false,
         is_extended: true,
         label: "Custom Section",
-        icon_active: "dashboard",
-        icon_inactive: "dashboard_outlined",
+        icon_active: "pi-squares-four-fill",
+        icon_inactive: "pi-squares-four",
         href: "/custom",
         attention_count: 0
       )

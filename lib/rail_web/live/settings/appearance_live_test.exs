@@ -25,12 +25,12 @@ defmodule RailWeb.Settings.AppearanceLiveTest do
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/appearance")
 
     view |> element("#theme-segment-light") |> render_click()
-    assert has_element?(view, "#theme-segment-light.bg-white")
+    assert has_element?(view, "#theme-segment-light[class*=font-semibold]")
 
     view |> element("#theme-segment-system") |> render_click()
-    assert has_element?(view, "#theme-segment-system.bg-white")
+    assert has_element?(view, "#theme-segment-system[class*=font-semibold]")
 
     view |> element("#theme-segment-dark") |> render_click()
-    assert has_element?(view, "#theme-segment-dark.bg-white")
+    assert has_element?(view, "#theme-segment-dark[class*=font-semibold]")
   end
 end

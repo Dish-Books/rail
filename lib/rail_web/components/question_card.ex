@@ -35,7 +35,7 @@ defmodule RailWeb.Components.QuestionCard do
     <div
       id={"question-card-#{@card_id}"}
       data-qa="overview-card question-card"
-      class="mb-3 rounded-lg border border-[var(--color-border)] border-l-4 border-l-amber-600 bg-[var(--color-surface)] p-4 shadow-xs"
+      class="mb-3 rounded-lg border border-slate-200 dark:border-slate-700 border-l-4 border-l-amber-600 bg-white dark:bg-slate-900 p-4 shadow-xs"
     >
       <!-- Header Row -->
       <div class="flex items-center justify-between gap-2 mb-3">
@@ -54,14 +54,14 @@ defmodule RailWeb.Components.QuestionCard do
             navigate={~p"/tasks/#{@task.id}"}
             id={"question-task-link-#{@card_id}"}
             data-qa="question-task-link"
-            class="text-xs font-semibold text-[var(--color-on-surface-variant)] hover:underline truncate"
+            class="text-xs font-semibold text-slate-600 dark:text-slate-300 hover:underline truncate"
           >
             {@header_label}
           </.link>
 
           <span
             :if={is_nil(@task)}
-            class="text-xs font-semibold text-[var(--color-on-surface-variant)] truncate"
+            class="text-xs font-semibold text-slate-600 dark:text-slate-300 truncate"
           >
             {@header_label}
           </span>
@@ -72,7 +72,7 @@ defmodule RailWeb.Components.QuestionCard do
           phx-hook="Elapsed"
           data-started-at={@started_at}
           data-qa="elapsed-text"
-          class="text-xs text-[var(--color-outline)] font-mono shrink-0"
+          class="text-xs text-slate-500 dark:text-slate-400 font-mono shrink-0"
         >
           {@elapsed_text}
         </span>
@@ -81,7 +81,7 @@ defmodule RailWeb.Components.QuestionCard do
       <!-- Question Prompt -->
       <h3
         data-qa="question-prompt"
-        class="text-base font-semibold text-[var(--color-on-surface)] leading-snug mb-1"
+        class="text-base font-semibold text-slate-900 dark:text-slate-100 leading-snug mb-1"
       >
         {@question.prompt}
       </h3>
@@ -90,7 +90,7 @@ defmodule RailWeb.Components.QuestionCard do
       <p
         :if={is_binary(@question.context_summary) and @question.context_summary != ""}
         data-qa="question-context-summary"
-        class="text-xs text-[var(--color-outline)] mb-3"
+        class="text-xs text-slate-500 dark:text-slate-400 mb-3"
       >
         {@question.context_summary}
       </p>
@@ -113,9 +113,9 @@ defmodule RailWeb.Components.QuestionCard do
           class={[
             "px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
             idx == 0 &&
-              "bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:opacity-90 shadow-xs",
+              "bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 shadow-xs",
             idx != 0 &&
-              "border border-[var(--color-outline)] text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-high)]"
+              "border border-slate-500 dark:border-slate-400 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
           ]}
         >
           {option}
@@ -127,7 +127,7 @@ defmodule RailWeb.Components.QuestionCard do
         id={"answer-form-#{@card_id}"}
         phx-submit="submit_question_answer"
         phx-change="noop"
-        class="flex items-center gap-2 mt-3 pt-2 border-t border-[var(--color-border)]"
+        class="flex items-center gap-2 mt-3 pt-2 border-t border-slate-200 dark:border-slate-700"
       >
         <input type="hidden" name="question_id" value={@question.id} />
         <input
@@ -137,14 +137,14 @@ defmodule RailWeb.Components.QuestionCard do
           data-qa="answer-input"
           placeholder="Type an answer..."
           autocomplete="off"
-          class="flex-1 min-w-0 px-3 py-1.5 rounded-lg text-xs border border-[var(--color-outline)] bg-[var(--color-surface)] text-[var(--color-on-surface)] placeholder-[var(--color-outline)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+          class="flex-1 min-w-0 px-3 py-1.5 rounded-lg text-xs border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
         />
         <button
           type="submit"
           id={"send-answer-#{@card_id}"}
           data-qa="send-answer-button"
           disabled={@submitting}
-          class="px-3 py-1.5 rounded-lg bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:opacity-90 text-xs font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          class="px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 text-xs font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
         >
           Send
         </button>
@@ -155,7 +155,7 @@ defmodule RailWeb.Components.QuestionCard do
           phx-click="dismiss_question"
           phx-value-question_id={@question.id}
           disabled={@submitting}
-          class="px-2.5 py-1.5 rounded-lg text-xs text-[var(--color-outline)] hover:text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container-high)] font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          class="px-2.5 py-1.5 rounded-lg text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
         >
           Dismiss
         </button>

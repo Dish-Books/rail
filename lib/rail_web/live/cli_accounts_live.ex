@@ -56,13 +56,13 @@ defmodule RailWeb.CliAccountsLive do
       >
         <div>
           <h1
-            class="text-2xl font-bold tracking-tight text-zinc-900"
+            class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
             id="cli-accounts-title"
             data-qa="cli_accounts_title"
           >
             CLI Accounts
           </h1>
-          <p class="mt-1 text-sm text-zinc-500" id="cli-accounts-subtitle">
+          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400" id="cli-accounts-subtitle">
             Account identities • Rolling usage windows • Local reset times
           </p>
         </div>
@@ -74,17 +74,17 @@ defmodule RailWeb.CliAccountsLive do
             id="refresh-quotas-button"
             data-qa="refresh_quotas_button"
             disabled={@is_refreshing}
-            class="inline-flex items-center gap-2 rounded-md bg-white px-3.5 py-2 text-sm font-semibold text-zinc-700 shadow-xs ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+            class="inline-flex items-center gap-2 rounded-md bg-slate-50 dark:bg-slate-800 px-3.5 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 shadow-xs ring-1 ring-inset ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors"
           >
             <.icon
               :if={not @is_refreshing}
-              name="arrow_path"
-              class="h-4 w-4 text-zinc-500"
+              name="pi-arrows-clockwise"
+              class="h-4 w-4 text-slate-500 dark:text-slate-400"
             />
             <.icon
               :if={@is_refreshing}
-              name="arrow_path"
-              class="h-4 w-4 text-zinc-500 animate-spin"
+              name="pi-arrows-clockwise"
+              class="h-4 w-4 text-slate-500 dark:text-slate-400 animate-spin"
             />
             <span>Refresh Quotas</span>
           </button>
@@ -96,10 +96,12 @@ defmodule RailWeb.CliAccountsLive do
         :if={Enum.empty?(@accounts) and @is_refreshing}
         id="cli-accounts-loading"
         data-qa="cli_accounts_loading"
-        class="p-12 text-center bg-white rounded-lg border border-zinc-200"
+        class="p-12 text-center bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700"
       >
-        <.icon name="arrow_path" class="h-8 w-8 text-indigo-600 animate-spin mx-auto mb-3" />
-        <p class="text-sm font-medium text-zinc-600">Probing CLI account quotas...</p>
+        <.icon name="pi-arrows-clockwise" class="h-8 w-8 text-indigo-600 animate-spin mx-auto mb-3" />
+        <p class="text-sm font-medium text-slate-500 dark:text-slate-400">
+          Probing CLI account quotas...
+        </p>
       </div>
 
       <!-- State: Empty accounts, not refreshing -->
@@ -107,10 +109,10 @@ defmodule RailWeb.CliAccountsLive do
         :if={Enum.empty?(@accounts) and not @is_refreshing}
         id="cli-accounts-empty"
         data-qa="cli_accounts_empty"
-        class="p-12 text-center bg-white rounded-lg border border-zinc-200"
+        class="p-12 text-center bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700"
       >
-        <.icon name="cpu_chip" class="h-10 w-10 text-zinc-400 mx-auto mb-3" />
-        <p class="text-sm text-zinc-500">
+        <.icon name="pi-cpu" class="h-10 w-10 text-slate-500 dark:text-slate-400 mx-auto mb-3" />
+        <p class="text-sm text-slate-500 dark:text-slate-400">
           No CLI accounts checked yet. Click Refresh Quotas to probe.
         </p>
       </div>
@@ -126,7 +128,7 @@ defmodule RailWeb.CliAccountsLive do
           :for={account <- @accounts}
           id={"backend-card-#{account.backend}"}
           data-qa={"cli-account-row backend_card_#{account.backend}"}
-          class="bg-white shadow-xs rounded-xl border border-zinc-200 p-6 space-y-5"
+          class="bg-slate-50 dark:bg-slate-800 shadow-xs rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-5"
         >
           <!-- Backend Card Header -->
           <div
@@ -139,13 +141,16 @@ defmodule RailWeb.CliAccountsLive do
               </div>
 
               <div class="flex flex-wrap items-center gap-2 min-w-0">
-                <span class="text-base font-bold text-zinc-900" id={"backend-name-#{account.backend}"}>
+                <span
+                  class="text-base font-bold text-slate-900 dark:text-slate-100"
+                  id={"backend-name-#{account.backend}"}
+                >
                   {display_name(account.backend)}
                 </span>
 
                 <span
                   :if={account.account_label not in [nil, ""]}
-                  class="text-sm text-zinc-600 truncate max-w-xs"
+                  class="text-sm text-slate-500 dark:text-slate-400 truncate max-w-xs"
                   id={"account-label-#{account.backend}"}
                 >
                   {account.account_label}
@@ -153,7 +158,7 @@ defmodule RailWeb.CliAccountsLive do
 
                 <span
                   :if={account.account_detail not in [nil, ""]}
-                  class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-zinc-100 text-zinc-700 ring-1 ring-inset ring-zinc-200"
+                  class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 ring-1 ring-inset ring-slate-200 dark:ring-slate-700"
                   id={"account-detail-#{account.backend}"}
                 >
                   {String.upcase(account.account_detail)}
@@ -171,10 +176,10 @@ defmodule RailWeb.CliAccountsLive do
 
             <div
               :if={not is_nil(account.fetched_at)}
-              class="flex items-center gap-1.5 text-xs text-zinc-400 shrink-0"
+              class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 shrink-0"
               id={"fetched-at-#{account.backend}"}
             >
-              <.icon name="clock" class="h-3.5 w-3.5" />
+              <.icon name="pi-clock" class="h-3.5 w-3.5" />
               <span>read {format_age(account.fetched_at, @now)}</span>
             </div>
           </div>
@@ -184,12 +189,15 @@ defmodule RailWeb.CliAccountsLive do
           <div
             :if={account.status == "not_configured"}
             id={"banner-not-configured-#{account.backend}"}
-            class="flex items-start gap-3 p-4 rounded-lg bg-zinc-100 border border-zinc-200 text-zinc-700 text-xs"
+            class="flex items-start gap-3 p-4 rounded-lg bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs"
           >
-            <.icon name="exclamation_triangle" class="h-5 w-5 text-zinc-500 shrink-0 mt-0.5" />
+            <.icon
+              name="pi-warning"
+              class="h-5 w-5 text-slate-500 dark:text-slate-400 shrink-0 mt-0.5"
+            />
             <div>
               <p class="font-medium">Backend Not Configured</p>
-              <p class="mt-0.5 text-zinc-500">
+              <p class="mt-0.5 text-slate-500 dark:text-slate-400">
                 {account.unavailable_reason ||
                   "Executable not found or not executable. Check path in Settings."}
               </p>
@@ -202,7 +210,7 @@ defmodule RailWeb.CliAccountsLive do
             id={"banner-signed-out-#{account.backend}"}
             class="flex items-start gap-3 p-4 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-xs"
           >
-            <.icon name="lock_closed" class="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
+            <.icon name="pi-lock" class="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
             <div>
               <p class="font-medium">Signed Out</p>
               <p class="mt-0.5 text-amber-800">
@@ -218,7 +226,7 @@ defmodule RailWeb.CliAccountsLive do
             id={"banner-unavailable-#{account.backend}"}
             class="flex items-start gap-3 p-4 rounded-lg bg-red-50 border border-red-200 text-red-900 text-xs"
           >
-            <.icon name="exclamation_circle" class="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+            <.icon name="pi-warning-circle" class="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
             <div>
               <p class="font-medium">Service Unavailable</p>
               <p class="mt-0.5 text-red-700">
@@ -233,7 +241,7 @@ defmodule RailWeb.CliAccountsLive do
               account.status == "ready" and (is_nil(account.groups) or Enum.empty?(account.groups))
             }
             id={"no-quota-windows-#{account.backend}"}
-            class="py-3 text-sm text-zinc-400 italic"
+            class="py-3 text-sm text-slate-500 dark:text-slate-400 italic"
           >
             No quota windows reported for this account.
           </div>
@@ -250,7 +258,7 @@ defmodule RailWeb.CliAccountsLive do
             <div
               :for={{group, g_idx} <- Enum.with_index(account.groups || [])}
               id={"group-section-#{account.backend}-#{g_idx}"}
-              class="rounded-lg bg-zinc-50 border border-zinc-200 p-4 space-y-3"
+              class="rounded-lg bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-700 p-4 space-y-3"
             >
               <h3
                 class="text-xs font-bold uppercase tracking-wider text-indigo-700"
@@ -260,7 +268,10 @@ defmodule RailWeb.CliAccountsLive do
               </h3>
 
               <% windows = extract_windows(group) %>
-              <div class="divide-y divide-zinc-200/70" id={"windows-list-#{account.backend}-#{g_idx}"}>
+              <div
+                class="divide-y divide-slate-200 dark:divide-slate-700"
+                id={"windows-list-#{account.backend}-#{g_idx}"}
+              >
                 <div
                   :for={{window, w_idx} <- Enum.with_index(windows)}
                   id={"window-row-#{account.backend}-#{g_idx}-#{w_idx}"}
@@ -268,7 +279,7 @@ defmodule RailWeb.CliAccountsLive do
                 >
                   <div class="flex items-center justify-between text-xs">
                     <span
-                      class="font-medium text-zinc-800"
+                      class="font-medium text-slate-900 dark:text-slate-100"
                       id={"window-label-#{account.backend}-#{g_idx}-#{w_idx}"}
                     >
                       {window["label"]}
@@ -283,7 +294,7 @@ defmodule RailWeb.CliAccountsLive do
                       </span>
 
                       <span
-                        class="text-zinc-400"
+                        class="text-slate-500 dark:text-slate-400"
                         id={"window-reset-#{account.backend}-#{g_idx}-#{w_idx}"}
                       >
                         {format_reset_string(window["resets_at"], @now)}
@@ -295,7 +306,7 @@ defmodule RailWeb.CliAccountsLive do
                   <div
                     :if={not is_nil(window["remaining_percent"])}
                     id={"progress-bar-#{account.backend}-#{g_idx}-#{w_idx}"}
-                    class="mt-2 w-full bg-zinc-200 rounded-full h-1.5 overflow-hidden"
+                    class="mt-2 w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden"
                   >
                     <div
                       class={"h-1.5 rounded-full #{bar_color_class(window["remaining_percent"])}"}
@@ -360,9 +371,9 @@ defmodule RailWeb.CliAccountsLive do
   defp display_name(:agy), do: "Antigravity CLI"
   defp display_name(other), do: other |> to_string() |> String.capitalize()
 
-  defp backend_icon(:claude), do: "terminal"
-  defp backend_icon(:agy), do: "rocket_launch"
-  defp backend_icon(_other), do: "cpu_chip"
+  defp backend_icon(:claude), do: "pi-terminal-window"
+  defp backend_icon(:agy), do: "pi-rocket-launch"
+  defp backend_icon(_other), do: "pi-cpu"
 
   defp status_badge("ready") do
     %{label: "Active", class: "bg-emerald-100 text-emerald-900 ring-1 ring-inset ring-emerald-200"}
@@ -377,12 +388,21 @@ defmodule RailWeb.CliAccountsLive do
   end
 
   defp status_badge("not_configured") do
-    %{label: "Not Configured", class: "bg-zinc-200 text-zinc-800 ring-1 ring-inset ring-zinc-300"}
+    %{
+      label: "Not Configured",
+      class:
+        "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 ring-1 ring-inset ring-slate-200 dark:ring-slate-700"
+    }
   end
 
   defp status_badge(other) do
     label = other |> to_string() |> String.capitalize()
-    %{label: label, class: "bg-zinc-100 text-zinc-700 ring-1 ring-inset ring-zinc-300"}
+
+    %{
+      label: label,
+      class:
+        "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 ring-1 ring-inset ring-slate-200 dark:ring-slate-700"
+    }
   end
 
   defp format_age(%DateTime{} = fetched_at, %DateTime{} = now) do
@@ -426,7 +446,7 @@ defmodule RailWeb.CliAccountsLive do
 
   defp text_color_class(remaining_percent) do
     cond do
-      is_nil(remaining_percent) -> "text-zinc-400"
+      is_nil(remaining_percent) -> "text-slate-500 dark:text-slate-400"
       remaining_percent >= 30.0 -> "text-emerald-700"
       remaining_percent >= 10.0 -> "text-amber-700"
       true -> "text-red-700"

@@ -128,7 +128,7 @@ defmodule RailWeb.Components.TaskActions do
               label: "Cancel run",
               kind: :cancel,
               style: :outlined,
-              icon: "stop_circle_outlined",
+              icon: "pi-stop-circle",
               action: "cancel",
               params: %{}
             }
@@ -146,7 +146,7 @@ defmodule RailWeb.Components.TaskActions do
             label: label,
             kind: :dispatch,
             style: :filled,
-            icon: "play_arrow",
+            icon: "pi-play-fill",
             action: "dispatch",
             params: %{}
           },
@@ -155,7 +155,7 @@ defmodule RailWeb.Components.TaskActions do
             label: "Send back with comments",
             kind: :comment,
             style: :outlined,
-            icon: "reply",
+            icon: "pi-arrow-bend-up-left",
             action: "comment",
             params: %{}
           }
@@ -172,7 +172,7 @@ defmodule RailWeb.Components.TaskActions do
                 label: "Unblock",
                 kind: nil,
                 style: :filled,
-                icon: "lock_open",
+                icon: "pi-lock-open",
                 action: "unblock",
                 params: %{}
               }
@@ -203,7 +203,7 @@ defmodule RailWeb.Components.TaskActions do
             label: "Send back to Engineer",
             kind: :send_back,
             style: :filled,
-            icon: "undo",
+            icon: "pi-arrow-counter-clockwise",
             action: "send_back_to_engineer",
             params: %{}
           },
@@ -212,7 +212,7 @@ defmodule RailWeb.Components.TaskActions do
             label: "Skip",
             kind: :approve,
             style: :outlined,
-            icon: "skip_next",
+            icon: "pi-skip-forward",
             action: "skip",
             params: %{}
           },
@@ -221,7 +221,7 @@ defmodule RailWeb.Components.TaskActions do
             label: "Send back with comments",
             kind: :comment,
             style: :outlined,
-            icon: "reply",
+            icon: "pi-arrow-bend-up-left",
             action: "comment",
             params: %{}
           }
@@ -238,7 +238,7 @@ defmodule RailWeb.Components.TaskActions do
           label: approve_label,
           kind: :approve,
           style: :filled,
-          icon: "check",
+          icon: "pi-check",
           action: "approve",
           params: %{}
         }
@@ -248,7 +248,7 @@ defmodule RailWeb.Components.TaskActions do
           label: "Send back with comments",
           kind: :comment,
           style: :outlined,
-          icon: "reply",
+          icon: "pi-arrow-bend-up-left",
           action: "comment",
           params: %{}
         }
@@ -260,7 +260,7 @@ defmodule RailWeb.Components.TaskActions do
               label: "Approve, skip design",
               kind: :approve,
               style: :outlined,
-              icon: "fast_forward_outlined",
+              icon: "pi-fast-forward",
               action: "approve_skip_design",
               params: %{}
             }
@@ -282,7 +282,7 @@ defmodule RailWeb.Components.TaskActions do
       label: "Send back to Engineer",
       kind: :send_back,
       style: :outlined,
-      icon: "undo",
+      icon: "pi-arrow-counter-clockwise",
       action: "send_back_to_engineer",
       params: %{}
     }
@@ -294,7 +294,7 @@ defmodule RailWeb.Components.TaskActions do
           label: "Rebase branch",
           kind: :rebase,
           style: :filled,
-          icon: "merge",
+          icon: "pi-git-merge",
           action: "rebase",
           params: %{}
         }
@@ -305,7 +305,7 @@ defmodule RailWeb.Components.TaskActions do
             label: "Mark ready for review",
             kind: :mark_ready,
             style: :outlined,
-            icon: "rate_review_outlined",
+            icon: "pi-chat-text",
             action: "mark_ready",
             params: %{}
           }
@@ -317,7 +317,7 @@ defmodule RailWeb.Components.TaskActions do
             label: "Merge anyway",
             kind: :merge,
             style: :outlined,
-            icon: "merge_type",
+            icon: "pi-git-merge",
             action: "merge",
             params: %{ignore_conflicts: true}
           }
@@ -331,7 +331,7 @@ defmodule RailWeb.Components.TaskActions do
           label: "Merge pull request",
           kind: :merge,
           style: :filled,
-          icon: "merge_type",
+          icon: "pi-git-merge",
           action: "merge",
           params: %{ignore_conflicts: false}
         }
@@ -344,7 +344,7 @@ defmodule RailWeb.Components.TaskActions do
           label: "Mark ready for review",
           kind: :mark_ready,
           style: :filled,
-          icon: "rate_review_outlined",
+          icon: "pi-chat-text",
           action: "mark_ready",
           params: %{}
         }
@@ -363,7 +363,7 @@ defmodule RailWeb.Components.TaskActions do
           label: "Use #{dir.title}",
           kind: :approve,
           style: :filled,
-          icon: "check",
+          icon: "pi-check",
           action: "pick_design_direction",
           params: %{direction_key: dir.key}
         }
@@ -374,7 +374,7 @@ defmodule RailWeb.Components.TaskActions do
       label: "Send back with comments",
       kind: :comment,
       style: :outlined,
-      icon: "reply",
+      icon: "pi-arrow-bend-up-left",
       action: "comment",
       params: %{}
     }
@@ -392,7 +392,7 @@ defmodule RailWeb.Components.TaskActions do
               label: "Re-record demo",
               kind: :retry,
               style: :filled,
-              icon: "refresh",
+              icon: "pi-arrow-clockwise",
               action: "rerecord_demo",
               params: %{}
             },
@@ -401,7 +401,7 @@ defmodule RailWeb.Components.TaskActions do
               label: "Continue without a demo",
               kind: :approve,
               style: :outlined,
-              icon: "arrow_forward",
+              icon: "pi-arrow-right",
               action: "decline_demo",
               params: %{}
             }
@@ -414,7 +414,7 @@ defmodule RailWeb.Components.TaskActions do
               label: "Design is done",
               kind: :recheck_design,
               style: :filled,
-              icon: "fact_check_outlined",
+              icon: "pi-check-square",
               action: "recheck_design",
               params: %{}
             },
@@ -423,7 +423,7 @@ defmodule RailWeb.Components.TaskActions do
               label: "Re-run designer",
               kind: :retry,
               style: :outlined,
-              icon: "refresh",
+              icon: "pi-arrow-clockwise",
               action: "retry",
               params: %{}
             }
@@ -436,7 +436,7 @@ defmodule RailWeb.Components.TaskActions do
               label: "Retry",
               kind: :retry,
               style: :filled,
-              icon: "refresh",
+              icon: "pi-arrow-clockwise",
               action: "retry",
               params: %{}
             }
@@ -448,7 +448,7 @@ defmodule RailWeb.Components.TaskActions do
       label: "Send back with comments",
       kind: :comment,
       style: :outlined,
-      icon: "reply",
+      icon: "pi-arrow-bend-up-left",
       action: "comment",
       params: %{}
     }
@@ -462,7 +462,7 @@ defmodule RailWeb.Components.TaskActions do
       label: "Chat",
       kind: nil,
       style: :outlined,
-      icon: "chat_bubble_outline",
+      icon: "pi-chat-circle",
       action: "chat",
       params: %{}
     }
@@ -472,7 +472,7 @@ defmodule RailWeb.Components.TaskActions do
       label: "Clean up",
       kind: :cleanup,
       style: :text,
-      icon: "delete_outline",
+      icon: "pi-trash",
       action: "cleanup",
       params: %{}
     }
@@ -486,7 +486,7 @@ defmodule RailWeb.Components.TaskActions do
           label: "Rebase branch",
           kind: :rebase,
           style: :outlined,
-          icon: "merge",
+          icon: "pi-git-merge",
           action: "rebase",
           params: %{}
         }
@@ -505,7 +505,7 @@ defmodule RailWeb.Components.TaskActions do
           label: "View diff",
           kind: nil,
           style: :text,
-          icon: "difference_outlined",
+          icon: "pi-git-diff",
           action: "diff",
           params: %{}
         }
@@ -530,15 +530,15 @@ defmodule RailWeb.Components.TaskActions do
   end
 
   defp button_style_class(:filled) do
-    "px-4 py-2 rounded-full text-xs font-semibold inline-flex items-center gap-2 transition-colors bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:bg-[var(--color-primary)]/90 cursor-pointer shadow-xs"
+    "px-4 py-2 rounded-full text-xs font-semibold inline-flex items-center gap-2 transition-colors bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-600 dark:hover:bg-blue-500/90 cursor-pointer shadow-xs"
   end
 
   defp button_style_class(:outlined) do
-    "px-4 py-2 rounded-full text-xs font-semibold inline-flex items-center gap-2 transition-colors border border-[var(--color-outline)] text-[var(--color-on-surface)] hover:bg-[var(--color-surface-container)] cursor-pointer"
+    "px-4 py-2 rounded-full text-xs font-semibold inline-flex items-center gap-2 transition-colors border border-slate-500 dark:border-slate-400 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
   end
 
   defp button_style_class(:text) do
-    "px-3 py-2 rounded-full text-xs font-semibold inline-flex items-center gap-2 transition-colors text-[var(--color-primary)] hover:bg-[var(--color-surface-container)] cursor-pointer"
+    "px-3 py-2 rounded-full text-xs font-semibold inline-flex items-center gap-2 transition-colors text-blue-600 dark:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
   end
 
   defp merged?(task) do

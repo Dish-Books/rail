@@ -80,46 +80,46 @@ defmodule Rail.Domain.Formatters do
   end
 
   @doc """
-  Returns the Material icon name for a task's state per spec 05 §0.6:
-  1. Chat active -> "chat_bubble_outline"
-  2. Conflicted -> "call_split"
-  3. Running -> "play_circle_outline"
-  4. Queued -> "schedule"
-  5. Blocked -> "help_outline"
-  6. Awaiting approval -> "merge_type" if ready_to_merge else "rate_review_outlined"
-  7. Failed -> "error_outline"
+  Returns the Phosphor icon class for a task's state per spec 05 §0.6:
+  1. Chat active -> "pi-chat-circle"
+  2. Conflicted -> "pi-git-branch"
+  3. Running -> "pi-play-circle"
+  4. Queued -> "pi-clock"
+  5. Blocked -> "pi-question"
+  6. Awaiting approval -> "pi-git-merge" if ready_to_merge else "pi-chat-text"
+  7. Failed -> "pi-warning-circle"
   """
   def stage_state_icon(task) do
     cond do
       get_field(task, :active_chat_role_id) != nil ->
-        "chat_bubble_outline"
+        "pi-chat-circle"
 
       shows_as_conflicted?(task) ->
-        "call_split"
+        "pi-git-branch"
 
       true ->
         case stage_state(task) do
           :running ->
-            "play_circle_outline"
+            "pi-play-circle"
 
           :queued ->
-            "schedule"
+            "pi-clock"
 
           s when s in [:blocked, :paused_question, :blocked_rework] ->
-            "help_outline"
+            "pi-question"
 
           :awaiting_approval ->
             if stage(task) == :ready_to_merge do
-              "merge_type"
+              "pi-git-merge"
             else
-              "rate_review_outlined"
+              "pi-chat-text"
             end
 
           :failed ->
-            "error_outline"
+            "pi-warning-circle"
 
           _other ->
-            "help_outline"
+            "pi-question"
         end
     end
   end
@@ -166,26 +166,26 @@ defmodule Rail.Domain.Formatters do
 
   def stage_state_color_class(task, :text) do
     case stage_state_color(task) do
-      :primary -> "text-[var(--color-primary)]"
+      :primary -> "text-blue-600 dark:text-blue-500"
       :amber -> "text-amber-700 dark:text-amber-300"
-      :outline -> "text-[var(--color-outline)]"
-      :error -> "text-[var(--color-error)]"
+      :outline -> "text-slate-500 dark:text-slate-400"
+      :error -> "text-red-600 dark:text-red-500"
     end
   end
 
   def stage_state_color_class(task, :chip) do
     case stage_state_color(task) do
       :primary ->
-        "bg-[var(--color-primary-container)] text-[var(--color-on-primary-container)] border-[var(--color-primary)]"
+        "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border-blue-600 dark:border-blue-500"
 
       :amber ->
         "bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 border-amber-500"
 
       :outline ->
-        "bg-[var(--color-surface-container-high)] text-[var(--color-on-surface)] border-[var(--color-outline)]"
+        "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 border-slate-500 dark:border-slate-400"
 
       :error ->
-        "bg-[var(--color-error-container)] text-[var(--color-on-error-container)] border-[var(--color-error)]"
+        "bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 border-red-600 dark:border-red-500"
     end
   end
 
@@ -362,30 +362,34 @@ defmodule Rail.Domain.Formatters do
 
   @doc """
   Maps a role icon name to a Material icon name per spec 05 §0.6 / §4.3:
-  `code` -> "code", `bug_report` -> "bug_report", `verified` -> "verified",
-  `fact_check` -> "fact_check", `rate_review` -> "rate_review", `alt_route` -> "alt_route",
-  `travel_explore` -> "travel_explore", `assignment` -> "assignment",
-  `architecture` -> "architecture", `palette` -> "palette", `videocam` -> "videocam",
-  default -> "help_outline".
+  A stored name that is already a Phosphor class passes through; the legacy Material
+  names map onto their Phosphor equivalent (`code` -> "pi-code", `bug_report` -> "pi-bug",
+  `verified` -> "pi-seal-check-fill", `fact_check` -> "pi-check-square-fill",
+  `rate_review` -> "pi-chat-text-fill", `alt_route` -> "pi-arrows-split",
+  `travel_explore` -> "pi-globe-hemisphere-west", `assignment` -> "pi-clipboard-text",
+  `architecture` -> "pi-compass-tool", `palette` -> "pi-palette",
+  `videocam` -> "pi-video-camera-fill"); anything else -> "pi-question".
   """
+  def role_icon_for("pi-" <> _rest = icon_name), do: icon_name
+
   def role_icon_for(icon_name) when is_binary(icon_name) do
     case icon_name do
-      "code" -> "code"
-      "bug_report" -> "bug_report"
-      "verified" -> "verified"
-      "fact_check" -> "fact_check"
-      "rate_review" -> "rate_review"
-      "alt_route" -> "alt_route"
-      "travel_explore" -> "travel_explore"
-      "assignment" -> "assignment"
-      "architecture" -> "architecture"
-      "palette" -> "palette"
-      "videocam" -> "videocam"
-      _other -> "help_outline"
+      "code" -> "pi-code"
+      "bug_report" -> "pi-bug"
+      "verified" -> "pi-seal-check-fill"
+      "fact_check" -> "pi-check-square-fill"
+      "rate_review" -> "pi-chat-text-fill"
+      "alt_route" -> "pi-arrows-split"
+      "travel_explore" -> "pi-globe-hemisphere-west"
+      "assignment" -> "pi-clipboard-text"
+      "architecture" -> "pi-compass-tool"
+      "palette" -> "pi-palette"
+      "videocam" -> "pi-video-camera-fill"
+      _other -> "pi-question"
     end
   end
 
-  def role_icon_for(_other), do: "help_outline"
+  def role_icon_for(_other), do: "pi-question"
 
   @doc """
   Formats a run status atom or string into lowerCamel per spec 05 §4.4:

@@ -134,23 +134,20 @@ defmodule RailWeb.OverviewLiveTest do
     assert has_element?(view, "#brand-name", "Rail")
   end
 
-  test "toggles theme mode between dark and light", %{conn: conn} do
+  # The Theme hook flips <html data-theme> itself and reports the result back, so the
+  # server only ever reacts to "theme_changed".
+  test "follows the theme the client reports", %{conn: conn} do
     {authed_conn, _user} = log_in_test_user(conn)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
+    assert has_element?(view, "#theme-toggle-button[phx-hook='Theme']")
     assert has_element?(view, "#theme-toggle-button[title='Switch to Light mode']")
 
-    # Toggle to light
-    view |> element("#theme-toggle-button") |> render_click()
-    assert has_element?(view, "#theme-toggle-button[title='Switch to Dark mode']")
-
-    # Toggle back to dark
-    view |> element("#theme-toggle-button") |> render_click()
-    assert has_element?(view, "#theme-toggle-button[title='Switch to Light mode']")
-
-    # Client hook event
     render_hook(view, "theme_changed", %{"theme" => "light"})
     assert has_element?(view, "#theme-toggle-button[title='Switch to Dark mode']")
+
+    render_hook(view, "theme_changed", %{"theme" => "dark"})
+    assert has_element?(view, "#theme-toggle-button[title='Switch to Light mode']")
   end
 
   test "opens and closes new issue modal", %{conn: conn} do
@@ -821,7 +818,7 @@ defmodule RailWeb.OverviewLiveTest do
         project_id: project_id,
         stage: nil,
         name: "Custom Bot",
-        icon_name: "smart_toy"
+        icon_name: "pi-robot"
       })
 
     %Role{id: r_prod_id} =
