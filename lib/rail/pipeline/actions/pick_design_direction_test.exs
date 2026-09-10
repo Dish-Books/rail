@@ -87,7 +87,16 @@ defmodule Rail.Pipeline.Actions.PickDesignDirectionTest do
         stage_state: :awaiting_approval
       })
 
-    design_manifest_9801 =
+    design_scratch_9801 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir_9801 = Path.join(design_scratch_9801, "design")
+    File.mkdir_p!(design_dir_9801)
+    on_exit(fn -> File.rm_rf(design_scratch_9801) end)
+
+    File.write!(Path.join(design_dir_9801, "dir-1.png"), "fake png content")
+    File.write!(Path.join(design_dir_9801, "dir-2.png"), "fake png content")
+
+    File.write!(
+      Path.join(design_dir_9801, "manifest.json"),
       Jason.encode!(%{
         "canvasUrl" => "https://canvas.example.com/design-9801",
         "version" => 1,
@@ -97,19 +106,12 @@ defmodule Rail.Pipeline.Actions.PickDesignDirectionTest do
           %{"key" => "dir-2", "title" => "Bold Dark", "notes" => "High contrast", "stillPath" => "dir-2.png"}
         ]
       })
-
-    expect(File, :exists?, 3, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, design_manifest_9801} end)
-
-    expect(File, :stat, 2, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, 2, fn _path -> {:ok, "PNG_STILL"} end)
+    )
 
     mock_design_uploads(2)
 
     {:ok, _design} =
-      Artifacts.capture_design(system_scope(), task, "/tmp/rail_scratch/design_9801", url_probe: fn _url -> true end)
+      Artifacts.capture_design(system_scope(), task, design_scratch_9801, url_probe: fn _url -> true end)
 
     {:ok, _role_run} =
       Runs.create_role_run(%{
@@ -179,7 +181,15 @@ defmodule Rail.Pipeline.Actions.PickDesignDirectionTest do
         stage_state: :awaiting_approval
       })
 
-    design_manifest_9802 =
+    design_scratch_9802 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir_9802 = Path.join(design_scratch_9802, "design")
+    File.mkdir_p!(design_dir_9802)
+    on_exit(fn -> File.rm_rf(design_scratch_9802) end)
+
+    File.write!(Path.join(design_dir_9802, "dir-1.png"), "fake png content")
+
+    File.write!(
+      Path.join(design_dir_9802, "manifest.json"),
       Jason.encode!(%{
         "canvasUrl" => "https://canvas.example.com/design-9802",
         "version" => 1,
@@ -188,19 +198,12 @@ defmodule Rail.Pipeline.Actions.PickDesignDirectionTest do
           %{"key" => "dir-1", "title" => "Direction 1", "notes" => "Notes", "stillPath" => "dir-1.png"}
         ]
       })
-
-    expect(File, :exists?, 2, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, design_manifest_9802} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_STILL"} end)
+    )
 
     mock_design_uploads(1)
 
     {:ok, _design} =
-      Artifacts.capture_design(system_scope(), task, "/tmp/rail_scratch/design_9802", url_probe: fn _url -> true end)
+      Artifacts.capture_design(system_scope(), task, design_scratch_9802, url_probe: fn _url -> true end)
 
     assert {:error, {:direction_not_found, "nonexistent-key"}} =
              Pipeline.pick_design_direction(task, "nonexistent-key")
@@ -220,7 +223,15 @@ defmodule Rail.Pipeline.Actions.PickDesignDirectionTest do
         stage_state: :awaiting_approval
       })
 
-    design_manifest_9803 =
+    design_scratch_9803 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir_9803 = Path.join(design_scratch_9803, "design")
+    File.mkdir_p!(design_dir_9803)
+    on_exit(fn -> File.rm_rf(design_scratch_9803) end)
+
+    File.write!(Path.join(design_dir_9803, "dir-1.png"), "fake png content")
+
+    File.write!(
+      Path.join(design_dir_9803, "manifest.json"),
       Jason.encode!(%{
         "canvasUrl" => "https://canvas.example.com/design-9803",
         "version" => 1,
@@ -229,19 +240,12 @@ defmodule Rail.Pipeline.Actions.PickDesignDirectionTest do
           %{"key" => "dir-1", "title" => "Direction 1", "notes" => "Notes", "stillPath" => "dir-1.png"}
         ]
       })
-
-    expect(File, :exists?, 2, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, design_manifest_9803} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_STILL"} end)
+    )
 
     mock_design_uploads(1)
 
     {:ok, _design} =
-      Artifacts.capture_design(system_scope(), task, "/tmp/rail_scratch/design_9803", url_probe: fn _url -> true end)
+      Artifacts.capture_design(system_scope(), task, design_scratch_9803, url_probe: fn _url -> true end)
 
     assert {:ok, %Task{stage: :design, stage_state: :queued}} =
              Pipeline.pick_design_direction(user_scope, task.id, "dir-1", [])
@@ -262,7 +266,15 @@ defmodule Rail.Pipeline.Actions.PickDesignDirectionTest do
         stage_state: :awaiting_approval
       })
 
-    design_manifest_9804 =
+    design_scratch_9804 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir_9804 = Path.join(design_scratch_9804, "design")
+    File.mkdir_p!(design_dir_9804)
+    on_exit(fn -> File.rm_rf(design_scratch_9804) end)
+
+    File.write!(Path.join(design_dir_9804, "dir-1.png"), "fake png content")
+
+    File.write!(
+      Path.join(design_dir_9804, "manifest.json"),
       Jason.encode!(%{
         "canvasUrl" => "https://canvas.example.com/design-9804",
         "version" => 1,
@@ -271,19 +283,12 @@ defmodule Rail.Pipeline.Actions.PickDesignDirectionTest do
           %{"key" => "dir-1", "title" => "Direction 1", "notes" => "Notes", "stillPath" => "dir-1.png"}
         ]
       })
-
-    expect(File, :exists?, 2, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, design_manifest_9804} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_STILL"} end)
+    )
 
     mock_design_uploads(1)
 
     {:ok, design} =
-      Artifacts.capture_design(system_scope(), task, "/tmp/rail_scratch/design_9804", url_probe: fn _url -> true end)
+      Artifacts.capture_design(system_scope(), task, design_scratch_9804, url_probe: fn _url -> true end)
 
     Repo.update_all(from(d in Design, where: d.id == ^design.id), set: [directions: nil])
 

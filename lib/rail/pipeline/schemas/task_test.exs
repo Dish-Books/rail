@@ -234,11 +234,12 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
         prompt: "Question prompt 12609?"
       })
 
-    expect(File, :exists?, 2, fn path -> String.ends_with?(path, "plan.md") end)
+    plan_scratch_45368 = Path.join("/tmp", "rail_plan_scratch_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(plan_scratch_45368)
+    on_exit(fn -> File.rm_rf(plan_scratch_45368) end)
+    File.write!(Path.join(plan_scratch_45368, "plan.md"), "# Plan 13101")
 
-    expect(File, :read!, fn _path -> "# Plan 13101" end)
-
-    {:ok, _captured} = capture(:architect, task, "/tmp/rail_scratch/plan_13101")
+    {:ok, _captured} = capture(:architect, task, plan_scratch_45368)
 
     {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
 
@@ -250,7 +251,15 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
         started_at: DateTime.utc_now()
       })
 
-    design_manifest_13102 =
+    design_scratch_13102 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir_13102 = Path.join(design_scratch_13102, "design")
+    File.mkdir_p!(design_dir_13102)
+    on_exit(fn -> File.rm_rf(design_scratch_13102) end)
+
+    File.write!(Path.join(design_dir_13102, "dir-1.png"), "fake png content")
+
+    File.write!(
+      Path.join(design_dir_13102, "manifest.json"),
       Jason.encode!(%{
         "canvasUrl" => "https://canvas.example.com/design-13102",
         "version" => 1,
@@ -259,19 +268,12 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
           %{"key" => "dir-1", "title" => "Direction 1", "notes" => "Notes", "stillPath" => "dir-1.png"}
         ]
       })
-
-    expect(File, :exists?, 2, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, design_manifest_13102} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_STILL"} end)
+    )
 
     mock_design_uploads(1)
 
     {:ok, _design} =
-      Artifacts.capture_design(system_scope(), task, "/tmp/rail_scratch/design_13102", url_probe: fn _url -> true end)
+      Artifacts.capture_design(system_scope(), task, design_scratch_13102, url_probe: fn _url -> true end)
 
     preloaded = Repo.preload(task, [:questions, :plans, :role_runs, :designs])
 

@@ -242,7 +242,15 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
         stage_state: :awaiting_approval
       })
 
-    design_manifest_8551 =
+    design_scratch_8551 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir_8551 = Path.join(design_scratch_8551, "design")
+    File.mkdir_p!(design_dir_8551)
+    on_exit(fn -> File.rm_rf(design_scratch_8551) end)
+
+    File.write!(Path.join(design_dir_8551, "dir-1.png"), "fake png content")
+
+    File.write!(
+      Path.join(design_dir_8551, "manifest.json"),
       Jason.encode!(%{
         "canvasUrl" => "https://canvas.example.com/design-8551",
         "version" => 1,
@@ -251,19 +259,12 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
           %{"key" => "dir-1", "title" => "Direction 1", "notes" => "Notes", "stillPath" => "dir-1.png"}
         ]
       })
-
-    expect(File, :exists?, 2, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, design_manifest_8551} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_STILL"} end)
+    )
 
     mock_design_uploads(1)
 
     {:ok, _design} =
-      Artifacts.capture_design(system_scope(), task, "/tmp/rail_scratch/design_8551", url_probe: fn _url -> true end)
+      Artifacts.capture_design(system_scope(), task, design_scratch_8551, url_probe: fn _url -> true end)
 
     {:ok, _role_run} =
       Runs.create_role_run(%{
@@ -297,7 +298,15 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
         stage_state: :awaiting_approval
       })
 
-    design_manifest_8552 =
+    design_scratch_8552 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir_8552 = Path.join(design_scratch_8552, "design")
+    File.mkdir_p!(design_dir_8552)
+    on_exit(fn -> File.rm_rf(design_scratch_8552) end)
+
+    File.write!(Path.join(design_dir_8552, "dir-1.png"), "fake png content")
+
+    File.write!(
+      Path.join(design_dir_8552, "manifest.json"),
       Jason.encode!(%{
         "canvasUrl" => "https://canvas.example.com/design-8552",
         "version" => 1,
@@ -306,19 +315,12 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
           %{"key" => "dir-1", "title" => "Direction 1", "notes" => "Notes", "stillPath" => "dir-1.png"}
         ]
       })
-
-    expect(File, :exists?, 2, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, design_manifest_8552} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_STILL"} end)
+    )
 
     mock_design_uploads(1)
 
     {:ok, _design} =
-      Artifacts.capture_design(system_scope(), task, "/tmp/rail_scratch/design_8552", url_probe: fn _url -> true end)
+      Artifacts.capture_design(system_scope(), task, design_scratch_8552, url_probe: fn _url -> true end)
 
     {:ok, _role_run} =
       Runs.create_role_run(%{

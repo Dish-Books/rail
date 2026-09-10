@@ -200,7 +200,15 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
         stage_state: :awaiting_approval
       })
 
-    design_manifest_11001 =
+    design_scratch_11001 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir_11001 = Path.join(design_scratch_11001, "design")
+    File.mkdir_p!(design_dir_11001)
+    on_exit(fn -> File.rm_rf(design_scratch_11001) end)
+
+    File.write!(Path.join(design_dir_11001, "dir-1.png"), "fake png content")
+
+    File.write!(
+      Path.join(design_dir_11001, "manifest.json"),
       Jason.encode!(%{
         "canvasUrl" => "https://canvas.example.com/design-11001",
         "version" => 1,
@@ -209,19 +217,12 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
           %{"key" => "dir-1", "title" => "Direction 1", "notes" => "Notes", "stillPath" => "dir-1.png"}
         ]
       })
-
-    expect(File, :exists?, 2, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, design_manifest_11001} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_STILL"} end)
+    )
 
     mock_design_uploads(1)
 
     {:ok, _design} =
-      Artifacts.capture_design(system_scope(), t_design, "/tmp/rail_scratch/design_11001", url_probe: fn _url -> true end)
+      Artifacts.capture_design(system_scope(), t_design, design_scratch_11001, url_probe: fn _url -> true end)
 
     LinearMock.mock_create_comment_success(%{"id" => "com_101", "body" => "Design comment"})
     assert {:ok, %Task{stage: :architect}} = Pipeline.approve_stage(t_design)
@@ -467,7 +468,16 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
           stage_state: :awaiting_approval
         })
 
-      design_manifest_11002 =
+      design_scratch_11002 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+      design_dir_11002 = Path.join(design_scratch_11002, "design")
+      File.mkdir_p!(design_dir_11002)
+      on_exit(fn -> File.rm_rf(design_scratch_11002) end)
+
+      File.write!(Path.join(design_dir_11002, "dir-1.png"), "fake png content")
+      File.write!(Path.join(design_dir_11002, "dir-2.png"), "fake png content")
+
+      File.write!(
+        Path.join(design_dir_11002, "manifest.json"),
         Jason.encode!(%{
           "canvasUrl" => "https://canvas.example.com/design-11002",
           "version" => 1,
@@ -477,19 +487,12 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
             %{"key" => "dir-2", "title" => "Direction 2", "notes" => "Notes", "stillPath" => "dir-2.png"}
           ]
         })
-
-      expect(File, :exists?, 3, fn _path -> true end)
-
-      expect(File, :read, fn _path -> {:ok, design_manifest_11002} end)
-
-      expect(File, :stat, 2, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-      expect(File, :read, 2, fn _path -> {:ok, "PNG_STILL"} end)
+      )
 
       mock_design_uploads(2)
 
       {:ok, _design} =
-        Artifacts.capture_design(system_scope(), task, "/tmp/rail_scratch/design_11002", url_probe: fn _url -> true end)
+        Artifacts.capture_design(system_scope(), task, design_scratch_11002, url_probe: fn _url -> true end)
 
       assert {:error, :no_picked_direction} = Pipeline.approve_stage(task)
       task = Repo.get(Task, task.id)
@@ -520,7 +523,15 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
           stage_state: :awaiting_approval
         })
 
-      design_manifest_11003 =
+      design_scratch_11003 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+      design_dir_11003 = Path.join(design_scratch_11003, "design")
+      File.mkdir_p!(design_dir_11003)
+      on_exit(fn -> File.rm_rf(design_scratch_11003) end)
+
+      File.write!(Path.join(design_dir_11003, "dir-1.png"), "fake png content")
+
+      File.write!(
+        Path.join(design_dir_11003, "manifest.json"),
         Jason.encode!(%{
           "canvasUrl" => "https://canvas.example.com/design-11003",
           "version" => 1,
@@ -529,19 +540,12 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
             %{"key" => "dir-1", "title" => "Direction 1", "notes" => "Notes", "stillPath" => "dir-1.png"}
           ]
         })
-
-      expect(File, :exists?, 2, fn _path -> true end)
-
-      expect(File, :read, fn _path -> {:ok, design_manifest_11003} end)
-
-      expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-      expect(File, :read, fn _path -> {:ok, "PNG_STILL"} end)
+      )
 
       mock_design_uploads(1)
 
       {:ok, _design} =
-        Artifacts.capture_design(system_scope(), task, "/tmp/rail_scratch/design_11003", url_probe: fn _url -> true end)
+        Artifacts.capture_design(system_scope(), task, design_scratch_11003, url_probe: fn _url -> true end)
 
       LinearMock.mock_create_comment_success(%{"id" => "com_solo", "body" => "Solo comment"})
 
@@ -572,7 +576,15 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
           stage_state: :awaiting_approval
         })
 
-      design_manifest_11004 =
+      design_scratch_11004 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+      design_dir_11004 = Path.join(design_scratch_11004, "design")
+      File.mkdir_p!(design_dir_11004)
+      on_exit(fn -> File.rm_rf(design_scratch_11004) end)
+
+      File.write!(Path.join(design_dir_11004, "dir-1.png"), "fake png content")
+
+      File.write!(
+        Path.join(design_dir_11004, "manifest.json"),
         Jason.encode!(%{
           "canvasUrl" => "https://canvas.example.com/design-11004",
           "version" => 1,
@@ -581,19 +593,12 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
             %{"key" => "dir-1", "title" => "Direction 1", "notes" => "Notes", "stillPath" => "dir-1.png"}
           ]
         })
-
-      expect(File, :exists?, 2, fn _path -> true end)
-
-      expect(File, :read, fn _path -> {:ok, design_manifest_11004} end)
-
-      expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-      expect(File, :read, fn _path -> {:ok, "PNG_STILL"} end)
+      )
 
       mock_design_uploads(1)
 
       {:ok, _design} =
-        Artifacts.capture_design(system_scope(), task, "/tmp/rail_scratch/design_11004", url_probe: fn _url -> true end)
+        Artifacts.capture_design(system_scope(), task, design_scratch_11004, url_probe: fn _url -> true end)
 
       Req.Test.expect(Rail.Linear, fn conn ->
         Plug.Conn.send_resp(conn, 500, "Comment API error")

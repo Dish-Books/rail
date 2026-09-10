@@ -529,11 +529,12 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.plan_for(task) == "## Implementation plan\nStep 1\nStep 2"
 
       # Stored plan takes precedence
-      expect(File, :exists?, 2, fn path -> String.ends_with?(path, "plan.md") end)
+      plan_scratch_33706 = Path.join("/tmp", "rail_plan_scratch_#{System.unique_integer([:positive])}")
+      File.mkdir_p!(plan_scratch_33706)
+      on_exit(fn -> File.rm_rf(plan_scratch_33706) end)
+      File.write!(Path.join(plan_scratch_33706, "plan.md"), "# Database Plan")
 
-      expect(File, :read!, fn _path -> "# Database Plan" end)
-
-      {:ok, _captured} = capture(:architect, task, "/tmp/rail_scratch/plan_7710")
+      {:ok, _captured} = capture(:architect, task, plan_scratch_33706)
 
       {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
       assert Formatters.plan_for(task) == "# Database Plan"

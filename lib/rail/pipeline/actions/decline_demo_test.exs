@@ -109,7 +109,15 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
         stage_state: :queued
       })
 
-    demo_manifest_8651 =
+    demo_scratch_8651 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+    demo_dir_8651 = Path.join(demo_scratch_8651, "demo")
+    File.mkdir_p!(demo_dir_8651)
+    on_exit(fn -> File.rm_rf(demo_scratch_8651) end)
+
+    File.write!(Path.join(demo_dir_8651, "frame-1.png"), "fake demo frame")
+
+    File.write!(
+      Path.join(demo_dir_8651, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -122,14 +130,7 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
           }
         ]
       })
-
-    expect(File, :exists?, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, demo_manifest_8651} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
+    )
 
     mock_demo_uploads(1)
 
@@ -139,7 +140,7 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
       "createdAt" => "2026-09-05T12:00:00.000Z"
     })
 
-    {:ok, _demo} = Artifacts.capture_demo(system_scope(), task, "/tmp/rail_scratch/demo_8651")
+    {:ok, _demo} = Artifacts.capture_demo(system_scope(), task, demo_scratch_8651)
 
     assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}} =
              Pipeline.decline_demo(Scope.for_system(), task.id, "Non-UI refactor, CLI verified")

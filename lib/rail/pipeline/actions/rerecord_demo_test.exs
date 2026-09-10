@@ -83,7 +83,15 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
         error: "Previous failure"
       })
 
-    demo_manifest_9901 =
+    demo_scratch_9901 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+    demo_dir_9901 = Path.join(demo_scratch_9901, "demo")
+    File.mkdir_p!(demo_dir_9901)
+    on_exit(fn -> File.rm_rf(demo_scratch_9901) end)
+
+    File.write!(Path.join(demo_dir_9901, "frame-1.png"), "fake demo frame")
+
+    File.write!(
+      Path.join(demo_dir_9901, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -96,14 +104,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
           }
         ]
       })
-
-    expect(File, :exists?, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, demo_manifest_9901} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
+    )
 
     mock_demo_uploads(1)
 
@@ -114,7 +115,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     })
 
     {:ok, demo} =
-      Artifacts.capture_demo(system_scope(), task, "/tmp/rail_scratch/demo_9901")
+      Artifacts.capture_demo(system_scope(), task, demo_scratch_9901)
 
     assert {:ok,
             %Task{

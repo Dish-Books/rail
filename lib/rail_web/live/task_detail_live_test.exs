@@ -214,11 +214,12 @@ defmodule RailWeb.TaskDetailLiveTest do
         worktree_path: "/tmp/worktree/tab-task"
       })
 
-    expect(File, :exists?, 2, fn path -> String.ends_with?(path, "plan.md") end)
+    plan_scratch_94904 = Path.join("/tmp", "rail_plan_scratch_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(plan_scratch_94904)
+    on_exit(fn -> File.rm_rf(plan_scratch_94904) end)
+    File.write!(Path.join(plan_scratch_94904, "plan.md"), "## Architectural Plan\n1. Step one\n2. Step two")
 
-    expect(File, :read!, fn _path -> "## Architectural Plan\n1. Step one\n2. Step two" end)
-
-    {:ok, _captured} = capture(:architect, task, "/tmp/rail_scratch/plan_14301")
+    {:ok, _captured} = capture(:architect, task, plan_scratch_94904)
 
     {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
 
@@ -1784,7 +1785,15 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage_state: :awaiting_approval
       })
 
-    design_manifest_14302 =
+    design_scratch_14302 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir_14302 = Path.join(design_scratch_14302, "design")
+    File.mkdir_p!(design_dir_14302)
+    on_exit(fn -> File.rm_rf(design_scratch_14302) end)
+
+    File.write!(Path.join(design_dir_14302, "dir-a.png"), "fake png content")
+
+    File.write!(
+      Path.join(design_dir_14302, "manifest.json"),
       Jason.encode!(%{
         "canvasUrl" => "https://canvas.example.com/design-14302",
         "version" => 1,
@@ -1793,21 +1802,12 @@ defmodule RailWeb.TaskDetailLiveTest do
           %{"key" => "dir-a", "title" => "Direction Alpha", "notes" => "Notes", "stillPath" => "dir-a.png"}
         ]
       })
-
-    expect(File, :exists?, 2, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, design_manifest_14302} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_STILL"} end)
+    )
 
     mock_design_uploads(1)
 
     {:ok, _design} =
-      Artifacts.capture_design(system_scope(), design_task_id, "/tmp/rail_scratch/design_14302",
-        url_probe: fn _url -> true end
-      )
+      Artifacts.capture_design(system_scope(), design_task_id, design_scratch_14302, url_probe: fn _url -> true end)
 
     assert {:ok, design_view, _html} = live(authed_conn, ~p"/tasks/#{design_task_id}")
     assert has_element?(design_view, "#action-pick-design-dir-a", "Use Direction Alpha")
@@ -2869,7 +2869,15 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage_state: :running
       })
 
-    design_manifest_14303 =
+    design_scratch_14303 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir_14303 = Path.join(design_scratch_14303, "design")
+    File.mkdir_p!(design_dir_14303)
+    on_exit(fn -> File.rm_rf(design_scratch_14303) end)
+
+    File.write!(Path.join(design_dir_14303, "dir-a.png"), "fake png content")
+
+    File.write!(
+      Path.join(design_dir_14303, "manifest.json"),
       Jason.encode!(%{
         "canvasUrl" => "https://canvas.example.com/design-14303",
         "version" => 2,
@@ -2878,19 +2886,12 @@ defmodule RailWeb.TaskDetailLiveTest do
           %{"key" => "dir-a", "title" => "Direction Alpha", "notes" => "Notes", "stillPath" => "dir-a.png"}
         ]
       })
-
-    expect(File, :exists?, 2, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, design_manifest_14303} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_STILL"} end)
+    )
 
     mock_design_uploads(1)
 
     {:ok, _design} =
-      Artifacts.capture_design(system_scope(), task, "/tmp/rail_scratch/design_14303", url_probe: fn _url -> true end)
+      Artifacts.capture_design(system_scope(), task, design_scratch_14303, url_probe: fn _url -> true end)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
 
@@ -2932,7 +2933,15 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage_state: :running
       })
 
-    demo_manifest_14304 =
+    demo_scratch_14304 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+    demo_dir_14304 = Path.join(demo_scratch_14304, "demo")
+    File.mkdir_p!(demo_dir_14304)
+    on_exit(fn -> File.rm_rf(demo_scratch_14304) end)
+
+    File.write!(Path.join(demo_dir_14304, "frame-1.png"), "fake demo frame")
+
+    File.write!(
+      Path.join(demo_dir_14304, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -2945,14 +2954,7 @@ defmodule RailWeb.TaskDetailLiveTest do
           }
         ]
       })
-
-    expect(File, :exists?, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, demo_manifest_14304} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
+    )
 
     mock_demo_uploads(1)
 
@@ -2963,7 +2965,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     })
 
     {:ok, _demo} =
-      Artifacts.capture_demo(system_scope(), task, "/tmp/rail_scratch/demo_14304")
+      Artifacts.capture_demo(system_scope(), task, demo_scratch_14304)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
 
@@ -3050,7 +3052,17 @@ defmodule RailWeb.TaskDetailLiveTest do
         worktree_path: "/tmp/fake-worktree"
       })
 
-    demo_manifest_14305 =
+    demo_scratch_14305 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+    demo_dir_14305 = Path.join(demo_scratch_14305, "demo")
+    File.mkdir_p!(demo_dir_14305)
+    on_exit(fn -> File.rm_rf(demo_scratch_14305) end)
+
+    File.write!(Path.join(demo_dir_14305, "frame-1.png"), "fake demo frame")
+    File.write!(Path.join(demo_dir_14305, "frame-2.png"), "fake demo frame")
+    File.write!(Path.join(demo_dir_14305, "frame-3.png"), "fake demo frame")
+
+    File.write!(
+      Path.join(demo_dir_14305, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -3072,14 +3084,7 @@ defmodule RailWeb.TaskDetailLiveTest do
           }
         ]
       })
-
-    expect(File, :exists?, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, demo_manifest_14305} end)
-
-    expect(File, :stat, 3, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, 3, fn _path -> {:ok, "PNG_FRAME"} end)
+    )
 
     mock_demo_uploads(3)
 
@@ -3090,7 +3095,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     })
 
     {:ok, _demo} =
-      Artifacts.capture_demo(system_scope(), task, "/tmp/rail_scratch/demo_14305")
+      Artifacts.capture_demo(system_scope(), task, demo_scratch_14305)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
 
