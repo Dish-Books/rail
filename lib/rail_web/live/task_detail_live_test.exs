@@ -1688,4 +1688,348 @@ defmodule RailWeb.TaskDetailLiveTest do
                dummy_socket
              )
   end
+
+  test "renders design panel when task has design attached", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+
+    task =
+      create_test_task(%{
+        owner_user_id: user.id,
+        stage: :engineer,
+        stage_state: :running
+      })
+
+    _design =
+      create_test_design(%{
+        task_id: task.id,
+        version: 2,
+        canvas_url: "https://canvas.example.com/project/42",
+        directions: [
+          %{
+            key: "dir-a",
+            title: "Direction Alpha",
+            notes: "Design notes here",
+            still_url: "https://uploads.linear.app/still_a.png"
+          }
+        ]
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "#design-panel")
+    assert has_element?(view, "#design-panel-title", "Design directions")
+    assert has_element?(view, "#design-version-pill", "v2")
+    assert has_element?(view, "#design-direction-card-dir-a")
+    assert has_element?(view, "#design-direction-title-dir-a", "Direction Alpha")
+    assert has_element?(view, "#design-canvas-link")
+  end
+
+  test "renders demo panel when task has demo attached", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+
+    task =
+      create_test_task(%{
+        owner_user_id: user.id,
+        stage: :engineer,
+        stage_state: :running
+      })
+
+    _demo =
+      create_test_demo(%{
+        task_id: task.id,
+        version: 1,
+        outcome: "recorded",
+        segments: [
+          %{
+            criterion_index: 1,
+            criterion: "Form submits properly",
+            outcome: :recorded,
+            frames: [
+              %{
+                path: "f1.png",
+                linear_asset_id: "ast_1",
+                url: "https://uploads.linear.app/demo/f1.png",
+                hold_ms: 1000,
+                caption: "Step 1"
+              }
+            ]
+          }
+        ]
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "#demo-panel")
+    assert has_element?(view, "#demo-panel-title", "Recorded demo")
+    assert has_element?(view, "#demo-version-pill", "v1")
+    assert has_element?(view, "#demo-recorded-count-pill", "1/1 recorded")
+    assert has_element?(view, "#demo-play-all-btn")
+    refute has_element?(view, "#no-demo-banner")
+  end
+
+  test "renders no-demo banner when stage is ready_to_merge and no demo exists", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+
+    task =
+      create_test_task(%{
+        owner_user_id: user.id,
+        stage: :ready_to_merge,
+        stage_state: :awaiting_approval
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "#no-demo-banner")
+    assert has_element?(view, "#no-demo-title", "No demo recorded")
+
+    assert has_element?(
+             view,
+             "#no-demo-body",
+             "This task reached Ready to merge without recording a demo (gates were skipped)."
+           )
+
+    refute has_element?(view, "#demo-panel")
+  end
+
+  test "opens demo player modal, navigates controls, and closes modal", %{conn: conn} do
+    {authed_conn, user} = log_in_test_user(conn)
+
+    task =
+      create_test_task(%{
+        owner_user_id: user.id,
+        stage: :ready_to_merge,
+        stage_state: :awaiting_approval,
+        worktree_path: "/tmp/fake-worktree"
+      })
+
+    _demo =
+      create_test_demo(%{
+        task_id: task.id,
+        version: 1,
+        outcome: "recorded",
+        segments: [
+          %{
+            criterion_index: 1,
+            criterion: "First criterion",
+            outcome: :recorded,
+            frames: [
+              %{
+                path: "f1.png",
+                linear_asset_id: "ast_1",
+                url: "https://uploads.linear.app/demo/f1.png",
+                hold_ms: 1000,
+                caption: "Caption 1"
+              },
+              %{
+                path: "f2.png",
+                linear_asset_id: "ast_2",
+                url: "https://uploads.linear.app/demo/f2.png",
+                hold_ms: 1000,
+                caption: "Caption 2"
+              }
+            ]
+          },
+          %{
+            criterion_index: 2,
+            criterion: "Second criterion",
+            outcome: :recorded,
+            frames: [
+              %{
+                path: "f3.png",
+                linear_asset_id: "ast_3",
+                url: "https://uploads.linear.app/demo/f3.png",
+                hold_ms: 1500,
+                caption: "Caption 3"
+              }
+            ]
+          }
+        ]
+      })
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
+
+    refute has_element?(view, "#demo-player-modal")
+
+    # Click Play all to open modal
+    assert view |> element("#demo-play-all-btn") |> render_click()
+
+    assert has_element?(view, "#demo-player-modal")
+    assert has_element?(view, "#demo-player-criterion-text", "First criterion")
+    assert has_element?(view, "#demo-player-caption-overlay", "Caption 1")
+
+    # Click Next frame
+    assert view |> element("#demo-player-next-frame") |> render_click()
+    assert has_element?(view, "#demo-player-caption-overlay", "Caption 2")
+
+    # Click Previous frame
+    assert view |> element("#demo-player-prev-frame") |> render_click()
+    assert has_element?(view, "#demo-player-caption-overlay", "Caption 1")
+
+    # Click Next segment
+    assert view |> element("#demo-player-next-segment") |> render_click()
+    assert has_element?(view, "#demo-player-criterion-text", "Second criterion")
+    assert has_element?(view, "#demo-player-caption-overlay", "Caption 3")
+
+    # Click Previous segment
+    assert view |> element("#demo-player-prev-segment") |> render_click()
+    assert has_element?(view, "#demo-player-criterion-text", "First criterion")
+
+    # Toggle play/pause
+    assert view |> element("#demo-player-play-toggle") |> render_click()
+
+    # Toggle loop
+    assert view |> element("#demo-player-loop-toggle") |> render_click()
+
+    # Seek
+    assert view
+           |> element("#demo-player-seek-form")
+           |> render_change(%{"ms" => "500"})
+
+    # Close modal
+    assert view |> element("#demo-player-close-btn") |> render_click()
+    refute has_element?(view, "#demo-player-modal")
+  end
+
+  test "exercises demo player and rerecord_demo unit events on TaskDetailLive" do
+    scope = Scope.for_system()
+    task = create_test_task(%{worktree_path: nil})
+
+    demo = %Rail.Artifacts.Schemas.Demo{
+      id: "demo_unit_test",
+      task_id: task.id,
+      version: 1,
+      outcome: "recorded",
+      segments: [
+        %{
+          criterion_index: 1,
+          criterion: "Segment 1",
+          outcome: :recorded,
+          frames: [
+            %{path: "f1.png", hold_ms: 1000, caption: "Frame 1"}
+          ]
+        }
+      ]
+    }
+
+    dummy_socket = %Socket{
+      assigns: %{
+        __changed__: %{},
+        task: task,
+        task_id: task.id,
+        current_scope: scope,
+        demo: demo,
+        demo_player: nil
+      }
+    }
+
+    # play_demo with nil demo
+    nil_demo_socket = %{dummy_socket | assigns: %{dummy_socket.assigns | demo: nil}}
+
+    assert {:noreply, ^nil_demo_socket} =
+             RailWeb.TaskDetailLive.handle_event("play_demo", %{}, nil_demo_socket)
+
+    # play_demo with valid demo (string segment index)
+    assert {:noreply, socket_with_player} =
+             RailWeb.TaskDetailLive.handle_event(
+               "play_demo",
+               %{"segment" => "0"},
+               dummy_socket
+             )
+
+    assert %RailWeb.Components.DemoPlayerState{is_playing: true} =
+             socket_with_player.assigns.demo_player
+
+    # play_demo with integer segment index
+    assert {:noreply, _socket} =
+             RailWeb.TaskDetailLive.handle_event(
+               "play_demo",
+               %{"segment" => 0},
+               dummy_socket
+             )
+
+    # play_demo with invalid segment index string
+    assert {:noreply, _socket} =
+             RailWeb.TaskDetailLive.handle_event(
+               "play_demo",
+               %{"segment" => "invalid"},
+               dummy_socket
+             )
+
+    # play_demo with missing segment parameter
+    assert {:noreply, _socket} =
+             RailWeb.TaskDetailLive.handle_event(
+               "play_demo",
+               %{},
+               dummy_socket
+             )
+
+    # player events with nil player
+    assert {:noreply, ^dummy_socket} =
+             RailWeb.TaskDetailLive.handle_event("player_toggle_play", %{}, dummy_socket)
+
+    assert {:noreply, ^dummy_socket} =
+             RailWeb.TaskDetailLive.handle_event("player_next_frame", %{}, dummy_socket)
+
+    assert {:noreply, ^dummy_socket} =
+             RailWeb.TaskDetailLive.handle_event("player_prev_frame", %{}, dummy_socket)
+
+    assert {:noreply, ^dummy_socket} =
+             RailWeb.TaskDetailLive.handle_event("player_next_segment", %{}, dummy_socket)
+
+    assert {:noreply, ^dummy_socket} =
+             RailWeb.TaskDetailLive.handle_event("player_prev_segment", %{}, dummy_socket)
+
+    assert {:noreply, ^dummy_socket} =
+             RailWeb.TaskDetailLive.handle_event("player_seek", %{"ms" => 100}, dummy_socket)
+
+    assert {:noreply, ^dummy_socket} =
+             RailWeb.TaskDetailLive.handle_event("player_toggle_loop", %{}, dummy_socket)
+
+    # player_seek with integer ms
+    assert {:noreply, %{assigns: %{demo_player: %{elapsed_ms: 500}}}} =
+             RailWeb.TaskDetailLive.handle_event(
+               "player_seek",
+               %{"ms" => 500},
+               socket_with_player
+             )
+
+    # player_seek with invalid string ms
+    assert {:noreply, %{assigns: %{demo_player: %{elapsed_ms: 0}}}} =
+             RailWeb.TaskDetailLive.handle_event(
+               "player_seek",
+               %{"ms" => "bad"},
+               socket_with_player
+             )
+
+    # player_seek with non-number ms
+    assert {:noreply, %{assigns: %{demo_player: %{elapsed_ms: 0}}}} =
+             RailWeb.TaskDetailLive.handle_event(
+               "player_seek",
+               %{"ms" => nil},
+               socket_with_player
+             )
+
+    # handle_info(:demo_player_tick) when playing
+    assert {:noreply, %{assigns: %{demo_player: %{elapsed_ms: 50}}}} =
+             RailWeb.TaskDetailLive.handle_info(:demo_player_tick, socket_with_player)
+
+    # handle_info(:demo_player_tick) when demo_player is nil
+    assert {:noreply, ^dummy_socket} =
+             RailWeb.TaskDetailLive.handle_info(:demo_player_tick, dummy_socket)
+
+    # handle_info(:demo_player_tick) when paused
+    paused_player = %{socket_with_player.assigns.demo_player | is_playing: false}
+    paused_socket = %{socket_with_player | assigns: %{socket_with_player.assigns | demo_player: paused_player}}
+
+    assert {:noreply, ^paused_socket} =
+             RailWeb.TaskDetailLive.handle_info(:demo_player_tick, paused_socket)
+
+    # player_toggle_play when paused starts playing
+    assert {:noreply, %{assigns: %{demo_player: %{is_playing: true}}}} =
+             RailWeb.TaskDetailLive.handle_event("player_toggle_play", %{}, paused_socket)
+
+    # rerecord_demo event delegates to handle_action_click
+    assert {:noreply, _socket} =
+             RailWeb.TaskDetailLive.handle_event("rerecord_demo", %{}, dummy_socket)
+  end
 end

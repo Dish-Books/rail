@@ -55,6 +55,9 @@ defmodule Rail.Pipeline.Schemas.Task do
     has_many :designs, Design
     has_many :demos, Demo
 
+    field :demo, :any, virtual: true
+    field :design, :any, virtual: true
+
     timestamps()
   end
 

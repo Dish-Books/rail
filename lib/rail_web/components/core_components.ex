@@ -29,4 +29,8 @@ defmodule RailWeb.CoreComponents do
   defdelegate conversation_tab(assigns), to: RailWeb.Components.ConversationTab
   defdelegate diff_pane(assigns), to: RailWeb.Components.DiffPane
   defdelegate diff_stat(assigns), to: RailWeb.Components.DiffStat
+  defdelegate demo_panel(assigns), to: RailWeb.Components.DemoPanel
+  defdelegate no_demo_banner(assigns), to: RailWeb.Components.NoDemoBanner
+  defdelegate demo_player_modal(assigns), to: RailWeb.Components.DemoPlayerModal
+  defdelegate design_panel(assigns), to: RailWeb.Components.DesignPanel
 end

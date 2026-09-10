@@ -13,7 +13,11 @@ defmodule RailWeb.TaskDetailLive do
       task_action_modals: 1,
       answer_field: 1,
       conversation_tab: 1,
-      diff_pane: 1
+      diff_pane: 1,
+      demo_panel: 1,
+      no_demo_banner: 1,
+      demo_player_modal: 1,
+      design_panel: 1
     ]
 
   alias Rail.Domain.ChatTranscript
@@ -24,6 +28,7 @@ defmodule RailWeb.TaskDetailLive do
   alias Rail.Pipeline.TaskActionRunner
   alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
+  alias RailWeb.Components.DemoPlayerState
 
   def mount(_params, _session, socket) do
     socket =
@@ -39,6 +44,8 @@ defmodule RailWeb.TaskDetailLive do
       |> assign(:running_action, nil)
       |> assign(:active_modal, nil)
       |> assign(:design, nil)
+      |> assign(:demo, nil)
+      |> assign(:demo_player, nil)
       |> assign(:ticket_content, "")
       |> assign(:plan_content, nil)
       |> assign(:pending_question, nil)
@@ -93,6 +100,8 @@ defmodule RailWeb.TaskDetailLive do
             |> assign(:running_action, nil)
             |> assign(:active_modal, nil)
             |> assign(:design, nil)
+            |> assign(:demo, nil)
+            |> assign(:demo_player, nil)
             |> assign(:ticket_content, "")
             |> assign(:plan_content, nil)
             |> assign(:pending_question, nil)
@@ -349,6 +358,16 @@ defmodule RailWeb.TaskDetailLive do
             answer_text={@answer_text}
           />
 
+          <!-- Design Panel (spec 05 §2.7 / §10) -->
+          <.design_panel :if={@design != nil} design={@design} />
+
+          <!-- Demo Panel / No-Demo Banner (spec 05 §2.8 / §9) -->
+          <%= if @demo != nil do %>
+            <.demo_panel demo={@demo} task={@task} />
+          <% else %>
+            <.no_demo_banner :if={@task.stage == :ready_to_merge} task={@task} />
+          <% end %>
+
           <!-- Stage Outcome Component -->
           <.stage_outcome
             task={@task}
@@ -480,6 +499,9 @@ defmodule RailWeb.TaskDetailLive do
           task={@task}
           current_role_name={@current_role_name}
         />
+
+        <!-- Demo Player Overlay Modal -->
+        <.demo_player_modal :if={@demo_player != nil} player={@demo_player} />
       <% end %>
     </div>
     """
@@ -785,6 +807,138 @@ defmodule RailWeb.TaskDetailLive do
     {:noreply, socket}
   end
 
+  def handle_event("rerecord_demo", params, socket) do
+    handle_action_click("rerecord_demo", params, socket)
+  end
+
+  def handle_event("play_demo", params, socket) do
+    demo = socket.assigns[:demo]
+
+    if demo do
+      seg_idx =
+        case Map.get(params, "segment") do
+          idx when is_integer(idx) ->
+            idx
+
+          idx when is_binary(idx) ->
+            case Integer.parse(idx) do
+              {parsed, _rest} -> parsed
+              :error -> 0
+            end
+
+          _other ->
+            0
+        end
+
+      player =
+        demo
+        |> DemoPlayerState.new(segment_index: seg_idx)
+        |> DemoPlayerState.play()
+
+      Process.send_after(self(), :demo_player_tick, 50)
+      {:noreply, assign(socket, :demo_player, player)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("close_demo_player", _params, socket) do
+    {:noreply, assign(socket, :demo_player, nil)}
+  end
+
+  def handle_event("player_toggle_play", _params, socket) do
+    case socket.assigns[:demo_player] do
+      %DemoPlayerState{} = player ->
+        new_player = DemoPlayerState.toggle_play_pause(player)
+
+        if new_player.is_playing do
+          Process.send_after(self(), :demo_player_tick, 50)
+        end
+
+        {:noreply, assign(socket, :demo_player, new_player)}
+
+      _other ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("player_next_frame", _params, socket) do
+    case socket.assigns[:demo_player] do
+      %DemoPlayerState{} = player ->
+        {:noreply, assign(socket, :demo_player, DemoPlayerState.next_frame(player))}
+
+      _other ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("player_prev_frame", _params, socket) do
+    case socket.assigns[:demo_player] do
+      %DemoPlayerState{} = player ->
+        {:noreply, assign(socket, :demo_player, DemoPlayerState.prev_frame(player))}
+
+      _other ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("player_next_segment", _params, socket) do
+    case socket.assigns[:demo_player] do
+      %DemoPlayerState{} = player ->
+        {:noreply, assign(socket, :demo_player, DemoPlayerState.next_segment(player))}
+
+      _other ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("player_prev_segment", _params, socket) do
+    case socket.assigns[:demo_player] do
+      %DemoPlayerState{} = player ->
+        {:noreply, assign(socket, :demo_player, DemoPlayerState.prev_segment(player))}
+
+      _other ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("player_seek", params, socket) do
+    case socket.assigns[:demo_player] do
+      %DemoPlayerState{} = player ->
+        raw_ms = Map.get(params, "ms")
+
+        ms =
+          case raw_ms do
+            i when is_integer(i) ->
+              i
+
+            s when is_binary(s) ->
+              case Integer.parse(s) do
+                {val, _rest} -> val
+                :error -> 0
+              end
+
+            _other ->
+              0
+          end
+
+        {:noreply, assign(socket, :demo_player, DemoPlayerState.seek(player, ms))}
+
+      _other ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("player_toggle_loop", _params, socket) do
+    case socket.assigns[:demo_player] do
+      %DemoPlayerState{} = player ->
+        {:noreply, assign(socket, :demo_player, DemoPlayerState.toggle_loop(player))}
+
+      _other ->
+        {:noreply, socket}
+    end
+  end
+
   def handle_event(_event, _params, socket), do: {:noreply, socket}
 
   def handle_info({:task_action_started, task_id, kind}, socket) do
@@ -863,6 +1017,22 @@ defmodule RailWeb.TaskDetailLive do
       {:noreply, apply_task_update(socket, updated_task)}
     else
       {:noreply, socket}
+    end
+  end
+
+  def handle_info(:demo_player_tick, socket) do
+    case socket.assigns[:demo_player] do
+      %DemoPlayerState{is_playing: true} = player ->
+        new_player = DemoPlayerState.tick(player, 50)
+
+        if new_player.is_playing do
+          Process.send_after(self(), :demo_player_tick, 50)
+        end
+
+        {:noreply, assign(socket, :demo_player, new_player)}
+
+      _other ->
+        {:noreply, socket}
     end
   end
 
@@ -1186,7 +1356,15 @@ defmodule RailWeb.TaskDetailLive do
   defp apply_task_data(socket, task) do
     scope = socket.assigns.current_scope
     {current_run, role_name} = resolve_current_run(task)
-    design = if is_list(task.designs) and task.designs != [], do: List.last(task.designs)
+
+    design =
+      task.design ||
+        if(is_list(task.designs) and task.designs != [], do: List.last(task.designs))
+
+    demo =
+      task.demo ||
+        if(is_list(task.demos) and task.demos != [], do: List.last(task.demos))
+
     running_action = socket.assigns[:running_action] || TaskActionRunner.running_on(task.id)
     pending_question = resolve_pending_question(scope, task)
 
@@ -1215,6 +1393,7 @@ defmodule RailWeb.TaskDetailLive do
     |> assign(:role_runs, task.role_runs || [])
     |> assign(:running_action, running_action)
     |> assign(:design, design)
+    |> assign(:demo, demo)
     |> assign(:ticket_content, Formatters.ticket_for(task))
     |> assign(:plan_content, Formatters.plan_for(task))
     |> assign(:pending_question, pending_question)
