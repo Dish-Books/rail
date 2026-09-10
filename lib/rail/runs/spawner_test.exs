@@ -1,5 +1,5 @@
 defmodule Rail.Runs.SpawnerTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run

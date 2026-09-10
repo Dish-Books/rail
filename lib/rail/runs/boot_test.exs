@@ -1,5 +1,5 @@
 defmodule Rail.Runs.BootTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
   alias Rail.Runs
   alias Rail.Runs.Boot

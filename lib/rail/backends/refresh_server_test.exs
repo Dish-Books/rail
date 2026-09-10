@@ -1,6 +1,7 @@
 defmodule Rail.Backends.RefreshServerTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Backends.RefreshServer
   alias Rail.Backends.Schemas.CliAccount
 
@@ -12,6 +13,9 @@ defmodule Rail.Backends.RefreshServerTest do
         claude_opts: [path_validator: fn _path -> false end],
         agy_opts: [path_validator: fn _path -> false end]
       )
+
+    # The server refreshes in its own task, so lend it this test's DB connection.
+    Sandbox.allow(Rail.Repo, self(), pid)
 
     on_exit(fn ->
       try do
@@ -40,6 +44,9 @@ defmodule Rail.Backends.RefreshServerTest do
         claude_opts: [path_validator: fn _path -> false end],
         agy_opts: [path_validator: fn _path -> false end]
       )
+
+    # The server refreshes in its own task, so lend it this test's DB connection.
+    Sandbox.allow(Rail.Repo, self(), named_pid)
 
     assert Process.alive?(named_pid)
     assert RefreshServer.running?(:named_refresh_server_test)
@@ -128,6 +135,10 @@ defmodule Rail.Backends.RefreshServerTest do
         claude_opts: claude_probe,
         agy_opts: agy_probe
       )
+
+    # The server refreshes in its own task, so lend it this test's DB connection.
+
+    Sandbox.allow(Rail.Repo, self(), pid)
 
     # Let the interval tick once
     Process.sleep(50)
