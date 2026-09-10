@@ -4,20 +4,21 @@ defmodule Rail.Runs.Schemas.Run do
   """
   use Rail.Schema
 
-  alias Rail.Domain.Enums.RunKind
-  alias Rail.Domain.Enums.RunStatus
   alias Rail.Runs.Schemas.RoleRun
+
+  @kinds [:stage, :chat, :rebase, :probe, :improve]
+  @statuses [:starting, :running, :finished, :adopted_dead, :blocked_on_input, :unwatched, :failed]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "run"}
   schema "runs" do
     belongs_to :role_run, RoleRun
     field :task_id, UXID
-    field :kind, RunKind
+    field :kind, Ecto.Enum, values: @kinds
     field :os_pid, :integer
     field :stream_path, :string
     field :node, :string
     field :boot_id, :string
-    field :status, RunStatus
+    field :status, Ecto.Enum, values: @statuses
     field :started_at, :utc_datetime_usec
 
     timestamps()
@@ -71,4 +72,7 @@ defmodule Rail.Runs.Schemas.Run do
       started_at: DateTime.utc_now()
     }
   end
+
+  def kinds, do: @kinds
+  def statuses, do: @statuses
 end

@@ -29,6 +29,16 @@ defmodule Rail.Roles.Schemas.RoleTest do
     assert :rebase in stages
   end
 
+  test "stages/0, backends/0, and reasoning_efforts/0 return allowed values" do
+    stages = Role.stages()
+    assert :product in stages
+    assert :merged in stages
+    assert :debugger in stages
+
+    assert Role.backends() == [:claude, :agy, :codex]
+    assert Role.reasoning_efforts() == [:low, :medium, :high]
+  end
+
   test "changeset validates required fields" do
     changeset = Role.changeset(%Role{}, %{})
 

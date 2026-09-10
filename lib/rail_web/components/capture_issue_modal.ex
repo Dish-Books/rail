@@ -2,7 +2,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
   @moduledoc false
   use RailWeb, :html
 
-  alias Rail.Domain.Enums.TaskPriority
+  alias Rail.Issues.Schemas.Issue
 
   attr :visible, :boolean, default: false
   attr :show_new_issue_modal, :boolean, default: nil
@@ -146,12 +146,12 @@ defmodule RailWeb.Components.CaptureIssueModal do
               data-qa="capture_priority_dropdown"
               class="w-full px-3 py-2 text-xs rounded-lg border border-[var(--color-outline)] bg-[var(--color-surface)] text-[var(--color-on-surface)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
             >
-              <%= for p <- TaskPriority.values() do %>
+              <%= for p <- Issue.priorities() do %>
                 <option
                   value={to_string(p)}
                   selected={to_string(@capture_priority) == to_string(p)}
                 >
-                  {TaskPriority.label(p)}
+                  {Issue.priority_label(p)}
                 </option>
               <% end %>
             </select>

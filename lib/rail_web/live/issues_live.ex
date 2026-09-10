@@ -10,9 +10,8 @@ defmodule RailWeb.IssuesLive do
       issue_editor_modal: 1
     ]
 
-  alias Rail.Domain.Enums.IssueState
-  alias Rail.Domain.Enums.TaskPriority
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Projects
 
@@ -139,7 +138,7 @@ defmodule RailWeb.IssuesLive do
         </button>
 
         <!-- Priority Chips -->
-        <%= for p <- TaskPriority.values() do %>
+        <%= for p <- Issue.priorities() do %>
           <button
             type="button"
             id={"filter-priority-#{p}"}
@@ -155,7 +154,7 @@ defmodule RailWeb.IssuesLive do
               )
             ]}
           >
-            {TaskPriority.label(p)} ({Map.get(@priority_counts, p, 0)})
+            {Issue.priority_label(p)} ({Map.get(@priority_counts, p, 0)})
           </button>
         <% end %>
 
@@ -258,7 +257,7 @@ defmodule RailWeb.IssuesLive do
           nil
 
         str ->
-          case TaskPriority.cast(str) do
+          case Issue.cast_priority(str) do
             {:ok, priority} ->
               if socket.assigns.filter_priority == priority, do: nil, else: priority
 
@@ -484,7 +483,7 @@ defmodule RailWeb.IssuesLive do
       if show_finished do
         all_issues
       else
-        Enum.reject(all_issues, &IssueState.finished?(&1.state))
+        Enum.reject(all_issues, &Issue.finished_state?(&1.state))
       end
 
     priority_counts =

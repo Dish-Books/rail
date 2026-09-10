@@ -2,8 +2,8 @@ defmodule RailWeb.Hooks.NavHook do
   @moduledoc false
   use RailWeb, :live_view
 
-  alias Rail.Domain.Enums.TaskPriority
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Projects
   alias Rail.Users
@@ -292,7 +292,7 @@ defmodule RailWeb.Hooks.NavHook do
     raw_priority = Map.get(params, "priority", "medium")
 
     priority =
-      case TaskPriority.cast(raw_priority) do
+      case Issue.cast_priority(raw_priority) do
         {:ok, p} -> p
         :error -> :medium
       end

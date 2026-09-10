@@ -3,9 +3,9 @@ defmodule Rail.Domain.Formatters do
   Formatting utilities for task statuses, summaries, tokens, costs, and durations.
   """
 
-  alias Rail.Domain.Enums.TaskStage
   alias Rail.Domain.TicketBody
   alias Rail.Pipeline.Schemas.Plan
+  alias Rail.Pipeline.Schemas.Task
 
   @doc """
   Derives an issue title from typed idea ask text.
@@ -568,7 +568,7 @@ defmodule Rail.Domain.Formatters do
   defp rework_cycle_suffix(task, current_stage, opts) do
     rework_cycles = get_field(task, :rework_cycles) || 0
     has_been_reworked = rework_cycles > 0
-    is_before_engineer = TaskStage.before?(current_stage, :engineer)
+    is_before_engineer = Task.before?(current_stage, :engineer)
 
     if has_been_reworked and not is_before_engineer do
       rework_budget_base = get_field(task, :rework_budget_base)
@@ -731,7 +731,7 @@ defmodule Rail.Domain.Formatters do
   end
 
   defp stage_label_name(stage) do
-    TaskStage.label(stage) || to_title(stage)
+    Task.stage_label(stage) || to_title(stage)
   end
 
   defp to_title(nil), do: ""

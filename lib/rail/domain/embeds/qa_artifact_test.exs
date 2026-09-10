@@ -38,4 +38,8 @@ defmodule Rail.Domain.Embeds.QaArtifactTest do
     assert decoded["name"] == "test_output.txt"
     assert decoded["kind"] == "text"
   end
+
+  test "kinds/0 returns allowed artifact kinds" do
+    assert QaArtifact.kinds() == [:image, :video, :text, :log]
+  end
 end

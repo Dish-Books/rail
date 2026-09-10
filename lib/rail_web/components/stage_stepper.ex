@@ -7,8 +7,8 @@ defmodule RailWeb.Components.StageStepper do
 
   import RailWeb.CoreComponents, only: [icon: 1]
 
-  alias Rail.Domain.Enums.TaskStage
   alias Rail.Domain.Formatters
+  alias Rail.Pipeline.Schemas.Task
 
   @canonical_stages [
     :product,
@@ -45,10 +45,10 @@ defmodule RailWeb.Components.StageStepper do
     >
       <%= for {st, idx} <- Enum.with_index(@stages) do %>
         <% is_current = st == @current_stage
-        is_done = TaskStage.before?(st, @current_stage)
+        is_done = Task.before?(st, @current_stage)
         icon_name = stage_icon(st, is_current, is_done, @task)
         chip_style = stage_chip_classes(is_current, is_done, @task)
-        label = TaskStage.label(st) %>
+        label = Task.stage_label(st) %>
 
         <div
           id={"stage-chip-#{st}"}

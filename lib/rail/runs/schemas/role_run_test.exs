@@ -61,6 +61,21 @@ defmodule Rail.Runs.Schemas.RoleRunTest do
     assert "can't be blank" in errors.started_at
   end
 
+  test "changeset/2 validates status enum" do
+    changeset = RoleRun.changeset(%RoleRun{}, %{status: "invalid_status"})
+    refute changeset.valid?
+    assert "is invalid" in errors_on(changeset).status
+  end
+
+  test "statuses/0 returns all allowed statuses" do
+    statuses = RoleRun.statuses()
+    assert :starting in statuses
+    assert :running in statuses
+    assert :finished in statuses
+    assert :adopted_dead in statuses
+    assert :blocked_on_input in statuses
+  end
+
   test "insert and retrieve role_run with embeds" do
     task_id = UXID.generate!(prefix: "tsk")
     role_id = UXID.generate!(prefix: "rol")

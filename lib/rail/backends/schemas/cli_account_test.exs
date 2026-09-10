@@ -27,11 +27,19 @@ defmodule Rail.Backends.Schemas.CliAccountTest do
     refute invalid_status.valid?
     assert %{status: ["is invalid"]} = errors_on(invalid_status)
 
+    invalid_backend = CliAccount.changeset(%CliAccount{}, %{backend: "unknown_backend", status: "ready"})
+    refute invalid_backend.valid?
+    assert %{backend: ["is invalid"]} = errors_on(invalid_backend)
+
     for status <- ["not_configured", "signed_out", "unavailable", "ready"] do
       valid = CliAccount.changeset(%CliAccount{}, %{backend: :claude, status: status})
       assert valid.valid?
       assert Ecto.Changeset.get_field(valid, :status) == status
     end
+  end
+
+  test "backends/0 returns all supported backend atoms" do
+    assert CliAccount.backends() == [:claude, :agy, :codex]
   end
 
   test "changeset/2 defaults node when nil or empty" do

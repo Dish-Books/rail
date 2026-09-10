@@ -3,7 +3,6 @@ defmodule Rail.Issues.Actions.CaptureIssue do
 
   import Rail.Issues.Utils.TokenResolver
 
-  alias Rail.Domain.Enums.TaskPriority
   alias Rail.Domain.Formatters
   alias Rail.Issues.Clients.Linear
   alias Rail.Issues.Schemas.Issue
@@ -51,7 +50,7 @@ defmodule Rail.Issues.Actions.CaptureIssue do
   defp resolve_priority(nil), do: :medium
 
   defp resolve_priority(val) do
-    case TaskPriority.cast(val) do
+    case Issue.cast_priority(val) do
       {:ok, priority} -> priority
       :error -> :medium
     end

@@ -21,8 +21,8 @@ defmodule RailWeb.TaskDetailLive do
     ]
 
   alias Rail.Domain.ChatTranscript
-  alias Rail.Domain.Enums.TaskPriority
   alias Rail.Domain.Formatters
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.TaskActionRunner
@@ -1343,7 +1343,7 @@ defmodule RailWeb.TaskDetailLive do
 
   defp task_priority_label(task) do
     priority = if is_map(task.issue), do: task.issue.priority, else: :medium
-    TaskPriority.label(priority || :medium) || "Medium"
+    Issue.priority_label(priority || :medium) || "Medium"
   end
 
   defp refresh_task(socket) do

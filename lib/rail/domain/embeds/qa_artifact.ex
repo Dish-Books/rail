@@ -6,14 +6,14 @@ defmodule Rail.Domain.Embeds.QaArtifact do
 
   import Ecto.Changeset
 
-  alias Rail.Domain.Enums.ArtifactKind
+  @kinds [:image, :video, :text, :log]
 
   @derive Jason.Encoder
 
   @primary_key false
   embedded_schema do
     field :name, :string
-    field :kind, ArtifactKind
+    field :kind, Ecto.Enum, values: @kinds
     field :text, :string
     field :url, :string
   end
@@ -37,4 +37,6 @@ defmodule Rail.Domain.Embeds.QaArtifact do
       url: nil
     }
   end
+
+  def kinds, do: @kinds
 end

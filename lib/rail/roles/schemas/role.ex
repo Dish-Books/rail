@@ -4,11 +4,8 @@ defmodule Rail.Roles.Schemas.Role do
   """
   use Rail.Schema
 
-  alias Rail.Domain.Enums.CliBackend
-  alias Rail.Domain.Enums.ReasoningEffort
   alias Rail.Projects.Schemas.Project
 
-  @derive {LiveSync.Watch, subscription_key: :project_id, table: "roles"}
   @canonical_stages [
     :product,
     :architect,
@@ -23,6 +20,10 @@ defmodule Rail.Roles.Schemas.Role do
   ]
   @allowed_stages @canonical_stages ++ [:design, :ready_to_merge, :merged]
 
+  @backends [:claude, :agy, :codex]
+  @reasoning_efforts [:low, :medium, :high]
+
+  @derive {LiveSync.Watch, subscription_key: :project_id, table: "roles"}
   @primary_key {:id, UXID, autogenerate: true, prefix: "rol"}
   schema "roles" do
     belongs_to :project, Project, type: UXID
@@ -30,9 +31,9 @@ defmodule Rail.Roles.Schemas.Role do
     field :name, :string
     field :description, :string
     field :icon_name, :string
-    field :cli_backend, CliBackend, default: :claude
+    field :cli_backend, Ecto.Enum, values: @backends, default: :claude
     field :model, :string
-    field :reasoning_effort, ReasoningEffort
+    field :reasoning_effort, Ecto.Enum, values: @reasoning_efforts
     field :system_prompt, :string
     field :max_concurrent, :integer, default: 1
     field :position, :integer, default: 0
@@ -65,6 +66,9 @@ defmodule Rail.Roles.Schemas.Role do
 
   @doc "Returns the list of canonical pipeline stages for agent roles."
   def canonical_stages, do: @canonical_stages
+  def stages, do: @allowed_stages
+  def backends, do: @backends
+  def reasoning_efforts, do: @reasoning_efforts
 
   def changeset(role, attrs, project_id \\ nil) do
     role

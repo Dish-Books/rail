@@ -8,9 +8,6 @@ defmodule Rail.Pipeline.Schemas.Task do
 
   alias Rail.Artifacts.Schemas.Demo
   alias Rail.Artifacts.Schemas.Design
-  alias Rail.Domain.Enums.Mergeability
-  alias Rail.Domain.Enums.TaskStage
-  alias Rail.Domain.Enums.TaskStageState
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Question
@@ -18,6 +15,35 @@ defmodule Rail.Pipeline.Schemas.Task do
   alias Rail.Repo
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Users.Schemas.User
+
+  @stages [
+    :product,
+    :design,
+    :architect,
+    :engineer,
+    :review,
+    :qa,
+    :qa_lead,
+    :demo,
+    :ready_to_merge,
+    :merged
+  ]
+
+  @stage_states [
+    :idle,
+    :queued,
+    :running,
+    :paused_question,
+    :paused_chat,
+    :awaiting_approval,
+    :changes_requested,
+    :failed,
+    :canceled,
+    :blocked_rework,
+    :blocked
+  ]
+
+  @mergeabilities [:clean, :mergeable, :conflicting, :blocked, :unknown]
 
   @derive {LiveSync.Watch, subscription_key: :project_id, table: "tasks"}
   @primary_key {:id, UXID, autogenerate: true, prefix: "tsk"}
@@ -28,16 +54,16 @@ defmodule Rail.Pipeline.Schemas.Task do
 
     field :title, :string
     field :description, :string
-    field :stage, TaskStage, default: :product
-    field :stage_state, TaskStageState, default: :queued
+    field :stage, Ecto.Enum, values: @stages, default: :product
+    field :stage_state, Ecto.Enum, values: @stage_states, default: :queued
     field :worktree_name, :string
     field :worktree_path, :string
     field :pr_number, :integer
     field :pr_url, :string
-    field :mergeability, Mergeability
+    field :mergeability, Ecto.Enum, values: @mergeabilities
     field :pr_is_draft, :boolean
     field :is_rebasing, :boolean, default: false
-    field :stage_state_before_rebase, TaskStageState
+    field :stage_state_before_rebase, Ecto.Enum, values: @stage_states
     field :active_chat_role_id, :string
     field :question_id, :string
     field :error, :string
@@ -130,6 +156,139 @@ defmodule Rail.Pipeline.Schemas.Task do
       viewed_diff_files: %{}
     }
   end
+
+  def stages, do: @stages
+  def stage_states, do: @stage_states
+  def mergeabilities, do: @mergeabilities
+
+  def next_stage(:product), do: :design
+  def next_stage(:design), do: :architect
+  def next_stage(:architect), do: :engineer
+  def next_stage(:engineer), do: :review
+  def next_stage(:review), do: :qa
+  def next_stage(:qa), do: :qa_lead
+  def next_stage(:qa_lead), do: :demo
+  def next_stage(:demo), do: :ready_to_merge
+  def next_stage(:ready_to_merge), do: :merged
+  def next_stage(_other), do: nil
+
+  def prev_stage(:product), do: nil
+  def prev_stage(:design), do: :product
+  def prev_stage(:architect), do: :design
+  def prev_stage(:engineer), do: :architect
+  def prev_stage(:review), do: :engineer
+  def prev_stage(:qa), do: :review
+  def prev_stage(:qa_lead), do: :qa
+  def prev_stage(:demo), do: :qa_lead
+  def prev_stage(:ready_to_merge), do: :demo
+  def prev_stage(:merged), do: :ready_to_merge
+  def prev_stage(_other), do: nil
+
+  def previous_stage(stage), do: prev_stage(stage)
+
+  def advanceable?(stage) when is_atom(stage) do
+    stage in [
+      :product,
+      :design,
+      :architect,
+      :engineer,
+      :review,
+      :qa,
+      :qa_lead,
+      :demo,
+      :ready_to_merge
+    ]
+  end
+
+  def advanceable?(_other), do: false
+
+  def gate?(stage) when is_atom(stage), do: stage in [:review, :qa, :qa_lead]
+  def gate?(_other), do: false
+
+  def terminal_stage?(:merged), do: true
+  def terminal_stage?(_other), do: false
+
+  def terminal?(stage), do: terminal_stage?(stage)
+
+  def stage_index(:product), do: 0
+  def stage_index(:design), do: 1
+  def stage_index(:architect), do: 2
+  def stage_index(:engineer), do: 3
+  def stage_index(:review), do: 4
+  def stage_index(:qa), do: 5
+  def stage_index(:qa_lead), do: 6
+  def stage_index(:demo), do: 7
+  def stage_index(:ready_to_merge), do: 8
+  def stage_index(:merged), do: 9
+  def stage_index(_other), do: nil
+
+  def index(stage), do: stage_index(stage)
+
+  def before?(stage_a, stage_b) when is_atom(stage_a) and is_atom(stage_b) do
+    idx_a = stage_index(stage_a)
+    idx_b = stage_index(stage_b)
+
+    if idx_a && idx_b, do: idx_a < idx_b, else: false
+  end
+
+  def before?(_a, _b), do: false
+
+  def after?(stage_a, stage_b) when is_atom(stage_a) and is_atom(stage_b) do
+    idx_a = stage_index(stage_a)
+    idx_b = stage_index(stage_b)
+
+    if idx_a && idx_b, do: idx_a > idx_b, else: false
+  end
+
+  def after?(_a, _b), do: false
+
+  def stage_label(:product), do: "Product"
+  def stage_label(:design), do: "Design"
+  def stage_label(:architect), do: "Architect"
+  def stage_label(:engineer), do: "Engineer"
+  def stage_label(:review), do: "Review"
+  def stage_label(:qa), do: "QA"
+  def stage_label(:qa_lead), do: "QA Lead"
+  def stage_label(:demo), do: "Demo"
+  def stage_label(:ready_to_merge), do: "Ready to merge"
+  def stage_label(:merged), do: "Merged"
+  def stage_label(_other), do: nil
+
+  def cast_stage(stage) when is_atom(stage) do
+    if stage in @stages, do: {:ok, stage}, else: :error
+  end
+
+  def cast_stage(stage) when is_binary(stage) do
+    found = Enum.find(@stages, fn s -> Atom.to_string(s) == stage end)
+    if found, do: {:ok, found}, else: :error
+  end
+
+  def cast_stage(_other), do: :error
+
+  # Stage state helpers:
+  def paused?(state) when is_atom(state), do: state in [:paused_question, :paused_chat, :blocked]
+  def paused?(%__MODULE__{stage_state: state}), do: paused?(state)
+  def paused?(_other), do: false
+
+  def running?(:running), do: true
+  def running?(%__MODULE__{stage_state: :running}), do: true
+  def running?(_other), do: false
+
+  def queued?(:queued), do: true
+  def queued?(%__MODULE__{stage_state: :queued}), do: true
+  def queued?(_other), do: false
+
+  def awaiting_approval?(:awaiting_approval), do: true
+  def awaiting_approval?(%__MODULE__{stage_state: :awaiting_approval}), do: true
+  def awaiting_approval?(_other), do: false
+
+  def active?(state) when is_atom(state), do: state in [:running, :paused_chat]
+  def active?(%__MODULE__{stage_state: state}), do: active?(state)
+  def active?(_other), do: false
+
+  def terminal_state?(state) when is_atom(state), do: state in [:failed, :canceled]
+  def terminal_state?(%__MODULE__{stage_state: state}), do: terminal_state?(state)
+  def terminal_state?(_other), do: false
 
   @doc """
   Returns true if the task is currently busy with an in-flight run:

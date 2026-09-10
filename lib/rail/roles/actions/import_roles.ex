@@ -3,7 +3,7 @@ defmodule Rail.Roles.Actions.ImportRoles do
 
   import Ecto.Query
 
-  alias Rail.Domain.Enums.TaskStage
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
@@ -68,7 +68,7 @@ defmodule Rail.Roles.Actions.ImportRoles do
   end
 
   defp unbind_stage(project_id, stage_val) when is_binary(stage_val) do
-    case TaskStage.cast(stage_val) do
+    case Task.cast_stage(stage_val) do
       {:ok, stage_atom} ->
         Repo.update_all(from(r in Role, where: r.project_id == ^project_id and r.stage == ^stage_atom),
           set: [stage: nil]

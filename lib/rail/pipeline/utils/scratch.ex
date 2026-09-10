@@ -281,7 +281,7 @@ defmodule Rail.Pipeline.Utils.Scratch do
   defp normalize_stage(stage) when is_atom(stage), do: stage
 
   defp normalize_stage(stage) when is_binary(stage) do
-    case Rail.Domain.Enums.TaskStage.cast(stage) do
+    case Task.cast_stage(stage) do
       {:ok, atom_val} -> atom_val
       _error -> nil
     end

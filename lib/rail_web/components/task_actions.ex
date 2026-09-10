@@ -9,8 +9,8 @@ defmodule RailWeb.Components.TaskActions do
 
   import RailWeb.CoreComponents, only: [icon: 1]
 
-  alias Rail.Domain.Enums.TaskStage
   alias Rail.Domain.Formatters
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.TaskActionRunner
 
   attr :task, :any, required: true
@@ -196,7 +196,7 @@ defmodule RailWeb.Components.TaskActions do
       task.stage == :design and is_nil(get_picked_key(design, task)) ->
         build_design_pick_actions(task, design)
 
-      TaskStage.gate?(task.stage) ->
+      Task.gate?(task.stage) ->
         actions = [
           %{
             id: "action-send-back-to-engineer",
@@ -496,7 +496,7 @@ defmodule RailWeb.Components.TaskActions do
         trailing
       end
 
-    has_diff = is_binary(task.worktree_path) and not TaskStage.before?(task.stage, :engineer)
+    has_diff = is_binary(task.worktree_path) and not Task.before?(task.stage, :engineer)
 
     trailing =
       if has_diff do

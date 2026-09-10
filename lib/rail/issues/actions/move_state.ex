@@ -3,7 +3,6 @@ defmodule Rail.Issues.Actions.MoveState do
 
   import Rail.Issues.Utils.TokenResolver
 
-  alias Rail.Domain.Enums.IssueState
   alias Rail.Issues.Clients.Linear
   alias Rail.Issues.Schemas.Issue
   alias Rail.Repo
@@ -36,7 +35,7 @@ defmodule Rail.Issues.Actions.MoveState do
 
     case project.linear_state_ids[state_key] do
       state_id when is_binary(state_id) ->
-        label = IssueState.label(state_type) || Phoenix.Naming.humanize(state_key)
+        label = Issue.state_label(state_type) || Phoenix.Naming.humanize(state_key)
         {:ok, state_id, label}
 
       nil ->
@@ -49,7 +48,7 @@ defmodule Rail.Issues.Actions.MoveState do
 
     case Linear.workflow_states(token, team_id) do
       {:ok, states} ->
-        case Enum.find(states, fn s -> s.type == type_str or s.name == IssueState.label(state_type) end) do
+        case Enum.find(states, fn s -> s.type == type_str or s.name == Issue.state_label(state_type) end) do
           %{id: id, name: name} ->
             {:ok, id, name}
 

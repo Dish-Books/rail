@@ -4,17 +4,18 @@ defmodule Rail.Runs.Schemas.RoleRun do
   """
   use Rail.Schema
 
-  alias Rail.Domain.Enums.RunStatus
   alias Rail.Domain.TaskUsage
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
+
+  @statuses [:starting, :running, :finished, :adopted_dead, :blocked_on_input, :unwatched, :failed]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "rr"}
   schema "role_runs" do
     field :task_id, UXID
     field :role_id, UXID
     field :conversation_id, :string
-    field :status, RunStatus
+    field :status, Ecto.Enum, values: @statuses
     field :started_at, :utc_datetime_usec
     field :completed_at, :utc_datetime_usec
     field :exit_code, :integer
@@ -98,6 +99,8 @@ defmodule Rail.Runs.Schemas.RoleRun do
       pruned: false
     }
   end
+
+  def statuses, do: @statuses
 
   @doc """
   Returns true if this role run has started execution previously.

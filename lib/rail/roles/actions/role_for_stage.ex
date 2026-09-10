@@ -1,7 +1,7 @@
 defmodule Rail.Roles.Actions.RoleForStage do
   @moduledoc false
 
-  alias Rail.Domain.Enums.TaskStage
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
@@ -60,7 +60,7 @@ defmodule Rail.Roles.Actions.RoleForStage do
   defp normalize_stage(stage) when is_atom(stage) do
     cond do
       stage in Role.canonical_stages() -> stage
-      stage in TaskStage.values() -> stage
+      stage in Task.stages() -> stage
       true -> nil
     end
   end
