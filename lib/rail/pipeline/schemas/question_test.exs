@@ -6,15 +6,6 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
 
-  test "factory builds a valid question struct" do
-    assert %Question{
-             task_id: "tsk_" <> _id,
-             prompt: "Should we proceed" <> _prompt,
-             options: ["Option A", "Option B"],
-             status: :pending
-           } = Question.factory()
-  end
-
   test "changeset validates required fields" do
     assert %{
              task_id: ["can't be blank"],

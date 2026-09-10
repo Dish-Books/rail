@@ -3,17 +3,39 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Projects.Schemas.LinearWorkspace
+  alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
-  test "sync_issues/2 syncs new issues and maps state types" do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
+  setup do
+    scope = system_scope()
 
-    %Project{id: project_id} =
-      project = Repo.insert!(%{Project.factory() | linear_workspace_id: ws_id, linear_team_id: "team_sync_1"})
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(scope, %{
+        name: "Sync Issues Workspace",
+        external_id: "lin_ws_sync_issues",
+        token: "lin_api_token_sync_issues",
+        webhook_secret: "whsec_sync_issues"
+      })
+
+    {:ok, project} =
+      Projects.create_project(scope, %{
+        name: "Sync Issues Project",
+        github_repo: "org/sync-issues",
+        github_installation_id: 5501,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_sync_issues",
+        linear_team_key: "SYN",
+        clone_path: "/tmp/repos/sync-issues"
+      })
+
+    %{project: project, workspace: workspace}
+  end
+
+  test "sync_issues/2 syncs new issues and maps state types", %{project: project} do
+    %Project{id: project_id} = project
 
     nodes = [
       %{
@@ -124,20 +146,22 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
              Repo.get_by(Issue, external_id: "lin_sync_7")
   end
 
-  test "sync_issues/2 updates existing issues when already present" do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-    project = Repo.insert!(%{Project.factory() | linear_workspace_id: ws_id, linear_team_id: "team_sync_2"})
+  test "sync_issues/2 updates existing issues when already present", %{project: project} do
+    LinearMock.mock_issues_success([
+      %{
+        "id" => "lin_exist_1",
+        "identifier" => "ENG-200",
+        "title" => "Old Title",
+        "description" => "Old Desc",
+        "state" => %{"id" => "st_1", "name" => "Triage", "type" => "triage"},
+        "branchName" => "eng-200-branch",
+        "url" => "https://linear.app/issue/ENG-200",
+        "createdAt" => "2026-09-01T10:00:00.000Z",
+        "updatedAt" => "2026-09-01T10:00:00.000Z"
+      }
+    ])
 
-    %Issue{id: existing_id} =
-      Repo.insert!(%{
-        Issue.factory()
-        | project_id: project.id,
-          external_id: "lin_exist_1",
-          identifier: "ENG-200",
-          title: "Old Title",
-          state: :triage,
-          linear_updated_at: ~U[2026-09-01 10:00:00.000000Z]
-      })
+    {:ok, [%Issue{id: existing_id}]} = Issues.sync_issues(system_scope(), project)
 
     updated_node = %{
       "id" => "lin_exist_1",
@@ -159,10 +183,7 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
              Issues.sync_issues(scope, project)
   end
 
-  test "sync_issues/2 returns error on API failure" do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-    project = Repo.insert!(%{Project.factory() | linear_workspace_id: ws_id, linear_team_id: "team_sync_3"})
-
+  test "sync_issues/2 returns error on API failure", %{project: project} do
     LinearMock.mock_api_error(500, %{"error" => "Linear Server Down"})
 
     scope = Scope.for_system()
@@ -171,9 +192,7 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
              Issues.sync_issues(scope, project)
   end
 
-  test "sync_issues/2 returns :not_authorized for invalid scope" do
-    project = Repo.insert!(Project.factory())
-
+  test "sync_issues/2 returns :not_authorized for invalid scope", %{project: project} do
     assert {:error, :not_authorized} = Issues.sync_issues(nil, project)
     assert {:error, :not_authorized} = Issues.sync_issues(%Scope{user: nil}, project)
   end

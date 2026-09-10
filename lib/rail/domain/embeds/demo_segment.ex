@@ -42,15 +42,4 @@ defmodule Rail.Domain.Embeds.DemoSegment do
   end
 
   def duration_ms(%__MODULE__{}), do: 0
-
-  @doc "Builds a valid fixture struct for testing."
-  def factory do
-    %__MODULE__{
-      criterion_index: 1,
-      criterion: "User can sign in with GitHub",
-      outcome: :recorded,
-      note: nil,
-      frames: [DemoFrame.factory()]
-    }
-  end
 end

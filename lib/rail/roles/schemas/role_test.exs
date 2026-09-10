@@ -1,24 +1,34 @@
 defmodule Rail.Roles.Schemas.RoleTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Roles.Schemas.Role
 
-  test "factory builds a valid role struct" do
-    role = Role.factory()
+  setup do
+    scope = system_scope()
 
-    assert %Role{
-             project_id: "prj_" <> _id,
-             stage: :engineer,
-             name: "Engineer " <> _name,
-             cli_backend: :claude,
-             model: "claude-3-7-sonnet",
-             reasoning_effort: :high,
-             system_prompt: "You are an expert engineer.",
-             max_concurrent: 1,
-             position: 0
-           } = role
+    {:ok, project} =
+      Projects.create_project(scope, %{
+        name: "Role Schema Project",
+        github_repo: "org/role-schema",
+        github_installation_id: 4503,
+        linear_team_id: "team_role_schema",
+        linear_team_key: "RLS",
+        clone_path: "/tmp/repos/role-schema"
+      })
+
+    {:ok, role} =
+      Roles.create_role(scope, project, %{
+        name: "Engineer",
+        stage: :engineer,
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert engineer."
+      })
+
+    %{project: project, role: role}
   end
 
   test "canonical_stages/0 returns list of 9 stages" do
@@ -52,9 +62,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
            } = errors_on(changeset)
   end
 
-  test "changeset accepts valid attributes and sets defaults" do
-    project = create_test_project()
-
+  test "changeset accepts valid attributes and sets defaults", %{project: project} do
     attrs = %{
       name: "Architect Agent",
       model: "claude-3-7-sonnet",
@@ -69,9 +77,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
     assert get_field(changeset, :position) == 0
   end
 
-  test "changeset validates numeric bounds" do
-    project = create_test_project()
-
+  test "changeset validates numeric bounds", %{project: project} do
     attrs = %{
       name: "Role with Invalid Bounds",
       model: "claude-3-7-sonnet",
@@ -88,9 +94,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
            } = errors_on(changeset)
   end
 
-  test "changeset validates enum types" do
-    project = create_test_project()
-
+  test "changeset validates enum types", %{project: project} do
     attrs = %{
       name: "Invalid Enums",
       model: "model-1",
@@ -109,22 +113,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
            } = errors_on(changeset)
   end
 
-  test "changeset enforces partial unique index on project_id and stage" do
-    project = create_test_project()
-
-    assert {:ok, %Role{stage: :engineer}} =
-             %Role{}
-             |> Role.changeset(
-               %{
-                 name: "Engineer 1",
-                 stage: :engineer,
-                 model: "claude-3-7-sonnet",
-                 system_prompt: "Code"
-               },
-               project.id
-             )
-             |> Repo.insert()
-
+  test "changeset enforces partial unique index on project_id and stage", %{project: project} do
     assert {:error, changeset} =
              %Role{}
              |> Role.changeset(
@@ -141,9 +130,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
     assert %{stage: ["has already been taken"]} = errors_on(changeset)
   end
 
-  test "allows multiple unbound roles with stage: nil in the same project" do
-    project = create_test_project()
-
+  test "allows multiple unbound roles with stage: nil in the same project", %{project: project} do
     assert {:ok, %Role{stage: nil, name: "Unbound 1"}} =
              %Role{}
              |> Role.changeset(
@@ -161,8 +148,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
              |> Repo.insert()
   end
 
-  test "ignores project_id passed in attrs to prevent unverified overrides" do
-    project1 = create_test_project()
+  test "ignores project_id passed in attrs to prevent unverified overrides", %{project: project} do
     other_project_id = "prj_000000000000000000000000"
 
     attrs = %{
@@ -172,8 +158,8 @@ defmodule Rail.Roles.Schemas.RoleTest do
       project_id: other_project_id
     }
 
-    changeset = Role.changeset(%Role{}, attrs, project1.id)
-    assert get_field(changeset, :project_id) == project1.id
+    changeset = Role.changeset(%Role{}, attrs, project.id)
+    assert get_field(changeset, :project_id) == project.id
   end
 
   test "validates foreign key on project_id" do
@@ -191,8 +177,8 @@ defmodule Rail.Roles.Schemas.RoleTest do
     assert %{project_id: ["does not exist"]} = errors_on(changeset)
   end
 
-  test "preloads belongs_to project" do
-    %Role{project_id: project_id} = role = create_test_role()
+  test "preloads belongs_to project", %{role: role} do
+    %Role{project_id: project_id} = role
     preloaded = Repo.preload(role, :project)
     assert %Project{id: ^project_id} = preloaded.project
   end

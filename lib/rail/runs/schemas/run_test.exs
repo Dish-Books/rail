@@ -4,19 +4,6 @@ defmodule Rail.Runs.Schemas.RunTest do
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
 
-  test "factory/0 returns a valid struct" do
-    run = Run.factory()
-
-    assert is_binary(run.role_run_id) and byte_size(run.role_run_id) > 0
-    assert is_binary(run.task_id) and byte_size(run.task_id) > 0
-    assert run.kind == :stage
-    assert run.status == :starting
-    assert is_binary(run.stream_path) and byte_size(run.stream_path) > 0
-    assert is_binary(run.node) and byte_size(run.node) > 0
-    assert is_binary(run.boot_id) and byte_size(run.boot_id) > 0
-    assert %DateTime{} = run.started_at
-  end
-
   test "changeset/2 with valid attributes" do
     role_run_id = UXID.generate!(prefix: "rr")
     task_id = UXID.generate!(prefix: "tsk")

@@ -57,24 +57,6 @@ defmodule Rail.Issues.Schemas.Issue do
     |> foreign_key_constraint(:project_id)
   end
 
-  def factory do
-    id = System.unique_integer([:positive])
-
-    %__MODULE__{
-      external_id: "lin_iss_#{id}",
-      identifier: "ENG-#{id}",
-      title: "Issue #{id}",
-      description: "Description for issue #{id}",
-      priority: :medium,
-      state: :triage,
-      state_name: "Triage",
-      branch_name: "eng-#{id}-branch",
-      url: "https://linear.app/issue/ENG-#{id}",
-      linear_created_at: DateTime.utc_now(),
-      linear_updated_at: DateTime.utc_now()
-    }
-  end
-
   def priorities, do: @priorities
   def states, do: @states
 

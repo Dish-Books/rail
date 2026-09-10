@@ -80,24 +80,6 @@ defmodule Rail.Roles.Schemas.Role do
     |> foreign_key_constraint(:project_id)
   end
 
-  def factory do
-    id = System.unique_integer([:positive])
-
-    %__MODULE__{
-      project_id: UXID.generate!(prefix: "prj"),
-      stage: :engineer,
-      name: "Engineer #{id}",
-      description: "Writes tested code for issue #{id}",
-      icon_name: "pi-cpu",
-      cli_backend: :claude,
-      model: "claude-3-7-sonnet",
-      reasoning_effort: :high,
-      system_prompt: "You are an expert engineer.",
-      max_concurrent: 1,
-      position: 0
-    }
-  end
-
   defp maybe_put_project_id(changeset, nil), do: changeset
   defp maybe_put_project_id(changeset, project_id), do: put_change(changeset, :project_id, project_id)
 end

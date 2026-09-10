@@ -4,19 +4,6 @@ defmodule Rail.Runs.Schemas.RoleRunTest do
   alias Rail.Domain.TaskUsage
   alias Rail.Runs.Schemas.RoleRun
 
-  test "factory/0 returns a valid struct" do
-    role_run = RoleRun.factory()
-
-    assert is_binary(role_run.task_id) and byte_size(role_run.task_id) > 0
-    assert is_binary(role_run.role_id) and byte_size(role_run.role_id) > 0
-    assert role_run.status == :running
-    assert %DateTime{} = role_run.started_at
-    assert role_run.attempts == 0
-    assert role_run.attempt_log_lines == 0
-    assert role_run.auto_retries == 0
-    refute role_run.pruned
-  end
-
   test "changeset/2 with valid attributes" do
     task_id = UXID.generate!(prefix: "tsk")
     role_id = UXID.generate!(prefix: "rol")

@@ -2,16 +2,32 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
-  alias Rail.Projects.Schemas.LinearWorkspace
-  alias Rail.Projects.Schemas.Project
-  alias Rail.Repo
+  alias Rail.Projects
   alias Rail.Scope
-  alias Rail.Users.Schemas.User
+  alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
   test "upload_asset/4 uploads binary data using workspace token" do
-    workspace = Repo.insert!(LinearWorkspace.factory())
-    project = Repo.insert!(%{Project.factory() | linear_workspace_id: workspace.id})
+    scope = Scope.for_system()
+
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(scope, %{
+        name: "Upload Asset Workspace",
+        external_id: "lin_ws_upload_asset",
+        token: "lin_api_token_upload_asset",
+        webhook_secret: "whsec_upload_asset"
+      })
+
+    {:ok, project} =
+      Projects.create_project(scope, %{
+        name: "Upload Asset Project",
+        github_repo: "org/upload-asset",
+        github_installation_id: 5201,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_upload_asset",
+        linear_team_key: "UPA",
+        clone_path: "/tmp/repos/upload-asset"
+      })
 
     LinearMock.mock_file_upload_success(
       upload_url: "https://api.linear.app/upload/asset_111",
@@ -19,7 +35,6 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
       asset_id: "asset_111"
     )
 
-    scope = Scope.for_system()
     binary_data = "PNG_CONTENT"
 
     assert {:ok,
@@ -48,8 +63,21 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
   end
 
   test "upload_asset/4 works with user scope" do
-    _workspace = Repo.insert!(LinearWorkspace.factory())
-    user = Repo.insert!(User.factory())
+    {:ok, _workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Upload Asset User Workspace",
+        external_id: "lin_ws_upload_user",
+        token: "lin_api_token_upload_user",
+        webhook_secret: "whsec_upload_user"
+      })
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_upload_asset",
+        login: "upload_asset_user",
+        email: "upload_asset@example.com"
+      })
+
     scope = Scope.for_user(user)
 
     LinearMock.mock_file_upload_success(

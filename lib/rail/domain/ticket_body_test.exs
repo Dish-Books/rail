@@ -12,12 +12,6 @@ defmodule Rail.Domain.TicketBodyTest do
     assert "can't be blank" in errors_on(invalid_changeset).title
   end
 
-  test "factory/0 returns a valid struct" do
-    ticket = TicketBody.factory()
-    assert ticket.title == "Add user profile settings"
-    assert ticket.description =~ "Users should be able to update their email"
-  end
-
   test "parse/1 extracts title from first line starting with # and trims body" do
     content = """
     # Update navigation header

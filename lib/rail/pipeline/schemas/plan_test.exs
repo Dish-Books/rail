@@ -5,14 +5,6 @@ defmodule Rail.Pipeline.Schemas.PlanTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
 
-  test "factory builds a valid plan struct" do
-    assert %Plan{
-             task_id: "tsk_" <> _id,
-             content: "# Implementation Plan" <> _content,
-             captured_at: %DateTime{}
-           } = Plan.factory()
-  end
-
   test "changeset validates required fields" do
     assert %{
              task_id: ["can't be blank"],

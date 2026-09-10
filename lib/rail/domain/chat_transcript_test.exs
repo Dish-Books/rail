@@ -5,8 +5,16 @@ defmodule Rail.Domain.ChatTranscriptTest do
   alias Rail.Domain.ChatTurn
   alias Rail.Domain.HandoffLine
 
-  test "changeset/2 and factory/0" do
-    transcript = ChatTranscript.factory()
+  test "changeset/2 counts turns" do
+    turn = %ChatTurn{
+      role: :user,
+      author: :human,
+      content: "Please update the primary button color.",
+      text: "Please update the primary button color.",
+      timestamp: DateTime.utc_now()
+    }
+
+    transcript = %ChatTranscript{turns: [turn], messages: [turn]}
     assert ChatTranscript.count(transcript) == 1
     refute ChatTranscript.empty?(transcript)
 

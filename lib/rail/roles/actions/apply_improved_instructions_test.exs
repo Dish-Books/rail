@@ -1,13 +1,37 @@
 defmodule Rail.Roles.Actions.ApplyImprovedInstructionsTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
 
-  test "applies improved instructions with admin scope" do
+  setup do
+    scope = system_scope()
+
+    {:ok, project} =
+      Projects.create_project(scope, %{
+        name: "Apply Instructions Project",
+        github_repo: "org/apply-instructions",
+        github_installation_id: 4404,
+        linear_team_id: "team_apply_instructions",
+        linear_team_key: "API",
+        clone_path: "/tmp/repos/apply-instructions"
+      })
+
+    {:ok, role} =
+      Roles.create_role(scope, project, %{
+        name: "Engineer",
+        stage: :engineer,
+        model: "claude-3-7-sonnet",
+        system_prompt: "Old instructions"
+      })
+
+    %{project: project, role: role}
+  end
+
+  test "applies improved instructions with admin scope", %{role: role} do
     scope = Scope.for_user(%{admin: true})
-    role = create_test_role(system_prompt: "Old instructions")
 
     new_instructions = "Comprehensive revised system prompt instructions."
 
@@ -17,9 +41,8 @@ defmodule Rail.Roles.Actions.ApplyImprovedInstructionsTest do
     assert {:ok, %Role{system_prompt: ^new_instructions}} = Roles.get_role(scope, role.id)
   end
 
-  test "applies improved instructions with system scope" do
+  test "applies improved instructions with system scope", %{role: role} do
     scope = Scope.for_system()
-    role = create_test_role(system_prompt: "Original")
 
     revised = "System approved prompt."
 
@@ -27,17 +50,14 @@ defmodule Rail.Roles.Actions.ApplyImprovedInstructionsTest do
              Roles.apply_improved_instructions(scope, role, revised)
   end
 
-  test "returns not authorized for non-admin scope" do
+  test "returns not authorized for non-admin scope", %{role: role} do
     scope = Scope.for_user(%{admin: false})
-    role = create_test_role()
 
     assert {:error, :not_authorized} =
              Roles.apply_improved_instructions(scope, role, "Blocked instructions")
   end
 
-  test "returns not authorized for nil scope" do
-    role = create_test_role()
-
+  test "returns not authorized for nil scope", %{role: role} do
     assert {:error, :not_authorized} =
              Roles.apply_improved_instructions(nil, role, "Blocked instructions")
   end

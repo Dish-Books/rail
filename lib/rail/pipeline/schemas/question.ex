@@ -53,20 +53,6 @@ defmodule Rail.Pipeline.Schemas.Question do
     |> foreign_key_constraint(:role_id)
   end
 
-  @doc """
-  Builds a valid fixture struct for testing.
-  """
-  def factory do
-    id = System.unique_integer([:positive])
-
-    %__MODULE__{
-      task_id: UXID.generate!(prefix: "tsk"),
-      prompt: "Should we proceed with option A or option B? #{id}",
-      options: ["Option A", "Option B"],
-      status: :pending
-    }
-  end
-
   def statuses, do: @statuses
 
   def pending?(:pending), do: true

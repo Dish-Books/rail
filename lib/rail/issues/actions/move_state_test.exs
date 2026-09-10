@@ -3,32 +3,50 @@ defmodule Rail.Issues.Actions.MoveStateTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Projects.Schemas.LinearWorkspace
+  alias Rail.Projects
   alias Rail.Projects.Schemas.Project
-  alias Rail.Repo
   alias Rail.Scope
-  alias Rail.Users.Schemas.User
+  alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
-  test "move_state/5 moves state using cached state ids" do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-
-    project =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          linear_team_id: "team_move_1",
-          linear_state_ids: %{"done" => "st_done_cached"}
+  setup do
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Move State Workspace",
+        external_id: "lin_ws_move_state",
+        token: "lin_api_token_move_state",
+        webhook_secret: "whsec_move_state"
       })
 
-    issue =
-      Repo.insert!(%{
-        Issue.factory()
-        | project_id: project.id,
-          external_id: "lin_move_1",
-          identifier: "ENG-1001",
-          state: :in_progress
+    %{workspace: workspace}
+  end
+
+  test "move_state/5 moves state using cached state ids", %{workspace: workspace} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Move State Cached",
+        github_repo: "org/move-state-cached",
+        github_installation_id: 6001,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_move_state_cached",
+        linear_team_key: "MV1",
+        clone_path: "/tmp/repos/move-state-cached",
+        linear_state_ids: %{"done" => "st_done_cached"}
       })
+
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_move_1",
+      "identifier" => "ENG-1001",
+      "title" => "Cached Move Issue",
+      "description" => "Cached Move Issue",
+      "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"},
+      "branchName" => nil,
+      "url" => "https://linear.app/issue/ENG-1001",
+      "createdAt" => "2026-09-01T10:00:00.000Z",
+      "updatedAt" => "2026-09-01T10:00:00.000Z"
+    })
+
+    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Cached Move Issue")
 
     LinearMock.mock_update_issue_success(%{
       "id" => "lin_move_1",
@@ -48,31 +66,47 @@ defmodule Rail.Issues.Actions.MoveStateTest do
              Issues.move_state(scope, project, issue, :done)
   end
 
-  test "move_state/5 resolves state from Linear when not cached for triage, backlog, done, in_progress, and fallback" do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-
-    project =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          linear_team_id: "team_move_2",
-          linear_state_ids: %{}
+  test "move_state/5 resolves state from Linear when not cached for triage, backlog, done, in_progress, and fallback", %{
+    workspace: workspace
+  } do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Move State Fetched",
+        github_repo: "org/move-state-fetched",
+        github_installation_id: 6002,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_move_state_fetched",
+        linear_team_key: "MV2",
+        clone_path: "/tmp/repos/move-state-fetched",
+        linear_state_ids: %{}
       })
 
-    issue =
-      Repo.insert!(%{
-        Issue.factory()
-        | project_id: project.id,
-          external_id: "lin_move_2",
-          identifier: "ENG-1002",
-          state: :triage
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_move_2",
+      "identifier" => "ENG-1002",
+      "title" => "Fetched Move Issue",
+      "description" => "Fetched Move Issue",
+      "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"},
+      "branchName" => nil,
+      "url" => "https://linear.app/issue/ENG-1002",
+      "createdAt" => "2026-09-01T10:00:00.000Z",
+      "updatedAt" => "2026-09-01T10:00:00.000Z"
+    })
+
+    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Fetched Move Issue")
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_move_state_user",
+        login: "move_state_user",
+        email: "move_state_user@example.com"
       })
 
-    user =
-      Repo.insert!(%{
-        User.factory()
-        | linear_access_token: "lin_move_user_tok",
-          linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
+    {:ok, user} =
+      Users.link_linear(user, %{
+        access_token: "lin_move_user_tok",
+        refresh_token: "lin_move_user_refresh",
+        expires_in: 3600
       })
 
     scope = Scope.for_user(user)
@@ -166,18 +200,33 @@ defmodule Rail.Issues.Actions.MoveStateTest do
              Issues.move_state(scope, project, issue, :custom)
   end
 
-  test "move_state/5 returns error when Linear update_issue mutation fails" do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-
-    project =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          linear_team_id: "team_move_err",
-          linear_state_ids: %{"done" => "st_done"}
+  test "move_state/5 returns error when Linear update_issue mutation fails", %{workspace: workspace} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Move State Mutation Error",
+        github_repo: "org/move-state-mut-err",
+        github_installation_id: 6003,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_move_state_mut_err",
+        linear_team_key: "MV3",
+        clone_path: "/tmp/repos/move-state-mut-err",
+        linear_state_ids: %{"done" => "st_done"}
       })
 
-    issue = Repo.insert!(%{Issue.factory() | project_id: project.id, external_id: "lin_move_err"})
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_move_err",
+      "identifier" => "ENG-1003",
+      "title" => "Mutation Error Issue",
+      "description" => "Mutation Error Issue",
+      "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"},
+      "branchName" => nil,
+      "url" => "https://linear.app/issue/ENG-1003",
+      "createdAt" => "2026-09-01T10:00:00.000Z",
+      "updatedAt" => "2026-09-01T10:00:00.000Z"
+    })
+
+    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Mutation Error Issue")
+
     LinearMock.mock_mutation_failure("issueUpdate")
     scope = Scope.for_system()
 
@@ -185,18 +234,33 @@ defmodule Rail.Issues.Actions.MoveStateTest do
              Issues.move_state(scope, project, issue, :done)
   end
 
-  test "move_state/5 returns error when Linear workflow_states fails" do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-
-    project =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          linear_team_id: "team_move_ws_err",
-          linear_state_ids: %{}
+  test "move_state/5 returns error when Linear workflow_states fails", %{workspace: workspace} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Move State Workflow Error",
+        github_repo: "org/move-state-ws-err",
+        github_installation_id: 6004,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_move_state_ws_err",
+        linear_team_key: "MV4",
+        clone_path: "/tmp/repos/move-state-ws-err",
+        linear_state_ids: %{}
       })
 
-    issue = Repo.insert!(%{Issue.factory() | project_id: project.id, external_id: "lin_move_ws_err"})
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_move_ws_err",
+      "identifier" => "ENG-1004",
+      "title" => "Workflow Error Issue",
+      "description" => "Workflow Error Issue",
+      "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"},
+      "branchName" => nil,
+      "url" => "https://linear.app/issue/ENG-1004",
+      "createdAt" => "2026-09-01T10:00:00.000Z",
+      "updatedAt" => "2026-09-01T10:00:00.000Z"
+    })
+
+    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Workflow Error Issue")
+
     LinearMock.mock_graphql_error([%{"message" => "Workflow states error"}])
     scope = Scope.for_system()
 
@@ -204,18 +268,32 @@ defmodule Rail.Issues.Actions.MoveStateTest do
              Issues.move_state(scope, project, issue, :done)
   end
 
-  test "move_state/5 returns error when state cannot be resolved from Linear" do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-
-    project =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          linear_team_id: "team_move_3",
-          linear_state_ids: %{}
+  test "move_state/5 returns error when state cannot be resolved from Linear", %{workspace: workspace} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Move State Unresolved",
+        github_repo: "org/move-state-unresolved",
+        github_installation_id: 6005,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_move_state_unresolved",
+        linear_team_key: "MV5",
+        clone_path: "/tmp/repos/move-state-unresolved",
+        linear_state_ids: %{}
       })
 
-    issue = Repo.insert!(%{Issue.factory() | project_id: project.id, external_id: "lin_move_3"})
+    LinearMock.mock_create_issue_success(%{
+      "id" => "lin_move_3",
+      "identifier" => "ENG-1005",
+      "title" => "Unresolved Move Issue",
+      "description" => "Unresolved Move Issue",
+      "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"},
+      "branchName" => nil,
+      "url" => "https://linear.app/issue/ENG-1005",
+      "createdAt" => "2026-09-01T10:00:00.000Z",
+      "updatedAt" => "2026-09-01T10:00:00.000Z"
+    })
+
+    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Unresolved Move Issue")
 
     LinearMock.mock_workflow_states_success([])
 
@@ -226,7 +304,7 @@ defmodule Rail.Issues.Actions.MoveStateTest do
   end
 
   test "move_state/5 returns :not_authorized for nil scope" do
-    project = Repo.insert!(Project.factory())
+    project = %Project{id: "prj_move_state_unauthorized"}
     issue = %Issue{project_id: project.id, external_id: "lin_1"}
     assert {:error, :not_authorized} = Issues.move_state(nil, project, issue, :done)
   end

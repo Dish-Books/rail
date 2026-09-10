@@ -1,5 +1,6 @@
 Mimic.copy(Date)
 Mimic.copy(DateTime)
+Mimic.copy(File)
 Mimic.copy(Rail.Users)
 Mimic.copy(Rail.Issues)
 Mimic.copy(Rail.Backends)

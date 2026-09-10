@@ -3,14 +3,6 @@ defmodule Rail.Domain.Embeds.QaArtifactTest do
 
   alias Rail.Domain.Embeds.QaArtifact
 
-  test "factory/0 builds a valid struct" do
-    artifact = QaArtifact.factory()
-    assert artifact.name == "test_output.txt"
-    assert artifact.kind == :text
-    assert artifact.text == "All 12 checks passed"
-    assert artifact.url == nil
-  end
-
   test "changeset/2 validates required name and kind enum" do
     changeset = QaArtifact.changeset(%QaArtifact{}, %{})
     refute changeset.valid?
@@ -32,7 +24,7 @@ defmodule Rail.Domain.Embeds.QaArtifactTest do
   end
 
   test "serializes to JSON" do
-    artifact = QaArtifact.factory()
+    artifact = %QaArtifact{name: "test_output.txt", kind: :text, text: "All 12 checks passed", url: nil}
     assert {:ok, json} = Jason.encode(artifact)
     assert {:ok, decoded} = Jason.decode(json)
     assert decoded["name"] == "test_output.txt"

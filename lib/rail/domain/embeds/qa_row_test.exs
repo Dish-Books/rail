@@ -4,18 +4,6 @@ defmodule Rail.Domain.Embeds.QaRowTest do
   alias Rail.Domain.Embeds.QaArtifact
   alias Rail.Domain.Embeds.QaRow
 
-  test "factory/0 builds a valid struct" do
-    row = QaRow.factory()
-    assert row.id == "check_1"
-    assert row.check == "Login flow succeeds"
-    assert row.result == :pass
-    assert row.severity == :blocker
-    assert row.caused_by_change == true
-    assert row.command == "mix test"
-    assert row.exit_code == 0
-    assert [%QaArtifact{name: "test_output.txt"}] = row.artifacts
-  end
-
   test "changeset/2 validates required fields and casts embedded artifacts" do
     changeset = QaRow.changeset(%QaRow{}, %{})
     refute changeset.valid?
@@ -61,7 +49,17 @@ defmodule Rail.Domain.Embeds.QaRowTest do
   end
 
   test "serializes to JSON" do
-    row = QaRow.factory()
+    row = %QaRow{
+      id: "check_1",
+      check: "Login flow succeeds",
+      result: :pass,
+      severity: :blocker,
+      caused_by_change: true,
+      command: "mix test",
+      exit_code: 0,
+      note: nil,
+      artifacts: [%QaArtifact{name: "test_output.txt", kind: :text, text: "All 12 checks passed", url: nil}]
+    }
     assert {:ok, json} = Jason.encode(row)
     assert {:ok, decoded} = Jason.decode(json)
     assert decoded["id"] == "check_1"

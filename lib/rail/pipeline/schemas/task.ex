@@ -139,28 +139,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     |> foreign_key_constraint(:owner_user_id)
   end
 
-  @doc """
-  Builds a valid fixture struct for testing.
-  """
-  def factory do
-    id = System.unique_integer([:positive])
-
-    %__MODULE__{
-      project_id: UXID.generate!(prefix: "prj"),
-      title: "Task #{id}",
-      description: "Description for task #{id}",
-      stage: :product,
-      stage_state: :queued,
-      worktree_name: "task-#{id}",
-      is_rebasing: false,
-      rework_cycles: 0,
-      rework_budget_base: 0,
-      rework_cycles_by_gate: %{},
-      outstanding_reports: [],
-      viewed_diff_files: %{}
-    }
-  end
-
   def stages, do: @stages
   def stage_states, do: @stage_states
   def mergeabilities, do: @mergeabilities

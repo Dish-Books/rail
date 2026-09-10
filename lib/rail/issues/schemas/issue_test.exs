@@ -2,6 +2,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
 
@@ -54,21 +55,16 @@ defmodule Rail.Issues.Schemas.IssueTest do
     assert errors_on(changeset)[:project_id] == ["can't be blank"]
   end
 
-  test "factory returns valid struct" do
-    issue = Issue.factory()
-
-    assert byte_size(issue.external_id) > 0
-    assert byte_size(issue.identifier) > 0
-    assert byte_size(issue.title) > 0
-    assert issue.priority == :medium
-    assert issue.state == :triage
-    assert issue.state_name == "Triage"
-    assert byte_size(issue.url) > 0
-    assert %DateTime{} = issue.linear_created_at
-  end
-
   test "persists to database with valid foreign key and enforces unique external_id" do
-    %Project{id: project_id} = Repo.insert!(Project.factory())
+    {:ok, %Project{id: project_id}} =
+      Projects.create_project(system_scope(), %{
+        name: "Issue Schema Project",
+        github_repo: "org/issue-schema",
+        github_installation_id: 5001,
+        linear_team_id: "team_issue_schema",
+        linear_team_key: "ISS",
+        clone_path: "/tmp/repos/issue-schema"
+      })
 
     issue_attrs = %{
       external_id: "lin_unique_test_1",

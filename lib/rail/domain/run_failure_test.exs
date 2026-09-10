@@ -12,14 +12,6 @@ defmodule Rail.Domain.RunFailureTest do
     assert "can't be blank" in errors_on(invalid_changeset).type
   end
 
-  test "factory/0 returns a valid struct" do
-    failure = RunFailure.factory()
-    assert failure.type == :transient
-    assert failure.message == "503 Service Unavailable"
-    assert failure.retryable == true
-    assert failure.attempt == 1
-  end
-
   test "constants max_auto_retries/0 and retry_backoff/0" do
     assert RunFailure.max_auto_retries() == 2
     assert RunFailure.retry_backoff() == [15, 60]

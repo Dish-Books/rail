@@ -4,14 +4,6 @@ defmodule Rail.Runs.Schemas.RunEventTest do
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.RunEvent
 
-  test "factory/0 returns a valid struct" do
-    event = RunEvent.factory()
-
-    assert is_binary(event.role_run_id) and byte_size(event.role_run_id) > 0
-    assert event.seq == 1
-    assert event.line == ~s({"type":"init"})
-  end
-
   test "changeset/2 with valid attributes" do
     role_run_id = UXID.generate!(prefix: "rr")
 

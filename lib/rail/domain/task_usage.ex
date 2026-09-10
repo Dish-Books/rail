@@ -50,18 +50,6 @@ defmodule Rail.Domain.TaskUsage do
     }
   end
 
-  @doc "Builds a valid TaskUsage struct fixture for testing."
-  def factory do
-    %__MODULE__{
-      input_tokens: 1_000,
-      output_tokens: 500,
-      cache_read_input_tokens: 200,
-      cache_creation_input_tokens: 100,
-      total_cost: Decimal.new("0.025"),
-      currency: "USD"
-    }
-  end
-
   @doc "Returns true if all token counters are 0 and total cost is nil or 0."
   def zero?(%__MODULE__{} = usage) do
     total_tokens(usage) == 0 and (is_nil(usage.total_cost) or Decimal.equal?(usage.total_cost, 0))

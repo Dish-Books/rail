@@ -38,12 +38,4 @@ defmodule Rail.Users.Schemas.UserToken do
   def by_token_and_context_query(token, context) when is_binary(token) and is_binary(context) do
     from __MODULE__, where: [token: ^token, context: ^context]
   end
-
-  def factory do
-    %__MODULE__{
-      token: :crypto.strong_rand_bytes(@rand_size),
-      context: "session",
-      user: User.factory()
-    }
-  end
 end

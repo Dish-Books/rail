@@ -27,15 +27,4 @@ defmodule Rail.Runs.Schemas.RunEvent do
     |> validate_required(@required_fields)
     |> foreign_key_constraint(:role_run_id)
   end
-
-  @doc """
-  Builds a valid fixture struct for tests.
-  """
-  def factory do
-    %__MODULE__{
-      role_run_id: UXID.generate!(prefix: "rr"),
-      seq: 1,
-      line: ~s({"type":"init"})
-    }
-  end
 end

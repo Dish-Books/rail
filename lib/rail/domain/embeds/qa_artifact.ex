@@ -28,15 +28,5 @@ defmodule Rail.Domain.Embeds.QaArtifact do
     |> validate_required(@required_fields)
   end
 
-  @doc "Builds a valid fixture struct for testing."
-  def factory do
-    %__MODULE__{
-      name: "test_output.txt",
-      kind: :text,
-      text: "All 12 checks passed",
-      url: nil
-    }
-  end
-
   def kinds, do: @kinds
 end

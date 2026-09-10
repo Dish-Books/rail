@@ -25,13 +25,4 @@ defmodule Rail.Domain.Embeds.CliAccountGroup do
     |> validate_required(@required_fields)
     |> validate_number(:count, greater_than_or_equal_to: 0)
   end
-
-  @doc "Builds a valid fixture struct for testing."
-  def factory do
-    %__MODULE__{
-      name: "Gemini Models",
-      count: 3,
-      details: %{"window" => "5-hour", "remaining_percent" => 100.0}
-    }
-  end
 end

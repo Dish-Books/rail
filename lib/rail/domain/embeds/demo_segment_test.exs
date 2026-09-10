@@ -4,14 +4,6 @@ defmodule Rail.Domain.Embeds.DemoSegmentTest do
   alias Rail.Domain.Embeds.DemoFrame
   alias Rail.Domain.Embeds.DemoSegment
 
-  test "factory/0 builds a valid struct with embedded frame" do
-    segment = DemoSegment.factory()
-    assert segment.criterion_index == 1
-    assert segment.criterion == "User can sign in with GitHub"
-    assert segment.outcome == :recorded
-    assert [%DemoFrame{url: "https://linear.app/assets/frame_1.png"}] = segment.frames
-  end
-
   test "changeset/2 validates required fields, index, and casts embedded frames" do
     changeset = DemoSegment.changeset(%DemoSegment{}, %{})
     refute changeset.valid?
@@ -67,7 +59,13 @@ defmodule Rail.Domain.Embeds.DemoSegmentTest do
   end
 
   test "serializes to JSON" do
-    segment = DemoSegment.factory()
+    segment = %DemoSegment{
+      criterion_index: 1,
+      criterion: "User can sign in with GitHub",
+      outcome: :recorded,
+      note: nil,
+      frames: [%DemoFrame{url: "https://linear.app/assets/frame_1.png", linear_asset_id: "asset_f1", hold_ms: 1000, caption: "Sign-in screen displayed"}]
+    }
     assert {:ok, json} = Jason.encode(segment)
     assert {:ok, decoded} = Jason.decode(json)
     assert decoded["criterion_index"] == 1

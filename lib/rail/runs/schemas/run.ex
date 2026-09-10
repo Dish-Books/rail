@@ -57,22 +57,6 @@ defmodule Rail.Runs.Schemas.Run do
     |> foreign_key_constraint(:role_run_id)
   end
 
-  @doc """
-  Builds a valid fixture struct for tests.
-  """
-  def factory do
-    %__MODULE__{
-      role_run_id: UXID.generate!(prefix: "rr"),
-      task_id: UXID.generate!(prefix: "tsk"),
-      kind: :stage,
-      stream_path: "/tmp/rail/streams/test.ndjson",
-      node: to_string(Node.self()),
-      boot_id: UXID.generate!(),
-      status: :starting,
-      started_at: DateTime.utc_now()
-    }
-  end
-
   def kinds, do: @kinds
   def statuses, do: @statuses
 end

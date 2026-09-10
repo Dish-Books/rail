@@ -52,28 +52,6 @@ defmodule Rail.Projects.Schemas.Project do
     |> foreign_key_constraint(:linear_workspace_id)
   end
 
-  def factory do
-    id = System.unique_integer([:positive])
-
-    %__MODULE__{
-      name: "Project #{id}",
-      github_repo: "org/repo-#{id}",
-      github_installation_id: id,
-      default_branch: "main",
-      linear_team_id: "team_#{id}",
-      linear_team_key: "PRJ#{id}",
-      linear_state_ids: %{
-        "triage" => "state_triage_#{id}",
-        "backlog" => "state_backlog_#{id}",
-        "in_progress" => "state_in_progress_#{id}",
-        "done" => "state_done_#{id}",
-        "canceled" => "state_canceled_#{id}"
-      },
-      clone_path: "/tmp/repos/repo-#{id}",
-      active: true
-    }
-  end
-
   defp maybe_clear_default_branch(changeset, attrs) do
     val =
       case attrs do

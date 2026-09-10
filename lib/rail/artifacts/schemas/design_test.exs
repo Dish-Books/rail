@@ -4,13 +4,7 @@ defmodule Rail.Artifacts.Schemas.DesignTest do
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Domain.Embeds.DesignDirection
 
-  describe "changeset/2 and factory/0" do
-    test "factory generates valid design" do
-      design = Design.factory()
-      assert %Design{version: 1, picked_key: "direction_a"} = design
-      assert [%DesignDirection{key: "direction_a"}] = design.directions
-    end
-
+  describe "changeset/2" do
     test "valid changeset succeeds" do
       attrs = %{
         task_id: "tsk_123",

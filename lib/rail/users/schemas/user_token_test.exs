@@ -5,12 +5,6 @@ defmodule Rail.Users.Schemas.UserTokenTest do
   alias Rail.Users.Schemas.User
   alias Rail.Users.Schemas.UserToken
 
-  test "factory builds a valid user token struct" do
-    token = UserToken.factory()
-    assert byte_size(token.token) == 32
-    assert token.context == "session"
-  end
-
   test "build_session_token builds a session token struct for user" do
     assert {:ok, %User{id: user_id}} =
              Users.register_oauth_user(%{

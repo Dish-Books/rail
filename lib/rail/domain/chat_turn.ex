@@ -47,17 +47,6 @@ defmodule Rail.Domain.ChatTurn do
     |> cast_embed(:handoff)
   end
 
-  @doc "Builds a valid ChatTurn fixture struct for testing."
-  def factory do
-    %__MODULE__{
-      role: :user,
-      author: :human,
-      content: "Please update the primary button color.",
-      text: "Please update the primary button color.",
-      timestamp: DateTime.utc_now()
-    }
-  end
-
   @doc "Returns true if the turn was authored by a human / user."
   def user?(%__MODULE__{role: :user}), do: true
   def user?(_other), do: false

@@ -58,17 +58,6 @@ defmodule Rail.Domain.RunFailure do
     |> validate_required([:type])
   end
 
-  @doc "Builds a valid RunFailure fixture struct for testing."
-  def factory do
-    %__MODULE__{
-      type: :transient,
-      message: "503 Service Unavailable",
-      exit_code: 1,
-      retryable: true,
-      attempt: 1
-    }
-  end
-
   @doc "Returns the maximum number of automatic retries allowed (2)."
   def max_auto_retries, do: @max_auto_retries
 

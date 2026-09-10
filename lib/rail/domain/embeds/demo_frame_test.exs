@@ -3,14 +3,6 @@ defmodule Rail.Domain.Embeds.DemoFrameTest do
 
   alias Rail.Domain.Embeds.DemoFrame
 
-  test "factory/0 builds a valid struct" do
-    frame = DemoFrame.factory()
-    assert frame.url == "https://linear.app/assets/frame_1.png"
-    assert frame.linear_asset_id == "asset_f1"
-    assert frame.hold_ms == 1000
-    assert frame.caption == "Sign-in screen displayed"
-  end
-
   test "changeset/2 validates required url and positive hold_ms" do
     changeset = DemoFrame.changeset(%DemoFrame{}, %{})
     refute changeset.valid?
@@ -31,7 +23,7 @@ defmodule Rail.Domain.Embeds.DemoFrameTest do
   end
 
   test "serializes to JSON" do
-    frame = DemoFrame.factory()
+    frame = %DemoFrame{url: "https://linear.app/assets/frame_1.png", linear_asset_id: "asset_f1", hold_ms: 1000, caption: "Sign-in screen displayed"}
     assert {:ok, json} = Jason.encode(frame)
     assert {:ok, decoded} = Jason.decode(json)
     assert decoded["url"] == "https://linear.app/assets/frame_1.png"

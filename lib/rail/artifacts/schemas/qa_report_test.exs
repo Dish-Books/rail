@@ -4,13 +4,7 @@ defmodule Rail.Artifacts.Schemas.QaReportTest do
   alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Domain.Embeds.QaRow
 
-  describe "changeset/2 and factory/0" do
-    test "factory generates valid QA report" do
-      report = QaReport.factory()
-      assert %QaReport{task_id: "tsk_" <> _rest} = report
-      assert [%QaRow{id: "check_1"}] = report.rows
-    end
-
+  describe "changeset/2" do
     test "valid changeset succeeds" do
       attrs = %{
         task_id: "tsk_qa_1",

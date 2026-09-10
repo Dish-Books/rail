@@ -30,14 +30,6 @@ defmodule Rail.Domain.ChatTurnTest do
     assert both_set.valid?
   end
 
-  test "factory/0 returns a valid fixture struct" do
-    turn = ChatTurn.factory()
-    assert turn.role == :user
-    assert turn.author == :human
-    assert turn.content =~ "primary button color"
-    assert %DateTime{} = turn.timestamp
-  end
-
   test "role helpers user?/1, agent?/1, system?/1" do
     user_turn = %ChatTurn{role: :user}
     agent_turn = %ChatTurn{role: :agent}

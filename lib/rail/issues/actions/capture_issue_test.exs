@@ -5,29 +5,48 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Projects.Schemas.LinearWorkspace
-  alias Rail.Projects.Schemas.Project
-  alias Rail.Repo
+  alias Rail.Projects
   alias Rail.Scope
-  alias Rail.Users.Schemas.User
+  alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
-  test "capture_issue/3 creates issue using capturer's token" do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-
-    project =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          linear_team_id: "team_cap_1",
-          linear_state_ids: %{"triage" => "st_triage_1"}
+  setup do
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(system_scope(), %{
+        name: "Capture Issue Workspace",
+        external_id: "lin_ws_capture_issue",
+        token: "lin_api_token_capture_issue",
+        webhook_secret: "whsec_capture_issue"
       })
 
-    user =
-      Repo.insert!(%{
-        User.factory()
-        | linear_access_token: "lin_usr_token_valid",
-          linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
+    %{workspace: workspace}
+  end
+
+  test "capture_issue/3 creates issue using capturer's token", %{workspace: workspace} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Capture Issue Project 6101",
+        github_repo: "org/capture-issue-6101",
+        github_installation_id: 6101,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_cap_1",
+        linear_team_key: "CI1",
+        clone_path: "/tmp/repos/capture-issue-6101",
+        linear_state_ids: %{"triage" => "st_triage_1"}
+      })
+
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_capture_6102",
+        login: "capture_user_6102",
+        email: "capture_user_6102@example.com"
+      })
+
+    {:ok, user} =
+      Users.link_linear(user, %{
+        access_token: "lin_usr_token_valid",
+        refresh_token: "lin_refresh_6102",
+        expires_in: 3600
       })
 
     scope = Scope.for_user(user)
@@ -55,18 +74,26 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
             }} = Issues.capture_issue(scope, project, "Short ask title\nMore details here")
   end
 
-  test "capture_issue/3 falls back to workspace token and logs when user unlinked" do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-
-    project =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          linear_team_id: "team_cap_2",
-          linear_state_ids: %{"triage" => "st_triage_2"}
+  test "capture_issue/3 falls back to workspace token and logs when user unlinked", %{workspace: workspace} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Capture Issue Project 6103",
+        github_repo: "org/capture-issue-6103",
+        github_installation_id: 6103,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_cap_2",
+        linear_team_key: "CI3",
+        clone_path: "/tmp/repos/capture-issue-6103",
+        linear_state_ids: %{"triage" => "st_triage_2"}
       })
 
-    user = Repo.insert!(%{User.factory() | linear_access_token: nil, linear_token_expires_at: nil})
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_capture_6104",
+        login: "capture_user_6104",
+        email: "capture_user_6104@example.com"
+      })
+
     scope = Scope.for_user(user)
 
     LinearMock.mock_create_issue_success(%{
@@ -90,9 +117,17 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
     assert log =~ "[rail] pushed to Linear as the workspace"
   end
 
-  test "capture_issue/3 returns error when Linear creation fails" do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-    project = Repo.insert!(%{Project.factory() | linear_workspace_id: ws_id})
+  test "capture_issue/3 returns error when Linear creation fails", %{workspace: workspace} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Capture Issue Project 6105",
+        github_repo: "org/capture-issue-6105",
+        github_installation_id: 6105,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_capture_6105",
+        linear_team_key: "CI5",
+        clone_path: "/tmp/repos/capture-issue-6105"
+      })
 
     LinearMock.mock_mutation_failure("issueCreate")
 
@@ -102,20 +137,32 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
              Issues.capture_issue(scope, project, "Failing ask")
   end
 
-  test "capture_issue/3 returns :not_authorized for nil scope" do
-    project = Repo.insert!(Project.factory())
+  test "capture_issue/3 returns :not_authorized for nil scope", %{workspace: workspace} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Capture Issue Project 6106",
+        github_repo: "org/capture-issue-6106",
+        github_installation_id: 6106,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_capture_6106",
+        linear_team_key: "CI6",
+        clone_path: "/tmp/repos/capture-issue-6106"
+      })
+
     assert {:error, :not_authorized} = Issues.capture_issue(nil, project, "ask")
   end
 
-  test "capture_issue/4 creates issue with specified atom priority" do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-
-    project =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          linear_team_id: "team_cap_pri",
-          linear_state_ids: %{"triage" => "st_triage_pri"}
+  test "capture_issue/4 creates issue with specified atom priority", %{workspace: workspace} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Capture Issue Project 6107",
+        github_repo: "org/capture-issue-6107",
+        github_installation_id: 6107,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_cap_pri",
+        linear_team_key: "CI7",
+        clone_path: "/tmp/repos/capture-issue-6107",
+        linear_state_ids: %{"triage" => "st_triage_pri"}
       })
 
     scope = Scope.for_system()
@@ -139,15 +186,17 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
             }} = Issues.capture_issue(scope, project, "Urgent fix needed immediately", priority: :urgent)
   end
 
-  test "capture_issue/4 casts string priority and falls back to medium on invalid priority" do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-
-    project =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          linear_team_id: "team_cap_str",
-          linear_state_ids: %{"triage" => "st_triage_str"}
+  test "capture_issue/4 casts string priority and falls back to medium on invalid priority", %{workspace: workspace} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Capture Issue Project 6108",
+        github_repo: "org/capture-issue-6108",
+        github_installation_id: 6108,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_cap_str",
+        linear_team_key: "CI8",
+        clone_path: "/tmp/repos/capture-issue-6108",
+        linear_state_ids: %{"triage" => "st_triage_str"}
       })
 
     scope = Scope.for_system()
@@ -171,15 +220,17 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
             }} = Issues.capture_issue(scope, project, "Low task details", priority: "low")
   end
 
-  test "capture_issue/4 falls back to medium on invalid priority" do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-
-    project =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          linear_team_id: "team_cap_inv",
-          linear_state_ids: %{"triage" => "st_triage_inv"}
+  test "capture_issue/4 falls back to medium on invalid priority", %{workspace: workspace} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Capture Issue Project 6109",
+        github_repo: "org/capture-issue-6109",
+        github_installation_id: 6109,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_cap_inv",
+        linear_team_key: "CI9",
+        clone_path: "/tmp/repos/capture-issue-6109",
+        linear_state_ids: %{"triage" => "st_triage_inv"}
       })
 
     scope = Scope.for_system()
@@ -203,15 +254,17 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
             }} = Issues.capture_issue(scope, project, "Some description", priority: "invalid_priority")
   end
 
-  test "capture_issue/4 falls back to medium on nil priority" do
-    %LinearWorkspace{id: ws_id} = Repo.insert!(LinearWorkspace.factory())
-
-    project =
-      Repo.insert!(%{
-        Project.factory()
-        | linear_workspace_id: ws_id,
-          linear_team_id: "team_cap_nil",
-          linear_state_ids: %{"triage" => "st_triage_nil"}
+  test "capture_issue/4 falls back to medium on nil priority", %{workspace: workspace} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Capture Issue Project 6110",
+        github_repo: "org/capture-issue-6110",
+        github_installation_id: 6110,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_cap_nil",
+        linear_team_key: "CI10",
+        clone_path: "/tmp/repos/capture-issue-6110",
+        linear_state_ids: %{"triage" => "st_triage_nil"}
       })
 
     scope = Scope.for_system()

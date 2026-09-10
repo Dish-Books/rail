@@ -1,14 +1,40 @@
 defmodule Rail.Roles.Actions.ImproveRoleTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Roles.RoleInstructionProposal
   alias Rail.Roles.Schemas.Role
+  alias Rail.Runs
   alias Rail.Scope
 
-  test "returns not authorized when user is not admin" do
+  setup do
+    scope = system_scope()
+
+    {:ok, project} =
+      Projects.create_project(scope, %{
+        name: "Improve Role Project",
+        github_repo: "org/improve-role",
+        github_installation_id: 4502,
+        linear_team_id: "team_improve_role",
+        linear_team_key: "IMP",
+        clone_path: "/tmp/repos/improve-role"
+      })
+
+    {:ok, role} =
+      Roles.create_role(scope, project, %{
+        name: "Engineer",
+        stage: :engineer,
+        cli_backend: :claude,
+        model: "claude-3-7-sonnet",
+        system_prompt: "Old prompt"
+      })
+
+    %{project: project, role: role}
+  end
+
+  test "returns not authorized when user is not admin", %{role: role} do
     scope = Scope.for_user(%{admin: false})
-    role = create_test_role()
 
     assert {:error, :not_authorized} =
              Roles.improve_role(scope, role, "claude-3-7-sonnet")
@@ -17,23 +43,25 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
              Roles.improve_role(nil, role, "claude-3-7-sonnet")
   end
 
-  test "returns no_evidence when role has no finished runs" do
+  test "returns no_evidence when role has no finished runs", %{role: role} do
     scope = Scope.for_user(%{admin: true})
-    role = create_test_role()
 
     assert {:error, :no_evidence} =
              Roles.improve_role(scope, role, "claude-3-7-sonnet")
   end
 
-  test "runs improvement with custom runner and cleans up temp directory" do
+  test "runs improvement with custom runner and cleans up temp directory", %{role: role} do
     scope = Scope.for_user(%{admin: true})
-    %Role{id: role_id} = role = create_test_role(system_prompt: "Old prompt")
+    %Role{id: role_id} = role
 
-    create_test_role_run(
-      role_id: role.id,
-      status: :finished,
-      output: "Previous run output"
-    )
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: "tsk_improve_role",
+        role_id: role.id,
+        status: :finished,
+        output: "Previous run output",
+        started_at: DateTime.utc_now()
+      })
 
     test_pid = self()
 
@@ -60,11 +88,17 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
     refute File.exists?(captured_cwd)
   end
 
-  test "handles runner returning 2-element {:ok, stdout}" do
+  test "handles runner returning 2-element {:ok, stdout}", %{role: role} do
     scope = Scope.for_system()
-    role = create_test_role()
 
-    create_test_role_run(role_id: role.id, status: :finished, output: "Output")
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: "tsk_improve_role",
+        role_id: role.id,
+        status: :finished,
+        output: "Output",
+        started_at: DateTime.utc_now()
+      })
 
     runner = fn _dir, _role, _opts ->
       output = """
@@ -80,11 +114,17 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
              Roles.improve_role(scope, role, "claude-3-7-sonnet", runner: runner)
   end
 
-  test "handles runner failure and cleans up temp directory" do
+  test "handles runner failure and cleans up temp directory", %{role: role} do
     scope = Scope.for_user(%{admin: true})
-    role = create_test_role()
 
-    create_test_role_run(role_id: role.id, status: :finished, output: "Output")
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: "tsk_improve_role",
+        role_id: role.id,
+        status: :finished,
+        output: "Output",
+        started_at: DateTime.utc_now()
+      })
 
     test_pid = self()
 
@@ -100,11 +140,17 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
     refute File.exists?(captured_cwd)
   end
 
-  test "cleans up temp directory even if runner raises" do
+  test "cleans up temp directory even if runner raises", %{role: role} do
     scope = Scope.for_user(%{admin: true})
-    role = create_test_role()
 
-    create_test_role_run(role_id: role.id, status: :finished, output: "Output")
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: "tsk_improve_role",
+        role_id: role.id,
+        status: :finished,
+        output: "Output",
+        started_at: DateTime.utc_now()
+      })
 
     test_pid = self()
 
@@ -121,11 +167,17 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
     refute File.exists?(captured_cwd)
   end
 
-  test "executes default runner when no custom runner is provided" do
+  test "executes default runner when no custom runner is provided", %{role: role} do
     scope = Scope.for_system()
-    role = create_test_role(cli_backend: :claude)
 
-    create_test_role_run(role_id: role.id, status: :finished, output: "Output")
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: "tsk_improve_role",
+        role_id: role.id,
+        status: :finished,
+        output: "Output",
+        started_at: DateTime.utc_now()
+      })
 
     script_path = Path.join(System.tmp_dir!(), "mock_claude_#{System.unique_integer([:positive])}.sh")
 
@@ -149,11 +201,17 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
              Roles.improve_role(scope, role, "claude-3-7-sonnet", claude_path: script_path)
   end
 
-  test "handles default runner non-zero exit" do
+  test "handles default runner non-zero exit", %{role: role} do
     scope = Scope.for_system()
-    role = create_test_role(cli_backend: :claude)
 
-    create_test_role_run(role_id: role.id, status: :finished, output: "Output")
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: "tsk_improve_role",
+        role_id: role.id,
+        status: :finished,
+        output: "Output",
+        started_at: DateTime.utc_now()
+      })
 
     # Use /usr/bin/false to simulate CLI failure
     assert {:error, {:run_failed, msg}} =
@@ -162,11 +220,17 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
     assert msg =~ "CLI exited with code 1"
   end
 
-  test "handles default runner non-zero exit with stderr message" do
+  test "handles default runner non-zero exit with stderr message", %{role: role} do
     scope = Scope.for_system()
-    role = create_test_role(cli_backend: :claude)
 
-    create_test_role_run(role_id: role.id, status: :finished, output: "Output")
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: "tsk_improve_role",
+        role_id: role.id,
+        status: :finished,
+        output: "Output",
+        started_at: DateTime.utc_now()
+      })
 
     script_path = Path.join(System.tmp_dir!(), "mock_claude_err_#{System.unique_integer([:positive])}.sh")
 
