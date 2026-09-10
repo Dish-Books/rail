@@ -163,7 +163,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   end
 
   test "lists tasks across all projects when project_id is nil", %{task: task} do
-    {:ok, p1} =
+    {:ok, _p1} =
       Projects.create_project(system_scope(), %{
         name: "List Tasks Project 7107",
         github_repo: "org/list-tasks-7107",

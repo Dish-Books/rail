@@ -5,12 +5,9 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
-  alias Rail.Projects.Schemas.Project
-  alias Rail.Repo
   alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
-  alias Rail.Users.Schemas.User
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -70,7 +67,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "cancels a running task, sets failed state and error, and broadcasts", %{project: project, task: task} do
+  test "cancels a running task, sets failed state and error, and broadcasts", %{project: _project, task: _task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     {:ok, project} =
@@ -128,7 +125,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :task_cancelled}}
   end
 
-  test "cancelling a rebasing task restores pre-rebase state with conflict error", %{project: project, task: task} do
+  test "cancelling a rebasing task restores pre-rebase state with conflict error", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Cancel Task Project 8105",
@@ -175,7 +172,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
             }} = Pipeline.cancel_task(task.id)
   end
 
-  test "cancelling a task with active chat turn stops chat", %{project: project, task: task} do
+  test "cancelling a task with active chat turn stops chat", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Cancel Task Project 8107",
@@ -229,7 +226,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
     assert {:error, :not_found} = Pipeline.cancel_task(Scope.for_system(), 12_345)
   end
 
-  test "cancels with options and delegates properly", %{project: project, task: task} do
+  test "cancels with options and delegates properly", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Cancel Task Project 8109",

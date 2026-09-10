@@ -5,12 +5,9 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
-  alias Rail.Projects.Schemas.Project
-  alias Rail.Repo
   alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
-  alias Rail.Users.Schemas.User
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -70,7 +67,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "refuses to start rebase when task is busy (running or active chat)", %{project: project} do
+  test "refuses to start rebase when task is busy (running or active chat)", %{project: _project} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Start Rebase Project 8802",
@@ -130,7 +127,10 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
     assert {:error, :task_busy} = Pipeline.start_rebase(task_chatting)
   end
 
-  test "starts rebase, queues task, preserves stage_state_before_rebase, and broadcasts", %{project: project, task: task} do
+  test "starts rebase, queues task, preserves stage_state_before_rebase, and broadcasts", %{
+    project: _project,
+    task: _task
+  } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     {:ok, project} =
@@ -169,7 +169,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_start_rebase_8807"})
 
-    {:ok, %Task{id: task_id} = task} = Pipeline.bring_local(system_scope(), issue_8807)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_8807)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -200,7 +200,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
     assert {:error, :not_found} = Pipeline.start_rebase(123)
   end
 
-  test "accepts nil scope and task with opts", %{project: project, task: task} do
+  test "accepts nil scope and task with opts", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Start Rebase Project 8808",

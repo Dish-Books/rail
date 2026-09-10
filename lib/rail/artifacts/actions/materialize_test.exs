@@ -12,7 +12,6 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
   alias Rail.Domain.Embeds.QaRow
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project

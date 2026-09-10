@@ -5,8 +5,6 @@ defmodule RailWeb.Hooks.NavHookTest do
 
   alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
-  alias Rail.Projects.Schemas.Project
-  alias Rail.Repo
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 

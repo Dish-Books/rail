@@ -115,7 +115,7 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
     refute Question.resolved?(123)
   end
 
-  test "validates foreign key on task_id", %{task: task} do
+  test "validates foreign key on task_id", %{task: _task} do
     assert {:error, %{errors: [task_id: {"does not exist", _details}]}} =
              %Question{}
              |> Question.changeset(

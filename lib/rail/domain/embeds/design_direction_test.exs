@@ -28,6 +28,7 @@ defmodule Rail.Domain.Embeds.DesignDirectionTest do
       still_url: "https://linear.app/assets/still_a.png",
       linear_asset_id: "asset_dir_a"
     }
+
     assert {:ok, json} = Jason.encode(direction)
     assert {:ok, decoded} = Jason.decode(json)
     assert decoded["key"] == "direction_a"

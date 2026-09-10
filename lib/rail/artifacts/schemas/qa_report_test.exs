@@ -2,7 +2,6 @@ defmodule Rail.Artifacts.Schemas.QaReportTest do
   use Rail.DataCase, async: true
 
   alias Rail.Artifacts.Schemas.QaReport
-  alias Rail.Domain.Embeds.QaRow
 
   describe "changeset/2" do
     test "valid changeset succeeds" do

@@ -6,15 +6,11 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
   alias Rail.Domain.Embeds.QaArtifact
   alias Rail.Domain.Embeds.QaRow
   alias Rail.Issues
-  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Projects
-  alias Rail.Projects.Schemas.LinearWorkspace
-  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Users
-  alias Rail.Users.Schemas.User
   alias RailTest.Mocks.Linear, as: LinearMock
   alias RailTest.Support.ArtifactHelpers
 
@@ -264,7 +260,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
 
       LinearMock.mock_update_issue_success(%{"id" => "lin_task_capture_qa_12306"})
 
-      {:ok, %Rail.Pipeline.Schemas.Task{id: task_id} = task} = Pipeline.bring_local(system_scope(), issue_12306)
+      {:ok, %Rail.Pipeline.Schemas.Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_12306)
 
       {:ok, %Rail.Pipeline.Schemas.Task{id: task_id} = task} =
         Pipeline.update_task(system_scope(), task.id, %{

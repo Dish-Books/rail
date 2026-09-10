@@ -9,12 +9,10 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
-  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
-  alias Rail.Users.Schemas.User
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -74,7 +72,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "skips refresh when task is merged", %{project: project, task: task} do
+  test "skips refresh when task is merged", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Refresh Merge Project 9002",
@@ -115,7 +113,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     assert {:ok, %Task{stage: :merged}} = Pipeline.refresh_mergeability(task)
   end
 
-  test "skips refresh when task has no pr_number", %{project: project, task: task} do
+  test "skips refresh when task has no pr_number", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Refresh Merge Project 9004",
@@ -156,7 +154,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     assert {:ok, %Task{pr_number: nil}} = Pipeline.refresh_mergeability(task)
   end
 
-  test "updates mergeability and draft status on successful poll", %{project: project, task: task} do
+  test "updates mergeability and draft status on successful poll", %{project: _project, task: _task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     {:ok, project} =
@@ -194,7 +192,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_refresh_merge_9008"})
 
-    {:ok, %Task{id: task_id} = task} = Pipeline.bring_local(system_scope(), issue_9008)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_9008)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -212,7 +210,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :mergeability_refreshed}}
   end
 
-  test "preserves conflicting status when GitHub returns unknown", %{project: project, task: task} do
+  test "preserves conflicting status when GitHub returns unknown", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Refresh Merge Project 9009",
@@ -256,7 +254,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
              Pipeline.refresh_mergeability(task, token: "tok_test", attempts: 1, retry_delay_ms: 0)
   end
 
-  test "preserves existing pr_is_draft when GitHub returns nil draft status", %{project: project, task: task} do
+  test "preserves existing pr_is_draft when GitHub returns nil draft status", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Refresh Merge Project 9011",
@@ -309,7 +307,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     assert {:error, :not_found} = Pipeline.refresh_mergeability(123)
   end
 
-  test "returns error when project is not found", %{project: project, task: task} do
+  test "returns error when project is not found", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Refresh Merge Project 9013",
@@ -349,7 +347,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     assert {:error, :project_not_found} = Pipeline.refresh_mergeability(task)
   end
 
-  test "returns error when token cannot be resolved", %{project: project, task: task} do
+  test "returns error when token cannot be resolved", %{project: _project, task: _task} do
     mock_installation_token_error(401, "Bad credentials", installation_id: 12_345)
 
     {:ok, project} =
@@ -389,7 +387,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     assert {:error, {:github_api_error, 401, _body}} = Pipeline.refresh_mergeability(task)
   end
 
-  test "returns error when GitHub client returns error", %{project: project, task: task} do
+  test "returns error when GitHub client returns error", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Refresh Merge Project 9017",
@@ -430,7 +428,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
              Pipeline.refresh_mergeability(task, token: "tok_test")
   end
 
-  test "checks demo staleness and re-queues ready_to_merge task when commit drifted", %{project: project, task: task} do
+  test "checks demo staleness and re-queues ready_to_merge task when commit drifted", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Refresh Merge Project 9019",

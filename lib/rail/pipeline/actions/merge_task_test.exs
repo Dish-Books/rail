@@ -10,12 +10,10 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
-  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
-  alias Rail.Users.Schemas.User
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -75,7 +73,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "returns {:ok, task} when task is already merged", %{project: project, task: task} do
+  test "returns {:ok, _task} when task is already merged", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Merge Task Project 9202",
@@ -116,7 +114,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert {:ok, %Task{stage: :merged}} = Pipeline.merge_task(task)
   end
 
-  test "returns {:error, :no_pr} when task has no pr_number", %{project: project, task: task} do
+  test "returns {:error, :no_pr} when task has no pr_number", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Merge Task Project 9204",
@@ -157,7 +155,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert {:error, :no_pr} = Pipeline.merge_task(task)
   end
 
-  test "returns {:error, :draft_pr} when pull request is still a draft", %{project: project, task: task} do
+  test "returns {:error, :draft_pr} when pull request is still a draft", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Merge Task Project 9206",
@@ -200,8 +198,8 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   end
 
   test "returns {:error, :has_conflicts} when PR has conflicts and ignore_conflicts is false", %{
-    project: project,
-    task: task
+    project: _project,
+    task: _task
   } do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
@@ -246,9 +244,9 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   end
 
   test "squash merges PR, deletes branch, removes worktree, and updates Linear issue to done", %{
-    project: project,
-    issue: issue,
-    task: task
+    project: _project,
+    issue: _issue,
+    task: _task
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     clone_path = create_temp_git_repo(prefix: "rail_merge_main")
@@ -313,7 +311,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9213"})
 
-    {:ok, %Task{id: task_id} = task} = Pipeline.bring_local(system_scope(), issue_9213)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_9213)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -357,7 +355,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :task_merged}}
   end
 
-  test "merges conflicting PR when ignore_conflicts: true is supplied", %{project: project, task: task} do
+  test "merges conflicting PR when ignore_conflicts: true is supplied", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Merge Task Project 9214",
@@ -405,7 +403,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
              Pipeline.merge_task(task, ignore_conflicts: true, token: "tok_test")
   end
 
-  test "double checks pull_request_is_merged when merge returns error", %{project: project, task: task} do
+  test "double checks pull_request_is_merged when merge returns error", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Merge Task Project 9216",
@@ -452,7 +450,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert {:ok, %Task{stage: :merged}} = Pipeline.merge_task(task, token: "tok_test")
   end
 
-  test "records error and fails when merge fails and PR was not merged", %{project: project, task: task} do
+  test "records error and fails when merge fails and PR was not merged", %{project: _project, task: _task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     {:ok, project} =
@@ -482,7 +480,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9219"})
 
-    {:ok, %Task{id: task_id} = task} = Pipeline.bring_local(system_scope(), issue_9219)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_9219)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -519,7 +517,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert {:error, :not_found} = Pipeline.merge_task(123)
   end
 
-  test "returns error when project is not found", %{project: project, task: task} do
+  test "returns error when project is not found", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Merge Task Project 9220",
@@ -562,7 +560,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert {:error, :project_not_found} = Pipeline.merge_task(task)
   end
 
-  test "deletes remote branch from issue when worktree_name is nil", %{project: project, issue: issue, task: task} do
+  test "deletes remote branch from issue when worktree_name is nil", %{project: _project, issue: _issue, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Merge Task Project 9222",
@@ -623,7 +621,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert {:ok, %Task{stage: :merged}} = Pipeline.merge_task(task, token: "tok_test")
   end
 
-  test "merges successfully when task has no issue_id", %{project: project, task: task} do
+  test "merges successfully when task has no issue_id", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Merge Task Project 9225",
@@ -670,7 +668,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert {:ok, %Task{stage: :merged}} = Pipeline.merge_task(task, token: "tok_test")
   end
 
-  test "formats error reason with map message", %{project: project, task: task} do
+  test "formats error reason with map message", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Merge Task Project 9227",
@@ -724,7 +722,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert reloaded.error == "Failed to merge pull request: Validation Failed"
   end
 
-  test "accepts nil scope during merge", %{project: project, task: task} do
+  test "accepts nil scope during merge", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Merge Task Project 9229",
@@ -769,7 +767,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert {:ok, %Task{stage: :merged}} = Pipeline.merge_task(nil, task, token: "tok_test")
   end
 
-  test "formats error reason with string message", %{project: project, task: task} do
+  test "formats error reason with string message", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Merge Task Project 9231",
@@ -823,7 +821,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert reloaded.error == "Failed to merge pull request: 500 Internal Server Error"
   end
 
-  test "formats error reason with arbitrary error", %{project: project, task: task} do
+  test "formats error reason with arbitrary error", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Merge Task Project 9233",

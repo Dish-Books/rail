@@ -62,6 +62,7 @@ defmodule Rail.Projects.Schemas.LinearWorkspaceTest do
         token: "lin_api_token_redacted",
         webhook_secret: "whsec_redacted"
       })
+
     inspected = inspect(workspace, limit: :infinity)
 
     refute String.contains?(inspected, workspace.token)

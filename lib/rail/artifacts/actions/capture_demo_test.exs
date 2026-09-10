@@ -6,14 +6,10 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
   alias Rail.Domain.Embeds.DemoFrame
   alias Rail.Domain.Embeds.DemoSegment
   alias Rail.Issues
-  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Projects
-  alias Rail.Projects.Schemas.LinearWorkspace
-  alias Rail.Projects.Schemas.Project
   alias Rail.Scope
   alias Rail.Users
-  alias Rail.Users.Schemas.User
   alias RailTest.Mocks.Linear, as: LinearMock
   alias RailTest.Support.ArtifactHelpers
 

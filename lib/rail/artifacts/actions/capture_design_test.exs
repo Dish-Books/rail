@@ -5,10 +5,7 @@ defmodule Rail.Artifacts.Actions.CaptureDesignTest do
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Domain.Embeds.DesignDirection
   alias Rail.Issues
-  alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
-  alias Rail.Projects.Schemas.LinearWorkspace
-  alias Rail.Projects.Schemas.Project
   alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
   alias RailTest.Support.ArtifactHelpers

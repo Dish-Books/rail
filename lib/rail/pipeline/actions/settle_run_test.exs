@@ -25,7 +25,6 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
   alias Rail.Users
-  alias RailTest.Mocks.Linear
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -605,7 +604,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
   test "settles clean exit 0 for qa stage with valid manifest capturing report and advancing to qa_lead", %{
     project: project,
-    issue: issue,
+    issue: _issue,
     task: task,
     roles: roles
   } do
@@ -1745,7 +1744,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14506"})
 
-    {:ok, %Task{id: task_id2} = task2} = Pipeline.bring_local(system_scope(), issue_14506)
+    {:ok, %Task{id: _task_id2} = task2} = Pipeline.bring_local(system_scope(), issue_14506)
 
     {:ok, task2} = Pipeline.update_task(system_scope(), task2.id, %{issue_id: nil})
 
@@ -1839,7 +1838,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14507"})
 
-    {:ok, %Task{id: task_id2} = task2} = Pipeline.bring_local(system_scope(), issue_14507)
+    {:ok, %Task{id: _task_id2} = task2} = Pipeline.bring_local(system_scope(), issue_14507)
 
     {:ok, task2} = Pipeline.update_task(system_scope(), task2.id, %{issue_id: nil})
 
@@ -1901,7 +1900,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14508"})
 
-    {:ok, %Task{id: task_id3} = task3} = Pipeline.bring_local(system_scope(), issue_14508)
+    {:ok, %Task{id: _task_id3} = task3} = Pipeline.bring_local(system_scope(), issue_14508)
 
     {:ok, task3} = Pipeline.update_task(system_scope(), task3.id, %{issue_id: nil})
 
@@ -2164,7 +2163,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     task: task,
     roles: roles
   } do
-    {:ok, project} = Projects.update_project(system_scope(), project, %{github_repo: "testorg/rebase_settle"})
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{github_repo: "testorg/rebase_settle"})
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -2229,7 +2228,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     task: task,
     roles: roles
   } do
-    {:ok, project} = Projects.update_project(system_scope(), project, %{github_repo: "testorg/rebase_settle_fail"})
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{github_repo: "testorg/rebase_settle_fail"})
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{

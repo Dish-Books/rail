@@ -68,7 +68,7 @@ defmodule Rail.Pipeline.DispatcherTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  setup %{project: project, task: setup_task, roles: roles} do
+  setup _context do
     {:ok, pid} =
       Dispatcher.start_link(
         name: nil,
@@ -411,7 +411,7 @@ defmodule Rail.Pipeline.DispatcherTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_dispatcher_13303"})
 
-    {:ok, %Task{id: id2} = t2} = Pipeline.bring_local(system_scope(), issue_13303)
+    {:ok, %Task{id: _id2} = t2} = Pipeline.bring_local(system_scope(), issue_13303)
 
     {:ok, %Task{id: id2} = t2} =
       Pipeline.update_task(system_scope(), t2.id, %{
@@ -498,7 +498,7 @@ defmodule Rail.Pipeline.DispatcherTest do
     assert Pipeline.dispatch_disabled?() == true
   end
 
-  test "default_dispatch_hook launches supervised stage run", %{project: project, task: task, roles: roles} do
+  test "default_dispatch_hook launches supervised stage run", %{project: _project, task: task, roles: roles} do
     {:ok, pid} =
       Dispatcher.start_link(
         name: nil,
@@ -510,7 +510,7 @@ defmodule Rail.Pipeline.DispatcherTest do
     # The dispatcher runs in its own process, so lend it this test's DB connection.
     Sandbox.allow(Repo, self(), pid)
 
-    repo_dir = create_temp_git_repo()
+    _repo_dir = create_temp_git_repo()
     _role = roles[:product]
 
     {:ok, %Task{id: task_id} = task} =

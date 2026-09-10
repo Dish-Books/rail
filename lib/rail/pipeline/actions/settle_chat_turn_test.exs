@@ -746,7 +746,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   end
 
   describe "settle_chat_turn at design stage" do
-    test "a chat turn that rewrites the manifest lands the design", %{project: project, task: task, workspace: workspace} do
+    test "a chat turn that rewrites the manifest lands the design", %{project: _project, task: task, workspace: workspace} do
       {:ok, project} =
         Projects.create_project(system_scope(), %{
           linear_workspace_id: workspace.id,
@@ -834,7 +834,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     end
 
     test "a chat turn that leaves the manifest alone changes nothing", %{
-      project: project,
+      project: _project,
       task: task,
       workspace: workspace
     } do

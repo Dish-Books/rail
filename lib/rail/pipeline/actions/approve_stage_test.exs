@@ -11,7 +11,6 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Scope
-  alias RailTest.Mocks.Linear
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -168,7 +167,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
 
   test "advances intermediate stages in standard pipeline order", %{
     project: project,
-    issue: issue,
+    issue: _issue,
     task: task,
     roles: roles
   } do
@@ -178,7 +177,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
     _qa = roles[:qa]
     _lead = roles[:qa_lead]
 
-    {:ok, workspace} =
+    {:ok, _workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Approve Stage Workspace 10511",
         external_id: "lin_ws_approve_stage_10511",
@@ -388,7 +387,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
   end
 
   describe "approve_stage design validation and publishing edge cases" do
-    test "fails when task has no linked issue", %{issue: issue, task: task} do
+    test "fails when task has no linked issue", %{issue: _issue, task: task} do
       {:ok, task} =
         Pipeline.update_task(system_scope(), task.id, %{
           issue_id: nil,
@@ -401,7 +400,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
       assert task.error =~ "has no GitHub issue"
     end
 
-    test "fails when linked issue does not exist in database", %{issue: issue, task: task} do
+    test "fails when linked issue does not exist in database", %{issue: _issue, task: task} do
       {:ok, %Task{} = task} =
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :design,
@@ -415,8 +414,8 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
       assert task.error =~ "has no GitHub issue"
     end
 
-    test "fails when no design artifact exists for the task", %{project: project, issue: issue, task: task} do
-      {:ok, workspace} =
+    test "fails when no design artifact exists for the task", %{project: project, issue: _issue, task: task} do
+      {:ok, _workspace} =
         Projects.upsert_linear_workspace(system_scope(), %{
           name: "Approve Stage Workspace 10512",
           external_id: "lin_ws_approve_stage_10512",
@@ -444,8 +443,8 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
       assert task.error =~ "No design artifact found to publish"
     end
 
-    test "fails when multiple directions exist but none is picked", %{project: project, issue: issue, task: task} do
-      {:ok, workspace} =
+    test "fails when multiple directions exist but none is picked", %{project: project, issue: _issue, task: task} do
+      {:ok, _workspace} =
         Projects.upsert_linear_workspace(system_scope(), %{
           name: "Approve Stage Workspace 10513",
           external_id: "lin_ws_approve_stage_10513",
@@ -497,8 +496,8 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
       assert task.error =~ "No design direction has been picked to publish"
     end
 
-    test "automatically uses single direction when picked_key is nil", %{project: project, issue: issue, task: task} do
-      {:ok, workspace} =
+    test "automatically uses single direction when picked_key is nil", %{project: project, issue: _issue, task: task} do
+      {:ok, _workspace} =
         Projects.upsert_linear_workspace(system_scope(), %{
           name: "Approve Stage Workspace 10514",
           external_id: "lin_ws_approve_stage_10514",
@@ -549,8 +548,8 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
       assert {:ok, %Task{stage: :architect}} = Pipeline.approve_stage(task)
     end
 
-    test "handles publish failure when Linear comment creation fails", %{project: project, issue: issue, task: task} do
-      {:ok, workspace} =
+    test "handles publish failure when Linear comment creation fails", %{project: project, issue: _issue, task: task} do
+      {:ok, _workspace} =
         Projects.upsert_linear_workspace(system_scope(), %{
           name: "Approve Stage Workspace 10515",
           external_id: "lin_ws_approve_stage_10515",

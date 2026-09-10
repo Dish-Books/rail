@@ -138,6 +138,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
 
   test "rolls back when target project id does not exist in db", %{source: source} do
     scope = Scope.for_user(%{admin: true})
+
     {:ok, _source_pm} =
       Roles.create_role(scope, source, %{
         name: "Source PM",

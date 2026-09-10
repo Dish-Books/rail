@@ -71,7 +71,7 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  setup %{project: project, task: setup_task, roles: roles} do
+  setup %{project: project, roles: roles} do
     {:ok, role} =
       Roles.update_role(system_scope(), roles[:engineer], %{
         cli_backend: :claude,

@@ -6,7 +6,6 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.TaskActionRunner
   alias Rail.Projects
-  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -69,8 +68,8 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
   end
 
   test "tracks running action, clears error on start, enforces single-flight, and finishes", %{
-    project: project,
-    task: task
+    project: _project,
+    task: _task
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
@@ -131,7 +130,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :action_finished, kind: :merge}}
   end
 
-  test "finish_action with error or timeout writes error message to task", %{project: project, task: task} do
+  test "finish_action with error or timeout writes error message to task", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Task Runner Project 10304",
@@ -177,7 +176,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     assert %Task{error: "Action merge timed out"} = Repo.get!(Task, task_id)
   end
 
-  test "forget/2 releases lock without writing error", %{project: project, task: task} do
+  test "forget/2 releases lock without writing error", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Task Runner Project 10306",
@@ -220,7 +219,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     assert %Task{error: nil} = Repo.get!(Task, task_id)
   end
 
-  test "run/5 executes work single-flight and cleans up lock", %{project: project, task: task} do
+  test "run/5 executes work single-flight and cleans up lock", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Task Runner Project 10308",
@@ -263,7 +262,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     refute TaskActionRunner.is_busy?(task_id)
   end
 
-  test "run/5 enforces single-flight and rejects re-entry", %{project: project, task: task} do
+  test "run/5 enforces single-flight and rejects re-entry", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Task Runner Project 10310",
@@ -308,7 +307,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     TaskActionRunner.forget(task_id)
   end
 
-  test "run/5 handles timeout and failure", %{project: project, task: task} do
+  test "run/5 handles timeout and failure", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Task Runner Project 10312",

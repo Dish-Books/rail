@@ -55,7 +55,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
     %{project: project, issue: issue, task: task}
   end
 
-  test "releases to running state when active process is running", %{project: project, task: task} do
+  test "releases to running state when active process is running", %{project: _project, task: task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     {:ok, project} =
@@ -122,7 +122,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :stage_released}}
   end
 
-  test "resumes stage settlement and advances stage when finished run had exit_code 0", %{project: project, task: task} do
+  test "resumes stage settlement and advances stage when finished run had exit_code 0", %{project: _project, task: task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Release Blocked Project 6803",
@@ -186,7 +186,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
              Pipeline.release_blocked_stage(task)
   end
 
-  test "sets failed state when finished run had non-zero exit_code", %{project: project, task: task} do
+  test "sets failed state when finished run had non-zero exit_code", %{project: _project, task: task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Release Blocked Project 6804",
@@ -250,8 +250,8 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
              Pipeline.release_blocked_stage(task)
   end
 
-  test "falls back to awaiting_approval when no run is behind the task", %{project: project, task: task} do
-    {:ok, project} =
+  test "falls back to awaiting_approval when no run is behind the task", %{project: _project, task: task} do
+    {:ok, _project} =
       Projects.create_project(system_scope(), %{
         name: "Release Blocked Project 6805",
         github_repo: "org/release-blocked-6805",

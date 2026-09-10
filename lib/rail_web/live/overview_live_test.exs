@@ -143,7 +143,7 @@ defmodule RailWeb.OverviewLiveTest do
         webhook_secret: "whsec_overview_live"
       })
 
-    assert {:ok, %Project{id: project_id, name: project_name} = project} =
+    assert {:ok, %Project{id: project_id, name: project_name}} =
              Projects.create_project(scope, %{
                name: "Preset Project",
                github_repo: "example/preset",
@@ -271,7 +271,7 @@ defmodule RailWeb.OverviewLiveTest do
         webhook_secret: "whsec_overview_live"
       })
 
-    assert {:ok, %Project{id: project_id} = project} =
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Attention App",
                github_repo: "example/att",
@@ -335,7 +335,7 @@ defmodule RailWeb.OverviewLiveTest do
         webhook_secret: "whsec_overview_live"
       })
 
-    assert {:ok, %Project{id: project_id} = project} =
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Running Project",
                github_repo: "example/running",
@@ -427,7 +427,7 @@ defmodule RailWeb.OverviewLiveTest do
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    assert {:ok, %Project{id: p2_id} = p2} =
+    assert {:ok, %Project{id: _p2_id} = p2} =
              Projects.create_project(scope, %{
                name: "Project P2",
                github_repo: "example/p2-run",
@@ -508,7 +508,7 @@ defmodule RailWeb.OverviewLiveTest do
         webhook_secret: "whsec_overview_live"
       })
 
-    assert {:ok, %Project{id: project_id} = project} =
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Empty App",
                github_repo: "example/empty",
@@ -967,7 +967,7 @@ defmodule RailWeb.OverviewLiveTest do
         webhook_secret: "whsec_overview_live"
       })
 
-    assert {:ok, %Project{id: project_id} = project} =
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Compact App",
                github_repo: "example/compact",
@@ -1113,7 +1113,7 @@ defmodule RailWeb.OverviewLiveTest do
         webhook_secret: "whsec_overview_live"
       })
 
-    assert {:ok, %Project{id: project_id} = project} =
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Agent App",
                github_repo: "example/agentapp",

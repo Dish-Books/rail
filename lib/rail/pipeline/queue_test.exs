@@ -66,7 +66,7 @@ defmodule Rail.Pipeline.QueueTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "returns empty list when role has no stage and counts active chats", %{project: project, task: task, roles: roles} do
+  test "returns empty list when role has no stage and counts active chats", %{project: project, task: task, roles: _roles} do
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{
         name: "Unbound role",
@@ -403,7 +403,7 @@ defmodule Rail.Pipeline.QueueTest do
         }
       })
 
-    {:ok, project2} =
+    {:ok, _project2} =
       Projects.create_project(system_scope(), %{
         name: "Queue Project 10109",
         github_repo: "org/queue-10109",

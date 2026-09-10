@@ -91,7 +91,7 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
 
   test "resolve_identifier extracts identifier from preloaded or un-preloaded issue", %{
     project: project,
-    issue: issue,
+    issue: _issue,
     task: task
   } do
     LinearMock.mock_create_issue_success(%{
@@ -150,7 +150,7 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
 
   test "prepare creates subdirectories and writes initial ticket for product stage", %{
     project: project,
-    issue: issue,
+    issue: _issue,
     task: task
   } do
     LinearMock.mock_create_issue_success(%{
@@ -184,7 +184,7 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
     assert File.read!(ticket_file) =~ "# Product Task\n\nProblem statement\n"
   end
 
-  test "prepare for engineer writes plan from plans table to plan.md", %{project: project, issue: issue, task: task} do
+  test "prepare for engineer writes plan from plans table to plan.md", %{project: project, issue: _issue, task: task} do
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_scratch_13506",
       "identifier" => "ENG-103",
@@ -377,7 +377,7 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
     assert manifest["commit"] == "qa_commit_123"
   end
 
-  test "capture for product updates ticket and processes split tickets", %{project: project, issue: issue, task: task} do
+  test "capture for product updates ticket and processes split tickets", %{project: project, issue: _issue, task: task} do
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_104",
       "identifier" => "ENG-104",
@@ -452,7 +452,7 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
 
   test "capture for architect captures plan from plans/identifier.md if plan.md missing", %{
     project: project,
-    issue: issue,
+    issue: _issue,
     task: task
   } do
     LinearMock.mock_create_issue_success(%{

@@ -379,10 +379,10 @@ defmodule Rail.Pipeline.Actions.DispatchNowTest do
     assert {:error, :dispatch_disabled} = Pipeline.dispatch_now(t4)
   end
 
-  test "dispatches via default supervised runner when git repo exists", %{project: project, task: task, roles: roles} do
+  test "dispatches via default supervised runner when git repo exists", %{project: _project, task: task, roles: roles} do
     repo_dir = create_temp_git_repo()
 
-    {:ok, project} =
+    {:ok, _project} =
       Projects.create_project(system_scope(), %{
         name: "Dispatch Now Project 9107",
         github_repo: "org/dispatch-now-9107",

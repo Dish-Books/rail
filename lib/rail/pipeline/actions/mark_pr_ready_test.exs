@@ -7,12 +7,10 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
-  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
-  alias Rail.Users.Schemas.User
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -72,7 +70,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "returns :no_pr and records error when task has no pr_number", %{project: project, task: task} do
+  test "returns :no_pr and records error when task has no pr_number", %{project: _project, task: _task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     {:ok, project} =
@@ -102,7 +100,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_mark_pr_ready_8903"})
 
-    {:ok, %Task{id: task_id} = task} = Pipeline.bring_local(system_scope(), issue_8903)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_8903)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -119,7 +117,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :mark_pr_ready_failed}}
   end
 
-  test "promotes draft PR, clears error, and triggers mergeability refresh", %{project: project, task: task} do
+  test "promotes draft PR, clears error, and triggers mergeability refresh", %{project: _project, task: _task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     {:ok, project} =
@@ -157,7 +155,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_mark_pr_ready_8906"})
 
-    {:ok, %Task{id: task_id} = task} = Pipeline.bring_local(system_scope(), issue_8906)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_8906)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -180,7 +178,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :mergeability_refreshed}}
   end
 
-  test "records error and leaves draft status true when GitHub mark ready fails", %{project: project, task: task} do
+  test "records error and leaves draft status true when GitHub mark ready fails", %{project: _project, task: _task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     {:ok, project} =
@@ -210,7 +208,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_mark_pr_ready_8908"})
 
-    {:ok, %Task{id: task_id} = task} = Pipeline.bring_local(system_scope(), issue_8908)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_8908)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -231,7 +229,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :mark_pr_ready_failed}}
   end
 
-  test "records error when GitHub returns binary error message", %{project: project, task: task} do
+  test "records error when GitHub returns binary error message", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Mark PR Ready Project 8909",
@@ -277,7 +275,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
     assert reloaded.error == "Failed to mark pull request ready: 404 Repository not found"
   end
 
-  test "records error when GitHub returns graphql error", %{project: project, task: task} do
+  test "records error when GitHub returns graphql error", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Mark PR Ready Project 8911",
@@ -332,7 +330,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
     assert {:error, :not_found} = Pipeline.mark_pr_ready(123)
   end
 
-  test "returns error when project is not found", %{project: project, task: task} do
+  test "returns error when project is not found", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Mark PR Ready Project 8913",

@@ -87,7 +87,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id} = project} =
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Detail Project",
                github_repo: "example/detail-project",
@@ -182,7 +182,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    assert {:ok, %Project{id: _project_id}} =
              Projects.create_project(scope, %{
                name: "Tab Switching Project",
                github_repo: "example/tab-project",
@@ -268,7 +268,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    assert {:ok, %Project{id: _project_id}} =
              Projects.create_project(scope, %{
                name: "No Plan Project",
                github_repo: "example/no-plan",
@@ -316,7 +316,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    assert {:ok, %Project{id: _project_id}} =
              Projects.create_project(scope, %{
                name: "No Worktree Project",
                github_repo: "example/no-wt",
@@ -365,7 +365,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    assert {:ok, %Project{id: _project_id}} =
              Projects.create_project(scope, %{
                name: "Conflict Project",
                github_repo: "example/conflict",
@@ -442,7 +442,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    assert {:ok, %Project{id: _project_id}} =
              Projects.create_project(scope, %{
                name: "Error Project",
                github_repo: "example/error",
@@ -562,7 +562,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    assert {:ok, %Project{id: _project_id}} =
              Projects.create_project(scope, %{
                name: "No Design Project",
                github_repo: "example/no-design",
@@ -611,7 +611,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    assert {:ok, %Project{id: _project_id}} =
              Projects.create_project(scope, %{
                name: "PubSub Project",
                github_repo: "example/pubsub",
@@ -697,7 +697,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert render(view) =~ "Directly Updated Task"
   end
 
-  test "handles ?project=<id> param and project switcher", %{conn: conn, project: project} do
+  test "handles ?project=<id> param and project switcher", %{conn: conn, project: _project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_11",
@@ -744,7 +744,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    assert {:ok, %Project{id: _project_id}} =
              Projects.create_project(scope, %{
                name: "Fallback Project",
                github_repo: "example/fallback",
@@ -815,7 +815,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    assert {:ok, %Project{id: project_id}} =
+    assert {:ok, %Project{id: _project_id}} =
              Projects.create_project(scope, %{
                name: "Edge Case Project",
                github_repo: "example/edge-case",
@@ -930,7 +930,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     _scope = Scope.for_user(user)
 
-    {:ok, %Project{id: project_id}} =
+    {:ok, %Project{id: _project_id}} =
       Projects.create_project(system_scope(), %{
         name: "Task Detail Tabs Project",
         github_repo: "org/task-detail-tabs",
@@ -1004,7 +1004,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     _scope = Scope.for_user(user)
 
-    {:ok, %Project{id: project_id}} =
+    {:ok, %Project{id: _project_id}} =
       Projects.create_project(system_scope(), %{
         name: "Task Detail Project 13802",
         github_repo: "org/task-detail-13802",
@@ -1107,7 +1107,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     _scope = Scope.for_user(user)
 
-    {:ok, %Project{id: project_id}} =
+    {:ok, %Project{id: _project_id}} =
       Projects.create_project(system_scope(), %{
         name: "Task Detail Project 13803",
         github_repo: "org/task-detail-13803",
@@ -1178,7 +1178,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     _scope = Scope.for_user(user)
 
-    {:ok, %Project{id: project_id}} =
+    {:ok, %Project{id: _project_id}} =
       Projects.create_project(system_scope(), %{
         name: "Task Detail Project 13804",
         github_repo: "org/task-detail-13804",
@@ -1271,7 +1271,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     _scope = Scope.for_user(user)
 
-    {:ok, %Project{id: project_id}} =
+    {:ok, %Project{id: _project_id}} =
       Projects.create_project(system_scope(), %{
         name: "Task Detail Project 13805",
         github_repo: "org/task-detail-13805",
@@ -1344,7 +1344,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     _scope = Scope.for_user(user)
 
-    {:ok, %Project{id: project_id}} =
+    {:ok, %Project{id: _project_id}} =
       Projects.create_project(system_scope(), %{
         name: "Task Detail Project 13806",
         github_repo: "org/task-detail-13806",
@@ -1439,7 +1439,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     _scope = Scope.for_user(user)
 
-    {:ok, %Project{id: project_id}} =
+    {:ok, %Project{id: _project_id}} =
       Projects.create_project(system_scope(), %{
         name: "Task Detail Project 13807",
         github_repo: "org/task-detail-13807",
@@ -1538,7 +1538,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     _scope = Scope.for_user(user)
 
-    {:ok, %Project{id: project_id}} =
+    {:ok, %Project{id: _project_id}} =
       Projects.create_project(system_scope(), %{
         name: "Task Detail Project 13808",
         github_repo: "org/task-detail-13808",
@@ -1849,7 +1849,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     authed_conn = log_in_user(conn, user)
     _scope = Scope.for_user(user)
 
-    {:ok, %Project{id: project_id}} =
+    {:ok, %Project{id: _project_id}} =
       Projects.create_project(system_scope(), %{
         name: "Task Detail Project 13809",
         github_repo: "org/task-detail-13809",
@@ -2030,7 +2030,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     authed_conn = log_in_user(conn, user)
 
-    {:ok, %Project{id: project_id}} =
+    {:ok, %Project{id: _project_id}} =
       Projects.create_project(system_scope(), %{
         name: "Task Detail Project 13811",
         github_repo: "org/task-detail-13811",
@@ -2242,7 +2242,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     authed_conn = log_in_user(conn, user)
 
-    {:ok, %Project{id: project_id}} =
+    {:ok, %Project{id: _project_id}} =
       Projects.create_project(system_scope(), %{
         name: "Task Detail Project 13812",
         github_repo: "org/task-detail-13812",

@@ -7,7 +7,6 @@ defmodule Rail.Pipeline.Actions.BringLocalTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
-  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Scope
@@ -72,13 +71,13 @@ defmodule Rail.Pipeline.Actions.BringLocalTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "returns not_authorized error for nil or unauthenticated scope", %{issue: issue} do
+  test "returns not_authorized error for nil or unauthenticated scope", %{issue: _issue} do
     issue = %Issue{id: "iss_123"}
     assert {:error, :not_authorized} = Pipeline.bring_local(nil, issue)
     assert {:error, :not_authorized} = Pipeline.bring_local(%Scope{user: nil, system: false}, issue)
   end
 
-  test "returns existing task if already brought local (idempotency)", %{project: project, issue: issue, task: task} do
+  test "returns existing task if already brought local (idempotency)", %{project: project, issue: _issue, task: task} do
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_bring_local_9602",
       "identifier" => "ISS-9602",
@@ -97,7 +96,7 @@ defmodule Rail.Pipeline.Actions.BringLocalTest do
     assert {:ok, %Task{id: ^existing_id}} = Pipeline.bring_local(scope, issue)
   end
 
-  test "brings issue local, updates Linear state, creates task, and broadcasts event", %{project: project, issue: issue} do
+  test "brings issue local, updates Linear state, creates task, and broadcasts event", %{project: _project, issue: _issue} do
     {:ok, %LinearWorkspace{id: ws_id}} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Bring Local Workspace 9603",
@@ -124,12 +123,12 @@ defmodule Rail.Pipeline.Actions.BringLocalTest do
       "title" => "Implement Core Pipeline"
     })
 
-    {:ok, %Issue{id: issue_id} = issue} = Issues.capture_issue(system_scope(), project, "Implement Core Pipeline")
+    {:ok, %Issue{id: _issue_id} = issue} = Issues.capture_issue(system_scope(), project, "Implement Core Pipeline")
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_bring_1"})
 
     {:ok, %Issue{id: issue_id} = issue} =
-      Issues.update_issue(system_scope(), %Issue{id: issue_id} = issue, %{
+      Issues.update_issue(system_scope(), %Issue{id: _issue_id} = issue, %{
         description: "Full bring_local integration",
         branch_name: "eng-5001-pipeline",
         state: :triage
@@ -175,7 +174,7 @@ defmodule Rail.Pipeline.Actions.BringLocalTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :brought_local}}
   end
 
-  test "derives worktree name from identifier when branch_name is nil", %{project: project, issue: issue} do
+  test "derives worktree name from identifier when branch_name is nil", %{project: _project, issue: _issue} do
     {:ok, %LinearWorkspace{id: ws_id}} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Bring Local Workspace 9607",
@@ -229,7 +228,7 @@ defmodule Rail.Pipeline.Actions.BringLocalTest do
     assert {:ok, %Task{worktree_name: "proj-feat--42"}} = Pipeline.bring_local(scope, issue)
   end
 
-  test "returns error when Linear move_state fails", %{project: project, issue: issue} do
+  test "returns error when Linear move_state fails", %{project: _project, issue: _issue} do
     {:ok, %LinearWorkspace{id: ws_id}} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Bring Local Workspace 9610",
@@ -265,7 +264,7 @@ defmodule Rail.Pipeline.Actions.BringLocalTest do
     refute Repo.exists?(from t in Task, where: t.issue_id == ^issue.id)
   end
 
-  test "returns existing task when already brought local", %{project: project, issue: issue, task: task} do
+  test "returns existing task when already brought local", %{project: project, issue: _issue, task: task} do
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_bring_local_9613",
       "identifier" => "ENG-EXIST",
@@ -284,7 +283,7 @@ defmodule Rail.Pipeline.Actions.BringLocalTest do
     assert {:ok, %Task{id: ^existing_id}} = Pipeline.bring_local(scope, issue)
   end
 
-  test "resolves owner_user_id from scope when owner_user argument is omitted", %{project: project, issue: issue} do
+  test "resolves owner_user_id from scope when owner_user argument is omitted", %{project: _project, issue: _issue} do
     {:ok, %LinearWorkspace{id: ws_id}} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Bring Local Workspace 9614",
@@ -345,7 +344,7 @@ defmodule Rail.Pipeline.Actions.BringLocalTest do
     assert {:ok, %Task{owner_user_id: ^user_id}} = Pipeline.bring_local(scope, issue)
   end
 
-  test "returns not_authorized when scope is unauthorized", %{project: project, issue: issue} do
+  test "returns not_authorized when scope is unauthorized", %{project: project, issue: _issue} do
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_bring_local_9618",
       "identifier" => "ENG-UNAUTH",

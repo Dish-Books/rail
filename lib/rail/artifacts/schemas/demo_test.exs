@@ -2,7 +2,6 @@ defmodule Rail.Artifacts.Schemas.DemoTest do
   use Rail.DataCase, async: true
 
   alias Rail.Artifacts.Schemas.Demo
-  alias Rail.Domain.Embeds.DemoSegment
 
   describe "changeset/2" do
     test "valid changeset succeeds" do

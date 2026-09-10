@@ -64,8 +64,16 @@ defmodule Rail.Domain.Embeds.DemoSegmentTest do
       criterion: "User can sign in with GitHub",
       outcome: :recorded,
       note: nil,
-      frames: [%DemoFrame{url: "https://linear.app/assets/frame_1.png", linear_asset_id: "asset_f1", hold_ms: 1000, caption: "Sign-in screen displayed"}]
+      frames: [
+        %DemoFrame{
+          url: "https://linear.app/assets/frame_1.png",
+          linear_asset_id: "asset_f1",
+          hold_ms: 1000,
+          caption: "Sign-in screen displayed"
+        }
+      ]
     }
+
     assert {:ok, json} = Jason.encode(segment)
     assert {:ok, decoded} = Jason.decode(json)
     assert decoded["criterion_index"] == 1

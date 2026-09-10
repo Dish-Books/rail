@@ -36,6 +36,7 @@ defmodule Rail.Domain.Embeds.CliAccountGroupTest do
       count: 3,
       details: %{"window" => "5-hour", "remaining_percent" => 100.0}
     }
+
     assert {:ok, json} = Jason.encode(group)
     assert {:ok, decoded} = Jason.decode(json)
     assert decoded["name"] == "Gemini Models"

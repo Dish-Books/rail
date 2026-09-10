@@ -155,6 +155,7 @@ defmodule Rail.Domain.TaskUsageTest do
       total_cost: Decimal.new("0.025"),
       currency: "USD"
     }
+
     assert {:ok, json} = Jason.encode(usage)
     assert {:ok, decoded} = Jason.decode(json)
     assert decoded["input_tokens"] == 1_000

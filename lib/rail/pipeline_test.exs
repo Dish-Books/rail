@@ -315,7 +315,17 @@ defmodule Rail.PipelineTest do
         worktree_path: worktree
       })
 
-    demo_manifest_10701 =
+    # The demo is captured from a real scratch directory because this test keeps
+    # touching the filesystem afterwards.
+    demo_scratch = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+    demo_dir = Path.join(demo_scratch, "demo")
+    File.mkdir_p!(demo_dir)
+    on_exit(fn -> File.rm_rf(demo_scratch) end)
+
+    File.write!(Path.join(demo_dir, "frame-1.png"), "fake demo frame")
+
+    File.write!(
+      Path.join(demo_dir, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -328,14 +338,7 @@ defmodule Rail.PipelineTest do
           }
         ]
       })
-
-    expect(File, :exists?, fn _path -> true end)
-
-    expect(File, :read, fn _path -> {:ok, demo_manifest_10701} end)
-
-    expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
-
-    expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
+    )
 
     mock_demo_uploads(1)
 
@@ -345,8 +348,7 @@ defmodule Rail.PipelineTest do
       "createdAt" => "2026-09-05T12:00:00.000Z"
     })
 
-    {:ok, _demo} =
-      Artifacts.capture_demo(system_scope(), task, "/tmp/rail_scratch/demo_10701")
+    {:ok, _demo} = Artifacts.capture_demo(system_scope(), task, demo_scratch)
 
     # can_rerecord_demo?
     assert Pipeline.can_rerecord_demo?(task)

@@ -2,7 +2,6 @@ defmodule Rail.Artifacts.Schemas.DesignTest do
   use Rail.DataCase, async: true
 
   alias Rail.Artifacts.Schemas.Design
-  alias Rail.Domain.Embeds.DesignDirection
 
   describe "changeset/2" do
     test "valid changeset succeeds" do

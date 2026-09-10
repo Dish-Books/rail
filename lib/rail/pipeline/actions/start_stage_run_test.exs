@@ -80,7 +80,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
              Pipeline.start_stage_run("tsk_000000000000000000000000")
   end
 
-  test "returns project_not_found when task project does not exist", %{task: task} do
+  test "returns project_not_found when task project does not exist", %{task: _task} do
     task = %Task{id: UXID.generate!(prefix: "tsk"), project_id: "prj_000000000000000000000000"}
 
     assert {:error, :project_not_found} = Pipeline.start_stage_run(task)

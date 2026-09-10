@@ -60,6 +60,7 @@ defmodule Rail.Domain.Embeds.QaRowTest do
       note: nil,
       artifacts: [%QaArtifact{name: "test_output.txt", kind: :text, text: "All 12 checks passed", url: nil}]
     }
+
     assert {:ok, json} = Jason.encode(row)
     assert {:ok, decoded} = Jason.decode(json)
     assert decoded["id"] == "check_1"

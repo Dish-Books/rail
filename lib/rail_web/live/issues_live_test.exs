@@ -8,7 +8,6 @@ defmodule RailWeb.IssuesLiveTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
-  alias Rail.Repo
   alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -71,7 +70,7 @@ defmodule RailWeb.IssuesLiveTest do
         webhook_secret: "whsec_issues_live"
       })
 
-    assert {:ok, %Project{id: project_id, name: project_name} = project} =
+    assert {:ok, %Project{id: project_id, name: project_name}} =
              Projects.create_project(scope, %{
                name: "Issues Project",
                github_repo: "example/issues-project",
@@ -140,7 +139,7 @@ defmodule RailWeb.IssuesLiveTest do
         webhook_secret: "whsec_issues_live"
       })
 
-    assert {:ok, %Project{id: project_id} = project} =
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Demo Project",
                github_repo: "example/demo-project",
@@ -214,7 +213,7 @@ defmodule RailWeb.IssuesLiveTest do
         webhook_secret: "whsec_issues_live"
       })
 
-    assert {:ok, %Project{id: project_id} = project} =
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Priority Project",
                github_repo: "example/priority-project",
@@ -344,7 +343,7 @@ defmodule RailWeb.IssuesLiveTest do
         webhook_secret: "whsec_issues_live"
       })
 
-    assert {:ok, %Project{id: project_id} = project} =
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Finished Project",
                github_repo: "example/finished-project",
@@ -435,7 +434,7 @@ defmodule RailWeb.IssuesLiveTest do
         webhook_secret: "whsec_issues_live"
       })
 
-    assert {:ok, %Project{id: project_id} = project} =
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Bring Local Project",
                github_repo: "example/bring-local",
@@ -510,7 +509,7 @@ defmodule RailWeb.IssuesLiveTest do
         webhook_secret: "whsec_issues_live"
       })
 
-    assert {:ok, %Project{id: project_id} = project} =
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Editor Project",
                github_repo: "example/editor-proj",
@@ -624,7 +623,7 @@ defmodule RailWeb.IssuesLiveTest do
         webhook_secret: "whsec_issues_live"
       })
 
-    assert {:ok, %Project{id: project_id} = project} =
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Archive Project",
                github_repo: "example/archive-proj",
@@ -728,7 +727,7 @@ defmodule RailWeb.IssuesLiveTest do
         webhook_secret: "whsec_issues_live"
       })
 
-    assert {:ok, %Project{id: project_id} = project} =
+    assert {:ok, %Project{id: project_id}} =
              Projects.create_project(scope, %{
                name: "Sync Project",
                github_repo: "example/sync-proj",
@@ -775,7 +774,7 @@ defmodule RailWeb.IssuesLiveTest do
         webhook_secret: "whsec_issues_live"
       })
 
-    assert {:ok, %Project{id: project_id} = project} =
+    assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "PubSub Project",
                github_repo: "example/pubsub-proj",

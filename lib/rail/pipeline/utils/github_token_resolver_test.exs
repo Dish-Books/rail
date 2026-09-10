@@ -8,11 +8,9 @@ defmodule Rail.Pipeline.Utils.GitHubTokenResolverTest do
   alias Rail.Pipeline
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
-  alias Rail.Repo
   alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
-  alias Rail.Users.Schemas.User
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -72,7 +70,7 @@ defmodule Rail.Pipeline.Utils.GitHubTokenResolverTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "resolves explicit token from opts", %{project: project} do
+  test "resolves explicit token from opts", %{project: _project} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "GH Token Project 9902",
@@ -94,7 +92,7 @@ defmodule Rail.Pipeline.Utils.GitHubTokenResolverTest do
     assert {:ok, "custom_tok_2"} = resolve_github_token(nil, project, github_token: "custom_tok_2")
   end
 
-  test "resolves user token from User struct and Scope", %{project: project} do
+  test "resolves user token from User struct and Scope", %{project: _project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_gh_token_9903",
@@ -126,7 +124,7 @@ defmodule Rail.Pipeline.Utils.GitHubTokenResolverTest do
     assert {:ok, "gho_user_tok_1"} = resolve_github_token(scope, project)
   end
 
-  test "resolves user token from user id string", %{project: project} do
+  test "resolves user token from user id string", %{project: _project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_gh_token_9905",
@@ -155,7 +153,7 @@ defmodule Rail.Pipeline.Utils.GitHubTokenResolverTest do
     assert {:ok, "gho_user_tok_2"} = resolve_github_token(user.id, project)
   end
 
-  test "falls back to installation token when user has no github token", %{project: project} do
+  test "falls back to installation token when user has no github token", %{project: _project} do
     mock_installation_token_success(installation_id: 88_888, token: "ghs_inst_tok_888")
 
     {:ok, project} =
@@ -188,7 +186,7 @@ defmodule Rail.Pipeline.Utils.GitHubTokenResolverTest do
     assert {:ok, "ghs_inst_tok_888"} = resolve_github_token(scope, project)
   end
 
-  test "falls back to installation token when user id not found", %{project: project} do
+  test "falls back to installation token when user id not found", %{project: _project} do
     mock_installation_token_success(installation_id: 77_777, token: "ghs_inst_tok_777")
 
     {:ok, project} =
@@ -211,7 +209,7 @@ defmodule Rail.Pipeline.Utils.GitHubTokenResolverTest do
     assert {:ok, "ghs_inst_tok_777"} = resolve_github_token("usr_nonexistent", project)
   end
 
-  test "returns error when no user token and project has no installation id", %{project: project} do
+  test "returns error when no user token and project has no installation id", %{project: _project} do
     project = %Project{github_installation_id: nil}
 
     assert {:error, :missing_github_token} = resolve_github_token(nil, project)

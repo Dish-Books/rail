@@ -134,7 +134,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
            } = errors_on(Task.changeset(%Task{}, attrs, project.id))
   end
 
-  test "ignores project_id passed in attrs to prevent unverified overrides", %{task: task} do
+  test "ignores project_id passed in attrs to prevent unverified overrides", %{task: _task} do
     {:ok, project1} =
       Projects.create_project(system_scope(), %{
         name: "Task Schema Project 12604",
@@ -170,7 +170,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
              |> Repo.insert()
   end
 
-  test "preloads belongs_to project, issue, and owner_user", %{project: project, issue: issue, task: task} do
+  test "preloads belongs_to project, issue, and owner_user", %{project: _project, issue: _issue, task: _task} do
     {:ok, %Project{id: project_id} = project} =
       Projects.create_project(system_scope(), %{
         name: "Task Schema Project 12605",

@@ -108,7 +108,7 @@ defmodule Rail.Domain.FormattersTest do
       assert is_nil(Formatters.overview_detail_for(task_normal))
     end
 
-    test "picks first non-blank line of task.error", %{task: task} do
+    test "picks first non-blank line of task.error", %{task: _task} do
       task = %{
         error: "\n   \nFirst non-blank error line\nSecond error line",
         stage: :engineer,
@@ -118,7 +118,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.overview_detail_for(task) == "First non-blank error line"
     end
 
-    test "falls back to failed run error when task.error is absent or blank", %{task: task} do
+    test "falls back to failed run error when task.error is absent or blank", %{task: _task} do
       task = %{
         error: "   ",
         stage: :engineer,
@@ -135,7 +135,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.overview_detail_for(task) == "Run failed with compiler crash"
     end
 
-    test "uses passed runs map when provided", %{task: task} do
+    test "uses passed runs map when provided", %{task: _task} do
       task = %{
         stage: :engineer,
         stage_state: :failed,
@@ -149,7 +149,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.overview_detail_for(task, runs) == "External runs map error"
     end
 
-    test "collapses consecutive whitespace and trims line", %{task: task} do
+    test "collapses consecutive whitespace and trims line", %{task: _task} do
       task = %{
         error: "   Failed   to    build    target    main.dart   ",
         stage: :engineer,
@@ -159,7 +159,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.overview_detail_for(task) == "Failed to build target main.dart"
     end
 
-    test "caps at 140 characters with ellipsis when line exceeds 140 chars", %{task: task} do
+    test "caps at 140 characters with ellipsis when line exceeds 140 chars", %{task: _task} do
       long_line = String.duplicate("A", 200)
       task = %{error: long_line, stage: :engineer, stage_state: :failed}
 
@@ -167,7 +167,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.overview_detail_for(task) == expected
     end
 
-    test "does not append ellipsis when line is 140 characters or fewer", %{task: task} do
+    test "does not append ellipsis when line is 140 characters or fewer", %{task: _task} do
       exact_140 = String.duplicate("B", 140)
       task = %{error: exact_140, stage: :engineer, stage_state: :failed}
 
@@ -181,7 +181,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.stage_label(%{stage_state: :unknown_state}) == "Waiting on you"
     end
 
-    test "active chat role has highest precedence", %{task: task} do
+    test "active chat role has highest precedence", %{task: _task} do
       task = %{
         active_chat_role_id: "engineer",
         stage: :architect,
@@ -389,7 +389,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.stage_label(t_merge_str) == "Conflicts - needs a rebase"
     end
 
-    test "stage_label and get_field handle struct, string keys, and invalid atoms", %{task: task} do
+    test "stage_label and get_field handle struct, string keys, and invalid atoms", %{task: _task} do
       # Struct task
       uri_task = %URI{scheme: "https", host: "example.com"}
       assert Formatters.stage_label(uri_task) == "Waiting on you"

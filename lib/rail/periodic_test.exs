@@ -10,7 +10,6 @@ defmodule Rail.PeriodicTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
-  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
@@ -76,7 +75,7 @@ defmodule Rail.PeriodicTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  setup %{project: project, task: setup_task, roles: roles} do
+  setup _context do
     {:ok, pid} =
       Periodic.start_link(
         name: nil,
@@ -182,7 +181,7 @@ defmodule Rail.PeriodicTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12704"})
 
-    {:ok, %Task{id: t1_id} = t1} = Pipeline.bring_local(system_scope(), issue_12704)
+    {:ok, %Task{id: _t1_id} = t1} = Pipeline.bring_local(system_scope(), issue_12704)
 
     {:ok, %Task{id: t1_id} = t1} =
       Pipeline.update_task(system_scope(), t1.id, %{
@@ -203,7 +202,7 @@ defmodule Rail.PeriodicTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12705"})
 
-    {:ok, %Task{id: t2_id} = t2} = Pipeline.bring_local(system_scope(), issue_12705)
+    {:ok, %Task{id: _t2_id} = t2} = Pipeline.bring_local(system_scope(), issue_12705)
 
     {:ok, %Task{id: t2_id} = t2} =
       Pipeline.update_task(system_scope(), t2.id, %{
@@ -320,7 +319,7 @@ defmodule Rail.PeriodicTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12710"})
 
-    {:ok, %Task{id: err_id} = err_task} = Pipeline.bring_local(system_scope(), issue_12710)
+    {:ok, %Task{id: _err_id} = err_task} = Pipeline.bring_local(system_scope(), issue_12710)
 
     {:ok, %Task{id: err_id} = err_task} =
       Pipeline.update_task(system_scope(), err_task.id, %{
@@ -339,7 +338,7 @@ defmodule Rail.PeriodicTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_periodic_12711"})
 
-    {:ok, %Task{id: ok_id} = ok_task} = Pipeline.bring_local(system_scope(), issue_12711)
+    {:ok, %Task{id: _ok_id} = ok_task} = Pipeline.bring_local(system_scope(), issue_12711)
 
     {:ok, %Task{id: ok_id} = ok_task} =
       Pipeline.update_task(system_scope(), ok_task.id, %{

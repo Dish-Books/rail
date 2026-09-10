@@ -6,12 +6,9 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
-  alias Rail.Projects.Schemas.Project
-  alias Rail.Repo
   alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
-  alias Rail.Users.Schemas.User
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -71,7 +68,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "refuses to clean up when task is busy", %{project: project, task: task} do
+  test "refuses to clean up when task is busy", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Cleanup Task Project 8702",
@@ -132,8 +129,8 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   end
 
   test "cleans up worktree, branch, scratch directory, updates worktree_path to nil, and broadcasts", %{
-    project: project,
-    task: task
+    project: _project,
+    task: _task
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     clone_path = create_temp_git_repo(prefix: "rail_cleanup_main")
@@ -180,7 +177,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_cleanup_task_8707"})
 
-    {:ok, %Task{id: task_id} = task} = Pipeline.bring_local(system_scope(), issue_8707)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.bring_local(system_scope(), issue_8707)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -199,7 +196,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :task_cleaned_up}}
   end
 
-  test "handles cleanup gracefully when worktree_path is already nil", %{project: project, task: task} do
+  test "handles cleanup gracefully when worktree_path is already nil", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Cleanup Task Project 8708",
@@ -248,7 +245,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert {:error, :not_found} = Pipeline.cleanup_task(123)
   end
 
-  test "accepts nil scope and task with opts", %{project: project, task: task} do
+  test "accepts nil scope and task with opts", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Cleanup Task Project 8710",
