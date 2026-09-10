@@ -13,6 +13,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
       description: "Users crash when logging in",
       state: :in_progress,
       state_name: "In Progress",
+      priority: :urgent,
       branch_name: "fix/login-crash",
       url: "https://linear.app/issue/ENG-101",
       linear_created_at: ~U[2026-09-01 10:00:00.000000Z],
@@ -23,6 +24,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
     assert changeset.valid?
     assert get_field(changeset, :project_id) == "prj_test_123"
     assert get_field(changeset, :state) == :in_progress
+    assert get_field(changeset, :priority) == :urgent
   end
 
   test "validates required fields" do
@@ -58,6 +60,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
     assert byte_size(issue.external_id) > 0
     assert byte_size(issue.identifier) > 0
     assert byte_size(issue.title) > 0
+    assert issue.priority == :medium
     assert issue.state == :triage
     assert issue.state_name == "Triage"
     assert byte_size(issue.url) > 0

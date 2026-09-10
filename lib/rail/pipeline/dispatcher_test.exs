@@ -562,6 +562,7 @@ defmodule Rail.Pipeline.DispatcherTest do
              GenServer.call(pid, {:dispatch_now, task.id})
 
     assert :ok = Dispatcher.cancel_retry_timer(pid, 12_345)
+    assert :ok = Dispatcher.cancel_retry_timer(task)
 
     send(pid, {:retry_timer_expired, "tsk_missing"})
     Process.sleep(10)

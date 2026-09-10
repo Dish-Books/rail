@@ -16,4 +16,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate compact_waiting_strip(assigns), to: RailWeb.Components.CompactWaitingStrip
   defdelegate with_agent_section(assigns), to: RailWeb.Components.WithAgentSection
   defdelegate role_roster(assigns), to: RailWeb.Components.RoleRoster
+  defdelegate issue_card(assigns), to: RailWeb.Components.IssueCard
+  defdelegate issue_editor_modal(assigns), to: RailWeb.Components.IssueEditorModal
+  defdelegate archive_issue_modal(assigns), to: RailWeb.Components.ArchiveIssueModal
 end

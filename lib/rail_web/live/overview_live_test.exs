@@ -361,7 +361,7 @@ defmodule RailWeb.OverviewLiveTest do
     System.delete_env("AXIS_NO_DISPATCH")
 
     Dispatcher.set_dispatch_disabled(true)
-    on_exit(fn -> Dispatcher.set_dispatch_disabled(false) end)
+    on_exit(fn -> Dispatcher.set_dispatch_disabled(true) end)
 
     assert {:ok, view2, _html} = live(authed_conn, ~p"/")
     assert has_element?(view2, "#dispatch-disabled-banner")
@@ -369,6 +369,8 @@ defmodule RailWeb.OverviewLiveTest do
     Dispatcher.set_dispatch_disabled(false)
     assert {:ok, view3, _html} = live(authed_conn, ~p"/")
     refute has_element?(view3, "#dispatch-disabled-banner")
+
+    Dispatcher.set_dispatch_disabled(true)
   end
 
   test "renders question card with options, handles answer clicks, text submission, and dismissal", %{conn: conn} do

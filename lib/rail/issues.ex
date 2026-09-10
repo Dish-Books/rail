@@ -7,7 +7,9 @@ defmodule Rail.Issues do
   defdelegate capture_issue(scope, project, ask), to: Actions.CaptureIssue
   defdelegate get_issue(scope, id), to: Actions.GetIssue
   defdelegate get_issue!(scope, id), to: Actions.GetIssue
-  defdelegate list_issues(scope, project_or_opts \\ []), to: Actions.ListIssues
+  defdelegate list_issues(scope), to: Actions.ListIssues
+  defdelegate list_issues(scope, project_or_opts), to: Actions.ListIssues
+  defdelegate list_issues(scope, project, opts), to: Actions.ListIssues
   defdelegate update_issue(scope, issue, attrs), to: Actions.UpdateIssue
   defdelegate archive_issue(scope, issue), to: Actions.ArchiveIssue
   defdelegate push_ticket(scope, project, identifier, ticket_content, owner_user \\ nil), to: Actions.PushTicket
