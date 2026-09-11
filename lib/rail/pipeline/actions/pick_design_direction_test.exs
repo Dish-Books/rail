@@ -209,17 +209,26 @@ defmodule Rail.Pipeline.Actions.PickDesignDirectionTest do
   end
 
   test "supports all arities and user scope invocation", %{task: task, roles: roles} do
-    {:ok, _designer_role} =
+    {:ok, designer_role} =
       Roles.update_role(system_scope(), roles[:design], %{
         name: "Designer"
       })
 
     user_scope = %Scope{user: %{id: "usr_1"}, system: false}
 
-    {:ok, task} =
+    {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :design,
         stage_state: :awaiting_approval
+      })
+
+    {:ok, _design_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: designer_role.id,
+        conversation_id: "sess_design",
+        status: :finished,
+        started_at: DateTime.utc_now()
       })
 
     design_scratch_9803 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")

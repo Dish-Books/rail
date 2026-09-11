@@ -305,7 +305,16 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     assert {:ok, %Task{stage: :engineer}} = Pipeline.recheck_design(task)
   end
 
-  test "fails when manifest is missing pickedKey after a pick", %{task: task} do
+  test "fails when manifest is missing pickedKey after a pick", %{task: task, roles: roles} do
+    {:ok, _design_run} =
+      Runs.create_role_run(%{
+        task_id: task.id,
+        role_id: roles[:design].id,
+        conversation_id: "sess_design",
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
     worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
     design_dir = Path.join([worktree_dir, ".rail", "design"])
     File.mkdir_p!(design_dir)
@@ -364,7 +373,16 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     assert reason =~ "Design manifest is missing pickedKey (expected \"dir-1\")."
   end
 
-  test "fails when manifest pickedKey does not match chosen direction", %{task: task} do
+  test "fails when manifest pickedKey does not match chosen direction", %{task: task, roles: roles} do
+    {:ok, _design_run} =
+      Runs.create_role_run(%{
+        task_id: task.id,
+        role_id: roles[:design].id,
+        conversation_id: "sess_design",
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
     worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
     design_dir = Path.join([worktree_dir, ".rail", "design"])
     File.mkdir_p!(design_dir)

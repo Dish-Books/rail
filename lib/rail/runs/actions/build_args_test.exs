@@ -1,9 +1,9 @@
-defmodule Rail.Runs.ArgvBuilderTest do
+defmodule Rail.Runs.Actions.BuildArgsTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Runs.ArgvBuilder
+  alias Rail.Runs.Actions.BuildArgs
 
-  test "builds standard Claude argv in exact flag order" do
+  test "builds standard Claude args in exact flag order" do
     opts = [
       backend: :claude,
       prompt: "Fix the bug",
@@ -11,9 +11,9 @@ defmodule Rail.Runs.ArgvBuilderTest do
       effort: "high"
     ]
 
-    argv = ArgvBuilder.build_argv(opts)
+    args = BuildArgs.build_args(opts)
 
-    assert argv == [
+    assert args == [
              "-p",
              "Fix the bug",
              "--model",
@@ -27,7 +27,7 @@ defmodule Rail.Runs.ArgvBuilderTest do
            ]
   end
 
-  test "builds read-only Claude argv with tools empty string and strict mcp config" do
+  test "builds read-only Claude args with tools empty string and strict mcp config" do
     opts = %{
       backend: "claude",
       prompt: "Review the code",
@@ -36,9 +36,9 @@ defmodule Rail.Runs.ArgvBuilderTest do
       read_only: true
     }
 
-    argv = ArgvBuilder.build_argv(opts)
+    args = BuildArgs.build_args(opts)
 
-    assert argv == [
+    assert args == [
              "-p",
              "Review the code",
              "--model",
@@ -53,10 +53,10 @@ defmodule Rail.Runs.ArgvBuilderTest do
              "--verbose"
            ]
 
-    refute "--dangerously-skip-permissions" in argv
+    refute "--dangerously-skip-permissions" in args
   end
 
-  test "attaches --system-prompt and --resume to Claude argv when present" do
+  test "attaches --system-prompt and --resume to Claude args when present" do
     opts = [
       backend: "CLAUDE",
       prompt: "Do work",
@@ -65,9 +65,9 @@ defmodule Rail.Runs.ArgvBuilderTest do
       conversation_id: "sess-abc-123"
     ]
 
-    argv = ArgvBuilder.build_argv(opts)
+    args = BuildArgs.build_args(opts)
 
-    assert Enum.take(argv, -4) == [
+    assert Enum.take(args, -4) == [
              "--system-prompt",
              "Act as QA engineer.",
              "--resume",
@@ -75,7 +75,7 @@ defmodule Rail.Runs.ArgvBuilderTest do
            ]
   end
 
-  test "omits empty system-prompt and resume from Claude argv" do
+  test "omits empty system-prompt and resume from Claude args" do
     opts = [
       backend: :claude,
       prompt: "Run",
@@ -84,13 +84,13 @@ defmodule Rail.Runs.ArgvBuilderTest do
       conversation_id: nil
     ]
 
-    argv = ArgvBuilder.build_argv(opts)
+    args = BuildArgs.build_args(opts)
 
-    refute "--system-prompt" in argv
-    refute "--resume" in argv
+    refute "--system-prompt" in args
+    refute "--resume" in args
   end
 
-  test "builds standard Agy argv in exact flag order" do
+  test "builds standard Agy args in exact flag order" do
     opts = [
       backend: :agy,
       prompt: "Refactor auth",
@@ -100,9 +100,9 @@ defmodule Rail.Runs.ArgvBuilderTest do
       log_file: "/tmp/rail/agy-logs/task-1.log"
     ]
 
-    argv = ArgvBuilder.build_argv(opts)
+    args = BuildArgs.build_args(opts)
 
-    assert argv == [
+    assert args == [
              "-p",
              "Refactor auth",
              "--model",
@@ -123,7 +123,7 @@ defmodule Rail.Runs.ArgvBuilderTest do
            ]
   end
 
-  test "builds read-only Agy argv with mode plan and no skip-permissions" do
+  test "builds read-only Agy args with mode plan and no skip-permissions" do
     opts = %{
       backend: "agy",
       prompt: "Plan the feature",
@@ -133,9 +133,9 @@ defmodule Rail.Runs.ArgvBuilderTest do
       print_timeout: "2h"
     }
 
-    argv = ArgvBuilder.build_argv(opts)
+    args = BuildArgs.build_args(opts)
 
-    assert argv == [
+    assert args == [
              "-p",
              "Plan the feature",
              "--model",
@@ -150,9 +150,9 @@ defmodule Rail.Runs.ArgvBuilderTest do
              "2h"
            ]
 
-    refute "--dangerously-skip-permissions" in argv
-    refute "--add-dir" in argv
-    refute "--log-file" in argv
+    refute "--dangerously-skip-permissions" in args
+    refute "--add-dir" in args
+    refute "--log-file" in args
   end
 
   test "attaches --conversation for Agy resume turn" do
@@ -163,12 +163,12 @@ defmodule Rail.Runs.ArgvBuilderTest do
       conversation_id: "conv-xyz-789"
     ]
 
-    argv = ArgvBuilder.build_argv(opts)
+    args = BuildArgs.build_args(opts)
 
-    assert Enum.take(argv, -2) == ["--conversation", "conv-xyz-789"]
-    refute "--resume" in argv
-    refute "--system-prompt" in argv
-    refute "--verbose" in argv
+    assert Enum.take(args, -2) == ["--conversation", "conv-xyz-789"]
+    refute "--resume" in args
+    refute "--system-prompt" in args
+    refute "--verbose" in args
   end
 
   test "treats non-claude backend as Agy" do
@@ -178,16 +178,16 @@ defmodule Rail.Runs.ArgvBuilderTest do
       model: "default-model"
     ]
 
-    argv = ArgvBuilder.build_argv(opts)
+    args = BuildArgs.build_args(opts)
 
-    assert "--mode" in argv
-    assert "--print-timeout" in argv
+    assert "--mode" in args
+    assert "--print-timeout" in args
 
-    nil_argv = ArgvBuilder.build_argv(backend: nil, prompt: "Nil engine")
-    assert "--mode" in nil_argv
+    nil_args = BuildArgs.build_args(backend: nil, prompt: "Nil engine")
+    assert "--mode" in nil_args
 
-    int_argv = ArgvBuilder.build_argv(backend: 123, prompt: "Int engine")
-    assert "--mode" in int_argv
+    int_args = BuildArgs.build_args(backend: 123, prompt: "Int engine")
+    assert "--mode" in int_args
   end
 
   test "ignores whitespace in agy add_dir, log_file, and conversation" do
@@ -200,24 +200,9 @@ defmodule Rail.Runs.ArgvBuilderTest do
       conversation_id: "   "
     ]
 
-    argv = ArgvBuilder.build_argv(opts)
-    refute "--add-dir" in argv
-    refute "--log-file" in argv
-    refute "--conversation" in argv
-  end
-
-  test "executable_path/2 reads the configured backend and honours overrides" do
-    assert ArgvBuilder.executable_path(:claude) == ""
-    assert ArgvBuilder.executable_path(:agy) == ""
-
-    scope = Rail.Scope.for_system()
-    {:ok, _claude} = Rail.Backends.create_backend(scope, %{name: :claude, executable_path: "/configured/claude"})
-    {:ok, _agy} = Rail.Backends.create_backend(scope, %{name: :agy, executable_path: "/configured/agy"})
-
-    assert ArgvBuilder.executable_path(:claude) == "/configured/claude"
-    assert ArgvBuilder.executable_path(:agy) == "/configured/agy"
-
-    assert ArgvBuilder.executable_path(:claude, claude_path: "/custom/claude") == "/custom/claude"
-    assert ArgvBuilder.executable_path(:agy, agy_path: "/custom/agy") == "/custom/agy"
+    args = BuildArgs.build_args(opts)
+    refute "--add-dir" in args
+    refute "--log-file" in args
+    refute "--conversation" in args
   end
 end

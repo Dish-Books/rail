@@ -4,8 +4,8 @@ defmodule Rail.Runs.Actions.StartRun do
   import Ecto.Query
 
   alias Ecto.Adapters.SQL.Sandbox
+  alias Rail.Backends.Probes
   alias Rail.Repo
-  alias Rail.Runs.ArgvBuilder
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
@@ -78,19 +78,19 @@ defmodule Rail.Runs.Actions.StartRun do
             if String.starts_with?(first, "/") or File.exists?(first) do
               {first, rest}
             else
-              {backend_executable(backend, opts), argv}
+              {backend_executable(backend), argv}
             end
 
           _other ->
-            {backend_executable(backend, opts), []}
+            {backend_executable(backend), []}
         end
     end
   end
 
   # Tests configure `:run_executable` as the stub the backends table would name in
   # production.
-  defp backend_executable(backend, opts) do
-    case ArgvBuilder.executable_path(backend, opts) do
+  defp backend_executable(backend) do
+    case Probes.configured_path(backend) do
       path when is_binary(path) and path != "" -> path
       _unconfigured -> Application.get_env(:rail, :run_executable, "")
     end

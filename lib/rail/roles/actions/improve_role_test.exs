@@ -33,6 +33,13 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
     %{project: project, role: role}
   end
 
+  defp configure_claude(executable_path) do
+    {:ok, _backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: executable_path})
+
+    :ok
+  end
+
   test "returns not authorized when user is not admin", %{role: role} do
     scope = Scope.for_user(%{admin: false})
 
@@ -196,8 +203,10 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
       File.rm(script_path)
     end)
 
+    configure_claude(script_path)
+
     assert {:ok, %RoleInstructionProposal{proposed: "Echoed prompt"}} =
-             Roles.improve_role(scope, role, "claude-3-7-sonnet", claude_path: script_path)
+             Roles.improve_role(scope, role, "claude-3-7-sonnet")
   end
 
   test "handles default runner non-zero exit", %{role: role} do
@@ -213,8 +222,10 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
       })
 
     # Use /usr/bin/false to simulate CLI failure
+    configure_claude("/usr/bin/false")
+
     assert {:error, {:run_failed, msg}} =
-             Roles.improve_role(scope, role, "claude-3-7-sonnet", claude_path: "/usr/bin/false")
+             Roles.improve_role(scope, role, "claude-3-7-sonnet")
 
     assert msg =~ "CLI exited with code 1"
   end
@@ -245,9 +256,11 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
       File.rm(script_path)
     end)
 
+    configure_claude(script_path)
+
     expected_msg = "something broke in runner"
 
     assert {:error, {:run_failed, ^expected_msg}} =
-             Roles.improve_role(scope, role, "claude-3-7-sonnet", claude_path: script_path)
+             Roles.improve_role(scope, role, "claude-3-7-sonnet")
   end
 end

@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Projects
   alias Rail.Roles
+  alias Rail.Runs
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -63,7 +64,16 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "lists questions by project and filters by status", %{project: project, task: task} do
+  test "lists questions by project and filters by status", %{project: project, task: task, roles: roles} do
+    {:ok, _product_run} =
+      Runs.create_role_run(%{
+        task_id: task.id,
+        role_id: roles[:product].id,
+        conversation_id: "sess_product",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
     {:ok, q_answered} = Pipeline.register_question(task, %{prompt: "P1 Answered"})
     {:ok, _q_answered} = Pipeline.answer_question(q_answered, "Because")
 
@@ -123,7 +133,16 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     assert Enum.map(asc_order, & &1.id) == [q1.id, q2.id]
   end
 
-  test "list_pending_questions convenience functions", %{project: project, task: task} do
+  test "list_pending_questions convenience functions", %{project: project, task: task, roles: roles} do
+    {:ok, _product_run} =
+      Runs.create_role_run(%{
+        task_id: task.id,
+        role_id: roles[:product].id,
+        conversation_id: "sess_product",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
     {:ok, q_answered} = Pipeline.register_question(task, %{prompt: "Answered question?"})
     {:ok, _q_answered} = Pipeline.answer_question(q_answered, "Because")
 

@@ -1,8 +1,9 @@
 defmodule Rail.Roles.Actions.ImproveRole do
   @moduledoc false
 
+  alias Rail.Backends.Probes
   alias Rail.Roles.Schemas.Role
-  alias Rail.Runs.ArgvBuilder
+  alias Rail.Runs
   alias Rail.Tools
 
   def improve_role(scope, %Role{} = role, chosen_model, opts \\ []) when is_binary(chosen_model) do
@@ -40,9 +41,9 @@ defmodule Rail.Roles.Actions.ImproveRole do
     end
   end
 
-  defp default_runner(temp_cwd, improver_role, opts) do
-    argv =
-      ArgvBuilder.build_argv(
+  defp default_runner(temp_cwd, improver_role, _opts) do
+    args =
+      Runs.build_args(
         backend: improver_role.cli_backend,
         model: improver_role.model,
         prompt: improver_role.system_prompt,
@@ -50,9 +51,9 @@ defmodule Rail.Roles.Actions.ImproveRole do
         work_dir: temp_cwd
       )
 
-    exe = ArgvBuilder.executable_path(improver_role.cli_backend, opts)
+    exe = Probes.configured_path(improver_role.cli_backend)
 
-    case Tools.run(exe, argv, cd: temp_cwd, stderr_to_stdout: true) do
+    case Tools.run(exe, args, cd: temp_cwd, stderr_to_stdout: true) do
       {stdout, 0} ->
         {:ok, stdout, %{}}
 

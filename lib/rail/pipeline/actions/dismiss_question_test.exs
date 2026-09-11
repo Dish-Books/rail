@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Runs
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -97,7 +98,16 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     assert is_nil(reloaded_task.question_id)
   end
 
-  test "returns error when dismissing an answered question", %{task: task} do
+  test "returns error when dismissing an answered question", %{task: task, roles: roles} do
+    {:ok, _product_run} =
+      Runs.create_role_run(%{
+        task_id: task.id,
+        role_id: roles[:product].id,
+        conversation_id: "sess_product",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
     {:ok, q_answered} = Pipeline.register_question(task, %{prompt: "Answered question?"})
     {:ok, q_answered} = Pipeline.answer_question(q_answered, "Yes")
 

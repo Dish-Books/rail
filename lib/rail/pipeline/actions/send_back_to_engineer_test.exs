@@ -195,6 +195,15 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
         output: "Reviewer finding: memory leak in loop."
       })
 
+    {:ok, _eng_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_eng.id,
+        conversation_id: "sess_eng",
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
     expected_empty = %{}
 
     assert {:ok,
@@ -227,6 +236,15 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :qa,
         stage_state: :awaiting_approval
+      })
+
+    {:ok, _eng_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_eng.id,
+        conversation_id: "sess_eng",
+        status: :finished,
+        started_at: DateTime.utc_now()
       })
 
     assert {:ok, %Task{stage: :engineer, stage_state: :queued}} =
@@ -276,5 +294,19 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
     assert eng_run.pending_answer =~ "Initial engineer instruction\n\nSent back to you by the human"
 
     assert {:error, :not_found} = Pipeline.send_back_to_engineer(user_scope, :invalid_task)
+  end
+
+  test "returns no_session when the engineer has never held a conversation", %{task: task, roles: roles} do
+    {:ok, role_eng} = Roles.update_role(system_scope(), roles[:engineer], %{name: "Staff Engineer"})
+
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :qa,
+        stage_state: :awaiting_approval
+      })
+
+    assert {:error, :no_session} = Pipeline.send_back_to_engineer(task, "Please fix")
+
+    assert Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id) == nil
   end
 end

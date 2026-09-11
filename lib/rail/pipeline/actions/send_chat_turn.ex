@@ -19,7 +19,6 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.ArgvBuilder
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Scope
 
@@ -373,7 +372,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
     chat_prompt = Runs.chat_prompt(message)
 
     argv =
-      ArgvBuilder.build_argv(
+      Runs.build_args(
         backend: role.cli_backend,
         prompt: chat_prompt,
         model: role.model,

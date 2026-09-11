@@ -1,34 +1,13 @@
-defmodule Rail.Runs.ArgvBuilder do
-  @moduledoc """
-  Builds CLI argument vectors (argv) for Claude and Agy agent runners.
-
-  Enforces exact flag order, read-only mode permissions, and resume flags per spec 03 §2.
-  """
-
-  alias Rail.Backends.Probes
+defmodule Rail.Runs.Actions.BuildArgs do
+  @moduledoc false
 
   @default_print_timeout "6h"
   @default_effort "high"
 
   @doc """
-  Returns the CLI binary path for the given backend.
-  """
-  def executable_path(backend, opts \\ [])
-
-  def executable_path(backend, opts) when is_list(opts) do
-    executable_path(backend, Map.new(opts))
-  end
-
-  def executable_path(backend, opts) when is_map(opts) do
-    if claude?(backend) do
-      opts[:claude_path] || Probes.configured_path(:claude)
-    else
-      opts[:agy_path] || Probes.configured_path(:agy)
-    end
-  end
-
-  @doc """
   Builds the command-line arguments list for the specified backend.
+
+  Enforces exact flag order, read-only mode permissions, and resume flags per spec 03 §2.
 
   Options:
   - `:backend` or `:cli_backend`: `:claude` | `:agy` (or string, case-insensitive)
@@ -42,21 +21,21 @@ defmodule Rail.Runs.ArgvBuilder do
   - `:work_dir` or `:working_directory`: directory for `--add-dir` (Agy only)
   - `:log_file`, `:log_path`, or `:agy_log_path`: path for `--log-file` (Agy only)
   """
-  def build_argv(opts) when is_list(opts) do
-    build_argv(Map.new(opts))
+  def build_args(opts) when is_list(opts) do
+    build_args(Map.new(opts))
   end
 
-  def build_argv(opts) when is_map(opts) do
+  def build_args(opts) when is_map(opts) do
     backend = opts[:backend] || opts[:cli_backend]
 
     if claude?(backend) do
-      build_claude_argv(opts)
+      build_claude_args(opts)
     else
-      build_agy_argv(opts)
+      build_agy_args(opts)
     end
   end
 
-  defp build_claude_argv(opts) do
+  defp build_claude_args(opts) do
     prompt = opts[:prompt] || ""
     model = opts[:model] || ""
     effort = opts[:reasoning_effort] || opts[:effort] || @default_effort
@@ -92,7 +71,7 @@ defmodule Rail.Runs.ArgvBuilder do
       resume_flags
   end
 
-  defp build_agy_argv(opts) do
+  defp build_agy_args(opts) do
     prompt = opts[:prompt] || ""
     model = opts[:model] || ""
     effort = opts[:reasoning_effort] || opts[:effort] || @default_effort

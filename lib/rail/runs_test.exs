@@ -7,15 +7,15 @@ defmodule Rail.RunsTest do
   alias Rail.Runs.QuestionDetector
   alias Rail.Runs.Schemas.RunEvent
 
-  test "delegates build_argv/1" do
-    argv =
-      Runs.build_argv(
+  test "delegates build_args/1" do
+    args =
+      Runs.build_args(
         backend: :claude,
         prompt: "Check types",
         model: "claude-3-7-sonnet"
       )
 
-    assert argv == [
+    assert args == [
              "-p",
              "Check types",
              "--model",

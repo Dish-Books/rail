@@ -112,7 +112,6 @@ defmodule Rail.PipelineTest do
   end
 
   test "delegates stage lifecycle and gate actions", %{project: project, task: task, roles: roles} do
-    _arch = roles[:architect]
     _eng = roles[:engineer]
 
     {:ok, task_approve} =
@@ -139,6 +138,15 @@ defmodule Rail.PipelineTest do
         stage_state: :awaiting_approval
       })
 
+    {:ok, _arch_run} =
+      Runs.create_role_run(%{
+        task_id: task_request.id,
+        role_id: roles[:architect].id,
+        conversation_id: "sess_arch",
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
     assert {:ok, %Task{stage: :architect, stage_state: :queued}} = Pipeline.request_changes(task_request, "Fix schema")
 
     LinearMock.mock_create_issue_success(%{
@@ -155,6 +163,15 @@ defmodule Rail.PipelineTest do
       Pipeline.update_task(system_scope(), task_send_back.id, %{
         stage: :review,
         stage_state: :awaiting_approval
+      })
+
+    {:ok, _eng_run} =
+      Runs.create_role_run(%{
+        task_id: task_send_back.id,
+        role_id: roles[:engineer].id,
+        conversation_id: "sess_eng",
+        status: :finished,
+        started_at: DateTime.utc_now()
       })
 
     assert {:ok, %Task{stage: :engineer, stage_state: :queued}} =
@@ -219,7 +236,6 @@ defmodule Rail.PipelineTest do
 
   test "delegates question lifecycle and listing actions", %{project: project, task: task, roles: roles} do
     role = roles[:engineer]
-    _review_role = roles[:review]
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -252,6 +268,15 @@ defmodule Rail.PipelineTest do
              Pipeline.list_pending_questions(scope, project.id, [])
 
     assert {:ok, %Task{stage: :review, stage_state: :queued}} = Pipeline.release_blocked_stage(scope, task.id)
+
+    {:ok, _review_run} =
+      Runs.create_role_run(%{
+        task_id: task.id,
+        role_id: roles[:review].id,
+        conversation_id: "sess_review",
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
 
     assert {:ok, %Question{status: :answered}} =
              Pipeline.answer_question(scope, q_id, "Postgres")

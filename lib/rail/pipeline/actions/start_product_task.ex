@@ -19,7 +19,6 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.ArgvBuilder
   alias Rail.Runs.Schemas.RoleRun
 
   @doc """
@@ -75,7 +74,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
       )
 
     argv =
-      ArgvBuilder.build_argv(
+      Runs.build_args(
         backend: role.cli_backend,
         prompt: prompt,
         model: role.model,
