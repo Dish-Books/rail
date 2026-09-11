@@ -1,9 +1,8 @@
 defmodule Rail.Git.Actions.GetChangedFiles do
   @moduledoc false
 
-  import Rail.Git.Utils.GitCmd
-
   alias Rail.Git.ChangedFile
+  alias Rail.ToolEnv
 
   @doc """
   Returns a list of ChangedFile structs for modified, deleted, and untracked files.
@@ -23,7 +22,7 @@ defmodule Rail.Git.Actions.GetChangedFiles do
           ["diff", "--numstat", filter]
       end
 
-    case git_cmd(args, cd: worktree_path, stderr_to_stdout: true) do
+    case ToolEnv.run("git", args, cd: worktree_path, stderr_to_stdout: true) do
       {output, 0} ->
         parse_numstat(output, worktree_path, filter)
 

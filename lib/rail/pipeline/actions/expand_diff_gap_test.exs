@@ -93,7 +93,7 @@ defmodule Rail.Pipeline.Actions.ExpandDiffGapTest do
   test "returns empty list when worktree_path is nil", %{task: task} do
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
-        worktree_path: nil
+        worktree_path: "/tmp/rail-removed-worktree"
       })
 
     assert {"any.txt:0", []} =

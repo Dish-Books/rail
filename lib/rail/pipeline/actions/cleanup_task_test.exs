@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
+  alias Rail.Projects.Schemas.Project
   alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
@@ -122,14 +123,14 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert {:error, :task_busy} = Pipeline.cleanup_task(task_chat)
   end
 
-  test "cleans up worktree, branch, scratch directory, updates worktree_path to nil, and broadcasts", %{
+  test "cleans up worktree, branch and scratch directory, and broadcasts", %{
     project: _project,
     task: _task
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     clone_path = create_temp_git_repo(prefix: "rail_cleanup_main")
     wt_dir = Path.join(System.tmp_dir!(), "rail_cleanup_wt_#{System.unique_integer([:positive])}")
-    {:ok, worktree_path} = Git.get_or_create_worktree(clone_path, wt_dir, "cleanup-branch")
+    {:ok, worktree_path} = Git.get_or_create_worktree(%Project{clone_path: clone_path}, %Task{worktree_path: wt_dir, worktree_name: "cleanup-branch"})
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
@@ -179,8 +180,10 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         worktree_path: worktree_path
       })
 
-    assert {:ok, %Task{worktree_path: nil}} =
+    assert {:ok, %Task{worktree_path: ^worktree_path} = cleaned} =
              Pipeline.cleanup_task(scope, task, scratch_dir: scratch_dir)
+
+    refute Task.worktree_present?(cleaned)
 
     refute File.exists?(worktree_path)
     refute File.exists?(scratch_dir)
@@ -219,11 +222,11 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :merged,
-        worktree_name: nil,
-        worktree_path: nil
+        worktree_name: "removed-worktree",
+        worktree_path: "/tmp/rail-removed-worktree"
       })
 
-    assert {:ok, %Task{worktree_path: nil}} = Pipeline.cleanup_task(task)
+    assert {:ok, %Task{}} = Pipeline.cleanup_task(task)
   end
 
   test "returns error when scope is unauthorized" do
@@ -266,11 +269,11 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :merged,
-        worktree_name: nil,
-        worktree_path: nil
+        worktree_name: "removed-worktree",
+        worktree_path: "/tmp/rail-removed-worktree"
       })
 
-    assert {:ok, %Task{worktree_path: nil}} = Pipeline.cleanup_task(nil, task)
-    assert {:ok, %Task{worktree_path: nil}} = Pipeline.cleanup_task(task.id, scratch_dir: "/tmp/nonexistent")
+    assert {:ok, %Task{}} = Pipeline.cleanup_task(nil, task)
+    assert {:ok, %Task{}} = Pipeline.cleanup_task(task.id, scratch_dir: "/tmp/nonexistent")
   end
 end

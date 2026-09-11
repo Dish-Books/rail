@@ -18,7 +18,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemo do
        (task.stage == :demo and task.stage_state == :failed)) and
       task.stage != :merged and is_nil(task.merged_at) and
       not Task.busy?(task) and
-      is_binary(task.worktree_path) and task.worktree_path != ""
+      Task.worktree_present?(task)
   end
 
   def can_rerecord_demo?(_other), do: false
@@ -58,9 +58,8 @@ defmodule Rail.Pipeline.Actions.RerecordDemo do
       task.stage == :merged or task.merged_at != nil ->
         {:error, :task_merged}
 
-      is_nil(task.worktree_path) or not File.dir?(task.worktree_path) ->
-        path = task.worktree_path || ""
-        error_msg = "Worktree does not exist on disk (#{path})."
+      not Task.worktree_present?(task) ->
+        error_msg = "Worktree does not exist on disk (#{task.worktree_path})."
 
         {:ok, updated_task} =
           task

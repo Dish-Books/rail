@@ -118,6 +118,7 @@ defmodule RailWeb.Components.DemoPanelTest do
   end
 
   test "renders stale demo with out of date pill, opacity-50, and disabled play buttons" do
+    File.mkdir_p!("/tmp/wt")
     seg = %{
       criterion_index: 1,
       criterion: "AC 1",

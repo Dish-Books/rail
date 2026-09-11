@@ -101,13 +101,9 @@ defmodule Rail.Pipeline.Actions.MergeTask do
   end
 
   defp finalize_merge(scope, project, task, token, opts) do
-    branch_name = task.worktree_name || resolve_issue_branch(task)
+    _branch_res = GitHub.delete_remote_branch(project.github_repo, task.worktree_name, token, opts)
 
-    if is_binary(branch_name) and branch_name != "" do
-      _branch_res = GitHub.delete_remote_branch(project.github_repo, branch_name, token, opts)
-    end
-
-    if is_binary(task.worktree_path) and task.worktree_path != "" and is_binary(project.clone_path) do
+    if is_binary(project.clone_path) do
       _wt_res = Git.remove_worktree(project.clone_path, task.worktree_path)
     end
 
@@ -115,7 +111,6 @@ defmodule Rail.Pipeline.Actions.MergeTask do
 
     attrs = %{
       stage: :merged,
-      worktree_path: nil,
       merged_at: Keyword.get(opts, :merged_at) || DateTime.utc_now(),
       error: nil
     }
@@ -157,13 +152,6 @@ defmodule Rail.Pipeline.Actions.MergeTask do
 
     {:error, reason}
   end
-
-  defp resolve_issue_branch(%Task{issue_id: issue_id}) when is_binary(issue_id) do
-    %Issue{branch_name: branch} = Repo.get!(Issue, issue_id)
-    if is_binary(branch) and branch != "", do: branch
-  end
-
-  defp resolve_issue_branch(_task), do: nil
 
   defp format_reason({:github_api_error, _status, %{"message" => msg}}), do: msg
   defp format_reason({:github_api_error, status, msg}) when is_binary(msg), do: "#{status} #{msg}"

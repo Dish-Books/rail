@@ -19,9 +19,15 @@ defmodule Rail.Pipeline.Actions.LoadDiff do
     do_load_diff(task)
   end
 
-  defp do_load_diff(%Task{worktree_path: nil}), do: {:error, :no_worktree}
+  defp do_load_diff(%Task{worktree_path: worktree_path} = task) do
+    if Task.worktree_present?(task) do
+      do_load_present_diff(task, worktree_path)
+    else
+      {:error, :no_worktree}
+    end
+  end
 
-  defp do_load_diff(%Task{worktree_path: worktree_path} = task) when is_binary(worktree_path) do
+  defp do_load_present_diff(%Task{} = task, worktree_path) do
     changes = Rail.Git.get_worktree_changes(worktree_path)
 
     {filter, diff_rev} =

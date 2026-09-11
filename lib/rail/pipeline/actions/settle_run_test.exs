@@ -2697,7 +2697,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :design,
           stage_state: :running,
-          worktree_path: nil
+          worktree_path: "/tmp/rail-removed-worktree"
         })
 
       # A previous design version already exists with dir-1 picked.
@@ -2784,7 +2784,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :design,
           stage_state: :running,
-          worktree_path: nil
+          worktree_path: "/tmp/rail-removed-worktree"
         })
 
       # A previous design version already exists with dir-1 picked.
@@ -3249,7 +3249,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :demo,
           stage_state: :running,
-          worktree_path: nil
+          worktree_path: "/tmp/rail-removed-worktree"
         })
 
       {:ok, role_run1} =
@@ -3281,7 +3281,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task2.id, %{
           stage: :demo,
           stage_state: :running,
-          worktree_path: nil
+          worktree_path: "/tmp/rail-removed-worktree"
         })
 
       {:ok, role_run2} =
@@ -3312,7 +3312,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :demo,
           stage_state: :running,
-          worktree_path: nil
+          worktree_path: "/tmp/rail-removed-worktree"
         })
 
       {:ok, role_run} =
@@ -3366,7 +3366,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :demo,
           stage_state: :running,
-          worktree_path: nil
+          worktree_path: "/tmp/rail-removed-worktree"
         })
 
       {:ok, role_run} =
@@ -3519,7 +3519,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :demo,
           stage_state: :running,
-          worktree_path: nil
+          worktree_path: "/tmp/rail-removed-worktree"
         })
 
       {:ok, role_run} =

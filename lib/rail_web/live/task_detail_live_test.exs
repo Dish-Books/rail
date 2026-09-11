@@ -211,11 +211,13 @@ defmodule RailWeb.TaskDetailLiveTest do
       set: [description: "Testing tabs"]
     )
 
+    tab_worktree = create_temp_git_repo()
+
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :product,
         stage_state: :running,
-        worktree_path: "/tmp/worktree/tab-task"
+        worktree_path: tab_worktree
       })
 
     plan_scratch_94904 = Path.join("/tmp", "rail_plan_scratch_#{System.unique_integer([:positive])}")
@@ -247,7 +249,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert_patched(view, ~p"/tasks/#{task.id}?tab=diff")
     assert has_element?(view, "#tab-diff[data-active='true']")
     assert has_element?(view, "#tab-diff-pane")
-    assert has_element?(view, "#tab-diff-pane", "/tmp/worktree/tab-task")
+    assert has_element?(view, "#tab-diff-pane", tab_worktree)
     assert has_element?(view, "#btn-refresh-diff", "Refresh")
 
     # Switch back to Overview tab
@@ -352,7 +354,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :product,
         stage_state: :queued,
-        worktree_path: nil
+        worktree_path: "/tmp/rail-removed-worktree"
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=diff")
@@ -801,14 +803,14 @@ defmodule RailWeb.TaskDetailLiveTest do
         issue_id: issue.id,
         stage: :architect,
         stage_state: :queued,
-        worktree_name: nil,
+        worktree_name: "removed-worktree",
         pr_number: 55,
         pr_url: nil,
         priority: nil
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
-    assert has_element?(view, "#meta-branch", "rail/issue-branch")
+    assert has_element?(view, "#meta-branch", "rail/removed-worktree")
     assert has_element?(view, "#meta-issue", "FB-99")
     assert has_element?(view, "#meta-pr", "PR #55")
     assert has_element?(view, "#meta-priority", "Urgent")
@@ -911,13 +913,13 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: minimal_id}} =
       Pipeline.update_task(system_scope(), %Task{id: minimal_id}.id, %{
         issue_id: nil,
-        worktree_name: nil,
+        worktree_name: "removed-worktree",
         pr_number: nil,
         pr_url: nil
       })
 
     assert {:ok, view_min, _html} = live(authed_conn, ~p"/tasks/#{minimal_id}")
-    refute has_element?(view_min, "#meta-branch")
+    assert has_element?(view_min, "#meta-branch", "rail/removed-worktree")
     refute has_element?(view_min, "#meta-issue")
     refute has_element?(view_min, "#meta-pr")
 
@@ -970,7 +972,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
         stage: :engineer,
         stage_state: :awaiting_approval,
-        worktree_path: "/tmp/worktree"
+        worktree_path: create_temp_git_repo()
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
@@ -2731,7 +2733,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
-        worktree_path: nil
+        worktree_path: "/tmp/rail-removed-worktree"
       })
 
     dummy_socket = %Socket{
@@ -3084,7 +3086,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
-        worktree_path: nil
+        worktree_path: "/tmp/rail-removed-worktree"
       })
 
     demo = %Rail.Artifacts.Schemas.Demo{

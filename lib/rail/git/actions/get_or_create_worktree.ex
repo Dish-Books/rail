@@ -1,78 +1,61 @@
 defmodule Rail.Git.Actions.GetOrCreateWorktree do
   @moduledoc false
 
-  import Rail.Git.Utils.GitCmd
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.Project
+  alias Rail.ToolEnv
 
   @doc """
-  Gets an existing worktree directory or creates a new one using the branch ladder.
+  Gets the task's existing worktree directory or creates a new one.
+
+  The repo, the worktree path, the branch and the base branch all come from the
+  project and the task. An existing branch is checked out as-is; otherwise the
+  branch is created from the project's default branch.
   """
-  def get_or_create_worktree(repo_path, worktree_path, branch, opts)
-      when is_binary(repo_path) and is_binary(worktree_path) and is_binary(branch) do
+  def get_or_create_worktree(%Project{} = project, %Task{} = task) do
+    repo_path = project.clone_path
+    branch = task.worktree_name || task.id
+    worktree_path = task.worktree_path || Path.join(repo_path, ".worktrees/#{branch}")
+    base_branch = project.default_branch
+
     if File.dir?(worktree_path) do
       {:ok, worktree_path}
     else
       File.mkdir_p!(Path.dirname(worktree_path))
-      base_branch = Keyword.get(opts, :base_branch, "main")
 
-      case try_ladder(repo_path, worktree_path, branch, base_branch) do
-        :ok ->
-          {:ok, worktree_path}
-
-        {:error, reason} ->
-          {:error, reason}
+      case create_worktree(repo_path, worktree_path, branch, base_branch) do
+        :ok -> {:ok, worktree_path}
+        {:error, reason} -> {:error, reason}
       end
     end
   end
 
-  defp try_ladder(repo_path, worktree_path, branch, base_branch) do
-    # Step 1: create new branch based on base_branch
-    res1 =
-      git_cmd(["worktree", "add", "-b", branch, worktree_path, base_branch],
-        cd: repo_path,
-        stderr_to_stdout: true
-      )
+  defp create_worktree(repo_path, worktree_path, branch, base_branch) do
+    args =
+      if branch_exists?(repo_path, branch) do
+        ["worktree", "add", worktree_path, branch]
+      else
+        ["worktree", "add", "-b", branch, worktree_path, base_branch]
+      end
 
-    case res1 do
+    case ToolEnv.run("git", args, cd: repo_path, stderr_to_stdout: true) do
       {_out, 0} ->
         :ok
 
-      _fail1 ->
-        # Step 2: checkout existing branch
-        res2 =
-          git_cmd(["worktree", "add", worktree_path, branch],
-            cd: repo_path,
-            stderr_to_stdout: true
-          )
-
-        case res2 do
-          {_out, 0} ->
-            :ok
-
-          _fail2 ->
-            # Step 3: detached HEAD
-            res3 =
-              git_cmd(["worktree", "add", worktree_path],
-                cd: repo_path,
-                stderr_to_stdout: true
-              )
-
-            case res3 do
-              {_out, 0} ->
-                :ok
-
-              _fail3 ->
-                {:error,
-                 "Failed to create worktree at #{worktree_path}:\n" <>
-                   "  attempt 1 (-b #{branch} #{base_branch}): #{describe(res1)}\n" <>
-                   "  attempt 2 (#{branch}): #{describe(res2)}\n" <>
-                   "  attempt 3 (detached): #{describe(res3)}"}
-            end
-        end
+      {out, code} ->
+        {:error,
+         "Failed to create worktree at #{worktree_path} " <>
+           "(git #{Enum.join(args, " ")} exited #{code}): #{String.trim(out)}"}
     end
   end
 
-  defp describe({output, code}) do
-    trimmed = String.trim(output)
-    "exit #{code}: #{trimmed}"
+  defp branch_exists?(repo_path, branch) do
+    match?(
+      {_out, 0},
+      ToolEnv.run("git", ["rev-parse", "--verify", "--quiet", "refs/heads/" <> branch],
+        cd: repo_path,
+        stderr_to_stdout: true
+      )
+    )
   end
 end

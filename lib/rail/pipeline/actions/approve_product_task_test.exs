@@ -153,13 +153,16 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
   end
 
   defp insert_task(project, issue, attrs \\ []) do
+    name = "apt-#{System.unique_integer([:positive])}"
+
     base = %{
       issue_id: issue.id,
       title: issue.title,
       description: issue.description,
       stage: :product,
       stage_state: :awaiting_approval,
-      worktree_name: "apt-#{System.unique_integer([:positive])}"
+      worktree_name: name,
+      worktree_path: Path.join(project.clone_path, ".worktrees/#{name}")
     }
 
     %Task{}

@@ -46,24 +46,9 @@ defmodule Rail.Projects.Schemas.Project do
   def changeset(project, attrs) do
     project
     |> cast(attrs, @fields)
-    |> maybe_clear_default_branch(attrs)
+    |> cast(attrs, [:default_branch])
     |> validate_required(@required_fields)
     |> unique_constraint(:github_repo)
     |> foreign_key_constraint(:linear_workspace_id)
-  end
-
-  defp maybe_clear_default_branch(changeset, attrs) do
-    val =
-      case attrs do
-        %{"default_branch" => v} -> v
-        %{default_branch: v} -> v
-        _other -> :not_set
-      end
-
-    if val in ["", nil] do
-      put_change(changeset, :default_branch, nil)
-    else
-      changeset
-    end
   end
 end

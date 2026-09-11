@@ -178,7 +178,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     assert {:error, :task_merged} = Pipeline.rerecord_demo(task_merged_at)
   end
 
-  test "guards against missing worktree directory on disk", %{project: project, task: task} do
+  test "guards against missing worktree directory on disk", %{project: _project, task: task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     nonexistent_path = "/tmp/nonexistent_worktree_#{System.unique_integer([:positive])}"
 
@@ -196,27 +196,6 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
 
     reloaded = Repo.get!(Task, task.id)
     assert reloaded.error == "Worktree does not exist on disk (#{nonexistent_path})."
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_rerecord_demo_9403",
-      "identifier" => "TSK-9403",
-      "title" => "Task 9403"
-    })
-
-    {:ok, issue_9403} = Issues.capture_issue(system_scope(), project, "Task 9403")
-
-    {:ok, task_nil_worktree} = Pipeline.create_task(issue_9403, :product)
-
-    {:ok, task_nil_worktree} =
-      Pipeline.update_task(system_scope(), task_nil_worktree.id, %{
-        stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
-        worktree_path: nil
-      })
-
-    assert {:error, :no_worktree} = Pipeline.rerecord_demo(task_nil_worktree)
-    reloaded_nil = Repo.get!(Task, task_nil_worktree.id)
-    assert reloaded_nil.error == "Worktree does not exist on disk ()."
   end
 
   test "can_rerecord_demo? checks eligibility accurately", %{project: project, task: task} do
@@ -294,7 +273,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
       Pipeline.update_task(system_scope(), missing_path_task.id, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
-        worktree_path: nil
+        worktree_path: "/tmp/rail-removed-worktree"
       })
 
     assert Pipeline.can_rerecord_demo?(eligible_ready)

@@ -99,6 +99,8 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
   end
 
   defp insert_task(project, issue) do
+    name = "sdt-#{System.unique_integer([:positive])}"
+
     %Task{}
     |> Task.changeset(
       %{
@@ -107,7 +109,8 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
         description: issue.description,
         stage: :product,
         stage_state: :awaiting_approval,
-        worktree_name: "sdt-#{System.unique_integer([:positive])}"
+        worktree_name: name,
+        worktree_path: Path.join(project.clone_path, ".worktrees/#{name}")
       },
       project.id
     )

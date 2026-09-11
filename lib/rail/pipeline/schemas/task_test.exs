@@ -91,6 +91,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       title: "Core Pipeline Feature",
       description: "Build pipeline core logic",
       worktree_name: "core-feature",
+      worktree_path: "/tmp/repos/task-schema/.worktrees/core-feature",
       pr_number: 101,
       pr_url: "https://github.com/example/repo/pull/101",
       mergeability: :mergeable,
@@ -161,7 +162,10 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   test "validates foreign key on project_id" do
     assert {:error, %{errors: [project_id: {"does not exist", _details}]}} =
              %Task{}
-             |> Task.changeset(%{title: "Missing Project Task"}, "prj_000000000000000000000000")
+             |> Task.changeset(
+               %{title: "Missing Project Task", worktree_name: "missing", worktree_path: "/tmp/missing"},
+               "prj_000000000000000000000000"
+             )
              |> Repo.insert()
   end
 
@@ -201,7 +205,14 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
     {:ok, _issue} = issue |> Issue.changeset(%{owner_user_id: user.id}, project.id) |> Repo.update()
 
-    task = Repo.insert!(Task.changeset(%Task{}, %{issue_id: issue.id}, project.id))
+    task =
+      Repo.insert!(
+        Task.changeset(
+          %Task{},
+          %{issue_id: issue.id, worktree_name: "schema-preload", worktree_path: "/tmp/schema-preload"},
+          project.id
+        )
+      )
 
     preloaded = Repo.preload(task, [:project, issue: :owner_user])
 

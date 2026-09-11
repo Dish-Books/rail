@@ -34,7 +34,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
   def start_design_task(task_or_id, opts \\ []) when is_list(opts) do
     with %Task{project: %Project{} = project} = task <- resolve_task(task_or_id),
          {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :design),
-         {:ok, worktree_path} <- ensure_worktree(project, task, opts),
+         {:ok, worktree_path} <- ensure_worktree(project, task),
          {:ok, task} <- claim_stage(task, worktree_path),
          scratch_path = write_scratch(project, task, opts),
          {:ok, role_run} <- role_run_for(task, role, worktree_path) do
@@ -47,16 +47,8 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
 
   # The worktree and the scratch tree
 
-  defp ensure_worktree(%Project{} = project, %Task{} = task, opts) do
-    base_branch = project.default_branch
-    name = task.worktree_name || task.id
-
-    path =
-      task.worktree_path ||
-        Keyword.get(opts, :worktree_path) ||
-        Path.join(project.clone_path, ".worktrees/#{name}")
-
-    case Git.get_or_create_worktree(project.clone_path, path, name, base_branch: base_branch) do
+  defp ensure_worktree(%Project{} = project, %Task{} = task) do
+    case Git.get_or_create_worktree(project, task) do
       {:ok, resolved} -> {:ok, resolved}
       {:error, reason} -> {:error, {:worktree_failed, reason}}
     end

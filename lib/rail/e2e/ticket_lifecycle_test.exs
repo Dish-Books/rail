@@ -322,7 +322,7 @@ defmodule Rail.E2E.TicketLifecycleTest do
       "state" => %{"name" => "Done"}
     })
 
-    assert {:ok, %Task{stage: :merged, worktree_path: nil, merged_at: %DateTime{}}} =
+    assert {:ok, %Task{stage: :merged, merged_at: %DateTime{}}} =
              Rail.Pipeline.merge_task(scope, task)
 
     assert %Issue{state: :done} = Repo.get!(Issue, issue_id)

@@ -40,10 +40,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
   end
 
   defp ensure_worktree(%Project{} = project, %Task{} = task) do
-    path = task.worktree_path
-    name = task.worktree_name || task.id
-
-    case Git.get_or_create_worktree(project.clone_path, path, name, base_branch: project.default_branch) do
+    case Git.get_or_create_worktree(project, task) do
       {:ok, resolved} -> {:ok, resolved}
       {:error, reason} -> {:error, {:worktree_failed, reason}}
     end

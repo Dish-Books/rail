@@ -114,7 +114,9 @@ defmodule Rail.Pipeline.Schemas.Task do
   @required_fields [
     :project_id,
     :stage,
-    :stage_state
+    :stage_state,
+    :worktree_name,
+    :worktree_path
   ]
 
   @doc """
@@ -128,6 +130,17 @@ defmodule Rail.Pipeline.Schemas.Task do
     |> validate_required(@required_fields)
     |> foreign_key_constraint(:project_id)
     |> foreign_key_constraint(:issue_id)
+  end
+
+  @doc """
+  True when the task's worktree directory is actually on disk.
+
+  `worktree_path` is always set, so it says where the worktree belongs, not
+  whether it is still there — merge and cleanup remove the directory and leave
+  the path alone.
+  """
+  def worktree_present?(%__MODULE__{worktree_path: path}) do
+    File.dir?(path)
   end
 
   def stages, do: @stages

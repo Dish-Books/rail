@@ -1,7 +1,7 @@
 defmodule Rail.Git.Actions.DeleteBranch do
   @moduledoc false
 
-  import Rail.Git.Utils.GitCmd
+  alias Rail.ToolEnv
 
   @doc """
   Deletes a local branch.
@@ -10,7 +10,7 @@ defmodule Rail.Git.Actions.DeleteBranch do
     force? = Keyword.get(opts, :force, true)
     flag = if force?, do: "-D", else: "-d"
 
-    case git_cmd(["branch", flag, branch], cd: repo_path, stderr_to_stdout: true) do
+    case ToolEnv.run("git", ["branch", flag, branch], cd: repo_path, stderr_to_stdout: true) do
       {_out, 0} ->
         :ok
 

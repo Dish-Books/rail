@@ -1,7 +1,7 @@
 defmodule Rail.Git.Actions.GetDiff do
   @moduledoc false
 
-  import Rail.Git.Utils.GitCmd
+  alias Rail.ToolEnv
 
   @doc """
   Gets the git diff for the worktree according to filter, synthesizing untracked files
@@ -25,12 +25,13 @@ defmodule Rail.Git.Actions.GetDiff do
     args = diff_args(filter_norm)
 
     diff_output =
-      case git_cmd(args, cd: worktree_path, stderr_to_stdout: true) do
+      case ToolEnv.run("git", args, cd: worktree_path, stderr_to_stdout: true) do
         {out, 0} ->
           out
 
         _fallback ->
-          {out_fallback, _code} = git_cmd(["diff"], cd: worktree_path, stderr_to_stdout: true)
+          {out_fallback, _code} =
+            ToolEnv.run("git", ["diff"], cd: worktree_path, stderr_to_stdout: true)
           out_fallback
       end
 

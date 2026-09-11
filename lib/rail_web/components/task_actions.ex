@@ -496,7 +496,7 @@ defmodule RailWeb.Components.TaskActions do
         trailing
       end
 
-    has_diff = is_binary(task.worktree_path) and not Task.before?(task.stage, :engineer)
+    has_diff = not Task.before?(task.stage, :engineer)
 
     trailing =
       if has_diff do

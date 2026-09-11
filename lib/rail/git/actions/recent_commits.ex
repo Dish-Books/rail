@@ -1,9 +1,8 @@
 defmodule Rail.Git.Actions.RecentCommits do
   @moduledoc false
 
-  import Rail.Git.Utils.GitCmd
-
   alias Rail.Git.CommitInfo
+  alias Rail.ToolEnv
 
   @doc """
   Returns recent commits from the worktree's HEAD.
@@ -11,7 +10,7 @@ defmodule Rail.Git.Actions.RecentCommits do
   def recent_commits(worktree_path, opts \\ []) when is_binary(worktree_path) do
     limit = Keyword.get(opts, :limit, 15)
 
-    case git_cmd(["log", "-n", to_string(limit), "--pretty=format:%H|%h|%s|%an|%cr"],
+    case ToolEnv.run("git", ["log", "-n", to_string(limit), "--pretty=format:%H|%h|%s|%an|%cr"],
            cd: worktree_path,
            stderr_to_stdout: true
          ) do

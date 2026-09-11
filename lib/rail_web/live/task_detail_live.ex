@@ -290,7 +290,6 @@ defmodule RailWeb.TaskDetailLive do
 
               <!-- Branch / Worktree Meta -->
               <div
-                :if={branch_name_for(@task)}
                 id="meta-branch"
                 data-qa="meta-branch"
                 class="flex items-center gap-1.5 shrink-0 font-mono"
@@ -460,7 +459,7 @@ defmodule RailWeb.TaskDetailLive do
             data-qa="tab-diff-pane"
             class={[@active_tab != :diff && "hidden"]}
           >
-            <%= if is_nil(@task.worktree_path) do %>
+            <%= if not Task.worktree_present?(@task) do %>
               <div
                 id="diff-empty-state"
                 data-qa="diff_empty_state"
@@ -1323,22 +1322,8 @@ defmodule RailWeb.TaskDetailLive do
     {run, RailWeb.Components.StageOutcome.format_role_id(role_id)}
   end
 
-  defp branch_name_for(task) do
-    cond do
-      is_binary(task.worktree_name) and task.worktree_name != "" ->
-        if String.starts_with?(task.worktree_name, "rail/") do
-          task.worktree_name
-        else
-          "rail/#{task.worktree_name}"
-        end
-
-      is_map(task.issue) and is_binary(task.issue.branch_name) and task.issue.branch_name != "" ->
-        task.issue.branch_name
-
-      true ->
-        nil
-    end
-  end
+  defp branch_name_for(%Task{worktree_name: "rail/" <> _ = name}), do: name
+  defp branch_name_for(%Task{worktree_name: name}), do: "rail/#{name}"
 
   defp issue_identifier_for(task) do
     if is_map(task.issue), do: task.issue.identifier
@@ -1522,7 +1507,7 @@ defmodule RailWeb.TaskDetailLive do
   defp maybe_load_diff(socket, :diff) do
     task = socket.assigns.task
 
-    if task && task.worktree_path && socket.assigns.file_diffs == [] &&
+    if task && Task.worktree_present?(task) && socket.assigns.file_diffs == [] &&
          not socket.assigns.loading_diff do
       do_load_diff(socket)
     else

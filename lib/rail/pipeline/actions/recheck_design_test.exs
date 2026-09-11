@@ -612,7 +612,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     {:ok, task_no_wt} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :design,
-        worktree_path: nil
+        worktree_path: "/tmp/rail-removed-worktree"
       })
 
     mock_design_uploads(2)

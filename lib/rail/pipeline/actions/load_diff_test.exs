@@ -53,7 +53,7 @@ defmodule Rail.Pipeline.Actions.LoadDiffTest do
   test "returns {:error, :no_worktree} when task worktree_path is nil", %{task: task} do
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
-        worktree_path: nil
+        worktree_path: "/tmp/rail-removed-worktree"
       })
 
     assert {:error, :no_worktree} = Pipeline.load_diff(task)

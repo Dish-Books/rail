@@ -314,7 +314,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
       Pipeline.update_task(system_scope(), task_nil_worktree.id, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
-        worktree_path: nil
+        worktree_path: "/tmp/rail-removed-worktree"
       })
 
     demo_scratch_10004 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")

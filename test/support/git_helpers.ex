@@ -12,8 +12,12 @@ defmodule RailTest.GitHelpers do
     branch = Keyword.get(opts, :branch, "main")
     initial_commit? = Keyword.get(opts, :initial_commit, true)
 
+    # unique_integer restarts per VM, so a dir left behind by a killed run can
+    # collide; the random suffix keeps each run's repos to itself.
     unique_id = System.unique_integer([:positive])
-    dir = Path.join("/tmp", "#{prefix}_#{unique_id}")
+    salt = Base.encode32(:crypto.strong_rand_bytes(5), case: :lower, padding: false)
+    dir = Path.join("/tmp", "#{prefix}_#{unique_id}_#{salt}")
+    File.rm_rf!(dir)
     File.mkdir_p!(dir)
 
     git!(dir, ["init", "-b", branch])

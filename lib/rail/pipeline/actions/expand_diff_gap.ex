@@ -11,9 +11,7 @@ defmodule Rail.Pipeline.Actions.ExpandDiffGap do
       when is_binary(file_path) and is_integer(gap_index) and is_integer(start_line) and is_integer(end_line) do
     gap_key = "#{file_path}:#{gap_index}"
 
-    if is_nil(task.worktree_path) do
-      {gap_key, []}
-    else
+    if Task.worktree_present?(task) do
       case Rail.Git.file_lines(task.worktree_path, file_path, rev: diff_rev) do
         lines when is_list(lines) ->
           count = max(0, end_line - start_line + 1)
@@ -24,6 +22,8 @@ defmodule Rail.Pipeline.Actions.ExpandDiffGap do
         nil ->
           {gap_key, []}
       end
+    else
+      {gap_key, []}
     end
   end
 end

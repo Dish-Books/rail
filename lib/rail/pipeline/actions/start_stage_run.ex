@@ -60,14 +60,8 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
 
   defp execute_stage_run(%Task{} = task, %Project{} = project, %Role{} = role, stage, opts) do
     base_branch = project.default_branch
-    worktree_name = task.worktree_name || task.id
 
-    worktree_path =
-      task.worktree_path ||
-        Keyword.get(opts, :worktree_path) ||
-        Path.join(project.clone_path, ".worktrees/#{worktree_name}")
-
-    case ensure_worktree(project.clone_path, worktree_path, worktree_name, base_branch) do
+    case Git.get_or_create_worktree(project, task) do
       {:ok, resolved_wt_path} ->
         proceed_with_worktree(task, project, role, stage, resolved_wt_path, base_branch, opts)
 
@@ -164,10 +158,6 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
 
         {:error, {:spawn_failed, reason, updated_task}}
     end
-  end
-
-  defp ensure_worktree(clone_path, worktree_path, worktree_name, base_branch) do
-    Git.get_or_create_worktree(clone_path, worktree_path, worktree_name, base_branch: base_branch)
   end
 
   defp maybe_update_worktree_path(%Task{worktree_path: path} = task, path), do: task

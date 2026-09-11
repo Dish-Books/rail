@@ -59,17 +59,12 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
       remove_scratch_files(project, task, opts)
     end
 
-    {:ok, updated_task} =
-      task
-      |> Task.changeset(%{worktree_path: nil})
-      |> Repo.update()
-
     Rail.Pipeline.broadcast_pipeline_changed(%{
-      task_id: updated_task.id,
+      task_id: task.id,
       event: :task_cleaned_up
     })
 
-    {:ok, updated_task}
+    {:ok, task}
   end
 
   defp remove_worktree_if_present(project, task) do

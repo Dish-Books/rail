@@ -8,7 +8,7 @@ defmodule Rail.Git do
   alias Rail.Git.Actions
 
   defdelegate ensure_clone(clone_url, clone_path), to: Actions.EnsureClone
-  defdelegate get_or_create_worktree(repo_path, worktree_path, branch, opts \\ []), to: Actions.GetOrCreateWorktree
+  defdelegate get_or_create_worktree(project, task), to: Actions.GetOrCreateWorktree
   defdelegate remove_worktree(repo_path, worktree_path, opts \\ []), to: Actions.RemoveWorktree
   defdelegate delete_branch(repo_path, branch, opts \\ []), to: Actions.DeleteBranch
   defdelegate get_diff(worktree_path), to: Actions.GetDiff

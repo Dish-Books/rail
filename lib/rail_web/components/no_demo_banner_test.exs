@@ -6,6 +6,11 @@ defmodule RailWeb.Components.NoDemoBannerTest do
   alias Rail.Pipeline.Schemas.Task
   alias RailWeb.Components.NoDemoBanner
 
+  setup do
+    File.mkdir_p!("/tmp/worktree")
+    :ok
+  end
+
   test "renders no-demo banner with record demo button when eligible" do
     task = %Task{
       id: "tsk_demo_elig",
@@ -41,12 +46,12 @@ defmodule RailWeb.Components.NoDemoBannerTest do
     assert html =~ "id=\"no-demo-banner\""
     refute html =~ "id=\"action-record-demo\""
 
-    # Missing worktree path
+    # Worktree removed from disk
     no_worktree_task = %Task{
       id: "tsk_no_wt",
       stage: :ready_to_merge,
       stage_state: :awaiting_approval,
-      worktree_path: nil
+      worktree_path: "/tmp/rail-removed-worktree"
     }
 
     html_no_wt = render_component(&NoDemoBanner.no_demo_banner/1, task: no_worktree_task)

@@ -1,7 +1,7 @@
 defmodule Rail.Git.Actions.EnsureClone do
   @moduledoc false
 
-  import Rail.Git.Utils.GitCmd
+  alias Rail.ToolEnv
 
   @doc """
   Clones a repository if not present; fetches updates if already cloned.
@@ -10,7 +10,10 @@ defmodule Rail.Git.Actions.EnsureClone do
     git_dir = Path.join(clone_path, ".git")
 
     if File.dir?(clone_path) and (File.dir?(git_dir) or File.exists?(git_dir)) do
-      case git_cmd(["fetch", "--all", "--prune"], cd: clone_path, stderr_to_stdout: true) do
+      case ToolEnv.run("git", ["fetch", "--all", "--prune"],
+             cd: clone_path,
+             stderr_to_stdout: true
+           ) do
         {_output, 0} ->
           {:ok, clone_path}
 
@@ -20,7 +23,7 @@ defmodule Rail.Git.Actions.EnsureClone do
     else
       File.mkdir_p!(Path.dirname(clone_path))
 
-      case git_cmd(["clone", clone_url, clone_path], stderr_to_stdout: true) do
+      case ToolEnv.run("git", ["clone", clone_url, clone_path], stderr_to_stdout: true) do
         {_output, 0} ->
           {:ok, clone_path}
 

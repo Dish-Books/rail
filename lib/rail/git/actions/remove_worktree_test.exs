@@ -2,11 +2,13 @@ defmodule Rail.Git.Actions.RemoveWorktreeTest do
   use Rail.DataCase, async: true
 
   alias Rail.Git
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.Project
 
   test "removes an existing worktree successfully" do
     repo = create_temp_git_repo()
     wt_path = Path.join(repo, ".worktrees/to_remove")
-    assert {:ok, ^wt_path} = Git.get_or_create_worktree(repo, wt_path, "feature-remove")
+    assert {:ok, ^wt_path} = Git.get_or_create_worktree(%Project{clone_path: repo}, %Task{worktree_path: wt_path, worktree_name: "feature-remove"})
     assert File.dir?(wt_path)
 
     assert :ok = Git.remove_worktree(repo, wt_path)

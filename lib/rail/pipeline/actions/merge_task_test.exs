@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Scope
@@ -241,7 +242,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     clone_path = create_temp_git_repo(prefix: "rail_merge_main")
     wt_dir = Path.join(System.tmp_dir!(), "rail_merge_wt_#{System.unique_integer([:positive])}")
-    {:ok, worktree_path} = Git.get_or_create_worktree(clone_path, wt_dir, "feature-branch")
+    {:ok, worktree_path} = Git.get_or_create_worktree(%Project{clone_path: clone_path}, %Task{worktree_path: wt_dir, worktree_name: "feature-branch"})
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
@@ -332,7 +333,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_merge_done"})
 
-    assert {:ok, %Task{stage: :merged, worktree_path: nil, merged_at: %DateTime{}, error: nil}} =
+    assert {:ok, %Task{stage: :merged, merged_at: %DateTime{}, error: nil}} =
              Pipeline.merge_task(scope, task, [])
 
     refute File.exists?(worktree_path)
@@ -540,7 +541,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert {:error, :project_not_found} = Pipeline.merge_task(task)
   end
 
-  test "deletes remote branch from issue when worktree_name is nil", %{project: _project, issue: _issue, task: _task} do
+  test "deletes the remote branch named by the task worktree", %{project: _project, issue: _issue, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Merge Task Project 9222",
@@ -587,12 +588,12 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         stage: :ready_to_merge,
         pr_number: 301,
         pr_is_draft: false,
-        worktree_name: nil,
-        worktree_path: nil
+        worktree_name: "removed-worktree",
+        worktree_path: "/tmp/rail-removed-worktree"
       })
 
     mock_merge_pull_request_success("testorg/branch_from_issue", 301)
-    mock_delete_remote_branch_success("testorg/branch_from_issue", "issue-branch-name")
+    mock_delete_remote_branch_success("testorg/branch_from_issue", "removed-worktree")
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_merge_done"})
 
@@ -633,11 +634,12 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         stage: :ready_to_merge,
         pr_number: 302,
         pr_is_draft: false,
-        worktree_name: nil,
-        worktree_path: nil
+        worktree_name: "removed-worktree",
+        worktree_path: "/tmp/rail-removed-worktree"
       })
 
     mock_merge_pull_request_success("testorg/no_issue", 302)
+    mock_delete_remote_branch_success("testorg/no_issue", "removed-worktree")
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_merge_done"})
 
@@ -729,10 +731,11 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         stage: :ready_to_merge,
         pr_number: 304,
         pr_is_draft: false,
-        worktree_name: nil
+        worktree_name: "removed-worktree"
       })
 
     mock_merge_pull_request_success("testorg/nil_scope", 304)
+    mock_delete_remote_branch_success("testorg/nil_scope", "removed-worktree")
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_merge_done"})
 
