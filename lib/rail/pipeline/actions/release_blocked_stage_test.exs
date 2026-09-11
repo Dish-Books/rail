@@ -12,6 +12,9 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, workspace} =
@@ -51,10 +54,10 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
-    %{project: project, issue: issue, task: task}
+    %{backend: backend, project: project, issue: issue, task: task}
   end
 
-  test "releases to running state when active process is running", %{project: _project, task: task} do
+  test "releases to running state when active process is running", %{backend: backend, project: _project, task: task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     {:ok, project} =
@@ -77,6 +80,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
 
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
         name: "Role 6806",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 6806.",
@@ -121,7 +125,11 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :stage_released}}
   end
 
-  test "resumes stage settlement and advances stage when finished run had exit_code 0", %{project: _project, task: task} do
+  test "resumes stage settlement and advances stage when finished run had exit_code 0", %{
+    backend: backend,
+    project: _project,
+    task: task
+  } do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Release Blocked Project 6803",
@@ -142,6 +150,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
 
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
         name: "Role 6807",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 6807.",
@@ -185,7 +194,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
              Pipeline.release_blocked_stage(task)
   end
 
-  test "sets failed state when finished run had non-zero exit_code", %{project: _project, task: task} do
+  test "sets failed state when finished run had non-zero exit_code", %{backend: backend, project: _project, task: task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Release Blocked Project 6804",
@@ -206,6 +215,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
 
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
         name: "Role 6808",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 6808.",

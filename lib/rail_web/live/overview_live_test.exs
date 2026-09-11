@@ -578,7 +578,9 @@ defmodule RailWeb.OverviewLiveTest do
     # other test shares, so the enabled case is covered in Rail.Pipeline.DispatcherTest.
   end
 
-  test "renders question card with options, handles answer clicks, text submission, and dismissal", %{conn: conn} do
+  test "renders question card with options, handles answer clicks, text submission, and dismissal", %{
+    conn: conn
+  } do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_overview_live_13",
@@ -611,8 +613,12 @@ defmodule RailWeb.OverviewLiveTest do
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     {:ok, %Role{id: role_id}} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "Backend Engineer",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13401.",
@@ -731,8 +737,12 @@ defmodule RailWeb.OverviewLiveTest do
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     {:ok, %Role{id: role_id}} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "Form Engineer",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13402.",
@@ -813,8 +823,12 @@ defmodule RailWeb.OverviewLiveTest do
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     {:ok, _role_arch} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "Architect",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13403.",
@@ -823,6 +837,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, _role_prod} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "Product",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13404.",
@@ -831,6 +846,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, _role_eng} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "Engineer",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13405.",
@@ -1185,9 +1201,7 @@ defmodule RailWeb.OverviewLiveTest do
   end
 
   test "renders role roster across projects and single project filter, showing idle, running, chatting, and waiting states",
-       %{
-         conn: conn
-       } do
+       %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_overview_live_18",
@@ -1220,8 +1234,12 @@ defmodule RailWeb.OverviewLiveTest do
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     {:ok, %Role{id: r_eng_id}} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "Software Engineer",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13406.",
@@ -1231,6 +1249,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, %Role{id: r_arch_id}} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "System Architect",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13407.",
@@ -1240,6 +1259,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, %Role{id: r_des_id}} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "UI Designer",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13408.",
@@ -1249,6 +1269,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, %Role{id: r_qa_id}} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "QA Specialist",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13409.",
@@ -1258,6 +1279,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, %Role{id: r_demo_id}} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "Demo Recorder",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13410.",
@@ -1267,6 +1289,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, %Role{id: r_custom_id}} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "Custom Bot",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13411.",
@@ -1276,6 +1299,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, %Role{id: r_prod_id}} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "Product Manager",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13412.",

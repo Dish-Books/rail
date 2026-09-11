@@ -23,11 +23,17 @@ defmodule RailWeb.Settings.RolesLiveTest do
                admin: true
              })
 
-    {:ok, _backend} =
+    {:ok, claude_backend} =
       Rail.Backends.create_backend(Rail.Scope.for_system(), %{
         name: :claude,
         executable_path: "/usr/local/bin/claude",
         models: [%{id: "claude-sonnet-5", display_name: "claude-sonnet-5"}]
+      })
+
+    {:ok, agy_backend} =
+      Rail.Backends.create_backend(Rail.Scope.for_system(), %{
+        name: :agy,
+        executable_path: "/usr/local/bin/agy"
       })
 
     admin_conn = log_in_user(conn, admin_user)
@@ -47,7 +53,9 @@ defmodule RailWeb.Settings.RolesLiveTest do
       conn: conn,
       admin_conn: admin_conn,
       admin_user: admin_user,
-      regular_conn: regular_conn
+      regular_conn: regular_conn,
+      claude_backend: claude_backend,
+      agy_backend: agy_backend
     }
   end
 
@@ -65,10 +73,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#no-projects-message")
   end
 
-  test "renders stage list and bound roles", %{
-    admin_conn: conn,
-    admin_user: admin_user
-  } do
+  test "renders stage list and bound roles", %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13001",
@@ -94,7 +99,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
                name: "Senior Engineer",
                description: "Writes tested features",
                stage: :engineer,
-               cli_backend: :claude,
+               backend_id: claude_backend.id,
                model: "claude-3-7-sonnet",
                reasoning_effort: :high,
                system_prompt: "You are an engineer."
@@ -134,9 +139,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert_patched(view, ~p"/settings/roles?project=#{project2.id}")
   end
 
-  test "creates a new role with stage binding", %{
-    admin_conn: conn
-  } do
+  test "creates a new role with stage binding", %{agy_backend: agy_backend, admin_conn: conn} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13003",
@@ -165,13 +168,13 @@ defmodule RailWeb.Settings.RolesLiveTest do
     # Validate form change with backend change
     view
     |> element("#role-backend-select")
-    |> render_change(%{"role" => %{"cli_backend" => "agy"}})
+    |> render_change(%{"role" => %{"backend_id" => agy_backend.id}})
 
     view
     |> element("#role-form")
     |> render_change(%{
       "role" => %{
-        "cli_backend" => "agy",
+        "backend_id" => agy_backend.id,
         "model_choice" => "gemini-ultra-custom"
       }
     })
@@ -190,7 +193,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Product Lead",
         "description" => "Owns specs",
         "stage" => "product",
-        "cli_backend" => "agy",
+        "backend_id" => agy_backend.id,
         "model_choice" => "gemini-3.8-flash-high",
         "reasoning_effort" => "medium",
         "system_prompt" => "",
@@ -208,7 +211,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Product Lead",
         "description" => "Owns specs",
         "stage" => "product",
-        "cli_backend" => "agy",
+        "backend_id" => agy_backend.id,
         "model_choice" => "gemini-3.8-flash-high",
         "reasoning_effort" => "medium",
         "system_prompt" => "You are product lead.",
@@ -220,9 +223,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#bound-role-name-product", "Product Lead")
   end
 
-  test "toolbar add button creates a role on the first free stage", %{
-    admin_conn: conn
-  } do
+  test "toolbar add button creates a role on the first free stage", %{claude_backend: claude_backend, admin_conn: conn} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13004",
@@ -255,7 +256,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Security Auditor",
         "description" => "Audits code",
         "stage" => "product",
-        "cli_backend" => "claude",
+        "backend_id" => claude_backend.id,
         "model_choice" => "claude-3-7-sonnet",
         "reasoning_effort" => "max",
         "system_prompt" => "You audit security.",
@@ -267,10 +268,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#bound-role-name-product", "Security Auditor")
   end
 
-  test "edits an existing role", %{
-    admin_conn: conn,
-    admin_user: admin_user
-  } do
+  test "edits an existing role", %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13005",
@@ -296,7 +294,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
                name: "QA Lead",
                description: "Coordinates QA",
                stage: :qa_lead,
-               cli_backend: :claude,
+               backend_id: claude_backend.id,
                model: "claude-3-7-sonnet",
                reasoning_effort: :high,
                system_prompt: "You verify quality."
@@ -318,7 +316,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Chief Quality Officer",
         "description" => "Leads quality assurance",
         "stage" => "qa_lead",
-        "cli_backend" => "claude",
+        "backend_id" => claude_backend.id,
         "model_choice" => "claude-3-7-sonnet",
         "reasoning_effort" => "xhigh",
         "system_prompt" => "You are chief quality officer.",
@@ -336,10 +334,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     refute has_element?(view, "#role-editor-modal")
   end
 
-  test "deletes a role", %{
-    admin_conn: conn,
-    admin_user: admin_user
-  } do
+  test "deletes a role", %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13006",
@@ -364,7 +359,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(scope, project.id, %{
                name: "Temporary Reviewer",
                stage: :review,
-               cli_backend: :claude,
+               backend_id: claude_backend.id,
                model: "claude-3-7-sonnet",
                system_prompt: "Review PRs"
              })
@@ -389,10 +384,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     refute has_element?(view, "#bound-role-name-review")
   end
 
-  test "copies roles from another project", %{
-    admin_conn: conn,
-    admin_user: admin_user
-  } do
+  test "copies roles from another project", %{agy_backend: agy_backend, admin_conn: conn, admin_user: admin_user} do
     scope = Rail.Scope.for_user(admin_user)
 
     {:ok, source_project} =
@@ -417,7 +409,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(scope, source_project.id, %{
                name: "Demo Recorder Role",
                stage: :demo,
-               cli_backend: :agy,
+               backend_id: agy_backend.id,
                model: "gemini-3.8-flash-high",
                system_prompt: "Record demos"
              })
@@ -454,6 +446,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
   end
 
   test "improve role flow with no finished runs shows empty evidence state", %{
+    claude_backend: claude_backend,
     admin_conn: conn,
     admin_user: admin_user
   } do
@@ -481,7 +474,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(scope, project.id, %{
                name: "Debugger Role",
                stage: :debugger,
-               cli_backend: :claude,
+               backend_id: claude_backend.id,
                model: "claude-3-7-sonnet",
                system_prompt: "Debug errors"
              })
@@ -499,6 +492,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
   end
 
   test "improve role flow full 3-step lifecycle to approval", %{
+    claude_backend: claude_backend,
     admin_conn: conn,
     admin_user: admin_user
   } do
@@ -526,7 +520,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(scope, project.id, %{
                name: "Engineer Role",
                stage: :engineer,
-               cli_backend: :claude,
+               backend_id: claude_backend.id,
                model: "claude-3-7-sonnet",
                system_prompt: "Write code"
              })
@@ -588,10 +582,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert updated_role.system_prompt == "Write clean, tested code"
   end
 
-  test "improve role handles run failure", %{
-    admin_conn: conn,
-    admin_user: admin_user
-  } do
+  test "improve role handles run failure", %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13011",
@@ -616,7 +607,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(scope, project.id, %{
                name: "Test Role",
                stage: :debugger,
-               cli_backend: :claude,
+               backend_id: claude_backend.id,
                model: "claude-3-7-sonnet",
                system_prompt: "Debug failures"
              })
@@ -722,6 +713,8 @@ defmodule RailWeb.Settings.RolesLiveTest do
   end
 
   test "renders available models dropdown and validates name in create modal", %{
+    agy_backend: agy_backend,
+    claude_backend: claude_backend,
     admin_conn: conn,
     admin_user: _admin_user
   } do
@@ -761,7 +754,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "",
         "description" => "A description",
         "stage" => "product",
-        "cli_backend" => "claude",
+        "backend_id" => claude_backend.id,
         "model_choice" => "claude-sonnet-5",
         "reasoning_effort" => "high",
         "system_prompt" => "Prompt",
@@ -775,17 +768,18 @@ defmodule RailWeb.Settings.RolesLiveTest do
     # Validate with model_choice: nil
     render_hook(view, "validate_role", %{
       "role" => %{
-        "cli_backend" => "claude",
+        "backend_id" => claude_backend.id,
         "model_choice" => nil
       }
     })
 
     # Switching to a backend with no configured row yields no models
-    render_hook(view, "change_backend", %{"role" => %{"cli_backend" => "agy"}})
+    render_hook(view, "change_backend", %{"role" => %{"backend_id" => agy_backend.id}})
     refute has_element?(view, "#role-model-select option[value='claude-sonnet-5']")
   end
 
   test "handles stage_default_name and max_concurrent variations in create modal", %{
+    claude_backend: claude_backend,
     admin_conn: conn,
     admin_user: _admin_user
   } do
@@ -825,7 +819,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Valid Name",
         "description" => "Desc",
         "stage" => "engineer",
-        "cli_backend" => "claude",
+        "backend_id" => claude_backend.id,
         "model_choice" => "claude-sonnet-5",
         "reasoning_effort" => "high",
         "system_prompt" => "Prompt",
@@ -846,7 +840,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "name" => "Another Valid Name",
         "description" => "Desc",
         "stage" => "qa",
-        "cli_backend" => "claude",
+        "backend_id" => claude_backend.id,
         "model_choice" => "claude-sonnet-5",
         "reasoning_effort" => "high",
         "system_prompt" => "Prompt",
@@ -949,6 +943,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
   end
 
   test "improve role displays error banner when improve_role fails", %{
+    claude_backend: claude_backend,
     admin_conn: conn,
     admin_user: admin_user
   } do
@@ -978,7 +973,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(scope, project.id, %{
                name: "Unlisted Model Role",
                stage: :qa,
-               cli_backend: :claude,
+               backend_id: claude_backend.id,
                model: "unlisted-custom-model-id",
                system_prompt: "QA instructions"
              })
@@ -1006,6 +1001,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
   end
 
   test "improve role handles cancellation and closing modal while running", %{
+    claude_backend: claude_backend,
     admin_conn: conn,
     admin_user: admin_user
   } do
@@ -1048,7 +1044,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(scope, project.id, %{
                name: "Slow Running Role",
                stage: :qa,
-               cli_backend: :claude,
+               backend_id: claude_backend.id,
                model: "claude-sonnet-5",
                system_prompt: "QA instructions"
              })
@@ -1080,6 +1076,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
   end
 
   test "improve role handles missing role and invalid proposal on approval", %{
+    claude_backend: claude_backend,
     admin_conn: conn,
     admin_user: admin_user
   } do
@@ -1107,7 +1104,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(scope, project.id, %{
                name: "To Be Deleted Role",
                stage: :qa,
-               cli_backend: :claude,
+               backend_id: claude_backend.id,
                model: "claude-sonnet-5",
                system_prompt: "QA instructions"
              })
@@ -1155,7 +1152,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
              Roles.create_role(scope, project.id, %{
                name: "Another Role",
                stage: :debugger,
-               cli_backend: :claude,
+               backend_id: claude_backend.id,
                model: "claude-sonnet-5",
                system_prompt: "Debugger instructions"
              })

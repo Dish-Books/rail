@@ -1,6 +1,7 @@
 defmodule Rail.Runs.Actions.BuildPromptTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Backends.Schemas.Backend
   alias Rail.Runs.Actions.BuildPrompt
 
   test "sends the answer, not the task again, when resuming a session" do
@@ -9,7 +10,7 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
       pending_answer: "You asked: archived bills?\nThe answer is: exclude",
       context_snippet: "house rules",
       task_description: "do the thing",
-      backend: :agy
+      backend: %Backend{name: :agy}
     ]
 
     prompt = BuildPrompt.build_prompt(opts)
@@ -35,7 +36,7 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
 
   test "emits role instructions inside tags for Agy on the first run only" do
     first_opts = [
-      backend: :agy,
+      backend: %Backend{name: :agy},
       role_instructions: "Act as a principal engineer.",
       context_snippet: "house rules",
       task_description: "do the thing"
@@ -52,7 +53,7 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
     assert first_prompt =~ "do the thing"
 
     resume_opts = [
-      backend: "agy",
+      backend: %Backend{name: :agy},
       conversation_id: "sess-123",
       pending_answer: "My answer",
       role_instructions: "Act as a principal engineer."
@@ -70,7 +71,7 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
 
   test "claude omits role instructions from prompt body" do
     opts = [
-      backend: :claude,
+      backend: %Backend{name: :claude},
       role_instructions: "Act as a principal engineer.",
       task_description: "do the thing"
     ]

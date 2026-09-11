@@ -140,4 +140,32 @@ defmodule Rail.Runs.Actions.DetectQuestionTest do
     assert question.role_id == "rol_atom"
     assert question.context_summary == "Asked during: Atom Title"
   end
+
+  test "detect_questions returns every question in order, collapsing repeats" do
+    text = """
+    Looking at the schema.
+    [QUESTION: Which database?] [OPTIONS: PG, MySQL]
+    Some prose in between.
+    > [QUESTION: Ship behind a flag?]
+    [QUESTION: <placeholder>]
+    [QUESTION: which database?]
+    """
+
+    questions = DetectQuestion.detect_questions(text, task_id: "tsk_1", role_id: "rol_1")
+
+    assert Enum.map(questions, & &1.prompt) == ["Which database?", "Ship behind a flag?"]
+    assert Enum.map(questions, & &1.options) == [["PG", "MySQL"], []]
+    assert Enum.all?(questions, &(&1.task_id == "tsk_1" and &1.role_id == "rol_1"))
+  end
+
+  test "detect_questions returns an empty list when there is nothing to ask" do
+    assert DetectQuestion.detect_questions("Just prose.") == []
+    assert DetectQuestion.detect_questions(nil) == []
+  end
+
+  test "detect_question still returns only the first question" do
+    text = "[QUESTION: First?]\n[QUESTION: Second?]"
+
+    assert %DetectedQuestion{prompt: "First?"} = DetectQuestion.detect_question(text)
+  end
 end

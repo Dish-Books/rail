@@ -22,13 +22,15 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.DetectedQuestion
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, workspace} =
@@ -62,6 +64,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
+            backend_id: backend.id,
             stage: stage,
             name: "#{stage} role",
             model: "claude-3-7-sonnet",
@@ -84,7 +87,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     # These tests exercise stage transitions, not Linear publishing.
     {:ok, task} = Pipeline.update_task(scope, task.id, %{issue_id: nil})
 
-    %{project: project, issue: issue, task: task, roles: roles}
+    %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
 
   test "returns not_found when task cannot be resolved", %{task: task, roles: roles} do
@@ -365,7 +368,11 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
              Pipeline.settle_run(task, role_run, %{exit_code: 1, error: perm_err})
   end
 
-  test "resolves string keys, updates associated Run, and captures scratch artifacts", %{task: task, roles: roles} do
+  test "resolves string keys, updates associated Run, and captures scratch artifacts", %{
+    backend: backend,
+    task: task,
+    roles: roles
+  } do
     scratch_dir = create_temp_git_repo()
 
     {:ok, %Task{id: task_id}} =
@@ -384,7 +391,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       })
 
     {:ok, %Run{id: run_id} = run} =
-      Runs.start_run(role_run_id, :stage, ["/bin/sleep", "5"], skip_follower: true)
+      Runs.start_run(role_run_id, :stage, ["/bin/sleep", "5"], backend: backend, skip_follower: true)
 
     plan_path = Path.join(scratch_dir, "plan.md")
     File.write!(plan_path, "# Captured Architecture Plan")
@@ -428,7 +435,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
              Pipeline.settle_run(task, role_run, %{})
   end
 
-  test "maybe_finish_run updates run when passed as top-level run struct", %{task: task, roles: roles} do
+  test "maybe_finish_run updates run when passed as top-level run struct", %{backend: backend, task: task, roles: roles} do
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :design,
@@ -445,7 +452,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       })
 
     {:ok, %Run{id: run_id} = run} =
-      Runs.start_run(role_run.id, :stage, ["/bin/sleep", "5"], skip_follower: true)
+      Runs.start_run(role_run.id, :stage, ["/bin/sleep", "5"], backend: backend, skip_follower: true)
 
     assert {:ok, _task, _role_run} = Pipeline.settle_run(task, role_run, run)
     assert %Run{id: ^run_id, status: :finished} = Repo.get!(Run, run_id)
@@ -2090,36 +2097,6 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
              Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
   end
 
-  test "settle_run registers detected question and preserves blocked state without advancing stage", %{
-    task: task,
-    roles: roles
-  } do
-    role = roles[:engineer]
-
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :engineer,
-        stage_state: :running
-      })
-
-    {:ok, role_run} =
-      Runs.create_role_run(%{
-        task_id: task.id,
-        role_id: role.id,
-        conversation_id: "sess_fixture",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-
-    output = "Working...\n[QUESTION: Which database engine?] [OPTIONS: PG, MySQL]"
-
-    assert {:ok, %Task{stage: :engineer, stage_state: :blocked, question_id: "qst_" <> _rest = q_id},
-            %RoleRun{status: :blocked_on_input, exit_code: 0}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
-
-    assert byte_size(q_id) > 0
-  end
-
   test "settle_run preserves blocked state when task was already blocked on question", %{task: task, roles: roles} do
     role = roles[:engineer]
 
@@ -2147,104 +2124,6 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     assert {:ok, %Task{stage: :engineer, stage_state: :blocked, question_id: ^expected_q_id},
             %RoleRun{status: :blocked_on_input, exit_code: 0}} =
              Pipeline.settle_run(task, role_run, %{exit_code: 0, output: "Exiting after ask"})
-  end
-
-  test "settle_run handles detected_question with atom and string keys and dropped question", %{
-    project: project,
-    task: task,
-    roles: roles
-  } do
-    role = roles[:engineer]
-
-    {:ok, task1} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :engineer,
-        stage_state: :running
-      })
-
-    {:ok, role_run1} =
-      Runs.create_role_run(%{
-        task_id: task1.id,
-        role_id: role.id,
-        conversation_id: "sess_fixture",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-
-    detector1 = %DetectedQuestion{prompt: "Atom key question?", options: ["A", "B"]}
-
-    assert {:ok, %Task{stage_state: :blocked, question_id: "qst_" <> _rest1 = q_id1}, %RoleRun{status: :blocked_on_input}} =
-             Pipeline.settle_run(task1, role_run1, %{exit_code: 0, detected_question: detector1})
-
-    assert byte_size(q_id1) > 0
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_settle_run_14509",
-      "identifier" => "TSK-14509",
-      "title" => "Task 14509"
-    })
-
-    {:ok, issue_14509} = Issues.capture_issue(system_scope(), project, "Task 14509")
-
-    {:ok, task2} = Pipeline.create_task(issue_14509, :product)
-
-    {:ok, task2} = Pipeline.update_task(system_scope(), task2.id, %{issue_id: nil})
-
-    {:ok, task2} =
-      Pipeline.update_task(system_scope(), task2.id, %{
-        stage: :engineer,
-        stage_state: :running
-      })
-
-    {:ok, role_run2} =
-      Runs.create_role_run(%{
-        task_id: task2.id,
-        role_id: role.id,
-        conversation_id: "sess_fixture",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-
-    detector2 = %DetectedQuestion{prompt: "String key question?", options: ["C", "D"]}
-
-    assert {:ok, %Task{stage_state: :blocked, question_id: "qst_" <> _rest2 = q_id2}, %RoleRun{status: :blocked_on_input}} =
-             Pipeline.settle_run(task2, role_run2, %{"exit_code" => 0, "detected_question" => detector2})
-
-    assert byte_size(q_id2) > 0
-
-    # Dropped registration when role_run has pending_answer
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_settle_run_14510",
-      "identifier" => "TSK-14510",
-      "title" => "Task 14510"
-    })
-
-    {:ok, issue_14510} = Issues.capture_issue(system_scope(), project, "Task 14510")
-
-    {:ok, task3} = Pipeline.create_task(issue_14510, :product)
-
-    {:ok, task3} = Pipeline.update_task(system_scope(), task3.id, %{issue_id: nil})
-
-    {:ok, task3} =
-      Pipeline.update_task(system_scope(), task3.id, %{
-        stage: :engineer,
-        stage_state: :running
-      })
-
-    {:ok, role_run3} =
-      Runs.create_role_run(%{
-        task_id: task3.id,
-        role_id: role.id,
-        conversation_id: "sess_fixture",
-        status: :running,
-        started_at: DateTime.utc_now(),
-        pending_answer: "Pending"
-      })
-
-    detector3 = %DetectedQuestion{prompt: "Drop this duplicate?", options: []}
-
-    assert {:ok, %Task{stage: :review, stage_state: :queued}, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task3, role_run3, %{exit_code: 0, detected_question: detector3})
   end
 
   test "settle_run delegates %Run{kind: :chat} and %{kind: :chat} to SettleChatTurn", %{task: task, roles: roles} do

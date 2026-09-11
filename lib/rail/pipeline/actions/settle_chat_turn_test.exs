@@ -20,6 +20,9 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     {:ok, workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Settle Chat Workspace",
@@ -55,7 +58,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 11006.",
         stage: :engineer,
-        cli_backend: :claude
+        backend_id: backend.id
       })
 
     {:ok, rev_role} =
@@ -64,7 +67,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 11007.",
         stage: :review,
-        cli_backend: :claude
+        backend_id: backend.id
       })
 
     LinearMock.mock_create_issue_success(%{
@@ -85,6 +88,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       })
 
     %{
+      backend: backend,
       workspace: workspace,
       project: project,
       eng_role: eng_role,
@@ -100,6 +104,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   end
 
   test "settles clean chat turn, clears active_chat_role_id and pending_chat, and accumulates chat_usage", %{
+    backend: backend,
     task: %Task{id: task_id} = task,
     rev_role: %Role{id: rev_role_id}
   } do
@@ -125,7 +130,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     {:ok, task} = task |> Task.changeset(%{active_chat_role_id: rev_role_id}) |> Repo.update()
 
     {:ok, run} =
-      Runs.start_run(role_run_id, :chat, ["/bin/sleep", "5"], skip_follower: true)
+      Runs.start_run(role_run_id, :chat, ["/bin/sleep", "5"], backend: backend, skip_follower: true)
 
     turn_usage = %TaskUsage{input_tokens: 100, output_tokens: 50, total_cost: Decimal.new("0.05")}
 
@@ -494,6 +499,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   end
 
   test "settle_run delegates to settle_chat_turn when run kind is :chat", %{
+    backend: backend,
     task: %Task{id: task_id} = task,
     rev_role: %Role{id: rev_role_id}
   } do
@@ -510,7 +516,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     {:ok, task} = task |> Task.changeset(%{active_chat_role_id: rev_role_id}) |> Repo.update()
 
     {:ok, run} =
-      Runs.start_run(role_run_id, :chat, ["/bin/sleep", "5"], skip_follower: true)
+      Runs.start_run(role_run_id, :chat, ["/bin/sleep", "5"], backend: backend, skip_follower: true)
 
     outcome = %{
       exit_code: 0,
@@ -525,6 +531,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   end
 
   test "settle_run dispatches queued pending_chat when stage run completes and task is idle", %{
+    backend: backend,
     task: %Task{id: task_id} = task,
     eng_role: %Role{id: eng_role_id},
     rev_role: %Role{id: rev_role_id}
@@ -558,7 +565,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       |> Repo.update()
 
     {:ok, stage_run} =
-      Runs.start_run(eng_role_run_id, :stage, ["/bin/sleep", "5"], skip_follower: true)
+      Runs.start_run(eng_role_run_id, :stage, ["/bin/sleep", "5"], backend: backend, skip_follower: true)
 
     outcome = %{
       exit_code: 0,
@@ -611,6 +618,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   end
 
   test "settle_chat_turn when branch modified and project has no review role", %{
+    backend: backend,
     task: orig_task,
     workspace: workspace
   } do
@@ -653,6 +661,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
     {:ok, eng_role_no_rev} =
       Roles.create_role(system_scope(), proj_no_rev, %{
+        backend_id: backend.id,
         name: "Role 11008",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 11008.",
@@ -676,6 +685,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   end
 
   test "settle_chat_turn resolves string-keyed maps, raw maps, and finishes in-flight run", %{
+    backend: backend,
     task: task,
     eng_role: eng_role
   } do
@@ -690,7 +700,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       })
 
     {:ok, in_flight_run} =
-      Runs.start_run(role_run.id, :chat, ["/bin/sleep", "5"], skip_follower: true)
+      Runs.start_run(role_run.id, :chat, ["/bin/sleep", "5"], backend: backend, skip_follower: true)
 
     # Finishing in_flight_run when passed as %Run{}
     assert {:ok, %Task{}, %RoleRun{}} =
@@ -742,7 +752,12 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   end
 
   describe "settle_chat_turn at design stage" do
-    test "a chat turn that rewrites the manifest lands the design", %{project: _project, task: task, workspace: workspace} do
+    test "a chat turn that rewrites the manifest lands the design", %{
+      backend: backend,
+      project: _project,
+      task: task,
+      workspace: workspace
+    } do
       {:ok, project} =
         Projects.create_project(system_scope(), %{
           linear_workspace_id: workspace.id,
@@ -772,6 +787,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
       {:ok, designer_role} =
         Roles.create_role(system_scope(), project, %{
+          backend_id: backend.id,
           name: "Designer",
           model: "claude-3-7-sonnet",
           system_prompt: "You are an expert agent for role 11009.",
@@ -831,6 +847,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     end
 
     test "a chat turn that leaves the manifest alone changes nothing", %{
+      backend: backend,
       project: _project,
       task: task,
       workspace: workspace
@@ -856,6 +873,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
       {:ok, designer_role} =
         Roles.create_role(system_scope(), project, %{
+          backend_id: backend.id,
           name: "Designer",
           model: "claude-3-7-sonnet",
           system_prompt: "You are an expert agent for role 11010.",

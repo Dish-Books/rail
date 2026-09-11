@@ -3,12 +3,17 @@ defmodule RailWeb.Components.AnswerField do
   Renders the AnswerField card on the Overview tab for a pending agent question.
   Per spec 05 §5, displays the question prompt, context summary, option chips,
   and a textarea with Dismiss and Answer & resume actions.
+
+  A run that asked several things leaves them all pending at once. They render as
+  tabs across the top of the one card, so the human answers them one at a time
+  without leaving the task: the stage stays parked until the last one is resolved.
   """
   use RailWeb, :html
 
   import RailWeb.CoreComponents, only: [icon: 1]
 
   attr :question, :any, required: true
+  attr :questions, :list, default: []
   attr :answer_text, :string, default: ""
   attr :submitting, :boolean, default: false
 
@@ -16,11 +21,14 @@ defmodule RailWeb.Components.AnswerField do
     question = assigns.question
     options = get_field(question, :options) || []
     context_summary = get_field(question, :context_summary)
+    questions = if assigns.questions == [], do: [question], else: assigns.questions
 
     assigns =
       assigns
       |> assign(:options, options)
       |> assign(:context_summary, context_summary)
+      |> assign(:questions, questions)
+      |> assign(:selected_id, get_field(question, :id))
 
     ~H"""
     <div
@@ -28,6 +36,42 @@ defmodule RailWeb.Components.AnswerField do
       data-qa="answer-field"
       class="p-5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xs space-y-4"
     >
+      <!-- One tab per question the run asked; the stage stays parked until all are resolved -->
+      <div
+        :if={length(@questions) > 1}
+        id="question-tabs"
+        data-qa="question-tabs"
+        role="tablist"
+        class="flex items-center gap-1 -mt-1 overflow-x-auto border-b border-slate-200 dark:border-slate-700"
+      >
+        <button
+          :for={{tab, idx} <- Enum.with_index(@questions)}
+          type="button"
+          role="tab"
+          id={"question-tab-#{idx}"}
+          data-qa={"question-tab-#{idx}"}
+          aria-selected={to_string(get_field(tab, :id) == @selected_id)}
+          phx-click="select_question"
+          phx-value-question_id={get_field(tab, :id)}
+          class={[
+            "shrink-0 px-3 py-1.5 -mb-px text-xs font-semibold border-b-2 transition-colors cursor-pointer",
+            get_field(tab, :id) == @selected_id &&
+              "border-blue-600 dark:border-blue-500 text-blue-700 dark:text-blue-300",
+            get_field(tab, :id) != @selected_id &&
+              "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+          ]}
+        >
+          Question {idx + 1}
+        </button>
+
+        <span
+          data-qa="question-tabs-remaining"
+          class="ml-auto pl-3 pr-1 text-xs text-slate-500 dark:text-slate-400 shrink-0"
+        >
+          {length(@questions)} unanswered
+        </span>
+      </div>
+
       <!-- Question Prompt (titleMedium, weight 600) -->
       <div>
         <h3

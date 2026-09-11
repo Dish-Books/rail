@@ -123,7 +123,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
     prompt =
       Runs.build_prompt(
         task: task,
-        backend: role.cli_backend,
+        backend: role.backend,
         role_instructions: role.system_prompt,
         context_snippet: brief(task),
         pending_answer: role_run.pending_answer,
@@ -132,7 +132,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
 
     argv =
       Runs.build_args(
-        backend: role.cli_backend,
+        backend: role.backend,
         prompt: prompt,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
@@ -143,7 +143,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
 
     spawner_opts =
       opts
-      |> Keyword.put_new(:backend, role.cli_backend)
+      |> Keyword.put_new(:backend, role.backend)
       |> Keyword.put_new(:cd, worktree_path)
       |> Keyword.put_new(:scratch_path, scratch_path)
       |> Keyword.put_new(:on_finished, fn _run, outcome ->

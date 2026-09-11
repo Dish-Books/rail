@@ -5,12 +5,15 @@ defmodule Rail.Roles.Actions.CreateRole do
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
 
+  # The backend comes back loaded, so a freshly created role is as usable as one
+  # read through `Roles.get_role/1`.
   def create_role(_scope, project_or_id, attrs) do
     project_id = extract_project_id(project_or_id)
 
-    %Role{}
-    |> Role.changeset(attrs, project_id)
-    |> Repo.insert()
+    case %Role{} |> Role.changeset(attrs, project_id) |> Repo.insert() do
+      {:ok, role} -> {:ok, Repo.preload(role, :backend)}
+      {:error, changeset} -> {:error, changeset}
+    end
   end
 
   defp extract_project_id(%Project{id: id}), do: id

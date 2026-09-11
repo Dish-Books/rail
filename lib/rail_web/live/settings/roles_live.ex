@@ -26,6 +26,7 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:current_project_id, nil)
       |> assign(:current_project, nil)
       |> assign(:roles, [])
+      |> assign(:backends, Backends.list_backends(scope))
       |> assign(:canonical_stages, Role.canonical_stages())
       |> assign(:active_modal, nil)
       |> assign(:modal_role, nil)
@@ -230,7 +231,7 @@ defmodule RailWeb.Settings.RolesLive do
                     </span>
                     <span>•</span>
                     <span class="font-mono uppercase text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">
-                      {bound_role.cli_backend}
+                      {bound_role.backend.name}
                     </span>
                     <span>•</span>
                     <span class="font-mono text-[11px]">
@@ -414,16 +415,18 @@ defmodule RailWeb.Settings.RolesLive do
                 <div>
                   <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">CLI Backend</label>
                   <select
-                    name="role[cli_backend]"
+                    name="role[backend_id]"
                     id="role-backend-select"
                     phx-change="change_backend"
                     class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
                   >
-                    <option value="claude" selected={@modal_form["cli_backend"] == "claude"}>
-                      Claude Code (claude -p)
-                    </option>
-                    <option value="agy" selected={@modal_form["cli_backend"] == "agy"}>
-                      Antigravity (agy -p)
+                    <option :if={@backends == []} value="">No backend configured</option>
+                    <option
+                      :for={backend <- @backends}
+                      value={backend.id}
+                      selected={@modal_form["backend_id"] == backend.id}
+                    >
+                      {backend_label(backend)}
                     </option>
                   </select>
                 </div>
@@ -961,16 +964,16 @@ defmodule RailWeb.Settings.RolesLive do
       params["stage"] ||
         List.first(unbound_stages(socket.assigns.canonical_stages, socket.assigns.roles))
 
-    backend = :claude
-    models = fetch_models_for_backend(backend)
-    default_model = @default_models[backend]
+    backend = default_backend(socket.assigns.backends)
+    models = models_for(backend)
+    default_model = default_model_for(backend)
 
     form_data = %{
       "role_id" => "",
       "name" => stage_default_name(stage),
       "description" => "",
       "stage" => if(stage, do: to_string(stage), else: ""),
-      "cli_backend" => to_string(backend),
+      "backend_id" => backend && backend.id,
       "model" => default_model,
       "reasoning_effort" => "high",
       "system_prompt" => "You are an agent persona.",
@@ -992,15 +995,14 @@ defmodule RailWeb.Settings.RolesLive do
     role = Enum.find(socket.assigns.roles, &(&1.id == role_id))
 
     if role do
-      backend = role.cli_backend
-      models = fetch_models_for_backend(backend)
+      models = models_for(role.backend)
 
       form_data = %{
         "role_id" => role.id,
         "name" => role.name,
         "description" => role.description || "",
         "stage" => if(role.stage, do: to_string(role.stage), else: ""),
-        "cli_backend" => to_string(role.cli_backend),
+        "backend_id" => role.backend_id,
         "model" => role.model,
         "reasoning_effort" => if(role.reasoning_effort, do: to_string(role.reasoning_effort), else: "high"),
         "system_prompt" => role.system_prompt,
@@ -1087,9 +1089,9 @@ defmodule RailWeb.Settings.RolesLive do
   end
 
   def handle_event("validate_role", %{"role" => role_params}, socket) do
-    backend = String.to_existing_atom(role_params["cli_backend"] || "claude")
+    backend = backend_by_id(socket.assigns.backends, role_params["backend_id"])
     model_choice = role_params["model_choice"]
-    chosen_model = model_choice || @default_models[backend]
+    chosen_model = model_choice || default_model_for(backend)
 
     updated_form =
       socket.assigns.modal_form
@@ -1099,15 +1101,14 @@ defmodule RailWeb.Settings.RolesLive do
     {:noreply, assign(socket, :modal_form, updated_form)}
   end
 
-  def handle_event("change_backend", %{"role" => %{"cli_backend" => backend_str}}, socket) do
-    backend = String.to_existing_atom(backend_str)
-    models = fetch_models_for_backend(backend)
-    default_model = @default_models[backend]
+  def handle_event("change_backend", %{"role" => %{"backend_id" => backend_id}}, socket) do
+    backend = backend_by_id(socket.assigns.backends, backend_id)
+    models = models_for(backend)
 
     updated_form =
       socket.assigns.modal_form
-      |> Map.put("cli_backend", backend_str)
-      |> Map.put("model", default_model)
+      |> Map.put("backend_id", backend_id)
+      |> Map.put("model", default_model_for(backend))
 
     socket =
       socket
@@ -1123,7 +1124,8 @@ defmodule RailWeb.Settings.RolesLive do
     modal = socket.assigns.active_modal
     existing_role = socket.assigns.modal_role
 
-    attrs = build_role_attrs(role_params, existing_role, length(socket.assigns.roles))
+    attrs =
+      build_role_attrs(role_params, existing_role, length(socket.assigns.roles), socket.assigns.backends)
 
     case execute_role_save(scope, project_id, modal, existing_role, attrs) do
       {:ok, _role} ->
@@ -1155,7 +1157,7 @@ defmodule RailWeb.Settings.RolesLive do
     role = Enum.find(socket.assigns.roles, &(&1.id == role_id))
 
     if role do
-      models = fetch_models_for_backend(role.cli_backend)
+      models = models_for(role.backend)
       runs = Roles.recent_finished_runs(scope, role.id)
 
       selected_model =
@@ -1310,10 +1312,29 @@ defmodule RailWeb.Settings.RolesLive do
     end
   end
 
-  defp fetch_models_for_backend(backend) do
-    case Backends.get_backend(backend) do
-      %Backend{models: models} -> models
-      _unconfigured -> []
+  defp backend_by_id(backends, id) when is_binary(id) and id != "" do
+    Enum.find(backends, &(&1.id == id))
+  end
+
+  defp backend_by_id(_backends, _id), do: nil
+
+  # Backends list alphabetically, so the first row is not the one a new role should
+  # start on. Claude is the default where it is configured.
+  defp default_backend(backends) do
+    Enum.find(backends, &(&1.name == :claude)) || List.first(backends)
+  end
+
+  defp models_for(%Backend{models: models}), do: models || []
+  defp models_for(_unconfigured), do: []
+
+  defp default_model_for(%Backend{name: name}), do: @default_models[name]
+  defp default_model_for(_unconfigured), do: nil
+
+  defp backend_label(%Backend{name: name}) do
+    case name do
+      :claude -> "Claude Code (claude -p)"
+      :agy -> "Antigravity (agy -p)"
+      other -> to_string(other)
     end
   end
 
@@ -1388,9 +1409,9 @@ defmodule RailWeb.Settings.RolesLive do
     end
   end
 
-  defp build_role_attrs(role_params, existing_role, roles_count) do
-    backend = String.to_existing_atom(role_params["cli_backend"] || "claude")
-    final_model = role_params["model_choice"] || @default_models[backend]
+  defp build_role_attrs(role_params, existing_role, roles_count, backends) do
+    backend = backend_by_id(backends, role_params["backend_id"])
+    final_model = role_params["model_choice"] || default_model_for(backend)
 
     stage =
       case role_params["stage"] do
@@ -1402,8 +1423,8 @@ defmodule RailWeb.Settings.RolesLive do
       name: String.trim(role_params["name"] || ""),
       description: String.trim(role_params["description"] || ""),
       stage: stage,
-      cli_backend: backend,
-      model: String.trim(final_model),
+      backend_id: backend && backend.id,
+      model: String.trim(final_model || ""),
       reasoning_effort: parse_effort(role_params["reasoning_effort"]),
       system_prompt: String.trim(role_params["system_prompt"] || ""),
       max_concurrent: parse_int(role_params["max_concurrent"], 1),

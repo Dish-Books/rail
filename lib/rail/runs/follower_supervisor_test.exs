@@ -1,6 +1,7 @@
 defmodule Rail.Runs.FollowerSupervisorTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Backends.Schemas.Backend
   alias Rail.Runs
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.RoleRun
@@ -42,10 +43,11 @@ defmodule Rail.Runs.FollowerSupervisorTest do
       File.rm_rf(tmp_dir)
     end)
 
-    %{role_run: role_run, run: run, stream_path: stream_path}
+    %{backend: %Backend{name: :claude}, role_run: role_run, run: run, stream_path: stream_path}
   end
 
   test "starts and stops follower children under supervision", %{
+    backend: backend,
     role_run: role_run,
     run: run,
     stream_path: stream_path
@@ -56,6 +58,7 @@ defmodule Rail.Runs.FollowerSupervisorTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
+        backend: backend,
         role_run: role_run,
         stream_path: stream_path,
         os_pid: pid

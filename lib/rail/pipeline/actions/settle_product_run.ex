@@ -10,25 +10,23 @@ defmodule Rail.Pipeline.Actions.SettleProductRun do
   captured here, a clean exit only parks the task at `awaiting_approval`, and
   `approve_product_task/2` is what publishes the ticket and moves the pipeline on.
 
-  A question the agent asked leaves the task blocked on it instead. A non-zero exit
-  retries with backoff while the failure still looks transient, and fails the stage
-  otherwise.
+  Questions the agent asked are already registered by the run layer before this runs,
+  so a task parked on one simply stays put: the answer, not this settle, moves it on.
+  A non-zero exit retries with backoff while the failure still looks transient, and
+  fails the stage otherwise.
   """
 
   alias Rail.Domain.RunFailure
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Runs
-  alias Rail.Runs.DetectedQuestion
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
 
   @doc """
   Settles the finished product `run` against `outcome`:
   - Updates the `RoleRun` and `Run` records with exit code, output, error and usage.
-  - Registers a detected question, leaving the task blocked on it.
+  - Leaves a task blocked on a question parked on it.
   - Parks the task at `awaiting_approval` on exit 0.
   - Applies retry backoff or marks failure on non-zero exit.
   - Broadcasts `pipeline_changed`.
@@ -53,7 +51,6 @@ defmodule Rail.Pipeline.Actions.SettleProductRun do
     run |> Run.changeset(%{status: :finished}) |> Repo.update()
 
     {:ok, role_run} = update_role_run(role_run, exit_code, error, output, usage)
-    {task, role_run} = maybe_register_question(task, role_run, outcome, output)
 
     {task_attrs, updated_role_run} = resolve_settle_outcome(task, role_run, exit_code, error)
 
@@ -66,26 +63,6 @@ defmodule Rail.Pipeline.Actions.SettleProductRun do
     Pipeline.maybe_dispatch_queued_pending_chat(updated_task, opts)
 
     {:ok, updated_task, updated_role_run}
-  end
-
-  defp maybe_register_question(task, role_run, outcome, output) do
-    detected_question =
-      case Map.get(outcome, :detected_question) do
-        %DetectedQuestion{} = question ->
-          question
-
-        _absent ->
-          output && Runs.detect_question(output, task_id: task.id, role_id: role_run.role_id)
-      end
-
-    if detected_question && task.stage_state != :blocked && is_nil(task.question_id) do
-      case Pipeline.register_question(task, role_run, detected_question) do
-        {:ok, %Question{}} -> {Repo.get!(Task, task.id), Repo.get!(RoleRun, role_run.id)}
-        _other -> {task, role_run}
-      end
-    else
-      {task, role_run}
-    end
   end
 
   # A task blocked on a question stays put: the answer, not this run, moves it on.

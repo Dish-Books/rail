@@ -23,6 +23,9 @@ defmodule RailWeb.TaskDetailLiveTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     {:ok, workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Task Detail Workspace",
@@ -50,7 +53,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         }
       })
 
-    %{workspace: workspace, project: project}
+    %{backend: backend, workspace: workspace, project: project}
   end
 
   test "redirects unauthenticated user to /auth/github", %{conn: conn} do
@@ -498,7 +501,11 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert has_element?(view, "#task-error-card", "Elixir compilation error")
   end
 
-  test "renders stage outcome when role run output and failure details exist", %{conn: conn, project: project} do
+  test "renders stage outcome when role run output and failure details exist", %{
+    backend: backend,
+    conn: conn,
+    project: project
+  } do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_8",
@@ -525,6 +532,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, role} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "Engineer",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13815.",
@@ -2260,6 +2268,7 @@ defmodule RailWeb.TaskDetailLiveTest do
   end
 
   test "Conversation tab handles role switching, raw log toggle, tool activity, and pubsub streaming", %{
+    backend: backend,
     conn: conn,
     project: project
   } do
@@ -2293,6 +2302,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, role_arch} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "Architect",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13816.",
@@ -2302,6 +2312,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, role_eng} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "Engineer",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13817.",
@@ -2411,6 +2422,7 @@ defmodule RailWeb.TaskDetailLiveTest do
   end
 
   test "Conversation tab chat input, delivery modal for running task, and dispatch options", %{
+    backend: backend,
     conn: conn,
     project: project
   } do
@@ -2445,6 +2457,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, role_eng} =
       Roles.create_role(system_scope(), project_id, %{
+        backend_id: backend.id,
         name: "Engineer",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13818.",

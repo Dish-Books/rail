@@ -142,7 +142,7 @@ defmodule Rail.Runs.Follower do
     run = Keyword.fetch!(opts, :run)
     role_run = Keyword.get(opts, :role_run) || Repo.get!(RoleRun, run.role_run_id)
     stream_path = Keyword.get(opts, :stream_path) || run.stream_path
-    backend = Keyword.get(opts, :backend, :claude)
+    backend = Keyword.fetch!(opts, :backend)
     tail_interval_ms = Keyword.get(opts, :tail_interval_ms, @default_tail_interval)
     batch_interval_ms = Keyword.get(opts, :batch_interval_ms, @default_batch_interval)
     skip_log_lines = Keyword.get(opts, :skip_log_lines, 0)
@@ -215,15 +215,11 @@ defmodule Rail.Runs.Follower do
         skip_log_lines: skip_log_lines
     }
 
-    if updated_state.task_id && updated_state.event_state.detected_question &&
-         is_nil(state.event_state.detected_question) do
-      # Internal helpers
-      Pipeline.register_question(
-        updated_state.task_id,
-        updated_state.role_run_id,
-        updated_state.event_state.detected_question
-      )
-    end
+    register_new_questions(
+      updated_state,
+      state.event_state.detected_questions,
+      updated_state.event_state.detected_questions
+    )
 
     alive? =
       if is_integer(updated_state.os_pid) and updated_state.os_pid > 0 do
@@ -429,11 +425,11 @@ defmodule Rail.Runs.Follower do
 
     case Repo.get(Run, state.run_id) do
       %Run{} = run ->
-        if state.task_id && event_state.detected_question && run.kind != :chat do
-          Pipeline.register_question(
+        if state.task_id && event_state.detected_questions != [] && run.kind != :chat do
+          Pipeline.register_questions(
             state.task_id,
             state.role_run_id,
-            event_state.detected_question
+            event_state.detected_questions
           )
         end
 
@@ -563,7 +559,7 @@ defmodule Rail.Runs.Follower do
       output: event_state.final_text,
       usage: event_state.usage,
       conversation_id: event_state.conversation_id || (updated_role_run && updated_role_run.conversation_id),
-      detected_question: event_state.detected_question,
+      detected_questions: event_state.detected_questions,
       run: updated_run,
       role_run: updated_role_run
     }
@@ -576,4 +572,17 @@ defmodule Rail.Runs.Follower do
       Runs.on_run_finished(updated_run, outcome)
     end
   end
+
+  # Questions register as soon as they stream in, so the human sees them without
+  # waiting for the agent to exit. Only the ones this pump newly saw are sent.
+  defp register_new_questions(%{task_id: task_id} = state, before, current) when is_binary(task_id) do
+    seen = MapSet.new(before, & &1.prompt)
+
+    case Enum.reject(current, &MapSet.member?(seen, &1.prompt)) do
+      [] -> :ok
+      new_questions -> Pipeline.register_questions(task_id, state.role_run_id, new_questions)
+    end
+  end
+
+  defp register_new_questions(_state, _before, _current), do: :ok
 end

@@ -12,6 +12,9 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, workspace} =
@@ -55,6 +58,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
+            backend_id: backend.id,
             stage: stage,
             name: "#{stage} role",
             model: "claude-3-7-sonnet",
@@ -80,6 +84,27 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
 
     reloaded_q = Repo.get!(Question, q.id)
     assert reloaded_q.status == :dismissed
+
+    reloaded_task = Repo.get!(Task, task.id)
+    assert reloaded_task.stage_state == :awaiting_approval
+    assert is_nil(reloaded_task.question_id)
+  end
+
+  test "dismissing the front question hands the human the next one instead of releasing", %{task: task} do
+    {:ok, first} = Pipeline.register_question(task, %{prompt: "Should we proceed?"})
+    {:ok, second} = Pipeline.register_question(task, %{prompt: "Ship behind a flag?"})
+
+    assert Repo.get!(Task, task.id).question_id == first.id
+
+    assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(first.id)
+
+    # Still blocked, now on the second question; the stage has not resumed.
+    reloaded_task = Repo.get!(Task, task.id)
+    assert reloaded_task.stage_state == :blocked
+    assert reloaded_task.question_id == second.id
+
+    # Dismissing the last one drains the queue and releases the stage.
+    assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(second.id)
 
     reloaded_task = Repo.get!(Task, task.id)
     assert reloaded_task.stage_state == :awaiting_approval

@@ -1,6 +1,8 @@
 defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.QuestionQueue
+
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
@@ -14,6 +16,9 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, workspace} =
@@ -47,6 +52,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
+            backend_id: backend.id,
             stage: stage,
             name: "#{stage} role",
             model: "claude-3-7-sonnet",
@@ -326,5 +332,52 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
       })
 
     assert {:error, :role_not_found} = Pipeline.answer_question(q_no_role, "Answer")
+  end
+
+  test "holds the stage until the last queued question is answered, then delivers every answer", %{
+    task: task,
+    roles: roles
+  } do
+    role = roles[:engineer]
+
+    {:ok, %Task{id: task_id}} =
+      Pipeline.update_task(system_scope(), task.id, %{stage: :engineer, stage_state: :running})
+
+    {:ok, role_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role.id,
+        conversation_id: "sess_fixture",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    detected =
+      Runs.detect_questions("[QUESTION: Use Postgres or MySQL?]\n[QUESTION: Ship behind a flag?]")
+
+    {:ok, _results} = Pipeline.register_questions(task_id, role_run, detected)
+    [first, second] = pending_questions(task_id)
+
+    # Answering the first hands the human the second and keeps the stage parked.
+    assert {:ok, %Question{status: :answered}} = Pipeline.answer_question(first.id, "Postgres")
+
+    assert %Task{stage_state: :blocked, question_id: second_id} = Repo.get!(Task, task_id)
+    assert second_id == second.id
+    assert %RoleRun{pending_answer: nil} = Repo.get!(RoleRun, role_run.id)
+
+    # The last answer drains the queue: now the stage re-queues with both answers.
+    assert {:ok, %Question{status: :answered}} = Pipeline.answer_question(second.id, "Yes, flagged")
+
+    assert %Task{stage_state: :queued, question_id: nil} = Repo.get!(Task, task_id)
+
+    %RoleRun{pending_answer: pending_answer} = Repo.get!(RoleRun, role_run.id)
+    assert pending_answer =~ "You asked 2 questions"
+    assert pending_answer =~ "1. You asked: Use Postgres or MySQL?"
+    assert pending_answer =~ "The answer is: Postgres"
+    assert pending_answer =~ "2. You asked: Ship behind a flag?"
+    assert pending_answer =~ "The answer is: Yes, flagged"
+
+    # Delivered answers do not follow the next blocked round.
+    assert undelivered_answers(task_id) == []
   end
 end

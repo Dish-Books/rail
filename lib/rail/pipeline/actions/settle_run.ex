@@ -2,6 +2,9 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   @moduledoc """
   Settles finished agent runs, captures stage scratch artifacts, advances the pipeline,
   and classifies transient vs permanent failures with automatic retry backoff.
+
+  Questions the agent asked are already registered by the run layer before this runs,
+  so a task parked on one simply stays put: the answer, not this settle, moves it on.
   """
 
   import Ecto.Query
@@ -22,7 +25,6 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.DetectedQuestion
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
   alias Rail.Scope
@@ -63,7 +65,6 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     maybe_finish_run(run_or_outcome)
 
     {:ok, role_run} = update_role_run(role_run, exit_code, error, output, usage)
-    {task, role_run} = maybe_detect_and_register_question(task, role_run, run_or_outcome, output)
 
     scratch_dir =
       Keyword.get(opts, :scratch_dir) ||
@@ -90,24 +91,6 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     final_task = maybe_trigger_demo_freshness(final_task, opts)
 
     {:ok, final_task, updated_role_run}
-  end
-
-  defp maybe_detect_and_register_question(task, role_run, run_or_outcome, output) do
-    detected_question =
-      resolve_detected_question(run_or_outcome) ||
-        (output && Runs.detect_question(output, task_id: task.id, role_id: role_run.role_id))
-
-    if detected_question && task.stage_state != :blocked && is_nil(task.question_id) do
-      case Rail.Pipeline.register_question(task, role_run, detected_question) do
-        {:ok, %Rail.Pipeline.Schemas.Question{}} ->
-          {Repo.get!(Task, task.id), Repo.get!(RoleRun, role_run.id)}
-
-        _other ->
-          {task, role_run}
-      end
-    else
-      {task, role_run}
-    end
   end
 
   defp resolve_settle_outcome(%Task{stage_state: :blocked, question_id: q_id}, role_run, _code, _error, _dir, _opts)
@@ -624,10 +607,6 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     |> RoleRun.changeset(attrs)
     |> Repo.update()
   end
-
-  defp resolve_detected_question(%{detected_question: %DetectedQuestion{} = q}), do: q
-  defp resolve_detected_question(%{"detected_question" => %DetectedQuestion{} = q}), do: q
-  defp resolve_detected_question(_other), do: nil
 
   defp maybe_finish_run(%Run{status: status} = run) when status != :finished do
     run |> Run.changeset(%{status: :finished}) |> Repo.update()

@@ -1,6 +1,8 @@
 defmodule Rail.Runs.FollowerTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.QuestionQueue
+
   alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Domain.TaskUsage
   alias Rail.Issues
@@ -19,6 +21,9 @@ defmodule Rail.Runs.FollowerTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     {:ok, workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Follower Workspace",
@@ -61,10 +66,11 @@ defmodule Rail.Runs.FollowerTest do
       File.rm_rf(tmp_dir)
     end)
 
-    %{workspace: workspace, role_run: role_run, run: run, stream_path: stream_path, tmp_dir: tmp_dir}
+    %{backend: backend, workspace: workspace, role_run: role_run, run: run, stream_path: stream_path, tmp_dir: tmp_dir}
   end
 
   test "tail polling, partial-line hold, and event parsing", %{
+    backend: backend,
     role_run: role_run,
     run: run,
     stream_path: stream_path
@@ -76,6 +82,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
+        backend: backend,
         role_run: role_run,
         stream_path: stream_path,
         os_pid: pid,
@@ -115,6 +122,7 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "250ms batching writes to run_events table and broadcasts on PubSub", %{
+    backend: backend,
     role_run: role_run,
     run: run,
     stream_path: stream_path
@@ -127,6 +135,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
+        backend: backend,
         role_run: role_run,
         stream_path: stream_path,
         os_pid: pid,
@@ -160,6 +169,7 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "child exit drains stderr, marks run finished, computes outcome and broadcasts", %{
+    backend: backend,
     role_run: role_run,
     run: run,
     stream_path: stream_path
@@ -180,6 +190,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
+        backend: backend,
         role_run: role_run,
         stream_path: stream_path,
         os_pid: pid,
@@ -217,6 +228,7 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "stop_run/2 terminates live process and settles run", %{
+    backend: backend,
     role_run: role_run,
     run: run,
     stream_path: stream_path
@@ -227,6 +239,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
+        backend: backend,
         role_run: role_run,
         stream_path: stream_path,
         os_pid: pid,
@@ -245,6 +258,7 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "lenient UTF-8 handles invalid byte sequences gracefully", %{
+    backend: backend,
     role_run: role_run,
     run: run,
     stream_path: stream_path
@@ -255,6 +269,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
+        backend: backend,
         role_run: role_run,
         stream_path: stream_path,
         os_pid: pid,
@@ -280,6 +295,7 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "skip_log_lines skips already recorded lines from being re-inserted", %{
+    backend: backend,
     role_run: role_run,
     run: run,
     stream_path: stream_path
@@ -297,6 +313,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
+        backend: backend,
         role_run: role_run,
         stream_path: stream_path,
         os_pid: pid,
@@ -328,6 +345,7 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "custom name, get_state call, and ignored info messages", %{
+    backend: backend,
     run: run,
     role_run: role_run,
     stream_path: stream_path
@@ -340,6 +358,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       Follower.start_link(
         run: run,
+        backend: backend,
         role_run: role_run,
         stream_path: stream_path,
         os_pid: pid,
@@ -365,6 +384,7 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "stop_run/2 accepts %Run{} struct and role_run_id string", %{
+    backend: backend,
     run: run,
     role_run: role_run,
     stream_path: stream_path
@@ -375,6 +395,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
+        backend: backend,
         role_run: role_run,
         stream_path: stream_path,
         os_pid: pid,
@@ -396,6 +417,7 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "child exit handles clean success without errors and passes exit_code from port", %{
+    backend: backend,
     tmp_dir: tmp_dir
   } do
     role_run =
@@ -434,6 +456,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
+        backend: backend,
         role_run: role_run,
         stream_path: stream,
         os_pid: pid,
@@ -459,6 +482,7 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "child exit handles both result_error only and result_error with stderr", %{
+    backend: backend,
     tmp_dir: tmp_dir
   } do
     test_pid = self()
@@ -498,6 +522,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run1,
+        backend: backend,
         role_run: role_run1,
         stream_path: stream1,
         os_pid: pid1,
@@ -549,6 +574,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run2,
+        backend: backend,
         role_run: role_run2,
         stream_path: stream2,
         os_pid: pid2,
@@ -567,9 +593,7 @@ defmodule Rail.Runs.FollowerTest do
     assert outcome2.error =~ "stderr text here"
   end
 
-  test "records exit_status from port message and sets exit_code on clean exit", %{
-    tmp_dir: tmp_dir
-  } do
+  test "records exit_status from port message and sets exit_code on clean exit", %{backend: backend, tmp_dir: tmp_dir} do
     test_pid = self()
 
     role_run =
@@ -603,6 +627,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
+        backend: backend,
         role_run: role_run,
         stream_path: stream,
         os_pid: 999_999,
@@ -647,6 +672,7 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "detects question in stream and registers it to block task", %{
+    backend: backend,
     tmp_dir: tmp_dir,
     workspace: workspace
   } do
@@ -671,6 +697,7 @@ defmodule Rail.Runs.FollowerTest do
 
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
         name: "Role 12503",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 12503.",
@@ -722,6 +749,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
+        backend: backend,
         role_run: role_run,
         stream_path: stream,
         os_pid: pid,
@@ -747,10 +775,27 @@ defmodule Rail.Runs.FollowerTest do
     reloaded_rr = Repo.get!(RoleRun, role_run.id)
     assert reloaded_rr.status == :blocked_on_input
 
+    # A second question in a later chunk queues behind the first rather than replacing it.
+    File.write!(
+      stream,
+      question_line <>
+        ~s({"type":"assistant","message":{"content":[{"type":"text","text":"[QUESTION: Ship behind a flag?]"}]}}\n)
+    )
+
+    Process.sleep(100)
+
+    assert Enum.map(pending_questions(task.id), & &1.prompt) == [
+             "Which db to choose?",
+             "Ship behind a flag?"
+           ]
+
+    assert Repo.get!(PipelineTask, task.id).question_id == reloaded_task.question_id
+
     Runs.stop_run(run.id, grace_period: 50)
   end
 
   test "chat child exit preserves role run status/output but updates conversation_id if new", %{
+    backend: backend,
     tmp_dir: tmp_dir
   } do
     test_pid = self()
@@ -788,6 +833,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
+        backend: backend,
         role_run: role_run,
         stream_path: stream,
         os_pid: pid,
@@ -813,9 +859,7 @@ defmodule Rail.Runs.FollowerTest do
     assert reloaded_rr.conversation_id == "sess-updated"
   end
 
-  test "chat child exit with same conversation_id leaves role run unchanged", %{
-    tmp_dir: tmp_dir
-  } do
+  test "chat child exit with same conversation_id leaves role run unchanged", %{backend: backend, tmp_dir: tmp_dir} do
     test_pid = self()
     task_id = UXID.generate!(prefix: "tsk")
     role_id = UXID.generate!(prefix: "rol")
@@ -851,6 +895,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
+        backend: backend,
         role_run: role_run,
         stream_path: stream,
         os_pid: pid,
@@ -874,9 +919,7 @@ defmodule Rail.Runs.FollowerTest do
     assert reloaded_rr.conversation_id == "sess-same"
   end
 
-  test "stage child exit without usage map updates role run with nil usage", %{
-    tmp_dir: tmp_dir
-  } do
+  test "stage child exit without usage map updates role run with nil usage", %{backend: backend, tmp_dir: tmp_dir} do
     test_pid = self()
     task_id = UXID.generate!(prefix: "tsk")
     role_id = UXID.generate!(prefix: "rol")
@@ -910,6 +953,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
+        backend: backend,
         role_run: role_run,
         stream_path: stream,
         os_pid: pid,

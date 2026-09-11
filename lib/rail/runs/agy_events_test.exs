@@ -290,9 +290,9 @@ defmodule Rail.Runs.AgyEventsTest do
 
     state = AgyEvents.handle_event(state, step)
 
-    assert %DetectedQuestion{} = state.detected_question
-    assert state.detected_question.prompt == "Which schema?"
-    assert state.detected_question.options == ["public", "private"]
+    assert [%DetectedQuestion{} = question] = state.detected_questions
+    assert question.prompt == "Which schema?"
+    assert question.options == ["public", "private"]
 
     # Subsequent line in later step preserves existing question
     later_step = %{
@@ -305,7 +305,7 @@ defmodule Rail.Runs.AgyEventsTest do
     }
 
     state = AgyEvents.handle_event(state, later_step)
-    assert state.detected_question.prompt == "Which schema?"
+    assert Enum.map(state.detected_questions, & &1.prompt) == ["Which schema?"]
   end
 
   test "parse_line decodes NDJSON or logs non-JSON stdout" do

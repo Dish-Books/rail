@@ -8,6 +8,8 @@ defmodule Rail.Runs.Boot do
 
   alias Ecto.Adapters.SQL
   alias Ecto.Adapters.SQL.Sandbox
+  alias Rail.Backends.Schemas.Backend
+  alias Rail.Pipeline
   alias Rail.Repo
   alias Rail.Runs
   alias Rail.Runs.Follower
@@ -130,7 +132,7 @@ defmodule Rail.Runs.Boot do
           os_pid: run.os_pid,
           next_seq: max_seq + 1,
           skip_log_lines: (run.role_run && run.role_run.attempt_log_lines) || 0,
-          backend: Keyword.get(opts, :backend, :claude),
+          backend: backend_for(run.role_run),
           on_finished: Keyword.get(opts, :on_finished)
         ]
 
@@ -147,6 +149,17 @@ defmodule Rail.Runs.Boot do
     end
   end
 
+  # A stream is parsed by the backend that wrote it, so adoption reads the backend off
+  # the role that produced the run rather than guessing.
+  defp backend_for(%RoleRun{} = role_run) do
+    case Repo.preload(role_run, role: :backend) do
+      %RoleRun{role: %{backend: %Backend{} = backend}} -> backend
+      _unconfigured -> %Backend{name: :claude}
+    end
+  end
+
+  defp backend_for(_role_run), do: %Backend{name: :claude}
+
   # coveralls-ignore-start (test sandbox fallback)
   defp allow_sandbox(pid) do
     if Code.ensure_loaded?(Sandbox) do
@@ -159,8 +172,8 @@ defmodule Rail.Runs.Boot do
   # coveralls-ignore-stop
 
   defp handle_dead_run(run, now, opts) do
-    backend = Keyword.get(opts, :backend, :claude)
     role_run = run.role_run || Repo.get(RoleRun, run.role_run_id)
+    backend = backend_for(role_run)
 
     event_state =
       Runs.new_event_state(backend,
@@ -224,10 +237,20 @@ defmodule Rail.Runs.Boot do
         output: updated_event_state.final_text,
         usage: updated_event_state.usage,
         conversation_id: updated_event_state.conversation_id || role_run.conversation_id,
-        detected_question: updated_event_state.detected_question,
+        detected_questions: updated_event_state.detected_questions,
         run: updated_run,
         role_run: updated_role_run
       }
+
+      # Questions register before the run settles, so whoever handles `on_finished`
+      # already sees the task parked on them.
+      if role_run.task_id && updated_event_state.detected_questions != [] && updated_run.kind != :chat do
+        Pipeline.register_questions(
+          role_run.task_id,
+          role_run.id,
+          updated_event_state.detected_questions
+        )
+      end
 
       if is_function(Keyword.get(opts, :on_finished), 2) do
         opts[:on_finished].(updated_run, outcome)

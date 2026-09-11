@@ -1,9 +1,12 @@
 defmodule Rail.Pipeline.Actions.DismissQuestion do
   @moduledoc """
   Action that dismisses a pending agent question.
-  Updates the question status to `:dismissed`, and if the task was parked on this question,
-  releases the blocked stage via `Rail.Pipeline.release_blocked_stage/2`.
+  Updates the question status to `:dismissed`. If the task was parked on this question,
+  the next one in the queue takes its place; the blocked stage is only released, via
+  `Rail.Pipeline.release_blocked_stage/2`, once nothing is pending.
   """
+
+  import Rail.Pipeline.Utils.QuestionQueue
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
@@ -44,11 +47,30 @@ defmodule Rail.Pipeline.Actions.DismissQuestion do
 
     case Repo.get(Task, updated_question.task_id) do
       %Task{question_id: q_id} = task when q_id == updated_question.id ->
-        Pipeline.release_blocked_stage(scope, task)
+        resolve_front_of_queue(scope, task)
         {:ok, updated_question}
 
       _other ->
         {:ok, updated_question}
+    end
+  end
+
+  defp resolve_front_of_queue(scope, %Task{} = task) do
+    case next_pending_question(task.id) do
+      %Question{} = next_question ->
+        {:ok, updated_task} =
+          task
+          |> Task.changeset(%{stage_state: :blocked, question_id: next_question.id})
+          |> Repo.update()
+
+        Pipeline.broadcast_pipeline_changed(%{
+          task_id: updated_task.id,
+          event: :question_registered,
+          question_id: next_question.id
+        })
+
+      nil ->
+        Pipeline.release_blocked_stage(scope, task)
     end
   end
 

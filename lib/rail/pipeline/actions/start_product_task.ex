@@ -66,7 +66,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     prompt =
       Runs.build_prompt(
         task: task,
-        backend: role.cli_backend,
+        backend: role.backend,
         role_instructions: role.system_prompt,
         context_snippet: brief(issue),
         pending_answer: role_run.pending_answer,
@@ -75,7 +75,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
 
     args =
       Runs.build_args(
-        backend: role.cli_backend,
+        backend: role.backend,
         prompt: prompt,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
@@ -85,7 +85,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
       )
 
     spawner_opts = [
-      backend: role.cli_backend,
+      backend: role.backend,
       cd: worktree_path,
       scratch_path: scratch_path,
       on_finished: fn run, outcome -> Pipeline.settle_product_run(run, outcome) end

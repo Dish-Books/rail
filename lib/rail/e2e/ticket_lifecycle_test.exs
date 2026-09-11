@@ -24,13 +24,13 @@ defmodule Rail.E2E.TicketLifecycleTest do
 
     system_scope = Rail.Scope.for_system()
 
-    {:ok, _claude_backend} =
+    {:ok, claude_backend} =
       Rail.Backends.create_backend(system_scope, %{
         name: :claude,
         executable_path: Path.join(shim_dir, "claude")
       })
 
-    {:ok, _agy_backend} =
+    {:ok, agy_backend} =
       Rail.Backends.create_backend(system_scope, %{
         name: :agy,
         executable_path: Path.join(shim_dir, "agy")
@@ -84,7 +84,7 @@ defmodule Rail.E2E.TicketLifecycleTest do
         Roles.create_role(system_scope(), project, %{
           stage: stage,
           name: "#{stage} role",
-          cli_backend: :claude,
+          backend_id: claude_backend.id,
           model: "claude-3-7-sonnet",
           system_prompt: "You are an expert agent for stage #{stage}."
         })
@@ -98,7 +98,8 @@ defmodule Rail.E2E.TicketLifecycleTest do
       project: project,
       scope: scope,
       scratch_dir: scratch_dir,
-      repo_dir: repo_dir
+      repo_dir: repo_dir,
+      agy_backend: agy_backend
     }
   end
 
@@ -330,7 +331,8 @@ defmodule Rail.E2E.TicketLifecycleTest do
   test "executes stage runs with agy CLI backend shim", %{
     project: project,
     scope: scope,
-    scratch_dir: scratch_dir
+    scratch_dir: scratch_dir,
+    agy_backend: agy_backend
   } do
     {:ok, agy_project} =
       Projects.create_project(system_scope(), %{
@@ -354,7 +356,7 @@ defmodule Rail.E2E.TicketLifecycleTest do
         Roles.create_role(system_scope(), agy_project, %{
           stage: stage,
           name: "#{stage} role",
-          cli_backend: :agy,
+          backend_id: agy_backend.id,
           model: "claude-3-7-sonnet",
           system_prompt: "You are an expert agent for stage #{stage}."
         })

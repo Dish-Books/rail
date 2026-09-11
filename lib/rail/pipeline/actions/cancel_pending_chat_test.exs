@@ -15,6 +15,9 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, workspace} =
@@ -48,6 +51,7 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
+            backend_id: backend.id,
             stage: stage,
             name: "#{stage} role",
             model: "claude-3-7-sonnet",
@@ -67,13 +71,13 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
-    %{project: project, issue: issue, task: task, roles: roles}
+    %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
 
-  setup %{project: project, roles: roles} do
+  setup %{backend: backend, project: project, roles: roles} do
     {:ok, role} =
       Roles.update_role(system_scope(), roles[:engineer], %{
-        cli_backend: :claude,
+        backend_id: backend.id,
         model: "claude-3-7-sonnet"
       })
 

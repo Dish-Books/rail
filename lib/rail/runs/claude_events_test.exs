@@ -64,12 +64,12 @@ defmodule Rail.Runs.ClaudeEventsTest do
              "[QUESTION: Scope to one repo?] [OPTIONS: yes, no]"
            ]
 
-    assert %DetectedQuestion{} = state.detected_question
-    assert state.detected_question.prompt == "Scope to one repo?"
-    assert state.detected_question.options == ["yes", "no"]
+    assert [%DetectedQuestion{} = question] = state.detected_questions
+    assert question.prompt == "Scope to one repo?"
+    assert question.options == ["yes", "no"]
   end
 
-  test "assistant text ignores placeholder questions and keeps only the first question" do
+  test "assistant text ignores placeholder questions and keeps every real question" do
     state = ClaudeEvents.new(task_id: "tsk_1", role_id: "rol_eng")
 
     first_event = %{
@@ -82,7 +82,7 @@ defmodule Rail.Runs.ClaudeEventsTest do
     }
 
     state = ClaudeEvents.handle_event(state, first_event)
-    assert is_nil(state.detected_question)
+    assert state.detected_questions == []
 
     second_event = %{
       "type" => "assistant",
@@ -95,7 +95,11 @@ defmodule Rail.Runs.ClaudeEventsTest do
     }
 
     state = ClaudeEvents.handle_event(state, second_event)
-    assert state.detected_question.prompt == "First real question?"
+
+    assert Enum.map(state.detected_questions, & &1.prompt) == [
+             "First real question?",
+             "Second ignored question?"
+           ]
   end
 
   test "parses assistant tool_use event and logs tool summary" do
@@ -147,7 +151,7 @@ defmodule Rail.Runs.ClaudeEventsTest do
     state = ClaudeEvents.handle_event(state, event)
 
     assert state.logs == ["[tool error] File not found: /repo/missing.dart"]
-    assert is_nil(state.detected_question)
+    assert state.detected_questions == []
   end
 
   test "rate_limit_event logs when status is not allowed" do

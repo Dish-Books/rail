@@ -18,6 +18,9 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     {:ok, workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Send Chat Workspace",
@@ -53,7 +56,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 11204.",
         stage: :engineer,
-        cli_backend: :claude
+        backend_id: backend.id
       })
 
     {:ok, reviewer_role} =
@@ -62,7 +65,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 11205.",
         stage: :review,
-        cli_backend: :claude
+        backend_id: backend.id
       })
 
     LinearMock.mock_create_issue_success(%{
@@ -85,6 +88,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     stub_bin = create_chat_stub_cli(conversation_id: "sess-chat-1")
 
     %{
+      backend: backend,
       workspace: workspace,
       project: project,
       role: role,
@@ -436,7 +440,12 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
            end)
   end
 
-  test "handles worktree creation failure during chat turn", %{task: task, role: role, workspace: workspace} do
+  test "handles worktree creation failure during chat turn", %{
+    backend: backend,
+    task: task,
+    role: role,
+    workspace: workspace
+  } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     {:ok, %RoleRun{} = role_run} =
@@ -481,6 +490,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     {:ok, bad_role} =
       Roles.create_role(system_scope(), bad_project, %{
+        backend_id: backend.id,
         name: "Role 11206",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 11206.",

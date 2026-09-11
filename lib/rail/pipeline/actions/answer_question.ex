@@ -1,9 +1,17 @@
 defmodule Rail.Pipeline.Actions.AnswerQuestion do
   @moduledoc """
   Action that records a human answer for a pending agent question.
-  Marks the question as `:answered`, terminates running execution (if active and not rebasing),
-  and re-queues the stage with the formatted answer via `Rail.Pipeline.request_changes/4`.
+  Marks the question as `:answered` and terminates running execution (if active and
+  not rebasing).
+
+  A run that asked several things leaves a queue behind it. Answering one question
+  moves the next to the front and the task stays blocked, so the human works through
+  them without the stage restarting in between. Only when nothing is pending does the
+  stage re-queue, via `Rail.Pipeline.request_changes/4`, carrying every answer of the
+  round at once.
   """
+
+  import Rail.Pipeline.Utils.QuestionQueue
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
@@ -62,15 +70,43 @@ defmodule Rail.Pipeline.Actions.AnswerQuestion do
       })
       |> Repo.update()
 
+    case next_pending_question(task.id) do
+      %Question{} = next_question ->
+        advance_queue(task, next_question, updated_question)
+
+      nil ->
+        resume_stage(scope, task, updated_question)
+    end
+  end
+
+  # More questions are waiting: keep the stage parked and put the next one in front.
+  defp advance_queue(%Task{} = task, %Question{} = next_question, answered) do
+    {:ok, updated_task} =
+      task
+      |> Task.changeset(%{stage_state: :blocked, question_id: next_question.id})
+      |> Repo.update()
+
+    Pipeline.broadcast_pipeline_changed(%{
+      task_id: updated_task.id,
+      event: :question_registered,
+      question_id: next_question.id
+    })
+
+    {:ok, answered}
+  end
+
+  defp resume_stage(scope, %Task{} = task, answered) do
     {:ok, task_cleared} =
       task
       |> Task.changeset(%{question_id: nil})
       |> Repo.update()
 
-    comment = "You asked: #{question.prompt}\nThe answer is: #{answer_text}"
+    delivered = undelivered_answers(task.id)
+    comment = format_answers(delivered)
 
     with {:ok, _task} <- Pipeline.request_changes(scope, task_cleared, comment) do
-      {:ok, updated_question}
+      mark_delivered(delivered)
+      {:ok, answered}
     end
   end
 

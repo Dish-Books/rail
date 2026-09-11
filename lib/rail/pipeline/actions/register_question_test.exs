@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
   use Rail.DataCase, async: true
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.QuestionQueue
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -18,6 +19,9 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, workspace} =
@@ -51,6 +55,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
+            backend_id: backend.id,
             stage: stage,
             name: "#{stage} role",
             model: "claude-3-7-sonnet",
@@ -230,7 +235,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     assert %Task{stage_state: :blocked, question_id: ^existing_id} = Repo.get!(Task, task.id)
   end
 
-  test "single-question-per-run limit: ignores question if task is already blocked on a question", %{
+  test "a second question queues behind the one the task is parked on", %{
     task: task,
     roles: roles
   } do
@@ -257,8 +262,39 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     detector = %DetectedQuestion{prompt: "Second question in same run?", options: []}
 
-    assert {:ok, :already_registered} = Pipeline.register_question(task, role_run, detector)
+    assert {:ok, %Question{} = second} = Pipeline.register_question(task, role_run, detector)
+
+    # The second question queues behind the first: the human keeps answering the one
+    # already in front, and the stage stays parked.
     assert Repo.get!(Task, task.id).question_id == q.id
+
+    assert Enum.map(pending_questions(task.id), & &1.id) == [q.id, second.id]
+  end
+
+  test "registers a batch of questions in order and parks the task on the first", %{task: task, roles: roles} do
+    {:ok, role_run} =
+      Runs.create_role_run(%{
+        task_id: task.id,
+        role_id: roles[:product].id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    detected =
+      Runs.detect_questions(
+        "[QUESTION: Which database?] [OPTIONS: PG, MySQL]\n[QUESTION: Ship behind a flag?]\n[QUESTION: Which database?]"
+      )
+
+    assert {:ok, results} = Pipeline.register_questions(task, role_run, detected)
+    assert length(results) == 2
+
+    pending = pending_questions(task.id)
+    assert Enum.map(pending, & &1.prompt) == ["Which database?", "Ship behind a flag?"]
+
+    task = Repo.get!(Task, task.id)
+    assert task.stage_state == :blocked
+    assert task.question_id == hd(pending).id
+    assert Repo.get!(RoleRun, role_run.id).status == :blocked_on_input
   end
 
   test "error cases: not found, invalid prompt, no question detected", %{project: project, task: task} do

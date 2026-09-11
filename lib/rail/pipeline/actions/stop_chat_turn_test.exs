@@ -15,6 +15,9 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, workspace} =
@@ -48,6 +51,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
+            backend_id: backend.id,
             stage: stage,
             name: "#{stage} role",
             model: "claude-3-7-sonnet",
@@ -67,13 +71,13 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
-    %{project: project, issue: issue, task: task, roles: roles}
+    %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
 
-  setup %{project: project, roles: roles} do
+  setup %{backend: backend, project: project, roles: roles} do
     {:ok, role} =
       Roles.update_role(system_scope(), roles[:engineer], %{
-        cli_backend: :claude,
+        backend_id: backend.id,
         model: "claude-3-7-sonnet"
       })
 
@@ -116,6 +120,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
   end
 
   test "stop_chat_turn terminates running chat run, clears active_chat_role_id, and appends stop log", %{
+    backend: backend,
     task: %Task{id: task_id} = task,
     role: %Role{id: role_id}
   } do
@@ -137,7 +142,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
     {:ok, task} = task |> Task.changeset(%{active_chat_role_id: role_id}) |> Repo.update()
 
     {:ok, _run} =
-      Runs.start_run(role_run_id, :chat, ["/bin/sleep", "5"], skip_follower: true)
+      Runs.start_run(role_run_id, :chat, ["/bin/sleep", "5"], backend: backend, skip_follower: true)
 
     assert {:ok, %Task{active_chat_role_id: nil}} = Pipeline.stop_chat_turn(task.id)
 

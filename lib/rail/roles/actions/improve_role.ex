@@ -1,7 +1,6 @@
 defmodule Rail.Roles.Actions.ImproveRole do
   @moduledoc false
 
-  alias Rail.Backends.Probes
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
   alias Rail.Tools
@@ -44,14 +43,14 @@ defmodule Rail.Roles.Actions.ImproveRole do
   defp default_runner(temp_cwd, improver_role, _opts) do
     args =
       Runs.build_args(
-        backend: improver_role.cli_backend,
+        backend: improver_role.backend,
         model: improver_role.model,
         prompt: improver_role.system_prompt,
         read_only: true,
         work_dir: temp_cwd
       )
 
-    exe = Probes.configured_path(improver_role.cli_backend)
+    exe = improver_role.backend.executable_path
 
     case Tools.run(exe, args, cd: temp_cwd, stderr_to_stdout: true) do
       {stdout, 0} ->

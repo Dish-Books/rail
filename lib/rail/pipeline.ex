@@ -88,6 +88,7 @@ defmodule Rail.Pipeline do
   defdelegate register_question(task_or_id, role_run_or_id, question_or_attrs, opts), to: Actions.RegisterQuestion
   defdelegate register_question(task_or_id, role_run_or_question, question_or_opts), to: Actions.RegisterQuestion
   defdelegate register_question(task_or_id, question_or_attrs), to: Actions.RegisterQuestion
+  defdelegate register_questions(task_or_id, role_run_or_id, questions, opts \\ []), to: Actions.RegisterQuestion
 
   defdelegate answer_question(scope, question_or_id, answer_text), to: Actions.AnswerQuestion
   defdelegate answer_question(question_or_id, answer_text), to: Actions.AnswerQuestion

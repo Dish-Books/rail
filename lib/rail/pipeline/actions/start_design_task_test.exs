@@ -13,6 +13,9 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, workspace} =
@@ -38,6 +41,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
 
     {:ok, role} =
       Roles.create_role(scope, project, %{
+        backend_id: backend.id,
         stage: :design,
         name: "design role",
         model: "claude-3-7-sonnet",

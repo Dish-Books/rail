@@ -7,6 +7,9 @@ defmodule Rail.Roles.Actions.DeleteRoleTest do
   alias Rail.Scope
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, project} =
@@ -22,6 +25,7 @@ defmodule Rail.Roles.Actions.DeleteRoleTest do
 
     {:ok, role} =
       Roles.create_role(scope, project, %{
+        backend_id: backend.id,
         name: "Engineer",
         stage: :engineer,
         model: "claude-3-7-sonnet",

@@ -17,6 +17,9 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, workspace} =
@@ -50,6 +53,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
+            backend_id: backend.id,
             stage: stage,
             name: "#{stage} role",
             model: "claude-3-7-sonnet",
@@ -72,7 +76,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
     # These tests exercise the runner, not Linear publishing, so detach the issue.
     {:ok, task} = Pipeline.update_task(scope, task.id, %{issue_id: nil})
 
-    %{project: project, issue: issue, task: task, roles: roles}
+    %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
 
   test "returns not_found when task ID does not exist" do
@@ -130,6 +134,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
   end
 
   test "successfully starts stage run, initializes RoleRun, updates task, and broadcasts", %{
+    backend: backend,
     task: task,
     roles: roles
   } do
@@ -137,7 +142,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
 
     {:ok, %Role{id: role_id}} =
       Roles.update_role(system_scope(), roles[:product], %{
-        cli_backend: :claude
+        backend_id: backend.id
       })
 
     scratch_dir = create_temp_git_repo()
@@ -177,6 +182,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
   end
 
   test "starts stage run by task ID, increments existing RoleRun attempts, and retains worktree", %{
+    backend: backend,
     project: project,
     task: task,
     roles: roles
@@ -185,7 +191,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
 
     {:ok, role} =
       Roles.update_role(system_scope(), roles[:product], %{
-        cli_backend: :claude
+        backend_id: backend.id
       })
 
     scratch_dir = create_temp_git_repo()

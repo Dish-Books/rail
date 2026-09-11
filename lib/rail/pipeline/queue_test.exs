@@ -14,6 +14,9 @@ defmodule Rail.Pipeline.QueueTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, workspace} =
@@ -47,6 +50,7 @@ defmodule Rail.Pipeline.QueueTest do
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
+            backend_id: backend.id,
             stage: stage,
             name: "#{stage} role",
             model: "claude-3-7-sonnet",
@@ -66,12 +70,18 @@ defmodule Rail.Pipeline.QueueTest do
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
-    %{project: project, issue: issue, task: task, roles: roles}
+    %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "returns empty list when role has no stage and counts active chats", %{project: project, task: task, roles: _roles} do
+  test "returns empty list when role has no stage and counts active chats", %{
+    backend: backend,
+    project: project,
+    task: task,
+    roles: _roles
+  } do
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
         name: "Unbound role",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an unbound agent.",
@@ -341,9 +351,10 @@ defmodule Rail.Pipeline.QueueTest do
     assert Queue.available_slots(project, role) == 0
   end
 
-  test "dispatches an off-pipeline stage like any other", %{project: project, task: task} do
+  test "dispatches an off-pipeline stage like any other", %{backend: backend, project: project, task: task} do
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
         stage: :debugger,
         name: "debugger role",
         model: "claude-3-7-sonnet",

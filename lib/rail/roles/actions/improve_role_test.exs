@@ -9,6 +9,9 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
   alias Rail.Scope
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, project} =
@@ -26,7 +29,7 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
       Roles.create_role(scope, project, %{
         name: "Engineer",
         stage: :engineer,
-        cli_backend: :claude,
+        backend_id: backend.id,
         model: "claude-3-7-sonnet",
         system_prompt: "Old prompt"
       })
@@ -34,11 +37,13 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
     %{project: project, role: role}
   end
 
-  defp configure_claude(executable_path) do
-    {:ok, _backend} =
-      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: executable_path})
-
-    :ok
+  # The role carries its backend, so pointing the backend at a stub means reloading
+  # the role too.
+  defp configure_claude(role, executable_path) do
+    {:ok, backend} = Roles.get_role(id: role.id)
+    {:ok, _updated} = Rail.Backends.update_backend(system_scope(), backend.backend, %{executable_path: executable_path})
+    {:ok, reloaded} = Roles.get_role(id: role.id)
+    reloaded
   end
 
   test "returns not authorized when user is not admin", %{role: role} do
@@ -204,7 +209,7 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
       File.rm(script_path)
     end)
 
-    configure_claude(script_path)
+    role = configure_claude(role, script_path)
 
     assert {:ok, %RoleInstructionProposal{proposed: "Echoed prompt"}} =
              Roles.improve_role(scope, role, "claude-3-7-sonnet")
@@ -223,7 +228,7 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
       })
 
     # Use /usr/bin/false to simulate CLI failure
-    configure_claude("/usr/bin/false")
+    role = configure_claude(role, "/usr/bin/false")
 
     assert {:error, {:run_failed, msg}} =
              Roles.improve_role(scope, role, "claude-3-7-sonnet")
@@ -257,7 +262,7 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
       File.rm(script_path)
     end)
 
-    configure_claude(script_path)
+    role = configure_claude(role, script_path)
 
     expected_msg = "something broke in runner"
 

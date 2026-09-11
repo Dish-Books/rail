@@ -17,6 +17,9 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, workspace} =
@@ -45,6 +48,7 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
 
     {:ok, role} =
       Roles.create_role(scope, project, %{
+        backend_id: backend.id,
         stage: :product,
         name: "product role",
         model: "claude-3-7-sonnet",

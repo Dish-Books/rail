@@ -4,6 +4,7 @@ defmodule Rail.Roles.Schemas.Role do
   """
   use Rail.Schema
 
+  alias Rail.Backends.Schemas.Backend
   alias Rail.Projects.Schemas.Project
 
   @canonical_stages [
@@ -57,23 +58,23 @@ defmodule Rail.Roles.Schemas.Role do
   ]
   @default_icon_name "pi-robot"
 
-  @backends [:claude, :agy, :codex]
   @reasoning_efforts [:low, :medium, :high]
 
   @derive {LiveSync.Watch, subscription_key: :project_id, table: "roles"}
   @primary_key {:id, UXID, autogenerate: true, prefix: "rol"}
   schema "roles" do
-    belongs_to :project, Project, type: UXID
     field :stage, Ecto.Enum, values: @allowed_stages
     field :name, :string
     field :description, :string
     field :icon_name, :string, default: @default_icon_name
-    field :cli_backend, Ecto.Enum, values: @backends, default: :claude
     field :model, :string
     field :reasoning_effort, Ecto.Enum, values: @reasoning_efforts
     field :system_prompt, :string
     field :max_concurrent, :integer, default: 1
     field :position, :integer, default: 0
+
+    belongs_to :backend, Backend, type: UXID
+    belongs_to :project, Project, type: UXID
 
     timestamps()
   end
@@ -83,7 +84,7 @@ defmodule Rail.Roles.Schemas.Role do
     :name,
     :description,
     :icon_name,
-    :cli_backend,
+    :backend_id,
     :model,
     :reasoning_effort,
     :system_prompt,
@@ -96,7 +97,7 @@ defmodule Rail.Roles.Schemas.Role do
     :name,
     :model,
     :system_prompt,
-    :cli_backend,
+    :backend_id,
     :icon_name,
     :max_concurrent,
     :position
@@ -105,7 +106,6 @@ defmodule Rail.Roles.Schemas.Role do
   @doc "Returns the list of canonical pipeline stages for agent roles."
   def canonical_stages, do: @canonical_stages
   def stages, do: @allowed_stages
-  def backends, do: @backends
   def reasoning_efforts, do: @reasoning_efforts
 
   @doc "Returns the Phosphor icon classes a role may be assigned."
@@ -123,6 +123,7 @@ defmodule Rail.Roles.Schemas.Role do
     |> validate_number(:position, greater_than_or_equal_to: 0)
     |> unique_constraint(:stage, name: :roles_project_id_stage_index)
     |> foreign_key_constraint(:project_id)
+    |> foreign_key_constraint(:backend_id)
   end
 
   defp maybe_put_project_id(changeset, nil), do: changeset

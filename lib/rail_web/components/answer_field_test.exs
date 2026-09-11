@@ -90,4 +90,39 @@ defmodule RailWeb.Components.AnswerFieldTest do
     nil_html = render_component(&AnswerField.answer_field/1, question: nil)
     assert nil_html =~ ~s(data-qa="answer-field")
   end
+
+  test "renders one tab per pending question and marks the selected one" do
+    questions = [
+      %Question{id: "qst_1", prompt: "Which database?", options: []},
+      %Question{id: "qst_2", prompt: "Ship behind a flag?", options: []},
+      %Question{id: "qst_3", prompt: "Who reviews it?", options: []}
+    ]
+
+    html =
+      render_component(&AnswerField.answer_field/1,
+        question: Enum.at(questions, 1),
+        questions: questions,
+        answer_text: ""
+      )
+
+    assert html =~ ~s(data-qa="question-tabs")
+    assert html =~ ~s(data-qa="question-tab-0")
+    assert html =~ ~s(data-qa="question-tab-2")
+    assert html =~ "3 unanswered"
+
+    # The card body shows the selected tab's question, not the first.
+    assert html =~ "Ship behind a flag?"
+    assert html =~ ~s(phx-value-question_id="qst_2")
+
+    [_before, from_selected_tab] = String.split(html, ~s(data-qa="question-tab-1"), parts: 2)
+    assert from_selected_tab =~ ~s(aria-selected="true")
+  end
+
+  test "a lone question renders no tab strip" do
+    question = %Question{id: "qst_1", prompt: "Which database?", options: []}
+
+    html = render_component(&AnswerField.answer_field/1, question: question, answer_text: "")
+
+    refute html =~ ~s(data-qa="question-tabs")
+  end
 end

@@ -12,6 +12,9 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, workspace} =
@@ -51,7 +54,7 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
-    %{project: project, issue: issue, task: task}
+    %{backend: backend, project: project, issue: issue, task: task}
   end
 
   test "changeset validates required fields" do
@@ -124,11 +127,12 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
              |> Repo.insert()
   end
 
-  test "preloads belongs_to task and role", %{task: task} do
+  test "preloads belongs_to task and role", %{backend: backend, task: task} do
     %Task{id: task_id} = task = task
 
     {:ok, %Role{id: role_id} = role} =
       Roles.create_role(system_scope(), task.project_id, %{
+        backend_id: backend.id,
         name: "Role 7502",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 7502."

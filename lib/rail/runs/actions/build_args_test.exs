@@ -1,11 +1,12 @@
 defmodule Rail.Runs.Actions.BuildArgsTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Backends.Schemas.Backend
   alias Rail.Runs.Actions.BuildArgs
 
   test "builds standard Claude args in exact flag order" do
     opts = [
-      backend: :claude,
+      backend: %Backend{name: :claude},
       prompt: "Fix the bug",
       model: "claude-3-7-sonnet-20250219",
       effort: "high"
@@ -29,7 +30,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
 
   test "builds read-only Claude args with tools empty string and strict mcp config" do
     opts = %{
-      backend: "claude",
+      backend: %Backend{name: :claude},
       prompt: "Review the code",
       model: "claude-3-5-sonnet-20241022",
       effort: "medium",
@@ -58,7 +59,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
 
   test "attaches --system-prompt and --resume to Claude args when present" do
     opts = [
-      backend: "CLAUDE",
+      backend: %Backend{name: :claude},
       prompt: "Do work",
       model: "claude-3-7-sonnet",
       system_prompt: "Act as QA engineer.",
@@ -77,7 +78,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
 
   test "omits empty system-prompt and resume from Claude args" do
     opts = [
-      backend: :claude,
+      backend: %Backend{name: :claude},
       prompt: "Run",
       model: "claude-3-7-sonnet",
       system_prompt: "   ",
@@ -92,7 +93,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
 
   test "builds standard Agy args in exact flag order" do
     opts = [
-      backend: :agy,
+      backend: %Backend{name: :agy},
       prompt: "Refactor auth",
       model: "gemini-2.5-pro",
       effort: "high",
@@ -125,7 +126,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
 
   test "builds read-only Agy args with mode plan and no skip-permissions" do
     opts = %{
-      backend: "agy",
+      backend: %Backend{name: :agy},
       prompt: "Plan the feature",
       model: "gemini-2.5-flash",
       reasoning_effort: "low",
@@ -157,7 +158,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
 
   test "attaches --conversation for Agy resume turn" do
     opts = [
-      backend: :agy,
+      backend: %Backend{name: :agy},
       prompt: "Continue",
       model: "gemini-2.5-pro",
       conversation_id: "conv-xyz-789"
@@ -192,7 +193,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
 
   test "ignores whitespace in agy add_dir, log_file, and conversation" do
     opts = [
-      backend: :agy,
+      backend: %Backend{name: :agy},
       prompt: "Terse",
       model: "gemini",
       work_dir: "   ",

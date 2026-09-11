@@ -6,6 +6,7 @@ defmodule Rail.Runs do
 
   import Ecto.Query
 
+  alias Rail.Backends.Schemas.Backend
   alias Rail.Domain.RunFailure
   alias Rail.Repo
   alias Rail.Runs.Actions
@@ -21,6 +22,7 @@ defmodule Rail.Runs do
 
   defdelegate append_pending_answer(role_run, answer, opts \\ []), to: Actions.AppendPendingAnswer
   defdelegate build_args(opts), to: Actions.BuildArgs
+  # Process lifecycle and execution
   defdelegate build_prompt(opts), to: Actions.BuildPrompt
   defdelegate chat_prompt(message), to: Actions.ChatPrompt
   defdelegate detect_question(line, opts \\ []), to: Actions.DetectQuestion
@@ -29,6 +31,7 @@ defmodule Rail.Runs do
   defdelegate summarize_tool_input(params), to: ToolSummarizer
   defdelegate summarize_tool_input(tool_name, params), to: ToolSummarizer
 
+  # Persistence and query helpers
   @doc """
   Determines whether a failure is transient and retryable.
   """
@@ -39,21 +42,8 @@ defmodule Rail.Runs do
   """
   def new_event_state(backend, opts \\ [])
 
-  # Process lifecycle and execution
-
-  def new_event_state(:claude, opts), do: ClaudeEvents.new(opts)
-
-  def new_event_state(backend, opts) when is_binary(backend) do
-    if String.downcase(backend) == "claude" do
-      ClaudeEvents.new(opts)
-    else
-      AgyEvents.new(opts)
-    end
-  end
-
-  def new_event_state(_other_backend, opts) do
-    AgyEvents.new(opts)
-  end
+  def new_event_state(%Backend{name: :claude}, opts), do: ClaudeEvents.new(opts)
+  def new_event_state(%Backend{}, opts), do: AgyEvents.new(opts)
 
   @doc """
   Parses a raw line from an agent NDJSON stdout stream into the accumulator state.
@@ -65,14 +55,13 @@ defmodule Rail.Runs do
   Dispatches a decoded NDJSON event map to the appropriate backend handler.
   """
 
-  # Persistence and query helpers
-
   def parse_event(%ClaudeEvents{} = state, event), do: ClaudeEvents.handle_event(state, event)
   def parse_event(%AgyEvents{} = state, event), do: AgyEvents.handle_event(state, event)
 
-  def parse_event(backend, event) when is_atom(backend) or is_binary(backend) do
-    state = new_event_state(backend)
-    parse_event(state, event)
+  def parse_event(%Backend{} = backend, event) do
+    backend
+    |> new_event_state()
+    |> parse_event(event)
   end
 
   @doc """

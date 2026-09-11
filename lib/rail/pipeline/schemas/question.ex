@@ -20,6 +20,7 @@ defmodule Rail.Pipeline.Schemas.Question do
     field :answer, :string
     field :status, Ecto.Enum, values: @statuses, default: :pending
     field :answered_at, :utc_datetime_usec
+    field :delivered_at, :utc_datetime_usec
 
     timestamps()
   end
@@ -32,7 +33,8 @@ defmodule Rail.Pipeline.Schemas.Question do
     :context_summary,
     :answer,
     :status,
-    :answered_at
+    :answered_at,
+    :delivered_at
   ]
 
   @required_fields [

@@ -1,5 +1,6 @@
 import Ecto.Query
 
+alias Rail.Backends.Schemas.Backend
 alias Rail.Projects.Schemas.Project
 alias Rail.Repo
 alias Rail.Roles.Schemas.Role
@@ -44,14 +45,21 @@ default_project =
     })
     |> Repo.insert!()
 
-# 3. Default Roles for Project
+# 3. CLI Backends — a role cannot exist without the backend it runs on.
+claude_backend =
+  Repo.get_by(Backend, name: :claude) ||
+    %Backend{}
+    |> Backend.changeset(%{name: :claude, executable_path: "claude"})
+    |> Repo.insert!()
+
+# 4. Default Roles for Project
 default_roles = [
   %{
     stage: :product,
     name: "Product Manager",
     description: "Clarifies problem statements, gathers requirements, and prepares issues for architecture",
     icon_name: "pi-clipboard-text",
-    cli_backend: :claude,
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:
@@ -64,7 +72,7 @@ default_roles = [
     name: "Software Architect",
     description: "Designs technical architecture, file changes, and implementation plans",
     icon_name: "pi-cube",
-    cli_backend: :claude,
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:
@@ -77,7 +85,7 @@ default_roles = [
     name: "Product Designer",
     description: "Designs user interfaces, layout specs, and UX flows",
     icon_name: "pi-paint-brush",
-    cli_backend: :claude,
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:
@@ -90,7 +98,7 @@ default_roles = [
     name: "Software Engineer",
     description: "Implements vertical slices, writes tests, and adheres to code standards",
     icon_name: "pi-code",
-    cli_backend: :claude,
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:
@@ -103,7 +111,7 @@ default_roles = [
     name: "Code Reviewer",
     description: "Reviews code changes against quality standards, architecture, and tests",
     icon_name: "pi-eye",
-    cli_backend: :claude,
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:
@@ -116,7 +124,7 @@ default_roles = [
     name: "QA Engineer",
     description: "Executes automated test suites and exercises running applications",
     icon_name: "pi-flask",
-    cli_backend: :claude,
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:
@@ -129,7 +137,7 @@ default_roles = [
     name: "QA Lead",
     description: "Evaluates overall quality gates, reviews QA reports, and grants sign-off",
     icon_name: "pi-shield-check",
-    cli_backend: :claude,
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:
@@ -142,7 +150,7 @@ default_roles = [
     name: "Demo Presenter",
     description: "Generates narrated demonstration walkthroughs of completed features",
     icon_name: "pi-video-camera",
-    cli_backend: :claude,
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:

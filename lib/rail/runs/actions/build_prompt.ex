@@ -1,6 +1,8 @@
 defmodule Rail.Runs.Actions.BuildPrompt do
   @moduledoc false
 
+  alias Rail.Backends.Schemas.Backend
+
   @doc """
   Constructs the agent prompt string passed via `-p`.
 
@@ -23,7 +25,7 @@ defmodule Rail.Runs.Actions.BuildPrompt do
     has_answer = is_binary(answer) and String.trim(answer) != ""
 
     role_instructions =
-      if claude?(opts[:backend] || opts[:cli_backend]) do
+      if claude?(opts[:backend]) do
         nil
       else
         opts[:role_instructions] || opts[:system_prompt]
@@ -87,7 +89,6 @@ defmodule Rail.Runs.Actions.BuildPrompt do
   defp maybe_append_answer(buffer, answer, true), do: buffer <> "\n#{answer}\n"
   defp maybe_append_answer(buffer, _answer, false), do: buffer
 
-  defp claude?(backend) when is_atom(backend), do: backend == :claude
-  defp claude?(backend) when is_binary(backend), do: String.downcase(backend) == "claude"
+  defp claude?(%Backend{name: name}), do: name == :claude
   defp claude?(_other_backend), do: false
 end

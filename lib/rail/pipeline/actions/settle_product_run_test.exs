@@ -16,6 +16,9 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, workspace} =
@@ -47,6 +50,7 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
 
     {:ok, product_role} =
       Roles.create_role(scope, project, %{
+        backend_id: backend.id,
         stage: :product,
         name: "product role",
         model: "claude-3-7-sonnet",
@@ -163,16 +167,6 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
              Pipeline.settle_product_run(run, %{exit_code: 0}, scratch_dir: scratch_dir)
 
     assert %Issue{title: ^title_before} = Repo.get!(Issue, issue.id)
-  end
-
-  test "registers a detected question and leaves the task blocked", %{task: task, role: role} do
-    run = task |> running_task() |> role_run(role) |> run()
-
-    output = "Thinking...\n[QUESTION: Which persona is this for?] [OPTIONS: Admin, End user]"
-
-    assert {:ok, %Task{stage: :product, stage_state: :blocked, question_id: "qst_" <> _rest},
-            %RoleRun{status: :blocked_on_input, exit_code: 0}} =
-             Pipeline.settle_product_run(run, %{exit_code: 0, output: output})
   end
 
   test "preserves an existing blocked question without parking for approval", %{task: task, role: role} do

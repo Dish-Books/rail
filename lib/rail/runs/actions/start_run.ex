@@ -4,7 +4,7 @@ defmodule Rail.Runs.Actions.StartRun do
   import Ecto.Query
 
   alias Ecto.Adapters.SQL.Sandbox
-  alias Rail.Backends.Probes
+  alias Rail.Backends.Schemas.Backend
   alias Rail.Repo
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.RoleRun
@@ -33,7 +33,7 @@ defmodule Rail.Runs.Actions.StartRun do
   end
 
   defp do_start_run(role_run, kind, argv, opts) do
-    backend = Keyword.get(opts, :backend, :claude)
+    backend = Keyword.fetch!(opts, :backend)
     {executable, args} = executable_and_args(argv, backend, opts)
     stream_path = stream_path(role_run, opts)
     prepare_stream_files(stream_path)
@@ -87,14 +87,8 @@ defmodule Rail.Runs.Actions.StartRun do
     end
   end
 
-  # Tests configure `:run_executable` as the stub the backends table would name in
-  # production.
-  defp backend_executable(backend) do
-    case Probes.configured_path(backend) do
-      path when is_binary(path) and path != "" -> path
-      _unconfigured -> Application.get_env(:rail, :run_executable, "")
-    end
-  end
+  defp backend_executable(%Backend{executable_path: path}) when is_binary(path), do: path
+  defp backend_executable(_unconfigured), do: ""
 
   defp stream_path(role_run, opts) do
     case Keyword.get(opts, :stream_path) do

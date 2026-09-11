@@ -49,6 +49,8 @@ defmodule RailWeb.TaskDetailLive do
       |> assign(:ticket_content, "")
       |> assign(:plan_content, nil)
       |> assign(:pending_question, nil)
+      |> assign(:pending_questions, [])
+      |> assign(:selected_question_id, nil)
       |> assign(:answer_text, "")
       |> assign(:ordered_runs, [])
       |> assign(:selected_role_id, nil)
@@ -105,6 +107,8 @@ defmodule RailWeb.TaskDetailLive do
             |> assign(:ticket_content, "")
             |> assign(:plan_content, nil)
             |> assign(:pending_question, nil)
+            |> assign(:pending_questions, [])
+            |> assign(:selected_question_id, nil)
             |> assign(:answer_text, "")
             |> assign(:ordered_runs, [])
             |> assign(:selected_role_id, nil)
@@ -374,6 +378,7 @@ defmodule RailWeb.TaskDetailLive do
             <.answer_field
               :if={@task.stage_state == :blocked and @pending_question != nil}
               question={@pending_question}
+              questions={@pending_questions}
               answer_text={@answer_text}
             />
 
@@ -555,6 +560,22 @@ defmodule RailWeb.TaskDetailLive do
     {:noreply, assign(socket, :answer_text, option)}
   end
 
+  def handle_event("select_question", params, socket) do
+    socket =
+      case Map.get(params, "question_id") do
+        question_id when is_binary(question_id) ->
+          socket
+          |> assign(:selected_question_id, question_id)
+          |> assign(:answer_text, "")
+          |> refresh_task()
+
+        _missing ->
+          socket
+      end
+
+    {:noreply, socket}
+  end
+
   def handle_event("answer_form_change", params, socket) do
     answer = Map.get(params, "answer") || ""
     {:noreply, assign(socket, :answer_text, answer)}
@@ -580,6 +601,7 @@ defmodule RailWeb.TaskDetailLive do
       socket =
         socket
         |> assign(:answer_text, "")
+        |> assign(:selected_question_id, nil)
         |> refresh_task()
 
       {:noreply, socket}
@@ -600,6 +622,7 @@ defmodule RailWeb.TaskDetailLive do
     socket =
       socket
       |> assign(:answer_text, "")
+      |> assign(:selected_question_id, nil)
       |> refresh_task()
 
     {:noreply, socket}
@@ -1372,7 +1395,9 @@ defmodule RailWeb.TaskDetailLive do
         if(is_list(task.demos) and task.demos != [], do: List.last(task.demos))
 
     running_action = socket.assigns[:running_action] || TaskActionRunner.running_on(task.id)
-    pending_question = resolve_pending_question(scope, task)
+    pending_questions = resolve_pending_questions(scope, task)
+    pending_question = select_pending_question(pending_questions, socket.assigns[:selected_question_id])
+    selected_question_id = question_id(pending_question)
 
     roles = if task.project_id, do: Rail.Roles.list_roles(scope, task.project_id), else: []
     roles_map = Map.new(roles, fn r -> {r.id, r} end)
@@ -1403,6 +1428,8 @@ defmodule RailWeb.TaskDetailLive do
     |> assign(:ticket_content, Formatters.ticket_for(task))
     |> assign(:plan_content, Formatters.plan_for(task))
     |> assign(:pending_question, pending_question)
+    |> assign(:pending_questions, pending_questions)
+    |> assign(:selected_question_id, selected_question_id)
     |> assign(:roles_map, roles_map)
     |> assign(:ordered_runs, ordered_runs)
     |> assign(:selected_role_id, selected_role_id)
@@ -1414,14 +1441,22 @@ defmodule RailWeb.TaskDetailLive do
     |> assign(:viewed_diff_files, task.viewed_diff_files || %{})
   end
 
-  defp resolve_pending_question(scope, %{stage_state: :blocked, question_id: q_id}) when is_binary(q_id) and q_id != "" do
-    case Pipeline.get_question(scope, q_id) do
-      {:ok, %{status: :pending} = q} -> q
-      _other -> nil
-    end
+  # A run can ask several things at once, so a blocked task shows the whole queue as
+  # tabs. task.question_id only names the one the pipeline parks on.
+  defp resolve_pending_questions(scope, %{stage_state: :blocked, id: task_id}) do
+    Pipeline.list_pending_questions(scope, task_id, order_by: [asc: :inserted_at, asc: :id])
   end
 
-  defp resolve_pending_question(_scope, _task), do: nil
+  defp resolve_pending_questions(_scope, _task), do: []
+
+  # The tab the human picked stays put across refreshes; once it is answered the
+  # front of the queue takes over.
+  defp select_pending_question(questions, selected_id) do
+    Enum.find(questions, &(&1.id == selected_id)) || List.first(questions)
+  end
+
+  defp question_id(%{id: id}), do: id
+  defp question_id(_none), do: nil
 
   defp resolve_selected_role_id(ordered_runs, current_selected_role_id) do
     cond do

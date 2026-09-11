@@ -1,6 +1,8 @@
 defmodule Rail.Runs.Actions.BuildArgs do
   @moduledoc false
 
+  alias Rail.Backends.Schemas.Backend
+
   @default_print_timeout "6h"
   @default_effort "high"
 
@@ -10,7 +12,7 @@ defmodule Rail.Runs.Actions.BuildArgs do
   Enforces exact flag order, read-only mode permissions, and resume flags per spec 03 §2.
 
   Options:
-  - `:backend` or `:cli_backend`: `:claude` | `:agy` (or string, case-insensitive)
+  - `:backend`: the `%Backend{}` the role runs on
   - `:prompt`: string prompt
   - `:model`: model name string
   - `:reasoning_effort` or `:effort`: `"high" | "medium" | "low"` (default `"high"`)
@@ -26,9 +28,7 @@ defmodule Rail.Runs.Actions.BuildArgs do
   end
 
   def build_args(opts) when is_map(opts) do
-    backend = opts[:backend] || opts[:cli_backend]
-
-    if claude?(backend) do
+    if claude?(opts[:backend]) do
       build_claude_args(opts)
     else
       build_agy_args(opts)
@@ -123,7 +123,6 @@ defmodule Rail.Runs.Actions.BuildArgs do
 
   defp agy_conversation_flags(_other), do: []
 
-  defp claude?(backend) when is_atom(backend), do: backend == :claude
-  defp claude?(backend) when is_binary(backend), do: String.downcase(backend) == "claude"
+  defp claude?(%Backend{name: name}), do: name == :claude
   defp claude?(_other_backend), do: false
 end

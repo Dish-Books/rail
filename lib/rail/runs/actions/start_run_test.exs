@@ -1,6 +1,7 @@
 defmodule Rail.Runs.Actions.StartRunTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Backends.Schemas.Backend
   alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
@@ -38,6 +39,7 @@ defmodule Rail.Runs.Actions.StartRunTest do
         role_run,
         :stage,
         ["/bin/sleep", "2"],
+        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
         stream_path: stream_path,
         skip_follower: true
       )
@@ -62,6 +64,7 @@ defmodule Rail.Runs.Actions.StartRunTest do
         role_run.id,
         :stage,
         ["/bin/echo", "hello"],
+        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
         stream_path: stream_path,
         skip_follower: true
       )
@@ -87,6 +90,7 @@ defmodule Rail.Runs.Actions.StartRunTest do
         role_run,
         :stage,
         ["/bin/sh", "-c", script],
+        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
         stream_path: stream_path,
         scratch_path: scratch_dir,
         gh_token: "gh_test_123",
@@ -128,6 +132,7 @@ defmodule Rail.Runs.Actions.StartRunTest do
         role_run,
         :stage,
         [missing_bin, "--help"],
+        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
         stream_path: stream_path,
         skip_follower: true
       )
@@ -148,6 +153,7 @@ defmodule Rail.Runs.Actions.StartRunTest do
         role_run,
         :stage,
         ["/bin/sleep", "2"],
+        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
         stream_path: stream_path,
         skip_follower: false
       )
@@ -176,6 +182,7 @@ defmodule Rail.Runs.Actions.StartRunTest do
         role_run,
         :stage,
         ["3"],
+        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
         executable: "/bin/sleep",
         cd: tmp_dir,
         state_dir: custom_state_dir,
@@ -198,11 +205,21 @@ defmodule Rail.Runs.Actions.StartRunTest do
         executable_path: "/bin/sleep"
       })
 
-    {:ok, run1} = Runs.start_run(role_run, :stage, [], skip_follower: true)
+    {:ok, run1} =
+      Runs.start_run(role_run, :stage, [],
+        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
+        skip_follower: true
+      )
+
     assert run1.status == :running
     Tools.terminate_os_process(run1.os_pid, grace_period: 50)
 
-    {:ok, run2} = Runs.start_run(role_run, :stage, ["/bin/sleep", "1"], skip_follower: false)
+    {:ok, run2} =
+      Runs.start_run(role_run, :stage, ["/bin/sleep", "1"],
+        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
+        skip_follower: false
+      )
+
     assert run2.status == :running
     follower_pid = Runs.get_follower_pid(run2.id)
     if is_pid(follower_pid), do: Rail.Runs.FollowerSupervisor.stop_follower(follower_pid)

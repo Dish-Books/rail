@@ -3,6 +3,10 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
   Action that registers an agent question detected during run execution.
   Enforces duplicate-question suppression, parks the stage (`stage_state: :blocked`),
   marks the role run as `:blocked_on_input`, and broadcasts `pipeline_changed`.
+
+  A run that asks several things at once registers each as its own question. The
+  first one parks the task; the rest queue up behind it so the human answers them
+  one at a time without the stage resuming in between.
   """
 
   import Ecto.Query
@@ -20,6 +24,21 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
   alias Rail.Runs.Schemas.RunEvent
 
   require Logger
+
+  @doc """
+  Registers every question in `questions` for a task and role run, in order.
+
+  The first registration parks the task; later ones join the queue behind it.
+  Returns `{:ok, results}` with one registration result per question.
+  """
+  def register_questions(task_or_id, role_run_or_id, questions, opts \\ []) when is_list(questions) do
+    results =
+      Enum.map(questions, fn question ->
+        do_register(task_or_id, role_run_or_id, question, opts)
+      end)
+
+    {:ok, results}
+  end
 
   @doc """
   Registers a detected question for a task and role run.
@@ -55,15 +74,10 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
   end
 
   defp handle_registration(%Task{} = task, role_run, prompt, options, context_summary, role_id) do
-    cond do
-      task.stage_state == :blocked and is_binary(task.question_id) ->
-        {:ok, :already_registered}
-
-      undelivered_pending_answer?(role_run) ->
-        drop_question(role_run)
-
-      true ->
-        register_or_reuse_question(task, role_run, prompt, options, context_summary, role_id)
+    if undelivered_pending_answer?(role_run) do
+      drop_question(role_run)
+    else
+      register_or_reuse_question(task, role_run, prompt, options, context_summary, role_id)
     end
   end
 
@@ -115,11 +129,16 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
           {new_question, new_question.id}
       end
 
+    # The task parks on the first question asked; the rest queue behind it, so an
+    # already-blocked task keeps the one the human is looking at in front. Read the
+    # current front from the database: registering a batch walks past a caller's copy.
+    blocking_question_id = current_question_id(task.id) || question_id
+
     {:ok, updated_task} =
       task
       |> Task.changeset(%{
         stage_state: :blocked,
-        question_id: question_id
+        question_id: blocking_question_id
       })
       |> Repo.update()
 
@@ -136,6 +155,10 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
     })
 
     {:ok, question}
+  end
+
+  defp current_question_id(task_id) do
+    Repo.one(from t in Task, where: t.id == ^task_id, select: t.question_id)
   end
 
   defp find_existing_pending_question(task_id, prompt) do
