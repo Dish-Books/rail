@@ -46,7 +46,7 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
     refute prompt =~ "Continue from where you stopped."
   end
 
-  test "emits role instructions inside tags first for Agy on first run and resume" do
+  test "emits role instructions inside tags for Agy on the first run only" do
     first_opts = [
       backend: :agy,
       role_instructions: "Act as a principal engineer.",
@@ -73,10 +73,8 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
 
     resume_prompt = BuildPrompt.build_prompt(resume_opts)
 
-    assert String.starts_with?(
-             resume_prompt,
-             "<role-instructions>\nAct as a principal engineer.\n</role-instructions>"
-           )
+    refute resume_prompt =~ "<role-instructions>"
+    assert String.starts_with?(resume_prompt, "My answer")
 
     assert resume_prompt =~ "My answer"
     assert resume_prompt =~ "Continue from where you stopped."
@@ -129,15 +127,6 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
     assert prompt =~ "My answer"
     refute prompt =~ plan
     refute prompt =~ "do the thing"
-  end
-
-  test "bypasses prompt construction when prompt_override is given" do
-    opts = %{
-      prompt_override: "Direct chat turn message",
-      task_description: "do the thing"
-    }
-
-    assert BuildPrompt.build_prompt(opts) == "Direct chat turn message"
   end
 
   test "extracts ticket from task struct or map" do

@@ -231,6 +231,7 @@ defmodule Rail.PipelineTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now(),
         exit_code: 0

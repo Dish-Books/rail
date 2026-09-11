@@ -22,6 +22,7 @@ defmodule Rail.Runs do
   alias Rail.Runs.ToolSummarizer
 
   defdelegate build_argv(opts), to: ArgvBuilder
+  defdelegate append_pending_answer(role_run, answer, opts \\ []), to: Actions.AppendPendingAnswer
   defdelegate build_prompt(opts), to: Actions.BuildPrompt
   defdelegate chat_prompt(message), to: Actions.ChatPrompt
   defdelegate detect_question(line, opts \\ []), to: QuestionDetector

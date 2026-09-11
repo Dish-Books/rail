@@ -92,7 +92,6 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
         task: task,
         backend: role.cli_backend,
         role_instructions: role.system_prompt,
-        system_prompt: role.system_prompt,
         context_snippet: brief,
         plan: plan_content,
         pending_answer: role_run.pending_answer,

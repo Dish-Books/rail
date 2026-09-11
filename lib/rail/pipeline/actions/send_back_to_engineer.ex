@@ -13,6 +13,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Scope
 
@@ -76,11 +77,18 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
   end
 
   defp execute_send_back(%Task{} = task, %Role{} = engineer_role, opts) do
+    case resumable_engineer_run(task.id, engineer_role.id) do
+      %RoleRun{} = engineer_run -> apply_send_back(task, engineer_run, opts)
+      nil -> {:error, :no_session}
+    end
+  end
+
+  defp apply_send_back(%Task{} = task, %RoleRun{} = engineer_run, opts) do
     note = extract_note(opts)
     carried_reports = build_carried_gate_reports(task)
     message = build_engineer_message(note, carried_reports)
 
-    update_or_create_engineer_run(task.id, engineer_role.id, message)
+    Runs.append_pending_answer(engineer_run, message, auto_retries: 0)
 
     attrs = %{
       stage: :engineer,
@@ -130,27 +138,10 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
     Enum.join(parts, "")
   end
 
-  defp update_or_create_engineer_run(task_id, role_id, message) do
+  defp resumable_engineer_run(task_id, role_id) do
     case Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_id) do
-      %RoleRun{} = existing ->
-        pending = existing.pending_answer
-        new_pending = if pending && String.trim(pending) != "", do: "#{pending}\n\n#{message}", else: message
-
-        existing
-        |> RoleRun.changeset(%{pending_answer: new_pending, auto_retries: 0})
-        |> Repo.update!()
-
-      nil ->
-        %RoleRun{}
-        |> RoleRun.changeset(%{
-          task_id: task_id,
-          role_id: role_id,
-          status: :finished,
-          auto_retries: 0,
-          pending_answer: message,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
+      %RoleRun{} = role_run -> if RoleRun.resumable?(role_run), do: role_run
+      nil -> nil
     end
   end
 

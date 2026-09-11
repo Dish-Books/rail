@@ -21,6 +21,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Runs
   alias Rail.Runs.QuestionDetector
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
@@ -502,7 +503,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
 
       case Roles.get_role(project_id: task.project_id, stage: :engineer) do
         {:ok, eng_role} ->
-          update_or_create_engineer_pending_answer(task.id, eng_role.id, note)
+          update_engineer_pending_answer(task.id, eng_role.id, note)
 
         _other ->
           :ok
@@ -560,27 +561,17 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     end
   end
 
-  defp update_or_create_engineer_pending_answer(task_id, engineer_role_id, note) do
-    case Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^engineer_role_id) do
-      %RoleRun{} = existing ->
-        pending = existing.pending_answer
-        new_pending = if pending && String.trim(pending) != "", do: "#{pending}\n\n#{note}", else: note
+  defp resumable_role_run(task_id, role_id) do
+    case Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_id) do
+      %RoleRun{} = role_run -> if RoleRun.resumable?(role_run), do: role_run
+      nil -> nil
+    end
+  end
 
-        existing
-        |> RoleRun.changeset(%{pending_answer: new_pending, auto_retries: 0})
-        |> Repo.update!()
-
-      nil ->
-        %RoleRun{}
-        |> RoleRun.changeset(%{
-          task_id: task_id,
-          role_id: engineer_role_id,
-          status: :finished,
-          auto_retries: 0,
-          pending_answer: note,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
+  defp update_engineer_pending_answer(task_id, engineer_role_id, note) do
+    case resumable_role_run(task_id, engineer_role_id) do
+      %RoleRun{} = engineer_run -> Runs.append_pending_answer(engineer_run, note, auto_retries: 0)
+      nil -> :ok
     end
   end
 
@@ -601,27 +592,9 @@ defmodule Rail.Pipeline.Actions.SettleRun do
             "evidence produced before it describes a build that no longer exists, and carrying such a row forward is a false pass. " <>
             "Re-run what you carry, or say plainly that you did not."
 
-        case Repo.one(from r in RoleRun, where: r.task_id == ^task.id and r.role_id == ^next_role.id) do
-          %RoleRun{} = existing ->
-            pending = existing.pending_answer
-
-            new_pending =
-              if pending && String.trim(pending) != "", do: "#{pending}\n\n#{evidence_note}", else: evidence_note
-
-            existing
-            |> RoleRun.changeset(%{pending_answer: new_pending})
-            |> Repo.update!()
-
-          nil ->
-            %RoleRun{}
-            |> RoleRun.changeset(%{
-              task_id: task.id,
-              role_id: next_role.id,
-              status: :finished,
-              pending_answer: evidence_note,
-              started_at: DateTime.utc_now()
-            })
-            |> Repo.insert!()
+        case resumable_role_run(task.id, next_role.id) do
+          %RoleRun{} = next_run -> Runs.append_pending_answer(next_run, evidence_note)
+          nil -> :ok
         end
 
       _other ->

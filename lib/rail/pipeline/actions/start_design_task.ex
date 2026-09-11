@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
          {:ok, task} <- claim_stage(task, worktree_path),
          scratch_path = write_scratch(project, task, opts),
          {:ok, role_run} <- Runs.start_or_resume_role_run(task, role, worktree_path) do
-      spawn_run(task, project, role, role_run, worktree_path, scratch_path, opts)
+      spawn_run(task, role, role_run, worktree_path, scratch_path, opts)
     else
       nil -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
@@ -120,31 +120,13 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
     """)
   end
 
-  defp workspace_brief(%Task{} = task, %Project{} = project, worktree_path) do
-    base_branch = project.default_branch
-
-    String.trim("""
-    Workspace for this task:
-    - Worktree: #{worktree_path} (your working directory; every path you touch is under it)
-    - Branch: #{task.worktree_name || task.id}, already checked out. Do NOT create a branch of your own, and do not rename this one.
-    - Base branch: #{base_branch} on remote `origin`
-    - Other agents share this repository. Never switch branches, never work in the main checkout, and never touch another worktree.
-    """)
-  end
-
-  defp spawn_run(task, project, role, role_run, worktree_path, scratch_path, opts) do
-    context =
-      [workspace_brief(task, project, worktree_path), brief(task)]
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.join("\n\n")
-
+  defp spawn_run(task, role, role_run, worktree_path, scratch_path, opts) do
     prompt =
       Runs.build_prompt(
         task: task,
         backend: role.cli_backend,
         role_instructions: role.system_prompt,
-        system_prompt: role.system_prompt,
-        context_snippet: context,
+        context_snippet: brief(task),
         pending_answer: role_run.pending_answer,
         conversation_id: role_run.conversation_id
       )

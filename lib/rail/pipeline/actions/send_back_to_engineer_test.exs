@@ -189,6 +189,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_rev.id,
+        conversation_id: "sess_fixture",
         status: :finished,
         started_at: DateTime.utc_now(),
         output: "Reviewer finding: memory leak in loop."
@@ -256,6 +257,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_eng.id,
+        conversation_id: "sess_fixture",
         status: :finished,
         started_at: DateTime.utc_now(),
         pending_answer: "Initial engineer instruction"

@@ -6,32 +6,21 @@ defmodule Rail.Runs.Actions.BuildPrompt do
 
   Handles:
   - System prompt split: Claude receives role instructions via `--system-prompt`
-    (omitted from the prompt body), while Agy receives `<role-instructions>...</role-instructions>`.
+    (omitted from the prompt body), while Agy receives `<role-instructions>...</role-instructions>`
+    on the first turn only - a resumed conversation already carries them, so re-sending
+    would stack a copy into the transcript every turn.
   - Resume turns with an answer: sends only the answer + "Continue from where you stopped.",
     omitting the ticket, context snippet, and plan so the agent does not ask again.
   - Initial turns and non-resumed answer turns: includes context snippet, ticket body,
     optional plan, and optional pending answer.
-  - Direct chat turns: passes `prompt_override` through unchanged.
   """
   def build_prompt(opts) when is_list(opts) do
     build_prompt(Map.new(opts))
   end
 
-  def build_prompt(%{prompt_override: prompt_override}) when is_binary(prompt_override) and prompt_override != "" do
-    prompt_override
-  end
-
   def build_prompt(opts) when is_map(opts) do
     answer = opts[:pending_answer] || opts[:answer]
     has_answer = is_binary(answer) and String.trim(answer) != ""
-
-    conversation_id = opts[:conversation_id] || opts[:resume]
-
-    is_resume =
-      case Map.fetch(opts, :is_resume) do
-        {:ok, val} when is_boolean(val) -> val
-        _no_explicit -> is_binary(conversation_id) and String.trim(conversation_id) != ""
-      end
 
     role_instructions =
       if claude?(opts[:backend] || opts[:cli_backend]) do
@@ -40,12 +29,11 @@ defmodule Rail.Runs.Actions.BuildPrompt do
         opts[:role_instructions] || opts[:system_prompt]
       end
 
-    buffer = role_instructions_block(role_instructions)
-
-    if has_answer and is_resume do
-      buffer <> "#{answer}\n\nContinue from where you stopped.\n"
+    if has_answer do
+      "#{answer}\n\nContinue from where you stopped.\n"
     else
-      buffer
+      role_instructions
+      |> role_instructions_block()
       |> maybe_append_context_snippet(opts[:context_snippet])
       |> append_ticket(opts)
       |> maybe_append_plan(opts[:plan])

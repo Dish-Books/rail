@@ -34,7 +34,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
          {:ok, worktree_path} <- ensure_worktree(project, task),
          scratch_path = write_scratch(project, task, issue),
          {:ok, role_run} <- Runs.start_or_resume_role_run(task, role, worktree_path) do
-      spawn_run(task, project, issue, role, role_run, worktree_path, scratch_path)
+      spawn_run(task, issue, role, role_run, worktree_path, scratch_path)
     end
   end
 
@@ -63,19 +63,13 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     scratch_path
   end
 
-  defp spawn_run(task, project, issue, role, role_run, worktree_path, scratch_path) do
-    context =
-      [workspace_brief(task, project, worktree_path), brief(issue)]
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.join("\n\n")
-
+  defp spawn_run(task, issue, role, role_run, worktree_path, scratch_path) do
     prompt =
       Runs.build_prompt(
         task: task,
         backend: role.cli_backend,
         role_instructions: role.system_prompt,
-        system_prompt: role.system_prompt,
-        context_snippet: context,
+        context_snippet: brief(issue),
         pending_answer: role_run.pending_answer,
         conversation_id: role_run.conversation_id
       )
@@ -126,18 +120,6 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     - Everything below the closing `---` becomes the ticket body verbatim, and the file replaces the ticket in full.
     - A ticket you split out is its own file, $RAIL_SCRATCH/tickets/split-<n>.md, in this same format. Rail opens each one as a new ticket.
     - These files are the only way to publish a ticket.
-    """)
-  end
-
-  defp workspace_brief(%Task{} = task, %Project{} = project, worktree_path) do
-    base_branch = project.default_branch
-
-    String.trim("""
-    Workspace for this task:
-    - Worktree: #{worktree_path} (your working directory; every path you touch is under it)
-    - Branch: #{task.worktree_name || task.id}, already checked out. Do NOT create a branch of your own, and do not rename this one.
-    - Base branch: #{base_branch} on remote `origin`
-    - Other agents share this repository. Never switch branches, never work in the main checkout, and never touch another worktree.
     """)
   end
 

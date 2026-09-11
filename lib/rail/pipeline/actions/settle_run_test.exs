@@ -91,6 +91,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :finished,
         started_at: DateTime.utc_now()
       })
@@ -118,6 +119,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -149,6 +151,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:product].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -184,6 +187,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -204,6 +208,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -225,6 +230,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -246,6 +252,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -271,6 +278,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -290,6 +298,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now(),
         auto_retries: 0
@@ -318,6 +327,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now(),
         auto_retries: 2
@@ -341,6 +351,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now(),
         auto_retries: 0
@@ -366,6 +377,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -403,6 +415,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now(),
         exit_code: 0,
@@ -425,6 +438,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -447,6 +461,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -466,6 +481,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now(),
         exit_code: nil,
@@ -481,6 +497,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now(),
         exit_code: 1,
@@ -502,6 +519,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -545,6 +563,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_rev.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -590,6 +609,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_qa.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -693,6 +713,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role_qa.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -751,6 +772,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role_qa.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -788,6 +810,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role_qa.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -863,6 +886,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_rail.id,
         role_id: role_qa.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -927,6 +951,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_qa.id,
         role_id: role_qa.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -990,6 +1015,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_root.id,
         role_id: role_qa.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1056,6 +1082,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_wt_root.id,
         role_id: role_qa.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1119,6 +1146,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_p.id,
         role_id: role_qa.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1186,7 +1214,17 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role_qa.id,
+        conversation_id: "sess_fixture",
         status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, _prior_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_eng.id,
+        conversation_id: "sess_eng",
+        status: :finished,
         started_at: DateTime.utc_now()
       })
 
@@ -1262,6 +1300,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role_qa.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1330,6 +1369,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role_qa.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1351,6 +1391,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role_lead.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1385,6 +1426,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_lead.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1421,6 +1463,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_lead.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1469,6 +1512,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_prior.id,
+        conversation_id: "sess_fixture",
         status: :finished,
         started_at: DateTime.utc_now(),
         output: "Prior QA note: button is off-center."
@@ -1478,7 +1522,17 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_rev.id,
+        conversation_id: "sess_fixture",
         status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, _eng_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_eng.id,
+        conversation_id: "sess_eng",
+        status: :finished,
         started_at: DateTime.utc_now()
       })
 
@@ -1524,6 +1578,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_rev.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1566,6 +1621,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_qa.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1600,6 +1656,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_rev.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1646,7 +1703,17 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_rev.id,
+        conversation_id: "sess_fixture",
         status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, _qa_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_qa.id,
+        conversation_id: "sess_qa",
+        status: :finished,
         started_at: DateTime.utc_now()
       })
 
@@ -1658,6 +1725,40 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     qa_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_qa.id)
     assert qa_run.pending_answer =~ "The change has been reworked and the reviewer has signed off on it again."
     assert qa_run.pending_answer =~ "The reworked change is commit #{head_sha}."
+  end
+
+  test "skips the evidence line when the next stage has never held a conversation", %{
+    task: task,
+    roles: roles
+  } do
+    {:ok, role_rev} = Roles.update_role(system_scope(), roles[:review], %{name: "Reviewer"})
+    {:ok, role_qa} = Roles.update_role(system_scope(), roles[:qa], %{name: "QA Tester"})
+
+    git_repo = create_temp_git_repo()
+
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :review,
+        stage_state: :running,
+        rework_cycles: 1,
+        worktree_path: git_repo
+      })
+
+    {:ok, role_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_rev.id,
+        conversation_id: "sess_fixture",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    output = "Rework resolved nicely.\n\nVERDICT: APPROVED"
+
+    assert {:ok, %Task{stage: :qa, stage_state: :queued}, %RoleRun{}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+
+    assert Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_qa.id) == nil
   end
 
   test "settles gate with changes_requested appending to existing engineer pending_answer or missing engineer role", %{
@@ -1686,6 +1787,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_eng.id,
+        conversation_id: "sess_fixture",
         status: :finished,
         started_at: DateTime.utc_now(),
         pending_answer: "Old engineer notes"
@@ -1695,6 +1797,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_rev.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1754,6 +1857,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id2,
         role_id: role_rev2.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1791,6 +1895,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_lead.id,
+        conversation_id: "sess_fixture",
         status: :finished,
         started_at: DateTime.utc_now(),
         pending_answer: "Prior lead notes"
@@ -1800,6 +1905,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_qa.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1846,7 +1952,17 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id2,
         role_id: role_lead.id,
+        conversation_id: "sess_fixture",
         status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, _demo_run} =
+      Runs.create_role_run(%{
+        task_id: task_id2,
+        role_id: role_demo.id,
+        conversation_id: "sess_demo",
+        status: :finished,
         started_at: DateTime.utc_now()
       })
 
@@ -1906,6 +2022,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id3,
         role_id: role_rev3.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1920,6 +2037,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id3,
         role_id: unknown_role_id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -1955,6 +2073,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_rev.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now(),
         stage_fingerprint_head_sha: "fallback_sha",
@@ -1984,6 +2103,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -2016,6 +2136,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role.id,
+        conversation_id: "sess_fixture",
         status: :blocked_on_input,
         started_at: DateTime.utc_now()
       })
@@ -2042,6 +2163,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task1.id,
         role_id: role.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -2075,6 +2197,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task2.id,
         role_id: role.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -2109,6 +2232,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task3.id,
         role_id: role.id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now(),
         pending_answer: "Pending"
@@ -2131,6 +2255,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :finished,
         started_at: DateTime.utc_now()
       })
@@ -2166,6 +2291,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -2195,6 +2321,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now(),
         auto_retries: 0
@@ -2231,6 +2358,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
+        conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -2259,6 +2387,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -2320,6 +2449,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -2401,6 +2531,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -2482,6 +2613,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -2563,6 +2695,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -2644,6 +2777,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -2725,6 +2859,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -2812,6 +2947,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -2841,6 +2977,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -2886,6 +3023,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now(),
           stage_fingerprint_head_sha: "prior_sha_before_move_#{original_sha}",
@@ -2938,6 +3076,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now(),
           stage_fingerprint_head_sha: original_sha,
@@ -2995,6 +3134,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now(),
           stage_fingerprint_head_sha: original_sha,
@@ -3068,6 +3208,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -3115,6 +3256,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -3156,6 +3298,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -3180,6 +3323,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now(),
           auto_retries: 0
@@ -3257,6 +3401,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task1.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -3289,6 +3434,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task2.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -3320,6 +3466,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -3374,6 +3521,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -3437,6 +3585,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now(),
           stage_fingerprint_head_sha: "head_fallback",
@@ -3495,6 +3644,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now(),
           stage_fingerprint_head_sha: "some_sha",
@@ -3527,6 +3677,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -3603,6 +3754,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Runs.create_role_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
+          conversation_id: "sess_fixture",
           status: :running,
           started_at: DateTime.utc_now()
         })

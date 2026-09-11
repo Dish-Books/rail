@@ -224,26 +224,11 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
             "Re-run what you carry, or say plainly that you did not."
 
         case Repo.one(from r in RoleRun, where: r.task_id == ^task.id and r.role_id == ^review_role.id) do
-          %RoleRun{} = existing ->
-            pending = existing.pending_answer
-
-            new_pending =
-              if pending && String.trim(pending) != "", do: "#{pending}\n\n#{evidence_note}", else: evidence_note
-
-            existing
-            |> RoleRun.changeset(%{pending_answer: new_pending})
-            |> Repo.update!()
+          %RoleRun{} = review_run ->
+            if RoleRun.resumable?(review_run), do: Runs.append_pending_answer(review_run, evidence_note)
 
           nil ->
-            %RoleRun{}
-            |> RoleRun.changeset(%{
-              task_id: task.id,
-              role_id: review_role.id,
-              status: :finished,
-              pending_answer: evidence_note,
-              started_at: DateTime.utc_now()
-            })
-            |> Repo.insert!()
+            :ok
         end
 
       _other ->

@@ -131,6 +131,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_arch.id,
+        conversation_id: "sess_fixture",
         status: :finished,
         started_at: DateTime.utc_now(),
         auto_retries: 2,
@@ -147,7 +148,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
     assert arch_run.auto_retries == 0
   end
 
-  test "creates role_run if one did not exist yet", %{task: task, roles: roles} do
+  test "returns no_session when the target role has never held a conversation", %{task: task, roles: roles} do
     {:ok, role_rev} =
       Roles.update_role(system_scope(), roles[:review], %{
         name: "Reviewer"
@@ -159,12 +160,29 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
         stage_state: :awaiting_approval
       })
 
-    assert {:ok, %Task{stage: :review, stage_state: :queued}} =
-             Pipeline.request_changes(task, "Add test coverage")
+    assert {:error, :no_session} = Pipeline.request_changes(task, "Add test coverage")
 
-    rev_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_rev.id)
-    assert rev_run.pending_answer == "Add test coverage"
-    assert rev_run.auto_retries == 0
+    assert Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_rev.id) == nil
+  end
+
+  test "returns no_session when the target role ran without recording a conversation", %{task: task, roles: roles} do
+    {:ok, role_rev} = Roles.update_role(system_scope(), roles[:review], %{name: "Reviewer"})
+
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        stage: :review,
+        stage_state: :awaiting_approval
+      })
+
+    {:ok, _role_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_rev.id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    assert {:error, :no_session} = Pipeline.request_changes(task, "Add test coverage")
   end
 
   test "delegates to send_back_to_engineer when target stage is ready_to_merge", %{task: task, roles: roles} do
@@ -177,6 +195,15 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval
+      })
+
+    {:ok, _seeded_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_eng.id,
+        conversation_id: "sess_eng",
+        status: :finished,
+        started_at: DateTime.utc_now()
       })
 
     assert {:ok, %Task{id: ^task_id, stage: :engineer, stage_state: :queued}} =
@@ -199,6 +226,15 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
         is_rebasing: true
       })
 
+    {:ok, _seeded_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_eng.id,
+        conversation_id: "sess_eng",
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
     assert {:ok, %Task{stage: :qa, stage_state: :queued}} =
              Pipeline.request_changes(task, "Resolve merge conflict cleanly")
 
@@ -207,15 +243,24 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
   end
 
   test "authorizes scope with user and handles invalid task argument", %{task: task, roles: roles} do
-    {:ok, _role_eng} =
+    {:ok, role_eng} =
       Roles.update_role(system_scope(), roles[:engineer], %{
         name: "Engineer"
       })
 
-    {:ok, task} =
+    {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval
+      })
+
+    {:ok, _seeded_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role_eng.id,
+        conversation_id: "sess_eng",
+        status: :finished,
+        started_at: DateTime.utc_now()
       })
 
     user_scope = %Scope{user: %{id: "usr_test"}, system: false}
@@ -268,6 +313,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role_des.id,
+        conversation_id: "sess_fixture",
         status: :finished,
         started_at: DateTime.utc_now()
       })
@@ -324,6 +370,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role_des.id,
+        conversation_id: "sess_fixture",
         status: :finished,
         started_at: DateTime.utc_now()
       })

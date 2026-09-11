@@ -96,6 +96,19 @@ defmodule Rail.Runs.Schemas.RoleRun do
   def has_started?(_other), do: false
 
   @doc """
+  Returns true if this role run holds a conversation an agent can be resumed into.
+
+  A pending answer only means "continue where you stopped" when there is a
+  conversation to continue: without one the agent never saw the question, so the
+  answer would reach a fresh process with no history.
+  """
+  def resumable?(%__MODULE__{conversation_id: conversation_id}) when is_binary(conversation_id) do
+    String.trim(conversation_id) != ""
+  end
+
+  def resumable?(_other), do: false
+
+  @doc """
   Returns true if this role run can accept an interactive chat turn:
   it must have previously started and carry a non-empty conversation ID.
   """

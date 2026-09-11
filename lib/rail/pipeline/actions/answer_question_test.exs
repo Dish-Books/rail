@@ -86,6 +86,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role.id,
+        conversation_id: "sess_fixture",
         status: :blocked_on_input,
         started_at: DateTime.utc_now()
       })
@@ -126,6 +127,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role.id,
+        conversation_id: "sess_fixture",
         status: :blocked_on_input,
         started_at: DateTime.utc_now()
       })
@@ -158,6 +160,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role.id,
+        conversation_id: "sess_fixture",
         status: :blocked_on_input,
         started_at: DateTime.utc_now()
       })
@@ -205,6 +208,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role.id,
+        conversation_id: "sess_fixture",
         status: :blocked_on_input,
         started_at: DateTime.utc_now()
       })
@@ -250,6 +254,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role.id,
+        conversation_id: "sess_fixture",
         status: :blocked_on_input,
         started_at: DateTime.utc_now()
       })

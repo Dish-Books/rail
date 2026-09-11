@@ -115,6 +115,7 @@ defmodule Rail.Pipeline.Actions.PickDesignDirectionTest do
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: designer_role.id,
+        conversation_id: "sess_fixture",
         status: :finished,
         started_at: DateTime.utc_now()
       })
