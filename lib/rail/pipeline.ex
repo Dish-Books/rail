@@ -12,7 +12,7 @@ defmodule Rail.Pipeline do
   defdelegate approve_product_task(task, opts \\ []), to: Actions.ApproveProductTask
   defdelegate start_design_task(task, opts \\ []), to: Actions.StartDesignTask
 
-  defdelegate create_task(issue), to: Actions.CreateTask
+  defdelegate create_task(issue, stage), to: Actions.CreateTask
   defdelegate list_tasks(scope, project_id), to: Actions.ListTasks
   defdelegate list_tasks(scope, project_id, opts), to: Actions.ListTasks
   defdelegate update_task(scope, task_or_id, attrs), to: Actions.UpdateTask
@@ -20,8 +20,7 @@ defmodule Rail.Pipeline do
   defdelegate get_task!(scope, id), to: Actions.GetTask
   defdelegate get_plan(scope, task_or_id), to: Actions.GetPlan
   defdelegate get_plan(task_or_id), to: Actions.GetPlan
-  defdelegate broadcast_pipeline_changed(), to: Actions.BroadcastPipelineChanged
-  defdelegate broadcast_pipeline_changed(meta), to: Actions.BroadcastPipelineChanged
+  defdelegate broadcast_pipeline_changed(meta \\ %{}), to: Actions.BroadcastPipelineChanged
   defdelegate list_eligible_tasks(project_or_id, role), to: Queue, as: :eligible_tasks
   defdelegate pump_dispatcher, to: Dispatcher, as: :pump
   defdelegate dispatch_now(scope, task_or_id, opts), to: Actions.DispatchNow

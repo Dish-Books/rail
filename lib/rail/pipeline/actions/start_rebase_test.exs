@@ -60,9 +60,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Start Rebase Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_start_rebase_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -93,9 +91,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
 
     {:ok, issue_8803} = Issues.capture_issue(system_scope(), project, "Task 8803")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_start_rebase_8803"})
-
-    {:ok, task_running} = Pipeline.create_task(issue_8803)
+    {:ok, task_running} = Pipeline.create_task(issue_8803, :product)
 
     {:ok, task_running} =
       Pipeline.update_task(system_scope(), task_running.id, %{
@@ -113,9 +109,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
 
     {:ok, issue_8804} = Issues.capture_issue(system_scope(), project, "Task 8804")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_start_rebase_8804"})
-
-    {:ok, task_chatting} = Pipeline.create_task(issue_8804)
+    {:ok, task_chatting} = Pipeline.create_task(issue_8804, :product)
 
     {:ok, task_chatting} =
       Pipeline.update_task(system_scope(), task_chatting.id, %{
@@ -167,9 +161,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
 
     {:ok, issue_8807} = Issues.capture_issue(system_scope(), project, "Task 8807")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_start_rebase_8807"})
-
-    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8807)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8807, :product)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -226,9 +218,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
 
     {:ok, issue_8809} = Issues.capture_issue(system_scope(), project, "Task 8809")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_start_rebase_8809"})
-
-    {:ok, task} = Pipeline.create_task(issue_8809)
+    {:ok, task} = Pipeline.create_task(issue_8809, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{

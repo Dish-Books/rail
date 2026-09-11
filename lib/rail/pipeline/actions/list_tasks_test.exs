@@ -1,11 +1,15 @@
 defmodule Rail.Pipeline.Actions.ListTasksTest do
   use Rail.DataCase, async: true
 
+  import Ecto.Query
+
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
+  alias Rail.Repo
   alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -46,18 +50,16 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "List Tasks Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_list_tasks_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task}
   end
 
   test "lists tasks for project under system and user scope", %{project: project, task: task} do
+    Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id), set: [title: "T1"])
+
     {:ok, %Task{id: id1}} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        title: "T1"
-      })
+      Pipeline.update_task(system_scope(), task.id, %{})
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_list_tasks_7102",
@@ -67,9 +69,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, issue_7102} = Issues.capture_issue(system_scope(), project, "T2")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_list_tasks_7102"})
-
-    {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7102)
+    {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7102, :product)
 
     system_scope = Scope.for_system()
     user_scope = Scope.for_user(%{admin: false})
@@ -100,9 +100,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, issue_7103} = Issues.capture_issue(system_scope(), project, "Task 7103")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_list_tasks_7103"})
-
-    {:ok, %Task{id: eng_q_id}} = Pipeline.create_task(issue_7103)
+    {:ok, %Task{id: eng_q_id}} = Pipeline.create_task(issue_7103, :product)
 
     {:ok, %Task{id: eng_q_id}} =
       Pipeline.update_task(system_scope(), %Task{id: eng_q_id}.id, %{
@@ -118,9 +116,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, issue_7104} = Issues.capture_issue(system_scope(), project, "Task 7104")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_list_tasks_7104"})
-
-    {:ok, _t_eng_running} = Pipeline.create_task(issue_7104)
+    {:ok, _t_eng_running} = Pipeline.create_task(issue_7104, :product)
 
     {:ok, _t_eng_running} =
       Pipeline.update_task(system_scope(), _t_eng_running.id, %{
@@ -139,10 +135,10 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   end
 
   test "supports custom order_by", %{project: project, task: task} do
+    Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id), set: [title: "Alpha"])
+
     {:ok, %Task{id: id1}} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        title: "Alpha"
-      })
+      Pipeline.update_task(system_scope(), task.id, %{})
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_list_tasks_7105",
@@ -152,9 +148,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, issue_7105} = Issues.capture_issue(system_scope(), project, "Beta")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_list_tasks_7105"})
-
-    {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7105)
+    {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7105, :product)
 
     scope = Scope.for_system()
 
@@ -197,10 +191,10 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         }
       })
 
+    Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id), set: [title: "P1 Task"])
+
     {:ok, %Task{id: id1}} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        title: "P1 Task"
-      })
+      Pipeline.update_task(system_scope(), task.id, %{})
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_list_tasks_7106",
@@ -210,9 +204,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, issue_7106} = Issues.capture_issue(system_scope(), p2, "P2 Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_list_tasks_7106"})
-
-    {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7106)
+    {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7106, :product)
 
     system_scope = Scope.for_system()
     user_scope = Scope.for_user(%{admin: false})
@@ -229,10 +221,10 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   end
 
   test "supports preload option", %{project: %Project{id: expected_project_id}, task: task} do
+    Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id), set: [title: "Preload Task"])
+
     {:ok, %Task{id: id1}} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        title: "Preload Task"
-      })
+      Pipeline.update_task(system_scope(), task.id, %{})
 
     scope = Scope.for_system()
 

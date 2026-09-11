@@ -133,9 +133,9 @@ defmodule Rail.Pipeline.Actions.MergeTask do
     {:ok, updated_task}
   end
 
-  defp maybe_transition_linear_issue(scope, project, %Task{issue_id: issue_id} = task) when is_binary(issue_id) do
+  defp maybe_transition_linear_issue(scope, project, %Task{issue_id: issue_id}) when is_binary(issue_id) do
     %Issue{} = issue = Repo.get!(Issue, issue_id)
-    owner_user = if task.owner_user_id, do: Repo.get(User, task.owner_user_id)
+    owner_user = issue.owner_user_id && Repo.get(User, issue.owner_user_id)
     effective_scope = scope || Scope.for_system()
     _issue_res = Issues.move_state(effective_scope, project, issue, :done, owner_user)
   end

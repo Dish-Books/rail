@@ -132,19 +132,8 @@ defmodule Rail.E2E.TicketLifecycleTest do
                "Implement Feature End-to-End\n\nNeed feature end-to-end.\n\n## Acceptance criteria\n- Feature works end-to-end\n- Verification succeeds"
              )
 
-    LinearMock.mock_update_issue_success(%{
-      "id" => "lin_iss_101",
-      "identifier" => "ISS-101",
-      "title" => "Implement Feature End-to-End",
-      "description" =>
-        "Need feature end-to-end.\n\n## Acceptance criteria\n- Feature works end-to-end\n- Verification succeeds",
-      "url" => "https://linear.app/issue/ISS-101",
-      "state" => %{"name" => "In Progress"},
-      "branchName" => "feature-iss-101"
-    })
-
     assert {:ok, %Task{id: task_id, stage: :product, stage_state: :queued} = task} =
-             Rail.Pipeline.create_task(issue)
+             Rail.Pipeline.create_task(issue, :product)
 
     # -------------------------------------------------------------------------
     # 2. Product run starts and settles -> parks for approval, which publishes the
@@ -401,7 +390,7 @@ defmodule Rail.E2E.TicketLifecycleTest do
     })
 
     assert {:ok, %Task{id: task_id, stage: :product, stage_state: :queued} = task} =
-             Rail.Pipeline.create_task(issue)
+             Rail.Pipeline.create_task(issue, :product)
 
     LinearMock.mock_update_issue_success(%{
       "id" => "lin_iss_102",

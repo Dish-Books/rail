@@ -66,9 +66,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Merge Task Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_merge_task_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -99,9 +97,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue_9203} = Issues.capture_issue(system_scope(), project, "Task 9203")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9203"})
-
-    {:ok, task} = Pipeline.create_task(issue_9203)
+    {:ok, task} = Pipeline.create_task(issue_9203, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -140,9 +136,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue_9205} = Issues.capture_issue(system_scope(), project, "Task 9205")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9205"})
-
-    {:ok, task} = Pipeline.create_task(issue_9205)
+    {:ok, task} = Pipeline.create_task(issue_9205, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -181,9 +175,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue_9207} = Issues.capture_issue(system_scope(), project, "Task 9207")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9207"})
-
-    {:ok, task} = Pipeline.create_task(issue_9207)
+    {:ok, task} = Pipeline.create_task(issue_9207, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -226,9 +218,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue_9209} = Issues.capture_issue(system_scope(), project, "Task 9209")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9209"})
-
-    {:ok, task} = Pipeline.create_task(issue_9209)
+    {:ok, task} = Pipeline.create_task(issue_9209, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -309,9 +299,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue_9213} = Issues.capture_issue(system_scope(), project, "Task 9213")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9213"})
-
-    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_9213)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_9213, :product)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -381,9 +369,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue_9215} = Issues.capture_issue(system_scope(), project, "Task 9215")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9215"})
-
-    {:ok, task} = Pipeline.create_task(issue_9215)
+    {:ok, task} = Pipeline.create_task(issue_9215, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -429,9 +415,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue_9217} = Issues.capture_issue(system_scope(), project, "Task 9217")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9217"})
-
-    {:ok, task} = Pipeline.create_task(issue_9217)
+    {:ok, task} = Pipeline.create_task(issue_9217, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -478,9 +462,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue_9219} = Issues.capture_issue(system_scope(), project, "Task 9219")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9219"})
-
-    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_9219)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_9219, :product)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -543,9 +525,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue_9221} = Issues.capture_issue(system_scope(), project, "Task 9221")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9221"})
-
-    {:ok, task} = Pipeline.create_task(issue_9221)
+    {:ok, task} = Pipeline.create_task(issue_9221, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -599,9 +579,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue_9224} = Issues.capture_issue(system_scope(), project, "Task 9224")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9224"})
-
-    {:ok, task} = Pipeline.create_task(issue_9224)
+    {:ok, task} = Pipeline.create_task(issue_9224, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -647,9 +625,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue_9226} = Issues.capture_issue(system_scope(), project, "Task 9226")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9226"})
-
-    {:ok, task} = Pipeline.create_task(issue_9226)
+    {:ok, task} = Pipeline.create_task(issue_9226, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -694,9 +670,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue_9228} = Issues.capture_issue(system_scope(), project, "Task 9228")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9228"})
-
-    {:ok, task} = Pipeline.create_task(issue_9228)
+    {:ok, task} = Pipeline.create_task(issue_9228, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -748,9 +722,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue_9230} = Issues.capture_issue(system_scope(), project, "Task 9230")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9230"})
-
-    {:ok, task} = Pipeline.create_task(issue_9230)
+    {:ok, task} = Pipeline.create_task(issue_9230, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -793,9 +765,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue_9232} = Issues.capture_issue(system_scope(), project, "Task 9232")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9232"})
-
-    {:ok, task} = Pipeline.create_task(issue_9232)
+    {:ok, task} = Pipeline.create_task(issue_9232, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -847,9 +817,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     {:ok, issue_9234} = Issues.capture_issue(system_scope(), project, "Task 9234")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_merge_task_9234"})
-
-    {:ok, task} = Pipeline.create_task(issue_9234)
+    {:ok, task} = Pipeline.create_task(issue_9234, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{

@@ -62,9 +62,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Send Back Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_send_back_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -112,9 +110,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
 
     {:ok, issue_8402} = Issues.capture_issue(system_scope(), project, "Task 8402")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_send_back_8402"})
-
-    {:ok, t_des} = Pipeline.create_task(issue_8402)
+    {:ok, t_des} = Pipeline.create_task(issue_8402, :product)
 
     {:ok, t_des} =
       Pipeline.update_task(system_scope(), t_des.id, %{
@@ -132,9 +128,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
 
     {:ok, issue_8403} = Issues.capture_issue(system_scope(), project, "Task 8403")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_send_back_8403"})
-
-    {:ok, t_arch} = Pipeline.create_task(issue_8403)
+    {:ok, t_arch} = Pipeline.create_task(issue_8403, :product)
 
     {:ok, t_arch} =
       Pipeline.update_task(system_scope(), t_arch.id, %{

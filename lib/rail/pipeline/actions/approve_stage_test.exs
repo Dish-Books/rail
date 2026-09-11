@@ -63,9 +63,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Approve Stage Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_approve_stage_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -235,9 +233,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
 
     {:ok, issue_10502} = Issues.capture_issue(system_scope(), project, "Task 10502")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_approve_stage_10502"})
-
-    {:ok, t_arch} = Pipeline.create_task(issue_10502)
+    {:ok, t_arch} = Pipeline.create_task(issue_10502, :product)
 
     {:ok, t_arch} =
       Pipeline.update_task(system_scope(), t_arch.id, %{
@@ -255,9 +251,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
 
     {:ok, issue_10503} = Issues.capture_issue(system_scope(), project, "Task 10503")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_approve_stage_10503"})
-
-    {:ok, t_eng} = Pipeline.create_task(issue_10503)
+    {:ok, t_eng} = Pipeline.create_task(issue_10503, :product)
 
     {:ok, t_eng} =
       Pipeline.update_task(system_scope(), t_eng.id, %{
@@ -275,9 +269,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
 
     {:ok, issue_10504} = Issues.capture_issue(system_scope(), project, "Task 10504")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_approve_stage_10504"})
-
-    {:ok, t_rev} = Pipeline.create_task(issue_10504)
+    {:ok, t_rev} = Pipeline.create_task(issue_10504, :product)
 
     {:ok, t_rev} =
       Pipeline.update_task(system_scope(), t_rev.id, %{
@@ -295,9 +287,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
 
     {:ok, issue_10505} = Issues.capture_issue(system_scope(), project, "Task 10505")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_approve_stage_10505"})
-
-    {:ok, t_qa} = Pipeline.create_task(issue_10505)
+    {:ok, t_qa} = Pipeline.create_task(issue_10505, :product)
 
     {:ok, t_qa} =
       Pipeline.update_task(system_scope(), t_qa.id, %{

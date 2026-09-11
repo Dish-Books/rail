@@ -181,7 +181,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
 
       owner_user =
         Keyword.get(opts, :owner_user) ||
-          (task && task.owner_user_id && Repo.get(User, task.owner_user_id))
+          (issue.owner_user_id && Repo.get(User, issue.owner_user_id))
 
       case Issues.comment(scope, issue, comment_body, owner_user) do
         {:ok, %{id: comment_id}} -> {:ok, comment_id}

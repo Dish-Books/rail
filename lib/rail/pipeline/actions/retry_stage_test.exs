@@ -62,9 +62,7 @@ defmodule Rail.Pipeline.Actions.RetryStageTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Retry Stage Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_retry_stage_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end

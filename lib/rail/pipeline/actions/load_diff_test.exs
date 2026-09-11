@@ -45,9 +45,7 @@ defmodule Rail.Pipeline.Actions.LoadDiffTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Load Diff Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_load_diff_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task}
   end

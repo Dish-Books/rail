@@ -1,6 +1,6 @@
 defmodule Rail.Domain.Formatters do
   @moduledoc """
-  Formatting utilities for task statuses, summaries, tokens, costs, and durations.
+  This module is deprecated and should not be added to
   """
 
   alias Rail.Domain.TicketBody
@@ -240,7 +240,7 @@ defmodule Rail.Domain.Formatters do
   Returns the ticket specification body for a task, falling back to literal `_No ticket body yet._` if empty.
   """
   def ticket_for(task) do
-    desc = get_field(task, :description) || ""
+    desc = description_of(task) || ""
     %{ticket: ticket} = TicketBody.split(desc)
     trimmed = String.trim(ticket)
     if trimmed == "", do: "_No ticket body yet._", else: ticket
@@ -250,7 +250,7 @@ defmodule Rail.Domain.Formatters do
   Returns the architectural plan for a task, resolving from stored Plan or task description split.
   """
   def plan_for(task) do
-    desc = get_field(task, :description) || ""
+    desc = description_of(task) || ""
 
     stored_plan =
       case task do
@@ -732,6 +732,10 @@ defmodule Rail.Domain.Formatters do
   end
 
   defp to_atom(_other), do: nil
+
+  defp description_of(task) do
+    get_field(task, :description) || get_field(get_field(task, :issue), :description)
+  end
 
   defp get_field(%_struct_mod{} = struct, field), do: Map.get(struct, field)
 

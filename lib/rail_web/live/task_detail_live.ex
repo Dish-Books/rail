@@ -182,9 +182,9 @@ defmodule RailWeb.TaskDetailLive do
                 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 truncate"
                 id="task-detail-title"
                 data-qa="task_detail_title"
-                title={@task.title}
+                title={@task.issue && @task.issue.title}
               >
-                {@task.title}
+                {@task.issue && @task.issue.title}
               </h1>
             </div>
 
@@ -1406,7 +1406,7 @@ defmodule RailWeb.TaskDetailLive do
     socket
     |> assign(:task, task)
     |> assign(:task_id, task.id)
-    |> assign(:page_title, task.title)
+    |> assign(:page_title, task.issue && task.issue.title)
     |> assign(:project_id, task.project_id)
     |> assign(:current_project_id, task.project_id)
     |> assign(:current_run, current_run)

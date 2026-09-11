@@ -64,9 +64,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Rerecord Demo Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_rerecord_demo_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -166,9 +164,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
 
     {:ok, issue_9402} = Issues.capture_issue(system_scope(), project, "Task 9402")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_rerecord_demo_9402"})
-
-    {:ok, task_merged_at} = Pipeline.create_task(issue_9402)
+    {:ok, task_merged_at} = Pipeline.create_task(issue_9402, :product)
 
     {:ok, task_merged_at} =
       Pipeline.update_task(system_scope(), task_merged_at.id, %{
@@ -209,9 +205,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
 
     {:ok, issue_9403} = Issues.capture_issue(system_scope(), project, "Task 9403")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_rerecord_demo_9403"})
-
-    {:ok, task_nil_worktree} = Pipeline.create_task(issue_9403)
+    {:ok, task_nil_worktree} = Pipeline.create_task(issue_9403, :product)
 
     {:ok, task_nil_worktree} =
       Pipeline.update_task(system_scope(), task_nil_worktree.id, %{
@@ -243,9 +237,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
 
     {:ok, issue_9404} = Issues.capture_issue(system_scope(), project, "Task 9404")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_rerecord_demo_9404"})
-
-    {:ok, eligible_demo_failed} = Pipeline.create_task(issue_9404)
+    {:ok, eligible_demo_failed} = Pipeline.create_task(issue_9404, :product)
 
     {:ok, eligible_demo_failed} =
       Pipeline.update_task(system_scope(), eligible_demo_failed.id, %{
@@ -262,9 +254,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
 
     {:ok, issue_9405} = Issues.capture_issue(system_scope(), project, "Task 9405")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_rerecord_demo_9405"})
-
-    {:ok, busy_task} = Pipeline.create_task(issue_9405)
+    {:ok, busy_task} = Pipeline.create_task(issue_9405, :product)
 
     {:ok, busy_task} =
       Pipeline.update_task(system_scope(), busy_task.id, %{
@@ -281,9 +271,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
 
     {:ok, issue_9406} = Issues.capture_issue(system_scope(), project, "Task 9406")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_rerecord_demo_9406"})
-
-    {:ok, merged_task} = Pipeline.create_task(issue_9406)
+    {:ok, merged_task} = Pipeline.create_task(issue_9406, :product)
 
     {:ok, merged_task} =
       Pipeline.update_task(system_scope(), merged_task.id, %{
@@ -300,9 +288,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
 
     {:ok, issue_9407} = Issues.capture_issue(system_scope(), project, "Task 9407")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_rerecord_demo_9407"})
-
-    {:ok, missing_path_task} = Pipeline.create_task(issue_9407)
+    {:ok, missing_path_task} = Pipeline.create_task(issue_9407, :product)
 
     {:ok, missing_path_task} =
       Pipeline.update_task(system_scope(), missing_path_task.id, %{

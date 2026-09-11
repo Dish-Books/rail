@@ -64,9 +64,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Stop Chat Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_stop_chat_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -86,9 +84,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
 
     {:ok, issue_8304} = Issues.capture_issue(system_scope(), project, "Task 8304")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_stop_chat_8304"})
-
-    {:ok, task} = Pipeline.create_task(issue_8304)
+    {:ok, task} = Pipeline.create_task(issue_8304, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{

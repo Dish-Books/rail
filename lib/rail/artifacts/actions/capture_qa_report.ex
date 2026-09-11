@@ -160,7 +160,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
 
     if issue do
       comment_body = format_qa_comment(qa_report)
-      owner_user = resolve_comment_owner(task, opts)
+      owner_user = resolve_comment_owner(issue, opts)
       Issues.comment(scope, issue, comment_body, owner_user)
     end
 
@@ -186,18 +186,18 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
     end
   end
 
-  defp resolve_comment_owner(task, opts) do
+  defp resolve_comment_owner(issue, opts) do
     case Keyword.get(opts, :owner_user) do
       %User{} = user ->
         user
 
       _other ->
         cond do
-          task && match?(%User{}, task.owner_user) ->
-            task.owner_user
+          match?(%User{}, issue.owner_user) ->
+            issue.owner_user
 
-          task && is_binary(task.owner_user_id) && task.owner_user_id != "" ->
-            Repo.get(User, task.owner_user_id)
+          is_binary(issue.owner_user_id) && issue.owner_user_id != "" ->
+            Repo.get(User, issue.owner_user_id)
 
           true ->
             nil

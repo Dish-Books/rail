@@ -64,9 +64,7 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Cancel Chat Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_cancel_chat_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -86,9 +84,7 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
 
     {:ok, issue_8204} = Issues.capture_issue(system_scope(), project, "Task 8204")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cancel_chat_8204"})
-
-    {:ok, task} = Pipeline.create_task(issue_8204)
+    {:ok, task} = Pipeline.create_task(issue_8204, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{

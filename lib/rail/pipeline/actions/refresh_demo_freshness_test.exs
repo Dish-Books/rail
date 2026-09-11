@@ -65,9 +65,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Demo Freshness Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_demo_freshness_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -92,9 +90,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
 
     {:ok, issue_9502} = Issues.capture_issue(system_scope(), project, "Task 9502")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_demo_freshness_9502"})
-
-    {:ok, task_merged_at} = Pipeline.create_task(issue_9502)
+    {:ok, task_merged_at} = Pipeline.create_task(issue_9502, :product)
 
     {:ok, task_merged_at} =
       Pipeline.update_task(system_scope(), task_merged_at.id, %{
@@ -114,9 +110,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
 
     {:ok, issue_9503} = Issues.capture_issue(system_scope(), project, "Task 9503")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_demo_freshness_9503"})
-
-    {:ok, task_no_demo} = Pipeline.create_task(issue_9503)
+    {:ok, task_no_demo} = Pipeline.create_task(issue_9503, :product)
 
     {:ok, task_no_demo} =
       Pipeline.update_task(system_scope(), task_no_demo.id, %{
@@ -190,9 +184,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
 
     {:ok, issue_9504} = Issues.capture_issue(system_scope(), project, "Task 9504")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_demo_freshness_9504"})
-
-    {:ok, task_missing_dir} = Pipeline.create_task(issue_9504)
+    {:ok, task_missing_dir} = Pipeline.create_task(issue_9504, :product)
 
     {:ok, task_missing_dir} =
       Pipeline.update_task(system_scope(), task_missing_dir.id, %{
@@ -256,9 +248,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
 
     {:ok, issue_9505} = Issues.capture_issue(system_scope(), project, "Task 9505")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_demo_freshness_9505"})
-
-    {:ok, task_non_git} = Pipeline.create_task(issue_9505)
+    {:ok, task_non_git} = Pipeline.create_task(issue_9505, :product)
 
     {:ok, task_non_git} =
       Pipeline.update_task(system_scope(), task_non_git.id, %{
@@ -318,9 +308,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
 
     {:ok, issue_9506} = Issues.capture_issue(system_scope(), project, "Task 9506")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_demo_freshness_9506"})
-
-    {:ok, task_nil_worktree} = Pipeline.create_task(issue_9506)
+    {:ok, task_nil_worktree} = Pipeline.create_task(issue_9506, :product)
 
     {:ok, task_nil_worktree} =
       Pipeline.update_task(system_scope(), task_nil_worktree.id, %{

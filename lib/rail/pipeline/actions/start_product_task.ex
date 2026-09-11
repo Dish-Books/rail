@@ -26,41 +26,27 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
   @doc """
   Starts the product stage for `issue`.
 
-  Reuses the issue's existing task when there is one, otherwise moves the issue to
-  `:in_progress` and creates one at the `:product` stage, owned by whoever the issue
-  is assigned to. Returns `{:ok, %{task: task, role_run: role_run, run: run}}`.
+  Reuses the issue's existing task when there is one, otherwise creates one at the
+  `:product` stage. Returns `{:ok, %{task: task, role_run: role_run, run: run}}`.
   """
   def start_product_task(%Issue{project: %Project{} = project} = issue, opts \\ []) do
-    with {:ok, task} <- Pipeline.create_task(issue),
+    with {:ok, task} <- Pipeline.create_task(issue, :product),
          {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :product),
-         {:ok, worktree_path} <- ensure_worktree(project, task, opts),
-         {:ok, task} <- put_worktree_path(task, worktree_path),
+         {:ok, worktree_path} <- ensure_worktree(project, task),
          scratch_path = write_scratch(project, task, issue, opts),
          {:ok, role_run} <- role_run_for(task, role, worktree_path) do
       spawn_run(task, project, issue, role, role_run, worktree_path, scratch_path, opts)
     end
   end
 
-  # The worktree and the scratch ticket file
-  defp ensure_worktree(%Project{} = project, %Task{} = task, opts) do
-    base_branch = Keyword.get(opts, :base_branch) || project.default_branch || "main"
+  defp ensure_worktree(%Project{} = project, %Task{} = task) do
+    path = task.worktree_path
     name = task.worktree_name || task.id
 
-    path =
-      task.worktree_path ||
-        Keyword.get(opts, :worktree_path) ||
-        Path.join(project.clone_path, ".worktrees/#{name}")
-
-    case Git.get_or_create_worktree(project.clone_path, path, name, base_branch: base_branch) do
+    case Git.get_or_create_worktree(project.clone_path, path, name, base_branch: project.default_branch) do
       {:ok, resolved} -> {:ok, resolved}
       {:error, reason} -> {:error, {:worktree_failed, reason}}
     end
-  end
-
-  defp put_worktree_path(%Task{worktree_path: path} = task, path), do: {:ok, task}
-
-  defp put_worktree_path(%Task{} = task, path) do
-    task |> Task.changeset(%{worktree_path: path}) |> Repo.update()
   end
 
   defp write_scratch(%Project{} = project, %Task{} = task, %Issue{} = issue, opts) do
@@ -74,8 +60,8 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
 
     content =
       TicketBody.format(%TicketBody{
-        title: task.title || issue.title || "",
-        description: task.description || issue.description || "",
+        title: issue.title || "",
+        description: issue.description || "",
         priority: issue.priority,
         estimate: issue.estimate
       })
@@ -143,8 +129,8 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     """)
   end
 
-  defp workspace_brief(%Task{} = task, %Project{} = project, worktree_path, opts) do
-    base_branch = Keyword.get(opts, :base_branch) || project.default_branch || "main"
+  defp workspace_brief(%Task{} = task, %Project{} = project, worktree_path) do
+    base_branch = project.default_branch
 
     String.trim("""
     Workspace for this task:
@@ -157,7 +143,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
 
   defp spawn_run(task, project, issue, role, role_run, worktree_path, scratch_path, opts) do
     context =
-      [workspace_brief(task, project, worktree_path, opts), brief(issue)]
+      [workspace_brief(task, project, worktree_path), brief(issue)]
       |> Enum.reject(&(&1 == ""))
       |> Enum.join("\n\n")
 

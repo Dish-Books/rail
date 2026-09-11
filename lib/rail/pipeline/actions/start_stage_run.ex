@@ -59,7 +59,7 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
   end
 
   defp execute_stage_run(%Task{} = task, %Project{} = project, %Role{} = role, stage, opts) do
-    base_branch = Keyword.get(opts, :base_branch) || project.default_branch || "main"
+    base_branch = project.default_branch
     worktree_name = task.worktree_name || task.id
 
     worktree_path =

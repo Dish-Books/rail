@@ -14,6 +14,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   alias Rail.Domain.StageVerdict
   alias Rail.Domain.TaskUsage
   alias Rail.Git
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -290,7 +291,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
           explicit
 
         nil ->
-          case Rail.Domain.TicketBody.acceptance_criteria(task.description || "") do
+          case Rail.Domain.TicketBody.acceptance_criteria(issue_description(task) || "") do
             list when is_list(list) and list != [] -> list
             _empty_or_nil -> nil
           end
@@ -786,8 +787,8 @@ defmodule Rail.Pipeline.Actions.SettleRun do
 
   defp build_demo_capture_opts(task, role_run, opts, criteria) do
     {head_sha, dirty_digest} = resolve_demo_fingerprint(task, role_run)
-    issue = Keyword.get(opts, :issue) || (task.issue_id && Repo.get(Rail.Issues.Schemas.Issue, task.issue_id))
-    owner_user = Keyword.get(opts, :owner_user) || (task.owner_user_id && Repo.get(User, task.owner_user_id))
+    issue = Keyword.get(opts, :issue) || (task.issue_id && Repo.get(Issue, task.issue_id))
+    owner_user = Keyword.get(opts, :owner_user) || (issue && issue.owner_user_id && Repo.get(User, issue.owner_user_id))
 
     opts
     |> Keyword.take([:scratch_dir, :req_options])
@@ -861,6 +862,18 @@ defmodule Rail.Pipeline.Actions.SettleRun do
 
     {attrs, updated_role_run}
   end
+
+  # The ticket body lives on the issue; the task only links to it.
+  defp issue_description(%Task{issue: %Issue{description: description}}), do: description
+
+  defp issue_description(%Task{issue_id: issue_id}) when is_binary(issue_id) do
+    case Repo.get(Issue, issue_id) do
+      %Issue{description: description} -> description
+      nil -> nil
+    end
+  end
+
+  defp issue_description(%Task{}), do: nil
 
   defp resolve_demo_target(task, scratch_dir, opts) do
     cond do

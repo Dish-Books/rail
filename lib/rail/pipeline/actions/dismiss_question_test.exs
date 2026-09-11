@@ -62,7 +62,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
         {stage, role}
       end)
 
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end

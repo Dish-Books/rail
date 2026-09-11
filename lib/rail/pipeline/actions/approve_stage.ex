@@ -130,7 +130,7 @@ defmodule Rail.Pipeline.Actions.ApproveStage do
         "![#{direction.title}](#{direction.still_url})\n\n" <>
         "[View live canvas](#{design.canvas_url})\n"
 
-    owner_user = if task.owner_user_id, do: %{id: task.owner_user_id}
+    owner_user = issue.owner_user_id && %{id: issue.owner_user_id}
 
     case Issues.comment(scope, issue, comment_body, owner_user) do
       {:ok, _comment} ->

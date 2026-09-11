@@ -48,9 +48,7 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Question Schema Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_question_schema_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task}
   end

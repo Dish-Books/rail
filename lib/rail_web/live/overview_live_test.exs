@@ -291,9 +291,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13416} = Issues.capture_issue(system_scope(), project, "Task 13416")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13416"})
-
-    {:ok, _task} = Pipeline.create_task(issue_13416)
+    {:ok, _task} = Pipeline.create_task(issue_13416, :product)
 
     {:ok, _task} =
       Pipeline.update_task(system_scope(), _task.id, %{
@@ -355,9 +353,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13417} = Issues.capture_issue(system_scope(), project, "Task 13417")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13417"})
-
-    {:ok, _task} = Pipeline.create_task(issue_13417)
+    {:ok, _task} = Pipeline.create_task(issue_13417, :product)
 
     {:ok, _task} =
       Pipeline.update_task(system_scope(), _task.id, %{
@@ -377,9 +373,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13418} = Issues.capture_issue(system_scope(), project, "Task 13418")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13418"})
-
-    {:ok, _task2} = Pipeline.create_task(issue_13418)
+    {:ok, _task2} = Pipeline.create_task(issue_13418, :product)
 
     {:ok, _task2} =
       Pipeline.update_task(system_scope(), _task2.id, %{
@@ -447,9 +441,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13419} = Issues.capture_issue(system_scope(), p1, "Task 13419")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13419"})
-
-    {:ok, _task1} = Pipeline.create_task(issue_13419)
+    {:ok, _task1} = Pipeline.create_task(issue_13419, :product)
 
     {:ok, _task1} =
       Pipeline.update_task(system_scope(), _task1.id, %{
@@ -465,9 +457,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13420} = Issues.capture_issue(system_scope(), p2, "Task 13420")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13420"})
-
-    {:ok, _task2} = Pipeline.create_task(issue_13420)
+    {:ok, _task2} = Pipeline.create_task(issue_13420, :product)
 
     {:ok, _task2} =
       Pipeline.update_task(system_scope(), _task2.id, %{
@@ -528,12 +518,11 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13421} = Issues.capture_issue(system_scope(), project, "Already Merged Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13421"})
+    {:ok, %Task{id: merged_id}} = Pipeline.create_task(issue_13421, :product)
+    merged_title = issue_13421.title
 
-    {:ok, %Task{id: merged_id, title: merged_title}} = Pipeline.create_task(issue_13421)
-
-    {:ok, %Task{id: merged_id, title: merged_title}} =
-      Pipeline.update_task(system_scope(), %Task{id: merged_id, title: merged_title}.id, %{
+    {:ok, %Task{id: merged_id}} =
+      Pipeline.update_task(system_scope(), merged_id, %{
         stage: :merged,
         stage_state: :queued
       })
@@ -629,12 +618,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13422} = Issues.capture_issue(system_scope(), project, "Build Graph API")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13422"})
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13422, :product)
 
-    {:ok, %Task{id: task_id, title: _task_title}} = Pipeline.create_task(issue_13422)
-
-    {:ok, %Task{id: task_id, title: _task_title}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id, title: _task_title}.id, %{
+    {:ok, %Task{id: task_id}} =
+      Pipeline.update_task(system_scope(), task_id, %{
         stage: :engineer,
         stage_state: :blocked
       })
@@ -662,8 +649,7 @@ defmodule RailWeb.OverviewLiveTest do
     })
 
     {:ok, orphan_issue} = Issues.capture_issue(system_scope(), project, "Orphan question task")
-    LinearMock.mock_update_issue_success(%{"id" => "lin_overview_orphan"})
-    {:ok, %Task{id: orphan_task_id} = orphan_task} = Pipeline.create_task(orphan_issue)
+    {:ok, %Task{id: orphan_task_id} = orphan_task} = Pipeline.create_task(orphan_issue, :product)
 
     {:ok, %Question{prompt: q_orphan_prompt}} =
       Pipeline.register_question(orphan_task, %{
@@ -751,9 +737,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13423} = Issues.capture_issue(system_scope(), project, "Freeform Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13423"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13423)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13423, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -850,12 +834,11 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13424} = Issues.capture_issue(system_scope(), project, "Architect Approval Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13424"})
+    {:ok, %Task{id: arch_id}} = Pipeline.create_task(issue_13424, :product)
+    arch_title = issue_13424.title
 
-    {:ok, %Task{id: arch_id, title: arch_title}} = Pipeline.create_task(issue_13424)
-
-    {:ok, %Task{id: arch_id, title: arch_title}} =
-      Pipeline.update_task(system_scope(), %Task{id: arch_id, title: arch_title}.id, %{
+    {:ok, %Task{id: arch_id}} =
+      Pipeline.update_task(system_scope(), arch_id, %{
         stage: :architect,
         stage_state: :awaiting_approval,
         error: "Architect notes here"
@@ -869,12 +852,11 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13425} = Issues.capture_issue(system_scope(), project, "Product Approval Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13425"})
+    {:ok, %Task{id: prod_id}} = Pipeline.create_task(issue_13425, :product)
+    prod_title = issue_13425.title
 
-    {:ok, %Task{id: prod_id, title: prod_title}} = Pipeline.create_task(issue_13425)
-
-    {:ok, %Task{id: prod_id, title: prod_title}} =
-      Pipeline.update_task(system_scope(), %Task{id: prod_id, title: prod_title}.id, %{
+    {:ok, %Task{id: prod_id}} =
+      Pipeline.update_task(system_scope(), prod_id, %{
         stage: :product,
         stage_state: :awaiting_approval
       })
@@ -887,12 +869,11 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13426} = Issues.capture_issue(system_scope(), project, "Engineer Approval Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13426"})
+    {:ok, %Task{id: eng_id}} = Pipeline.create_task(issue_13426, :product)
+    eng_title = issue_13426.title
 
-    {:ok, %Task{id: eng_id, title: eng_title}} = Pipeline.create_task(issue_13426)
-
-    {:ok, %Task{id: eng_id, title: eng_title}} =
-      Pipeline.update_task(system_scope(), %Task{id: eng_id, title: eng_title}.id, %{
+    {:ok, %Task{id: eng_id}} =
+      Pipeline.update_task(system_scope(), eng_id, %{
         stage: :engineer,
         stage_state: :awaiting_approval
       })
@@ -985,12 +966,11 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13427} = Issues.capture_issue(system_scope(), project, "Failed Build Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13427"})
+    {:ok, %Task{id: failed_id}} = Pipeline.create_task(issue_13427, :product)
+    failed_title = issue_13427.title
 
-    {:ok, %Task{id: failed_id, title: failed_title}} = Pipeline.create_task(issue_13427)
-
-    {:ok, %Task{id: failed_id, title: failed_title}} =
-      Pipeline.update_task(system_scope(), %Task{id: failed_id, title: failed_title}.id, %{
+    {:ok, %Task{id: failed_id}} =
+      Pipeline.update_task(system_scope(), failed_id, %{
         stage: :engineer,
         stage_state: :failed,
         error: "Compilation error in worker.ex"
@@ -1004,12 +984,11 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13428} = Issues.capture_issue(system_scope(), project, "Ready PR Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13428"})
+    {:ok, %Task{id: merge_id}} = Pipeline.create_task(issue_13428, :product)
+    merge_title = issue_13428.title
 
-    {:ok, %Task{id: merge_id, title: merge_title}} = Pipeline.create_task(issue_13428)
-
-    {:ok, %Task{id: merge_id, title: merge_title}} =
-      Pipeline.update_task(system_scope(), %Task{id: merge_id, title: merge_title}.id, %{
+    {:ok, %Task{id: merge_id}} =
+      Pipeline.update_task(system_scope(), merge_id, %{
         stage: :ready_to_merge,
         stage_state: :queued,
         pr_number: nil
@@ -1023,12 +1002,11 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13429} = Issues.capture_issue(system_scope(), project, "Conflicted Branch Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13429"})
+    {:ok, %Task{id: conflict_id}} = Pipeline.create_task(issue_13429, :product)
+    conflict_title = issue_13429.title
 
-    {:ok, %Task{id: conflict_id, title: conflict_title}} = Pipeline.create_task(issue_13429)
-
-    {:ok, %Task{id: conflict_id, title: conflict_title}} =
-      Pipeline.update_task(system_scope(), %Task{id: conflict_id, title: conflict_title}.id, %{
+    {:ok, %Task{id: conflict_id}} =
+      Pipeline.update_task(system_scope(), conflict_id, %{
         stage: :engineer,
         stage_state: :queued,
         mergeability: :conflicting
@@ -1131,9 +1109,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13430} = Issues.capture_issue(system_scope(), project, "Queued Design Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13430"})
-
-    {:ok, %Task{id: t_queued_id}} = Pipeline.create_task(issue_13430)
+    {:ok, %Task{id: t_queued_id}} = Pipeline.create_task(issue_13430, :product)
 
     {:ok, %Task{id: t_queued_id}} =
       Pipeline.update_task(system_scope(), %Task{id: t_queued_id}.id, %{
@@ -1149,9 +1125,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13431} = Issues.capture_issue(system_scope(), project, "Active Rebasing Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13431"})
-
-    {:ok, %Task{id: t_rebase_id}} = Pipeline.create_task(issue_13431)
+    {:ok, %Task{id: t_rebase_id}} = Pipeline.create_task(issue_13431, :product)
 
     {:ok, %Task{id: t_rebase_id}} =
       Pipeline.update_task(system_scope(), %Task{id: t_rebase_id}.id, %{
@@ -1168,9 +1142,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13432} = Issues.capture_issue(system_scope(), project, "Active Coding Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13432"})
-
-    {:ok, %Task{id: t_running_id}} = Pipeline.create_task(issue_13432)
+    {:ok, %Task{id: t_running_id}} = Pipeline.create_task(issue_13432, :product)
 
     {:ok, %Task{id: t_running_id}} =
       Pipeline.update_task(system_scope(), %Task{id: t_running_id}.id, %{
@@ -1315,9 +1287,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13433} = Issues.capture_issue(system_scope(), project, "Writing Tests")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13433"})
-
-    {:ok, %Task{id: t_eng_id}} = Pipeline.create_task(issue_13433)
+    {:ok, %Task{id: t_eng_id}} = Pipeline.create_task(issue_13433, :product)
 
     {:ok, %Task{id: t_eng_id}} =
       Pipeline.update_task(system_scope(), %Task{id: t_eng_id}.id, %{
@@ -1335,9 +1305,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13434} = Issues.capture_issue(system_scope(), project, "Brainstorming Architecture")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13434"})
-
-    {:ok, %Task{id: t_arch_id}} = Pipeline.create_task(issue_13434)
+    {:ok, %Task{id: t_arch_id}} = Pipeline.create_task(issue_13434, :product)
 
     {:ok, %Task{id: t_arch_id}} =
       Pipeline.update_task(system_scope(), %Task{id: t_arch_id}.id, %{
@@ -1356,9 +1324,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13435} = Issues.capture_issue(system_scope(), project, "Verify Slice 5.2")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_overview_live_13435"})
-
-    {:ok, %Task{id: t_qa_id}} = Pipeline.create_task(issue_13435)
+    {:ok, %Task{id: t_qa_id}} = Pipeline.create_task(issue_13435, :product)
 
     {:ok, %Task{id: t_qa_id}} =
       Pipeline.update_task(system_scope(), %Task{id: t_qa_id}.id, %{
@@ -1419,10 +1385,9 @@ defmodule RailWeb.OverviewLiveTest do
   test "compact waiting strip renders with issue identifier and fallback label for other kind" do
     task_with_issue = %Task{
       id: "tsk_compact_strip",
-      title: "Other Kind Task",
       stage: :engineer,
       stage_state: :awaiting_approval,
-      issue: %Issue{identifier: "ISS-42"}
+      issue: %Issue{identifier: "ISS-42", title: "Other Kind Task"}
     }
 
     row = %{item: %{key: "custom-1"}, kind: :custom, task: task_with_issue, waiting_since: DateTime.utc_now()}
@@ -1437,7 +1402,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     task_rebase = %Task{
       id: "tsk_reb_1",
-      title: "Rebase In Agent",
+      issue: %Issue{title: "Rebase In Agent"},
       is_rebasing: true,
       stage_state: :running,
       stage: :engineer,
@@ -1446,7 +1411,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     task_blocked = %Task{
       id: "tsk_blk_1",
-      title: "Blocked In Agent",
+      issue: %Issue{title: "Blocked In Agent"},
       stage_state: :blocked,
       stage: :engineer,
       updated_at: now
@@ -1454,7 +1419,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     task_approval = %Task{
       id: "tsk_appr_1",
-      title: "Approval In Agent",
+      issue: %Issue{title: "Approval In Agent"},
       stage_state: :awaiting_approval,
       stage: :architect,
       updated_at: now
@@ -1462,16 +1427,15 @@ defmodule RailWeb.OverviewLiveTest do
 
     task_failed = %Task{
       id: "tsk_fail_1",
-      title: "Failed In Agent",
       stage_state: :failed,
       stage: :engineer,
-      issue: %Issue{identifier: "WAG-100"},
+      issue: %Issue{identifier: "WAG-100", title: "Failed In Agent"},
       updated_at: now
     }
 
     task_other = %Task{
       id: "tsk_other_1",
-      title: "Other In Agent",
+      issue: %Issue{title: "Other In Agent"},
       stage_state: :running,
       stage: nil,
       updated_at: now
@@ -1479,7 +1443,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     task_role = %{
       id: "tsk_role_map",
-      title: "Map with role",
+      issue: %{title: "Map with role"},
       stage_state: :running,
       stage: nil,
       role: %{name: "Custom Agent Role"},
@@ -1510,10 +1474,9 @@ defmodule RailWeb.OverviewLiveTest do
   test "approval card renders default diff tab, issue identifier, and fallback role name" do
     task = %Task{
       id: "tsk_test_diff",
-      title: "Default Diff Task",
       stage: :review,
       stage_state: :awaiting_approval,
-      issue: %Issue{identifier: "APP-50"},
+      issue: %Issue{identifier: "APP-50", title: "Default Diff Task"},
       inserted_at: DateTime.utc_now(),
       project: nil
     }
@@ -1531,7 +1494,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     task_plain = %Task{
       id: "tsk_plain",
-      title: "Plain Task",
+      issue: %Issue{title: "Plain Task"},
       stage: nil,
       stage_state: :awaiting_approval,
       inserted_at: DateTime.utc_now(),
@@ -1546,9 +1509,8 @@ defmodule RailWeb.OverviewLiveTest do
   test "question card renders with task issue, role, and fallback role" do
     task_with_issue = %Task{
       id: "tsk_q_issue",
-      title: "Question Task",
       stage: :architect,
-      issue: %Issue{identifier: "QST-88"}
+      issue: %Issue{identifier: "QST-88", title: "Question Task"}
     }
 
     q1 = %Question{

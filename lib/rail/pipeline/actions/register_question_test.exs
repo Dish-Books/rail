@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
   import Ecto.Query
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
@@ -66,9 +67,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Register Question Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_register_question_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -78,11 +77,13 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     role = roles[:engineer]
 
-    {:ok, %Task{id: task_id, title: task_title}} =
+    {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :engineer,
         stage_state: :running
       })
+
+    task_title = Repo.get!(Issue, task.issue_id).title
 
     {:ok, role_run} =
       Runs.create_role_run(%{
@@ -279,9 +280,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     {:ok, issue_7902} = Issues.capture_issue(system_scope(), project, "Task 7902")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_register_question_7902"})
-
-    {:ok, task} = Pipeline.create_task(issue_7902)
+    {:ok, task} = Pipeline.create_task(issue_7902, :product)
     assert {:error, :invalid_prompt} = Pipeline.register_question(task, %{prompt: "   "})
     assert {:error, :no_question_detected} = Pipeline.register_question(task, "Just some prose text")
     assert {:error, :invalid_question_attrs} = Pipeline.register_question(task, 12_345)

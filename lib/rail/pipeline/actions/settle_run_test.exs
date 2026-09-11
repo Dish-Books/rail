@@ -11,6 +11,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
   alias Rail.Domain.TaskUsage
   alias Rail.Git
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Question
@@ -76,9 +77,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Settle Run Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_settle_run_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     # These tests exercise stage transitions, not Linear publishing.
     {:ok, task} = Pipeline.update_task(scope, task.id, %{issue_id: nil})
@@ -134,10 +133,11 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     File.mkdir_p!(Path.join(scratch_dir, "tickets"))
     on_exit(fn -> File.rm_rf(scratch_dir) end)
 
+    title_before = issue.title
     ticket_file = Path.join([scratch_dir, "tickets", "#{issue.identifier}.md"])
     File.write!(ticket_file, "---\ntitle: Rewritten by the product run\n---\n\nA body the human has not approved.\n")
 
-    {:ok, %Task{id: task_id, title: title_before} = task} =
+    {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
         issue_id: issue.id,
         stage: :product,
@@ -153,8 +153,10 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       })
 
     # No Linear mock is set up: a push would raise on the unexpected request.
-    assert {:ok, %Task{title: ^title_before}, %RoleRun{}} =
+    assert {:ok, %Task{}, %RoleRun{}} =
              Pipeline.settle_run(task, role_run, %{exit_code: 0}, scratch_dir: scratch_dir)
+
+    assert %Issue{title: ^title_before} = Repo.get!(Issue, issue.id)
   end
 
   test "settles clean exit 0 for architect stage advancing to awaiting_approval when plan exists", %{
@@ -909,9 +911,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     {:ok, issue_14502} = Issues.capture_issue(system_scope(), project, "Task 14502")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14502"})
-
-    {:ok, task_qa} = Pipeline.create_task(issue_14502)
+    {:ok, task_qa} = Pipeline.create_task(issue_14502, :product)
 
     {:ok, task_qa} = Pipeline.update_task(system_scope(), task_qa.id, %{issue_id: nil})
 
@@ -975,9 +975,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     {:ok, issue_14503} = Issues.capture_issue(system_scope(), project, "Task 14503")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14503"})
-
-    {:ok, task_root} = Pipeline.create_task(issue_14503)
+    {:ok, task_root} = Pipeline.create_task(issue_14503, :product)
 
     {:ok, task_root} = Pipeline.update_task(system_scope(), task_root.id, %{issue_id: nil})
 
@@ -1042,9 +1040,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     {:ok, issue_14504} = Issues.capture_issue(system_scope(), project, "Task 14504")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14504"})
-
-    {:ok, task_wt_root} = Pipeline.create_task(issue_14504)
+    {:ok, task_wt_root} = Pipeline.create_task(issue_14504, :product)
 
     {:ok, task_wt_root} = Pipeline.update_task(system_scope(), task_wt_root.id, %{issue_id: nil})
 
@@ -1108,9 +1104,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     {:ok, issue_14505} = Issues.capture_issue(system_scope(), project, "Task 14505")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14505"})
-
-    {:ok, task_p} = Pipeline.create_task(issue_14505)
+    {:ok, task_p} = Pipeline.create_task(issue_14505, :product)
 
     {:ok, task_p} = Pipeline.update_task(system_scope(), task_p.id, %{issue_id: nil})
 
@@ -1743,9 +1737,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     {:ok, issue_14506} = Issues.capture_issue(system_scope(), project_no_eng, "Task 14506")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14506"})
-
-    {:ok, %Task{id: _task_id2} = task2} = Pipeline.create_task(issue_14506)
+    {:ok, %Task{id: _task_id2} = task2} = Pipeline.create_task(issue_14506, :product)
 
     {:ok, task2} = Pipeline.update_task(system_scope(), task2.id, %{issue_id: nil})
 
@@ -1837,9 +1829,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     {:ok, issue_14507} = Issues.capture_issue(system_scope(), project, "Task 14507")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14507"})
-
-    {:ok, %Task{id: _task_id2} = task2} = Pipeline.create_task(issue_14507)
+    {:ok, %Task{id: _task_id2} = task2} = Pipeline.create_task(issue_14507, :product)
 
     {:ok, task2} = Pipeline.update_task(system_scope(), task2.id, %{issue_id: nil})
 
@@ -1899,9 +1889,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     {:ok, issue_14508} = Issues.capture_issue(system_scope(), project_no_qa, "Task 14508")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14508"})
-
-    {:ok, %Task{id: _task_id3} = task3} = Pipeline.create_task(issue_14508)
+    {:ok, %Task{id: _task_id3} = task3} = Pipeline.create_task(issue_14508, :product)
 
     {:ok, task3} = Pipeline.update_task(system_scope(), task3.id, %{issue_id: nil})
 
@@ -2072,9 +2060,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     {:ok, issue_14509} = Issues.capture_issue(system_scope(), project, "Task 14509")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14509"})
-
-    {:ok, task2} = Pipeline.create_task(issue_14509)
+    {:ok, task2} = Pipeline.create_task(issue_14509, :product)
 
     {:ok, task2} = Pipeline.update_task(system_scope(), task2.id, %{issue_id: nil})
 
@@ -2108,9 +2094,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     {:ok, issue_14510} = Issues.capture_issue(system_scope(), project, "Task 14510")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14510"})
-
-    {:ok, task3} = Pipeline.create_task(issue_14510)
+    {:ok, task3} = Pipeline.create_task(issue_14510, :product)
 
     {:ok, task3} = Pipeline.update_task(system_scope(), task3.id, %{issue_id: nil})
 
@@ -3289,9 +3273,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
       {:ok, issue_14511} = Issues.capture_issue(system_scope(), project, "Task 14511")
 
-      LinearMock.mock_update_issue_success(%{"id" => "lin_task_settle_run_14511"})
-
-      {:ok, task2} = Pipeline.create_task(issue_14511)
+      {:ok, task2} = Pipeline.create_task(issue_14511, :product)
 
       {:ok, task2} = Pipeline.update_task(system_scope(), task2.id, %{issue_id: nil})
 
@@ -3401,7 +3383,11 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       assert byte_size(err) > 0
     end
 
-    test "resolves criteria from task description and handles nonexistent worktree path", %{task: task, roles: roles} do
+    test "resolves criteria from the issue description and handles nonexistent worktree path", %{
+      task: task,
+      issue: issue,
+      roles: roles
+    } do
       {:ok, _workspace} =
         Projects.upsert_linear_workspace(system_scope(), %{
           name: "Settle Run Workspace 14613",
@@ -3434,11 +3420,15 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
       )
 
+      Repo.update_all(from(i in Issue, where: i.id == ^issue.id),
+        set: [description: "Feature details\n\n## Acceptance criteria\n- First criterion"]
+      )
+
       {:ok, task} =
         Pipeline.update_task(system_scope(), task.id, %{
+          issue_id: issue.id,
           stage: :demo,
           stage_state: :running,
-          description: "Feature details\n\n## Acceptance criteria\n- First criterion",
           worktree_path: "/tmp/nonexistent_wt_#{System.unique_integer([:positive])}"
         })
 
@@ -3453,6 +3443,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
 
       mock_demo_uploads(1)
+
+      LinearMock.mock_create_comment_success(%{"id" => "lin_cmt_demo_criteria", "body" => "Demo"})
 
       assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
                Pipeline.settle_run(task, role_run, %{exit_code: 0}, scratch_dir: scratch_dir)

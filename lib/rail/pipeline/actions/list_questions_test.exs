@@ -58,9 +58,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "List Questions Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_list_questions_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -76,8 +74,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     })
 
     {:ok, issue2} = Issues.capture_issue(system_scope(), project, "Second Task")
-    LinearMock.mock_update_issue_success(%{"id" => "lin_list_questions_2"})
-    {:ok, task1b} = Pipeline.create_task(issue2)
+    {:ok, task1b} = Pipeline.create_task(issue2, :product)
 
     {:ok, q1} = Pipeline.register_question(task1b, %{prompt: "P1 Pending"})
 
@@ -99,8 +96,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     })
 
     {:ok, issue3} = Issues.capture_issue(system_scope(), project2, "Other Project Task")
-    LinearMock.mock_update_issue_success(%{"id" => "lin_list_questions_3"})
-    {:ok, task2} = Pipeline.create_task(issue3)
+    {:ok, task2} = Pipeline.create_task(issue3, :product)
 
     {:ok, _q3} = Pipeline.register_question(task2, %{prompt: "P2 Pending"})
 
@@ -138,8 +134,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     })
 
     {:ok, issue_pending} = Issues.capture_issue(system_scope(), project, "Pending Question Task")
-    LinearMock.mock_update_issue_success(%{"id" => "lin_list_questions_pending"})
-    {:ok, pending_task} = Pipeline.create_task(issue_pending)
+    {:ok, pending_task} = Pipeline.create_task(issue_pending, :product)
 
     {:ok, q_pending} = Pipeline.register_question(pending_task, %{prompt: "Still open?"})
 

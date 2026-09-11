@@ -10,10 +10,12 @@ defmodule RailWeb.TaskDetailLiveTest do
   alias Phoenix.LiveView.Socket
   alias Rail.Artifacts
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
+  alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
   alias Rail.Scope
@@ -120,14 +122,15 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13826} = Issues.capture_issue(system_scope(), project, "Implement Login Flow")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13826"})
+    {:ok, task} = Pipeline.create_task(issue_13826, :product)
 
-    {:ok, task} = Pipeline.create_task(issue_13826)
+    Repo.update_all(from(i in Issue, where: i.id == ^issue.id),
+      set: [title: "Implement Login Flow", description: "Must handle OAuth callbacks cleanly"]
+    )
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
         issue_id: issue.id,
-        description: "Must handle OAuth callbacks cleanly",
         stage: :engineer,
         stage_state: :running,
         worktree_name: "login-flow",
@@ -202,13 +205,14 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13827} = Issues.capture_issue(system_scope(), project, "Tab Switching Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13827"})
+    {:ok, task} = Pipeline.create_task(issue_13827, :product)
 
-    {:ok, task} = Pipeline.create_task(issue_13827)
+    Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id),
+      set: [description: "Testing tabs"]
+    )
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
-        description: "Testing tabs",
         stage: :product,
         stage_state: :running,
         worktree_path: "/tmp/worktree/tab-task"
@@ -289,13 +293,14 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13828} = Issues.capture_issue(system_scope(), project, "No Plan Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13828"})
+    {:ok, task} = Pipeline.create_task(issue_13828, :product)
 
-    {:ok, task} = Pipeline.create_task(issue_13828)
+    Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id),
+      set: [description: "Task without plan"]
+    )
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
-        description: "Task without plan",
         stage: :product,
         stage_state: :queued
       })
@@ -337,13 +342,14 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13829} = Issues.capture_issue(system_scope(), project, "No Worktree Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13829"})
+    {:ok, task} = Pipeline.create_task(issue_13829, :product)
 
-    {:ok, task} = Pipeline.create_task(issue_13829)
+    Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id),
+      set: [description: "Task without worktree"]
+    )
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
-        description: "Task without worktree",
         stage: :product,
         stage_state: :queued,
         worktree_path: nil
@@ -386,13 +392,14 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13830} = Issues.capture_issue(system_scope(), project, "Conflicted Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13830"})
+    {:ok, conflicted_task} = Pipeline.create_task(issue_13830, :product)
 
-    {:ok, conflicted_task} = Pipeline.create_task(issue_13830)
+    Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, conflicted_task.id).issue_id),
+      set: [description: "Merge conflict present"]
+    )
 
     {:ok, conflicted_task} =
       Pipeline.update_task(system_scope(), conflicted_task.id, %{
-        description: "Merge conflict present",
         stage: :engineer,
         stage_state: :failed,
         mergeability: :conflicting,
@@ -413,13 +420,14 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13831} = Issues.capture_issue(system_scope(), project, "Rebasing Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13831"})
+    {:ok, rebasing_task} = Pipeline.create_task(issue_13831, :product)
 
-    {:ok, rebasing_task} = Pipeline.create_task(issue_13831)
+    Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, rebasing_task.id).issue_id),
+      set: [description: "Actively rebasing"]
+    )
 
     {:ok, rebasing_task} =
       Pipeline.update_task(system_scope(), rebasing_task.id, %{
-        description: "Actively rebasing",
         stage: :engineer,
         stage_state: :running,
         mergeability: :conflicting,
@@ -463,13 +471,14 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13832} = Issues.capture_issue(system_scope(), project, "Error Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13832"})
+    {:ok, task} = Pipeline.create_task(issue_13832, :product)
 
-    {:ok, task} = Pipeline.create_task(issue_13832)
+    Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id),
+      set: [description: "Task with error"]
+    )
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
-        description: "Task with error",
         stage: :engineer,
         stage_state: :failed,
         error: "Elixir compilation error in test/dummy_test.exs:10"
@@ -520,13 +529,14 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13833} = Issues.capture_issue(system_scope(), project, "Outcome Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13833"})
+    {:ok, task} = Pipeline.create_task(issue_13833, :product)
 
-    {:ok, task} = Pipeline.create_task(issue_13833)
+    Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id),
+      set: [description: "Task with role run"]
+    )
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
-        description: "Task with role run",
         stage: :engineer,
         stage_state: :failed
       })
@@ -583,13 +593,14 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13834} = Issues.capture_issue(system_scope(), project, "Backend API Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13834"})
+    {:ok, task} = Pipeline.create_task(issue_13834, :product)
 
-    {:ok, task} = Pipeline.create_task(issue_13834)
+    Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id),
+      set: [description: "Pure backend work"]
+    )
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
-        description: "Pure backend work",
         stage: :engineer,
         stage_state: :running
       })
@@ -632,23 +643,22 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13835} = Issues.capture_issue(system_scope(), project, "Initial Title")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13835"})
-
-    {:ok, %Task{id: target_id}} = Pipeline.create_task(issue_13835)
+    {:ok, %Task{id: target_id}} = Pipeline.create_task(issue_13835, :product)
 
     {:ok, %Task{id: target_id}} =
       Pipeline.update_task(system_scope(), %Task{id: target_id}.id, %{
-        description: "Initial description",
         stage: :product,
         stage_state: :queued
       })
+
+    issue_id = Repo.get!(Task, target_id).issue_id
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{target_id}")
     assert has_element?(view, "#task-detail-title", "Initial Title")
 
     # 1. PubSub :pipeline_changed with matching task_id
-    Rail.Repo.update_all(
-      from(t in Task, where: t.id == ^target_id),
+    Repo.update_all(
+      from(i in Issue, where: i.id == ^issue_id),
       set: [title: "Updated via Pipeline Event"]
     )
 
@@ -660,8 +670,8 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert render(view) =~ "Updated via Pipeline Event"
 
     # 2. LiveSync event with atom :id
-    Rail.Repo.update_all(
-      from(t in Task, where: t.id == ^target_id),
+    Repo.update_all(
+      from(i in Issue, where: i.id == ^issue_id),
       set: [title: "Updated via LiveSync Atom"]
     )
 
@@ -669,8 +679,8 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert render(view) =~ "Updated via LiveSync Atom"
 
     # 3. LiveSync event with string "id"
-    Rail.Repo.update_all(
-      from(t in Task, where: t.id == ^target_id),
+    Repo.update_all(
+      from(i in Issue, where: i.id == ^issue_id),
       set: [title: "Updated via LiveSync String"]
     )
 
@@ -684,12 +694,12 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     # 4. Direct :task_updated message
     {:ok, updated_task} = Pipeline.get_task(scope, target_id)
-    updated_task = %{updated_task | title: "Directly Updated Task"}
+    updated_task = %{updated_task | issue: %{updated_task.issue | title: "Directly Updated Task"}}
     send(view.pid, {:task_updated, updated_task})
     assert render(view) =~ "Directly Updated Task"
 
     # Direct :task_updated message with different task id is ignored
-    send(view.pid, {:task_updated, %Task{id: "tsk_different", title: "Ignored"}})
+    send(view.pid, {:task_updated, %Task{id: "tsk_different"}})
     assert render(view) =~ "Directly Updated Task"
 
     # 5. Unknown message and async handling
@@ -780,14 +790,15 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13836} = Issues.capture_issue(system_scope(), project, "Metadata Fallback Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13836"})
+    {:ok, task} = Pipeline.create_task(issue_13836, :product)
 
-    {:ok, task} = Pipeline.create_task(issue_13836)
+    Repo.update_all(from(i in Issue, where: i.id == ^issue.id),
+      set: [description: "## Ticket\n\nTicket description content\n\n## Implementation Plan\n\nPlan details"]
+    )
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
         issue_id: issue.id,
-        description: "## Ticket\n\nTicket description content\n\n## Implementation Plan\n\nPlan details",
         stage: :architect,
         stage_state: :queued,
         worktree_name: nil,
@@ -849,14 +860,13 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13837} = Issues.capture_issue(system_scope(), project, "Edge Case Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13837"})
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13837, :product)
 
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13837)
+    Repo.update_all(from(i in Issue, where: i.id == ^issue.id), set: [description: "Edge case description"])
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
         issue_id: issue.id,
-        description: "Edge case description",
         stage: :demo,
         stage_state: :running,
         worktree_name: "rail/existing-prefix",
@@ -870,7 +880,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     Req.Test.allow(Rail.GitHub, self(), view.pid)
 
-    Sandbox.allow(Rail.Repo, self(), view.pid)
+    Sandbox.allow(Repo, self(), view.pid)
     assert has_element?(view, "#meta-branch", "rail/existing-prefix")
     assert has_element?(view, "#meta-issue", "EC-1")
     assert has_element?(view, "#meta-priority", "High")
@@ -883,7 +893,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert {:noreply, _socket} = RailWeb.TaskDetailLive.handle_async(:dummy, :result, dummy_socket)
     assert :ok = RailWeb.TaskDetailLive.terminate(:normal, dummy_socket)
 
-    Rail.Repo.delete_all(from(t in Task, where: t.id == ^task_id))
+    Repo.delete_all(from(t in Task, where: t.id == ^task_id))
     send(view.pid, {:pipeline_changed, %{task_id: task_id}})
     assert render(view) =~ "This task has been cleaned up."
 
@@ -896,9 +906,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13838} = Issues.capture_issue(system_scope(), project, "Minimal Task")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13838"})
-
-    {:ok, %Task{id: minimal_id}} = Pipeline.create_task(issue_13838)
+    {:ok, %Task{id: minimal_id}} = Pipeline.create_task(issue_13838, :product)
 
     {:ok, %Task{id: minimal_id}} =
       Pipeline.update_task(system_scope(), %Task{id: minimal_id}.id, %{
@@ -956,9 +964,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13839} = Issues.capture_issue(system_scope(), project, "Task 13839")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13839"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13839)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13839, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -973,7 +979,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     Req.Test.allow(Rail.GitHub, self(), view.pid)
 
-    Sandbox.allow(Rail.Repo, self(), view.pid)
+    Sandbox.allow(Repo, self(), view.pid)
 
     # Click chat
     view |> element("#action-chat") |> render_click()
@@ -1030,9 +1036,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13840} = Issues.capture_issue(system_scope(), project, "Task 13840")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13840"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13840)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13840, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -1049,7 +1053,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     Req.Test.allow(Rail.GitHub, self(), view.pid)
 
-    Sandbox.allow(Rail.Repo, self(), view.pid)
+    Sandbox.allow(Repo, self(), view.pid)
 
     # Click Merge pull request button
     view |> element("#action-merge") |> render_click()
@@ -1075,9 +1079,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13841} = Issues.capture_issue(system_scope(), project, "Task 13841")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13841"})
-
-    {:ok, %Task{id: conf_task_id}} = Pipeline.create_task(issue_13841)
+    {:ok, %Task{id: conf_task_id}} = Pipeline.create_task(issue_13841, :product)
 
     {:ok, %Task{id: conf_task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: conf_task_id}.id, %{
@@ -1133,9 +1135,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13842} = Issues.capture_issue(system_scope(), project, "Task 13842")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13842"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13842)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13842, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -1151,7 +1151,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     Req.Test.allow(Rail.GitHub, self(), view.pid)
 
-    Sandbox.allow(Rail.Repo, self(), view.pid)
+    Sandbox.allow(Repo, self(), view.pid)
 
     # Click Rebase
     view |> element("#action-rebase") |> render_click()
@@ -1204,9 +1204,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13843} = Issues.capture_issue(system_scope(), project, "Task 13843")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13843"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13843)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13843, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -1220,7 +1218,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     Req.Test.allow(Rail.GitHub, self(), view.pid)
 
-    Sandbox.allow(Rail.Repo, self(), view.pid)
+    Sandbox.allow(Repo, self(), view.pid)
 
     # Open cleanup modal
     view |> element("#action-cleanup") |> render_click()
@@ -1244,9 +1242,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13844} = Issues.capture_issue(system_scope(), project, "Task 13844")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13844"})
-
-    {:ok, %Task{id: busy_task_id}} = Pipeline.create_task(issue_13844)
+    {:ok, %Task{id: busy_task_id}} = Pipeline.create_task(issue_13844, :product)
 
     {:ok, %Task{id: busy_task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: busy_task_id}.id, %{
@@ -1297,9 +1293,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13845} = Issues.capture_issue(system_scope(), project, "Task 13845")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13845"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13845)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13845, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -1313,7 +1307,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     Req.Test.allow(Rail.GitHub, self(), view.pid)
 
-    Sandbox.allow(Rail.Repo, self(), view.pid)
+    Sandbox.allow(Repo, self(), view.pid)
 
     # Open modal
     view |> element("#action-send-back") |> render_click()
@@ -1370,9 +1364,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13846} = Issues.capture_issue(system_scope(), project, "Task 13846")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13846"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13846)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13846, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -1387,7 +1379,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     Req.Test.allow(Rail.GitHub, self(), view.pid)
 
-    Sandbox.allow(Rail.Repo, self(), view.pid)
+    Sandbox.allow(Repo, self(), view.pid)
 
     # Open modal
     view |> element("#action-send-back-to-engineer") |> render_click()
@@ -1411,9 +1403,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13847} = Issues.capture_issue(system_scope(), project, "Task 13847")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13847"})
-
-    {:ok, %Task{id: task_id_2}} = Pipeline.create_task(issue_13847)
+    {:ok, %Task{id: task_id_2}} = Pipeline.create_task(issue_13847, :product)
 
     {:ok, %Task{id: task_id_2}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id_2}.id, %{
@@ -1465,9 +1455,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13848} = Issues.capture_issue(system_scope(), project, "Task 13848")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13848"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13848)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13848, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -1481,7 +1469,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     Req.Test.allow(Rail.GitHub, self(), view.pid)
 
-    Sandbox.allow(Rail.Repo, self(), view.pid)
+    Sandbox.allow(Repo, self(), view.pid)
 
     # Open modal
     view |> element("#action-decline-demo") |> render_click()
@@ -1505,9 +1493,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13849} = Issues.capture_issue(system_scope(), project, "Task 13849")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13849"})
-
-    {:ok, %Task{id: task_id_2}} = Pipeline.create_task(issue_13849)
+    {:ok, %Task{id: task_id_2}} = Pipeline.create_task(issue_13849, :product)
 
     {:ok, %Task{id: task_id_2}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id_2}.id, %{
@@ -1565,9 +1551,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13850} = Issues.capture_issue(system_scope(), project, "Task 13850")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13850"})
-
-    {:ok, %Task{id: prod_task_id}} = Pipeline.create_task(issue_13850)
+    {:ok, %Task{id: prod_task_id}} = Pipeline.create_task(issue_13850, :product)
 
     {:ok, %Task{id: prod_task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: prod_task_id}.id, %{
@@ -1588,9 +1572,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13851} = Issues.capture_issue(system_scope(), project, "Task 13851")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13851"})
-
-    {:ok, %Task{id: prod_skip_task_id}} = Pipeline.create_task(issue_13851)
+    {:ok, %Task{id: prod_skip_task_id}} = Pipeline.create_task(issue_13851, :product)
 
     {:ok, %Task{id: prod_skip_task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: prod_skip_task_id}.id, %{
@@ -1610,9 +1592,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13852} = Issues.capture_issue(system_scope(), project, "Task 13852")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13852"})
-
-    {:ok, %Task{id: qa_task_id}} = Pipeline.create_task(issue_13852)
+    {:ok, %Task{id: qa_task_id}} = Pipeline.create_task(issue_13852, :product)
 
     {:ok, %Task{id: qa_task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: qa_task_id}.id, %{
@@ -1633,9 +1613,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13853} = Issues.capture_issue(system_scope(), project, "Task 13853")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13853"})
-
-    {:ok, %Task{id: retry_task_id}} = Pipeline.create_task(issue_13853)
+    {:ok, %Task{id: retry_task_id}} = Pipeline.create_task(issue_13853, :product)
 
     {:ok, %Task{id: retry_task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: retry_task_id}.id, %{
@@ -1656,9 +1634,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13854} = Issues.capture_issue(system_scope(), project, "Task 13854")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13854"})
-
-    {:ok, %Task{id: running_task_id}} = Pipeline.create_task(issue_13854)
+    {:ok, %Task{id: running_task_id}} = Pipeline.create_task(issue_13854, :product)
 
     {:ok, %Task{id: running_task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: running_task_id}.id, %{
@@ -1679,9 +1655,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13855} = Issues.capture_issue(system_scope(), project, "Task 13855")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13855"})
-
-    {:ok, %Task{id: queued_task_id}} = Pipeline.create_task(issue_13855)
+    {:ok, %Task{id: queued_task_id}} = Pipeline.create_task(issue_13855, :product)
 
     {:ok, %Task{id: queued_task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: queued_task_id}.id, %{
@@ -1703,9 +1677,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13856} = Issues.capture_issue(system_scope(), project, "Task 13856")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13856"})
-
-    {:ok, %Task{id: blocked_task_id}} = Pipeline.create_task(issue_13856)
+    {:ok, %Task{id: blocked_task_id}} = Pipeline.create_task(issue_13856, :product)
 
     {:ok, %Task{id: blocked_task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: blocked_task_id}.id, %{
@@ -1727,9 +1699,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13857} = Issues.capture_issue(system_scope(), project, "Task 13857")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13857"})
-
-    {:ok, %Task{id: draft_task_id}} = Pipeline.create_task(issue_13857)
+    {:ok, %Task{id: draft_task_id}} = Pipeline.create_task(issue_13857, :product)
 
     {:ok, %Task{id: draft_task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: draft_task_id}.id, %{
@@ -1752,9 +1722,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13858} = Issues.capture_issue(system_scope(), project, "Task 13858")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13858"})
-
-    {:ok, %Task{id: demo_task_id}} = Pipeline.create_task(issue_13858)
+    {:ok, %Task{id: demo_task_id}} = Pipeline.create_task(issue_13858, :product)
 
     {:ok, %Task{id: demo_task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: demo_task_id}.id, %{
@@ -1775,9 +1743,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13859} = Issues.capture_issue(system_scope(), project, "Task 13859")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13859"})
-
-    {:ok, %Task{id: design_task_id}} = Pipeline.create_task(issue_13859)
+    {:ok, %Task{id: design_task_id}} = Pipeline.create_task(issue_13859, :product)
 
     {:ok, %Task{id: design_task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: design_task_id}.id, %{
@@ -1822,9 +1788,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13860} = Issues.capture_issue(system_scope(), project, "Task 13860")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13860"})
-
-    {:ok, %Task{id: design_failed_id}} = Pipeline.create_task(issue_13860)
+    {:ok, %Task{id: design_failed_id}} = Pipeline.create_task(issue_13860, :product)
 
     {:ok, %Task{id: design_failed_id}} =
       Pipeline.update_task(system_scope(), %Task{id: design_failed_id}.id, %{
@@ -1874,9 +1838,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13861} = Issues.capture_issue(system_scope(), project, "Task 13861")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13861"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13861)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13861, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -1893,7 +1855,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     Req.Test.allow(Rail.GitHub, self(), view.pid)
 
-    Sandbox.allow(Rail.Repo, self(), view.pid)
+    Sandbox.allow(Repo, self(), view.pid)
     assert has_element?(view, "#task-error-card", "Previous error message")
 
     # Broadcast task_action_started -> clears error and sets spinner
@@ -1957,9 +1919,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13862} = Issues.capture_issue(system_scope(), project, "Task 13862")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13862"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13862)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13862, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -1973,7 +1933,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     Req.Test.allow(Rail.GitHub, self(), view.pid)
 
-    Sandbox.allow(Rail.Repo, self(), view.pid)
+    Sandbox.allow(Repo, self(), view.pid)
 
     # Form change event does nothing
     render_hook(view, "modal_form_change", %{})
@@ -2055,9 +2015,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13863} = Issues.capture_issue(system_scope(), project, "Task 13863")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13863"})
-
-    {:ok, task} = Pipeline.create_task(issue_13863)
+    {:ok, task} = Pipeline.create_task(issue_13863, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -2075,7 +2033,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     _updated =
       task
       |> Ecto.Changeset.change(%{question_id: question.id})
-      |> Rail.Repo.update!()
+      |> Repo.update!()
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
 
@@ -2111,9 +2069,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13864} = Issues.capture_issue(system_scope(), project, "Task 13864")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13864"})
-
-    {:ok, task_answer_fb} = Pipeline.create_task(issue_13864)
+    {:ok, task_answer_fb} = Pipeline.create_task(issue_13864, :product)
 
     {:ok, task_answer_fb} =
       Pipeline.update_task(system_scope(), task_answer_fb.id, %{
@@ -2130,7 +2086,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     _updated_fb =
       task_answer_fb
       |> Ecto.Changeset.change(%{question_id: q_fallback.id})
-      |> Rail.Repo.update!()
+      |> Repo.update!()
 
     assert {:ok, view_fb, _html} = live(authed_conn, ~p"/tasks/#{task_answer_fb.id}")
     assert has_element?(view_fb, "#answer-field-card")
@@ -2146,9 +2102,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13865} = Issues.capture_issue(system_scope(), project, "Task 13865")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13865"})
-
-    {:ok, task_dismiss_exp} = Pipeline.create_task(issue_13865)
+    {:ok, task_dismiss_exp} = Pipeline.create_task(issue_13865, :product)
 
     {:ok, task_dismiss_exp} =
       Pipeline.update_task(system_scope(), task_dismiss_exp.id, %{
@@ -2165,7 +2119,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     _updated_2 =
       task_dismiss_exp
       |> Ecto.Changeset.change(%{question_id: q2.id})
-      |> Rail.Repo.update!()
+      |> Repo.update!()
 
     assert {:ok, view2, _html} = live(authed_conn, ~p"/tasks/#{task_dismiss_exp.id}")
     assert has_element?(view2, "#answer-field-card")
@@ -2181,9 +2135,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13866} = Issues.capture_issue(system_scope(), project, "Task 13866")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13866"})
-
-    {:ok, task_dismiss_fb} = Pipeline.create_task(issue_13866)
+    {:ok, task_dismiss_fb} = Pipeline.create_task(issue_13866, :product)
 
     {:ok, task_dismiss_fb} =
       Pipeline.update_task(system_scope(), task_dismiss_fb.id, %{
@@ -2200,7 +2152,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     _updated_3 =
       task_dismiss_fb
       |> Ecto.Changeset.change(%{question_id: q3.id})
-      |> Rail.Repo.update!()
+      |> Repo.update!()
 
     assert {:ok, view3, _html} = live(authed_conn, ~p"/tasks/#{task_dismiss_fb.id}")
     assert has_element?(view3, "#answer-field-card")
@@ -2216,9 +2168,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13867} = Issues.capture_issue(system_scope(), project, "Task 13867")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13867"})
-
-    {:ok, bad_task} = Pipeline.create_task(issue_13867)
+    {:ok, bad_task} = Pipeline.create_task(issue_13867, :product)
 
     {:ok, bad_task} =
       Pipeline.update_task(system_scope(), bad_task.id, %{
@@ -2267,9 +2217,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13868} = Issues.capture_issue(system_scope(), project, "Task 13868")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13868"})
-
-    {:ok, task} = Pipeline.create_task(issue_13868)
+    {:ok, task} = Pipeline.create_task(issue_13868, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -2341,9 +2289,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13869} = Issues.capture_issue(system_scope(), project, "Task 13869")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13869"})
-
-    {:ok, task} = Pipeline.create_task(issue_13869)
+    {:ok, task} = Pipeline.create_task(issue_13869, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -2485,9 +2431,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13870} = Issues.capture_issue(system_scope(), project, "Task 13870")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13870"})
-
-    {:ok, task} = Pipeline.create_task(issue_13870)
+    {:ok, task} = Pipeline.create_task(issue_13870, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -2549,7 +2493,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     _updated =
       task
       |> Ecto.Changeset.change(%{stage_state: :awaiting_approval})
-      |> Rail.Repo.update!()
+      |> Repo.update!()
 
     assert {:ok, idle_view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=conversation")
 
@@ -2643,9 +2587,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13871} = Issues.capture_issue(system_scope(), project, "Task 13871")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13871"})
-
-    {:ok, task} = Pipeline.create_task(issue_13871)
+    {:ok, task} = Pipeline.create_task(issue_13871, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -2686,9 +2628,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13872} = Issues.capture_issue(system_scope(), project, "Task 13872")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13872"})
-
-    {:ok, task} = Pipeline.create_task(issue_13872)
+    {:ok, task} = Pipeline.create_task(issue_13872, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -2756,9 +2696,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13873} = Issues.capture_issue(system_scope(), project, "Task 13873")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13873"})
-
-    {:ok, task} = Pipeline.create_task(issue_13873)
+    {:ok, task} = Pipeline.create_task(issue_13873, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -2789,9 +2727,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13874} = Issues.capture_issue(system_scope(), project, "Task 13874")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13874"})
-
-    {:ok, task} = Pipeline.create_task(issue_13874)
+    {:ok, task} = Pipeline.create_task(issue_13874, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -2858,9 +2794,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13875} = Issues.capture_issue(system_scope(), project, "Task 13875")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13875"})
-
-    {:ok, task} = Pipeline.create_task(issue_13875)
+    {:ok, task} = Pipeline.create_task(issue_13875, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -2922,9 +2856,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13876} = Issues.capture_issue(system_scope(), project, "Task 13876")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13876"})
-
-    {:ok, task} = Pipeline.create_task(issue_13876)
+    {:ok, task} = Pipeline.create_task(issue_13876, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -2996,9 +2928,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13877} = Issues.capture_issue(system_scope(), project, "Task 13877")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13877"})
-
-    {:ok, task} = Pipeline.create_task(issue_13877)
+    {:ok, task} = Pipeline.create_task(issue_13877, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -3040,9 +2970,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13878} = Issues.capture_issue(system_scope(), project, "Task 13878")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13878"})
-
-    {:ok, task} = Pipeline.create_task(issue_13878)
+    {:ok, task} = Pipeline.create_task(issue_13878, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -3152,9 +3080,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13879} = Issues.capture_issue(system_scope(), project, "Task 13879")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_detail_13879"})
-
-    {:ok, task} = Pipeline.create_task(issue_13879)
+    {:ok, task} = Pipeline.create_task(issue_13879, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{

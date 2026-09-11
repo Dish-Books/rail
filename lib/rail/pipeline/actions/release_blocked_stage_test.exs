@@ -48,9 +48,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Release Blocked Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_release_blocked_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task}
   end

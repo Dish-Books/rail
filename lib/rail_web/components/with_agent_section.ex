@@ -37,7 +37,7 @@ defmodule RailWeb.Components.WithAgentSection do
                   data-qa="with-agent-title"
                   class="text-sm font-semibold text-slate-900 dark:text-slate-100 hover:underline truncate"
                 >
-                  {row.task.title}
+                  {row.task.issue && row.task.issue.title}
                 </.link>
               </div>
 

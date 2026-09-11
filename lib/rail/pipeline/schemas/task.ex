@@ -14,7 +14,6 @@ defmodule Rail.Pipeline.Schemas.Task do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Runs.Schemas.RoleRun
-  alias Rail.Users.Schemas.User
 
   # The linear pipeline, then stages a task can be parked in off that path.
   # `:debugger` has no position in the sequence: nothing advances into or out of
@@ -54,10 +53,7 @@ defmodule Rail.Pipeline.Schemas.Task do
   schema "tasks" do
     belongs_to :project, Project
     belongs_to :issue, Issue
-    belongs_to :owner_user, User, foreign_key: :owner_user_id
 
-    field :title, :string
-    field :description, :string
     field :stage, Ecto.Enum, values: @stages, default: :product
     field :stage_state, Ecto.Enum, values: @stage_states, default: :queued
     field :worktree_name, :string
@@ -93,9 +89,6 @@ defmodule Rail.Pipeline.Schemas.Task do
 
   @cast_fields [
     :issue_id,
-    :owner_user_id,
-    :title,
-    :description,
     :stage,
     :stage_state,
     :worktree_name,
@@ -120,7 +113,6 @@ defmodule Rail.Pipeline.Schemas.Task do
 
   @required_fields [
     :project_id,
-    :title,
     :stage,
     :stage_state
   ]
@@ -136,7 +128,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     |> validate_required(@required_fields)
     |> foreign_key_constraint(:project_id)
     |> foreign_key_constraint(:issue_id)
-    |> foreign_key_constraint(:owner_user_id)
   end
 
   def stages, do: @stages

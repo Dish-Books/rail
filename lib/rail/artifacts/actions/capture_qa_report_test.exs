@@ -258,9 +258,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
 
       {:ok, issue_12306} = Issues.capture_issue(system_scope(), project, "Task 12306")
 
-      LinearMock.mock_update_issue_success(%{"id" => "lin_task_capture_qa_12306"})
-
-      {:ok, %Rail.Pipeline.Schemas.Task{id: _task_id} = task} = Pipeline.create_task(issue_12306)
+      {:ok, %Rail.Pipeline.Schemas.Task{id: _task_id} = task} = Pipeline.create_task(issue_12306, :product)
 
       {:ok, %Rail.Pipeline.Schemas.Task{id: task_id} = task} =
         Pipeline.update_task(system_scope(), task.id, %{
@@ -284,7 +282,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
                Artifacts.capture_qa_report(scope, task, dir, project: project)
 
       # Also test with preloaded associations
-      task_preloaded = Repo.preload(task, [:issue, :owner_user])
+      task_preloaded = Repo.preload(task, issue: :owner_user)
 
       LinearMock.mock_file_upload_success(
         upload_url: "https://api.linear.app/upload/qa_preloaded",
@@ -316,9 +314,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
 
       {:ok, issue_12307} = Issues.capture_issue(system_scope(), project, "Task 12307")
 
-      LinearMock.mock_update_issue_success(%{"id" => "lin_task_capture_qa_12307"})
-
-      {:ok, %Rail.Pipeline.Schemas.Task{id: task_id} = task} = Pipeline.create_task(issue_12307)
+      {:ok, %Rail.Pipeline.Schemas.Task{id: task_id} = task} = Pipeline.create_task(issue_12307, :product)
 
       task_with_proj = %{task | project: project}
 

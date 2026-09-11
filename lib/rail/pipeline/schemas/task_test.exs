@@ -72,18 +72,13 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Task Schema Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_schema_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
   test "changeset validates required fields" do
-    assert %{
-             project_id: ["can't be blank"],
-             title: ["can't be blank"]
-           } = errors_on(Task.changeset(%Task{}, %{}))
+    assert %{project_id: ["can't be blank"]} = errors_on(Task.changeset(%Task{}, %{}))
 
     assert %{
              stage: ["can't be blank"],
@@ -204,25 +199,15 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
     {:ok, %Issue{id: issue_id} = issue} = Issues.capture_issue(system_scope(), project, "Task Schema Issue 12611")
 
-    task =
-      Repo.insert!(
-        Task.changeset(
-          %Task{},
-          %{
-            title: "Preload Task",
-            issue_id: issue.id,
-            owner_user_id: user.id
-          },
-          project.id
-        )
-      )
+    {:ok, _issue} = issue |> Issue.changeset(%{owner_user_id: user.id}, project.id) |> Repo.update()
 
-    preloaded = Repo.preload(task, [:project, :issue, :owner_user])
+    task = Repo.insert!(Task.changeset(%Task{}, %{issue_id: issue.id}, project.id))
+
+    preloaded = Repo.preload(task, [:project, issue: :owner_user])
 
     assert %Task{
              project: %Project{id: ^project_id},
-             issue: %Issue{id: ^issue_id},
-             owner_user: %User{id: ^user_id}
+             issue: %Issue{id: ^issue_id, owner_user: %User{id: ^user_id}}
            } = preloaded
   end
 
@@ -328,9 +313,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
       {:ok, issue_12602} = Issues.capture_issue(system_scope(), project, "Task 12602")
 
-      LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_schema_12602"})
-
-      {:ok, task_without_run} = Pipeline.create_task(issue_12602)
+      {:ok, task_without_run} = Pipeline.create_task(issue_12602, :product)
 
       {:ok, task_without_run} =
         Pipeline.update_task(system_scope(), task_without_run.id, %{
@@ -380,9 +363,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
       {:ok, issue_12603} = Issues.capture_issue(system_scope(), project_no_designer, "Task 12603")
 
-      LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_schema_12603"})
-
-      {:ok, task_no_designer} = Pipeline.create_task(issue_12603)
+      {:ok, task_no_designer} = Pipeline.create_task(issue_12603, :product)
 
       {:ok, task_no_designer} =
         Pipeline.update_task(system_scope(), task_no_designer.id, %{

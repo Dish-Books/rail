@@ -61,9 +61,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Cleanup Task Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_cleanup_task_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -94,9 +92,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     {:ok, issue_8703} = Issues.capture_issue(system_scope(), project, "Task 8703")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cleanup_task_8703"})
-
-    {:ok, task} = Pipeline.create_task(issue_8703)
+    {:ok, task} = Pipeline.create_task(issue_8703, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -114,9 +110,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     {:ok, issue_8704} = Issues.capture_issue(system_scope(), project, "Task 8704")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cleanup_task_8704"})
-
-    {:ok, task_chat} = Pipeline.create_task(issue_8704)
+    {:ok, task_chat} = Pipeline.create_task(issue_8704, :product)
 
     {:ok, task_chat} =
       Pipeline.update_task(system_scope(), task_chat.id, %{
@@ -175,9 +169,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     {:ok, issue_8707} = Issues.capture_issue(system_scope(), project, "Task 8707")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cleanup_task_8707"})
-
-    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8707)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8707, :product)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -222,9 +214,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     {:ok, issue_8709} = Issues.capture_issue(system_scope(), project, "Task 8709")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cleanup_task_8709"})
-
-    {:ok, task} = Pipeline.create_task(issue_8709)
+    {:ok, task} = Pipeline.create_task(issue_8709, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -271,9 +261,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     {:ok, issue_8711} = Issues.capture_issue(system_scope(), project, "Task 8711")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cleanup_task_8711"})
-
-    {:ok, task} = Pipeline.create_task(issue_8711)
+    {:ok, task} = Pipeline.create_task(issue_8711, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{

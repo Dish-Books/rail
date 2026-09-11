@@ -102,12 +102,15 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
 
     LinearMock.mock_update_issue_success(%{"id" => issue.external_id})
 
-    assert {:ok, %{task: %Task{issue_id: ^issue_id, owner_user_id: ^user_id, stage: :product}}} =
+    assert {:ok, %{task: %Task{issue_id: ^issue_id, stage: :product} = task}} =
              Pipeline.start_product_task(issue,
                executable: System.find_executable("true") || "/usr/bin/true",
                skip_follower: true,
                scratch_dir: temp_scratch_dir()
              )
+
+    # The owner lives on the issue; the task only links to it.
+    assert %Issue{owner_user_id: ^user_id} = Repo.get!(Issue, task.issue_id)
   end
 
   test "returns role_not_found when the project has no product role", %{
@@ -137,15 +140,16 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
   end
 
   defp insert_task(project, issue) do
+    name = "spt-#{System.unique_integer([:positive])}"
+
     %Task{}
     |> Task.changeset(
       %{
         issue_id: issue.id,
-        title: issue.title,
-        description: issue.description,
         stage: :product,
         stage_state: :queued,
-        worktree_name: "spt-#{System.unique_integer([:positive])}"
+        worktree_name: name,
+        worktree_path: Path.join(project.clone_path, ".worktrees/#{name}")
       },
       project.id
     )

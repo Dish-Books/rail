@@ -48,7 +48,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
   # The worktree and the scratch tree
 
   defp ensure_worktree(%Project{} = project, %Task{} = task, opts) do
-    base_branch = Keyword.get(opts, :base_branch) || project.default_branch || "main"
+    base_branch = project.default_branch
     name = task.worktree_name || task.id
 
     path =
@@ -83,8 +83,8 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
 
         content =
           TicketBody.format(%TicketBody{
-            title: task.title || issue.title || "",
-            description: task.description || issue.description || "",
+            title: issue.title || "",
+            description: issue.description || "",
             priority: issue.priority,
             estimate: issue.estimate
           })
@@ -159,8 +159,8 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
     """)
   end
 
-  defp workspace_brief(%Task{} = task, %Project{} = project, worktree_path, opts) do
-    base_branch = Keyword.get(opts, :base_branch) || project.default_branch || "main"
+  defp workspace_brief(%Task{} = task, %Project{} = project, worktree_path) do
+    base_branch = project.default_branch
 
     String.trim("""
     Workspace for this task:
@@ -173,7 +173,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
 
   defp spawn_run(task, project, role, role_run, worktree_path, scratch_path, opts) do
     context =
-      [workspace_brief(task, project, worktree_path, opts), brief(task)]
+      [workspace_brief(task, project, worktree_path), brief(task)]
       |> Enum.reject(&(&1 == ""))
       |> Enum.join("\n\n")
 

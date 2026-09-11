@@ -270,7 +270,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
       assert msg =~ "Demo manifest not found"
     end
 
-    test "resolves owner_user from task.owner_user_id when posting comment", %{
+    test "resolves owner_user from the task's issue when posting comment", %{
       dir: dir,
       project: project,
       issue: issue
@@ -293,9 +293,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
 
       {:ok, issue_12202} = Issues.capture_issue(system_scope(), project, "Task 12202")
 
-      LinearMock.mock_update_issue_success(%{"id" => "lin_task_capture_demo_12202"})
-
-      {:ok, task} = Pipeline.create_task(issue_12202)
+      {:ok, task} = Pipeline.create_task(issue_12202, :product)
 
       {:ok, task} =
         Pipeline.update_task(system_scope(), task.id, %{

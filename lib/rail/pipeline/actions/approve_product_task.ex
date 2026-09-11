@@ -81,10 +81,10 @@ defmodule Rail.Pipeline.Actions.ApproveProductTask do
     if File.exists?(ticket_file) do
       content = File.read!(ticket_file)
 
-      case Issues.push_ticket(Scope.for_system(), project, issue.identifier, content, owner_user(task)) do
+      case Issues.push_ticket(Scope.for_system(), project, issue.identifier, content, owner_user(issue)) do
         {:ok, _issue} ->
           create_splits(project, task, scratch_path)
-          adopt_ticket(task, content)
+          adopt_ticket(task, issue, content)
 
         {:error, reason} ->
           reason_text = if is_binary(reason), do: reason, else: inspect(reason)
@@ -102,17 +102,22 @@ defmodule Rail.Pipeline.Actions.ApproveProductTask do
 
       files ->
         contents = Enum.map(files, &File.read!/1)
-        _created = Issues.create_split_issues(Scope.for_system(), project, contents, owner_user(task))
+        _created = Issues.create_split_issues(Scope.for_system(), project, contents, owner_user(task.issue))
         :ok
     end
   end
 
-  defp adopt_ticket(%Task{} = task, content) do
+  # The ticket the product agent wrote replaces the issue's title and body; the
+  # task only clears its own error.
+  defp adopt_ticket(%Task{project: %Project{} = project} = task, %Issue{} = issue, content) do
     ticket = TicketBody.parse(content)
 
-    task
-    |> Task.changeset(%{title: ticket.title, description: ticket.description, error: nil})
-    |> Repo.update()
+    {:ok, _issue} =
+      issue
+      |> Issue.changeset(%{title: ticket.title, description: ticket.description}, project.id)
+      |> Repo.update()
+
+    task |> Task.changeset(%{error: nil}) |> Repo.update()
   end
 
   defp fail(%Task{} = task, message, reason) do
@@ -127,8 +132,8 @@ defmodule Rail.Pipeline.Actions.ApproveProductTask do
       Scratch.default_scratch_path(project, task)
   end
 
-  defp owner_user(%Task{owner_user_id: user_id}) when is_binary(user_id), do: %{id: user_id}
-  defp owner_user(_task), do: nil
+  defp owner_user(%Issue{owner_user_id: user_id}) when is_binary(user_id), do: %{id: user_id}
+  defp owner_user(_issue), do: nil
 
   # The project and the issue are carried on the task from here on: every step below
   # needs them, and none of them should be refetching either.

@@ -180,7 +180,7 @@ defmodule RailWeb.OverviewLive do
             </div>
 
             <p class="text-xs text-slate-500 dark:text-slate-400">
-              Describe what should change for <span class="font-semibold text-slate-900 dark:text-slate-100">{@send_back_task.title}</span>.
+              Describe what should change for <span class="font-semibold text-slate-900 dark:text-slate-100">{@send_back_task.issue && @send_back_task.issue.title}</span>.
             </p>
 
             <form
@@ -236,7 +236,8 @@ defmodule RailWeb.OverviewLive do
               Merge this pull request?
             </h2>
             <p class="text-xs text-slate-500 dark:text-slate-400">
-              Squash-merges PR #{@merge_task.pr_number || "?"} for {@merge_task.title} and deletes its branch.
+              Squash-merges PR #{@merge_task.pr_number || "?"} for {@merge_task.issue &&
+                @merge_task.issue.title} and deletes its branch.
             </p>
 
             <div class="flex justify-end space-x-3 pt-3">
@@ -278,7 +279,7 @@ defmodule RailWeb.OverviewLive do
               Rebase this branch?
             </h2>
             <p class="text-xs text-slate-500 dark:text-slate-400">
-              Rebases the branch for {@rebase_task.title} onto the default branch, resolves conflicts, and force-pushes.
+              Rebases the branch for {@rebase_task.issue && @rebase_task.issue.title} onto the default branch, resolves conflicts, and force-pushes.
             </p>
 
             <div class="flex justify-end space-x-3 pt-3">

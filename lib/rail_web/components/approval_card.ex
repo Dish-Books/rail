@@ -82,7 +82,7 @@ defmodule RailWeb.Components.ApprovalCard do
           data-qa="approval-title"
           class="hover:underline"
         >
-          {@task.title}
+          {@task.issue && @task.issue.title}
         </.link>
       </h3>
 

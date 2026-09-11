@@ -497,9 +497,9 @@ defmodule Rail.Pipeline.Utils.Briefs do
       branch: get_field(task, :worktree_name) || get_field(task, :branch_name),
       is_rebasing: get_field(task, :is_rebasing),
       design: get_field(task, :design),
-      ticket: get_field(task, :ticket) || get_field(task, :description),
+      ticket: get_field(task, :ticket) || get_field(task, :description) || issue_field(task, :description),
       pr_number: get_field(task, :pr_number),
-      title: get_field(task, :title)
+      title: get_field(task, :title) || issue_field(task, :title)
     ]
 
     merged =
@@ -522,6 +522,9 @@ defmodule Rail.Pipeline.Utils.Briefs do
 
   defp get_opt(_other, _key), do: nil
 
+  # The title and ticket body live on the issue the task links to.
+  defp issue_field(task, field), do: get_field(get_field(task, :issue), field)
+
   defp get_field(%_struct_mod{} = struct, field), do: Map.get(struct, field)
 
   defp get_field(map, field) when is_map(map) do
@@ -536,4 +539,6 @@ defmodule Rail.Pipeline.Utils.Briefs do
         end
     end
   end
+
+  defp get_field(_other, _field), do: nil
 end

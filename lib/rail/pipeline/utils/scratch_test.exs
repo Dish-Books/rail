@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
@@ -65,9 +66,7 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Scratch Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_scratch_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -119,9 +118,7 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
 
     {:ok, issue_13502} = Issues.capture_issue(system_scope(), project, "Task 13502")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_scratch_13502"})
-
-    {:ok, task_no_issue} = Pipeline.create_task(issue_13502)
+    {:ok, task_no_issue} = Pipeline.create_task(issue_13502, :product)
 
     {:ok, task_no_issue} =
       Pipeline.update_task(system_scope(), task_no_issue.id, %{
@@ -160,13 +157,13 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
 
     {:ok, issue} = Issues.capture_issue(system_scope(), project, "Scratch Issue 13505")
 
+    {:ok, issue} =
+      issue
+      |> Issue.changeset(%{title: "Product Task", description: "Problem statement"}, project.id)
+      |> Repo.update()
+
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        issue_id: issue.id,
-        title: "Product Task",
-        description: "Problem statement",
-        stage: :product
-      })
+      Pipeline.update_task(system_scope(), task.id, %{issue_id: issue.id, stage: :product})
 
     scratch_dir = create_temp_git_repo()
 
@@ -223,17 +220,16 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
   end
 
   test "prepare for engineer extracts legacy plan from description when no plan in db", %{task: task} do
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        issue_id: nil,
-        stage: :engineer,
-        description: "Ticket details\n\n## Implementation plan\nFallback steps"
-      })
+    {:ok, _issue} =
+      Issue
+      |> Repo.get!(task.issue_id)
+      |> Issue.changeset(%{description: "Ticket details\n\n## Implementation plan\nFallback steps"}, task.project_id)
+      |> Repo.update()
+
+    {:ok, task} = Pipeline.update_task(system_scope(), task.id, %{stage: :engineer})
 
     scratch_dir = create_temp_git_repo()
-
     assert {:ok, ^scratch_dir} = prepare(task, scratch_dir)
-
     plan_path = Path.join(scratch_dir, "plan.md")
     assert File.exists?(plan_path)
     assert File.read!(plan_path) =~ "Fallback steps"
@@ -243,8 +239,7 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
         issue_id: nil,
-        stage: :engineer,
-        description: "Only ticket details without plan"
+        stage: :engineer
       })
 
     scratch_dir = create_temp_git_repo()
@@ -386,12 +381,12 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
 
     {:ok, issue} = Issues.capture_issue(system_scope(), project, "Scratch Issue 13507")
 
+    Repo.update_all(from(i in Issue, where: i.id == ^issue.id), set: [title: "Old Title", description: "Old Desc"])
+
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
         issue_id: issue.id,
-        stage: :product,
-        title: "Old Title",
-        description: "Old Desc"
+        stage: :product
       })
 
     scratch_dir = create_temp_git_repo()
@@ -430,8 +425,10 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
       "updatedAt" => "2026-09-04T10:00:00.000Z"
     })
 
-    assert {:ok, %Task{title: "Updated Title", description: "Updated Description Body"}} =
-             capture(:product, task, scratch_dir)
+    assert {:ok, %Task{}} = capture(:product, task, scratch_dir)
+
+    assert %Issue{title: "Updated Title", description: "Updated Description Body"} =
+             Repo.get!(Issue, task.issue_id)
   end
 
   test "capture for architect captures plan from plan.md", %{task: task} do

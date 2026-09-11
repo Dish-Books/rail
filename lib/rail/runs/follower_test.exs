@@ -689,9 +689,7 @@ defmodule Rail.Runs.FollowerTest do
 
     {:ok, issue_12505} = Issues.capture_issue(system_scope(), project, "Task 12505")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_follower_12505"})
-
-    {:ok, task} = Pipeline.create_task(issue_12505)
+    {:ok, task} = Pipeline.create_task(issue_12505, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{

@@ -120,7 +120,7 @@ defmodule RailWeb.Components.CompactWaitingStrip do
 
   defp task_title_line(task) do
     task_key = task_key(task)
-    "#{task_key} · #{task.title}"
+    "#{task_key} · #{task.issue && task.issue.title}"
   end
 
   defp task_key(%{issue: %{identifier: identifier}}) when is_binary(identifier) and identifier != "", do: identifier

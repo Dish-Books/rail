@@ -65,9 +65,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Refresh Merge Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_refresh_merge_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -98,9 +96,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
 
     {:ok, issue_9003} = Issues.capture_issue(system_scope(), project, "Task 9003")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_refresh_merge_9003"})
-
-    {:ok, task} = Pipeline.create_task(issue_9003)
+    {:ok, task} = Pipeline.create_task(issue_9003, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -139,9 +135,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
 
     {:ok, issue_9005} = Issues.capture_issue(system_scope(), project, "Task 9005")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_refresh_merge_9005"})
-
-    {:ok, task} = Pipeline.create_task(issue_9005)
+    {:ok, task} = Pipeline.create_task(issue_9005, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -190,9 +184,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
 
     {:ok, issue_9008} = Issues.capture_issue(system_scope(), project, "Task 9008")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_refresh_merge_9008"})
-
-    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_9008)
+    {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_9008, :product)
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -236,9 +228,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
 
     {:ok, issue_9010} = Issues.capture_issue(system_scope(), project, "Task 9010")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_refresh_merge_9010"})
-
-    {:ok, task} = Pipeline.create_task(issue_9010)
+    {:ok, task} = Pipeline.create_task(issue_9010, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -280,9 +270,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
 
     {:ok, issue_9012} = Issues.capture_issue(system_scope(), project, "Task 9012")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_refresh_merge_9012"})
-
-    {:ok, task} = Pipeline.create_task(issue_9012)
+    {:ok, task} = Pipeline.create_task(issue_9012, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -333,9 +321,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
 
     {:ok, issue_9014} = Issues.capture_issue(system_scope(), project, "Task 9014")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_refresh_merge_9014"})
-
-    {:ok, task} = Pipeline.create_task(issue_9014)
+    {:ok, task} = Pipeline.create_task(issue_9014, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -375,9 +361,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
 
     {:ok, issue_9016} = Issues.capture_issue(system_scope(), project, "Task 9016")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_refresh_merge_9016"})
-
-    {:ok, task} = Pipeline.create_task(issue_9016)
+    {:ok, task} = Pipeline.create_task(issue_9016, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -413,9 +397,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
 
     {:ok, issue_9018} = Issues.capture_issue(system_scope(), project, "Task 9018")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_refresh_merge_9018"})
-
-    {:ok, task} = Pipeline.create_task(issue_9018)
+    {:ok, task} = Pipeline.create_task(issue_9018, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -456,9 +438,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
 
     {:ok, issue_9020} = Issues.capture_issue(system_scope(), project, "Task 9020")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_refresh_merge_9020"})
-
-    {:ok, task} = Pipeline.create_task(issue_9020)
+    {:ok, task} = Pipeline.create_task(issue_9020, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{

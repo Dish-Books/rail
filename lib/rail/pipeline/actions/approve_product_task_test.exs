@@ -88,11 +88,15 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :product_approved}}
 
-    assert %Task{title: "Attachments follow their source document", description: description} = Repo.get!(Task, task_id)
-    assert description =~ "Journal entries show the attachments"
-
-    assert %Issue{title: "Attachments follow their source document", priority: :high, estimate: 3} =
+    assert %Issue{
+             title: "Attachments follow their source document",
+             priority: :high,
+             estimate: 3,
+             description: description
+           } =
              Repo.get!(Issue, issue.id)
+
+    assert description =~ "Journal entries show the attachments"
   end
 
   test "opens an issue for every ticket the run split out", %{task: task, issue: issue, scratch_dir: scratch_dir} do

@@ -62,9 +62,7 @@ defmodule Rail.Runs.PruneRunEventsTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Prune Events Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_prune_events_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end

@@ -60,9 +60,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Task Runner Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_runner_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -98,9 +96,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
 
     {:ok, issue_10303} = Issues.capture_issue(system_scope(), project, "Task 10303")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_runner_10303"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10303)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10303, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -156,9 +152,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
 
     {:ok, issue_10305} = Issues.capture_issue(system_scope(), project, "Task 10305")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_runner_10305"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10305)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10305, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -202,9 +196,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
 
     {:ok, issue_10307} = Issues.capture_issue(system_scope(), project, "Task 10307")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_runner_10307"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10307)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10307, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -245,9 +237,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
 
     {:ok, issue_10309} = Issues.capture_issue(system_scope(), project, "Task 10309")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_runner_10309"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10309)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10309, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -288,9 +278,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
 
     {:ok, issue_10311} = Issues.capture_issue(system_scope(), project, "Task 10311")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_runner_10311"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10311)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10311, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
@@ -333,9 +321,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
 
     {:ok, issue_10313} = Issues.capture_issue(system_scope(), project, "Task 10313")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_task_runner_10313"})
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10313)
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10313, :product)
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{

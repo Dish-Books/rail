@@ -59,9 +59,7 @@ defmodule Rail.Pipeline.Actions.DispatchNowTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Dispatch Now Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_dispatch_now_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -122,9 +120,7 @@ defmodule Rail.Pipeline.Actions.DispatchNowTest do
 
     {:ok, issue_9102} = Issues.capture_issue(system_scope(), project, "Task 9102")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_dispatch_now_9102"})
-
-    {:ok, failed_task} = Pipeline.create_task(issue_9102)
+    {:ok, failed_task} = Pipeline.create_task(issue_9102, :product)
 
     {:ok, failed_task} =
       Pipeline.update_task(system_scope(), failed_task.id, %{
@@ -196,9 +192,7 @@ defmodule Rail.Pipeline.Actions.DispatchNowTest do
 
     {:ok, issue_9103} = Issues.capture_issue(system_scope(), project, "Task 9103")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_dispatch_now_9103"})
-
-    {:ok, task} = Pipeline.create_task(issue_9103)
+    {:ok, task} = Pipeline.create_task(issue_9103, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -310,9 +304,7 @@ defmodule Rail.Pipeline.Actions.DispatchNowTest do
 
     {:ok, issue_9104} = Issues.capture_issue(system_scope(), project, "Task 9104")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_dispatch_now_9104"})
-
-    {:ok, t2} = Pipeline.create_task(issue_9104)
+    {:ok, t2} = Pipeline.create_task(issue_9104, :product)
 
     {:ok, t2} =
       Pipeline.update_task(system_scope(), t2.id, %{
@@ -328,9 +320,7 @@ defmodule Rail.Pipeline.Actions.DispatchNowTest do
 
     {:ok, issue_9105} = Issues.capture_issue(system_scope(), project, "Task 9105")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_dispatch_now_9105"})
-
-    {:ok, t3} = Pipeline.create_task(issue_9105)
+    {:ok, t3} = Pipeline.create_task(issue_9105, :product)
 
     {:ok, t3} =
       Pipeline.update_task(system_scope(), t3.id, %{
@@ -366,9 +356,7 @@ defmodule Rail.Pipeline.Actions.DispatchNowTest do
 
     {:ok, issue_9106} = Issues.capture_issue(system_scope(), project, "Task 9106")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_dispatch_now_9106"})
-
-    {:ok, t4} = Pipeline.create_task(issue_9106)
+    {:ok, t4} = Pipeline.create_task(issue_9106, :product)
 
     {:ok, t4} =
       Pipeline.update_task(system_scope(), t4.id, %{

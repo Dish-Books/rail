@@ -45,9 +45,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Skip Ready Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_skip_ready_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task}
   end
@@ -85,9 +83,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
     {:ok, issue_6601} = Issues.capture_issue(system_scope(), project, "Task 6601")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_skip_ready_6601"})
-
-    {:ok, t_running} = Pipeline.create_task(issue_6601)
+    {:ok, t_running} = Pipeline.create_task(issue_6601, :product)
 
     {:ok, t_running} =
       Pipeline.update_task(system_scope(), t_running, %{
@@ -115,9 +111,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
     {:ok, issue_6602} = Issues.capture_issue(system_scope(), project, "Task 6602")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_skip_ready_6602"})
-
-    {:ok, t_prod} = Pipeline.create_task(issue_6602)
+    {:ok, t_prod} = Pipeline.create_task(issue_6602, :product)
 
     {:ok, t_prod} =
       Pipeline.update_task(system_scope(), t_prod, %{
@@ -135,9 +129,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
     {:ok, issue_6603} = Issues.capture_issue(system_scope(), project, "Task 6603")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_skip_ready_6603"})
-
-    {:ok, t_arch} = Pipeline.create_task(issue_6603)
+    {:ok, t_arch} = Pipeline.create_task(issue_6603, :product)
 
     {:ok, t_arch} =
       Pipeline.update_task(system_scope(), t_arch, %{
@@ -187,9 +179,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
     {:ok, issue_6604} = Issues.capture_issue(system_scope(), project, "Task 6604")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_skip_ready_6604"})
-
-    {:ok, t_lead} = Pipeline.create_task(issue_6604)
+    {:ok, t_lead} = Pipeline.create_task(issue_6604, :product)
 
     {:ok, t_lead} =
       Pipeline.update_task(system_scope(), t_lead, %{

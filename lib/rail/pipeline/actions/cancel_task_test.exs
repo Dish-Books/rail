@@ -60,9 +60,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Cancel Task Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_cancel_task_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -104,9 +102,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
 
     {:ok, issue_8104} = Issues.capture_issue(system_scope(), project, "Task 8104")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cancel_task_8104"})
-
-    {:ok, %Task{id: task_id} = task} = Pipeline.create_task(issue_8104)
+    {:ok, %Task{id: task_id} = task} = Pipeline.create_task(issue_8104, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -151,9 +147,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
 
     {:ok, issue_8106} = Issues.capture_issue(system_scope(), project, "Task 8106")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cancel_task_8106"})
-
-    {:ok, task} = Pipeline.create_task(issue_8106)
+    {:ok, task} = Pipeline.create_task(issue_8106, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -198,9 +192,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
 
     {:ok, issue_8108} = Issues.capture_issue(system_scope(), project, "Task 8108")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cancel_task_8108"})
-
-    {:ok, task} = Pipeline.create_task(issue_8108)
+    {:ok, task} = Pipeline.create_task(issue_8108, :product)
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -252,9 +244,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
 
     {:ok, issue_8110} = Issues.capture_issue(system_scope(), project, "Task 8110")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cancel_task_8110"})
-
-    {:ok, task} = Pipeline.create_task(issue_8110)
+    {:ok, task} = Pipeline.create_task(issue_8110, :product)
 
     assert {:ok, %Task{stage_state: :failed}} =
              Pipeline.cancel_task(task, dispatcher: nil)
@@ -267,9 +257,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
 
     {:ok, issue_8111} = Issues.capture_issue(system_scope(), project, "Task 8111")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_cancel_task_8111"})
-
-    {:ok, task2} = Pipeline.create_task(issue_8111)
+    {:ok, task2} = Pipeline.create_task(issue_8111, :product)
 
     assert {:ok, %Task{stage_state: :failed}} =
              Pipeline.cancel_task(Scope.for_system(), task2, dispatcher: nil)

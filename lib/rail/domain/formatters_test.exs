@@ -5,8 +5,10 @@ defmodule Rail.Domain.FormattersTest do
 
   alias Rail.Domain.Formatters
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Projects
+  alias Rail.Repo
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -46,9 +48,7 @@ defmodule Rail.Domain.FormattersTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Formatters Issue")
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_formatters_1"})
-
-    {:ok, task} = Pipeline.create_task(issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task}
   end
@@ -521,10 +521,13 @@ defmodule Rail.Domain.FormattersTest do
     end
 
     test "plan_for returns stored plan or plan from description split", %{task: task} do
-      {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
-          description: "Ticket text\n\n## Implementation plan\nStep 1\nStep 2"
-        })
+      {:ok, _issue} =
+        Issue
+        |> Repo.get!(task.issue_id)
+        |> Issue.changeset(%{description: "Ticket text\n\n## Implementation plan\nStep 1\nStep 2"}, task.project_id)
+        |> Repo.update()
+
+      {:ok, task} = Pipeline.get_task(system_scope(), task.id)
 
       assert Formatters.plan_for(task) == "## Implementation plan\nStep 1\nStep 2"
 

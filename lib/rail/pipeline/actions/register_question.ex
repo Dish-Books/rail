@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
 
   import Ecto.Query
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
@@ -101,7 +102,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
             role_id: resolved_role_id,
             prompt: prompt,
             options: options,
-            context_summary: context_summary || "Asked during: #{task.title}",
+            context_summary: context_summary || "Asked during: #{task_title(task)}",
             status: :pending
           }
 
@@ -158,7 +159,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
       {:error, :invalid_prompt}
     else
       role_id = q.role_id || (role_run && role_run.role_id)
-      context_summary = q.context_summary || "Asked during: #{task.title}"
+      context_summary = q.context_summary || "Asked during: #{task_title(task)}"
       {:ok, trimmed_prompt, q.options || [], context_summary, role_id}
     end
   end
@@ -167,7 +168,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
     case QuestionDetector.detect_question(text,
            task_id: task.id,
            role_id: role_run && role_run.role_id,
-           task_title: task.title
+           task_title: task_title(task)
          ) do
       %QuestionDetector{} = detected ->
         extract_question_attrs(detected, task, role_run)
@@ -185,13 +186,25 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
       {:error, :invalid_prompt}
     else
       options = attrs[:options] || attrs["options"] || []
-      context_summary = attrs[:context_summary] || attrs["context_summary"] || "Asked during: #{task.title}"
+      context_summary = attrs[:context_summary] || attrs["context_summary"] || "Asked during: #{task_title(task)}"
       role_id = attrs[:role_id] || attrs["role_id"] || (role_run && role_run.role_id)
       {:ok, trimmed_prompt, options, context_summary, role_id}
     end
   end
 
   defp extract_question_attrs(_other, _task, _role_run), do: {:error, :invalid_question_attrs}
+
+  # The title lives on the issue the task links to.
+  defp task_title(%Task{issue: %Issue{title: title}}), do: title
+
+  defp task_title(%Task{issue_id: issue_id}) when is_binary(issue_id) do
+    case Repo.get(Issue, issue_id) do
+      %Issue{title: title} -> title
+      nil -> nil
+    end
+  end
+
+  defp task_title(%Task{}), do: nil
 
   defp resolve_task(%Task{} = task), do: task
   defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)

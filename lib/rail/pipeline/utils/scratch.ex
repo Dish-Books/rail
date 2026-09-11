@@ -119,14 +119,13 @@ defmodule Rail.Pipeline.Utils.Scratch do
     end)
   end
 
-  defp maybe_write_ticket(%Task{title: title, description: desc} = task, identifier, scratch_dir)
-       when is_binary(identifier) and identifier != "" do
+  defp maybe_write_ticket(%Task{} = task, identifier, scratch_dir) when is_binary(identifier) and identifier != "" do
     issue = task.issue_id && Repo.get(Issue, task.issue_id)
 
     content =
       TicketBody.format(%TicketBody{
-        title: title || "",
-        description: desc || "",
+        title: (issue && issue.title) || "",
+        description: (issue && issue.description) || "",
         priority: issue && issue.priority,
         estimate: issue && issue.estimate
       })
@@ -156,7 +155,7 @@ defmodule Rail.Pipeline.Utils.Scratch do
           content
 
         _none ->
-          TicketBody.split(task.description || "").plan
+          TicketBody.split(issue_description(task) || "").plan
       end
 
     if is_binary(plan_content) and plan_content != "" do
@@ -196,7 +195,8 @@ defmodule Rail.Pipeline.Utils.Scratch do
 
   defp capture_ticket_and_splits(scope, task, identifier, scratch_dir) do
     project = Repo.get!(Project, task.project_id)
-    owner_user = if task.owner_user_id, do: %{id: task.owner_user_id}
+    issue = task.issue_id && Repo.get(Issue, task.issue_id)
+    owner_user = issue && issue.owner_user_id && %{id: issue.owner_user_id}
 
     task =
       if is_binary(identifier) and identifier != "" do
@@ -206,13 +206,9 @@ defmodule Rail.Pipeline.Utils.Scratch do
           content = File.read!(ticket_file)
           _push_res = Issues.push_ticket(scope, project, identifier, content, owner_user)
           parsed = TicketBody.parse(content)
+          _adopted = adopt_ticket(issue, parsed, project)
 
-          {:ok, updated_task} =
-            task
-            |> Task.changeset(%{title: parsed.title, description: parsed.description})
-            |> Repo.update()
-
-          updated_task
+          task
         else
           task
         end
@@ -229,6 +225,25 @@ defmodule Rail.Pipeline.Utils.Scratch do
 
     task
   end
+
+  # The ticket the agent wrote replaces the issue's own title and body: the task
+  # keeps no copy of either.
+  defp adopt_ticket(%Issue{} = issue, %TicketBody{} = parsed, %Project{} = project) do
+    issue
+    |> Issue.changeset(%{title: parsed.title, description: parsed.description}, project.id)
+    |> Repo.update()
+  end
+
+  defp adopt_ticket(nil, _parsed, _project), do: :ok
+
+  defp issue_description(%Task{issue_id: issue_id}) when is_binary(issue_id) do
+    case Repo.get(Issue, issue_id) do
+      %Issue{description: description} -> description
+      nil -> nil
+    end
+  end
+
+  defp issue_description(%Task{}), do: nil
 
   defp capture_plan(task, identifier, scratch_dir) do
     candidates = [
