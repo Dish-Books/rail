@@ -33,7 +33,6 @@ defmodule Rail.Runs.FollowerSupervisorTest do
         kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
-        boot_id: Runs.boot_id(),
         status: :running,
         started_at: DateTime.utc_now()
       })

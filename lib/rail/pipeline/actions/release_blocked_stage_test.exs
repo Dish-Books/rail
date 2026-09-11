@@ -110,7 +110,6 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         status: :running,
         stream_path: "/tmp/fake_stream",
         node: "node_test",
-        boot_id: "boot_test",
         started_at: DateTime.utc_now()
       })
 
@@ -176,7 +175,6 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         status: :finished,
         stream_path: "/tmp/fake_stream_0",
         node: "node_test",
-        boot_id: "boot_test",
         started_at: DateTime.utc_now()
       })
 
@@ -240,7 +238,6 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         status: :finished,
         stream_path: "/tmp/fake_stream_err",
         node: "node_test",
-        boot_id: "boot_test",
         started_at: DateTime.utc_now()
       })
 

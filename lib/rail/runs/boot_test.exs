@@ -47,7 +47,6 @@ defmodule Rail.Runs.BootTest do
         kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
-        boot_id: "prev-boot",
         status: :running,
         os_pid: pid,
         started_at: DateTime.utc_now()
@@ -96,7 +95,6 @@ defmodule Rail.Runs.BootTest do
         kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
-        boot_id: "prev-boot",
         status: :running,
         os_pid: dead_pid,
         started_at: DateTime.utc_now()
@@ -139,7 +137,6 @@ defmodule Rail.Runs.BootTest do
         kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
-        boot_id: "prev-boot",
         status: :running,
         os_pid: 999_997,
         started_at: DateTime.utc_now()
@@ -180,7 +177,6 @@ defmodule Rail.Runs.BootTest do
         kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
-        boot_id: "prev-boot",
         status: :starting,
         os_pid: nil,
         started_at: DateTime.shift(DateTime.utc_now(), second: -70)
@@ -218,7 +214,6 @@ defmodule Rail.Runs.BootTest do
         kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
-        boot_id: Runs.boot_id(),
         status: :starting,
         os_pid: nil,
         started_at: DateTime.utc_now()
@@ -251,7 +246,6 @@ defmodule Rail.Runs.BootTest do
       kind: :stage,
       stream_path: stream_path,
       node: "other_node@remote_host",
-      boot_id: "other-boot",
       status: :running,
       os_pid: 999_990,
       started_at: DateTime.utc_now()
@@ -264,7 +258,6 @@ defmodule Rail.Runs.BootTest do
       kind: :stage,
       stream_path: stream_path,
       node: to_string(Node.self()),
-      boot_id: Runs.boot_id(),
       status: :finished,
       os_pid: 999_991,
       started_at: DateTime.utc_now()
@@ -313,7 +306,6 @@ defmodule Rail.Runs.BootTest do
       kind: :stage,
       stream_path: stream1,
       node: to_string(Node.self()),
-      boot_id: "prev",
       status: :running,
       os_pid: 999_980,
       started_at: DateTime.utc_now()
@@ -351,7 +343,6 @@ defmodule Rail.Runs.BootTest do
       kind: :stage,
       stream_path: stream2,
       node: to_string(Node.self()),
-      boot_id: "prev",
       status: :running,
       os_pid: 999_981,
       started_at: DateTime.utc_now()
@@ -382,7 +373,6 @@ defmodule Rail.Runs.BootTest do
       kind: :stage,
       stream_path: stream3,
       node: to_string(Node.self()),
-      boot_id: "prev",
       status: :running,
       os_pid: 999_982,
       started_at: DateTime.utc_now()
@@ -410,7 +400,6 @@ defmodule Rail.Runs.BootTest do
         kind: :stage,
         stream_path: Path.join(tmp_dir, "nonexistent.ndjson"),
         node: to_string(Node.self()),
-        boot_id: "prev",
         status: :running,
         os_pid: 999_983,
         started_at: DateTime.utc_now()

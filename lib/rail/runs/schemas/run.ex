@@ -17,7 +17,6 @@ defmodule Rail.Runs.Schemas.Run do
     field :os_pid, :integer
     field :stream_path, :string
     field :node, :string
-    field :boot_id, :string
     field :status, Ecto.Enum, values: @statuses
     field :started_at, :utc_datetime_usec
 
@@ -31,7 +30,6 @@ defmodule Rail.Runs.Schemas.Run do
     :os_pid,
     :stream_path,
     :node,
-    :boot_id,
     :status,
     :started_at
   ]
@@ -42,7 +40,6 @@ defmodule Rail.Runs.Schemas.Run do
     :kind,
     :stream_path,
     :node,
-    :boot_id,
     :status,
     :started_at
   ]

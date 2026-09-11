@@ -52,7 +52,6 @@ defmodule Rail.Runs.FollowerTest do
         kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
-        boot_id: Runs.boot_id(),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -425,7 +424,6 @@ defmodule Rail.Runs.FollowerTest do
         kind: :stage,
         stream_path: stream,
         node: to_string(Node.self()),
-        boot_id: Runs.boot_id(),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -492,7 +490,6 @@ defmodule Rail.Runs.FollowerTest do
         kind: :stage,
         stream_path: stream1,
         node: to_string(Node.self()),
-        boot_id: Runs.boot_id(),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -544,7 +541,6 @@ defmodule Rail.Runs.FollowerTest do
         kind: :stage,
         stream_path: stream2,
         node: to_string(Node.self()),
-        boot_id: Runs.boot_id(),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -599,7 +595,6 @@ defmodule Rail.Runs.FollowerTest do
         kind: :stage,
         stream_path: stream,
         node: to_string(Node.self()),
-        boot_id: Runs.boot_id(),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -716,7 +711,6 @@ defmodule Rail.Runs.FollowerTest do
         kind: :stage,
         stream_path: stream,
         node: to_string(Node.self()),
-        boot_id: Runs.boot_id(),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -783,7 +777,6 @@ defmodule Rail.Runs.FollowerTest do
         kind: :chat,
         stream_path: stream,
         node: to_string(Node.self()),
-        boot_id: Runs.boot_id(),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -847,7 +840,6 @@ defmodule Rail.Runs.FollowerTest do
         kind: :chat,
         stream_path: stream,
         node: to_string(Node.self()),
-        boot_id: Runs.boot_id(),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -907,7 +899,6 @@ defmodule Rail.Runs.FollowerTest do
         kind: :stage,
         stream_path: stream,
         node: to_string(Node.self()),
-        boot_id: Runs.boot_id(),
         status: :running,
         started_at: DateTime.utc_now()
       })

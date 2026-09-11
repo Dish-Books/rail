@@ -94,20 +94,6 @@ defmodule Rail.RunsTest do
     assert %AgyEvents{conversation_id: "conv-2"} = agy_result
   end
 
-  test "boot_id/0 returns consistent node boot ID and supports override/reset" do
-    id1 = Runs.boot_id()
-    id2 = Runs.boot_id()
-    assert id1 == id2
-    assert is_binary(id1) and byte_size(id1) > 0
-
-    Runs.debug_set_boot_id("custom-boot-123")
-    assert Runs.boot_id() == "custom-boot-123"
-
-    Runs.reset_boot_id()
-    recalculated = Runs.boot_id()
-    assert recalculated != "custom-boot-123"
-  end
-
   test "create_role_run/1, get_role_run/1, get_role_run!/1, update_role_run/2" do
     task_id = UXID.generate!(prefix: "tsk")
     role_id = UXID.generate!(prefix: "rol")

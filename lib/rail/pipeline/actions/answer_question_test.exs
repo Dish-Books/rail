@@ -179,7 +179,6 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
         status: :running,
         stream_path: "/tmp/fake_stream_ans",
         node: "node_test",
-        boot_id: "boot_test",
         started_at: DateTime.utc_now()
       })
 
@@ -226,7 +225,6 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
         status: :running,
         stream_path: "/tmp/fake_rebase_stream",
         node: "node_test",
-        boot_id: "boot_test",
         started_at: DateTime.utc_now()
       })
 

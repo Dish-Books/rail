@@ -16,7 +16,6 @@ defmodule Rail.Runs.Schemas.RunTest do
       os_pid: 12_345,
       stream_path: "/tmp/rail/streams/test.ndjson",
       node: "nonode@nohost",
-      boot_id: "boot-1",
       status: :running,
       started_at: now
     }
@@ -41,7 +40,6 @@ defmodule Rail.Runs.Schemas.RunTest do
     assert "can't be blank" in errors.kind
     assert "can't be blank" in errors.stream_path
     assert "can't be blank" in errors.node
-    assert "can't be blank" in errors.boot_id
     assert "can't be blank" in errors.status
     assert "can't be blank" in errors.started_at
   end
@@ -54,7 +52,6 @@ defmodule Rail.Runs.Schemas.RunTest do
         kind: "invalid_kind",
         stream_path: "/tmp/rail/streams/test.ndjson",
         node: "node@host",
-        boot_id: "boot-1",
         status: "invalid_status",
         started_at: DateTime.utc_now()
       })
@@ -97,7 +94,6 @@ defmodule Rail.Runs.Schemas.RunTest do
         os_pid: 12_345,
         stream_path: "/tmp/rail/streams/#{role_run.id}.ndjson",
         node: "node@host",
-        boot_id: "boot-test",
         status: :starting,
         started_at: DateTime.utc_now()
       })

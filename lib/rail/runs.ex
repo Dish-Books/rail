@@ -22,8 +22,6 @@ defmodule Rail.Runs do
   alias Rail.Runs.Schemas.RunEvent
   alias Rail.Runs.ToolSummarizer
 
-  @boot_id_key {__MODULE__, :boot_id}
-
   defdelegate build_argv(opts), to: ArgvBuilder
   defdelegate build_prompt(opts), to: PromptBuilder
   defdelegate chat_prompt(message), to: PromptBuilder
@@ -37,37 +35,6 @@ defmodule Rail.Runs do
   Determines whether a failure is transient and retryable.
   """
   def transient?(failure), do: RunFailure.transient?(failure)
-
-  @doc """
-  Returns the unique boot identifier for this BEAM node runtime.
-  """
-  def boot_id do
-    case :persistent_term.get(@boot_id_key, nil) do
-      id when is_binary(id) ->
-        id
-
-      nil ->
-        id = UXID.generate!()
-        :persistent_term.put(@boot_id_key, id)
-        id
-    end
-  end
-
-  @doc """
-  Overrides the boot identifier for testing.
-  """
-  def debug_set_boot_id(id) when is_binary(id) do
-    :persistent_term.put(@boot_id_key, id)
-    :ok
-  end
-
-  @doc """
-  Resets the boot identifier.
-  """
-  def reset_boot_id do
-    :persistent_term.erase(@boot_id_key)
-    :ok
-  end
 
   @doc """
   Initializes an event accumulator state struct for either `:claude` or `:agy`.

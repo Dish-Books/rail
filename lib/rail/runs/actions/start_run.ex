@@ -5,7 +5,6 @@ defmodule Rail.Runs.Actions.StartRun do
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Repo
-  alias Rail.Runs
   alias Rail.Runs.ArgvBuilder
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.RoleRun
@@ -56,7 +55,6 @@ defmodule Rail.Runs.Actions.StartRun do
       kind: kind,
       stream_path: stream_path,
       node: to_string(Node.self()),
-      boot_id: Runs.boot_id(),
       status: :starting,
       started_at: DateTime.utc_now()
     }
