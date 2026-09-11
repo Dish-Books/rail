@@ -85,7 +85,7 @@ defmodule Rail.Pipeline.Actions.RetryStageTest do
     assert {:error, :not_authorized} = Pipeline.retry_stage(unauth_scope, task.id)
   end
 
-  test "returns no_role_for_stage when stage lacks a configured role", %{task: task, roles: roles} do
+  test "returns role_not_found when stage lacks a configured role", %{task: task, roles: roles} do
     {:ok, _deleted} = Roles.delete_role(system_scope(), roles[:engineer])
 
     {:ok, task} =
@@ -94,7 +94,7 @@ defmodule Rail.Pipeline.Actions.RetryStageTest do
         stage_state: :failed
       })
 
-    assert {:error, {:no_role_for_stage, :engineer}} = Pipeline.retry_stage(task)
+    assert {:error, :role_not_found} = Pipeline.retry_stage(task)
   end
 
   test "clears retry_after and error, sets stage_state to queued, and resets auto_retries", %{task: task, roles: roles} do

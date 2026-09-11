@@ -97,11 +97,11 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
 
       case Repo.one(query) do
         %RoleRun{} = queued_run ->
-          case Repo.get(Role, queued_run.role_id) do
-            %Role{} = queued_role ->
+          case Roles.get_role(id: queued_run.role_id) do
+            {:ok, %Role{} = queued_role} ->
               dispatch_chat_turn(task, queued_role, queued_run, opts)
 
-            nil ->
+            {:error, :role_not_found} ->
               :ok
           end
 
@@ -129,9 +129,9 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
   defp resolve_role(%Role{} = role), do: {:ok, role}
 
   defp resolve_role(id) when is_binary(id) do
-    case Repo.get(Role, id) do
-      %Role{} = role -> {:ok, role}
-      nil -> {:error, {:role_not_found, id}}
+    case Roles.get_role(id: id) do
+      {:ok, %Role{} = role} -> {:ok, role}
+      {:error, :role_not_found} -> {:error, {:role_not_found, id}}
     end
   end
 
@@ -300,7 +300,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
   defp interrupt_active_stage(task, target_role) do
     stage = if task.is_rebasing, do: :engineer, else: task.stage
 
-    with {:ok, stage_role} <- Roles.role_for_stage(task.project_id, stage),
+    with {:ok, stage_role} <- Roles.get_role(project_id: task.project_id, stage: stage),
          %RoleRun{} = stage_role_run <-
            Repo.one(from r in RoleRun, where: r.task_id == ^task.id and r.role_id == ^stage_role.id) do
       record_stage_interrupt_event(stage_role, stage_role_run, target_role)

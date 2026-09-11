@@ -166,7 +166,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
   end
 
   defp log_designer_event(task, line) do
-    with {:ok, %Role{} = designer_role} <- Roles.role_for_stage(task.project_id, :design),
+    with {:ok, %Role{} = designer_role} <- Roles.get_role(project_id: task.project_id, stage: :design),
          %RoleRun{} = role_run <-
            Repo.one(
              from r in RoleRun,

@@ -158,7 +158,7 @@ defmodule Rail.Pipeline.Actions.ApproveStage do
       if next_stage == :ready_to_merge do
         {:awaiting_approval, nil}
       else
-        case Roles.role_for_stage(task.project_id, next_stage) do
+        case Roles.get_role(project_id: task.project_id, stage: next_stage) do
           {:ok, _role} ->
             {:queued, nil}
 
@@ -195,7 +195,7 @@ defmodule Rail.Pipeline.Actions.ApproveStage do
   defp determine_next_stage(%Task{stage: :qa}, _opts), do: :qa_lead
 
   defp determine_next_stage(%Task{stage: :qa_lead} = task, _opts) do
-    case Roles.role_for_stage(task.project_id, :demo) do
+    case Roles.get_role(project_id: task.project_id, stage: :demo) do
       {:ok, _role} -> :demo
       _no_role -> :ready_to_merge
     end

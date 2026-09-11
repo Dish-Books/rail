@@ -110,7 +110,7 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
              )
   end
 
-  test "returns no_role_for_stage when the project has no product role", %{
+  test "returns role_not_found when the project has no product role", %{
     project: project,
     role: role,
     issue: issue
@@ -118,7 +118,7 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
     {:ok, _deleted} = Roles.delete_role(system_scope(), role)
     insert_task(project, issue)
 
-    assert {:error, {:no_role_for_stage, :product}} = Pipeline.start_product_task(issue)
+    assert {:error, :role_not_found} = Pipeline.start_product_task(issue)
   end
 
   test "marks the task failed when the worktree cannot be created", %{project: project, issue: issue} do

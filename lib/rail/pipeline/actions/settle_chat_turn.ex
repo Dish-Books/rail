@@ -90,7 +90,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
   end
 
   defp check_design_manifest_modification(task, role_run, opts) do
-    role = Repo.get(Role, role_run.role_id)
+    role = role_for_run(role_run)
     before_stamp = Keyword.get(opts, :before_design_stamp)
 
     if is_struct(role, Role) and role.stage == :design and task.stage == :design and task.stage_state != :blocked and
@@ -160,7 +160,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
   end
 
   defp apply_branch_modification(task, role_run, after_fp) do
-    role = Repo.get(Role, role_run.role_id)
+    role = role_for_run(role_run)
 
     if role && role.stage == :engineer do
       has_been_reworked = (task.rework_cycles || 0) > 0
@@ -213,7 +213,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
   end
 
   defp maybe_append_reviewer_pending_answer(task, head_sha) do
-    case Roles.role_for_stage(task.project_id, :review) do
+    case Roles.get_role(project_id: task.project_id, stage: :review) do
       {:ok, review_role} ->
         evidence_note =
           "The engineer has addressed the findings from your last pass on this branch. " <>
@@ -280,6 +280,13 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
   defp resolve_task(%Task{} = task), do: Repo.get(Task, task.id)
   defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)
   defp resolve_task(_other), do: nil
+
+  defp role_for_run(%RoleRun{role_id: role_id}) do
+    case Roles.get_role(id: role_id) do
+      {:ok, %Role{} = role} -> role
+      {:error, :role_not_found} -> nil
+    end
+  end
 
   defp resolve_role_run(%RoleRun{} = role_run), do: Repo.get(RoleRun, role_run.id)
   defp resolve_role_run(id) when is_binary(id), do: Repo.get(RoleRun, id)

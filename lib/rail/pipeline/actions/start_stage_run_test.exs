@@ -98,7 +98,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
         stage_state: :queued
       })
 
-    assert {:error, {:no_role_for_stage, :product}} = Pipeline.start_stage_run(task)
+    assert {:error, :role_not_found} = Pipeline.start_stage_run(task)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :dispatch_failed}}
 

@@ -33,7 +33,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
   """
   def start_design_task(task_or_id, opts \\ []) when is_list(opts) do
     with %Task{project: %Project{} = project} = task <- resolve_task(task_or_id),
-         {:ok, %Role{} = role} <- design_role(project),
+         {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :design),
          {:ok, worktree_path} <- ensure_worktree(project, task, opts),
          {:ok, task} <- claim_stage(task, worktree_path),
          scratch_path = write_scratch(project, task, opts),
@@ -42,13 +42,6 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
     else
       nil -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp design_role(%Project{id: project_id}) do
-    case Roles.role_for_stage(project_id, :design) do
-      {:ok, %Role{} = role} -> {:ok, role}
-      _no_role -> {:error, {:no_role_for_stage, :design}}
     end
   end
 

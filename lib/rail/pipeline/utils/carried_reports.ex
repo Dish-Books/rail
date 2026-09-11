@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Utils.CarriedReports do
 
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs.Schemas.RoleRun
 
@@ -67,8 +68,8 @@ defmodule Rail.Pipeline.Utils.CarriedReports do
   end
 
   defp resolve_role_name(role_id) do
-    case Repo.get(Role, role_id) do
-      %Role{name: name} when is_binary(name) and name != "" -> name
+    case Roles.get_role(id: role_id) do
+      {:ok, %Role{name: name}} when is_binary(name) and name != "" -> name
       _other -> to_string(role_id)
     end
   end

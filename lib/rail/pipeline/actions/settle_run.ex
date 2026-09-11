@@ -435,7 +435,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
           :qa_lead
 
         :qa_lead ->
-          case Roles.role_for_stage(task.project_id, :demo) do
+          case Roles.get_role(project_id: task.project_id, stage: :demo) do
             {:ok, _role} -> :demo
             _no_demo -> :ready_to_merge
           end
@@ -498,7 +498,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
           "Where you disagree with a finding, say why rather than silently leaving it.\n\n" <>
           findings <> carried
 
-      case Roles.role_for_stage(task.project_id, :engineer) do
+      case Roles.get_role(project_id: task.project_id, stage: :engineer) do
         {:ok, eng_role} ->
           update_or_create_engineer_pending_answer(task.id, eng_role.id, note)
 
@@ -552,8 +552,8 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   end
 
   defp resolve_role_name(role_id) do
-    case Repo.get(Role, role_id) do
-      %Role{name: name} when is_binary(name) and name != "" -> name
+    case Roles.get_role(id: role_id) do
+      {:ok, %Role{name: name}} when is_binary(name) and name != "" -> name
       _other -> to_string(role_id)
     end
   end
@@ -583,7 +583,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   end
 
   defp maybe_append_evidence_line_to_next_stage(task, next_stage, head_sha) do
-    case Roles.role_for_stage(task.project_id, next_stage) do
+    case Roles.get_role(project_id: task.project_id, stage: next_stage) do
       {:ok, next_role} ->
         stage_label =
           case task.stage do

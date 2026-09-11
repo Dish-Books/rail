@@ -562,26 +562,6 @@ defmodule Rail.Domain.FormattersTest do
     end
   end
 
-  describe "role_icon_for/1" do
-    test "maps known icon names and defaults to help_outline" do
-      assert Formatters.role_icon_for("code") == "pi-code"
-      assert Formatters.role_icon_for("bug_report") == "pi-bug"
-      assert Formatters.role_icon_for("verified") == "pi-seal-check-fill"
-      assert Formatters.role_icon_for("fact_check") == "pi-check-square-fill"
-      assert Formatters.role_icon_for("rate_review") == "pi-chat-text-fill"
-      assert Formatters.role_icon_for("alt_route") == "pi-arrows-split"
-      assert Formatters.role_icon_for("travel_explore") == "pi-globe-hemisphere-west"
-      assert Formatters.role_icon_for("assignment") == "pi-clipboard-text"
-      assert Formatters.role_icon_for("architecture") == "pi-compass-tool"
-      assert Formatters.role_icon_for("palette") == "pi-palette"
-      assert Formatters.role_icon_for("videocam") == "pi-video-camera-fill"
-      assert Formatters.role_icon_for("pi-terminal-window") == "pi-terminal-window"
-      assert Formatters.role_icon_for("terminal") == "pi-question"
-      assert Formatters.role_icon_for("unknown") == "pi-question"
-      assert Formatters.role_icon_for(nil) == "pi-question"
-    end
-  end
-
   describe "format_run_status/1" do
     test "formats atom and string statuses into lowerCamel" do
       assert Formatters.format_run_status(:running) == "running"

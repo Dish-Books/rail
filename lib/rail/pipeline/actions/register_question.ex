@@ -211,7 +211,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
   end
 
   defp resolve_default_role_id(%Task{project_id: project_id, stage: stage}) do
-    case Roles.role_for_stage(project_id, stage) do
+    case Roles.get_role(project_id: project_id, stage: stage) do
       {:ok, %Role{id: role_id}} -> role_id
       _other -> nil
     end

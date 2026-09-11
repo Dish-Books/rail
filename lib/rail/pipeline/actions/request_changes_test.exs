@@ -101,7 +101,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
     assert {:error, :empty_comment} = Pipeline.request_changes(task, nil)
   end
 
-  test "returns no_role_for_stage when target stage role is not configured", %{task: task, roles: roles} do
+  test "returns role_not_found when target stage role is not configured", %{task: task, roles: roles} do
     {:ok, _deleted} = Roles.delete_role(system_scope(), roles[:architect])
 
     {:ok, task} =
@@ -110,7 +110,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
         stage_state: :awaiting_approval
       })
 
-    assert {:error, {:no_role_for_stage, :architect}} =
+    assert {:error, :role_not_found} =
              Pipeline.request_changes(task, "Please rethink architecture")
   end
 

@@ -45,7 +45,7 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
 
     case Repo.get(Project, task.project_id) do
       %Project{} = project ->
-        case Roles.role_for_stage(project.id, stage) do
+        case Roles.get_role(project_id: project.id, stage: stage) do
           {:ok, %Role{} = role} ->
             execute_stage_run(task, project, role, stage, opts)
 
@@ -248,7 +248,7 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
 
     Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :dispatch_failed})
 
-    {:error, {:no_role_for_stage, stage}}
+    {:error, :role_not_found}
   end
 
   defp handle_worktree_failure(task, reason) do

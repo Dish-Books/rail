@@ -574,7 +574,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     view |> element("#approve-proposal-button") |> render_click()
     refute has_element?(view, "#improve-role-modal")
 
-    updated_role = Roles.get_role!(scope, role_id)
+    {:ok, updated_role} = Roles.get_role(id: role_id)
     assert updated_role.system_prompt == "Write clean, tested code"
   end
 

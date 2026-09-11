@@ -9,17 +9,7 @@ defmodule Rail.Roles do
   defdelegate canonical_stages(), to: Schemas.Role
   defdelegate list_roles(scope, project_id), to: Actions.ListRoles
 
-  @decorate can?(resource: :roles, action: :view)
-  defdelegate get_role(scope, id), to: Actions.GetRole
-
-  defdelegate get_role!(scope, id), to: Actions.GetRole
-  defdelegate role_for_stage(project_id, stage), to: Actions.RoleForStage
-
-  @decorate can?(resource: :roles, action: :view)
-  defdelegate role_for_stage(scope, project_id, stage), to: Actions.RoleForStage
-
-  defdelegate role_for_stage!(project_id, stage), to: Actions.RoleForStage
-  defdelegate role_for_stage!(scope, project_id, stage), to: Actions.RoleForStage
+  defdelegate get_role(by), to: Actions.GetRole
 
   @decorate can?(resource: :roles, action: :manage)
   defdelegate create_role(scope, project_or_id, attrs), to: Actions.CreateRole

@@ -6,6 +6,7 @@ defmodule Rail.Roles.Actions.RecentFinishedRuns do
 
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+  alias Rail.Roles.Actions.GetRole
   alias Rail.Roles.RoleRunRecord
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs.Schemas.RoleRun
@@ -39,9 +40,16 @@ defmodule Rail.Roles.Actions.RecentFinishedRuns do
       )
 
     role_runs = Repo.all(query)
-    role = Keyword.get(opts, :role) || Repo.get(Role, role_id)
+    role = Keyword.get(opts, :role) || fetch_role(role_id)
 
     collect_records(role_runs, [], limit, role, max_chars, head_chars, tail_chars, opts)
+  end
+
+  defp fetch_role(role_id) do
+    case GetRole.get_role(id: role_id) do
+      {:ok, %Role{} = role} -> role
+      {:error, :role_not_found} -> nil
+    end
   end
 
   defp collect_records([], acc, _limit, _role, _max_chars, _head_chars, _tail_chars, _opts) do

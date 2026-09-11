@@ -70,7 +70,7 @@ defmodule Rail.Pipeline.Actions.RequestChanges do
 
     if target_stage == :ready_to_merge do
       if target_stage in @stages_before_engineer do
-        {:error, {:no_role_for_stage, target_stage}}
+        {:error, :role_not_found}
       else
         Pipeline.send_back_to_engineer(scope, task, comment: comment)
       end
@@ -82,13 +82,9 @@ defmodule Rail.Pipeline.Actions.RequestChanges do
   defp resolve_and_apply_changes(%Task{} = task, target_stage, comment, opts) do
     stage_for_role = if task.is_rebasing, do: :engineer, else: target_stage
 
-    case Roles.role_for_stage(task.project_id, stage_for_role) do
-      {:ok, %Role{} = target_role} ->
-        formatted_comment = format_comment_for_stage(task, target_stage, comment, opts)
-        update_task_and_role_run(task, target_stage, target_role, formatted_comment, comment)
-
-      _no_role ->
-        {:error, {:no_role_for_stage, stage_for_role}}
+    with {:ok, %Role{} = target_role} <- Roles.get_role(project_id: task.project_id, stage: stage_for_role) do
+      formatted_comment = format_comment_for_stage(task, target_stage, comment, opts)
+      update_task_and_role_run(task, target_stage, target_role, formatted_comment, comment)
     end
   end
 

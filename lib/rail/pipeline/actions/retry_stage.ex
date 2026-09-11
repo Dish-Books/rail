@@ -53,12 +53,8 @@ defmodule Rail.Pipeline.Actions.RetryStage do
   defp do_retry_stage(%Task{} = task, opts) do
     stage_to_find = if task.is_rebasing, do: :engineer, else: task.stage
 
-    case Roles.role_for_stage(task.project_id, stage_to_find) do
-      {:ok, %Role{} = role} ->
-        execute_retry(task, role, opts)
-
-      _no_role ->
-        {:error, {:no_role_for_stage, stage_to_find}}
+    with {:ok, %Role{} = role} <- Roles.get_role(project_id: task.project_id, stage: stage_to_find) do
+      execute_retry(task, role, opts)
     end
   end
 

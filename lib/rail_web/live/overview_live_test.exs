@@ -1240,7 +1240,7 @@ defmodule RailWeb.OverviewLiveTest do
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13406.",
         stage: :engineer,
-        icon_name: nil
+        icon_name: "pi-code"
       })
 
     {:ok, %Role{id: r_arch_id}} =
@@ -1249,7 +1249,7 @@ defmodule RailWeb.OverviewLiveTest do
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13407.",
         stage: :architect,
-        icon_name: nil
+        icon_name: "pi-compass-tool"
       })
 
     {:ok, %Role{id: r_des_id}} =
@@ -1258,7 +1258,7 @@ defmodule RailWeb.OverviewLiveTest do
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13408.",
         stage: :design,
-        icon_name: nil
+        icon_name: "pi-palette"
       })
 
     {:ok, %Role{id: r_qa_id}} =
@@ -1267,7 +1267,7 @@ defmodule RailWeb.OverviewLiveTest do
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13409.",
         stage: :qa,
-        icon_name: nil
+        icon_name: "pi-flask"
       })
 
     {:ok, %Role{id: r_demo_id}} =
@@ -1276,7 +1276,7 @@ defmodule RailWeb.OverviewLiveTest do
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13410.",
         stage: :demo,
-        icon_name: nil
+        icon_name: "pi-video-camera"
       })
 
     {:ok, %Role{id: r_custom_id}} =
@@ -1294,7 +1294,7 @@ defmodule RailWeb.OverviewLiveTest do
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 13412.",
         stage: :product,
-        icon_name: nil
+        icon_name: "pi-clipboard-text"
       })
 
     LinearMock.mock_create_issue_success(%{

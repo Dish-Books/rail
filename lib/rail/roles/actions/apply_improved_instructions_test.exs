@@ -38,7 +38,7 @@ defmodule Rail.Roles.Actions.ApplyImprovedInstructionsTest do
     assert {:ok, %Role{system_prompt: ^new_instructions}} =
              Roles.apply_improved_instructions(scope, role, new_instructions)
 
-    assert {:ok, %Role{system_prompt: ^new_instructions}} = Roles.get_role(scope, role.id)
+    assert {:ok, %Role{system_prompt: ^new_instructions}} = Roles.get_role(id: role.id)
   end
 
   test "applies improved instructions with system scope", %{role: role} do

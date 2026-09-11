@@ -76,7 +76,7 @@ defmodule RailWeb.Components.ConversationTab do
                       "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600"
                   ]}
                 >
-                  <.icon name={Formatters.role_icon_for(role.icon_name)} class="h-4 w-4 shrink-0" />
+                  <.icon name={role.icon_name} class="h-4 w-4 shrink-0" />
                   <span>{role.name}</span>
                 </button>
               <% end %>
@@ -299,7 +299,7 @@ defmodule RailWeb.Components.ConversationTab do
           class="max-w-[720px] mr-auto p-3 rounded-tl-xl rounded-tr-xl rounded-br-xl rounded-bl-xs bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600/50 space-y-2 shadow-xs"
         >
           <div class="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-500">
-            <.icon name={Formatters.role_icon_for(@role.icon_name)} class="h-3.5 w-3.5 shrink-0" />
+            <.icon name={@role.icon_name} class="h-3.5 w-3.5 shrink-0" />
             <span>{@role.name}</span>
           </div>
           <div class="select-text prose dark:prose-invert max-w-none text-[13px] leading-relaxed">

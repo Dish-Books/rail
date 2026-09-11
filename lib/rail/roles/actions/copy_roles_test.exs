@@ -96,8 +96,8 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
     assert {:ok, [%Role{name: "New Copied Engineer", stage: :engineer}]} =
              Roles.copy_roles(scope, target, source.id)
 
-    assert {:ok, %Role{stage: nil}} = Roles.get_role(scope, old_target_role.id)
-    assert {:ok, %Role{name: "New Copied Engineer"}} = Roles.role_for_stage(target.id, :engineer)
+    assert {:ok, %Role{stage: nil}} = Roles.get_role(id: old_target_role.id)
+    assert {:ok, %Role{name: "New Copied Engineer"}} = Roles.get_role(project_id: target.id, stage: :engineer)
   end
 
   test "replaces all existing roles in target when replace_all: true", %{source: source, target: target} do

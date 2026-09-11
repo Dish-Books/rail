@@ -324,6 +324,6 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
         prompt: "Question prompt 7814?"
       })
 
-    assert {:error, {:no_role_for_stage, :engineer}} = Pipeline.answer_question(q_no_role, "Answer")
+    assert {:error, :role_not_found} = Pipeline.answer_question(q_no_role, "Answer")
   end
 end

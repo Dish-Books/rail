@@ -66,7 +66,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
   end
 
   defp do_send_back_to_engineer(%Task{} = task, opts) do
-    case Roles.role_for_stage(task.project_id, :engineer) do
+    case Roles.get_role(project_id: task.project_id, stage: :engineer) do
       {:ok, %Role{} = engineer_role} ->
         execute_send_back(task, engineer_role, opts)
 

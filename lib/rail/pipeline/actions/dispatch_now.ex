@@ -72,7 +72,7 @@ defmodule Rail.Pipeline.Actions.DispatchNow do
     stage_to_find = if task.is_rebasing, do: :engineer, else: task.stage
 
     with {:ok, project} <- fetch_project(task.project_id),
-         {:ok, role} <- fetch_role_for_stage(project.id, stage_to_find),
+         {:ok, role} <- Roles.get_role(project_id: project.id, stage: stage_to_find),
          :ok <- verify_available_slots(project.id, role) do
       dispatch_hook = Keyword.get(opts, :dispatch_hook, &default_dispatch_hook/2)
       dispatch_hook.(task, role)
@@ -100,13 +100,6 @@ defmodule Rail.Pipeline.Actions.DispatchNow do
     case Repo.get(Project, project_id) do
       %Project{} = project -> {:ok, project}
       nil -> {:error, :project_not_found}
-    end
-  end
-
-  defp fetch_role_for_stage(project_id, stage) do
-    case Roles.role_for_stage(project_id, stage) do
-      {:ok, %Role{} = role} -> {:ok, role}
-      _other -> {:error, {:no_role_for_stage, stage}}
     end
   end
 

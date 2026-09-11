@@ -32,7 +32,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
   """
   def start_product_task(%Issue{project: %Project{} = project} = issue, opts \\ []) do
     with {:ok, task} <- Pipeline.create_task(issue),
-         {:ok, %Role{} = role} <- product_role(project),
+         {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :product),
          {:ok, worktree_path} <- ensure_worktree(project, task, opts),
          {:ok, task} <- put_worktree_path(task, worktree_path),
          scratch_path = write_scratch(project, task, issue, opts),
@@ -41,15 +41,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     end
   end
 
-  defp product_role(%Project{id: project_id}) do
-    case Roles.role_for_stage(project_id, :product) do
-      {:ok, %Role{} = role} -> {:ok, role}
-      _no_role -> {:error, {:no_role_for_stage, :product}}
-    end
-  end
-
   # The worktree and the scratch ticket file
-
   defp ensure_worktree(%Project{} = project, %Task{} = task, opts) do
     base_branch = Keyword.get(opts, :base_branch) || project.default_branch || "main"
     name = task.worktree_name || task.id

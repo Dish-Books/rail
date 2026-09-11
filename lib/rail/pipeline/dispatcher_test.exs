@@ -354,7 +354,7 @@ defmodule Rail.Pipeline.DispatcherTest do
         stage_state: :queued
       })
 
-    assert {:error, {:no_role_for_stage, :product}} = Dispatcher.dispatch_now(pid, task)
+    assert {:error, :role_not_found} = Dispatcher.dispatch_now(pid, task)
   end
 
   test "dispatch_now returns error when no concurrency slots are available", %{
@@ -845,7 +845,7 @@ defmodule Rail.Pipeline.DispatcherTest do
 
     # The globally registered Dispatcher is shared with every other test, so the
     # enabled path runs against this test's own instance.
-    assert {:error, {:no_role_for_stage, :product}} =
+    assert {:error, :role_not_found} =
              GenServer.call(pid, {:dispatch_now, task, [dispatch_disabled: false]})
 
     assert {:error, :dispatcher_not_running} =
@@ -856,7 +856,7 @@ defmodule Rail.Pipeline.DispatcherTest do
     assert :ok = Dispatcher.cancel_retry_timer(:non_existent_dispatcher, task)
     assert Dispatcher.retry_timers(:non_existent_dispatcher) == %{}
 
-    assert {:error, {:no_role_for_stage, :product}} =
+    assert {:error, :role_not_found} =
              GenServer.call(pid, {:dispatch_now, task.id})
 
     assert :ok = Dispatcher.cancel_retry_timer(pid, 12_345)

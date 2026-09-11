@@ -361,37 +361,6 @@ defmodule Rail.Domain.Formatters do
   end
 
   @doc """
-  Maps a role icon name to a Material icon name per spec 05 §0.6 / §4.3:
-  A stored name that is already a Phosphor class passes through; the legacy Material
-  names map onto their Phosphor equivalent (`code` -> "pi-code", `bug_report` -> "pi-bug",
-  `verified` -> "pi-seal-check-fill", `fact_check` -> "pi-check-square-fill",
-  `rate_review` -> "pi-chat-text-fill", `alt_route` -> "pi-arrows-split",
-  `travel_explore` -> "pi-globe-hemisphere-west", `assignment` -> "pi-clipboard-text",
-  `architecture` -> "pi-compass-tool", `palette` -> "pi-palette",
-  `videocam` -> "pi-video-camera-fill"); anything else -> "pi-question".
-  """
-  def role_icon_for("pi-" <> _rest = icon_name), do: icon_name
-
-  def role_icon_for(icon_name) when is_binary(icon_name) do
-    case icon_name do
-      "code" -> "pi-code"
-      "bug_report" -> "pi-bug"
-      "verified" -> "pi-seal-check-fill"
-      "fact_check" -> "pi-check-square-fill"
-      "rate_review" -> "pi-chat-text-fill"
-      "alt_route" -> "pi-arrows-split"
-      "travel_explore" -> "pi-globe-hemisphere-west"
-      "assignment" -> "pi-clipboard-text"
-      "architecture" -> "pi-compass-tool"
-      "palette" -> "pi-palette"
-      "videocam" -> "pi-video-camera-fill"
-      _other -> "pi-question"
-    end
-  end
-
-  def role_icon_for(_other), do: "pi-question"
-
-  @doc """
   Formats a run status atom or string into lowerCamel per spec 05 §4.4:
   e.g. :running -> "running", :blocked_on_input -> "blockedOnInput", :completed -> "completed".
   """

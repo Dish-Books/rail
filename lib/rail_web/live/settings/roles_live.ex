@@ -194,8 +194,14 @@ defmodule RailWeb.Settings.RolesLive do
                 <div
                   class="flex items-center justify-center h-10 w-10 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono text-xs font-bold shrink-0 uppercase"
                   id={"stage-avatar-#{stage}"}
+                  data-qa={"stage-avatar-#{stage}"}
                 >
-                  {stage_initials(stage)}
+                  <.icon
+                    :if={bound_role}
+                    name={bound_role.icon_name}
+                    class="h-5 w-5"
+                  />
+                  <span :if={is_nil(bound_role)}>{stage_initials(stage)}</span>
                 </div>
 
                 <div class="min-w-0">

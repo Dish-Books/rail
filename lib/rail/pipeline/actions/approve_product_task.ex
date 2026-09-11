@@ -45,7 +45,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductTask do
   # A project with no design role has nothing to design with, so the task queues for the
   # architect stage the dispatcher already knows how to run.
   defp hand_off(%Task{} = task, opts) do
-    case Roles.role_for_stage(task.project_id, :design) do
+    case Roles.get_role(project_id: task.project_id, stage: :design) do
       {:ok, %Role{}} ->
         Pipeline.start_design_task(task, opts)
 

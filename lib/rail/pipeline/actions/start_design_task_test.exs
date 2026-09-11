@@ -81,7 +81,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
     assert content =~ "title: Attachments follow their source document"
   end
 
-  test "returns no_role_for_stage when the project has no design role", %{
+  test "returns role_not_found when the project has no design role", %{
     project: project,
     role: role,
     issue: issue
@@ -89,7 +89,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
     {:ok, _deleted} = Roles.delete_role(system_scope(), role)
     task = insert_task(project, issue)
 
-    assert {:error, {:no_role_for_stage, :design}} = Pipeline.start_design_task(task)
+    assert {:error, :role_not_found} = Pipeline.start_design_task(task)
 
     assert %Task{stage: :product} = Repo.get!(Task, task.id)
   end

@@ -163,7 +163,7 @@ defmodule Rail.Pipeline.Actions.DispatchNowTest do
              Pipeline.dispatch_now(task_with_bad_project, dispatch_disabled: false)
   end
 
-  test "returns no_role_for_stage when no role configured for stage", %{task: task, roles: roles} do
+  test "returns role_not_found when no role configured for stage", %{task: task, roles: roles} do
     {:ok, _deleted} = Roles.delete_role(system_scope(), roles[:design])
 
     {:ok, task} =
@@ -172,7 +172,7 @@ defmodule Rail.Pipeline.Actions.DispatchNowTest do
         stage_state: :queued
       })
 
-    assert {:error, {:no_role_for_stage, :design}} =
+    assert {:error, :role_not_found} =
              Pipeline.dispatch_now(task, dispatch_disabled: false)
   end
 

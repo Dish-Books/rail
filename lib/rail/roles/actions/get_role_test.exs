@@ -4,7 +4,6 @@ defmodule Rail.Roles.Actions.GetRoleTest do
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
-  alias Rail.Scope
 
   setup do
     scope = system_scope()
@@ -30,45 +29,20 @@ defmodule Rail.Roles.Actions.GetRoleTest do
     %{project: project, role: role}
   end
 
-  test "returns role for authenticated user", %{role: %Role{id: role_id} = role} do
-    scope = Scope.for_user(%{admin: false})
-
-    assert {:ok, %Role{id: ^role_id}} = Roles.get_role(scope, role.id)
+  test "returns role by id", %{role: %Role{id: role_id} = role} do
+    assert {:ok, %Role{id: ^role_id}} = Roles.get_role(id: role.id)
   end
 
-  test "returns role for system scope", %{role: %Role{id: role_id} = role} do
-    scope = Scope.for_system()
-
-    assert {:ok, %Role{id: ^role_id}} = Roles.get_role(scope, role.id)
+  test "returns role by other fields", %{project: project, role: %Role{id: role_id}} do
+    assert {:ok, %Role{id: ^role_id}} = Roles.get_role(project_id: project.id, stage: :engineer)
+    assert {:ok, %Role{id: ^role_id}} = Roles.get_role(name: "Engineer")
   end
 
-  test "returns not found error when role does not exist" do
-    scope = Scope.for_system()
-    assert {:error, :not_found} = Roles.get_role(scope, "rol_000000000000000000000000")
+  test "returns role_not_found when role does not exist" do
+    assert {:error, :role_not_found} = Roles.get_role(id: "rol_000000000000000000000000")
   end
 
-  test "returns not authorized error for nil or invalid scope", %{role: role} do
-    assert {:error, :not_authorized} = Roles.get_role(nil, role.id)
-    assert {:error, :not_authorized} = Roles.get_role(%Scope{user: nil, system: false}, role.id)
-  end
-
-  test "get_role! returns role for authenticated scope", %{role: %Role{id: role_id} = role} do
-    scope = Scope.for_system()
-
-    assert %Role{id: ^role_id} = Roles.get_role!(scope, role.id)
-  end
-
-  test "get_role! raises Ecto.NoResultsError when role does not exist" do
-    scope = Scope.for_system()
-
-    assert_raise Ecto.NoResultsError, fn ->
-      Roles.get_role!(scope, "rol_000000000000000000000000")
-    end
-  end
-
-  test "get_role! raises Ecto.NoResultsError when scope is unauthorized", %{role: role} do
-    assert_raise Ecto.NoResultsError, fn ->
-      Roles.get_role!(nil, role.id)
-    end
+  test "returns role_not_found when no role matches the criteria", %{project: project} do
+    assert {:error, :role_not_found} = Roles.get_role(project_id: project.id, stage: :design)
   end
 end

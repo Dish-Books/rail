@@ -34,7 +34,7 @@ defmodule Rail.Roles.Actions.DeleteRoleTest do
     scope = Scope.for_user(%{admin: true})
 
     assert {:ok, %Role{id: ^role_id}} = Roles.delete_role(scope, role)
-    assert Roles.get_role(scope, role.id) == {:error, :not_found}
+    assert Roles.get_role(id: role.id) == {:error, :role_not_found}
   end
 
   test "deletes role with system scope", %{role: %Role{id: role_id} = role} do
@@ -47,7 +47,7 @@ defmodule Rail.Roles.Actions.DeleteRoleTest do
     scope = Scope.for_user(%{admin: false})
 
     assert {:error, :not_authorized} = Roles.delete_role(scope, role)
-    assert {:ok, %Role{id: ^role_id}} = Roles.get_role(Scope.for_system(), role.id)
+    assert {:ok, %Role{id: ^role_id}} = Roles.get_role(id: role.id)
   end
 
   test "returns not authorized for nil scope", %{role: role} do

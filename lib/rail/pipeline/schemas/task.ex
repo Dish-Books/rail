@@ -305,7 +305,7 @@ defmodule Rail.Pipeline.Schemas.Task do
 
   def uses_design?(%__MODULE__{id: task_id, project_id: project_id}, _empty)
       when is_binary(task_id) and is_binary(project_id) do
-    case Rail.Roles.role_for_stage(project_id, :design) do
+    case Rail.Roles.get_role(project_id: project_id, stage: :design) do
       {:ok, %{id: designer_role_id}} ->
         Repo.exists?(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^designer_role_id)
 
@@ -321,7 +321,7 @@ defmodule Rail.Pipeline.Schemas.Task do
   defp designer_role_run?(%{role: %{stage: :design}}, _project_id), do: true
 
   defp designer_role_run?(%{role_id: role_id}, project_id) when is_binary(role_id) and is_binary(project_id) do
-    case Rail.Roles.role_for_stage(project_id, :design) do
+    case Rail.Roles.get_role(project_id: project_id, stage: :design) do
       {:ok, %{id: ^role_id}} -> true
       _other -> false
     end
