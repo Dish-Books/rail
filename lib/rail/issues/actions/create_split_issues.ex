@@ -24,12 +24,15 @@ defmodule Rail.Issues.Actions.CreateSplitIssues do
   end
 
   defp create_single_split_issue(token, project, ticket, triage_state_id) do
-    linear_attrs = %{
-      team_id: project.linear_team_id,
-      title: ticket.title,
-      description: ticket.description,
-      state_id: triage_state_id
-    }
+    linear_attrs =
+      %{
+        team_id: project.linear_team_id,
+        title: ticket.title,
+        description: ticket.description,
+        state_id: triage_state_id
+      }
+      |> put_if_set(:priority, ticket.priority)
+      |> put_if_set(:estimate, ticket.estimate)
 
     case Linear.create_issue(token, linear_attrs) do
       {:ok, linear_issue} ->
@@ -46,6 +49,8 @@ defmodule Rail.Issues.Actions.CreateSplitIssues do
       identifier: linear_issue.identifier,
       title: linear_issue.title,
       description: linear_issue.description,
+      priority: linear_issue.priority || :medium,
+      estimate: linear_issue.estimate,
       state: :triage,
       state_name: (linear_issue.state && linear_issue.state.name) || "Triage",
       branch_name: linear_issue.branch_name,
@@ -78,6 +83,9 @@ defmodule Rail.Issues.Actions.CreateSplitIssues do
   defp normalize_tickets(tickets) when is_map(tickets) do
     TicketBody.parse_splits(tickets)
   end
+
+  defp put_if_set(attrs, _key, nil), do: attrs
+  defp put_if_set(attrs, key, value), do: Map.put(attrs, key, value)
 
   defp parse_datetime(nil), do: nil
 

@@ -8,8 +8,11 @@ defmodule Rail.Pipeline do
   alias Rail.Pipeline.Dispatcher
   alias Rail.Pipeline.Queue
 
-  defdelegate bring_local(scope, issue), to: Actions.BringLocal
-  defdelegate bring_local(scope, issue, owner_user), to: Actions.BringLocal
+  defdelegate start_product_task(issue, opts \\ []), to: Actions.StartProductTask
+  defdelegate approve_product_task(task, opts \\ []), to: Actions.ApproveProductTask
+  defdelegate start_design_task(task, opts \\ []), to: Actions.StartDesignTask
+
+  defdelegate create_task(issue), to: Actions.CreateTask
   defdelegate list_tasks(scope, project_id), to: Actions.ListTasks
   defdelegate list_tasks(scope, project_id, opts), to: Actions.ListTasks
   defdelegate update_task(scope, task_or_id, attrs), to: Actions.UpdateTask
@@ -30,6 +33,7 @@ defmodule Rail.Pipeline do
   defdelegate retry_timers(), to: Dispatcher
   defdelegate rearm_pending_retries(), to: Dispatcher
   defdelegate start_stage_run(task, opts \\ []), to: Actions.StartStageRun
+
   defdelegate settle_run(task, role_run, run_or_outcome \\ %{}, opts \\ []), to: Actions.SettleRun
   defdelegate approve_stage(scope, task_or_id, opts), to: Actions.ApproveStage
   defdelegate approve_stage(scope_or_task, task_or_opts), to: Actions.ApproveStage

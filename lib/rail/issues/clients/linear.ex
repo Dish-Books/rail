@@ -3,6 +3,8 @@ defmodule Rail.Issues.Clients.Linear do
   GraphQL and HTTP client for Linear issues, comments, workflow states, and uploads.
   """
 
+  alias Rail.Domain.TicketBody
+
   @default_graphql_url "https://api.linear.app/graphql"
 
   def config do
@@ -35,6 +37,11 @@ defmodule Rail.Issues.Clients.Linear do
             identifier
             title
             description
+            priority
+            estimate
+            assignee {
+              id
+            }
             state {
               id
               name
@@ -77,6 +84,11 @@ defmodule Rail.Issues.Clients.Linear do
         identifier
         title
         description
+        priority
+        estimate
+        assignee {
+          id
+        }
         state {
           id
           name
@@ -111,6 +123,11 @@ defmodule Rail.Issues.Clients.Linear do
           identifier
           title
           description
+          priority
+          estimate
+          assignee {
+            id
+          }
           state {
             id
             name
@@ -131,6 +148,8 @@ defmodule Rail.Issues.Clients.Linear do
       |> put_if_present("title", get_attr(attrs, [:title, "title"]))
       |> put_if_present("description", get_attr(attrs, [:description, "description"]))
       |> put_if_present("stateId", get_attr(attrs, [:state_id, "state_id", :stateId, "stateId"]))
+      |> put_if_present("priority", linear_priority(get_attr(attrs, [:priority, "priority"])))
+      |> put_if_present("estimate", get_attr(attrs, [:estimate, "estimate"]))
 
     with {:ok, %{"issueCreate" => result}} <- execute_query(token, query, %{"input" => input}, opts) do
       if result["success"] do
@@ -151,6 +170,11 @@ defmodule Rail.Issues.Clients.Linear do
           identifier
           title
           description
+          priority
+          estimate
+          assignee {
+            id
+          }
           state {
             id
             name
@@ -170,6 +194,8 @@ defmodule Rail.Issues.Clients.Linear do
       |> put_if_present("title", get_attr(attrs, [:title, "title"]))
       |> put_if_present("description", get_attr(attrs, [:description, "description"]))
       |> put_if_present("stateId", get_attr(attrs, [:state_id, "state_id", :stateId, "stateId"]))
+      |> put_if_present("priority", linear_priority(get_attr(attrs, [:priority, "priority"])))
+      |> put_if_present("estimate", get_attr(attrs, [:estimate, "estimate"]))
 
     with {:ok, %{"issueUpdate" => result}} <-
            execute_query(token, query, %{"id" => issue_id, "input" => input}, opts) do
@@ -372,6 +398,9 @@ defmodule Rail.Issues.Clients.Linear do
       identifier: node["identifier"],
       title: node["title"],
       description: node["description"],
+      priority: rail_priority(node["priority"]),
+      estimate: node["estimate"],
+      assignee_id: get_in(node, ["assignee", "id"]),
       state: format_issue_state(node["state"]),
       branch_name: node["branchName"],
       url: node["url"],
@@ -403,6 +432,21 @@ defmodule Rail.Issues.Clients.Linear do
 
   defp put_if_present(map, _key, nil), do: map
   defp put_if_present(map, key, value), do: Map.put(map, key, value)
+
+  @linear_priorities %{urgent: 1, high: 2, medium: 3, low: 4}
+
+  defp linear_priority(nil), do: nil
+  defp linear_priority(priority) when is_atom(priority), do: Map.get(@linear_priorities, priority)
+  defp linear_priority(priority) when is_integer(priority) and priority in 0..4, do: priority
+
+  defp linear_priority(priority) when is_binary(priority) do
+    linear_priority(TicketBody.cast_priority(priority))
+  end
+
+  defp linear_priority(_other), do: nil
+
+  defp rail_priority(number) when is_integer(number), do: TicketBody.cast_priority(number)
+  defp rail_priority(_other), do: nil
 
   defp format_iso_time(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
   defp format_iso_time(str) when is_binary(str), do: str

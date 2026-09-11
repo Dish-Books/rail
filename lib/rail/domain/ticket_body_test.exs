@@ -38,13 +38,71 @@ defmodule Rail.Domain.TicketBodyTest do
     assert ticket.description == "Just a raw prompt without title heading."
   end
 
-  test "format/2 and format/1 serializes to markdown" do
-    assert TicketBody.format("Fix bug", "Details go here.") == "# Fix bug\n\nDetails go here."
-    assert TicketBody.format("Fix bug", "") == "# Fix bug"
-    assert TicketBody.format("Fix bug", nil) == "# Fix bug"
+  test "format/2 and format/1 serializes to front matter" do
+    assert TicketBody.format("Fix bug", "Details go here.") == "---\ntitle: Fix bug\n---\n\nDetails go here.\n"
+    assert TicketBody.format("Fix bug", "") == "---\ntitle: Fix bug\n---\n"
+    assert TicketBody.format("Fix bug", nil) == "---\ntitle: Fix bug\n---\n"
 
-    ticket = %TicketBody{title: "Fix bug", description: "Details go here."}
-    assert TicketBody.format(ticket) == "# Fix bug\n\nDetails go here."
+    ticket = %TicketBody{title: "Fix bug", description: "Details go here.", priority: :high, estimate: 3}
+
+    assert TicketBody.format(ticket) ==
+             "---\ntitle: Fix bug\npriority: high\nestimate: 3\n---\n\nDetails go here.\n"
+  end
+
+  test "format/1 round-trips through parse/1" do
+    ticket = %TicketBody{title: "Fix bug", description: "## Desired outcome\n\nIt works.", priority: :urgent, estimate: 2}
+
+    assert ticket |> TicketBody.format() |> TicketBody.parse() == ticket
+  end
+
+  test "parse/1 reads title, priority and estimate from front matter" do
+    content = """
+    ---
+    title: Journal Entry shows attachments
+    priority: high
+    estimate: 3
+    ---
+    The problem paragraph.
+
+    ## Desired outcome
+
+    It works.
+    """
+
+    ticket = TicketBody.parse(content)
+
+    assert ticket.title == "Journal Entry shows attachments"
+    assert ticket.priority == :high
+    assert ticket.estimate == 3
+    assert ticket.description == "The problem paragraph.\n\n## Desired outcome\n\nIt works."
+  end
+
+  test "parse/1 accepts the numeric priority labels and quoted titles" do
+    content = "---\ntitle: \"Fix: the thing\"\npriority: 1\nestimate: 5\n---\nBody."
+
+    ticket = TicketBody.parse(content)
+
+    assert ticket.title == "Fix: the thing"
+    assert ticket.priority == :urgent
+    assert ticket.estimate == 5
+  end
+
+  test "parse/1 leaves priority and estimate unset when front matter omits or mangles them" do
+    content = "---\ntitle: Fix bug\npriority: whenever\nestimate: soon\n---\nBody."
+
+    ticket = TicketBody.parse(content)
+
+    assert ticket.title == "Fix bug"
+    assert is_nil(ticket.priority)
+    assert is_nil(ticket.estimate)
+  end
+
+  test "parse/1 falls back to the heading form when there is no front matter" do
+    ticket = TicketBody.parse("# Fix bug\n\nDetails go here.")
+
+    assert ticket.title == "Fix bug"
+    assert ticket.description == "Details go here."
+    assert is_nil(ticket.priority)
   end
 
   test "split/1 returns original body as ticket and nil plan when no plan heading exists" do

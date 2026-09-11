@@ -68,7 +68,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
         default_scratch_path(task.project_id, task.id)
 
     {:ok, task} =
-      if task.stage in [:design, :demo, :qa] do
+      if task.stage in [:product, :design, :demo, :qa] do
         {:ok, task}
       else
         capture(task.stage, task, scratch_dir)
@@ -148,21 +148,16 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     {attrs, role_run}
   end
 
-  defp handle_clean_exit(%Task{stage: :product} = task, role_run, _scratch_dir, _opts) do
+  # The product run's ticket stays in scratch until a human approves it: nothing is
+  # captured here, and `approve_product_task/2` is what publishes it and moves on.
+  defp handle_clean_exit(%Task{stage: :product}, role_run, _scratch_dir, _opts) do
     {:ok, role_run} =
       role_run
       |> RoleRun.changeset(%{auto_retries: 0})
       |> Repo.update()
 
-    target_stage =
-      case Roles.role_for_stage(task.project_id, :design) do
-        {:ok, _role} -> :design
-        _no_designer -> :architect
-      end
-
     attrs = %{
-      stage: target_stage,
-      stage_state: :queued,
+      stage_state: :awaiting_approval,
       retry_after: nil,
       error: nil
     }

@@ -26,7 +26,8 @@ defmodule Rail.Issues.Actions.GetIssue do
   defp do_get_issue(id) when is_binary(id) do
     query =
       from i in Issue,
-        where: i.id == ^id or i.external_id == ^id
+        where: i.id == ^id or i.external_id == ^id,
+        preload: [:project]
 
     case Repo.one(query) do
       %Issue{} = issue -> {:ok, issue}

@@ -18,13 +18,18 @@ defmodule Rail.Domain.TicketBody do
   @heading_pattern ~r/^##\s+/
   @split_filename_pattern ~r/^split-(\d+)\.md$/
 
+  @priorities [:urgent, :high, :medium, :low]
+  @priority_numbers %{1 => :urgent, 2 => :high, 3 => :medium, 4 => :low}
+
   @primary_key false
   embedded_schema do
     field :title, :string, default: ""
     field :description, :string, default: ""
+    field :priority, Ecto.Enum, values: @priorities
+    field :estimate, :integer
   end
 
-  @fields [:title, :description]
+  @fields [:title, :description, :priority, :estimate]
 
   @doc "Builds a changeset for a ticket body."
   def changeset(ticket_body, attrs) do
@@ -36,56 +41,86 @@ defmodule Rail.Domain.TicketBody do
   @doc """
   Parses a ticket specification markdown string into a `TicketBody` struct.
 
-  Extracts the title from the first line starting with `# ` (trimmed).
-  The description is everything after the title line, with leading/trailing whitespace trimmed.
+  The canonical form is a `---` delimited front matter block carrying `title`, and
+  optionally `priority` and `estimate`, with everything below it as the description:
+
+      ---
+      title: Journal Entry shows its source document's attachments
+      priority: high
+      estimate: 3
+      ---
+      The problem paragraph...
+
+  Falls back to the legacy form, where the title is the first line starting with `# `
+  and the description is everything after it.
   """
   def parse(nil), do: %__MODULE__{title: "", description: ""}
 
   def parse(content) when is_binary(content) do
     normalized = String.replace(content, "\r\n", "\n")
-    lines = String.split(normalized, "\n")
 
-    case Enum.find_index(lines, &String.starts_with?(String.trim_leading(&1), "# ")) do
-      index when is_integer(index) ->
-        title_line = Enum.at(lines, index)
-        title = title_line |> String.trim_leading() |> String.replace_prefix("# ", "") |> String.trim()
-
-        description =
-          lines
-          |> Enum.drop(index + 1)
-          |> Enum.join("\n")
-          |> String.trim()
-
-        %__MODULE__{
-          title: title,
-          description: description
-        }
-
-      nil ->
-        %__MODULE__{
-          title: "",
-          description: String.trim(content)
-        }
+    case split_front_matter(normalized) do
+      {:ok, fields, body} -> from_front_matter(fields, body)
+      :none -> parse_heading_form(normalized)
     end
   end
 
   @doc """
-  Serializes a `TicketBody` or `(title, description)` tuple to markdown:
-  `# <Title>\n\n<Description>`.
+  Casts a front matter priority value to one of `#{inspect(@priorities)}`, or `nil`.
+
+  Accepts the Linear names (`urgent`, `high`, `medium`, `low`, case insensitive) and the
+  numbers they are labeled with in the product role's table (`1` urgent through `4` low).
   """
-  def format(%__MODULE__{title: title, description: description}) do
-    format(title, description)
+  def cast_priority(nil), do: nil
+  def cast_priority(priority) when priority in @priorities, do: priority
+  def cast_priority(number) when is_integer(number), do: Map.get(@priority_numbers, number)
+
+  def cast_priority(value) when is_binary(value) do
+    normalized = value |> String.trim() |> String.downcase()
+
+    case Integer.parse(normalized) do
+      {number, ""} -> cast_priority(number)
+      _not_a_number -> Enum.find(@priorities, &(Atom.to_string(&1) == normalized))
+    end
+  end
+
+  def cast_priority(_other), do: nil
+
+  @doc """
+  Casts a front matter estimate to a non-negative integer, or `nil`.
+  """
+  def cast_estimate(nil), do: nil
+  def cast_estimate(estimate) when is_integer(estimate) and estimate >= 0, do: estimate
+
+  def cast_estimate(value) when is_binary(value) do
+    case value |> String.trim() |> Integer.parse() do
+      {number, ""} when number >= 0 -> number
+      _other -> nil
+    end
+  end
+
+  def cast_estimate(_other), do: nil
+
+  @doc """
+  Serializes a `TicketBody` to the front matter form `parse/1` reads back.
+  """
+  def format(%__MODULE__{} = ticket) do
+    fields =
+      [
+        {"title", String.trim(ticket.title || "")},
+        {"priority", ticket.priority && Atom.to_string(ticket.priority)},
+        {"estimate", ticket.estimate && Integer.to_string(ticket.estimate)}
+      ]
+      |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
+      |> Enum.map_join("\n", fn {key, value} -> "#{key}: #{value}" end)
+
+    description = if is_binary(ticket.description), do: String.trim(ticket.description), else: ""
+
+    String.trim_trailing("---\n#{fields}\n---\n\n#{description}") <> "\n"
   end
 
   def format(title, description) when is_binary(title) do
-    trimmed_title = String.trim(title)
-    trimmed_desc = if is_binary(description), do: String.trim(description), else: ""
-
-    if trimmed_desc == "" do
-      "# #{trimmed_title}"
-    else
-      "# #{trimmed_title}\n\n#{trimmed_desc}"
-    end
+    format(%__MODULE__{title: title, description: description})
   end
 
   @doc """
@@ -236,6 +271,88 @@ defmodule Rail.Domain.TicketBody do
   end
 
   def parse_manifest(_other), do: []
+
+  defp parse_heading_form(content) do
+    lines = String.split(content, "\n")
+
+    case Enum.find_index(lines, &String.starts_with?(String.trim_leading(&1), "# ")) do
+      index when is_integer(index) ->
+        title_line = Enum.at(lines, index)
+        title = title_line |> String.trim_leading() |> String.replace_prefix("# ", "") |> String.trim()
+
+        description =
+          lines
+          |> Enum.drop(index + 1)
+          |> Enum.join("\n")
+          |> String.trim()
+
+        %__MODULE__{
+          title: title,
+          description: description
+        }
+
+      nil ->
+        %__MODULE__{
+          title: "",
+          description: String.trim(content)
+        }
+    end
+  end
+
+  defp split_front_matter(content) do
+    case String.split(content, "\n") do
+      ["---" | rest] ->
+        case Enum.find_index(rest, &(String.trim_trailing(&1) == "---")) do
+          index when is_integer(index) ->
+            {field_lines, body_lines} = Enum.split(rest, index)
+            body = body_lines |> Enum.drop(1) |> Enum.join("\n")
+            {:ok, parse_front_matter_fields(field_lines), body}
+
+          nil ->
+            :none
+        end
+
+      _no_delimiter ->
+        :none
+    end
+  end
+
+  defp parse_front_matter_fields(lines) do
+    Map.new(lines, fn line ->
+      case String.split(line, ":", parts: 2) do
+        [key, value] -> {key |> String.trim() |> String.downcase(), unquote_value(value)}
+        [key] -> {key |> String.trim() |> String.downcase(), ""}
+      end
+    end)
+  end
+
+  defp unquote_value(value) do
+    trimmed = String.trim(value)
+
+    cond do
+      String.starts_with?(trimmed, "\"") and String.ends_with?(trimmed, "\"") and String.length(trimmed) > 1 ->
+        trimmed |> String.slice(1..-2//1) |> String.trim()
+
+      String.starts_with?(trimmed, "'") and String.ends_with?(trimmed, "'") and String.length(trimmed) > 1 ->
+        trimmed |> String.slice(1..-2//1) |> String.trim()
+
+      true ->
+        trimmed
+    end
+  end
+
+  defp from_front_matter(fields, body) do
+    base =
+      case Map.get(fields, "title") do
+        title when is_binary(title) and title != "" ->
+          %__MODULE__{title: title, description: String.trim(body)}
+
+        _missing ->
+          parse_heading_form(body)
+      end
+
+    %{base | priority: cast_priority(Map.get(fields, "priority")), estimate: cast_estimate(Map.get(fields, "estimate"))}
+  end
 
   defp find_plan_heading_index([], _idx, _in_fence), do: nil
 

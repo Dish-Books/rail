@@ -21,86 +21,13 @@ defmodule Rail.Pipeline.Utils.Briefs do
   end
 
   @doc """
-  Stage brief for the Product role.
-  """
-  def product_brief(opts \\ []) do
-    ticket_section = ticket_write_brief(opts)
-
-    String.trim("""
-    Turn this backlog idea into a ticket the Architect can plan from.
-
-    Verify what it claims against the code before you write anything, and cover what comparable products do in this area where the call is a product one. Write the ticket, then put it on the issue with the commands below. Leave `## Implementation plan` to the Architect.
-
-    #{ticket_section}
-    Findings, competitor comparisons and assumptions are your report to the human, and stay in this conversation - never in the issue body.
-
-    A human reviews your ticket before anything is planned, and may send it back to you with comments on this same conversation. When that happens, edit the issue again. Stop once the ticket is written.
-
-    The raw ask follows; quote it verbatim as the ticket's source, never reword it.
-    """)
-  end
-
-  @doc """
-  How a role that owns the ticket puts its work where Rail will find it.
-  """
-  def ticket_write_brief(opts \\ []) do
-    identifier =
-      get_opt(opts, :identifier) ||
-        get_opt(opts, :issue_identifier) ||
-        get_opt(opts, :issue_number)
-
-    if is_nil(identifier) or identifier == "" do
-      "This task has no Linear issue, so there is nowhere to write the ticket. Report that and stop: a target repository has to be set in Rail Settings before this stage can produce anything.\n"
-    else
-      file = "$RAIL_SCRATCH/tickets/#{identifier}.md"
-
-      String.trim_trailing("""
-      The ticket is Linear issue #{identifier}, and its body IS the ticket. Nothing you write in this reply reaches it - Rail captures it from #{file} and updates the issue when your run completes cleanly.
-
-      From your worktree, with the heredoc body and its closing TICKET line at column zero:
-
-      mkdir -p $RAIL_SCRATCH/tickets
-      cat > #{file} <<'TICKET'
-      # <the ticket title>
-
-      <the whole ticket body, starting at the problem paragraph>
-      TICKET
-
-      Rules for that write:
-      - A heredoc into #{file}, never an inline string. A ticket is markdown full of quotes, backticks and blank lines, and only a file carries it cleanly.
-      - The file replaces the ticket body: `# <the ticket title>` must be on the very first line, followed by the complete body with every section the finished ticket should have.
-      - Rail reads #{file} and updates Linear when your run completes cleanly. Do not run `gh issue edit` or any issue editing commands yourself.
-      - An ask you split out is a new issue of its own, never a second ticket inside this one:
-
-      mkdir -p $RAIL_SCRATCH/tickets
-      cat > $RAIL_SCRATCH/tickets/split-1.md <<'TICKET'
-      # <title>
-
-      <the split ticket body>
-      TICKET
-
-      Name any issue you opened in your report.
-      """) <> "\n"
-    end
-  end
-
-  @doc """
   Stage brief for the Design role.
   """
   def design_brief(_opts \\ []) do
     String.trim("""
-    Explore and produce design directions for the ticket below.
+    Rail reads your design directions from $RAIL_SCRATCH/design/. Save a still screenshot of each direction there, and never edit application code on this stage.
 
-    Invoke the `design` skill by name to explore and generate design directions. Produce exactly three distinct design directions on a single published canvas.
-
-    You are designing the user interface, not implementing it: do NOT edit or touch any application code under lib/, test/, or anywhere in the repository.
-
-    Take a still screenshot of each direction and save them under `$RAIL_SCRATCH/design/`. Use headless Chrome:
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --screenshot=$RAIL_SCRATCH/design/<still>.png --window-size=1280,800 <url>
-    or wkhtmltoimage as fallback:
-    wkhtmltoimage --width 1280 <url> $RAIL_SCRATCH/design/<still>.png
-
-    Write the manifest to `$RAIL_SCRATCH/design/manifest.json` with this shape:
+    Write the manifest to $RAIL_SCRATCH/design/manifest.json with this shape:
     {
       "canvasUrl": "<absolute https URL to the published canvas>",
       "version": 1,
@@ -114,8 +41,6 @@ defmodule Rail.Pipeline.Utils.Briefs do
       ],
       "pickedKey": null
     }
-
-    A human reviews the design directions and picks one before anything is planned. Stop once the design is published, the stills are captured, and the manifest is written.
     """)
   end
 
@@ -128,12 +53,8 @@ defmodule Rail.Pipeline.Utils.Briefs do
     plan_section = plan_write_brief(opts)
 
     String.trim("""
-    Plan the implementation of the ticket below.
-
-    #{design_prefix}Write the implementation plan to the plan file below, keeping the ticket's acceptance criteria as your contract. Stop at the plan - you do not write the code.
-
-    #{plan_section}
-    A human reviews your plan before any code is written, and may send it back to you with comments on this same conversation. When that happens, write the plan file again.
+    #{design_prefix}#{plan_section}
+    Review comments come back as further turns of this same conversation. When that happens, write the plan file again.
     """)
   end
 
@@ -141,44 +62,24 @@ defmodule Rail.Pipeline.Utils.Briefs do
   How the Architect writes its implementation plan into scratch.
   """
   def plan_write_brief(opts \\ []) do
-    identifier =
-      get_opt(opts, :identifier) ||
-        get_opt(opts, :issue_identifier) ||
-        get_opt(opts, :issue_number)
+    file = "$RAIL_SCRATCH/plans/#{resolve_identifier(opts)}.md"
 
-    if is_nil(identifier) or identifier == "" do
-      "This task has no Linear issue, so there is nowhere to write the plan. Report that and stop: a target repository has to be set in Rail Settings before this stage can produce anything.\n"
-    else
-      file = "$RAIL_SCRATCH/plans/#{identifier}.md"
+    String.trim("""
+    The plan is the file #{file}. Rail captures it when your run completes cleanly. The ticket itself is not yours to write.
 
-      String.trim_trailing("""
-      The plan is Rail's local working document, stored beside the task rather than on Linear. The issue body is the ticket and is not yours to edit.
+    Write it from your worktree with a heredoc, the body and its closing PLAN line at column zero:
 
-      From your worktree, with the heredoc body and its closing PLAN line at column zero:
+    mkdir -p $RAIL_SCRATCH/plans
+    cat > #{file} <<'PLAN'
+    ## Implementation plan
 
-      mkdir -p $RAIL_SCRATCH/plans
-      cat > #{file} <<'PLAN'
-      ## Implementation plan
+    <the implementation plan>
+    PLAN
 
-      <the implementation plan: Approach, File-level changes, Slices, Risks, Decisions for review>
-      PLAN
-
-      Rules for that write:
-      - The issue body is the ticket and is not yours to edit.
-      - A heredoc into #{file}, never an inline string. The plan is markdown full of quotes, backticks and blank lines, and Rail captures it from this file when your run completes cleanly.
-      - Keep the `## Implementation plan` heading at the top of the plan.
-      - An ask you split out is a new issue of its own, never a second ticket inside this one:
-
-      mkdir -p $RAIL_SCRATCH/tickets
-      cat > $RAIL_SCRATCH/tickets/split-1.md <<'TICKET'
-      # <title>
-
-      <the split ticket body>
-      TICKET
-
-      Name any issue you opened in your report.
-      """) <> "\n"
-    end
+    - A heredoc into #{file}, never an inline string.
+    - Keep the `## Implementation plan` heading on the first line.
+    - A ticket you split out is its own file, $RAIL_SCRATCH/tickets/split-<n>.md, with `---` front matter carrying its `title`. Rail opens each one as a new ticket.
+    """)
   end
 
   @doc """
@@ -197,12 +98,11 @@ defmodule Rail.Pipeline.Utils.Briefs do
         still_path = get_field(direction, :still_path) || ""
 
         String.trim("""
-        An approved design direction has been published for this ticket:
+        The approved design direction for this ticket:
         - Title: #{title}
         - Notes: #{notes}
         - Canvas URL: #{canvas_url}
         - Still screenshot: #{still_path}
-        Plan the implementation to match this design.
         """)
 
       nil ->
@@ -221,7 +121,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
     String.trim("""
     The human picked direction "#{title}" (key: "#{key}").
 
-    Narrow the published canvas to this single direction so the other directions no longer appear. Re-shoot the still for this direction under $RAIL_SCRATCH/design/ using a versioned filename reflecting this update (e.g. #{key}-v2.png). Update $RAIL_SCRATCH/design/manifest.json with an incremented version, the same canvasUrl, and this picked direction as the only direction in `directions`, with `pickedKey` set to "#{key}", and record the updated stillPath and notes.
+    Re-shoot its still under $RAIL_SCRATCH/design/ with a new versioned filename (e.g. #{key}-v2.png), and rewrite $RAIL_SCRATCH/design/manifest.json with an incremented `version`, the same `canvasUrl`, `pickedKey` set to "#{key}", and this direction as the only entry in `directions`, carrying the updated `stillPath` and `notes`.
     """)
   end
 
@@ -243,7 +143,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
 
     #{comment}
 
-    Revise the design on the canvas to incorporate this feedback. Re-shoot the still under $RAIL_SCRATCH/design/ using a versioned filename reflecting this update (e.g. <key>-v<version>.png). Update $RAIL_SCRATCH/design/manifest.json with an incremented version, keeping the same canvasUrl, and record the updated stillPath and notes for this direction.
+    Re-shoot the still under $RAIL_SCRATCH/design/ with a new versioned filename (e.g. <key>-v<version>.png), and rewrite $RAIL_SCRATCH/design/manifest.json with an incremented `version`, the same `canvasUrl`, and the updated `stillPath` and `notes` for this direction.
     """)
   end
 
@@ -252,11 +152,9 @@ defmodule Rail.Pipeline.Utils.Briefs do
   """
   def engineer_brief(_opts \\ []) do
     String.trim("""
-    Implement the ticket and plan below, then open a draft pull request.
+    Never commit anything under $RAIL_SCRATCH into the pull request.
 
-    Do not commit scratch files under $RAIL_SCRATCH/plans/ (or any scratch dir) into the pull request.
-
-    Review comments, reviewer findings and QA findings on that pull request come back to you as further turns of this same conversation, so keep your worktree as you left it.
+    Review comments, reviewer findings and QA findings come back as further turns of this same conversation, so keep your worktree as you left it.
     """)
   end
 
@@ -275,11 +173,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
       end
 
     String.trim("""
-    Review the implementation of the ticket below.
-
-    #{branch_line}You are read-only: report what you find, do not fix it.
-
-    Your last line is your verdict, exactly `VERDICT: APPROVED` or `VERDICT: CHANGES REQUESTED`, and it is read by the pipeline rather than by a human: CHANGES REQUESTED sends your findings straight back to the engineer and the change comes back to you when they are addressed, APPROVED hands it to QA. Do not approve a change with a blocker or high finding on it just to keep it moving; do not request changes over nits alone.
+    #{branch_line}Rail reads your last line as your verdict, exactly `VERDICT: APPROVED` or `VERDICT: CHANGES REQUESTED`. CHANGES REQUESTED sends your findings back to the engineer and returns the change to you once they are addressed; APPROVED hands it to QA.
     """)
   end
 
@@ -297,13 +191,9 @@ defmodule Rail.Pipeline.Utils.Briefs do
       end
 
     String.trim("""
-    QA the implementation of the ticket below by driving the running app.
+    #{branch_line}Write your evidence to $RAIL_SCRATCH/qa/ with a manifest.json, and leave the app running with its VM service URL recorded there so the QA Lead can attach to it.
 
-    #{branch_line}Exercise what the ticket asked for and report what a user would actually see.
-
-    Leave every check provable: write your evidence to $RAIL_SCRATCH/qa/ with a manifest.json the QA Lead reads, and leave the app running with its VM service URL recorded there so the lead can attach rather than start over.
-
-    Your last line is your verdict, exactly `VERDICT: PASS` or `VERDICT: FAIL`, and it is read by the pipeline rather than by a human: FAIL sends your findings straight back to the engineer, PASS hands your evidence to the QA Lead, who grades it and can still fail the change. Fail it for any blocker or major finding this change caused; nits and pre-existing problems are reported, not failed on.
+    Rail reads your last line as your verdict, exactly `VERDICT: PASS` or `VERDICT: FAIL`. FAIL sends your findings back to the engineer; PASS hands your evidence to the QA Lead.
     """)
   end
 
@@ -321,11 +211,9 @@ defmodule Rail.Pipeline.Utils.Briefs do
       end
 
     String.trim("""
-    Grade the QA pass on the ticket below.
+    #{branch_line}The QA engineer's report is above and its evidence is in $RAIL_SCRATCH/qa/, with the running app reachable at the VM service URL recorded there.
 
-    #{branch_line}The QA engineer's report is above and its evidence is in $RAIL_SCRATCH/qa/. You are not re-running its checklist: you are asking what it missed, which green rows its artifacts do not actually support, and whether the riskiest ground got covered at all - and you have the running app to settle any of that yourself.
-
-    Your last line is your verdict, exactly `VERDICT: PASS` or `VERDICT: FAIL`, and it is read by the pipeline rather than by a human: FAIL sends your findings and QA's straight back to the engineer, PASS leaves the change ready to merge.
+    Rail reads your last line as your verdict, exactly `VERDICT: PASS` or `VERDICT: FAIL`. FAIL sends your findings and QA's back to the engineer; PASS leaves the change ready to merge.
     """)
   end
 
@@ -345,16 +233,12 @@ defmodule Rail.Pipeline.Utils.Briefs do
       end
 
     String.trim("""
-    Record a demo of the ticket below working by driving the app on camera.
-
-    You are recording evidence, not making changes: do NOT edit application code, never create branches, and never open PRs.
-
-    Drive the running app according to your role instructions and capture still frames.
+    Never edit application code, create a branch or open a pull request on this stage.
 
     Each part of the recording corresponds to an acceptance criterion from the ticket, in order:
     #{criteria_section}
 
-    Write your frames into $RAIL_SCRATCH/demo/ and the manifest to $RAIL_SCRATCH/demo/manifest.json with this shape:
+    Rail reads the recording from $RAIL_SCRATCH/demo/. Write your frames there and the manifest to $RAIL_SCRATCH/demo/manifest.json with this shape:
     {
       "version": 1,
       "outcome": "recorded",
@@ -374,9 +258,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
       ]
     }
 
-    For any criterion with no visible behavior, set outcome to "notFilmable" with a note explaining why rather than filming nothing. If recording fails for technical reasons, set outcome to "failed" with an explanatory note.
-
-    Stop once the frames and manifest are written.
+    For any criterion with no visible behavior, set outcome to "notFilmable" with a note saying why. If recording fails, set outcome to "failed" with a note.
     """)
   end
 
@@ -410,23 +292,21 @@ defmodule Rail.Pipeline.Utils.Briefs do
 
         #{comment}
 
-        Re-record the demo of the ticket below working by driving the app on camera.
+        Re-record the demo.
         """)
       else
-        "Re-record the demo of the ticket below working by driving the app on camera."
+        "Re-record the demo."
       end
 
     String.trim("""
     #{intro}
 
-    You are recording evidence, not making changes: do NOT edit application code, never create branches, and never open PRs.
-
-    Drive the running app according to your role instructions and capture still frames.
+    Never edit application code, create a branch or open a pull request on this stage.
 
     Each part of the recording corresponds to an acceptance criterion from the ticket, in order:
     #{criteria_section}
 
-    Write your frames into $RAIL_SCRATCH/demo/ and the manifest to $RAIL_SCRATCH/demo/manifest.json with this shape:
+    Rail reads the recording from $RAIL_SCRATCH/demo/. Write your frames there and the manifest to $RAIL_SCRATCH/demo/manifest.json with this shape:
     {
       "version": #{version},
       "outcome": "recorded",
@@ -446,9 +326,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
       ]
     }
 
-    For any criterion with no visible behavior, set outcome to "notFilmable" with a note explaining why rather than filming nothing. If recording fails for technical reasons, set outcome to "failed" with an explanatory note.
-
-    Stop once the frames and manifest are written.
+    For any criterion with no visible behavior, set outcome to "notFilmable" with a note saying why. If recording fails, set outcome to "failed" with a note.
     """)
   end
 
@@ -463,19 +341,14 @@ defmodule Rail.Pipeline.Utils.Briefs do
     pr = if pr_number, do: "PR ##{pr_number}", else: "The pull request"
 
     String.trim("""
-    #{pr} for #{branch} no longer merges into #{base}: the base branch has moved and your change now conflicts with it.
-
-    Rebase the branch, in the worktree you already have, on the branch you already have checked out:
+    #{pr} for #{branch} no longer merges into #{base}. Rebase the branch in the worktree you already have:
       git fetch origin #{base}
       git rebase origin/#{base}
-    Resolve each conflict as it comes, `git add` the resolved files and `git rebase --continue`. Keep both sides' intent: never drop someone else's change to make the rebase go through, and never quietly revert your own. Where the two sides genuinely cannot both hold without a product decision, stop and ask with [QUESTION: ...] rather than guessing.
 
-    Then run the project's checks from the top - the conflict is exactly where a silent breakage hides - and update the existing pull request:
+    Update the existing pull request rather than opening a second one:
       git push --force-with-lease origin #{branch}
 
-    This is a rebase and nothing else. Do not implement anything new, do not address review findings, do not merge #{base} into the branch instead of rebasing, and do not open a second pull request. If the rebase cannot be finished, `git rebase --abort` so the branch is left as it was, and report why.
-
-    Finish by saying what conflicted and how you resolved each one.
+    This run is a rebase and nothing else: implement nothing new, address no review findings, and do not merge #{base} into the branch instead of rebasing. If the rebase cannot be finished, `git rebase --abort` so the branch is left as it was, and report why. To ask the human a question rather than guess, put `[QUESTION: ...]` on its own line, optionally followed by `[OPTIONS: a, b]`.
     """)
   end
 
@@ -508,7 +381,10 @@ defmodule Rail.Pipeline.Utils.Briefs do
     end
   end
 
-  defp dispatch_stage_brief(:product, opts), do: product_brief(opts)
+  defp resolve_identifier(opts) do
+    get_opt(opts, :identifier) || get_opt(opts, :issue_identifier) || get_opt(opts, :issue_number)
+  end
+
   defp dispatch_stage_brief(:design, opts), do: design_brief(opts)
   defp dispatch_stage_brief(:architect, opts), do: architect_brief(opts)
   defp dispatch_stage_brief(:engineer, opts), do: engineer_brief(opts)

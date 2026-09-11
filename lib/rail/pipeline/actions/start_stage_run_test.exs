@@ -387,6 +387,6 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
              Pipeline.start_stage_run(task, executable: true_bin)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}, 2000
-    assert %Task{stage_state: :queued, stage: :architect} = Repo.get!(Task, task_id)
+    assert %Task{stage: :product, stage_state: :awaiting_approval} = Repo.get!(Task, task_id)
   end
 end

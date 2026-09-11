@@ -119,9 +119,18 @@ defmodule Rail.Pipeline.Utils.Scratch do
     end)
   end
 
-  defp maybe_write_ticket(%Task{title: title, description: desc}, identifier, scratch_dir)
+  defp maybe_write_ticket(%Task{title: title, description: desc} = task, identifier, scratch_dir)
        when is_binary(identifier) and identifier != "" do
-    content = "# #{title}\n\n#{desc || ""}\n"
+    issue = task.issue_id && Repo.get(Issue, task.issue_id)
+
+    content =
+      TicketBody.format(%TicketBody{
+        title: title || "",
+        description: desc || "",
+        priority: issue && issue.priority,
+        estimate: issue && issue.estimate
+      })
+
     dest_path = Path.join([scratch_dir, "tickets", "#{identifier}.md"])
     File.write!(dest_path, content)
   end

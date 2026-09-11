@@ -3,6 +3,7 @@ defmodule Rail.Issues.Schemas.Issue do
   use Rail.Schema
 
   alias Rail.Projects.Schemas.Project
+  alias Rail.Users.Schemas.User
 
   @priorities [:urgent, :high, :medium, :low]
   @states [:backlog, :triage, :todo, :in_progress, :in_review, :done, :canceled]
@@ -11,11 +12,13 @@ defmodule Rail.Issues.Schemas.Issue do
   @primary_key {:id, UXID, autogenerate: true, prefix: "iss"}
   schema "issues" do
     belongs_to :project, Project
+    belongs_to :owner_user, User
     field :external_id, :string
     field :identifier, :string
     field :title, :string
     field :description, :string
     field :priority, Ecto.Enum, values: @priorities, default: :medium
+    field :estimate, :integer
     field :state, Ecto.Enum, values: @states
     field :state_name, :string
     field :branch_name, :string
@@ -27,11 +30,13 @@ defmodule Rail.Issues.Schemas.Issue do
   end
 
   @cast_fields [
+    :owner_user_id,
     :external_id,
     :identifier,
     :title,
     :description,
     :priority,
+    :estimate,
     :state,
     :state_name,
     :branch_name,
@@ -55,6 +60,7 @@ defmodule Rail.Issues.Schemas.Issue do
     |> validate_required(@required_fields)
     |> unique_constraint(:external_id)
     |> foreign_key_constraint(:project_id)
+    |> foreign_key_constraint(:owner_user_id)
   end
 
   def priorities, do: @priorities

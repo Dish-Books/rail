@@ -16,18 +16,24 @@ defmodule Rail.Issues.Actions.PushTicket do
         %Issue{} = issue ->
           ticket = TicketBody.parse(ticket_content)
 
-          linear_attrs = %{
-            title: ticket.title,
-            description: ticket.description
-          }
+          linear_attrs =
+            %{
+              title: ticket.title,
+              description: ticket.description
+            }
+            |> put_if_set(:priority, ticket.priority)
+            |> put_if_set(:estimate, ticket.estimate)
 
           case Linear.update_issue(token, issue.external_id, linear_attrs) do
             {:ok, updated_linear_issue} ->
-              local_attrs = %{
-                title: ticket.title,
-                description: ticket.description,
-                linear_updated_at: parse_datetime(updated_linear_issue.updated_at)
-              }
+              local_attrs =
+                %{
+                  title: ticket.title,
+                  description: ticket.description,
+                  linear_updated_at: parse_datetime(updated_linear_issue.updated_at)
+                }
+                |> put_if_set(:priority, ticket.priority)
+                |> put_if_set(:estimate, ticket.estimate)
 
               issue
               |> Issue.changeset(local_attrs, project.id)
@@ -42,6 +48,9 @@ defmodule Rail.Issues.Actions.PushTicket do
       end
     end
   end
+
+  defp put_if_set(attrs, _key, nil), do: attrs
+  defp put_if_set(attrs, key, value), do: Map.put(attrs, key, value)
 
   defp parse_datetime(nil), do: nil
 

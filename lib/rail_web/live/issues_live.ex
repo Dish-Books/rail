@@ -326,13 +326,12 @@ defmodule RailWeb.IssuesLive do
     {:noreply, socket}
   end
 
-  def handle_event("bring_local", %{"issue_id" => issue_id}, socket) do
+  def handle_event("start_product_task", %{"issue_id" => issue_id}, socket) do
     scope = socket.assigns[:current_scope]
-    user = socket.assigns[:current_user]
 
     case Issues.get_issue(scope, issue_id) do
       {:ok, issue} ->
-        Pipeline.bring_local(scope, issue, user)
+        Pipeline.start_product_task(issue)
         socket = reload_data(socket)
         {:noreply, socket}
 

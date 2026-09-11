@@ -37,9 +37,12 @@ defmodule Rail.Issues.Actions.CaptureIssue do
             linear_updated_at: parse_datetime(linear_issue.updated_at)
           }
 
-          %Issue{}
-          |> Issue.changeset(local_attrs, project.id)
-          |> Repo.insert()
+          # The project is what the caller already handed us: carry it on the issue so
+          # nothing downstream has to fetch it again.
+          case %Issue{} |> Issue.changeset(local_attrs, project.id) |> Repo.insert() do
+            {:ok, %Issue{} = issue} -> {:ok, %{issue | project: project}}
+            {:error, changeset} -> {:error, changeset}
+          end
 
         {:error, reason} ->
           {:error, reason}

@@ -104,10 +104,9 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
              Pipeline.settle_run(task_id, "rr_000000000000000000000000")
   end
 
-  test "settles clean exit 0 for product stage advancing to design when design role exists", %{task: task, roles: roles} do
+  test "settles clean exit 0 for product stage by parking at awaiting_approval", %{task: task, roles: roles} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     _product_role = roles[:product]
-    _design_role = roles[:design]
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
@@ -123,20 +122,24 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         started_at: DateTime.utc_now()
       })
 
-    assert {:ok, %Task{id: ^task_id, stage: :design, stage_state: :queued},
+    assert {:ok, %Task{id: ^task_id, stage: :product, stage_state: :awaiting_approval},
             %RoleRun{status: :finished, exit_code: 0, auto_retries: 0}} =
              Pipeline.settle_run(task, role_run, %{exit_code: 0})
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}
   end
 
-  test "settles clean exit 0 for product stage skipping to architect when design role absent", %{task: task, roles: roles} do
-    {:ok, _deleted} = Roles.delete_role(system_scope(), roles[:design])
+  test "settling the product stage writes nothing to Linear", %{task: task, issue: issue, roles: roles} do
+    scratch_dir = Path.join(System.tmp_dir!(), "settle_product_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(Path.join(scratch_dir, "tickets"))
+    on_exit(fn -> File.rm_rf(scratch_dir) end)
 
-    _product_role = roles[:product]
+    ticket_file = Path.join([scratch_dir, "tickets", "#{issue.identifier}.md"])
+    File.write!(ticket_file, "---\ntitle: Rewritten by the product run\n---\n\nA body the human has not approved.\n")
 
-    {:ok, %Task{id: task_id} = task} =
+    {:ok, %Task{id: task_id, title: title_before} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
+        issue_id: issue.id,
         stage: :product,
         stage_state: :running
       })
@@ -144,13 +147,14 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     {:ok, role_run} =
       Runs.create_role_run(%{
         task_id: task_id,
-        role_id: roles[:engineer].id,
+        role_id: roles[:product].id,
         status: :running,
         started_at: DateTime.utc_now()
       })
 
-    assert {:ok, %Task{id: ^task_id, stage: :architect, stage_state: :queued}, %RoleRun{status: :finished, exit_code: 0}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0})
+    # No Linear mock is set up: a push would raise on the unexpected request.
+    assert {:ok, %Task{title: ^title_before}, %RoleRun{}} =
+             Pipeline.settle_run(task, role_run, %{exit_code: 0}, scratch_dir: scratch_dir)
   end
 
   test "settles clean exit 0 for architect stage advancing to awaiting_approval when plan exists", %{

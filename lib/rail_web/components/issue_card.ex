@@ -113,14 +113,14 @@ defmodule RailWeb.Components.IssueCard do
           <button
             :if={@task == nil and not Issue.finished_state?(@issue.state)}
             type="button"
-            id={"bring-local-#{@issue.id}"}
-            data-qa={"bring_local_#{@issue.id}"}
-            phx-click="bring_local"
+            id={"start-product-task-#{@issue.id}"}
+            data-qa={"start_product_task_#{@issue.id}"}
+            phx-click="start_product_task"
             phx-value-issue_id={@issue.id}
             class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
           >
             <.icon name="pi-arrow-down-left" class="h-3.5 w-3.5" />
-            <span>Bring local</span>
+            <span>Start</span>
           </button>
 
           <!-- Archive button -->

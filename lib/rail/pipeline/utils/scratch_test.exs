@@ -67,7 +67,7 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_scratch_1"})
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
@@ -121,7 +121,7 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_task_scratch_13502"})
 
-    {:ok, task_no_issue} = Pipeline.bring_local(system_scope(), issue_13502)
+    {:ok, task_no_issue} = Pipeline.create_task(issue_13502)
 
     {:ok, task_no_issue} =
       Pipeline.update_task(system_scope(), task_no_issue.id, %{
@@ -180,7 +180,8 @@ defmodule Rail.Pipeline.Utils.ScratchTest do
 
     ticket_file = Path.join([scratch_dir, "tickets", "ENG-102.md"])
     assert File.exists?(ticket_file)
-    assert File.read!(ticket_file) =~ "# Product Task\n\nProblem statement\n"
+    assert File.read!(ticket_file) =~ "---\ntitle: Product Task\n"
+    assert File.read!(ticket_file) =~ "\n---\n\nProblem statement\n"
   end
 
   test "prepare for engineer writes plan from plans table to plan.md", %{project: project, issue: _issue, task: task} do

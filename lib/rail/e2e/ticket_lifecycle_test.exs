@@ -147,7 +147,8 @@ defmodule Rail.E2E.TicketLifecycleTest do
              Rail.Pipeline.create_task(issue)
 
     # -------------------------------------------------------------------------
-    # 2. Product run starts and settles -> updates ticket, advances to :architect
+    # 2. Product run starts and settles -> parks for approval, which publishes the
+    #    ticket and advances to :architect (no design role on this project)
     # -------------------------------------------------------------------------
     LinearMock.mock_update_issue_success(%{
       "id" => "lin_iss_101",
@@ -164,7 +165,10 @@ defmodule Rail.E2E.TicketLifecycleTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}, 10_000
 
     task = Repo.get!(Task, task_id)
-    assert %Task{stage: :architect, stage_state: :queued} = task
+    assert %Task{stage: :product, stage_state: :awaiting_approval} = task
+
+    assert {:ok, %{task: %Task{stage: :architect, stage_state: :queued} = task}} =
+             Rail.Pipeline.approve_product_task(task, scratch_dir: scratch_dir)
 
     assert {:ok,
             %RoleRun{
@@ -413,7 +417,11 @@ defmodule Rail.E2E.TicketLifecycleTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}, 10_000
 
     task = Repo.get!(Task, task_id)
-    assert %Task{stage: :architect, stage_state: :queued} = task
+    assert %Task{stage: :product, stage_state: :awaiting_approval} = task
+
+    assert {:ok, %{task: %Task{stage: :architect, stage_state: :queued}}} =
+             Rail.Pipeline.approve_product_task(task, scratch_dir: scratch_dir)
+
     assert {:ok, %RoleRun{status: :finished, exit_code: 0}} = Rail.Runs.get_latest_role_run_for_task(task_id)
   end
 end
