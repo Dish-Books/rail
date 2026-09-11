@@ -11,7 +11,7 @@ defmodule Rail.Runs.Spawner do
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
-  alias Rail.ToolEnv
+  alias Rail.Tools
 
   @doc """
   Spawns a detached child process for an agent run.
@@ -96,7 +96,7 @@ defmodule Rail.Runs.Spawner do
       |> Run.changeset(run_attrs)
       |> Repo.insert()
 
-    resolved_binary = ToolEnv.resolve(executable)
+    resolved_binary = Tools.resolve(executable)
 
     if binary_exists?(resolved_binary) do
       launch_and_follow(run, role_run, resolved_binary, args, stream_path, backend, opts)
@@ -298,7 +298,7 @@ defmodule Rail.Runs.Spawner do
           extra_env
       end
 
-    merged = ToolEnv.env(extra_env)
+    merged = Tools.env(extra_env)
 
     Enum.map(merged, fn {k, v} ->
       {String.to_charlist(to_string(k)), String.to_charlist(to_string(v))}

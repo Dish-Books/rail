@@ -1,7 +1,7 @@
 defmodule RailTest.GitHelpers do
   @moduledoc false
 
-  alias Rail.ToolEnv
+  alias Rail.Tools
 
   @doc """
   Creates a real temporary git repository on disk with initial commits.
@@ -42,7 +42,7 @@ defmodule RailTest.GitHelpers do
   Executes a git command in the given directory and raises if it fails.
   """
   def git!(dir, args) do
-    case ToolEnv.run("git", args, cd: dir, stderr_to_stdout: true) do
+    case Tools.run("git", args, cd: dir, stderr_to_stdout: true) do
       {out, 0} ->
         out
 

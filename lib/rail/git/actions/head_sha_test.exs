@@ -2,7 +2,7 @@ defmodule Rail.Git.Actions.HeadShaTest do
   use Rail.DataCase, async: true
 
   alias Rail.Git
-  alias Rail.ToolEnv
+  alias Rail.Tools
 
   test "returns short HEAD sha for valid repository" do
     repo = create_temp_git_repo()
@@ -10,7 +10,7 @@ defmodule Rail.Git.Actions.HeadShaTest do
     sha = Git.head_sha(repo)
     assert byte_size(sha) >= 7
 
-    {expected, 0} = ToolEnv.run("git", ["rev-parse", "--short", "HEAD"], cd: repo)
+    {expected, 0} = Tools.run("git", ["rev-parse", "--short", "HEAD"], cd: repo)
     assert sha == String.trim(expected)
   end
 

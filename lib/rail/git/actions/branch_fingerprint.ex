@@ -2,7 +2,7 @@ defmodule Rail.Git.Actions.BranchFingerprint do
   @moduledoc false
 
   alias Rail.Git.BranchFingerprint
-  alias Rail.ToolEnv
+  alias Rail.Tools
 
   @doc """
   Computes a fingerprint snapshot of a worktree's HEAD SHA and working-copy status.
@@ -12,11 +12,11 @@ defmodule Rail.Git.Actions.BranchFingerprint do
     ignore_rail? = Keyword.get(opts, :ignore_rail, false)
 
     with {head_out, 0} <-
-           ToolEnv.run("git", ["rev-parse", "HEAD"], cd: worktree_path, stderr_to_stdout: true),
+           Tools.run("git", ["rev-parse", "HEAD"], cd: worktree_path, stderr_to_stdout: true),
          head_sha = String.trim(head_out),
          true <- head_sha != "",
          {status_out, 0} <-
-           ToolEnv.run("git", ["status", "--porcelain", "--untracked-files=all"],
+           Tools.run("git", ["status", "--porcelain", "--untracked-files=all"],
              cd: worktree_path,
              stderr_to_stdout: true
            ) do

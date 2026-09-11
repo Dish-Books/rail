@@ -2,7 +2,7 @@ defmodule Rail.Git.Actions.GetChangedFiles do
   @moduledoc false
 
   alias Rail.Git.ChangedFile
-  alias Rail.ToolEnv
+  alias Rail.Tools
 
   @doc """
   Returns a list of ChangedFile structs for modified, deleted, and untracked files.
@@ -22,7 +22,7 @@ defmodule Rail.Git.Actions.GetChangedFiles do
           ["diff", "--numstat", filter]
       end
 
-    case ToolEnv.run("git", args, cd: worktree_path, stderr_to_stdout: true) do
+    case Tools.run("git", args, cd: worktree_path, stderr_to_stdout: true) do
       {output, 0} ->
         parse_numstat(output, worktree_path, filter)
 

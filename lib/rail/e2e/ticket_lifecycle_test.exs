@@ -21,7 +21,6 @@ defmodule Rail.E2E.TicketLifecycleTest do
     old_path = System.get_env("PATH") || ""
     new_path = "#{shim_dir}:#{old_path}"
     System.put_env("PATH", new_path)
-    Rail.ToolEnv.debug_set_path(new_path)
 
     system_scope = Rail.Scope.for_system()
 
@@ -39,7 +38,6 @@ defmodule Rail.E2E.TicketLifecycleTest do
 
     on_exit(fn ->
       System.put_env("PATH", old_path)
-      Rail.ToolEnv.reset()
     end)
 
     repo_dir = create_temp_git_repo(initial_commit: true)

@@ -1,7 +1,7 @@
 defmodule Rail.Git.Actions.FileLines do
   @moduledoc false
 
-  alias Rail.ToolEnv
+  alias Rail.Tools
 
   @doc """
   Returns the lines of a file in the worktree, either from a git revision
@@ -11,7 +11,7 @@ defmodule Rail.Git.Actions.FileLines do
     rev = Keyword.get(opts, :rev)
 
     if is_binary(rev) and rev != "" do
-      case ToolEnv.run("git", ["show", "#{rev}:#{relative_path}"],
+      case Tools.run("git", ["show", "#{rev}:#{relative_path}"],
              cd: worktree_path,
              stderr_to_stdout: true
            ) do

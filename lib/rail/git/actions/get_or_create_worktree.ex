@@ -3,7 +3,7 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
 
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
-  alias Rail.ToolEnv
+  alias Rail.Tools
 
   @doc """
   Gets the task's existing worktree directory or creates a new one.
@@ -38,7 +38,7 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
         ["worktree", "add", "-b", branch, worktree_path, base_branch]
       end
 
-    case ToolEnv.run("git", args, cd: repo_path, stderr_to_stdout: true) do
+    case Tools.run("git", args, cd: repo_path, stderr_to_stdout: true) do
       {_out, 0} ->
         :ok
 
@@ -52,7 +52,7 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
   defp branch_exists?(repo_path, branch) do
     match?(
       {_out, 0},
-      ToolEnv.run("git", ["rev-parse", "--verify", "--quiet", "refs/heads/" <> branch],
+      Tools.run("git", ["rev-parse", "--verify", "--quiet", "refs/heads/" <> branch],
         cd: repo_path,
         stderr_to_stdout: true
       )

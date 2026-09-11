@@ -3,7 +3,7 @@ defmodule Rail.Roles.Actions.ImproveRole do
 
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs.ArgvBuilder
-  alias Rail.ToolEnv
+  alias Rail.Tools
 
   def improve_role(scope, %Role{} = role, chosen_model, opts \\ []) when is_binary(chosen_model) do
     case Rail.Roles.recent_finished_runs(scope, role.id, opts) do
@@ -52,7 +52,7 @@ defmodule Rail.Roles.Actions.ImproveRole do
 
     exe = ArgvBuilder.executable_path(improver_role.cli_backend, opts)
 
-    case ToolEnv.run(exe, argv, cd: temp_cwd, stderr_to_stdout: true) do
+    case Tools.run(exe, argv, cd: temp_cwd, stderr_to_stdout: true) do
       {stdout, 0} ->
         {:ok, stdout, %{}}
 

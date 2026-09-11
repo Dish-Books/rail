@@ -2,13 +2,13 @@ defmodule Rail.Git.Actions.ListWorktrees do
   @moduledoc false
 
   alias Rail.Git.WorktreeInfo
-  alias Rail.ToolEnv
+  alias Rail.Tools
 
   @doc """
   Lists worktrees in a git repository by parsing porcelain output.
   """
   def list_worktrees(repo_path) when is_binary(repo_path) do
-    case ToolEnv.run("git", ["worktree", "list", "--porcelain"],
+    case Tools.run("git", ["worktree", "list", "--porcelain"],
            cd: repo_path,
            stderr_to_stdout: true
          ) do

@@ -1,9 +1,9 @@
 defmodule Rail.Backends.ProcessRunner do
   @moduledoc """
-  Timeout-aware process execution using ToolEnv for environment and path parity.
+  Timeout-aware process execution using Rail.Tools for environment and path parity.
   """
 
-  alias Rail.ToolEnv
+  alias Rail.Tools
 
   @doc """
   Runs an executable with arguments and options, enforcing a timeout.
@@ -15,7 +15,7 @@ defmodule Rail.Backends.ProcessRunner do
     task =
       Task.async(fn ->
         try do
-          ToolEnv.run(executable, args, opts)
+          Tools.run(executable, args, opts)
         rescue
           error -> {:error, error}
         end

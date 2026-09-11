@@ -1,7 +1,7 @@
 defmodule Rail.Git.Actions.RemoveWorktree do
   @moduledoc false
 
-  alias Rail.ToolEnv
+  alias Rail.Tools
 
   @doc """
   Removes a git worktree and prunes worktree metadata.
@@ -18,12 +18,12 @@ defmodule Rail.Git.Actions.RemoveWorktree do
             ["worktree", "remove", worktree_path]
           end
 
-        ToolEnv.run("git", args, cd: repo_path, stderr_to_stdout: true)
+        Tools.run("git", args, cd: repo_path, stderr_to_stdout: true)
       else
         {"", 0}
       end
 
-    ToolEnv.run("git", ["worktree", "prune"], cd: repo_path, stderr_to_stdout: true)
+    Tools.run("git", ["worktree", "prune"], cd: repo_path, stderr_to_stdout: true)
 
     case result do
       {_out, 0} ->
