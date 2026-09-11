@@ -12,6 +12,8 @@ defmodule Rail.Pipeline do
 
   defdelegate settle_product_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleProductRun
 
+  defdelegate parse_stage_verdict(role_run_or_id), to: Actions.ParseStageVerdict
+
   defdelegate approve_product_task(task, opts \\ []), to: Actions.ApproveProductTask
   defdelegate start_design_task(task, opts \\ []), to: Actions.StartDesignTask
 

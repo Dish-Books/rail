@@ -19,7 +19,6 @@ defmodule Rail.Runs.Schemas.RoleRun do
     field :started_at, :utc_datetime_usec
     field :completed_at, :utc_datetime_usec
     field :exit_code, :integer
-    field :output, :string
     field :error, :string
     field :pending_answer, :string
     field :pending_chat, :string
@@ -51,7 +50,6 @@ defmodule Rail.Runs.Schemas.RoleRun do
     :started_at,
     :completed_at,
     :exit_code,
-    :output,
     :error,
     :pending_answer,
     :pending_chat,

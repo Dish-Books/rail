@@ -6,21 +6,21 @@ defmodule RailWeb.Components.StageOutcomeTest do
   alias RailWeb.Components.StageOutcome
 
   test "renders nothing when role_run is nil" do
-    task = %{stage: :engineer, stage_state: :running}
+    task = %{stage: :engineer, stage_state: :failed}
     html = render_component(&StageOutcome.stage_outcome/1, task: task, role_run: nil)
     refute html =~ "id=\"stage-outcome\""
   end
 
-  test "renders nothing when output and error are empty" do
-    task = %{stage: :engineer, stage_state: :running}
-    role_run = %{output: "   ", error: "   "}
+  test "renders nothing when the error is blank" do
+    task = %{stage: :engineer, stage_state: :failed}
+    role_run = %{error: "   "}
     html = render_component(&StageOutcome.stage_outcome/1, task: task, role_run: role_run)
     refute html =~ "id=\"stage-outcome\""
   end
 
   test "renders Failure heading and error box when stage_state is failed and error present" do
     task = %{stage: :engineer, stage_state: :failed}
-    role_run = %{role_id: "engineer", error: "mix test failed with 2 errors", output: nil}
+    role_run = %{role_id: "engineer", error: "mix test failed with 2 errors"}
 
     html = render_component(&StageOutcome.stage_outcome/1, task: task, role_run: role_run)
 
@@ -29,31 +29,15 @@ defmodule RailWeb.Components.StageOutcomeTest do
     assert html =~ "Engineer Failure"
     assert html =~ "id=\"stage-failure-box\""
     assert html =~ "mix test failed with 2 errors"
-    refute html =~ "id=\"stage-outcome-heading\""
   end
 
-  test "does not render failure if stage_state is not failed even if error is in role_run" do
+  test "renders nothing when stage_state is not failed even if the role run carries an error" do
     task = %{stage: :engineer, stage_state: :running}
-    role_run = %{role_id: "engineer", error: "old error", output: "Current output"}
+    role_run = %{role_id: "engineer", error: "old error"}
 
     html = render_component(&StageOutcome.stage_outcome/1, task: task, role_run: role_run)
 
-    refute html =~ "id=\"stage-failure-heading\""
-    assert html =~ "id=\"stage-outcome-heading\""
-    assert html =~ "Engineer Outcome"
-    assert html =~ "Current output"
-  end
-
-  test "renders Outcome heading and markdown output" do
-    task = %{stage: :engineer, stage_state: :awaiting_approval}
-    role_run = %{role_id: "engineer", output: "## Implementation complete\n\nAll tests pass."}
-
-    html = render_component(&StageOutcome.stage_outcome/1, task: task, role_run: role_run)
-
-    assert html =~ "id=\"stage-outcome-heading\""
-    assert html =~ "Engineer Outcome"
-    assert html =~ "Implementation complete"
-    assert html =~ "All tests pass."
+    refute html =~ "id=\"stage-outcome\""
   end
 
   test "uses explicit role_name when provided" do
@@ -66,12 +50,12 @@ defmodule RailWeb.Components.StageOutcomeTest do
   end
 
   test "delegated CoreComponents.stage_outcome renders properly" do
-    task = %{stage: :engineer, stage_state: :awaiting_approval}
-    role_run = %{role_id: "engineer", output: "Done"}
+    task = %{stage: :engineer, stage_state: :failed}
+    role_run = %{role_id: "engineer", error: "Boom"}
 
     html = render_component(&RailWeb.CoreComponents.stage_outcome/1, task: task, role_run: role_run)
 
-    assert html =~ "Engineer Outcome"
+    assert html =~ "Engineer Failure"
   end
 
   test "format_role_id formats various role identifiers" do
@@ -89,20 +73,16 @@ defmodule RailWeb.Components.StageOutcomeTest do
 
   test "resolves role name and handles string map keys" do
     task_with_str_keys = %{"stage" => "review", "stage_state" => "failed", "current_role_id" => "reviewer"}
-    role_run = %{"output" => "All checked"}
+    role_run = %{"error" => "All checked"}
 
     html = render_component(&StageOutcome.stage_outcome/1, task: task_with_str_keys, role_run: role_run)
-    assert html =~ "Reviewer Outcome"
+    assert html =~ "Reviewer Failure"
     assert html =~ "All checked"
 
     # Task without stage or role falls back to Stage
-    empty_task = %{}
-    role_run2 = %{output: "Empty task output"}
+    empty_task = %{"stage_state" => "failed"}
+    role_run2 = %{error: "Empty task error"}
     html2 = render_component(&StageOutcome.stage_outcome/1, task: empty_task, role_run: role_run2)
-    assert html2 =~ "Stage Outcome"
-
-    # Nil task falls back safely
-    html_nil_task = render_component(&StageOutcome.stage_outcome/1, task: nil, role_run: role_run2)
-    assert html_nil_task =~ "Stage Outcome"
+    assert html2 =~ "Stage Failure"
   end
 end

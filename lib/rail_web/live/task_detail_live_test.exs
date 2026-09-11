@@ -501,7 +501,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert has_element?(view, "#task-error-card", "Elixir compilation error")
   end
 
-  test "renders stage outcome when role run output and failure details exist", %{
+  test "renders the stage failure when a role run failed", %{
     backend: backend,
     conn: conn,
     project: project
@@ -567,7 +567,6 @@ defmodule RailWeb.TaskDetailLiveTest do
         role_id: role.id,
         status: :finished,
         started_at: now,
-        output: "Finished analysis of authentication module.",
         error: "Unit tests failed with exit code 1"
       })
 
@@ -575,8 +574,6 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert has_element?(view, "#stage-outcome")
     assert has_element?(view, "#stage-failure-section")
     assert has_element?(view, "#stage-failure-box", "Unit tests failed with exit code 1")
-    assert has_element?(view, "#stage-outcome-section")
-    assert has_element?(view, "#stage-outcome-card", "Finished analysis of authentication module.")
   end
 
   test "skips design stage when project/task does not use design", %{conn: conn, project: project} do
@@ -2338,16 +2335,19 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     now = DateTime.utc_now()
 
-    {:ok, _run_arch} =
+    {:ok, run_arch} =
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role_arch.id,
         status: :finished,
         started_at: DateTime.shift(now, minute: -10),
         completed_at: DateTime.shift(now, minute: -5),
-        conversation_id: "conv_arch",
-        output: "[human] Architect instructions\n[run] claude\nArchitecture design complete."
+        conversation_id: "conv_arch"
       })
+
+    Runs.append_run_event(run_arch, "[human] Architect instructions")
+    Runs.append_run_event(run_arch, "[run] claude")
+    Runs.append_run_event(run_arch, "Architecture design complete.")
 
     {:ok, run_eng} =
       Runs.create_role_run(%{
@@ -2355,19 +2355,24 @@ defmodule RailWeb.TaskDetailLiveTest do
         role_id: role_eng.id,
         status: :running,
         started_at: DateTime.shift(now, second: -200),
-        conversation_id: "conv_eng",
-        output: "[human] Engineer instructions\n[run] claude\n[tool read_file] lib/app.ex\nWriting the code now."
+        conversation_id: "conv_eng"
       })
 
-    {:ok, _run_custom} =
+    Runs.append_run_event(run_eng, "[human] Engineer instructions")
+    Runs.append_run_event(run_eng, "[run] claude")
+    Runs.append_run_event(run_eng, "[tool read_file] lib/app.ex")
+    Runs.append_run_event(run_eng, "Writing the code now.")
+
+    {:ok, run_custom} =
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: "custom_tester",
         status: :finished,
         started_at: DateTime.shift(now, second: -100),
-        conversation_id: "conv_custom",
-        output: "Custom agent report"
+        conversation_id: "conv_custom"
       })
+
+    Runs.append_run_event(run_custom, "Custom agent report")
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=conversation")
 
@@ -2481,15 +2486,18 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage_state: :running
       })
 
-    {:ok, _run_eng} =
+    {:ok, run_eng_chat} =
       Runs.create_role_run(%{
         task_id: task.id,
         role_id: role_eng.id,
         status: :running,
         started_at: DateTime.utc_now(),
-        conversation_id: "conv_eng_chat",
-        output: "[human] Hello\n[run] start\nHi there"
+        conversation_id: "conv_eng_chat"
       })
+
+    Runs.append_run_event(run_eng_chat, "[human] Hello")
+    Runs.append_run_event(run_eng_chat, "[run] start")
+    Runs.append_run_event(run_eng_chat, "Hi there")
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=conversation")
 

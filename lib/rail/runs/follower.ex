@@ -532,7 +532,6 @@ defmodule Rail.Runs.Follower do
               completed_at: DateTime.utc_now(),
               exit_code: exit_code,
               error: error,
-              output: event_state.final_text,
               conversation_id: event_state.conversation_id || role_run.conversation_id,
               usage: event_state.usage
             }
@@ -556,7 +555,6 @@ defmodule Rail.Runs.Follower do
     %{
       exit_code: exit_code,
       error: error,
-      output: event_state.final_text,
       usage: event_state.usage,
       conversation_id: event_state.conversation_id || (updated_role_run && updated_role_run.conversation_id),
       detected_questions: event_state.detected_questions,

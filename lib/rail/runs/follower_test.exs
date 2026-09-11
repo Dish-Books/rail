@@ -728,6 +728,8 @@ defmodule Rail.Runs.FollowerTest do
         started_at: DateTime.utc_now()
       })
 
+    Runs.append_run_event(role_run, "Completed task implementation successfully.")
+
     stream = Path.join(tmp_dir, "question_stream.ndjson")
     File.write!(stream, "")
     File.write!("#{stream}.err", "")
@@ -794,7 +796,7 @@ defmodule Rail.Runs.FollowerTest do
     Runs.stop_run(run.id, grace_period: 50)
   end
 
-  test "chat child exit preserves role run status/output but updates conversation_id if new", %{
+  test "chat child exit preserves role run status but updates conversation_id if new", %{
     backend: backend,
     tmp_dir: tmp_dir
   } do
@@ -808,9 +810,10 @@ defmodule Rail.Runs.FollowerTest do
         role_id: role_id,
         status: :running,
         started_at: DateTime.utc_now(),
-        conversation_id: "sess-orig",
-        output: "Preserved output"
+        conversation_id: "sess-orig"
       })
+
+    Runs.append_run_event(role_run, "Completed task implementation successfully.")
 
     stream = Path.join(tmp_dir, "chat_exit.ndjson")
     File.write!(stream, ~s({"type":"system","subtype":"init","session_id":"sess-updated"}\n))
@@ -855,7 +858,6 @@ defmodule Rail.Runs.FollowerTest do
 
     reloaded_rr = Runs.get_role_run!(role_run.id)
     assert reloaded_rr.status == :running
-    assert reloaded_rr.output == "Preserved output"
     assert reloaded_rr.conversation_id == "sess-updated"
   end
 
@@ -870,9 +872,10 @@ defmodule Rail.Runs.FollowerTest do
         role_id: role_id,
         status: :running,
         started_at: DateTime.utc_now(),
-        conversation_id: "sess-same",
-        output: "Preserved"
+        conversation_id: "sess-same"
       })
+
+    Runs.append_run_event(role_run, "Completed task implementation successfully.")
 
     stream = Path.join(tmp_dir, "chat_same.ndjson")
     File.write!(stream, ~s({"type":"init","session_id":"sess-same"}\n))
@@ -931,6 +934,8 @@ defmodule Rail.Runs.FollowerTest do
         status: :running,
         started_at: DateTime.utc_now()
       })
+
+    Runs.append_run_event(role_run, "Completed task implementation successfully.")
 
     stream = Path.join(tmp_dir, "stage_no_usage.ndjson")
     File.write!(stream, "plain non-json log line\n")

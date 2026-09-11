@@ -190,15 +190,16 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
         error: "Rework limit reached"
       })
 
-    {:ok, _role_run} =
+    {:ok, rev_run} =
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_rev.id,
         conversation_id: "sess_fixture",
         status: :finished,
-        started_at: DateTime.utc_now(),
-        output: "Reviewer finding: memory leak in loop."
+        started_at: DateTime.utc_now()
       })
+
+    Runs.append_run_event(rev_run, "Reviewer finding: memory leak in loop.")
 
     {:ok, _eng_run} =
       Runs.create_role_run(%{

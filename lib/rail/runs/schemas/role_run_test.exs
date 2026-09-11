@@ -16,7 +16,6 @@ defmodule Rail.Runs.Schemas.RoleRunTest do
       started_at: now,
       conversation_id: "conv-123",
       exit_code: 0,
-      output: "Done",
       error: nil,
       usage: %{input_tokens: 100, output_tokens: 50},
       chat_usage: %{input_tokens: 20, output_tokens: 10}

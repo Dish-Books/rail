@@ -71,85 +71,108 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "returns empty string and empty entries when task has no outstanding reports", %{task: task} do
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        outstanding_reports: []
-      })
+  test "returns an empty string when the task has no outstanding reports", %{task: task} do
+    {:ok, task} = Pipeline.update_task(system_scope(), task.id, %{outstanding_reports: []})
 
-    assert build_carried_gate_reports(task) == ""
-    assert collect_report_entries(task) == []
+    assert carried_reports(task) == ""
   end
 
-  test "formats carried gate reports and supports excluding a specific gate", %{task: task, roles: roles} do
-    {:ok, role_rev} =
-      Roles.update_role(system_scope(), roles[:review], %{
-        name: "Reviewer"
-      })
-
-    {:ok, role_qa} =
-      Roles.update_role(system_scope(), roles[:qa], %{
-        name: "QA Tester"
-      })
+  test "carries what each gate's log said, and supports excluding one gate", %{task: task, roles: roles} do
+    {:ok, role_rev} = Roles.update_role(system_scope(), roles[:review], %{name: "Reviewer"})
+    {:ok, role_qa} = Roles.update_role(system_scope(), roles[:qa], %{name: "QA Tester"})
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
         outstanding_reports: [role_rev.id, role_qa.id]
       })
 
-    {:ok, _role_run} =
+    {:ok, rev_run} =
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_rev.id,
         status: :finished,
-        started_at: DateTime.utc_now(),
-        output: "Reviewer finding: unused variable."
+        started_at: DateTime.utc_now()
       })
 
-    {:ok, _role_run} =
+    Runs.append_run_event(rev_run, "Reviewer finding: unused variable.")
+
+    {:ok, qa_run} =
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_qa.id,
         status: :finished,
-        started_at: DateTime.utc_now(),
-        output: "QA finding: button alignment broken."
+        started_at: DateTime.utc_now()
       })
 
-    text_all = build_carried_gate_reports(task)
+    Runs.append_run_event(qa_run, "QA finding: button alignment broken.")
+
+    text_all = carried_reports(task)
     assert text_all =~ "Also outstanding: what the other gates last reported"
     assert text_all =~ "### Reviewer\n\nReviewer finding: unused variable."
     assert text_all =~ "### QA Tester\n\nQA finding: button alignment broken."
 
-    text_except = build_carried_gate_reports(task, except: role_rev.id)
+    text_except = carried_reports(task, except: role_rev.id)
     assert text_except =~ "### QA Tester\n\nQA finding: button alignment broken."
     refute text_except =~ "### Reviewer"
   end
 
-  test "ignores role_runs with empty or missing output", %{task: task, roles: roles} do
-    {:ok, role} =
-      Roles.update_role(system_scope(), roles[:review], %{
-        name: "Empty Reviewer"
-      })
+  test "leaves out tool, rail and human lines, and gates whose log holds nothing else", %{
+    task: task,
+    roles: roles
+  } do
+    {:ok, role} = Roles.update_role(system_scope(), roles[:review], %{name: "Empty Reviewer"})
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        outstanding_reports: [role.id]
-      })
+      Pipeline.update_task(system_scope(), task.id, %{outstanding_reports: [role.id]})
 
-    {:ok, _role_run} =
+    {:ok, role_run} =
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role.id,
         status: :finished,
-        started_at: DateTime.utc_now(),
-        output: "   "
+        started_at: DateTime.utc_now()
       })
 
-    assert build_carried_gate_reports(task) == ""
-    assert collect_report_entries(task) == []
+    Runs.append_run_event(role_run, "[tool] bash mix test")
+    Runs.append_run_event(role_run, "[human] take another look")
+    Runs.append_run_event(role_run, "[rail] That turn was not delivered")
+    Runs.append_run_event(role_run, "[result] exit 0")
+
+    assert carried_reports(task) == ""
   end
 
-  test "falls back to role_id when role schema is not found in database", %{task: task} do
+  test "reads the latest run for a role", %{task: task, roles: roles} do
+    {:ok, role} = Roles.update_role(system_scope(), roles[:review], %{name: "Reviewer"})
+
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(system_scope(), task.id, %{outstanding_reports: [role.id]})
+
+    {:ok, first_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role.id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    Runs.append_run_event(first_run, "Stale finding from the first pass.")
+
+    {:ok, latest_run} =
+      Runs.create_role_run(%{
+        task_id: task_id,
+        role_id: role.id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    Runs.append_run_event(latest_run, "Current finding.")
+
+    text = carried_reports(task)
+    assert text =~ "Current finding."
+    refute text =~ "Stale finding"
+  end
+
+  test "falls back to role_id when the role is not in the database", %{task: task} do
     non_existent_role_id = "rol_000000000000000000000001"
 
     {:ok, %Task{id: task_id} = task} =
@@ -157,18 +180,16 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
         outstanding_reports: [non_existent_role_id]
       })
 
-    {:ok, _role_run} =
+    {:ok, role_run} =
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: non_existent_role_id,
         status: :finished,
-        started_at: DateTime.utc_now(),
-        output: "Finding from unknown role"
+        started_at: DateTime.utc_now()
       })
 
-    assert [{^non_existent_role_id, ^non_existent_role_id, "Finding from unknown role"}] =
-             collect_report_entries(task)
+    Runs.append_run_event(role_run, "Finding from unknown role")
 
-    assert build_carried_gate_reports(task) =~ "### #{non_existent_role_id}\n\nFinding from unknown role"
+    assert carried_reports(task) =~ "### #{non_existent_role_id}\n\nFinding from unknown role"
   end
 end

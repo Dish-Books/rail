@@ -85,8 +85,8 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
 
   defp apply_send_back(%Task{} = task, %RoleRun{} = engineer_run, opts) do
     note = extract_note(opts)
-    carried_reports = build_carried_gate_reports(task)
-    message = build_engineer_message(note, carried_reports)
+    carried = carried_reports(task)
+    message = build_engineer_message(note, carried)
 
     Runs.append_pending_answer(engineer_run, message, auto_retries: 0)
 
@@ -122,7 +122,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
 
   defp extract_note(_other), do: ""
 
-  defp build_engineer_message(note, carried_reports) do
+  defp build_engineer_message(note, carried) do
     base =
       "Sent back to you by the human, with the findings this change is still carrying. " <>
         "Address every one of them - nits included, and the ones marked pre-existing too - " <>
@@ -133,7 +133,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
     parts =
       [base] ++
         if(note == "", do: [], else: ["\n\nWhat the human asked for:\n\n#{note}"]) ++
-        if carried_reports == "", do: [], else: [carried_reports]
+        if carried == "", do: [], else: [carried]
 
     Enum.join(parts, "")
   end

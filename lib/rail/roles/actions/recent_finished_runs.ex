@@ -88,16 +88,9 @@ defmodule Rail.Roles.Actions.RecentFinishedRuns do
         reader.(rr)
 
       nil ->
-        if rr.output && String.trim(rr.output) != "" do
-          rr.output
-        else
-          events = rr.run_events || []
-
-          if events == [] do
-            nil
-          else
-            Enum.map_join(events, "\n", & &1.line)
-          end
+        case rr.run_events || [] do
+          [] -> nil
+          events -> Enum.map_join(events, "\n", & &1.line)
         end
     end
   end

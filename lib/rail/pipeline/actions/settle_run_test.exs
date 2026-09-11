@@ -409,13 +409,11 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     outcome = %{
       "exit_code" => 0,
-      "output" => "Run finished cleanly",
       "usage" => %{"input_tokens" => 500, "output_tokens" => 150},
       :run => run
     }
 
-    assert {:ok, %Task{id: ^task_id, stage_state: :awaiting_approval},
-            %RoleRun{id: ^role_run_id, status: :finished, output: "Run finished cleanly"}} =
+    assert {:ok, %Task{id: ^task_id, stage_state: :awaiting_approval}, %RoleRun{id: ^role_run_id, status: :finished}} =
              Pipeline.settle_run(task_id, role_run_id, outcome)
 
     assert %Run{id: ^run_id, status: :finished} = Repo.get!(Run, run_id)
@@ -423,7 +421,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     assert plan_content =~ "Captured Architecture Plan"
   end
 
-  test "resolves exit code, output, error, and usage fallbacks from role_run or defaults", %{task: task, roles: roles} do
+  test "resolves exit code and error fallbacks from role_run or defaults", %{task: task, roles: roles} do
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :ready_to_merge,
@@ -438,11 +436,10 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         status: :running,
         started_at: DateTime.utc_now(),
         exit_code: 0,
-        output: "prior output",
         error: nil
       })
 
-    assert {:ok, %Task{id: ^task_id, stage_state: :awaiting_approval}, %RoleRun{output: "prior output"}} =
+    assert {:ok, %Task{id: ^task_id, stage_state: :awaiting_approval}, %RoleRun{exit_code: 0, error: nil}} =
              Pipeline.settle_run(task, role_run, %{})
   end
 
@@ -538,7 +535,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
              Pipeline.settle_run(task, role_run_err, %{"exit_code" => 1})
   end
 
-  test "resolves atom-keyed output and various usage input formats", %{task: task, roles: roles} do
+  test "resolves various usage input formats", %{task: task, roles: roles} do
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :design,
@@ -553,9 +550,6 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         status: :running,
         started_at: DateTime.utc_now()
       })
-
-    assert {:ok, _t1, %RoleRun{output: "atom output"}} =
-             Pipeline.settle_run(task, role_run, %{output: "atom output"})
 
     usage_struct = %TaskUsage{input_tokens: 42, output_tokens: 10}
 
@@ -600,6 +594,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output = "Code looks great!\n\nVERDICT: APPROVED"
 
+    Runs.append_run_event(role_run, output)
+
     assert {:ok,
             %Task{
               id: ^task_id,
@@ -612,7 +608,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               exit_code: 0,
               stage_fingerprint_head_sha: head_sha,
               stage_fingerprint_dirty_digest: dirty_digest
-            }} = Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+            }} = Pipeline.settle_run(task, role_run, %{exit_code: 0})
 
     assert is_binary(head_sha) and head_sha != ""
     assert is_binary(dirty_digest) and dirty_digest != ""
@@ -663,6 +659,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output = "Test checklist passed.\n\nVERDICT: PASS"
 
+    Runs.append_run_event(role_run, output)
+
     assert {:ok,
             %Task{
               id: ^task_id,
@@ -670,7 +668,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               stage_state: :queued,
               outstanding_reports: [^role_qa_id]
             }, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+             Pipeline.settle_run(task, role_run, %{exit_code: 0})
   end
 
   test "settles clean exit 0 for qa stage with valid manifest capturing report and advancing to qa_lead", %{
@@ -770,6 +768,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output = "QA checklist completed.\n\nVERDICT: PASS"
 
+    Runs.append_run_event(role_run, output)
+
     assert {:ok,
             %Task{
               id: ^task_id,
@@ -777,7 +777,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               stage_state: :queued,
               outstanding_reports: [^role_qa_id]
             }, %RoleRun{status: :finished, exit_code: 0}} =
-             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0, output: output})
+             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0})
 
     assert %QaReport{
              task_id: ^task_id,
@@ -824,6 +824,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         started_at: DateTime.utc_now()
       })
 
+    Runs.append_run_event(role_run, "VERDICT: PASS")
+
     assert {:ok,
             %Task{
               id: ^task_id,
@@ -831,7 +833,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               stage_state: :failed,
               error: err_msg
             }, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0, output: "VERDICT: PASS"})
+             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0})
 
     assert err_msg =~ "Failed to parse QA manifest"
   end
@@ -862,6 +864,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         started_at: DateTime.utc_now()
       })
 
+    Runs.append_run_event(role_run, "VERDICT: PASS")
+
     assert {:ok,
             %Task{
               id: ^task_id,
@@ -869,10 +873,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               stage_state: :failed,
               error: err_msg
             }, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{
-               exit_code: 0,
-               output: "VERDICT: PASS"
-             })
+             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0})
 
     assert err_msg =~ "QA left no manifest"
   end
@@ -909,11 +910,10 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         started_at: DateTime.utc_now()
       })
 
+    Runs.append_run_event(role_run, "VERDICT: PASS")
+
     assert {:ok, %Task{stage: :qa_lead}, %RoleRun{}} =
-             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{
-               exit_code: 0,
-               output: "VERDICT: PASS"
-             })
+             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0})
 
     assert %QaReport{commit: "scratch_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task.id)
   end
@@ -991,6 +991,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output = "Button is broken.\n\nVERDICT: FAIL"
 
+    Runs.append_run_event(role_run, output)
+
     assert {:ok,
             %Task{
               id: ^task_id,
@@ -998,7 +1000,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               stage_state: :queued,
               rework_cycles: 1
             }, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0, output: output})
+             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0})
 
     assert %QaReport{commit: "fail_qa_commit"} = Repo.one(from q in QaReport, where: q.task_id == ^task_id)
 
@@ -1070,6 +1072,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       Plug.Conn.send_resp(conn, 500, "Upload error")
     end)
 
+    Runs.append_run_event(role_run, "VERDICT: PASS")
+
     assert {:ok,
             %Task{
               id: ^task_id,
@@ -1077,7 +1081,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               stage_state: :failed,
               error: err_msg
             }, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0, output: "VERDICT: PASS"})
+             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0})
 
     assert err_msg =~ "linear_api_error"
   end
@@ -1136,11 +1140,10 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       })
 
     # Step 1: Settle QA run
+    Runs.append_run_event(role_run_qa, "VERDICT: PASS")
+
     assert {:ok, %Task{stage: :qa_lead, stage_state: :queued} = task_lead_queued, _rr} =
-             Pipeline.settle_run(%{task | scratch_path: qa_scratch_dir}, role_run_qa, %{
-               exit_code: 0,
-               output: "VERDICT: PASS"
-             })
+             Pipeline.settle_run(%{task | scratch_path: qa_scratch_dir}, role_run_qa, %{exit_code: 0})
 
     # Step 2: Scratch prepare for QA Lead
     lead_scratch_dir = create_temp_git_repo()
@@ -1160,11 +1163,10 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         started_at: DateTime.utc_now()
       })
 
+    Runs.append_run_event(role_run_lead, "VERDICT: PASS")
+
     assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, _rr2} =
-             Pipeline.settle_run(%{task_lead_queued | scratch_path: lead_scratch_dir}, role_run_lead, %{
-               exit_code: 0,
-               output: "VERDICT: PASS"
-             })
+             Pipeline.settle_run(%{task_lead_queued | scratch_path: lead_scratch_dir}, role_run_lead, %{exit_code: 0})
   end
 
   test "settles clean exit 0 for qa_lead stage with passed verdict advancing to demo if configured", %{
@@ -1198,13 +1200,15 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output = "QA Lead evaluation successful.\n\nVERDICT: PASSED"
 
+    Runs.append_run_event(role_run, output)
+
     assert {:ok,
             %Task{
               id: ^task_id,
               stage: :demo,
               stage_state: :queued
             }, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+             Pipeline.settle_run(task, role_run, %{exit_code: 0})
   end
 
   test "settles clean exit 0 for qa_lead stage with passed verdict advancing to ready_to_merge if no demo role", %{
@@ -1235,13 +1239,15 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output = "QA Lead evaluation successful.\n\nVERDICT: APPROVED"
 
+    Runs.append_run_event(role_run, output)
+
     assert {:ok,
             %Task{
               id: ^task_id,
               stage: :ready_to_merge,
               stage_state: :awaiting_approval
             }, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+             Pipeline.settle_run(task, role_run, %{exit_code: 0})
   end
 
   test "settles gate with changes_requested within budget routing back to engineer with carried reports", %{
@@ -1273,15 +1279,16 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         outstanding_reports: [role_prior.id]
       })
 
-    {:ok, _role_run} =
+    {:ok, prior_role_run} =
       Runs.create_role_run(%{
         task_id: task_id,
         role_id: role_prior.id,
         conversation_id: "sess_fixture",
         status: :finished,
-        started_at: DateTime.utc_now(),
-        output: "Prior QA note: button is off-center."
+        started_at: DateTime.utc_now()
       })
+
+    Runs.append_run_event(prior_role_run, "Prior QA note: button is off-center.")
 
     {:ok, role_run} =
       Runs.create_role_run(%{
@@ -1303,6 +1310,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output = "Please fix test coverage.\n\nVERDICT: CHANGES REQUESTED"
 
+    Runs.append_run_event(role_run, output)
+
     assert {:ok,
             %Task{
               id: ^task_id,
@@ -1312,7 +1321,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               rework_cycles_by_gate: %{^role_rev_id => 1},
               outstanding_reports: []
             }, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+             Pipeline.settle_run(task, role_run, %{exit_code: 0})
 
     engineer_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
     assert engineer_run.pending_answer =~ "Findings from Reviewer on the change you just pushed (rework 1 of 5)"
@@ -1350,6 +1359,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output = "Still not fixed.\n\nVERDICT: FAIL"
 
+    Runs.append_run_event(role_run, output)
+
     assert {:ok,
             %Task{
               id: ^task_id,
@@ -1358,7 +1369,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               rework_cycles: 3,
               error: err
             }, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+             Pipeline.settle_run(task, role_run, %{exit_code: 0})
 
     assert err =~ "Reviewer is still requesting changes after 3 rework cycles."
     assert err =~ "Send back to Engineer to have them addressed, or Skip"
@@ -1410,6 +1421,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output = "QA failure.\n\nVERDICT: FAILED"
 
+    Runs.append_run_event(role_run, output)
+
     assert {:ok,
             %Task{
               id: ^task_id,
@@ -1417,7 +1430,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               rework_cycles: 5,
               error: err
             }, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+             Pipeline.settle_run(task, role_run, %{exit_code: 0})
 
     assert err =~ "QA Tester is still requesting changes after 1 rework cycle."
   end
@@ -1445,6 +1458,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output = "Here are some notes but no verdict keyword."
 
+    Runs.append_run_event(role_run, output)
+
     assert {:ok,
             %Task{
               id: ^task_id,
@@ -1452,7 +1467,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               error: err,
               outstanding_reports: [^role_rev_id]
             }, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+             Pipeline.settle_run(task, role_run, %{exit_code: 0})
 
     assert err =~ "Reviewer ended without a clear verdict. Read its report, then Send back to Engineer or Skip"
   end
@@ -1501,8 +1516,10 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output = "Rework resolved nicely.\n\nVERDICT: APPROVED"
 
+    Runs.append_run_event(role_run, output)
+
     assert {:ok, %Task{stage: :qa, stage_state: :queued}, %RoleRun{stage_fingerprint_head_sha: head_sha}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+             Pipeline.settle_run(task, role_run, %{exit_code: 0})
 
     qa_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_qa.id)
     assert qa_run.pending_answer =~ "The change has been reworked and the reviewer has signed off on it again."
@@ -1537,8 +1554,10 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output = "Rework resolved nicely.\n\nVERDICT: APPROVED"
 
+    Runs.append_run_event(role_run, output)
+
     assert {:ok, %Task{stage: :qa, stage_state: :queued}, %RoleRun{}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+             Pipeline.settle_run(task, role_run, %{exit_code: 0})
 
     assert Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_qa.id) == nil
   end
@@ -1586,8 +1605,10 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output = "Please fix tests.\n\nVERDICT: CHANGES REQUESTED"
 
+    Runs.append_run_event(role_run, output)
+
     assert {:ok, %Task{stage: :engineer, stage_state: :queued}, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+             Pipeline.settle_run(task, role_run, %{exit_code: 0})
 
     eng_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
     assert eng_run.pending_answer =~ "Old engineer notes\n\nFindings from Reviewer"
@@ -1645,8 +1666,10 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         started_at: DateTime.utc_now()
       })
 
+    Runs.append_run_event(role_run2, output)
+
     assert {:ok, %Task{stage: :engineer, stage_state: :queued}, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task2, role_run2, %{exit_code: 0, output: output})
+             Pipeline.settle_run(task2, role_run2, %{exit_code: 0})
   end
 
   test "settles gate pass with rework from qa and qa_lead appending to existing pending_answer or missing next role", %{
@@ -1710,8 +1733,10 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output = "QA passed cleanly.\n\nVERDICT: PASS"
 
+    Runs.append_run_event(role_run, output)
+
     assert {:ok, %Task{stage: :qa_lead, stage_state: :queued}, %RoleRun{stage_fingerprint_head_sha: head_sha}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+             Pipeline.settle_run(task, role_run, %{exit_code: 0})
 
     lead_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_lead.id)
 
@@ -1766,8 +1791,10 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output2 = "QA Lead pass.\n\nVERDICT: PASS"
 
+    Runs.append_run_event(role_run2, output2)
+
     assert {:ok, %Task{stage: :demo, stage_state: :queued}, %RoleRun{stage_fingerprint_head_sha: head_sha2}} =
-             Pipeline.settle_run(task2, role_run2, %{exit_code: 0, output: output2})
+             Pipeline.settle_run(task2, role_run2, %{exit_code: 0})
 
     demo_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id2 and r.role_id == ^role_demo.id)
     assert demo_run.pending_answer =~ "The change has been reworked and the previous gate has signed off on it again."
@@ -1826,8 +1853,10 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         started_at: DateTime.utc_now()
       })
 
+    Runs.append_run_event(role_run3, "VERDICT: APPROVED")
+
     assert {:ok, %Task{stage: :qa, stage_state: :queued}, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task3, role_run3, %{exit_code: 0, output: "VERDICT: APPROVED"})
+             Pipeline.settle_run(task3, role_run3, %{exit_code: 0})
 
     # Part D: Gate unclear with unknown role ID falls back to to_string(role_id)
     unknown_role_id = "rol_unknown_gate"
@@ -1841,8 +1870,10 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         started_at: DateTime.utc_now()
       })
 
+    Runs.append_run_event(role_run_unknown, "unclear")
+
     assert {:ok, %Task{stage_state: :awaiting_approval, error: err}, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task3, role_run_unknown, %{exit_code: 0, output: "unclear"})
+             Pipeline.settle_run(task3, role_run_unknown, %{exit_code: 0})
 
     assert err =~ "rol_unknown_gate ended without a clear verdict."
   end
@@ -1881,9 +1912,11 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     output = "Approved.\n\nVERDICT: APPROVED"
 
+    Runs.append_run_event(role_run, output)
+
     assert {:ok, %Task{stage: :qa},
             %RoleRun{stage_fingerprint_head_sha: "fallback_sha", stage_fingerprint_dirty_digest: "fallback_digest"}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output})
+             Pipeline.settle_run(task, role_run, %{exit_code: 0})
   end
 
   test "settle_run preserves blocked state when task was already blocked on question", %{task: task, roles: roles} do
@@ -1910,9 +1943,11 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         started_at: DateTime.utc_now()
       })
 
+    Runs.append_run_event(role_run, "Exiting after ask")
+
     assert {:ok, %Task{stage: :engineer, stage_state: :blocked, question_id: ^expected_q_id},
             %RoleRun{status: :blocked_on_input, exit_code: 0}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: "Exiting after ask"})
+             Pipeline.settle_run(task, role_run, %{exit_code: 0})
   end
 
   test "settle_run delegates %Run{kind: :chat} and %{kind: :chat} to SettleChatTurn", %{task: task, roles: roles} do

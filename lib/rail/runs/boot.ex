@@ -221,7 +221,6 @@ defmodule Rail.Runs.Boot do
         completed_at: now,
         exit_code: exit_code,
         error: error,
-        output: updated_event_state.final_text,
         usage: updated_event_state.usage,
         conversation_id: updated_event_state.conversation_id || role_run.conversation_id
       }
@@ -234,7 +233,6 @@ defmodule Rail.Runs.Boot do
       outcome = %{
         exit_code: exit_code,
         error: error,
-        output: updated_event_state.final_text,
         usage: updated_event_state.usage,
         conversation_id: updated_event_state.conversation_id || role_run.conversation_id,
         detected_questions: updated_event_state.detected_questions,

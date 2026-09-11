@@ -526,14 +526,15 @@ defmodule RailWeb.Settings.RolesLiveTest do
              })
 
     # Create a finished role run with output for evidence
-    {:ok, _role_run} =
+    {:ok, role_run} =
       Runs.create_role_run(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: role_id,
         status: :finished,
-        started_at: DateTime.utc_now(),
-        output: "Completed task implementation successfully."
+        started_at: DateTime.utc_now()
       })
+
+    Runs.append_run_event(role_run, "Completed task implementation successfully.")
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
@@ -612,14 +613,15 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "Debug failures"
              })
 
-    {:ok, _role_run} =
+    {:ok, role_run} =
       Runs.create_role_run(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: role_id,
         status: :finished,
-        started_at: DateTime.utc_now(),
-        output: "Output"
+        started_at: DateTime.utc_now()
       })
+
+    Runs.append_run_event(role_run, "Completed task implementation successfully.")
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
@@ -984,9 +986,10 @@ defmodule RailWeb.Settings.RolesLiveTest do
         role_id: role_id,
         status: :finished,
         started_at: DateTime.utc_now(),
-        completed_at: nil,
-        output: "Output"
+        completed_at: nil
       })
+
+    Runs.append_run_event(role_run, "Completed task implementation successfully.")
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
@@ -1049,14 +1052,15 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "QA instructions"
              })
 
-    {:ok, _role_run} =
+    {:ok, role_run} =
       Runs.create_role_run(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: role_id,
         status: :finished,
-        started_at: DateTime.utc_now(),
-        output: "Output"
+        started_at: DateTime.utc_now()
       })
+
+    Runs.append_run_event(role_run, "Completed task implementation successfully.")
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
@@ -1109,14 +1113,15 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "QA instructions"
              })
 
-    {:ok, _role_run} =
+    {:ok, role_run} =
       Runs.create_role_run(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: role_id,
         status: :finished,
-        started_at: DateTime.utc_now(),
-        output: "Output"
+        started_at: DateTime.utc_now()
       })
+
+    Runs.append_run_event(role_run, "Completed task implementation successfully.")
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
@@ -1157,14 +1162,15 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "Debugger instructions"
              })
 
-    {:ok, _role_run} =
+    {:ok, role_run} =
       Runs.create_role_run(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: new_role_id,
         status: :finished,
-        started_at: DateTime.utc_now(),
-        output: "Output"
+        started_at: DateTime.utc_now()
       })
+
+    Runs.append_run_event(role_run, "Completed task implementation successfully.")
 
     assert {:ok, view2, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 

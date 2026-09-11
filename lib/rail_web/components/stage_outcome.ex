@@ -1,11 +1,11 @@
 defmodule RailWeb.Components.StageOutcome do
   @moduledoc """
-  Renders the outcome or failure details of a role run for the current stage.
-  Per spec 05 §7, does not parse or invent verdict badges.
+  Renders the failure details of a role run for the current stage.
+
+  What a run said is the conversation view's job — it renders the whole log.
+  Per spec 05 §7, this does not parse or invent verdict badges.
   """
   use RailWeb, :html
-
-  import RailWeb.CoreComponents, only: [markdown: 1]
 
   attr :task, :any, required: true
   attr :role_run, :any, default: nil
@@ -16,23 +16,15 @@ defmodule RailWeb.Components.StageOutcome do
     task = assigns.task
     run = assigns.role_run
 
-    output = if run, do: String.trim(get_field(run, :output) || ""), else: ""
     error = if run, do: String.trim(get_field(run, :error) || ""), else: ""
 
-    is_failed = stage_state_failed?(task)
-    has_output = output != ""
-    has_error = is_failed and error != ""
-
-    visible = run != nil and (has_output or has_error)
+    visible = run != nil and error != "" and stage_state_failed?(task)
     resolved_role_name = resolve_role_name(assigns.role_name, run, task)
 
     assigns =
       assigns
       |> assign(:visible, visible)
-      |> assign(:output, output)
       |> assign(:error, error)
-      |> assign(:has_output, has_output)
-      |> assign(:has_error, has_error)
       |> assign(:resolved_role_name, resolved_role_name)
 
     ~H"""
@@ -42,8 +34,7 @@ defmodule RailWeb.Components.StageOutcome do
       data-qa="stage-outcome stage_outcome"
       class={["space-y-6", @class]}
     >
-      <!-- Failure Block -->
-      <div :if={@has_error} id="stage-failure-section" class="space-y-2">
+      <div id="stage-failure-section" class="space-y-2">
         <h3
           id="stage-failure-heading"
           data-qa="stage_failure_heading"
@@ -57,24 +48,6 @@ defmodule RailWeb.Components.StageOutcome do
           class="w-full p-4 rounded-lg bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 font-mono text-xs whitespace-pre-wrap select-text break-words"
         >
           {@error}
-        </div>
-      </div>
-
-      <!-- Outcome Block -->
-      <div :if={@has_output} id="stage-outcome-section" class="space-y-2">
-        <h3
-          id="stage-outcome-heading"
-          data-qa="stage_outcome_heading"
-          class="text-base font-bold text-slate-900 dark:text-slate-100"
-        >
-          {@resolved_role_name} Outcome
-        </h3>
-        <div
-          id="stage-outcome-card"
-          data-qa="stage_outcome_card"
-          class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-4 select-text"
-        >
-          <.markdown content={@output} />
         </div>
       </div>
     </div>

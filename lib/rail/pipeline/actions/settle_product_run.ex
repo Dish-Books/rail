@@ -45,12 +45,11 @@ defmodule Rail.Pipeline.Actions.SettleProductRun do
     # An empty outcome means a re-settle: keep what the run layer already recorded.
     exit_code = Map.get(outcome, :exit_code) || role_run.exit_code || 0
     error = Map.get(outcome, :error) || role_run.error
-    output = Map.get(outcome, :output) || role_run.output
     usage = Map.get(outcome, :usage)
 
     run |> Run.changeset(%{status: :finished}) |> Repo.update()
 
-    {:ok, role_run} = update_role_run(role_run, exit_code, error, output, usage)
+    {:ok, role_run} = update_role_run(role_run, exit_code, error, usage)
 
     {task_attrs, updated_role_run} = resolve_settle_outcome(task, role_run, exit_code, error)
 
@@ -118,15 +117,14 @@ defmodule Rail.Pipeline.Actions.SettleProductRun do
     end
   end
 
-  defp update_role_run(role_run, exit_code, error, output, usage) do
+  defp update_role_run(role_run, exit_code, error, usage) do
     new_status = if role_run.status == :blocked_on_input, do: :blocked_on_input, else: :finished
 
     attrs = %{
       status: new_status,
       completed_at: role_run.completed_at || DateTime.utc_now(),
       exit_code: exit_code,
-      error: error,
-      output: output
+      error: error
     }
 
     attrs = if usage, do: Map.put(attrs, :usage, usage), else: attrs

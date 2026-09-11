@@ -10,11 +10,11 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   import Ecto.Query
   import Rail.Pipeline.Utils.CaptureScratch
   import Rail.Pipeline.Utils.CarriedReports
+  import Rail.Runs.Utils.AssistantLog
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Domain.RunFailure
-  alias Rail.Domain.StageVerdict
   alias Rail.Domain.TaskUsage
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
@@ -31,7 +31,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
 
   @doc """
   Settles a finished run for a task:
-  - Updates `RoleRun` and `Run` records with exit codes, outputs, and usage.
+  - Updates `RoleRun` and `Run` records with exit codes, errors, and usage.
   - Captures scratch artifacts via `capture_scratch/3`.
   - Advances stage or sets approval gates on exit 0.
   - Applies retry backoff or marks failure on non-zero exit.
@@ -58,12 +58,11 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   defp do_settle_run(%Task{} = task, %RoleRun{} = role_run, run_or_outcome, opts) do
     exit_code = resolve_exit_code(run_or_outcome, role_run)
     error = resolve_error(run_or_outcome, role_run)
-    output = resolve_output(run_or_outcome, role_run)
     usage = resolve_usage(run_or_outcome, role_run)
 
     maybe_finish_run(run_or_outcome)
 
-    {:ok, role_run} = update_role_run(role_run, exit_code, error, output, usage)
+    {:ok, role_run} = update_role_run(role_run, exit_code, error, usage)
 
     scratch_dir = task.scratch_path
 
@@ -388,7 +387,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     gate_role_id = role_run.role_id
     reports = task.outstanding_reports || []
     updated_reports = if gate_role_id in reports, do: reports, else: Enum.reverse([gate_role_id | Enum.reverse(reports)])
-    verdict = StageVerdict.parse(role_run.output)
+    verdict = Rail.Pipeline.parse_stage_verdict(role_run)
 
     case verdict.verdict do
       :passed ->
@@ -464,8 +463,8 @@ defmodule Rail.Pipeline.Actions.SettleRun do
       new_total_rework = (task.rework_cycles || 0) + 1
       new_cycles_by_gate = Map.put(cycles_by_gate, gate_role_id, per_gate + 1)
       role_name = resolve_role_name(gate_role_id)
-      findings = String.trim(role_run.output || "")
-      carried = build_carried_gate_reports(task, except: gate_role_id)
+      findings = String.trim(assistant_log(role_run))
+      carried = carried_reports(task, except: gate_role_id)
 
       note =
         "Findings from #{role_name} on the change you just pushed (rework #{new_total_rework} of 5). " <>
@@ -576,7 +575,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     end
   end
 
-  defp update_role_run(role_run, exit_code, error, output, usage) do
+  defp update_role_run(role_run, exit_code, error, usage) do
     new_status =
       if role_run.status == :blocked_on_input do
         :blocked_on_input
@@ -588,8 +587,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
       status: new_status,
       completed_at: role_run.completed_at || DateTime.utc_now(),
       exit_code: exit_code,
-      error: error,
-      output: output
+      error: error
     }
 
     attrs = if usage, do: Map.put(attrs, :usage, usage), else: attrs
@@ -618,11 +616,6 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   defp resolve_error(%{"error" => err}, _role_run) when is_binary(err), do: err
   defp resolve_error(_outcome, %RoleRun{error: err}) when is_binary(err), do: err
   defp resolve_error(_outcome, _role_run), do: nil
-
-  defp resolve_output(%{output: out}, _role_run) when is_binary(out), do: out
-  defp resolve_output(%{"output" => out}, _role_run) when is_binary(out), do: out
-  defp resolve_output(_outcome, %RoleRun{output: out}) when is_binary(out), do: out
-  defp resolve_output(_outcome, _role_run), do: nil
 
   defp resolve_usage(%{usage: %TaskUsage{} = usage}, _role_run), do: Map.from_struct(usage)
   defp resolve_usage(%{usage: usage}, _role_run) when is_map(usage), do: usage

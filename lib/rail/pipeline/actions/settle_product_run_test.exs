@@ -183,7 +183,7 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
 
     assert {:ok, %Task{stage_state: :blocked, question_id: ^expected_q_id},
             %RoleRun{status: :blocked_on_input, exit_code: 0}} =
-             Pipeline.settle_product_run(run, %{exit_code: 0, output: "Exiting after ask"})
+             Pipeline.settle_product_run(run, %{exit_code: 0})
   end
 
   test "retries a transient failure with backoff while retries remain", %{task: task, role: role} do
@@ -219,22 +219,21 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
     run = task |> running_task() |> role_run(role) |> run()
     usage = %TaskUsage{input_tokens: 11, output_tokens: 22}
 
-    assert {:ok, %Task{stage_state: :awaiting_approval}, %RoleRun{status: :finished, exit_code: 0, output: "done"}} =
-             Pipeline.settle_product_run(run, %{exit_code: 0, output: "done", usage: usage})
+    assert {:ok, %Task{stage_state: :awaiting_approval}, %RoleRun{status: :finished, exit_code: 0}} =
+             Pipeline.settle_product_run(run, %{exit_code: 0, usage: usage})
 
     assert %RoleRun{usage: %TaskUsage{input_tokens: 11, output_tokens: 22}} =
              Repo.get!(RoleRun, run.role_run_id)
   end
 
-  test "falls back to the role run's own exit code, error, and output", %{task: task, role: role} do
+  test "falls back to the role run's own exit code and error", %{task: task, role: role} do
     run =
       task
       |> running_task()
-      |> role_run(role, %{exit_code: 1, error: "permanent boom", output: "prior output"})
+      |> role_run(role, %{exit_code: 1, error: "permanent boom"})
       |> run(:finished)
 
-    assert {:ok, %Task{stage_state: :failed, error: "permanent boom"},
-            %RoleRun{status: :finished, exit_code: 1, output: "prior output"}} =
+    assert {:ok, %Task{stage_state: :failed, error: "permanent boom"}, %RoleRun{status: :finished, exit_code: 1}} =
              Pipeline.settle_product_run(run)
   end
 end

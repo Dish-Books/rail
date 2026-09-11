@@ -104,16 +104,13 @@ defmodule Rail.Pipeline.Utils.PrepareScratch do
 
   defp maybe_write_outstanding_reports(%Task{outstanding_reports: reports} = task, scratch_dir)
        when is_list(reports) and reports != [] do
-    entries = collect_report_entries(task)
+    case carried_reports(task) do
+      "" ->
+        :ok
 
-    if entries != [] do
-      sections =
-        Enum.map(entries, fn {_role_id, role_name, output} ->
-          "### #{role_name}\n\n#{output}"
-        end)
-
-      content = "# Outstanding Gate Reports\n\n" <> Enum.join(sections, "\n\n") <> "\n"
-      File.write!(Path.join(scratch_dir, "outstanding_reports.md"), content)
+      block ->
+        content = "# Outstanding Gate Reports" <> block <> "\n"
+        File.write!(Path.join(scratch_dir, "outstanding_reports.md"), content)
     end
 
     :ok

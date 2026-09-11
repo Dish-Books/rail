@@ -1,9 +1,10 @@
 defmodule Rail.Pipeline.Utils.CarriedReports do
   @moduledoc """
-  Utilities for collecting and formatting carried gate reports from `outstanding_reports`.
+  The findings the other gates left on a change, for handing to the engineer.
   """
 
   import Ecto.Query
+  import Rail.Runs.Utils.AssistantLog
 
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -12,12 +13,21 @@ defmodule Rail.Pipeline.Utils.CarriedReports do
   alias Rail.Runs.Schemas.RoleRun
 
   @doc """
-  Builds the carried gate reports text block for the engineer, excluding any role specified in `:except`.
-  Returns an empty string if no gate reports are found.
+  The carried gate reports block for the engineer, or `""` when there is nothing
+  to carry.
+
+  Each role named in `task.outstanding_reports` contributes what its latest run
+  said, read from that run's log. `:except` drops one role, for the gate whose
+  own findings are already being handed over separately.
   """
-  def build_carried_gate_reports(%Task{} = task, opts \\ []) do
+  def carried_reports(%Task{} = task, opts \\ []) do
     except_role_id = Keyword.get(opts, :except)
-    sections = collect_report_sections(task, except_role_id)
+
+    sections =
+      task.outstanding_reports
+      |> List.wrap()
+      |> Enum.reject(&(&1 == except_role_id))
+      |> Enum.flat_map(&section_for(task, &1))
 
     if sections == [] do
       ""
@@ -33,38 +43,23 @@ defmodule Rail.Pipeline.Utils.CarriedReports do
     end
   end
 
-  @doc """
-  Collects all report sections as `{role_id, role_name, output_content}` triples.
-  """
-  def collect_report_entries(%Task{} = task, except_role_id \\ nil) do
-    role_ids = Enum.reject(task.outstanding_reports || [], &(&1 == except_role_id))
+  defp section_for(%Task{} = task, role_id) do
+    findings =
+      from(r in RoleRun,
+        where: r.task_id == ^task.id and r.role_id == ^role_id,
+        order_by: [desc: r.inserted_at],
+        limit: 1,
+        select: r.id
+      )
+      |> Repo.one()
+      |> assistant_log()
+      |> String.trim()
 
-    Enum.flat_map(role_ids, fn role_id ->
-      run =
-        Repo.one(
-          from r in RoleRun,
-            where: r.task_id == ^task.id and r.role_id == ^role_id,
-            order_by: [desc: r.inserted_at],
-            limit: 1
-        )
-
-      output = if run && run.output, do: String.trim(run.output), else: ""
-
-      if output == "" do
-        []
-      else
-        role_name = resolve_role_name(role_id)
-        [{role_id, role_name, output}]
-      end
-    end)
-  end
-
-  defp collect_report_sections(%Task{} = task, except_role_id) do
-    task
-    |> collect_report_entries(except_role_id)
-    |> Enum.map(fn {_role_id, role_name, output} ->
-      "### #{role_name}\n\n#{output}"
-    end)
+    if findings == "" do
+      []
+    else
+      ["### #{resolve_role_name(role_id)}\n\n#{findings}"]
+    end
   end
 
   defp resolve_role_name(role_id) do

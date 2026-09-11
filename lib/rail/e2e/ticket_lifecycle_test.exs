@@ -6,6 +6,7 @@ defmodule Rail.E2E.TicketLifecycleTest do
   alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Artifacts.Schemas.Demo
   alias Rail.Artifacts.Schemas.QaReport
+  alias Rail.Domain.StageVerdict
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
@@ -281,10 +282,10 @@ defmodule Rail.E2E.TicketLifecycleTest do
     task = Repo.get!(Task, task_id)
     assert %Task{stage: :qa, stage_state: :queued} = task
 
-    assert {:ok, %RoleRun{status: :finished, exit_code: 0, output: rev_out}} =
+    assert {:ok, %RoleRun{status: :finished, exit_code: 0} = rev_run} =
              Rail.Runs.get_latest_role_run_for_task(task_id)
 
-    assert rev_out =~ "VERDICT: PASSED"
+    assert %StageVerdict{verdict: :passed} = Rail.Pipeline.parse_stage_verdict(rev_run)
 
     # -------------------------------------------------------------------------
     # 7. QA run starts and settles -> captures QA report into Postgres, parses VERDICT: PASSED, advances to :qa_lead
@@ -309,10 +310,10 @@ defmodule Rail.E2E.TicketLifecycleTest do
     task = Repo.get!(Task, task_id)
     assert %Task{stage: :qa_lead, stage_state: :queued} = task
 
-    assert {:ok, %RoleRun{status: :finished, exit_code: 0, output: qa_out}} =
+    assert {:ok, %RoleRun{status: :finished, exit_code: 0} = qa_run} =
              Rail.Runs.get_latest_role_run_for_task(task_id)
 
-    assert qa_out =~ "VERDICT: PASSED"
+    assert %StageVerdict{verdict: :passed} = Rail.Pipeline.parse_stage_verdict(qa_run)
     assert %QaReport{rows: [_row]} = Repo.get_by(QaReport, task_id: task_id)
 
     # -------------------------------------------------------------------------
@@ -333,10 +334,10 @@ defmodule Rail.E2E.TicketLifecycleTest do
     task = Repo.get!(Task, task_id)
     assert %Task{stage: :demo, stage_state: :queued} = task
 
-    assert {:ok, %RoleRun{status: :finished, exit_code: 0, output: lead_out}} =
+    assert {:ok, %RoleRun{status: :finished, exit_code: 0} = lead_run} =
              Rail.Runs.get_latest_role_run_for_task(task_id)
 
-    assert lead_out =~ "VERDICT: PASSED"
+    assert %StageVerdict{verdict: :passed} = Rail.Pipeline.parse_stage_verdict(lead_run)
 
     # -------------------------------------------------------------------------
     # 9. Demo run starts and settles -> captures demo into Postgres, advances to :ready_to_merge

@@ -66,14 +66,15 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
   test "runs improvement with custom runner and cleans up temp directory", %{role: %Role{id: role_id} = role} do
     scope = Scope.for_user(%{admin: true})
 
-    {:ok, _role_run} =
+    {:ok, role_run} =
       Runs.create_role_run(%{
         task_id: "tsk_improve_role",
         role_id: role.id,
         status: :finished,
-        output: "Previous run output",
         started_at: DateTime.utc_now()
       })
+
+    Runs.append_run_event(role_run, "Previous run output")
 
     test_pid = self()
 
@@ -103,14 +104,15 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
   test "handles runner returning 2-element {:ok, stdout}", %{role: role} do
     scope = Scope.for_system()
 
-    {:ok, _role_run} =
+    {:ok, role_run} =
       Runs.create_role_run(%{
         task_id: "tsk_improve_role",
         role_id: role.id,
         status: :finished,
-        output: "Output",
         started_at: DateTime.utc_now()
       })
+
+    Runs.append_run_event(role_run, "Previous run output")
 
     runner = fn _dir, _role, _opts ->
       output = """
@@ -129,14 +131,15 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
   test "handles runner failure and cleans up temp directory", %{role: role} do
     scope = Scope.for_user(%{admin: true})
 
-    {:ok, _role_run} =
+    {:ok, role_run} =
       Runs.create_role_run(%{
         task_id: "tsk_improve_role",
         role_id: role.id,
         status: :finished,
-        output: "Output",
         started_at: DateTime.utc_now()
       })
+
+    Runs.append_run_event(role_run, "Previous run output")
 
     test_pid = self()
 
@@ -155,14 +158,15 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
   test "cleans up temp directory even if runner raises", %{role: role} do
     scope = Scope.for_user(%{admin: true})
 
-    {:ok, _role_run} =
+    {:ok, role_run} =
       Runs.create_role_run(%{
         task_id: "tsk_improve_role",
         role_id: role.id,
         status: :finished,
-        output: "Output",
         started_at: DateTime.utc_now()
       })
+
+    Runs.append_run_event(role_run, "Previous run output")
 
     test_pid = self()
 
@@ -182,14 +186,15 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
   test "executes default runner when no custom runner is provided", %{role: role} do
     scope = Scope.for_system()
 
-    {:ok, _role_run} =
+    {:ok, role_run} =
       Runs.create_role_run(%{
         task_id: "tsk_improve_role",
         role_id: role.id,
         status: :finished,
-        output: "Output",
         started_at: DateTime.utc_now()
       })
+
+    Runs.append_run_event(role_run, "Previous run output")
 
     script_path = Path.join(System.tmp_dir!(), "mock_claude_#{System.unique_integer([:positive])}.sh")
 
@@ -218,14 +223,15 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
   test "handles default runner non-zero exit", %{role: role} do
     scope = Scope.for_system()
 
-    {:ok, _role_run} =
+    {:ok, role_run} =
       Runs.create_role_run(%{
         task_id: "tsk_improve_role",
         role_id: role.id,
         status: :finished,
-        output: "Output",
         started_at: DateTime.utc_now()
       })
+
+    Runs.append_run_event(role_run, "Previous run output")
 
     # Use /usr/bin/false to simulate CLI failure
     role = configure_claude(role, "/usr/bin/false")
@@ -239,14 +245,15 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
   test "handles default runner non-zero exit with stderr message", %{role: role} do
     scope = Scope.for_system()
 
-    {:ok, _role_run} =
+    {:ok, role_run} =
       Runs.create_role_run(%{
         task_id: "tsk_improve_role",
         role_id: role.id,
         status: :finished,
-        output: "Output",
         started_at: DateTime.utc_now()
       })
+
+    Runs.append_run_event(role_run, "Previous run output")
 
     script_path = Path.join(System.tmp_dir!(), "mock_claude_err_#{System.unique_integer([:positive])}.sh")
 

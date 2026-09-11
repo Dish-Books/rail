@@ -179,8 +179,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
         status: :finished,
         started_at: DateTime.utc_now(),
         attempts: 1,
-        conversation_id: "sess-chat-1",
-        output: "Original stage output"
+        conversation_id: "sess-chat-1"
       })
 
     assert {:ok, :sent, %Task{active_chat_role_id: ^role_id, stage: :engineer, stage_state: :queued}} =
@@ -223,7 +222,6 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     assert %RoleRun{
              status: :finished,
-             output: "Original stage output",
              chat_fingerprint_head_sha: head_sha,
              chat_fingerprint_dirty_digest: dirty_digest
            } = refreshed_role_run

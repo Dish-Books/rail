@@ -119,7 +119,6 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         started_at: DateTime.utc_now(),
         attempts: 1,
         conversation_id: "sess-rev-1",
-        output: "Original review output",
         pending_chat: "Can you clarify finding 1?",
         chat_fingerprint_head_sha: "head123",
         chat_fingerprint_dirty_digest: "digest123",
@@ -146,7 +145,6 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     outcome = %{
       exit_code: 0,
       error: nil,
-      output: "Hello from reviewer agent",
       usage: turn_usage,
       run: run
     }
@@ -168,7 +166,6 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
     assert %RoleRun{
              status: :finished,
-             output: "Original review output",
              pending_chat: nil,
              chat_fingerprint_head_sha: nil,
              chat_fingerprint_dirty_digest: nil,
@@ -179,7 +176,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     assert refreshed_run.status == :finished
   end
 
-  test "review chat returning VERDICT line does not advance stage or touch output", %{
+  test "review chat returning a VERDICT line does not advance the stage", %{
     task: %Task{id: task_id} = task,
     rev_role: %Role{id: rev_role_id}
   } do
@@ -190,28 +187,28 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         status: :finished,
         started_at: DateTime.utc_now(),
         attempts: 1,
-        conversation_id: "sess-verdict",
-        output: "Original verdict: approved"
+        conversation_id: "sess-verdict"
       })
+
+    Runs.append_run_event(role_run_id, "Reviewed.\n\nVERDICT: APPROVED")
 
     {:ok, task} = task |> Task.changeset(%{active_chat_role_id: rev_role_id}) |> Repo.update()
 
     outcome = %{
       exit_code: 0,
       error: nil,
-      output: "I still have concerns.\nVERDICT: CHANGES REQUESTED",
       usage: %TaskUsage{input_tokens: 20, output_tokens: 10}
     }
 
     assert {:ok, %Task{stage: :review, stage_state: :awaiting_approval}, %RoleRun{}} =
              Pipeline.settle_chat_turn(task, role_run_id, outcome)
 
+    Runs.append_run_event(role_run_id, "I still have concerns.\n\nVERDICT: CHANGES REQUESTED")
+
     refreshed_task = Repo.get!(Task, task_id)
-    refreshed_role_run = Repo.get!(RoleRun, role_run_id)
 
     assert refreshed_task.stage == :review
     assert refreshed_task.stage_state == :awaiting_approval
-    assert refreshed_role_run.output == "Original verdict: approved"
   end
 
   test "chat turn emitting [QUESTION:] does not file question or block stage", %{
@@ -233,7 +230,6 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     outcome = %{
       exit_code: 0,
       error: nil,
-      output: "[QUESTION: Do you prefer approach A or B?]",
       usage: %TaskUsage{input_tokens: 30, output_tokens: 15}
     }
 
@@ -278,7 +274,6 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     outcome = %{
       exit_code: 0,
       error: nil,
-      output: "I made the code change.",
       usage: %TaskUsage{input_tokens: 100, output_tokens: 50}
     }
 
@@ -343,7 +338,6 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     outcome = %{
       exit_code: 0,
       error: nil,
-      output: "Fixed the reported issue.",
       usage: %TaskUsage{input_tokens: 120, output_tokens: 60}
     }
 
@@ -400,7 +394,6 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     outcome = %{
       exit_code: 0,
       error: nil,
-      output: "Left a comment and touched a file",
       usage: %TaskUsage{input_tokens: 40, output_tokens: 20}
     }
 
@@ -436,8 +429,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
     outcome = %{
       exit_code: 1,
-      error: "Command failed: exit 1",
-      output: ""
+      error: "Command failed: exit 1"
     }
 
     assert {:ok, %Task{stage: :review, stage_state: :awaiting_approval}, %RoleRun{}} =
@@ -493,7 +485,6 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     outcome = %{
       exit_code: 0,
       error: nil,
-      output: "Done with eng chat",
       usage: %TaskUsage{input_tokens: 10, output_tokens: 10}
     }
 
@@ -540,7 +531,6 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     outcome = %{
       exit_code: 0,
       error: nil,
-      output: "Chat reply",
       usage: %TaskUsage{input_tokens: 30, output_tokens: 15},
       run: run
     }
@@ -602,7 +592,6 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     outcome = %{
       exit_code: 0,
       error: nil,
-      output: "Engineer stage finished",
       usage: %TaskUsage{input_tokens: 500, output_tokens: 200},
       run: stage_run
     }

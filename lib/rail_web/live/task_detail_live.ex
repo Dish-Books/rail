@@ -1498,19 +1498,8 @@ defmodule RailWeb.TaskDetailLive do
          Runs.running?(task.id))
   end
 
-  defp load_run_transcript(%RoleRun{id: role_run_id} = run) do
-    events = Runs.list_run_events(role_run_id)
-
-    lines =
-      if events == [] do
-        if is_binary(run.output) and run.output != "" do
-          String.split(run.output, "\n")
-        else
-          []
-        end
-      else
-        Enum.map(events, & &1.line)
-      end
+  defp load_run_transcript(%RoleRun{id: role_run_id}) do
+    lines = role_run_id |> Runs.list_run_events() |> Enum.map(& &1.line)
 
     {lines, ChatTranscript.parse(lines)}
   end
