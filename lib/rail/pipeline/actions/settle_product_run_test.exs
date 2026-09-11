@@ -126,9 +126,11 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
     %Task{id: task_id} = task = running_task(task)
     run = task |> role_run(role, %{auto_retries: 2}) |> run()
 
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run, %{exit_code: 0})
+
     assert {:ok, %Task{id: ^task_id, stage: :product, stage_state: :awaiting_approval, error: nil, retry_after: nil},
             %RoleRun{status: :finished, exit_code: 0, auto_retries: 0}} =
-             Pipeline.settle_product_run(run, %{exit_code: 0})
+             Pipeline.settle_product_run(run)
 
     assert %Run{status: :finished} = Repo.get!(Run, run.id)
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}
@@ -141,8 +143,10 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
     # The run was handed out before the task started; the settle must see :running, not the stale copy.
     running_task(task)
 
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run, %{exit_code: 0})
+
     assert {:ok, %Task{stage_state: :awaiting_approval}, %RoleRun{}} =
-             Pipeline.settle_product_run(run, %{exit_code: 0})
+             Pipeline.settle_product_run(run)
   end
 
   test "writes nothing to Linear: the ticket stays in scratch until approval", %{
@@ -164,7 +168,7 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
 
     # No Linear mock is set up: a push would raise on the unexpected request.
     assert {:ok, %Task{stage_state: :awaiting_approval}, %RoleRun{}} =
-             Pipeline.settle_product_run(run, %{exit_code: 0}, scratch_dir: scratch_dir)
+             Pipeline.settle_product_run(run)
 
     assert %Issue{title: ^title_before} = Repo.get!(Issue, issue.id)
   end
@@ -181,9 +185,11 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
 
     run = task |> role_run(role, %{status: :blocked_on_input}) |> run()
 
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run, %{exit_code: 0})
+
     assert {:ok, %Task{stage_state: :blocked, question_id: ^expected_q_id},
             %RoleRun{status: :blocked_on_input, exit_code: 0}} =
-             Pipeline.settle_product_run(run, %{exit_code: 0})
+             Pipeline.settle_product_run(run)
   end
 
   test "retries a transient failure with backoff while retries remain", %{task: task, role: role} do
@@ -192,9 +198,11 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
 
     transient_err = "rate limit exceeded: 429 too many requests"
 
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run, %{exit_code: 1, error: transient_err})
+
     assert {:ok, %Task{id: ^task_id, stage_state: :queued, retry_after: %DateTime{}, error: ^transient_err},
             %RoleRun{status: :finished, auto_retries: 1, exit_code: 1}} =
-             Pipeline.settle_product_run(run, %{exit_code: 1, error: transient_err})
+             Pipeline.settle_product_run(run)
   end
 
   test "fails a transient failure once auto retries are exhausted", %{task: task, role: role} do
@@ -202,25 +210,31 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
 
     transient_err = "rate limit exceeded: 429 too many requests"
 
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run, %{exit_code: 1, error: transient_err})
+
     assert {:ok, %Task{stage_state: :failed, retry_after: nil, error: ^transient_err},
             %RoleRun{status: :finished, auto_retries: 2, exit_code: 1}} =
-             Pipeline.settle_product_run(run, %{exit_code: 1, error: transient_err})
+             Pipeline.settle_product_run(run)
   end
 
   test "fails a permanent failure immediately", %{task: task, role: role} do
     run = task |> running_task() |> role_run(role) |> run()
 
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run, %{exit_code: 2})
+
     assert {:ok, %Task{stage_state: :failed, retry_after: nil, error: "Exited with code 2"},
             %RoleRun{status: :finished, exit_code: 2}} =
-             Pipeline.settle_product_run(run, %{exit_code: 2})
+             Pipeline.settle_product_run(run)
   end
 
   test "records usage from the outcome", %{task: task, role: role} do
     run = task |> running_task() |> role_run(role) |> run()
     usage = %TaskUsage{input_tokens: 11, output_tokens: 22}
 
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run, %{exit_code: 0, usage: usage})
+
     assert {:ok, %Task{stage_state: :awaiting_approval}, %RoleRun{status: :finished, exit_code: 0}} =
-             Pipeline.settle_product_run(run, %{exit_code: 0, usage: usage})
+             Pipeline.settle_product_run(run)
 
     assert %RoleRun{usage: %TaskUsage{input_tokens: 11, output_tokens: 22}} =
              Repo.get!(RoleRun, run.role_run_id)
@@ -232,6 +246,8 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
       |> running_task()
       |> role_run(role, %{exit_code: 1, error: "permanent boom"})
       |> run(:finished)
+
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run)
 
     assert {:ok, %Task{stage_state: :failed, error: "permanent boom"}, %RoleRun{status: :finished, exit_code: 1}} =
              Pipeline.settle_product_run(run)

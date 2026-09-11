@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStage do
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.SettleAction
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -80,12 +81,15 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStage do
     {:ok, updated_task}
   end
 
-  defp has_finished_run?(latest_run, latest_role_run) do
-    (latest_run && latest_run.status == :finished) ||
-      (latest_role_run && latest_role_run.exit_code != nil)
+  # Settling goes through the run, so a role run with no run row left to settle
+  # falls through to the awaiting-approval branch instead.
+  defp has_finished_run?(%Run{} = latest_run, latest_role_run) do
+    latest_run.status == :finished || (latest_role_run && latest_role_run.exit_code != nil)
   end
 
-  defp release_finished_run(%Task{} = task, latest_run, latest_role_run) do
+  defp has_finished_run?(_no_run, _latest_role_run), do: false
+
+  defp release_finished_run(%Task{} = task, %Run{} = latest_run, latest_role_run) do
     exit_code =
       if latest_role_run && is_integer(latest_role_run.exit_code) do
         latest_role_run.exit_code
@@ -99,11 +103,11 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStage do
         |> Task.changeset(%{question_id: nil})
         |> Repo.update()
 
-      run_payload = latest_run || %{exit_code: 0}
+      settle = settle_action(cleared_task)
 
-      with {:ok, settled_task, _updated_role_run} <-
-             Pipeline.settle_run(cleared_task, latest_role_run, run_payload) do
-        {:ok, settled_task}
+      with {:ok, _settled_task, _role_run} <- Pipeline.settle_run(latest_run, %{exit_code: 0}),
+           {:ok, advanced_task, _role_run} <- settle.(latest_run, %{}, []) do
+        {:ok, advanced_task}
       end
     else
       {:ok, updated_task} =

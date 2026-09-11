@@ -137,8 +137,8 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
     spawner_opts =
       opts
       |> Keyword.take([:allow_fun, :on_finished])
-      |> Keyword.put_new(:on_finished, fn _run, outcome ->
-        Pipeline.settle_run(task.id, role_run.id, outcome, opts)
+      |> Keyword.put_new(:on_finished, fn run, outcome ->
+        Pipeline.settle_design_run(run, outcome, opts)
       end)
 
     case Runs.start_run(role_run, :stage, argv, spawner_opts) do

@@ -441,6 +441,10 @@ defmodule Rail.Runs.Follower do
         updated_role_run = update_role_run(state.role_run_id, exit_code, error, event_state, run.kind)
         outcome = build_outcome(exit_code, error, event_state, updated_run, updated_role_run)
 
+        # Every stage run settles the same way before anything stage-specific is
+        # told about it; `on_finished` is only asked where a clean run goes next.
+        if run.kind != :chat, do: Pipeline.settle_run(updated_run, outcome)
+
         notify_run_finished(state.on_finished, updated_run, outcome)
 
         Phoenix.PubSub.broadcast(

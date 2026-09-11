@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
   import Rail.Pipeline.Utils.Briefs
   import Rail.Pipeline.Utils.IssueIdentifier
   import Rail.Pipeline.Utils.PrepareScratch
+  import Rail.Pipeline.Utils.SettleAction
 
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Plan
@@ -107,11 +108,10 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
   end
 
   defp spawn_and_finalize(task, role_run, argv, opts) do
+    settle = settle_action(task)
+
     on_finished_cb =
-      Keyword.get(opts, :on_finished) ||
-        fn _run, outcome ->
-          Rail.Pipeline.settle_run(task.id, role_run.id, outcome, opts)
-        end
+      Keyword.get(opts, :on_finished) || fn run, outcome -> settle.(run, outcome, opts) end
 
     spawner_opts =
       [on_finished: on_finished_cb] ++ Keyword.take(opts, [:allow_fun])

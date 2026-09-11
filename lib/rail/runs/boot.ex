@@ -250,6 +250,10 @@ defmodule Rail.Runs.Boot do
         )
       end
 
+      # Every stage run settles the same way before anything stage-specific is told
+      # about it; `on_finished` is only asked where a clean run goes next.
+      if updated_run.kind != :chat, do: Pipeline.settle_run(updated_run, outcome)
+
       if is_function(Keyword.get(opts, :on_finished), 2) do
         opts[:on_finished].(updated_run, outcome)
       else

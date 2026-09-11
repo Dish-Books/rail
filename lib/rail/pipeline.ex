@@ -10,7 +10,17 @@ defmodule Rail.Pipeline do
 
   defdelegate start_product_task(issue, opts \\ []), to: Actions.StartProductTask
 
+  defdelegate settle_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleRun
+
   defdelegate settle_product_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleProductRun
+  defdelegate settle_design_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleDesignRun
+  defdelegate settle_architect_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleArchitectRun
+  defdelegate settle_engineer_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleEngineerRun
+  defdelegate settle_review_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleReviewRun
+  defdelegate settle_qa_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleQaRun
+  defdelegate settle_qa_lead_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleQaLeadRun
+  defdelegate settle_demo_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleDemoRun
+  defdelegate settle_rebase_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleRebaseRun
 
   defdelegate parse_stage_verdict(role_run_or_id), to: Actions.ParseStageVerdict
 
@@ -38,7 +48,6 @@ defmodule Rail.Pipeline do
   defdelegate rearm_pending_retries(), to: Dispatcher
   defdelegate start_stage_run(task, opts \\ []), to: Actions.StartStageRun
 
-  defdelegate settle_run(task, role_run, run_or_outcome \\ %{}, opts \\ []), to: Actions.SettleRun
   defdelegate approve_stage(scope, task_or_id, opts), to: Actions.ApproveStage
   defdelegate approve_stage(scope_or_task, task_or_opts), to: Actions.ApproveStage
   defdelegate approve_stage(task_or_id), to: Actions.ApproveStage

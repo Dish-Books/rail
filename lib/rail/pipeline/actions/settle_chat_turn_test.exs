@@ -499,47 +499,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     assert hd(rev_runs).kind == :chat
   end
 
-  test "settle_run delegates to settle_chat_turn when run kind is :chat", %{
-    task: %Task{id: task_id} = task,
-    rev_role: %Role{id: rev_role_id}
-  } do
-    {:ok, %RoleRun{id: role_run_id}} =
-      Runs.create_role_run(%{
-        task_id: task_id,
-        role_id: rev_role_id,
-        status: :finished,
-        started_at: DateTime.utc_now(),
-        attempts: 1,
-        conversation_id: "sess-chat-delegate"
-      })
-
-    {:ok, task} = task |> Task.changeset(%{active_chat_role_id: rev_role_id}) |> Repo.update()
-
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run_id,
-        task_id: task_id,
-        kind: :chat,
-        stream_path: "/tmp/settle_chat_turn/#{role_run_id}.ndjson",
-        node: to_string(Node.self()),
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-      |> Repo.insert!()
-
-    outcome = %{
-      exit_code: 0,
-      error: nil,
-      usage: %TaskUsage{input_tokens: 30, output_tokens: 15},
-      run: run
-    }
-
-    assert {:ok, %Task{active_chat_role_id: nil}, %RoleRun{chat_usage: %TaskUsage{input_tokens: 30}}} =
-             Pipeline.settle_run(task.id, role_run_id, outcome)
-  end
-
-  test "settle_run dispatches queued pending_chat when stage run completes and task is idle", %{
+  test "settling a stage run dispatches queued pending_chat when the task goes idle", %{
     backend: backend,
     task: %Task{id: task_id} = task,
     eng_role: %Role{id: eng_role_id},
@@ -571,7 +531,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         pending_chat: "Queued question while stage was running"
       })
 
-    {:ok, task} =
+    {:ok, _task} =
       task
       |> Task.changeset(%{stage: :engineer, stage_state: :running})
       |> Repo.update()
@@ -596,8 +556,10 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       run: stage_run
     }
 
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(stage_run, outcome, async: false)
+
     assert {:ok, %Task{stage: :review, stage_state: :queued}, %RoleRun{}} =
-             Pipeline.settle_run(task.id, eng_role_run_id, outcome, async: false)
+             Pipeline.settle_engineer_run(stage_run, %{}, async: false)
 
     refreshed_task = Repo.get!(Task, task_id)
     assert refreshed_task.active_chat_role_id == rev_role_id

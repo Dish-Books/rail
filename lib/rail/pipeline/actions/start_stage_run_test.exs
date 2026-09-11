@@ -332,7 +332,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
 
     custom_cb = fn run, outcome ->
       send(test_pid, {:custom_cb_invoked, run, outcome})
-      Pipeline.settle_run(task.id, run.role_run_id, outcome)
+      Pipeline.settle_product_run(run, outcome)
     end
 
     assert {:ok, %{role_run: %RoleRun{id: role_run_id}, run: run}} =

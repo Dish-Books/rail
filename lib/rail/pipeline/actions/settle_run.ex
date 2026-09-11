@@ -1,346 +1,74 @@
 defmodule Rail.Pipeline.Actions.SettleRun do
   @moduledoc """
-  Settles finished agent runs, captures stage scratch artifacts, advances the pipeline,
-  and classifies transient vs permanent failures with automatic retry backoff.
+  What settling a finished run means for every run, whatever stage it belongs to.
 
-  Questions the agent asked are already registered by the run layer before this runs,
-  so a task parked on one simply stays put: the answer, not this settle, moves it on.
+  The run layer calls this as a child exits, before it invokes the run's
+  `on_finished` callback, so every run is recorded the same way whether or not
+  anything is waiting on it.
+
+  Two of the three outcomes are settled outright here:
+
+  - a task parked on a question stays parked — the answer, not this settle, moves it on;
+  - a non-zero exit retries with backoff while the failure still looks transient, and
+    fails the stage otherwise.
+
+  The third, a clean exit, is the stage's own business. This leaves the task alone
+  and the stage's settle action — wired in as that run's `on_finished` — decides
+  where it goes. Nothing here looks at `task.stage`.
   """
 
-  import Ecto.Query
-  import Rail.Pipeline.Utils.CaptureScratch
-  import Rail.Pipeline.Utils.CarriedReports
-  import Rail.Runs.Utils.AssistantLog
-
-  alias Rail.Artifacts
-  alias Rail.Artifacts.Schemas.Design
   alias Rail.Domain.RunFailure
   alias Rail.Domain.TaskUsage
-  alias Rail.Git
-  alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline.Schemas.Plan
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Roles
-  alias Rail.Roles.Schemas.Role
-  alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
-  alias Rail.Scope
-  alias Rail.Users.Schemas.User
 
   @doc """
-  Settles a finished run for a task:
-  - Updates `RoleRun` and `Run` records with exit codes, errors, and usage.
-  - Captures scratch artifacts via `capture_scratch/3`.
-  - Advances stage or sets approval gates on exit 0.
-  - Applies retry backoff or marks failure on non-zero exit.
-  - Broadcasts `pipeline_changed`.
+  Settles the finished `run` against `outcome`.
+
+  The run is the handle for everything: its role run and task are force-preloaded so
+  the settle works from what is in the database now, not from whatever copy the caller
+  was holding when the run started.
   """
-  def settle_run(task_target, role_run_target, run_or_outcome \\ %{}, opts \\ []) do
-    with %Task{} = task <- resolve_task(task_target),
-         %RoleRun{} = role_run <- resolve_role_run(role_run_target) do
-      if chat_run?(run_or_outcome) do
-        Rail.Pipeline.settle_chat_turn(task, role_run, run_or_outcome, opts)
-      else
-        do_settle_run(task, role_run, run_or_outcome, opts)
-      end
-    else
-      _not_found -> {:error, :not_found}
+  def settle_run(%Run{} = run, outcome \\ %{}, opts \\ []) do
+    case Repo.preload(run, [role_run: :task], force: true) do
+      %Run{role_run: %RoleRun{task: %Task{} = task} = role_run} = run ->
+        do_settle_run(run, task, role_run, outcome, opts)
+
+      _unresolved ->
+        {:error, :invalid_state}
     end
   end
 
-  defp chat_run?(%Run{kind: :chat}), do: true
-  defp chat_run?(%{run: %Run{kind: :chat}}), do: true
-  defp chat_run?(%{kind: :chat}), do: true
-  defp chat_run?(_other), do: false
+  defp do_settle_run(%Run{} = run, %Task{} = task, %RoleRun{} = role_run, outcome, opts) do
+    # An empty outcome means a re-settle: keep what the run layer already recorded.
+    exit_code = resolve_exit_code(outcome, role_run)
+    error = resolve_error(outcome, role_run)
+    usage = resolve_usage(outcome, role_run)
 
-  defp do_settle_run(%Task{} = task, %RoleRun{} = role_run, run_or_outcome, opts) do
-    exit_code = resolve_exit_code(run_or_outcome, role_run)
-    error = resolve_error(run_or_outcome, role_run)
-    usage = resolve_usage(run_or_outcome, role_run)
-
-    maybe_finish_run(run_or_outcome)
+    run |> Run.changeset(%{status: :finished}) |> Repo.update()
 
     {:ok, role_run} = update_role_run(role_run, exit_code, error, usage)
 
-    scratch_dir = task.scratch_path
+    case settle_outcome(task, exit_code, error, role_run) do
+      :stage_decides ->
+        {:ok, task, role_run}
 
-    {:ok, task} =
-      if task.stage in [:product, :design, :demo, :qa] do
-        {:ok, task}
-      else
-        capture_scratch(task.stage, task)
-      end
-
-    {task_attrs, updated_role_run} = resolve_settle_outcome(task, role_run, exit_code, error, scratch_dir, opts)
-
-    {:ok, updated_task} =
-      task
-      |> Task.changeset(task_attrs)
-      |> Repo.update()
-
-    Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :run_settled})
-    Rail.Pipeline.maybe_dispatch_queued_pending_chat(updated_task, opts)
-    final_task = maybe_refresh_rebase_mergeability(updated_task, task, exit_code, opts)
-    final_task = maybe_trigger_demo_freshness(final_task, opts)
-
-    {:ok, final_task, updated_role_run}
+      {task_attrs, role_run} ->
+        finish(task, role_run, task_attrs, opts)
+    end
   end
 
-  defp resolve_settle_outcome(%Task{stage_state: :blocked, question_id: q_id}, role_run, _code, _error, _dir, _opts)
-       when is_binary(q_id) do
+  # A task blocked on a question stays put: the answer, not this run, moves it on.
+  defp settle_outcome(%Task{stage_state: :blocked, question_id: q_id}, _code, _error, role_run) when is_binary(q_id) do
     {%{}, role_run}
   end
 
-  defp resolve_settle_outcome(task, role_run, 0, _error, scratch_dir, opts) do
-    handle_clean_exit(task, role_run, scratch_dir, opts)
-  end
+  defp settle_outcome(_task, 0, _error, _role_run), do: :stage_decides
 
-  defp resolve_settle_outcome(task, role_run, exit_code, error, _scratch_dir, _opts) do
-    handle_failed_exit(task, role_run, error, exit_code)
-  end
-
-  defp maybe_refresh_rebase_mergeability(%Task{} = updated_task, %Task{is_rebasing: true}, 0, opts) do
-    case Rail.Pipeline.refresh_mergeability(updated_task, opts) do
-      {:ok, refreshed} -> refreshed
-      _failure -> updated_task
-    end
-  end
-
-  defp maybe_refresh_rebase_mergeability(%Task{} = updated_task, _task, _exit_code, _opts) do
-    updated_task
-  end
-
-  defp handle_clean_exit(%Task{is_rebasing: true} = task, role_run, _scratch_dir, _opts) do
-    {:ok, role_run} =
-      role_run
-      |> RoleRun.changeset(%{auto_retries: 0})
-      |> Repo.update()
-
-    attrs = %{
-      is_rebasing: false,
-      stage_state: task.stage_state_before_rebase || :queued,
-      stage_state_before_rebase: nil,
-      retry_after: nil,
-      error: nil
-    }
-
-    {attrs, role_run}
-  end
-
-  # The product run's ticket stays in scratch until a human approves it: nothing is
-  # captured here, and `approve_product_task/2` is what publishes it and moves on.
-  defp handle_clean_exit(%Task{stage: :product}, role_run, _scratch_dir, _opts) do
-    {:ok, role_run} =
-      role_run
-      |> RoleRun.changeset(%{auto_retries: 0})
-      |> Repo.update()
-
-    attrs = %{
-      stage_state: :awaiting_approval,
-      retry_after: nil,
-      error: nil
-    }
-
-    {attrs, role_run}
-  end
-
-  defp handle_clean_exit(%Task{stage: :design} = task, role_run, scratch_dir, opts) do
-    scope = Scope.for_system()
-    read_opts = Keyword.take(opts, [:url_probe, :req_options])
-    capture_opts = Keyword.take(opts, [:project, :issue, :owner_user, :url_probe, :req_options])
-
-    previous_design =
-      Repo.one(
-        from d in Design,
-          where: d.task_id == ^task.id,
-          order_by: [desc: d.version],
-          limit: 1
-      )
-
-    with {:ok, manifest_data} <- Artifacts.read_design(scope, scratch_dir, read_opts),
-         :ok <- validate_design_manifest_transition(manifest_data, previous_design),
-         {:ok, _design} <- Artifacts.capture_design(scope, task, scratch_dir, capture_opts) do
-      {:ok, role_run} =
-        role_run
-        |> RoleRun.changeset(%{auto_retries: 0})
-        |> Repo.update()
-
-      attrs = %{
-        stage_state: :awaiting_approval,
-        retry_after: nil,
-        error: nil
-      }
-
-      {attrs, role_run}
-    else
-      {:error, reason} ->
-        err_msg = if is_binary(reason), do: reason, else: inspect(reason)
-
-        attrs = %{
-          stage_state: :failed,
-          error: err_msg,
-          retry_after: nil
-        }
-
-        {attrs, role_run}
-    end
-  end
-
-  defp handle_clean_exit(%Task{stage: :architect} = task, role_run, _scratch_dir, _opts) do
-    has_plan? = Repo.exists?(from p in Plan, where: p.task_id == ^task.id)
-
-    if has_plan? do
-      {:ok, role_run} =
-        role_run
-        |> RoleRun.changeset(%{auto_retries: 0})
-        |> Repo.update()
-
-      attrs = %{
-        stage_state: :awaiting_approval,
-        retry_after: nil,
-        error: nil
-      }
-
-      {attrs, role_run}
-    else
-      error_msg = "Architect exited 0 without writing a plan file."
-
-      attrs = %{
-        stage_state: :failed,
-        error: error_msg,
-        retry_after: nil
-      }
-
-      {attrs, role_run}
-    end
-  end
-
-  defp handle_clean_exit(%Task{stage: :engineer} = _task, role_run, _scratch_dir, _opts) do
-    {:ok, role_run} =
-      role_run
-      |> RoleRun.changeset(%{auto_retries: 0})
-      |> Repo.update()
-
-    attrs = %{
-      stage: :review,
-      stage_state: :queued,
-      retry_after: nil,
-      error: nil
-    }
-
-    {attrs, role_run}
-  end
-
-  defp handle_clean_exit(%Task{stage: :qa} = task, role_run, scratch_dir, opts) do
-    scope = Scope.for_system()
-
-    # The report lives in the task's scratch directory or nowhere: a QA run that left
-    # no manifest has not reported, whatever its exit code said.
-    if qa_manifest_exists?(scratch_dir) do
-      read_opts = Keyword.take(opts, [:req_options])
-
-      case Artifacts.read_qa_report(scope, scratch_dir, read_opts) do
-        {:ok, qa_data} ->
-          capture_and_advance_qa(scope, task, role_run, scratch_dir, qa_data, opts)
-
-        {:error, reason} ->
-          fail_qa_stage(role_run, reason)
-      end
-    else
-      fail_qa_stage(role_run, "QA left no manifest at #{Path.join([scratch_dir, "qa", "manifest.json"])}.")
-    end
-  end
-
-  defp handle_clean_exit(%Task{stage: stage} = task, role_run, _scratch_dir, _opts) when stage in [:review, :qa_lead] do
-    handle_gate_exit(task, role_run)
-  end
-
-  defp handle_clean_exit(%Task{stage: :demo} = task, role_run, scratch_dir, opts) do
-    scope = Scope.for_system()
-
-    criteria =
-      case Keyword.get(opts, :criteria) do
-        explicit when explicit != nil ->
-          explicit
-
-        nil ->
-          case Rail.Domain.TicketBody.acceptance_criteria(issue_description(task) || "") do
-            list when is_list(list) and list != [] -> list
-            _empty_or_nil -> nil
-          end
-      end
-
-    read_opts =
-      opts
-      |> Keyword.take([:scratch_dir, :req_options])
-      |> Keyword.put(:criteria, criteria)
-
-    with {:ok, manifest} <- Artifacts.read_demo(scope, scratch_dir, read_opts),
-         :ok <- validate_demo_worktree_stability(task, role_run) do
-      capture_and_advance_demo(scope, task, role_run, scratch_dir, manifest, opts, criteria)
-    else
-      {:error, reason} ->
-        err_msg = if is_binary(reason), do: reason, else: inspect(reason)
-
-        attrs = %{
-          stage_state: :failed,
-          error: err_msg,
-          retry_after: nil
-        }
-
-        {attrs, role_run}
-    end
-  end
-
-  defp handle_clean_exit(%Task{} = _task, role_run, _scratch_dir, _opts) do
-    {:ok, role_run} =
-      role_run
-      |> RoleRun.changeset(%{auto_retries: 0})
-      |> Repo.update()
-
-    attrs = %{
-      stage_state: :awaiting_approval,
-      retry_after: nil,
-      error: nil
-    }
-
-    {attrs, role_run}
-  end
-
-  defp capture_and_advance_qa(scope, task, role_run, scratch_dir, qa_data, opts) do
-    {head_sha, _dirty_digest} = resolve_fingerprint(task, role_run)
-    commit = head_sha || qa_data[:commit]
-
-    capture_opts =
-      opts
-      |> Keyword.take([:req_options, :scratch_dir, :project, :issue, :owner_user])
-      |> Keyword.put(:role_run_id, role_run.id)
-      |> Keyword.put(:commit, commit)
-
-    case Artifacts.capture_qa_report(scope, task, scratch_dir, capture_opts) do
-      {:ok, _report} ->
-        handle_gate_exit(task, role_run)
-
-      {:error, reason} ->
-        fail_qa_stage(role_run, reason)
-    end
-  end
-
-  defp fail_qa_stage(role_run, reason) do
-    err_msg = if is_binary(reason), do: reason, else: inspect(reason)
-
-    attrs = %{
-      stage_state: :failed,
-      error: err_msg,
-      retry_after: nil
-    }
-
-    {attrs, role_run}
-  end
-
-  defp handle_failed_exit(%Task{} = _task, role_run, error, exit_code) do
+  defp settle_outcome(_task, exit_code, error, role_run) do
     error_msg = error || "Exited with code #{exit_code}"
     auto_retries = role_run.auto_retries || 0
 
@@ -354,234 +82,28 @@ defmodule Rail.Pipeline.Actions.SettleRun do
         |> RoleRun.changeset(%{auto_retries: new_retries})
         |> Repo.update()
 
-      attrs = %{
-        stage_state: :queued,
-        retry_after: retry_after,
-        error: error_msg
-      }
-
-      {attrs, updated_role_run}
+      {%{stage_state: :queued, retry_after: retry_after, error: error_msg}, updated_role_run}
     else
-      attrs = %{
-        stage_state: :failed,
-        error: error_msg,
-        retry_after: nil
-      }
-
-      {attrs, role_run}
+      {%{stage_state: :failed, error: error_msg, retry_after: nil}, role_run}
     end
   end
 
-  defp handle_gate_exit(%Task{} = task, %RoleRun{} = role_run) do
-    {head_sha, dirty_digest} = resolve_fingerprint(task, role_run)
-
-    {:ok, role_run} =
-      role_run
-      |> RoleRun.changeset(%{
-        auto_retries: 0,
-        stage_fingerprint_head_sha: head_sha,
-        stage_fingerprint_dirty_digest: dirty_digest
-      })
+  defp finish(task, role_run, task_attrs, opts) do
+    {:ok, updated_task} =
+      task
+      |> Task.changeset(task_attrs)
       |> Repo.update()
 
-    gate_role_id = role_run.role_id
-    reports = task.outstanding_reports || []
-    updated_reports = if gate_role_id in reports, do: reports, else: Enum.reverse([gate_role_id | Enum.reverse(reports)])
-    verdict = Rail.Pipeline.parse_stage_verdict(role_run)
+    Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :run_settled})
+    Pipeline.maybe_dispatch_queued_pending_chat(updated_task, opts)
 
-    case verdict.verdict do
-      :passed ->
-        handle_gate_passed(task, role_run, updated_reports, head_sha)
+    {:ok, refreshed} = Pipeline.refresh_demo_freshness(updated_task, opts)
 
-      :changes_requested ->
-        handle_gate_changes_requested(task, role_run, gate_role_id, updated_reports)
-
-      :unclear ->
-        handle_gate_unclear(role_run, gate_role_id, updated_reports)
-    end
-  end
-
-  defp handle_gate_passed(task, role_run, updated_reports, head_sha) do
-    next_stage =
-      case task.stage do
-        :review ->
-          :qa
-
-        :qa ->
-          :qa_lead
-
-        :qa_lead ->
-          case Roles.get_role(project_id: task.project_id, stage: :demo) do
-            {:ok, _role} -> :demo
-            _no_demo -> :ready_to_merge
-          end
-      end
-
-    next_stage_state = if next_stage == :ready_to_merge, do: :awaiting_approval, else: :queued
-
-    if (task.rework_cycles || 0) > 0 and next_stage != :ready_to_merge and head_sha != nil do
-      maybe_append_evidence_line_to_next_stage(task, next_stage, head_sha)
-    end
-
-    attrs = %{
-      stage: next_stage,
-      stage_state: next_stage_state,
-      outstanding_reports: updated_reports,
-      retry_after: nil,
-      error: nil
-    }
-
-    {attrs, role_run}
-  end
-
-  defp handle_gate_changes_requested(task, role_run, gate_role_id, updated_reports) do
-    rework_base = task.rework_budget_base || 0
-    total_rework = (task.rework_cycles || 0) - rework_base
-    cycles_by_gate = task.rework_cycles_by_gate || %{}
-    per_gate = Map.get(cycles_by_gate, gate_role_id, 0)
-    rework_exhausted = total_rework >= 5 or per_gate >= 3
-
-    if rework_exhausted do
-      role_name = resolve_role_name(gate_role_id)
-      by_gate_count = per_gate
-      cycle_word = if by_gate_count == 1, do: "cycle", else: "cycles"
-
-      error_msg =
-        "#{role_name} is still requesting changes after #{by_gate_count} rework #{cycle_word}. " <>
-          "Read the findings and decide: Send back to Engineer to have them addressed, " <>
-          "or Skip to take the change as it is and go straight to the merge."
-
-      attrs = %{
-        stage_state: :awaiting_approval,
-        outstanding_reports: updated_reports,
-        retry_after: nil,
-        error: error_msg
-      }
-
-      {attrs, role_run}
-    else
-      new_total_rework = (task.rework_cycles || 0) + 1
-      new_cycles_by_gate = Map.put(cycles_by_gate, gate_role_id, per_gate + 1)
-      role_name = resolve_role_name(gate_role_id)
-      findings = String.trim(assistant_log(role_run))
-      carried = carried_reports(task, except: gate_role_id)
-
-      note =
-        "Findings from #{role_name} on the change you just pushed (rework #{new_total_rework} of 5). " <>
-          "Address every finding, nits included, and the ones marked pre-existing rather than caused by this change too - " <>
-          "nobody else picks those up, so leaving one loses it. Work in the same worktree on the same branch, " <>
-          "run the project's checks from the top, push to the existing pull request, and say what you changed. " <>
-          "Where you disagree with a finding, say why rather than silently leaving it.\n\n" <>
-          findings <> carried
-
-      case Roles.get_role(project_id: task.project_id, stage: :engineer) do
-        {:ok, eng_role} ->
-          update_engineer_pending_answer(task.id, eng_role.id, note)
-
-        _other ->
-          :ok
-      end
-
-      attrs = %{
-        stage: :engineer,
-        stage_state: :queued,
-        rework_cycles: new_total_rework,
-        rework_cycles_by_gate: new_cycles_by_gate,
-        outstanding_reports: [],
-        retry_after: nil,
-        error: nil
-      }
-
-      {attrs, role_run}
-    end
-  end
-
-  defp handle_gate_unclear(role_run, gate_role_id, updated_reports) do
-    role_name = resolve_role_name(gate_role_id)
-
-    error_msg =
-      "#{role_name} ended without a clear verdict. " <>
-        "Read its report, then Send back to Engineer or Skip to the merge."
-
-    attrs = %{
-      stage_state: :awaiting_approval,
-      outstanding_reports: updated_reports,
-      retry_after: nil,
-      error: error_msg
-    }
-
-    {attrs, role_run}
-  end
-
-  defp resolve_fingerprint(%Task{worktree_path: path}, role_run) when is_binary(path) do
-    case Git.branch_fingerprint(path) do
-      %{head_sha: sha, dirty_digest: digest} ->
-        {sha, digest}
-
-      _other ->
-        {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
-    end
-  end
-
-  defp resolve_fingerprint(_task, role_run) do
-    {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
-  end
-
-  defp resolve_role_name(role_id) do
-    case Roles.get_role(id: role_id) do
-      {:ok, %Role{name: name}} when is_binary(name) and name != "" -> name
-      _other -> to_string(role_id)
-    end
-  end
-
-  defp resumable_role_run(task_id, role_id) do
-    case Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_id) do
-      %RoleRun{} = role_run -> if RoleRun.resumable?(role_run), do: role_run
-      nil -> nil
-    end
-  end
-
-  defp update_engineer_pending_answer(task_id, engineer_role_id, note) do
-    case resumable_role_run(task_id, engineer_role_id) do
-      %RoleRun{} = engineer_run -> Runs.append_pending_answer(engineer_run, note, auto_retries: 0)
-      nil -> :ok
-    end
-  end
-
-  defp maybe_append_evidence_line_to_next_stage(task, next_stage, head_sha) do
-    case Roles.get_role(project_id: task.project_id, stage: next_stage) do
-      {:ok, next_role} ->
-        stage_label =
-          case task.stage do
-            :review -> "the reviewer"
-            :qa -> "QA"
-            _stage -> "the previous gate"
-          end
-
-        evidence_note =
-          "The change has been reworked and #{stage_label} has signed off on it again. " <>
-            "Inspect it as it stands now, re-checking anything you failed it on before.\n\n" <>
-            "The reworked change is commit #{head_sha}. Every check you report on this pass must have been run against it: " <>
-            "evidence produced before it describes a build that no longer exists, and carrying such a row forward is a false pass. " <>
-            "Re-run what you carry, or say plainly that you did not."
-
-        case resumable_role_run(task.id, next_role.id) do
-          %RoleRun{} = next_run -> Runs.append_pending_answer(next_run, evidence_note)
-          nil -> :ok
-        end
-
-      _other ->
-        :ok
-    end
+    {:ok, refreshed, role_run}
   end
 
   defp update_role_run(role_run, exit_code, error, usage) do
-    new_status =
-      if role_run.status == :blocked_on_input do
-        :blocked_on_input
-      else
-        :finished
-      end
+    new_status = if role_run.status == :blocked_on_input, do: :blocked_on_input, else: :finished
 
     attrs = %{
       status: new_status,
@@ -596,16 +118,6 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     |> RoleRun.changeset(attrs)
     |> Repo.update()
   end
-
-  defp maybe_finish_run(%Run{status: status} = run) when status != :finished do
-    run |> Run.changeset(%{status: :finished}) |> Repo.update()
-  end
-
-  defp maybe_finish_run(%{run: %Run{status: status} = run}) when status != :finished do
-    run |> Run.changeset(%{status: :finished}) |> Repo.update()
-  end
-
-  defp maybe_finish_run(_other), do: :ok
 
   defp resolve_exit_code(%{exit_code: code}, _role_run) when is_integer(code), do: code
   defp resolve_exit_code(%{"exit_code" => code}, _role_run) when is_integer(code), do: code
@@ -622,180 +134,4 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   defp resolve_usage(%{"usage" => %TaskUsage{} = usage}, _role_run), do: Map.from_struct(usage)
   defp resolve_usage(%{"usage" => usage}, _role_run) when is_map(usage), do: usage
   defp resolve_usage(_outcome, _role_run), do: nil
-
-  defp resolve_task(%Task{} = task), do: task
-  defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)
-  defp resolve_task(_other), do: nil
-
-  defp resolve_role_run(%RoleRun{} = role_run), do: role_run
-  defp resolve_role_run(id) when is_binary(id), do: Repo.get(RoleRun, id)
-  defp resolve_role_run(_other), do: nil
-
-  defp validate_design_manifest_transition(_manifest_data, nil), do: :ok
-
-  defp validate_design_manifest_transition(manifest_data, %Design{} = prev) do
-    cond do
-      prev.picked_key != nil and (is_nil(manifest_data.picked_key) or manifest_data.picked_key == "") ->
-        {:error, "Design manifest is missing pickedKey (expected \"#{prev.picked_key}\")."}
-
-      prev.picked_key != nil and manifest_data.picked_key != prev.picked_key ->
-        {:error,
-         "Design manifest pickedKey (#{manifest_data.picked_key}) does not match chosen direction (#{prev.picked_key})."}
-
-      prev.picked_key != nil and not direction_present?(manifest_data.directions, prev.picked_key) ->
-        {:error, "Manifest missing picked direction: #{prev.picked_key}"}
-
-      manifest_data.version <= prev.version ->
-        {:error, "Manifest version must be incremented after a pick or revision."}
-
-      true ->
-        :ok
-    end
-  end
-
-  defp direction_present?(directions, key) when is_binary(key) do
-    is_list(directions) and Enum.any?(directions, fn d -> Map.get(d, :key) == key end)
-  end
-
-  defp maybe_trigger_demo_freshness(%Task{} = task, opts) do
-    {:ok, refreshed} = Rail.Pipeline.refresh_demo_freshness(task, opts)
-    refreshed
-  end
-
-  defp validate_demo_worktree_stability(%Task{worktree_path: path}, role_run) when is_binary(path) and path != "" do
-    if File.dir?(path) and
-         (role_run.stage_fingerprint_head_sha != nil or
-            role_run.stage_fingerprint_dirty_digest != nil) do
-      case Git.branch_fingerprint(path) do
-        %{head_sha: current_sha, dirty_digest: current_digest} ->
-          cond do
-            role_run.stage_fingerprint_head_sha != nil and
-                current_sha != role_run.stage_fingerprint_head_sha ->
-              {:error, "The worktree moved during the demo run."}
-
-            role_run.stage_fingerprint_dirty_digest != nil and
-                current_digest != role_run.stage_fingerprint_dirty_digest ->
-              {:error, "Worktree code outside .rail/ was modified during recording."}
-
-            true ->
-              :ok
-          end
-
-        _fingerprint_nil ->
-          :ok
-      end
-    else
-      :ok
-    end
-  end
-
-  defp validate_demo_worktree_stability(_task, _role_run), do: :ok
-
-  defp capture_and_advance_demo(scope, task, role_run, scratch_dir, manifest, opts, criteria) do
-    capture_opts = build_demo_capture_opts(task, role_run, opts, criteria)
-
-    case manifest.outcome || manifest[:outcome] do
-      outcome when outcome in ["recorded", "declined"] ->
-        advance_captured_demo(scope, task, role_run, scratch_dir, capture_opts)
-
-      "failed" ->
-        advance_failed_demo(scope, task, role_run, scratch_dir, manifest, capture_opts)
-    end
-  end
-
-  defp build_demo_capture_opts(task, role_run, opts, criteria) do
-    {head_sha, dirty_digest} = resolve_demo_fingerprint(task, role_run)
-    issue = Keyword.get(opts, :issue) || (task.issue_id && Repo.get(Issue, task.issue_id))
-    owner_user = Keyword.get(opts, :owner_user) || (issue && issue.owner_user_id && Repo.get(User, issue.owner_user_id))
-
-    opts
-    |> Keyword.take([:scratch_dir, :req_options])
-    |> Keyword.put(:criteria, criteria)
-    |> Keyword.put(:head_sha, head_sha)
-    |> Keyword.put(:commit, head_sha)
-    |> Keyword.put(:dirty_digest, dirty_digest)
-    |> Keyword.put(:issue, issue)
-    |> Keyword.put(:owner_user, owner_user)
-  end
-
-  defp resolve_demo_fingerprint(%Task{worktree_path: path}, role_run) when is_binary(path) and path != "" do
-    if File.dir?(path) do
-      case Git.branch_fingerprint(path) do
-        %{head_sha: sha, dirty_digest: digest} -> {sha, digest}
-        _fingerprint_nil -> {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
-      end
-    else
-      {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
-    end
-  end
-
-  defp resolve_demo_fingerprint(_task, role_run) do
-    {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
-  end
-
-  defp advance_captured_demo(scope, task, role_run, scratch_dir, capture_opts) do
-    case Artifacts.capture_demo(scope, task, scratch_dir, capture_opts) do
-      {:ok, _demo} ->
-        {:ok, updated_role_run} =
-          role_run
-          |> RoleRun.changeset(%{auto_retries: 0})
-          |> Repo.update()
-
-        attrs = %{
-          stage: :ready_to_merge,
-          stage_state: :awaiting_approval,
-          retry_after: nil,
-          error: nil
-        }
-
-        {attrs, updated_role_run}
-
-      {:error, reason} ->
-        err_msg = if is_binary(reason), do: reason, else: inspect(reason)
-
-        attrs = %{
-          stage_state: :failed,
-          error: err_msg,
-          retry_after: nil
-        }
-
-        {attrs, role_run}
-    end
-  end
-
-  defp advance_failed_demo(scope, task, role_run, scratch_dir, manifest, capture_opts) do
-    _capture_result = Artifacts.capture_demo(scope, task, scratch_dir, capture_opts)
-
-    {:ok, updated_role_run} =
-      role_run
-      |> RoleRun.changeset(%{auto_retries: 0})
-      |> Repo.update()
-
-    attrs = %{
-      stage: :demo,
-      stage_state: :failed,
-      error: manifest.note || "Demo recording failed.",
-      retry_after: nil
-    }
-
-    {attrs, updated_role_run}
-  end
-
-  # The ticket body lives on the issue; the task only links to it.
-  defp issue_description(%Task{issue: %Issue{description: description}}), do: description
-
-  defp issue_description(%Task{issue_id: issue_id}) when is_binary(issue_id) do
-    case Repo.get(Issue, issue_id) do
-      %Issue{description: description} -> description
-      nil -> nil
-    end
-  end
-
-  defp issue_description(%Task{}), do: nil
-
-  defp qa_manifest_exists?(target) do
-    is_binary(target) and
-      (File.exists?(Path.join(target, "manifest.json")) or
-         File.exists?(Path.join([target, "qa", "manifest.json"])))
-  end
 end
