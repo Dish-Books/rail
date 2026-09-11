@@ -26,7 +26,6 @@ defmodule Rail.Runs.Schemas.RoleRun do
     field :attempts, :integer, default: 0
     field :attempt_log_lines, :integer, default: 0
     field :auto_retries, :integer, default: 0
-    field :pruned, :boolean, default: false
     field :chat_fingerprint_head_sha, :string
     field :chat_fingerprint_dirty_digest, :string
     field :stage_fingerprint_head_sha, :string
@@ -59,7 +58,6 @@ defmodule Rail.Runs.Schemas.RoleRun do
     :attempts,
     :attempt_log_lines,
     :auto_retries,
-    :pruned,
     :chat_fingerprint_head_sha,
     :chat_fingerprint_dirty_digest,
     :stage_fingerprint_head_sha,

@@ -49,8 +49,7 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
         started_at: DateTime.shift(now, minute: -1),
         completed_at: DateTime.shift(now, second: -40),
         output: "Transcript output for run 1",
-        exit_code: 0,
-        pruned: false
+        exit_code: 0
       })
 
     {:ok, run2} =
@@ -62,8 +61,7 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
         completed_at: DateTime.shift(now, second: -10),
         output: "Transcript output for run 2",
         exit_code: 1,
-        error: "Compilation failed",
-        pruned: false
+        error: "Compilation failed"
       })
 
     tasks = [
@@ -135,7 +133,7 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
              Roles.recent_finished_runs(scope, role.id, transcript_reader: custom_reader)
   end
 
-  test "skips runs with blank transcripts and ignores pruned or in-flight runs", %{role: role} do
+  test "skips runs with blank transcripts and ignores in-flight runs", %{role: role} do
     scope = Scope.for_system()
 
     # blank output and no events
@@ -145,17 +143,6 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
         task_id: "tsk_blank",
         status: :finished,
         output: "",
-        started_at: DateTime.utc_now()
-      })
-
-    # pruned run
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
-        role_id: role.id,
-        task_id: "tsk_pruned",
-        status: :finished,
-        output: "Text",
-        pruned: true,
         started_at: DateTime.utc_now()
       })
 

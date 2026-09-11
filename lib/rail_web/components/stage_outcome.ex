@@ -19,14 +19,11 @@ defmodule RailWeb.Components.StageOutcome do
     output = if run, do: String.trim(get_field(run, :output) || ""), else: ""
     error = if run, do: String.trim(get_field(run, :error) || ""), else: ""
 
-    is_pruned =
-      if run, do: get_field(run, :run_pruned) == true or get_field(run, :is_pruned) == true, else: false
-
     is_failed = stage_state_failed?(task)
     has_output = output != ""
     has_error = is_failed and error != ""
 
-    visible = run != nil and (has_output or has_error or is_pruned)
+    visible = run != nil and (has_output or has_error)
     resolved_role_name = resolve_role_name(assigns.role_name, run, task)
 
     assigns =
@@ -34,7 +31,6 @@ defmodule RailWeb.Components.StageOutcome do
       |> assign(:visible, visible)
       |> assign(:output, output)
       |> assign(:error, error)
-      |> assign(:is_pruned, is_pruned)
       |> assign(:has_output, has_output)
       |> assign(:has_error, has_error)
       |> assign(:resolved_role_name, resolved_role_name)
@@ -65,7 +61,7 @@ defmodule RailWeb.Components.StageOutcome do
       </div>
 
       <!-- Outcome Block -->
-      <div :if={@has_output or @is_pruned} id="stage-outcome-section" class="space-y-2">
+      <div :if={@has_output} id="stage-outcome-section" class="space-y-2">
         <h3
           id="stage-outcome-heading"
           data-qa="stage_outcome_heading"
@@ -78,10 +74,7 @@ defmodule RailWeb.Components.StageOutcome do
           data-qa="stage_outcome_card"
           class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-4 select-text"
         >
-          <p :if={@is_pruned} class="text-sm text-slate-500 dark:text-slate-400">
-            This transcript aged out and was swept.
-          </p>
-          <.markdown :if={not @is_pruned} content={@output} />
+          <.markdown content={@output} />
         </div>
       </div>
     </div>

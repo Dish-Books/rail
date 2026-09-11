@@ -196,15 +196,9 @@ defmodule RailWeb.Components.ConversationTab do
     messages =
       if assigns.transcript, do: assigns.transcript.messages || assigns.transcript.turns || [], else: []
 
-    is_pruned =
-      if assigns.run,
-        do: assigns.run.pruned == true or Map.get(assigns.run, :run_pruned) == true,
-        else: false
-
     assigns =
       assigns
       |> assign(:messages, messages)
-      |> assign(:is_pruned, is_pruned)
       |> assign(:has_messages, messages != [])
 
     ~H"""
@@ -217,16 +211,14 @@ defmodule RailWeb.Components.ConversationTab do
         class="flex-1 overflow-y-auto p-4 space-y-3 max-h-[560px]"
       >
         <%= if not @has_messages do %>
-          <!-- Empty State (No messages yet / swept) -->
+          <!-- Empty State -->
           <div
             id="chat-empty-state"
             data-qa="chat-empty-state"
             class="flex items-center justify-center h-48 text-center"
           >
             <p class="text-sm font-medium text-slate-500 dark:text-slate-400">
-              {if @is_pruned,
-                do: "This transcript aged out and was swept.",
-                else: "No messages yet."}
+              No messages yet.
             </p>
           </div>
         <% else %>
@@ -583,17 +575,11 @@ defmodule RailWeb.Components.ConversationTab do
   attr :roles_map, :map, default: %{}
 
   def raw_log_view(assigns) do
-    is_pruned =
-      if assigns.run,
-        do: assigns.run.pruned == true or Map.get(assigns.run, :run_pruned) == true,
-        else: false
-
     lines = assigns.log_lines || []
 
     assigns =
       assigns
       |> assign(:lines, lines)
-      |> assign(:is_pruned, is_pruned)
       |> assign(:has_lines, lines != [])
 
     ~H"""
@@ -605,11 +591,7 @@ defmodule RailWeb.Components.ConversationTab do
     >
       <%= if not @has_lines do %>
         <div id="raw-log-empty-state" class="flex items-center justify-center h-48 text-zinc-500">
-          <p>
-            {if @is_pruned,
-              do: "This transcript aged out and was swept.",
-              else: "Nothing logged yet."}
-          </p>
+          <p>Nothing logged yet.</p>
         </div>
       <% else %>
         <%= for {line, idx} <- Enum.with_index(@lines) do %>

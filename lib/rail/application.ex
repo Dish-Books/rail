@@ -19,7 +19,6 @@ defmodule Rail.Application do
           Rail.Backends.RefreshServer,
           Rail.Pipeline.Dispatcher,
           Rail.Pipeline.TaskActionRunner,
-          Rail.Periodic,
           RailWeb.Endpoint
         ]
 

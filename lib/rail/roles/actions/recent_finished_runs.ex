@@ -34,7 +34,7 @@ defmodule Rail.Roles.Actions.RecentFinishedRuns do
 
     query =
       from(rr in RoleRun,
-        where: rr.role_id == ^role_id and rr.pruned == false and rr.status in ^statuses,
+        where: rr.role_id == ^role_id and rr.status in ^statuses,
         order_by: [desc: fragment("COALESCE(?, ?)", rr.completed_at, rr.started_at)],
         preload: [:run_events]
       )

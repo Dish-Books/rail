@@ -203,16 +203,16 @@ defmodule RailWeb.Components.ConversationTabTest do
     assert html_expanded =~ "lib/rail_web/router.ex"
   end
 
-  test "renders ChatPane empty state for pruned vs unpruned runs" do
+  test "renders ChatPane empty state when a run has no messages" do
     task = %Task{id: "tsk_empty", stage: :engineer}
     role = %Role{id: "engineer", name: "Engineer", icon_name: "pi-code"}
-    unpruned_run = %RoleRun{id: "rr_unpruned", role_id: "engineer", status: :running, pruned: false}
+    run = %RoleRun{id: "rr_empty", role_id: "engineer", status: :running}
 
-    html_unpruned =
+    html =
       render_component(&ConversationTab.conversation_tab/1,
         task: task,
-        ordered_runs: [unpruned_run],
-        selected_run: unpruned_run,
+        ordered_runs: [run],
+        selected_run: run,
         selected_role_id: "engineer",
         selected_role: role,
         roles_map: %{"engineer" => role},
@@ -220,23 +220,7 @@ defmodule RailWeb.Components.ConversationTabTest do
         show_raw_log: false
       )
 
-    assert html_unpruned =~ "No messages yet."
-
-    pruned_run = %RoleRun{id: "rr_pruned", role_id: "engineer", status: :completed, pruned: true}
-
-    html_pruned =
-      render_component(&ConversationTab.conversation_tab/1,
-        task: task,
-        ordered_runs: [pruned_run],
-        selected_run: pruned_run,
-        selected_role_id: "engineer",
-        selected_role: role,
-        roles_map: %{"engineer" => role},
-        transcript: %ChatTranscript{messages: []},
-        show_raw_log: false
-      )
-
-    assert html_pruned =~ "This transcript aged out and was swept."
+    assert html =~ "No messages yet."
   end
 
   test "renders Composer banners in precedence: thinking > queued > unavailable" do

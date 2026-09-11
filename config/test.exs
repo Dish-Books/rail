@@ -40,5 +40,4 @@ config :rail, :linear_oauth,
   req_options: [plug: {Req.Test, Rail.Linear}]
 
 config :rail, :no_dispatch, true
-config :rail, :periodic, auto_start: false
 config :rail, dev_routes: true

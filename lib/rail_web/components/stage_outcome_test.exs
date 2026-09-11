@@ -11,9 +11,9 @@ defmodule RailWeb.Components.StageOutcomeTest do
     refute html =~ "id=\"stage-outcome\""
   end
 
-  test "renders nothing when output and error are empty and not pruned" do
+  test "renders nothing when output and error are empty" do
     task = %{stage: :engineer, stage_state: :running}
-    role_run = %{output: "   ", error: "   ", is_pruned: false}
+    role_run = %{output: "   ", error: "   "}
     html = render_component(&StageOutcome.stage_outcome/1, task: task, role_run: role_run)
     refute html =~ "id=\"stage-outcome\""
   end
@@ -56,17 +56,6 @@ defmodule RailWeb.Components.StageOutcomeTest do
     assert html =~ "All tests pass."
   end
 
-  test "renders pruned message when is_pruned is true" do
-    task = %{stage: :architect, stage_state: :awaiting_approval}
-    role_run = %{role_id: "architect", output: "", is_pruned: true}
-
-    html = render_component(&StageOutcome.stage_outcome/1, task: task, role_run: role_run)
-
-    assert html =~ "id=\"stage-outcome-heading\""
-    assert html =~ "Architect Outcome"
-    assert html =~ "This transcript aged out and was swept."
-  end
-
   test "uses explicit role_name when provided" do
     task = %{stage: :engineer, stage_state: :failed}
     role_run = %{error: "some error"}
@@ -98,13 +87,13 @@ defmodule RailWeb.Components.StageOutcomeTest do
     assert StageOutcome.format_role_id(123) == "123"
   end
 
-  test "resolves role name and handles run_pruned and string map keys" do
+  test "resolves role name and handles string map keys" do
     task_with_str_keys = %{"stage" => "review", "stage_state" => "failed", "current_role_id" => "reviewer"}
-    role_run = %{"output" => "All checked", "run_pruned" => true}
+    role_run = %{"output" => "All checked"}
 
     html = render_component(&StageOutcome.stage_outcome/1, task: task_with_str_keys, role_run: role_run)
     assert html =~ "Reviewer Outcome"
-    assert html =~ "This transcript aged out and was swept."
+    assert html =~ "All checked"
 
     # Task without stage or role falls back to Stage
     empty_task = %{}
