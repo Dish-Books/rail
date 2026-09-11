@@ -7,7 +7,6 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
   both, and the spawned run.
   """
 
-  import Ecto.Query
   import Rail.Pipeline.Utils.ScratchPath
 
   alias Rail.Domain.TicketBody
@@ -37,7 +36,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
          {:ok, worktree_path} <- ensure_worktree(project, task),
          {:ok, task} <- claim_stage(task, worktree_path),
          scratch_path = write_scratch(project, task, opts),
-         {:ok, role_run} <- role_run_for(task, role, worktree_path) do
+         {:ok, role_run} <- Runs.start_or_resume_role_run(task, role, worktree_path) do
       spawn_run(task, project, role, role_run, worktree_path, scratch_path, opts)
     else
       nil -> {:error, :not_found}
@@ -88,35 +87,6 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
     end
 
     scratch_path
-  end
-
-  # The run
-
-  defp role_run_for(%Task{} = task, %Role{} = role, worktree_path) do
-    {head_sha, dirty_digest} =
-      case Git.branch_fingerprint(worktree_path, []) do
-        %{head_sha: sha, dirty_digest: digest} -> {sha, digest}
-        _other -> {nil, nil}
-      end
-
-    attrs = %{
-      status: :running,
-      started_at: DateTime.utc_now(),
-      stage_fingerprint_head_sha: head_sha,
-      stage_fingerprint_dirty_digest: dirty_digest
-    }
-
-    case Repo.one(from r in RoleRun, where: r.task_id == ^task.id and r.role_id == ^role.id) do
-      %RoleRun{} = existing ->
-        existing
-        |> RoleRun.changeset(Map.put(attrs, :attempts, (existing.attempts || 0) + 1))
-        |> Repo.update()
-
-      nil ->
-        %RoleRun{}
-        |> RoleRun.changeset(Map.merge(attrs, %{task_id: task.id, role_id: role.id, attempts: 1}))
-        |> Repo.insert()
-    end
   end
 
   defp brief(%Task{} = task) do

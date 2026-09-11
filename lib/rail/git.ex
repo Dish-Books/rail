@@ -17,7 +17,7 @@ defmodule Rail.Git do
   defdelegate synthesize_untracked_diff(worktree_path, relative_path), to: Actions.SynthesizeUntrackedDiff
   defdelegate get_worktree_changes(worktree_path, opts \\ []), to: Actions.GetWorktreeChanges
   defdelegate get_changed_files(worktree_path, opts \\ []), to: Actions.GetChangedFiles
-  defdelegate branch_fingerprint(worktree_path, opts \\ []), to: Actions.BranchFingerprint
+  defdelegate branch_fingerprint(worktree_path), to: Actions.BranchFingerprint
   defdelegate head_sha(worktree_path), to: Actions.HeadSha
   defdelegate file_lines(worktree_path, relative_path, opts \\ []), to: Actions.FileLines
   defdelegate list_worktrees(repo_path), to: Actions.ListWorktrees

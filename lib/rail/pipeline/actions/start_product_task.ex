@@ -7,7 +7,6 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
   and the spawned run.
   """
 
-  import Ecto.Query
   import Rail.Pipeline.Utils.ScratchPath
 
   alias Rail.Domain.TicketBody
@@ -35,7 +34,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
          {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :product),
          {:ok, worktree_path} <- ensure_worktree(project, task),
          scratch_path = write_scratch(project, task, issue),
-         {:ok, role_run} <- role_run_for(task, role, worktree_path) do
+         {:ok, role_run} <- Runs.start_or_resume_role_run(task, role, worktree_path) do
       spawn_run(task, project, issue, role, role_run, worktree_path, scratch_path)
     end
   end
@@ -63,72 +62,6 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     tickets_dir |> Path.join("#{issue.identifier}.md") |> File.write!(content)
 
     scratch_path
-  end
-
-  # The run
-
-  defp role_run_for(%Task{} = task, %Role{} = role, worktree_path) do
-    {head_sha, dirty_digest} =
-      case Git.branch_fingerprint(worktree_path) do
-        %{head_sha: sha, dirty_digest: digest} -> {sha, digest}
-        _other -> {nil, nil}
-      end
-
-    attrs = %{
-      status: :running,
-      started_at: DateTime.utc_now(),
-      stage_fingerprint_head_sha: head_sha,
-      stage_fingerprint_dirty_digest: dirty_digest
-    }
-
-    case Repo.one(from r in RoleRun, where: r.task_id == ^task.id and r.role_id == ^role.id) do
-      %RoleRun{} = existing ->
-        existing
-        |> RoleRun.changeset(Map.put(attrs, :attempts, (existing.attempts || 0) + 1))
-        |> Repo.update()
-
-      nil ->
-        %RoleRun{}
-        |> RoleRun.changeset(Map.merge(attrs, %{task_id: task.id, role_id: role.id, attempts: 1}))
-        |> Repo.insert()
-    end
-  end
-
-  defp brief(%Issue{identifier: identifier}) do
-    file = "$RAIL_SCRATCH/tickets/#{identifier}.md"
-
-    String.trim("""
-    The ticket is the file #{file}. Rail publishes that file when your run completes cleanly.
-
-    Write it from your worktree with a heredoc, the body and its closing TICKET line at column zero:
-
-    cat > #{file} <<'TICKET'
-    ---
-    title: <the ticket title>
-    priority: urgent | high | medium | low
-    estimate: <points>
-    ---
-    <the ticket body>
-    TICKET
-
-    - A heredoc into #{file}, never an inline string.
-    - The `---` front matter block starts on the first line of the file. `title` is required; `priority` and `estimate` keep whatever they are already set to when left out.
-    - Everything below the closing `---` becomes the ticket body verbatim, and the file replaces the ticket in full.
-    - A ticket you split out is its own file, $RAIL_SCRATCH/tickets/split-<n>.md, in this same format. Rail opens each one as a new ticket.
-    - These files are the only way to publish a ticket.
-    """)
-  end
-
-  defp workspace_brief(%Task{} = task, %Project{} = project, worktree_path) do
-    base_branch = project.default_branch
-
-    String.trim("""
-    Workspace for this task:
-    - Worktree: #{worktree_path} (your working directory; every path you touch is under it)
-    - Branch: #{task.worktree_name || task.id}, already checked out. Do NOT create a branch of your own, and do not rename this one.
-    - Base branch: #{base_branch} on remote `origin`
-    - Other agents share this repository. Never switch branches, never work in the main checkout, and never touch another worktree.
-    """)
   end
 
   defp spawn_run(task, project, issue, role, role_run, worktree_path, scratch_path) do
@@ -170,6 +103,43 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
       {:ok, run} -> finalize(task, role_run, run)
       {:error, reason} -> fail(task, reason)
     end
+  end
+
+  defp brief(%Issue{identifier: identifier}) do
+    file = "$RAIL_SCRATCH/tickets/#{identifier}.md"
+
+    String.trim("""
+    The ticket is the file #{file}. Rail publishes that file when your run completes cleanly.
+
+    Write it from your worktree with a heredoc, the body and its closing TICKET line at column zero:
+
+    cat > #{file} <<'TICKET'
+    ---
+    title: <the ticket title>
+    priority: urgent | high | medium | low
+    estimate: <points>
+    ---
+    <the ticket body>
+    TICKET
+
+    - A heredoc into #{file}, never an inline string.
+    - The `---` front matter block starts on the first line of the file. `title` is required; `priority` and `estimate` keep whatever they are already set to when left out.
+    - Everything below the closing `---` becomes the ticket body verbatim, and the file replaces the ticket in full.
+    - A ticket you split out is its own file, $RAIL_SCRATCH/tickets/split-<n>.md, in this same format. Rail opens each one as a new ticket.
+    - These files are the only way to publish a ticket.
+    """)
+  end
+
+  defp workspace_brief(%Task{} = task, %Project{} = project, worktree_path) do
+    base_branch = project.default_branch
+
+    String.trim("""
+    Workspace for this task:
+    - Worktree: #{worktree_path} (your working directory; every path you touch is under it)
+    - Branch: #{task.worktree_name || task.id}, already checked out. Do NOT create a branch of your own, and do not rename this one.
+    - Base branch: #{base_branch} on remote `origin`
+    - Other agents share this repository. Never switch branches, never work in the main checkout, and never touch another worktree.
+    """)
   end
 
   defp finalize(task, role_run, run) do

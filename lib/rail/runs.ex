@@ -120,6 +120,11 @@ defmodule Rail.Runs do
   end
 
   @doc """
+  Marks the role run for a task/role pair as running, creating it on first use.
+  """
+  defdelegate start_or_resume_role_run(task, role, worktree_path), to: Actions.StartOrResumeRoleRun
+
+  @doc """
   Creates a new role run record.
   """
   def create_role_run(attrs) do

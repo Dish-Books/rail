@@ -43,7 +43,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
 
       {resolved_head_sha, resolved_dirty_digest} =
         if task && is_binary(task.worktree_path) && File.dir?(task.worktree_path) do
-          case Git.branch_fingerprint(task.worktree_path, ignore_rail: true) do
+          case Git.branch_fingerprint(task.worktree_path) do
             %{head_sha: sha, dirty_digest: digest} -> {sha, digest}
             _other -> {nil, nil}
           end

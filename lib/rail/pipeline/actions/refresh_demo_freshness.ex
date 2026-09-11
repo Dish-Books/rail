@@ -70,7 +70,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshness do
   defp check_freshness_against_worktree(%Task{worktree_path: path} = task, %Demo{} = demo)
        when is_binary(path) and path != "" do
     if File.dir?(path) do
-      case Git.branch_fingerprint(path, ignore_rail: true) do
+      case Git.branch_fingerprint(path) do
         %{head_sha: current_sha, dirty_digest: current_digest} ->
           if demo.head_sha != current_sha or demo.dirty_digest != current_digest do
             handle_demo_drift(task, demo)

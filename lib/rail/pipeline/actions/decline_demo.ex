@@ -99,7 +99,7 @@ defmodule Rail.Pipeline.Actions.DeclineDemo do
 
   defp resolve_fingerprint(%Task{worktree_path: path}) when is_binary(path) do
     if File.dir?(path) do
-      case Git.branch_fingerprint(path, ignore_rail: true) do
+      case Git.branch_fingerprint(path) do
         %{head_sha: sha, dirty_digest: digest} -> {sha, digest}
         _other -> {nil, nil}
       end

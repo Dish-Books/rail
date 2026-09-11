@@ -6,11 +6,12 @@ defmodule Rail.Git.Actions.BranchFingerprint do
 
   @doc """
   Computes a fingerprint snapshot of a worktree's HEAD SHA and working-copy status.
-  Returns nil if git cannot answer.
-  """
-  def branch_fingerprint(worktree_path, opts \\ []) when is_binary(worktree_path) do
-    ignore_rail? = Keyword.get(opts, :ignore_rail, false)
 
+  `.rail/` is left out of the working-copy digest: agents write their own
+  reports and manifests there, so counting it would make every run look like it
+  changed the tree. Returns nil if git cannot answer.
+  """
+  def branch_fingerprint(worktree_path) when is_binary(worktree_path) do
     with {head_out, 0} <-
            Tools.run("git", ["rev-parse", "HEAD"], cd: worktree_path, stderr_to_stdout: true),
          head_sha = String.trim(head_out),
@@ -20,16 +21,9 @@ defmodule Rail.Git.Actions.BranchFingerprint do
              cd: worktree_path,
              stderr_to_stdout: true
            ) do
-      effective_status =
-        if ignore_rail? do
-          filter_rail_status(status_out)
-        else
-          status_out
-        end
-
       dirty_digest =
         :sha256
-        |> :crypto.hash(effective_status)
+        |> :crypto.hash(filter_rail_status(status_out))
         |> Base.encode16(case: :lower)
 
       %BranchFingerprint{

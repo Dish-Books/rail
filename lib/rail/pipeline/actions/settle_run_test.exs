@@ -2853,7 +2853,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     test "demo run settlement fails when worktree moved during recording", %{task: task, roles: roles} do
       worktree = create_temp_git_repo()
-      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree, ignore_rail: true)
+      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree)
 
       demo_dir = Path.join([worktree, ".rail", "demo"])
       File.mkdir_p!(demo_dir)
@@ -2903,7 +2903,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       roles: roles
     } do
       worktree = create_temp_git_repo()
-      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree, ignore_rail: true)
+      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree)
 
       demo_dir = Path.join([worktree, ".rail", "demo"])
       File.mkdir_p!(demo_dir)
@@ -2960,7 +2960,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
 
       worktree = create_temp_git_repo()
-      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree, ignore_rail: true)
+      %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree)
 
       demo_dir = Path.join([worktree, ".rail", "demo"])
       File.mkdir_p!(demo_dir)

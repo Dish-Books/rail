@@ -82,10 +82,7 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
 
     {:ok, _scratch} = prepare_scratch(task, scratch_path)
 
-    fp_opts = if stage == :demo, do: [ignore_rail: true], else: []
-    {head_sha, dirty_digest} = resolve_fingerprint(worktree_path, fp_opts)
-
-    {:ok, role_run} = resolve_or_create_role_run(task, role, head_sha, dirty_digest)
+    {:ok, role_run} = Runs.start_or_resume_role_run(task, role, worktree_path)
 
     identifier = issue_identifier(task)
     brief = build_brief(task, worktree_path, base_branch, identifier, role, stage)
@@ -167,47 +164,6 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
   defp maybe_update_worktree_path(%Task{} = task, new_path) do
     {:ok, updated} = task |> Task.changeset(%{worktree_path: new_path}) |> Repo.update()
     updated
-  end
-
-  defp resolve_fingerprint(worktree_path, opts) do
-    case Git.branch_fingerprint(worktree_path, opts) do
-      %{head_sha: sha, dirty_digest: digest} -> {sha, digest}
-      _other -> {nil, nil}
-    end
-  end
-
-  defp resolve_or_create_role_run(task, role, head_sha, dirty_digest) do
-    case Repo.one(from r in RoleRun, where: r.task_id == ^task.id and r.role_id == ^role.id) do
-      %RoleRun{} = existing ->
-        attempts = (existing.attempts || 0) + 1
-
-        attrs = %{
-          status: :running,
-          started_at: DateTime.utc_now(),
-          attempts: attempts,
-          stage_fingerprint_head_sha: head_sha,
-          stage_fingerprint_dirty_digest: dirty_digest
-        }
-
-        existing
-        |> RoleRun.changeset(attrs)
-        |> Repo.update()
-
-      nil ->
-        attrs = %{
-          task_id: task.id,
-          role_id: role.id,
-          status: :running,
-          started_at: DateTime.utc_now(),
-          attempts: 1,
-          stage_fingerprint_head_sha: head_sha,
-          stage_fingerprint_dirty_digest: dirty_digest
-        }
-
-        %RoleRun{}
-        |> RoleRun.changeset(attrs)
-        |> Repo.insert()
-    end
   end
 
   defp build_brief(task, worktree_path, base_branch, identifier, role, stage) do

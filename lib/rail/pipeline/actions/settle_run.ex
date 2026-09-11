@@ -749,7 +749,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     if File.dir?(path) and
          (role_run.stage_fingerprint_head_sha != nil or
             role_run.stage_fingerprint_dirty_digest != nil) do
-      case Git.branch_fingerprint(path, ignore_rail: true) do
+      case Git.branch_fingerprint(path) do
         %{head_sha: current_sha, dirty_digest: current_digest} ->
           cond do
             role_run.stage_fingerprint_head_sha != nil and
@@ -803,7 +803,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
 
   defp resolve_demo_fingerprint(%Task{worktree_path: path}, role_run) when is_binary(path) and path != "" do
     if File.dir?(path) do
-      case Git.branch_fingerprint(path, ignore_rail: true) do
+      case Git.branch_fingerprint(path) do
         %{head_sha: sha, dirty_digest: digest} -> {sha, digest}
         _fingerprint_nil -> {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
       end
