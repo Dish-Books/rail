@@ -1,7 +1,7 @@
 defmodule Rail.Tools.Actions.Env do
   @moduledoc false
 
-  import Rail.Tools.Utils.StoredPath
+  import Rail.Tools.Utils.MergedPath
 
   @doc """
   Builds the environment a tool process should run with: the current
@@ -12,7 +12,7 @@ defmodule Rail.Tools.Actions.Env do
   def env(nil), do: env(%{})
 
   def env(extra) when is_map(extra) or is_list(extra) do
-    base = Map.put(System.get_env(), "PATH", stored_path())
+    base = Map.put(System.get_env(), "PATH", merged_path())
 
     Enum.reduce(extra, base, fn {key, value}, acc ->
       Map.put(acc, to_string(key), to_string(value))

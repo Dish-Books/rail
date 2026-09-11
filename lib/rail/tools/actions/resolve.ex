@@ -1,8 +1,8 @@
 defmodule Rail.Tools.Actions.Resolve do
   @moduledoc false
 
+  import Rail.Tools.Utils.MergedPath
   import Rail.Tools.Utils.ResolveCache
-  import Rail.Tools.Utils.StoredPath
 
   @separator ":"
 
@@ -16,7 +16,7 @@ defmodule Rail.Tools.Actions.Resolve do
     if String.contains?(executable, "/") do
       executable
     else
-      path = stored_path()
+      path = merged_path()
       fetch(path, executable, fn -> scan(path, executable) end)
     end
   end

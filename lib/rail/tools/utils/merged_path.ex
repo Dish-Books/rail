@@ -1,7 +1,8 @@
 defmodule Rail.Tools.Utils.MergedPath do
   @moduledoc """
-  Merges the login shell's PATH with the inherited one and the well-known
-  directories, in search order and without duplicates.
+  The PATH external tools run with: the inherited `PATH` followed by the user's
+  home bin directories and the well-known system ones, deduplicated and in
+  search order.
   """
 
   @separator ":"
@@ -17,10 +18,9 @@ defmodule Rail.Tools.Utils.MergedPath do
   ]
 
   @doc """
-  Builds the merged PATH from a login shell PATH, falling back to the inherited
-  `PATH` when `sys_path` is not given.
+  Builds the merged PATH, reading the inherited `PATH` when `sys_path` is not given.
   """
-  def merged_path(shell_path, sys_path \\ nil) do
+  def merged_path(sys_path \\ nil) do
     home = System.get_env("HOME") || ""
 
     home_dirs =
@@ -30,8 +30,7 @@ defmodule Rail.Tools.Utils.MergedPath do
         [Path.join(home, ".local/bin"), Path.join(home, "bin")]
       end
 
-    (segments(shell_path) ++
-       segments(sys_path || System.get_env("PATH")) ++ home_dirs ++ @fallback_dirs)
+    (segments(sys_path || System.get_env("PATH")) ++ home_dirs ++ @fallback_dirs)
     |> Enum.filter(&(&1 != ""))
     |> Enum.uniq()
     |> Enum.join(@separator)
