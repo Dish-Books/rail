@@ -11,7 +11,6 @@ defmodule Rail.Runs.Schemas.Run do
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "run"}
   schema "runs" do
-    belongs_to :role_run, RoleRun
     field :task_id, UXID
     field :kind, Ecto.Enum, values: @kinds
     field :os_pid, :integer
@@ -19,6 +18,8 @@ defmodule Rail.Runs.Schemas.Run do
     field :node, :string
     field :status, Ecto.Enum, values: @statuses
     field :started_at, :utc_datetime_usec
+
+    belongs_to :role_run, RoleRun
 
     timestamps()
   end

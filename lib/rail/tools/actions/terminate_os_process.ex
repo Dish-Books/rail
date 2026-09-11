@@ -15,7 +15,7 @@ defmodule Rail.Tools.Actions.TerminateOsProcess do
   def terminate_os_process(pid, opts) when is_integer(pid) and pid > 0 do
     kill(pid, "TERM")
 
-    unless wait_until_dead(pid, Keyword.get(opts, :grace_period, @kill_grace_ms)) do
+    if !wait_until_dead(pid, Keyword.get(opts, :grace_period, @kill_grace_ms)) do
       kill(pid, "KILL")
       wait_until_dead(pid, @kill_grace_ms)
     end

@@ -32,6 +32,7 @@ defmodule Rail.Git.Actions.GetDiff do
         _fallback ->
           {out_fallback, _code} =
             Tools.run("git", ["diff"], cd: worktree_path, stderr_to_stdout: true)
+
           out_fallback
       end
 

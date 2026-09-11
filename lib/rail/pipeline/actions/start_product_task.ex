@@ -73,7 +73,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
         conversation_id: role_run.conversation_id
       )
 
-    argv =
+    args =
       Runs.build_args(
         backend: role.cli_backend,
         prompt: prompt,
@@ -88,10 +88,10 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
       backend: role.cli_backend,
       cd: worktree_path,
       scratch_path: scratch_path,
-      on_finished: fn _run, outcome -> Pipeline.settle_run(task.id, role_run.id, outcome) end
+      on_finished: fn _run, outcome -> Pipeline.settle_product_run(task.id, role_run.id, outcome) end
     ]
 
-    case Runs.start_run(role_run, :stage, argv, spawner_opts) do
+    case Runs.start_run(role_run, :stage, args, spawner_opts) do
       {:ok, run} -> finalize(task, role_run, run)
       {:error, reason} -> fail(task, reason)
     end

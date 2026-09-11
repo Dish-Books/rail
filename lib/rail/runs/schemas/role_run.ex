@@ -5,6 +5,8 @@ defmodule Rail.Runs.Schemas.RoleRun do
   use Rail.Schema
 
   alias Rail.Domain.TaskUsage
+  alias Rail.Pipeline.Schemas.Role
+  alias Rail.Roles.Schemas.Task
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
 
@@ -12,8 +14,6 @@ defmodule Rail.Runs.Schemas.RoleRun do
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "rr"}
   schema "role_runs" do
-    field :task_id, UXID
-    field :role_id, UXID
     field :conversation_id, :string
     field :status, Ecto.Enum, values: @statuses
     field :started_at, :utc_datetime_usec
@@ -34,6 +34,9 @@ defmodule Rail.Runs.Schemas.RoleRun do
 
     embeds_one :usage, TaskUsage, on_replace: :delete
     embeds_one :chat_usage, TaskUsage, on_replace: :delete
+
+    belongs_to :role, Role
+    belongs_to :task, Task
 
     has_many :runs, Run
     has_many :run_events, RunEvent

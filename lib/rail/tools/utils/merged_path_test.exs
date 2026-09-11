@@ -5,7 +5,7 @@ defmodule Rail.Tools.Utils.MergedPathTest do
 
   test "merges and deduplicates in search order" do
     home = System.get_env("HOME") || "/Users/test"
-    segments = MergedPath.merged_path("/inherited/bin:/common/bin") |> String.split(":")
+    segments = "/inherited/bin:/common/bin" |> MergedPath.merged_path() |> String.split(":")
 
     assert hd(segments) == "/inherited/bin"
     assert "/common/bin" in segments
