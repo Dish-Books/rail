@@ -12,7 +12,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.QuestionDetector
+  alias Rail.Runs.DetectedQuestion
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.RunEvent
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -94,7 +94,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
         started_at: DateTime.utc_now()
       })
 
-    detector = %QuestionDetector{
+    detector = %DetectedQuestion{
       prompt: "Use Postgres or SQLite?",
       options: ["Postgres", "SQLite"],
       task_id: task_id,
@@ -181,7 +181,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
         pending_answer: "Previous queued answer from human"
       })
 
-    detector = %QuestionDetector{prompt: "Should I proceed anyway?", options: []}
+    detector = %DetectedQuestion{prompt: "Should I proceed anyway?", options: []}
 
     assert {:ok, :dropped} = Pipeline.register_question(task.id, role_run.id, detector)
 
@@ -223,7 +223,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
       })
 
     # Incoming question has different casing and extra spaces
-    detector = %QuestionDetector{prompt: "  should we use postgresql?  ", options: []}
+    detector = %DetectedQuestion{prompt: "  should we use postgresql?  ", options: []}
 
     assert {:ok, %Question{id: ^existing_id}} = Pipeline.register_question(task, role_run, detector)
 
@@ -255,7 +255,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
         started_at: DateTime.utc_now()
       })
 
-    detector = %QuestionDetector{prompt: "Second question in same run?", options: []}
+    detector = %DetectedQuestion{prompt: "Second question in same run?", options: []}
 
     assert {:ok, :already_registered} = Pipeline.register_question(task, role_run, detector)
     assert Repo.get!(Task, task.id).question_id == q.id

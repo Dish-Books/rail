@@ -5,8 +5,8 @@ defmodule Rail.Runs.Schemas.RoleRun do
   use Rail.Schema
 
   alias Rail.Domain.TaskUsage
-  alias Rail.Pipeline.Schemas.Role
-  alias Rail.Roles.Schemas.Task
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Roles.Schemas.Role
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
 

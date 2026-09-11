@@ -22,7 +22,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.QuestionDetector
+  alias Rail.Runs.DetectedQuestion
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
   alias Rail.Scope
@@ -95,7 +95,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   defp maybe_detect_and_register_question(task, role_run, run_or_outcome, output) do
     detected_question =
       resolve_detected_question(run_or_outcome) ||
-        (output && QuestionDetector.detect_question(output, task_id: task.id, role_id: role_run.role_id))
+        (output && Runs.detect_question(output, task_id: task.id, role_id: role_run.role_id))
 
     if detected_question && task.stage_state != :blocked && is_nil(task.question_id) do
       case Rail.Pipeline.register_question(task, role_run, detected_question) do
@@ -625,8 +625,8 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     |> Repo.update()
   end
 
-  defp resolve_detected_question(%{detected_question: %QuestionDetector{} = q}), do: q
-  defp resolve_detected_question(%{"detected_question" => %QuestionDetector{} = q}), do: q
+  defp resolve_detected_question(%{detected_question: %DetectedQuestion{} = q}), do: q
+  defp resolve_detected_question(%{"detected_question" => %DetectedQuestion{} = q}), do: q
   defp resolve_detected_question(_other), do: nil
 
   defp maybe_finish_run(%Run{status: status} = run) when status != :finished do

@@ -4,7 +4,7 @@ defmodule Rail.RunsTest do
   alias Rail.Runs
   alias Rail.Runs.AgyEvents
   alias Rail.Runs.ClaudeEvents
-  alias Rail.Runs.QuestionDetector
+  alias Rail.Runs.DetectedQuestion
   alias Rail.Runs.Schemas.RunEvent
 
   test "delegates build_args/1" do
@@ -35,8 +35,8 @@ defmodule Rail.RunsTest do
   end
 
   test "delegates detect_question/1 and detect_question/2" do
-    assert %QuestionDetector{} = Runs.detect_question("[QUESTION: Which db?]")
-    assert %QuestionDetector{task_id: "tsk_1"} = Runs.detect_question("[QUESTION: Which db?]", task_id: "tsk_1")
+    assert %DetectedQuestion{} = Runs.detect_question("[QUESTION: Which db?]")
+    assert %DetectedQuestion{task_id: "tsk_1"} = Runs.detect_question("[QUESTION: Which db?]", task_id: "tsk_1")
     assert is_nil(Runs.detect_question("Plain prose"))
   end
 

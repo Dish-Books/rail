@@ -1,4 +1,4 @@
-defmodule Rail.Runs.QuestionDetector do
+defmodule Rail.Runs.Actions.DetectQuestion do
   @moduledoc """
   Detects question markers emitted in agent prose: `[QUESTION: ...] [OPTIONS: ...]`.
 
@@ -7,15 +7,7 @@ defmodule Rail.Runs.QuestionDetector do
   Rejects placeholder prompts that echo role briefs or ellipses.
   """
 
-  @enforce_keys [:prompt]
-  defstruct [
-    :id,
-    :prompt,
-    :task_id,
-    :role_id,
-    :context_summary,
-    options: []
-  ]
+  alias Rail.Runs.DetectedQuestion
 
   @question_regex ~r/^[\s>*\-]*\[QUESTION:\s*([^\]]+)\]/i
   @options_regex ~r/\[OPTIONS:\s*([^\]]+)\]/i
@@ -23,27 +15,44 @@ defmodule Rail.Runs.QuestionDetector do
   @placeholder_dots_regex ~r/[.\x{2026}\s]/u
 
   @doc """
-  Detects whether `line_or_text` contains an agent question marker.
+  Detects every agent question marker in `line_or_text`.
 
-  Returns a `%Rail.Runs.QuestionDetector{}` struct or `nil` if no question is present
-  or if the prompt is a placeholder.
+  Returns a list of `%Rail.Runs.DetectedQuestion{}` in the order they appear, with
+  repeats of the same prompt collapsed. An agent that asks several things in one
+  turn gets all of them through; placeholder prompts are dropped.
   """
-  def detect_question(line_or_text, opts \\ [])
+  def detect_questions(line_or_text, opts \\ [])
 
-  def detect_question(nil, _opts), do: nil
+  def detect_questions(nil, _opts), do: []
 
-  def detect_question(text, opts) when is_binary(text) and is_list(opts) do
-    detect_question(text, Map.new(opts))
+  def detect_questions(text, opts) when is_binary(text) and is_list(opts) do
+    detect_questions(text, Map.new(opts))
   end
 
-  def detect_question(text, opts) when is_binary(text) and is_map(opts) do
-    if String.contains?(text, "\n") do
-      text
-      |> String.split(["\r\n", "\n"])
-      |> Enum.find_value(&detect_single_line(&1, opts))
-    else
-      detect_single_line(text, opts)
-    end
+  def detect_questions(text, opts) when is_binary(text) and is_map(opts) do
+    text
+    |> String.split(["\r\n", "\n"])
+    |> Enum.flat_map(fn line ->
+      case detect_single_line(line, opts) do
+        %DetectedQuestion{} = question -> [question]
+        nil -> []
+      end
+    end)
+    |> Enum.uniq_by(&normalize_prompt(&1.prompt))
+  end
+
+  @doc """
+  Detects the first agent question marker in `line_or_text`.
+
+  Returns a `%Rail.Runs.DetectedQuestion{}` struct or `nil` if no question is present
+  or if the prompt is a placeholder. Use `detect_questions/2` to see all of them.
+  """
+  def detect_question(line_or_text, opts \\ []) do
+    line_or_text |> detect_questions(opts) |> List.first()
+  end
+
+  defp normalize_prompt(prompt) do
+    prompt |> to_string() |> String.trim() |> String.downcase()
   end
 
   defp detect_single_line(line, opts) do
@@ -88,7 +97,7 @@ defmodule Rail.Runs.QuestionDetector do
       opts[:id] ||
         "q-" <> Base.encode16(:crypto.strong_rand_bytes(4), case: :lower)
 
-    %__MODULE__{
+    %DetectedQuestion{
       id: id,
       prompt: prompt,
       options: options,

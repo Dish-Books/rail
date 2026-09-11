@@ -3,7 +3,7 @@ defmodule Rail.Runs.AgyEventsTest do
 
   alias Rail.Domain.TaskUsage
   alias Rail.Runs.AgyEvents
-  alias Rail.Runs.QuestionDetector
+  alias Rail.Runs.DetectedQuestion
 
   test "parses init event, updates conversation id and logs tool count" do
     state = AgyEvents.new(task_id: "tsk_1", role_id: "rol_1")
@@ -290,7 +290,7 @@ defmodule Rail.Runs.AgyEventsTest do
 
     state = AgyEvents.handle_event(state, step)
 
-    assert %QuestionDetector{} = state.detected_question
+    assert %DetectedQuestion{} = state.detected_question
     assert state.detected_question.prompt == "Which schema?"
     assert state.detected_question.options == ["public", "private"]
 

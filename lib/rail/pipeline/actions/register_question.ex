@@ -14,7 +14,8 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
-  alias Rail.Runs.QuestionDetector
+  alias Rail.Runs
+  alias Rail.Runs.DetectedQuestion
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.RunEvent
 
@@ -152,7 +153,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
     end)
   end
 
-  defp extract_question_attrs(%QuestionDetector{} = q, task, role_run) do
+  defp extract_question_attrs(%DetectedQuestion{} = q, task, role_run) do
     trimmed_prompt = String.trim(q.prompt || "")
 
     if trimmed_prompt == "" do
@@ -165,12 +166,12 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
   end
 
   defp extract_question_attrs(text, task, role_run) when is_binary(text) do
-    case QuestionDetector.detect_question(text,
+    case Runs.detect_question(text,
            task_id: task.id,
            role_id: role_run && role_run.role_id,
            task_title: task_title(task)
          ) do
-      %QuestionDetector{} = detected ->
+      %DetectedQuestion{} = detected ->
         extract_question_attrs(detected, task, role_run)
 
       nil ->

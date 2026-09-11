@@ -22,7 +22,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.QuestionDetector
+  alias Rail.Runs.DetectedQuestion
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
   alias Rail.Users
@@ -2171,7 +2171,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         started_at: DateTime.utc_now()
       })
 
-    detector1 = %QuestionDetector{prompt: "Atom key question?", options: ["A", "B"]}
+    detector1 = %DetectedQuestion{prompt: "Atom key question?", options: ["A", "B"]}
 
     assert {:ok, %Task{stage_state: :blocked, question_id: "qst_" <> _rest1 = q_id1}, %RoleRun{status: :blocked_on_input}} =
              Pipeline.settle_run(task1, role_run1, %{exit_code: 0, detected_question: detector1})
@@ -2205,7 +2205,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         started_at: DateTime.utc_now()
       })
 
-    detector2 = %QuestionDetector{prompt: "String key question?", options: ["C", "D"]}
+    detector2 = %DetectedQuestion{prompt: "String key question?", options: ["C", "D"]}
 
     assert {:ok, %Task{stage_state: :blocked, question_id: "qst_" <> _rest2 = q_id2}, %RoleRun{status: :blocked_on_input}} =
              Pipeline.settle_run(task2, role_run2, %{"exit_code" => 0, "detected_question" => detector2})
@@ -2241,7 +2241,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         pending_answer: "Pending"
       })
 
-    detector3 = %QuestionDetector{prompt: "Drop this duplicate?", options: []}
+    detector3 = %DetectedQuestion{prompt: "Drop this duplicate?", options: []}
 
     assert {:ok, %Task{stage: :review, stage_state: :queued}, %RoleRun{status: :finished}} =
              Pipeline.settle_run(task3, role_run3, %{exit_code: 0, detected_question: detector3})

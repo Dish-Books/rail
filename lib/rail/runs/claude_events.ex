@@ -7,7 +7,7 @@ defmodule Rail.Runs.ClaudeEvents do
   """
 
   alias Rail.Domain.TaskUsage
-  alias Rail.Runs.QuestionDetector
+  alias Rail.Runs
   alias Rail.Runs.ToolSummarizer
 
   defstruct [
@@ -15,7 +15,7 @@ defmodule Rail.Runs.ClaudeEvents do
     :task_id,
     :role_id,
     :result_error,
-    :detected_question,
+    detected_questions: [],
     logs: [],
     final_text: "",
     assistant_text: "",
@@ -151,6 +151,7 @@ defmodule Rail.Runs.ClaudeEvents do
       state
       | saw_result: true,
         final_text: final_text,
+        detected_questions: absorb_questions(state, final_text),
         usage: usage,
         thinking_tokens: thinking_tokens,
         num_turns: num_turns,
@@ -181,25 +182,11 @@ defmodule Rail.Runs.ClaudeEvents do
       new_assistant_text = state.assistant_text <> text <> "\n"
       lines = String.split(text, "\n")
 
-      {new_logs, detected_question} =
-        Enum.reduce(lines, {state.logs, state.detected_question}, fn line, {logs_acc, q_acc} ->
-          new_q =
-            case q_acc do
-              %QuestionDetector{} = existing ->
-                existing
-
-              nil ->
-                QuestionDetector.detect_question(line, task_id: state.task_id, role_id: state.role_id)
-            end
-
-          {Enum.concat(logs_acc, [line]), new_q}
-        end)
-
       %{
         state
         | assistant_text: new_assistant_text,
-          logs: new_logs,
-          detected_question: detected_question
+          logs: Enum.concat(state.logs, lines),
+          detected_questions: absorb_questions(state, text)
       }
     end
   end
@@ -295,4 +282,12 @@ defmodule Rail.Runs.ClaudeEvents do
   end
 
   defp to_int(_other_val), do: 0
+
+  # Questions can surface in streamed assistant prose or only in the final result
+  # payload, so both feed the same accumulator. Order is kept and repeats collapse.
+  defp absorb_questions(%__MODULE__{} = state, text) do
+    state.detected_questions
+    |> Enum.concat(Runs.detect_questions(text, task_id: state.task_id, role_id: state.role_id))
+    |> Enum.uniq_by(&String.downcase(String.trim(&1.prompt || "")))
+  end
 end

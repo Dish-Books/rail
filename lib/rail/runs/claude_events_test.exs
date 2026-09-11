@@ -3,7 +3,7 @@ defmodule Rail.Runs.ClaudeEventsTest do
 
   alias Rail.Domain.TaskUsage
   alias Rail.Runs.ClaudeEvents
-  alias Rail.Runs.QuestionDetector
+  alias Rail.Runs.DetectedQuestion
 
   test "parses system init event, captures session id and logs tool/server counts" do
     state = ClaudeEvents.new(task_id: "task-1", role_id: "role-1")
@@ -64,7 +64,7 @@ defmodule Rail.Runs.ClaudeEventsTest do
              "[QUESTION: Scope to one repo?] [OPTIONS: yes, no]"
            ]
 
-    assert %QuestionDetector{} = state.detected_question
+    assert %DetectedQuestion{} = state.detected_question
     assert state.detected_question.prompt == "Scope to one repo?"
     assert state.detected_question.options == ["yes", "no"]
   end

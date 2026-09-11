@@ -9,6 +9,9 @@ defmodule Rail.Pipeline do
   alias Rail.Pipeline.Queue
 
   defdelegate start_product_task(issue), to: Actions.StartProductTask
+
+  defdelegate settle_product_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleProductRun
+
   defdelegate approve_product_task(task, opts \\ []), to: Actions.ApproveProductTask
   defdelegate start_design_task(task, opts \\ []), to: Actions.StartDesignTask
 

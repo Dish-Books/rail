@@ -88,7 +88,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
       backend: role.cli_backend,
       cd: worktree_path,
       scratch_path: scratch_path,
-      on_finished: fn _run, outcome -> Pipeline.settle_product_run(task.id, role_run.id, outcome) end
+      on_finished: fn run, outcome -> Pipeline.settle_product_run(run, outcome) end
     ]
 
     case Runs.start_run(role_run, :stage, args, spawner_opts) do

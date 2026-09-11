@@ -4,6 +4,7 @@ defmodule Rail.Runs.Schemas.Run do
   """
   use Rail.Schema
 
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Runs.Schemas.RoleRun
 
   @kinds [:stage, :chat, :rebase, :probe, :improve]
@@ -11,7 +12,6 @@ defmodule Rail.Runs.Schemas.Run do
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "run"}
   schema "runs" do
-    field :task_id, UXID
     field :kind, Ecto.Enum, values: @kinds
     field :os_pid, :integer
     field :stream_path, :string
@@ -19,6 +19,7 @@ defmodule Rail.Runs.Schemas.Run do
     field :status, Ecto.Enum, values: @statuses
     field :started_at, :utc_datetime_usec
 
+    belongs_to :task, Task
     belongs_to :role_run, RoleRun
 
     timestamps()
