@@ -188,8 +188,9 @@ defmodule Rail.Runs.Actions.StartRun do
     max_seq + 1
   end
 
+  # The agent is told its scratch directory by absolute path in the brief, so the
+  # child only needs the stream files and a token.
   defp run_env(stream_path, opts) do
-    scratch_path = Keyword.get(opts, :scratch_path) || Keyword.get(opts, :rail_scratch) || ""
     gh_token = Keyword.get(opts, :gh_token) || System.get_env("GH_TOKEN") || ""
 
     env =
@@ -197,7 +198,6 @@ defmodule Rail.Runs.Actions.StartRun do
         %{
           "RAIL_STREAM" => stream_path,
           "RAIL_STREAM_ERR" => "#{stream_path}.err",
-          "RAIL_SCRATCH" => scratch_path,
           "GH_TOKEN" => gh_token
         },
         Keyword.get(opts, :env, %{})

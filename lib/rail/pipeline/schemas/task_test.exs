@@ -97,6 +97,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       description: "Build pipeline core logic",
       worktree_name: "core-feature",
       worktree_path: "/tmp/repos/task-schema/.worktrees/core-feature",
+      scratch_path: Path.join(System.tmp_dir!(), "rail_test_scratch_#{System.unique_integer([:positive])}"),
       pr_number: 101,
       pr_url: "https://github.com/example/repo/pull/101",
       mergeability: :mergeable,
@@ -169,7 +170,12 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     assert {:error, %{errors: [project_id: {"does not exist", _details}]}} =
              %Task{}
              |> Task.changeset(
-               %{title: "Missing Project Task", worktree_name: "missing", worktree_path: "/tmp/missing"},
+               %{
+                 title: "Missing Project Task",
+                 worktree_name: "missing",
+                 worktree_path: "/tmp/missing",
+                 scratch_path: "/tmp/scratch"
+               },
                "prj_000000000000000000000000"
              )
              |> Repo.insert()
@@ -216,7 +222,12 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       Repo.insert!(
         Task.changeset(
           %Task{},
-          %{issue_id: issue.id, worktree_name: "schema-preload", worktree_path: "/tmp/schema-preload"},
+          %{
+            issue_id: issue.id,
+            worktree_name: "schema-preload",
+            worktree_path: "/tmp/schema-preload",
+            scratch_path: "/tmp/schema-preload-scratch"
+          },
           project.id
         )
       )
@@ -242,7 +253,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     on_exit(fn -> File.rm_rf(plan_scratch_45368) end)
     File.write!(Path.join(plan_scratch_45368, "plan.md"), "# Plan 13101")
 
-    {:ok, _captured} = capture_scratch(:architect, task, plan_scratch_45368)
+    {:ok, _captured} = capture_scratch(:architect, %{task | scratch_path: plan_scratch_45368})
 
     {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
 

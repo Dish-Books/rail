@@ -14,7 +14,7 @@ defmodule Rail.ArtifactsTest do
 
   setup do
     dir = Path.join(@tmp_base, "facade_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(dir)
+    Enum.each(["design", "demo", "qa"], &File.mkdir_p!(Path.join(dir, &1)))
 
     {:ok, ws} =
       Projects.upsert_linear_workspace(system_scope(), %{
@@ -43,7 +43,7 @@ defmodule Rail.ArtifactsTest do
   describe "Rail.Artifacts facade" do
     test "delegates read and capture actions for design", %{dir: dir, project: project} do
       scope = Scope.for_system()
-      ArtifactHelpers.write_design_manifest(dir)
+      ArtifactHelpers.write_design_manifest(Path.join(dir, "design"))
 
       assert {:ok, %{}} = Artifacts.read_design(scope, dir, url_probe: fn _url -> true end)
 
@@ -62,7 +62,7 @@ defmodule Rail.ArtifactsTest do
 
     test "delegates demo actions including mark_demo_stale", %{dir: dir, project: project} do
       scope = Scope.for_system()
-      ArtifactHelpers.write_demo_manifest(dir)
+      ArtifactHelpers.write_demo_manifest(Path.join(dir, "demo"))
 
       assert {:ok, %{}} = Artifacts.read_demo(scope, dir)
 
@@ -80,7 +80,7 @@ defmodule Rail.ArtifactsTest do
 
     test "delegates qa actions and asset helper", %{dir: dir, project: project} do
       scope = Scope.for_system()
-      ArtifactHelpers.write_qa_manifest(dir)
+      ArtifactHelpers.write_qa_manifest(Path.join(dir, "qa"))
 
       assert {:ok, %{}} = Artifacts.read_qa_report(scope, dir)
 

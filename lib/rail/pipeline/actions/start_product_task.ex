@@ -68,7 +68,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
         task: task,
         backend: role.backend,
         role_instructions: role.system_prompt,
-        context_snippet: brief(issue),
+        context_snippet: brief(issue, task.scratch_path),
         pending_answer: role_run.pending_answer,
         conversation_id: role_run.conversation_id
       )
@@ -97,8 +97,8 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     end
   end
 
-  defp brief(%Issue{identifier: identifier}) do
-    file = "$RAIL_SCRATCH/tickets/#{identifier}.md"
+  defp brief(%Issue{identifier: identifier}, scratch_path) do
+    file = "#{scratch_path}/tickets/#{identifier}.md"
 
     String.trim("""
     The ticket is the file #{file}. Rail publishes that file when your run completes cleanly.
@@ -117,7 +117,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     - A heredoc into #{file}, never an inline string.
     - The `---` front matter block starts on the first line of the file. `title` is required; `priority` and `estimate` keep whatever they are already set to when left out.
     - Everything below the closing `---` becomes the ticket body verbatim, and the file replaces the ticket in full.
-    - A ticket you split out is its own file, $RAIL_SCRATCH/tickets/split-<n>.md, in this same format. Rail opens each one as a new ticket.
+    - A ticket you split out is its own file, #{scratch_path}/tickets/split-<n>.md, in this same format. Rail opens each one as a new ticket.
     - These files are the only way to publish a ticket.
     """)
   end

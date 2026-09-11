@@ -95,7 +95,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
 
     if is_struct(role, Role) and role.stage == :design and task.stage == :design and task.stage_state != :blocked and
          Keyword.has_key?(opts, :before_design_stamp) do
-      after_stamp = Pipeline.design_manifest_stamp(task.worktree_path)
+      after_stamp = Pipeline.design_manifest_stamp(task.scratch_path)
 
       if after_stamp == before_stamp do
         {task, role_run}

@@ -21,55 +21,37 @@ defmodule Rail.Artifacts.Actions.ReadDesignTest do
       assert {:error, :not_authorized} = Artifacts.read_design(scope, dir)
     end
 
-    test "reads design directly from design directory", %{design_dir: design_dir} do
+    test "reads the manifest out of the scratch directory's design/", %{dir: dir, design_dir: design_dir} do
       scope = Scope.for_system()
       ArtifactHelpers.write_design_manifest(design_dir)
 
-      assert {:ok, %{version: 1, directions: [_dir]}} =
-               Artifacts.read_design(scope, design_dir, url_probe: fn _url -> true end)
-    end
-
-    test "reads design from parent scratch directory", %{dir: dir, design_dir: design_dir} do
-      scope = Scope.user_scope()
-      ArtifactHelpers.write_design_manifest(design_dir)
-
-      assert {:ok, %{version: 1}} =
+      assert {:ok, %{version: 1, directions: [_direction]}} =
                Artifacts.read_design(scope, dir, url_probe: fn _url -> true end)
     end
 
-    test "reads design using task struct and scratch option", %{dir: dir, design_dir: design_dir} do
-      scope = Scope.user_scope()
-      ArtifactHelpers.write_design_manifest(design_dir)
+    # The scratch directory is the only place a manifest is looked for: one written
+    # into the worktree instead is a design Rail never saw.
+    test "ignores a manifest left in the worktree's .rail/design", %{dir: dir} do
+      scope = Scope.for_system()
+      rail_design = Path.join([dir, ".rail", "design"])
+      File.mkdir_p!(rail_design)
+      ArtifactHelpers.write_design_manifest(rail_design)
 
-      assert {:ok, %{version: 1}} =
-               Artifacts.read_design(scope, %{id: "tsk_dsg_1"},
-                 scratch_dir: dir,
-                 url_probe: fn _url -> true end
-               )
+      assert {:error, msg} = Artifacts.read_design(scope, dir)
+      assert msg =~ "No design manifest found"
     end
 
-    test "reads design using task id string and scratch option", %{dir: dir, design_dir: design_dir} do
-      scope = Scope.user_scope()
-      ArtifactHelpers.write_design_manifest(design_dir)
-
-      assert {:ok, %{version: 1}} =
-               Artifacts.read_design(scope, "tsk_dsg_1",
-                 scratch_dir: dir,
-                 url_probe: fn _url -> true end
-               )
-    end
-
-    test "returns validation failure when manifest is invalid", %{design_dir: design_dir} do
+    test "returns validation failure when manifest is invalid", %{dir: dir, design_dir: design_dir} do
       scope = Scope.for_system()
       File.write!(Path.join(design_dir, "manifest.json"), "{bad_json")
 
-      assert {:error, msg} = Artifacts.read_design(scope, design_dir)
+      assert {:error, msg} = Artifacts.read_design(scope, dir)
       assert msg =~ "Failed to parse design manifest"
     end
 
     test "returns error when manifest does not exist" do
       scope = Scope.for_system()
-      assert {:error, msg} = Artifacts.read_design(scope, "/nonexistent/design/dir")
+      assert {:error, msg} = Artifacts.read_design(scope, "/nonexistent/scratch")
       assert msg =~ "No design manifest found"
     end
   end

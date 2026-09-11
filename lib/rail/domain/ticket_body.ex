@@ -1,6 +1,6 @@
 defmodule Rail.Domain.TicketBody do
   @moduledoc """
-  Represents a parsed Linear ticket specification written to `$RAIL_SCRATCH/tickets/<identifier>.md`.
+  Represents a parsed Linear ticket specification written to `<scratch>/tickets/<identifier>.md`.
 
   Also provides utilities for acceptance criteria parsing and split-out ticket management.
   """

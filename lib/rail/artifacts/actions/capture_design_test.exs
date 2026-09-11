@@ -14,7 +14,7 @@ defmodule Rail.Artifacts.Actions.CaptureDesignTest do
 
   setup do
     dir = Path.join(@tmp_base, "design_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(dir)
+    File.mkdir_p!(Path.join(dir, "design"))
 
     {:ok, ws} =
       Projects.upsert_linear_workspace(system_scope(), %{
@@ -67,7 +67,7 @@ defmodule Rail.Artifacts.Actions.CaptureDesignTest do
       project: project
     } do
       scope = Scope.for_system()
-      ArtifactHelpers.write_design_manifest(dir)
+      ArtifactHelpers.write_design_manifest(Path.join(dir, "design"))
 
       LinearMock.mock_file_upload_success(
         upload_url: "https://api.linear.app/upload/dsg_1",
@@ -115,7 +115,7 @@ defmodule Rail.Artifacts.Actions.CaptureDesignTest do
 
     test "propagates validator failure", %{dir: dir} do
       scope = Scope.for_system()
-      File.write!(Path.join(dir, "manifest.json"), "{invalid")
+      File.write!(Path.join([dir, "design", "manifest.json"]), "{invalid")
 
       assert {:error, msg} = Artifacts.capture_design(scope, "tsk_err", dir)
       assert msg =~ "Failed to parse design manifest"
@@ -164,10 +164,10 @@ defmodule Rail.Artifacts.Actions.CaptureDesignTest do
       project: project
     } do
       scope = Scope.for_system()
-      ArtifactHelpers.write_design_manifest(dir)
+      ArtifactHelpers.write_design_manifest(Path.join(dir, "design"))
 
       # Still file unreadable before upload
-      still_file = Path.join(dir, "still_a.png")
+      still_file = Path.join([dir, "design", "still_a.png"])
       File.chmod!(still_file, 0o000)
 
       assert {:error, msg} =

@@ -5,7 +5,6 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
   """
 
   import Ecto.Query
-  import Rail.Pipeline.Utils.ScratchPath
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Design
@@ -64,7 +63,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
   Supports `require_new_version: true` (for clean run settlement) or `false` (for recheck / chat turns).
   """
   def apply_design_manifest(%Scope{} = scope, %Task{} = task, opts \\ []) do
-    design_target = resolve_design_target(task, opts)
+    design_target = task.scratch_path
     read_opts = Keyword.take(opts, [:url_probe, :req_options])
     require_new_version = Keyword.get(opts, :require_new_version, false)
     project = Keyword.get(opts, :project) || (task.project_id && Repo.get(Project, task.project_id))
@@ -94,32 +93,22 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
   end
 
   @doc """
-  Returns a timestamp/size stamp of the design manifest on disk, or nil if none exists.
+  Returns a timestamp/size stamp of the design manifest in `scratch_path`, or nil.
+
+  Used to tell whether a chat turn rewrote the manifest.
   """
-  def design_manifest_stamp(%Task{worktree_path: path}), do: design_manifest_stamp(path)
+  def design_manifest_stamp(%Task{scratch_path: path}), do: design_manifest_stamp(path)
 
-  def design_manifest_stamp(worktree_path) when is_binary(worktree_path) do
-    manifest_path =
-      cond do
-        File.exists?(Path.join(worktree_path, ".rail/design/manifest.json")) ->
-          Path.join(worktree_path, ".rail/design/manifest.json")
+  def design_manifest_stamp(scratch_path) when is_binary(scratch_path) do
+    manifest_path = Path.join([scratch_path, "design", "manifest.json"])
 
-        File.exists?(Path.join(worktree_path, "manifest.json")) ->
-          Path.join(worktree_path, "manifest.json")
-
-        true ->
-          nil
-      end
-
-    with path when is_binary(path) <- manifest_path,
-         {:ok, %File.Stat{mtime: mtime, size: size}} <- File.stat(path, time: :posix) do
-      "#{mtime}:#{size}"
-    else
+    case File.stat(manifest_path, time: :posix) do
+      {:ok, %File.Stat{mtime: mtime, size: size}} -> "#{mtime}:#{size}"
       _other -> nil
     end
   end
 
-  def design_manifest_stamp(_worktree), do: nil
+  def design_manifest_stamp(_other), do: nil
 
   defp authorize_scope(%Scope{system: true}), do: :ok
   defp authorize_scope(%Scope{user: %{}}), do: :ok
@@ -177,25 +166,6 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
       Runs.append_run_event(role_run.id, line)
     else
       _other -> :ok
-    end
-  end
-
-  defp resolve_design_target(task, opts) do
-    cond do
-      Keyword.get(opts, :scratch_dir) ->
-        Keyword.get(opts, :scratch_dir)
-
-      Keyword.get(opts, :scratch_path) ->
-        Keyword.get(opts, :scratch_path)
-
-      Keyword.get(opts, :worktree_path) ->
-        Keyword.get(opts, :worktree_path)
-
-      task.worktree_path && task.worktree_path != "" ->
-        task.worktree_path
-
-      true ->
-        scratch_path(task.project_id, task.id)
     end
   end
 

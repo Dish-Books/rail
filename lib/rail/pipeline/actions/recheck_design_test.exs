@@ -90,10 +90,10 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         name: "Designer"
       })
 
-    worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-    design_dir = Path.join([worktree_dir, ".rail", "design"])
+    scratch_dir = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir = Path.join(scratch_dir, "design")
     File.mkdir_p!(design_dir)
-    on_exit(fn -> File.rm_rf(worktree_dir) end)
+    on_exit(fn -> File.rm_rf(scratch_dir) end)
 
     File.write!(Path.join(design_dir, "dir-1.png"), "fake png content 1")
     File.write!(Path.join(design_dir, "dir-2.png"), "fake png content 2")
@@ -109,13 +109,13 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
             "key" => "dir-1",
             "title" => "Minimal Light",
             "notes" => "Clean aesthetic with spacious white layout",
-            "stillPath" => ".rail/design/dir-1.png"
+            "stillPath" => "dir-1.png"
           },
           %{
             "key" => "dir-2",
             "title" => "Bold Dark",
             "notes" => "Dark mode with high contrast neon highlights",
-            "stillPath" => ".rail/design/dir-2.png"
+            "stillPath" => "dir-2.png"
           }
         ]
       })
@@ -126,7 +126,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         stage: :design,
         stage_state: :failed,
         error: "Canvas URL could not be opened or returned 404/410",
-        worktree_path: worktree_dir
+        scratch_path: scratch_dir
       })
 
     {:ok, role_run} =
@@ -168,10 +168,10 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         name: "Designer"
       })
 
-    worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-    design_dir = Path.join([worktree_dir, ".rail", "design"])
+    scratch_dir = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir = Path.join(scratch_dir, "design")
     File.mkdir_p!(design_dir)
-    on_exit(fn -> File.rm_rf(worktree_dir) end)
+    on_exit(fn -> File.rm_rf(scratch_dir) end)
 
     File.write!(Path.join(design_dir, "dir-1.png"), "fake png content 1")
     File.write!(Path.join(design_dir, "dir-2.png"), "fake png content 2")
@@ -187,13 +187,13 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
             "key" => "dir-1",
             "title" => "Minimal Light",
             "notes" => "Clean aesthetic with spacious white layout",
-            "stillPath" => ".rail/design/dir-1.png"
+            "stillPath" => "dir-1.png"
           },
           %{
             "key" => "dir-2",
             "title" => "Bold Dark",
             "notes" => "Dark mode with high contrast neon highlights",
-            "stillPath" => ".rail/design/dir-2.png"
+            "stillPath" => "dir-2.png"
           }
         ]
       })
@@ -204,13 +204,13 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         stage: :design,
         stage_state: :failed,
         error: "Initial gate failure",
-        worktree_path: worktree_dir
+        scratch_path: scratch_dir
       })
 
     mock_design_uploads(2)
 
     {:ok, _design} =
-      Artifacts.capture_design(system_scope(), task, worktree_dir, url_probe: fn _url -> true end)
+      Artifacts.capture_design(system_scope(), task, scratch_dir, url_probe: fn _url -> true end)
 
     mock_design_uploads(4)
 
@@ -227,10 +227,10 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         name: "Designer"
       })
 
-    worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-    design_dir = Path.join([worktree_dir, ".rail", "design"])
+    scratch_dir = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir = Path.join(scratch_dir, "design")
     File.mkdir_p!(design_dir)
-    on_exit(fn -> File.rm_rf(worktree_dir) end)
+    on_exit(fn -> File.rm_rf(scratch_dir) end)
 
     File.write!(Path.join(design_dir, "dir-1.png"), "fake png content 1")
     File.write!(Path.join(design_dir, "dir-2.png"), "fake png content 2")
@@ -246,13 +246,13 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
             "key" => "dir-1",
             "title" => "Minimal Light",
             "notes" => "Clean aesthetic with spacious white layout",
-            "stillPath" => ".rail/design/dir-1.png"
+            "stillPath" => "dir-1.png"
           },
           %{
             "key" => "dir-2",
             "title" => "Bold Dark",
             "notes" => "Dark mode with high contrast neon highlights",
-            "stillPath" => ".rail/design/dir-2.png"
+            "stillPath" => "dir-2.png"
           }
         ]
       })
@@ -263,7 +263,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         stage: :design,
         stage_state: :failed,
         error: "Initial failure",
-        worktree_path: worktree_dir
+        scratch_path: scratch_dir
       })
 
     {:ok, role_run} =
@@ -320,10 +320,10 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         started_at: DateTime.utc_now()
       })
 
-    worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-    design_dir = Path.join([worktree_dir, ".rail", "design"])
+    scratch_dir = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir = Path.join(scratch_dir, "design")
     File.mkdir_p!(design_dir)
-    on_exit(fn -> File.rm_rf(worktree_dir) end)
+    on_exit(fn -> File.rm_rf(scratch_dir) end)
 
     File.write!(Path.join(design_dir, "dir-1.png"), "fake png content 1")
     File.write!(Path.join(design_dir, "dir-2.png"), "fake png content 2")
@@ -339,13 +339,13 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
             "key" => "dir-1",
             "title" => "Minimal Light",
             "notes" => "Clean aesthetic with spacious white layout",
-            "stillPath" => ".rail/design/dir-1.png"
+            "stillPath" => "dir-1.png"
           },
           %{
             "key" => "dir-2",
             "title" => "Bold Dark",
             "notes" => "Dark mode with high contrast neon highlights",
-            "stillPath" => ".rail/design/dir-2.png"
+            "stillPath" => "dir-2.png"
           }
         ]
       })
@@ -355,13 +355,13 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :design,
         stage_state: :failed,
-        worktree_path: worktree_dir
+        scratch_path: scratch_dir
       })
 
     mock_design_uploads(2)
 
     {:ok, _design} =
-      Artifacts.capture_design(system_scope(), task, worktree_dir, url_probe: fn _url -> true end)
+      Artifacts.capture_design(system_scope(), task, scratch_dir, url_probe: fn _url -> true end)
 
     # The human picks dir-1, so the manifest must keep that choice.
     {:ok, task} =
@@ -388,10 +388,10 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         started_at: DateTime.utc_now()
       })
 
-    worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-    design_dir = Path.join([worktree_dir, ".rail", "design"])
+    scratch_dir = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir = Path.join(scratch_dir, "design")
     File.mkdir_p!(design_dir)
-    on_exit(fn -> File.rm_rf(worktree_dir) end)
+    on_exit(fn -> File.rm_rf(scratch_dir) end)
 
     File.write!(Path.join(design_dir, "dir-1.png"), "fake png content 1")
     File.write!(Path.join(design_dir, "dir-2.png"), "fake png content 2")
@@ -407,13 +407,13 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
             "key" => "dir-1",
             "title" => "Minimal Light",
             "notes" => "Clean aesthetic with spacious white layout",
-            "stillPath" => ".rail/design/dir-1.png"
+            "stillPath" => "dir-1.png"
           },
           %{
             "key" => "dir-2",
             "title" => "Bold Dark",
             "notes" => "Dark mode with high contrast neon highlights",
-            "stillPath" => ".rail/design/dir-2.png"
+            "stillPath" => "dir-2.png"
           }
         ]
       })
@@ -423,13 +423,13 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :design,
         stage_state: :failed,
-        worktree_path: worktree_dir
+        scratch_path: scratch_dir
       })
 
     mock_design_uploads(2)
 
     {:ok, _design} =
-      Artifacts.capture_design(system_scope(), task, worktree_dir, url_probe: fn _url -> true end)
+      Artifacts.capture_design(system_scope(), task, scratch_dir, url_probe: fn _url -> true end)
 
     # The human picks dir-1, then the agent rewrites the manifest with a different pick.
     {:ok, task} =
@@ -456,14 +456,14 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         "key" => "dir-other",
         "title" => "Other",
         "notes" => "Other notes",
-        "stillPath" => ".rail/design/dir-1.png"
+        "stillPath" => "dir-1.png"
       }
     ]
 
-    worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-    design_dir = Path.join([worktree_dir, ".rail", "design"])
+    scratch_dir = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir = Path.join(scratch_dir, "design")
     File.mkdir_p!(design_dir)
-    on_exit(fn -> File.rm_rf(worktree_dir) end)
+    on_exit(fn -> File.rm_rf(scratch_dir) end)
 
     File.write!(Path.join(design_dir, "dir-1.png"), "fake png content 1")
     File.write!(Path.join(design_dir, "dir-2.png"), "fake png content 2")
@@ -482,13 +482,13 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :design,
         stage_state: :failed,
-        worktree_path: worktree_dir
+        scratch_path: scratch_dir
       })
 
     mock_design_uploads(2)
 
     {:ok, _design} =
-      Artifacts.capture_design(system_scope(), task, worktree_dir, url_probe: fn _url -> true end)
+      Artifacts.capture_design(system_scope(), task, scratch_dir, url_probe: fn _url -> true end)
 
     mock_design_uploads(2)
 
@@ -497,10 +497,10 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
   end
 
   test "computes design_manifest_stamp and handles missing files" do
-    worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-    design_dir = Path.join([worktree_dir, ".rail", "design"])
+    scratch_dir = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir = Path.join(scratch_dir, "design")
     File.mkdir_p!(design_dir)
-    on_exit(fn -> File.rm_rf(worktree_dir) end)
+    on_exit(fn -> File.rm_rf(scratch_dir) end)
 
     File.write!(Path.join(design_dir, "dir-1.png"), "fake png content 1")
     File.write!(Path.join(design_dir, "dir-2.png"), "fake png content 2")
@@ -516,19 +516,19 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
             "key" => "dir-1",
             "title" => "Minimal Light",
             "notes" => "Clean aesthetic with spacious white layout",
-            "stillPath" => ".rail/design/dir-1.png"
+            "stillPath" => "dir-1.png"
           },
           %{
             "key" => "dir-2",
             "title" => "Bold Dark",
             "notes" => "Dark mode with high contrast neon highlights",
-            "stillPath" => ".rail/design/dir-2.png"
+            "stillPath" => "dir-2.png"
           }
         ]
       })
     )
 
-    stamp = Pipeline.design_manifest_stamp(worktree_dir)
+    stamp = Pipeline.design_manifest_stamp(scratch_dir)
     assert stamp =~ ~r/^\d+:\d+$/
 
     assert is_nil(Pipeline.design_manifest_stamp("/tmp/nonexistent_design_dir_#{System.unique_integer([:positive])}"))
@@ -550,11 +550,11 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     assert {:error, :not_found} = Pipeline.recheck_design(user_scope, 12_345)
   end
 
-  test "computes design_manifest_stamp from task struct and root manifest.json", %{task: task} do
-    worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-    design_dir = Path.join([worktree_dir, ".rail", "design"])
+  test "computes design_manifest_stamp from the task's scratch directory", %{task: task} do
+    scratch_dir = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir = Path.join(scratch_dir, "design")
     File.mkdir_p!(design_dir)
-    on_exit(fn -> File.rm_rf(worktree_dir) end)
+    on_exit(fn -> File.rm_rf(scratch_dir) end)
 
     File.write!(Path.join(design_dir, "dir-1.png"), "fake png content 1")
     File.write!(Path.join(design_dir, "dir-2.png"), "fake png content 2")
@@ -570,13 +570,13 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
             "key" => "dir-1",
             "title" => "Minimal Light",
             "notes" => "Clean aesthetic with spacious white layout",
-            "stillPath" => ".rail/design/dir-1.png"
+            "stillPath" => "dir-1.png"
           },
           %{
             "key" => "dir-2",
             "title" => "Bold Dark",
             "notes" => "Dark mode with high contrast neon highlights",
-            "stillPath" => ".rail/design/dir-2.png"
+            "stillPath" => "dir-2.png"
           }
         ]
       })
@@ -584,17 +584,19 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{
-        worktree_path: worktree_dir
+        scratch_path: scratch_dir
       })
 
     assert Pipeline.design_manifest_stamp(task) =~ ~r/^\d+:\d+$/
+    assert Pipeline.design_manifest_stamp(scratch_dir) =~ ~r/^\d+:\d+$/
 
+    # A manifest sitting at the scratch root rather than under design/ is not one.
     root_dir = create_temp_git_repo()
     File.write!(Path.join(root_dir, "manifest.json"), "{}")
-    assert Pipeline.design_manifest_stamp(root_dir) =~ ~r/^\d+:\d+$/
+    assert is_nil(Pipeline.design_manifest_stamp(root_dir))
   end
 
-  test "supports scratch_dir, scratch_path, worktree_path opts and nil task worktree_path", %{task: task} do
+  test "reads the manifest from the task's scratch directory and nowhere else", %{task: task} do
     {:ok, _workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Recheck Design Workspace 13706",
@@ -603,16 +605,14 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         webhook_secret: "whsec_recheck_design_13706"
       })
 
-    worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-    design_dir = Path.join([worktree_dir, ".rail", "design"])
+    scratch_dir = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
+    design_dir = Path.join(scratch_dir, "design")
     File.mkdir_p!(design_dir)
-    on_exit(fn -> File.rm_rf(worktree_dir) end)
+    on_exit(fn -> File.rm_rf(scratch_dir) end)
 
     File.write!(Path.join(design_dir, "dir-1.png"), "fake png content 1")
-    File.write!(Path.join(design_dir, "dir-2.png"), "fake png content 2")
 
-    File.write!(
-      Path.join(design_dir, "manifest.json"),
+    manifest =
       Jason.encode!(%{
         "canvasUrl" => "https://claude.ai/design/canvas-1",
         "version" => 1,
@@ -622,41 +622,32 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
             "key" => "dir-1",
             "title" => "Minimal Light",
             "notes" => "Clean aesthetic with spacious white layout",
-            "stillPath" => ".rail/design/dir-1.png"
-          },
-          %{
-            "key" => "dir-2",
-            "title" => "Bold Dark",
-            "notes" => "Dark mode with high contrast neon highlights",
-            "stillPath" => ".rail/design/dir-2.png"
+            "stillPath" => "dir-1.png"
           }
         ]
       })
-    )
 
-    {:ok, task_no_wt} =
+    File.write!(Path.join(design_dir, "manifest.json"), manifest)
+
+    {:ok, scratch_task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :design,
+        scratch_path: scratch_dir,
         worktree_path: "/tmp/rail-removed-worktree"
       })
 
-    mock_design_uploads(2)
+    mock_design_uploads(1)
 
     assert {:ok, %Task{stage_state: :awaiting_approval}} =
-             Pipeline.recheck_design(task_no_wt, scratch_dir: worktree_dir, url_probe: fn _uri -> true end)
+             Pipeline.recheck_design(scratch_task, url_probe: fn _uri -> true end)
 
-    mock_design_uploads(2)
+    # A manifest written into the worktree instead is a design Rail never saw.
+    {:ok, elsewhere_task} =
+      Pipeline.update_task(system_scope(), task.id, %{
+        scratch_path: Path.join("/tmp", "rail_design_empty_#{System.unique_integer([:positive])}")
+      })
 
-    assert {:ok, %Task{stage_state: :awaiting_approval}} =
-             Pipeline.recheck_design(task_no_wt, scratch_path: worktree_dir, url_probe: fn _uri -> true end)
-
-    mock_design_uploads(2)
-
-    assert {:ok, %Task{stage_state: :awaiting_approval}} =
-             Pipeline.recheck_design(task_no_wt, worktree_path: worktree_dir, url_probe: fn _uri -> true end)
-
-    # When no opt and no worktree_path, falls back to default_scratch_path
-    assert {:error, err} = Pipeline.recheck_design(task_no_wt, url_probe: fn _uri -> true end)
+    assert {:error, err} = Pipeline.recheck_design(elsewhere_task, url_probe: fn _uri -> true end)
     assert err =~ "No design manifest found"
   end
 end

@@ -18,7 +18,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
 
   setup do
     dir = Path.join(@tmp_base, "qa_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(dir)
+    File.mkdir_p!(Path.join(dir, "qa"))
 
     {:ok, ws} =
       Projects.upsert_linear_workspace(system_scope(), %{
@@ -71,7 +71,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
       project: project
     } do
       scope = Scope.for_system()
-      ArtifactHelpers.write_qa_manifest(dir)
+      ArtifactHelpers.write_qa_manifest(Path.join(dir, "qa"))
 
       LinearMock.mock_file_upload_success(
         upload_url: "https://api.linear.app/upload/qa_1",
@@ -109,7 +109,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
 
     test "propagates validator failure", %{dir: dir} do
       scope = Scope.for_system()
-      File.write!(Path.join(dir, "manifest.json"), "{invalid")
+      File.write!(Path.join([dir, "qa", "manifest.json"]), "{invalid")
 
       assert {:error, msg} = Artifacts.capture_qa_report(scope, "tsk_err", dir)
       assert msg =~ "Failed to parse QA manifest"
@@ -152,7 +152,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
     } do
       scope = Scope.for_system()
 
-      ArtifactHelpers.write_qa_manifest(dir, %{
+      ArtifactHelpers.write_qa_manifest(Path.join(dir, "qa"), %{
         "session" => %{},
         "rows" => [
           %{
@@ -181,7 +181,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
                Artifacts.capture_qa_report(scope, "tsk_qa_up_err", dir, project: project)
 
       # Unreadable image file before upload (gracefully leaves art without url)
-      img_file = Path.join(dir, "screenshot.png")
+      img_file = Path.join([dir, "qa", "screenshot.png"])
       File.chmod!(img_file, 0o000)
 
       LinearMock.mock_create_comment_success(%{"id" => "lin_cmt_unreadable", "body" => "QA"})
@@ -195,18 +195,17 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
       File.chmod!(img_file, 0o644)
     end
 
-    test "reads text artifact content from file on disk and captures from worktree .rail/qa", %{
+    test "reads text artifact content from a file on disk", %{
       dir: dir,
       project: project
     } do
       scope = Scope.for_system()
-      rail_qa = Path.join([dir, ".rail", "qa"])
-      File.mkdir_p!(rail_qa)
+      qa_dir = Path.join(dir, "qa")
 
-      log_path = Path.join(rail_qa, "system_check.txt")
+      log_path = Path.join(qa_dir, "system_check.txt")
       File.write!(log_path, "TEST_SYSTEM_LOG_CONTENT")
 
-      ArtifactHelpers.write_qa_manifest(rail_qa, %{
+      ArtifactHelpers.write_qa_manifest(qa_dir, %{
         "commit" => "wt_commit",
         "session" => %{"pid" => 1234},
         "rows" => [
@@ -241,7 +240,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
       issue: issue
     } do
       scope = Scope.for_system()
-      ArtifactHelpers.write_qa_manifest(dir)
+      ArtifactHelpers.write_qa_manifest(Path.join(dir, "qa"))
 
       {:ok, user} =
         Users.register_oauth_user(%{
@@ -305,7 +304,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
       project: project
     } do
       scope = Scope.for_system()
-      ArtifactHelpers.write_qa_manifest(dir)
+      ArtifactHelpers.write_qa_manifest(Path.join(dir, "qa"))
 
       LinearMock.mock_create_issue_success(%{
         "id" => "lin_task_capture_qa_12307",
@@ -352,7 +351,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
     } do
       scope = Scope.for_system()
 
-      ArtifactHelpers.write_qa_manifest(dir, %{
+      ArtifactHelpers.write_qa_manifest(Path.join(dir, "qa"), %{
         "rows" => [
           %{
             "id" => "check_url_only",
@@ -391,7 +390,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
       issue: issue
     } do
       scope = Scope.for_system()
-      ArtifactHelpers.write_qa_manifest(dir)
+      ArtifactHelpers.write_qa_manifest(Path.join(dir, "qa"))
 
       {:ok, user} =
         Users.register_oauth_user(%{

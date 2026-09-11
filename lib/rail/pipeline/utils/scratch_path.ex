@@ -1,6 +1,6 @@
 defmodule Rail.Pipeline.Utils.ScratchPath do
   @moduledoc """
-  The `$RAIL_SCRATCH` directory a task's agents read and write.
+  The scratch directory a task's agents read and write, named when the task is created.
   """
 
   @doc """

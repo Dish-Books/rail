@@ -25,7 +25,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
 
   defp normalize_args(target, opts, _extra_opts) when is_list(opts) do
     {task, task_id} = resolve_task_and_id(target)
-    scratch_dir = Keyword.get(opts, :scratch_dir) || "/tmp/rail_scratch/#{task_id}"
+    scratch_dir = Keyword.fetch!(opts, :scratch_dir)
     {task, task_id, scratch_dir, opts}
   end
 
@@ -85,21 +85,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
     end
   end
 
-  defp resolve_demo_dir(path) do
-    cond do
-      File.exists?(Path.join(path, "manifest.json")) ->
-        path
-
-      File.exists?(Path.join([path, "demo", "manifest.json"])) ->
-        Path.join(path, "demo")
-
-      File.exists?(Path.join([path, ".rail", "demo", "manifest.json"])) ->
-        Path.join([path, ".rail", "demo"])
-
-      true ->
-        Path.join(path, "demo")
-    end
-  end
+  defp resolve_demo_dir(scratch_dir), do: Path.join(scratch_dir, "demo")
 
   defp next_version(task_id, manifest_version) do
     query =

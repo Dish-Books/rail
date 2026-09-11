@@ -58,6 +58,7 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :stage_state, Ecto.Enum, values: @stage_states, default: :queued
     field :worktree_name, :string
     field :worktree_path, :string
+    field :scratch_path, :string
     field :pr_number, :integer
     field :pr_url, :string
     field :mergeability, Ecto.Enum, values: @mergeabilities
@@ -93,6 +94,7 @@ defmodule Rail.Pipeline.Schemas.Task do
     :stage_state,
     :worktree_name,
     :worktree_path,
+    :scratch_path,
     :pr_number,
     :pr_url,
     :mergeability,
@@ -116,7 +118,8 @@ defmodule Rail.Pipeline.Schemas.Task do
     :stage,
     :stage_state,
     :worktree_name,
-    :worktree_path
+    :worktree_path,
+    :scratch_path
   ]
 
   @doc """

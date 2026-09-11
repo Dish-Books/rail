@@ -329,7 +329,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
     des_run = Repo.one(from r in RoleRun, where: r.task_id == ^task.id and r.role_id == ^role_des.id)
     assert des_run.pending_answer =~ "The human requested revisions to the picked design:"
     assert des_run.pending_answer =~ "Please make headers bolder"
-    assert des_run.pending_answer =~ "rewrite $RAIL_SCRATCH/design/manifest.json with an incremented `version`"
+    assert des_run.pending_answer =~ "rewrite #{task.scratch_path}/design/manifest.json with an incremented `version`"
 
     events = Repo.all(from e in RunEvent, where: e.role_run_id == ^des_run.id, order_by: [asc: e.seq])
     assert Enum.any?(events, fn e -> e.line == "[human] Please make headers bolder" end)

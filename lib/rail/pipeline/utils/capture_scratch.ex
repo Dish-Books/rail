@@ -1,6 +1,6 @@
 defmodule Rail.Pipeline.Utils.CaptureScratch do
   @moduledoc """
-  Captures what a stage's agent left in `$RAIL_SCRATCH` back into Postgres and Linear.
+  Captures what a stage's agent left in its scratch directory back into Postgres and Linear.
   """
 
   import Rail.Pipeline.Utils.IssueIdentifier
@@ -16,9 +16,9 @@ defmodule Rail.Pipeline.Utils.CaptureScratch do
   alias Rail.Scope
 
   @doc """
-  Captures the outputs `stage` wrote into `scratch_dir` for `task`.
+  Captures the outputs `stage` wrote into the task's scratch directory.
   """
-  def capture_scratch(stage, %Task{} = task, scratch_dir) when is_binary(scratch_dir) do
+  def capture_scratch(stage, %Task{scratch_path: scratch_dir} = task) when is_binary(scratch_dir) do
     identifier = issue_identifier(task)
     scope = Scope.for_system()
 

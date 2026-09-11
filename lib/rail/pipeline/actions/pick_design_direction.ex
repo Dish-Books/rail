@@ -75,7 +75,9 @@ defmodule Rail.Pipeline.Actions.PickDesignDirection do
       |> Design.changeset(%{picked_key: key})
       |> Repo.update()
 
-    pick_brief = design_pick_brief(key, title: direction.title, design: updated_design)
+    pick_brief =
+      design_pick_brief(key, title: direction.title, design: updated_design, scratch_path: task.scratch_path)
+
     request_opts = opts |> Keyword.put(:stage, :design) |> Keyword.put(:is_pick, true)
 
     Pipeline.request_changes(scope, task, pick_brief, request_opts)

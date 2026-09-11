@@ -118,29 +118,14 @@ defmodule Rail.Artifacts.Validators.DesignValidator do
   defp non_blank?(str) when is_binary(str), do: str != ""
   defp non_blank?(_other), do: false
 
+  # A still is written next to the manifest, in the task's design directory. Nothing
+  # outside it is a design Rail captures.
   defp validate_still_path(design_dir, key, title, notes, raw_still_path) do
-    worktree_dir =
-      cond do
-        String.ends_with?(design_dir, "/.rail/design") ->
-          String.replace_suffix(design_dir, "/.rail/design", "")
-
-        String.ends_with?(design_dir, "/design") ->
-          String.replace_suffix(design_dir, "/design", "")
-
-        true ->
-          design_dir
-      end
-
     canonical_target =
-      cond do
-        Path.type(raw_still_path) == :absolute ->
-          Path.expand(raw_still_path)
-
-        File.exists?(Path.expand(raw_still_path, worktree_dir)) ->
-          Path.expand(raw_still_path, worktree_dir)
-
-        true ->
-          Path.expand(raw_still_path, design_dir)
+      if Path.type(raw_still_path) == :absolute do
+        Path.expand(raw_still_path)
+      else
+        Path.expand(raw_still_path, design_dir)
       end
 
     case verify_confinement(design_dir, canonical_target, allow_root: false) do

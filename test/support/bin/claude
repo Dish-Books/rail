@@ -26,7 +26,14 @@ if [[ -z "$STAGE" ]]; then
   fi
 fi
 
-if [[ -n "${RAIL_SCRATCH:-}" ]]; then
+# Rail no longer exports RAIL_SCRATCH: the brief names the scratch directory by
+# absolute path, so recover it from the prompt the way the stage is recovered.
+RAIL_SCRATCH="${RAIL_SCRATCH:-}"
+if [[ -z "$RAIL_SCRATCH" ]]; then
+  RAIL_SCRATCH=$(printf '%s\n' "$*" | grep -oE '/[^[:space:]"]*/scratch/tsk_[A-Za-z0-9]+' | head -n 1 || true)
+fi
+
+if [[ -n "$RAIL_SCRATCH" ]]; then
   mkdir -p "$RAIL_SCRATCH"
 
   IDENTIFIER="ISS-1"

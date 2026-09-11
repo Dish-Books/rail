@@ -131,7 +131,7 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
       "updatedAt" => "2026-09-04T10:00:00.000Z"
     })
 
-    assert {:ok, %Task{}} = capture_scratch(:product, task, scratch_dir)
+    assert {:ok, %Task{}} = capture_scratch(:product, %{task | scratch_path: scratch_dir})
 
     assert %Issue{title: "Updated Title", description: "Updated Description Body"} =
              Repo.get!(Issue, task.issue_id)
@@ -147,7 +147,7 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
 
     File.write!(Path.join(scratch_dir, "plan.md"), "## Implementation plan\nStep A\nStep B")
 
-    assert {:ok, %Task{id: task_id}} = capture_scratch(:architect, task, scratch_dir)
+    assert {:ok, %Task{id: task_id}} = capture_scratch(:architect, %{task | scratch_path: scratch_dir})
 
     plan = Repo.one(from p in Plan, where: p.task_id == ^task_id)
     assert %Plan{content: "## Implementation plan\nStep A\nStep B"} = plan
@@ -178,7 +178,7 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
 
     File.write!(Path.join(plans_dir, "ENG-106.md"), "## Implementation plan\nFrom subfolder")
 
-    assert {:ok, %Task{id: task_id}} = capture_scratch(:architect, task, scratch_dir)
+    assert {:ok, %Task{id: task_id}} = capture_scratch(:architect, %{task | scratch_path: scratch_dir})
 
     plan = Repo.one(from p in Plan, where: p.task_id == ^task_id)
     assert %Plan{content: "## Implementation plan\nFrom subfolder"} = plan
@@ -194,17 +194,17 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
     File.mkdir_p!(design_dir)
     File.write!(Path.join(design_dir, "manifest.json"), ~s({"version": 1, "canvasUrl": "https://example.com"}))
 
-    assert {:ok, %Task{}} = capture_scratch(:design, task, scratch_dir)
+    assert {:ok, %Task{}} = capture_scratch(:design, %{task | scratch_path: scratch_dir})
 
     qa_dir = Path.join(scratch_dir, "qa")
     File.mkdir_p!(qa_dir)
     File.write!(Path.join(qa_dir, "manifest.json"), ~s({"commit": "abc", "session": {}, "rows": []}))
 
-    assert {:ok, %Task{}} = capture_scratch(:qa, task, scratch_dir)
+    assert {:ok, %Task{}} = capture_scratch(:qa, %{task | scratch_path: scratch_dir})
 
     scratch_dir_direct = create_temp_git_repo()
     File.write!(Path.join(scratch_dir_direct, "manifest.json"), ~s({"commit": "dir_qa", "session": {}, "rows": []}))
-    assert {:ok, %Task{}} = capture_scratch(:qa, task, scratch_dir_direct)
+    assert {:ok, %Task{}} = capture_scratch(:qa, %{task | scratch_path: scratch_dir_direct})
 
     demo_dir = Path.join(scratch_dir, "demo")
     File.mkdir_p!(demo_dir)
@@ -214,16 +214,16 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
       ~s({"version": 1, "outcome": "recorded", "note": "ok", "segments": []})
     )
 
-    assert {:ok, %Task{}} = capture_scratch(:demo, task, scratch_dir)
+    assert {:ok, %Task{}} = capture_scratch(:demo, %{task | scratch_path: scratch_dir})
   end
 
   test "capture_scratch for unhandled stage or missing files does nothing", %{task: task} do
     scratch_dir = create_temp_git_repo()
 
-    assert {:ok, %Task{}} = capture_scratch(:engineer, task, scratch_dir)
-    assert {:ok, %Task{}} = capture_scratch(:review, task, scratch_dir)
-    assert {:ok, %Task{}} = capture_scratch(:design, task, scratch_dir)
-    assert {:ok, %Task{}} = capture_scratch(:qa, task, scratch_dir)
-    assert {:ok, %Task{}} = capture_scratch(:demo, task, scratch_dir)
+    assert {:ok, %Task{}} = capture_scratch(:engineer, %{task | scratch_path: scratch_dir})
+    assert {:ok, %Task{}} = capture_scratch(:review, %{task | scratch_path: scratch_dir})
+    assert {:ok, %Task{}} = capture_scratch(:design, %{task | scratch_path: scratch_dir})
+    assert {:ok, %Task{}} = capture_scratch(:qa, %{task | scratch_path: scratch_dir})
+    assert {:ok, %Task{}} = capture_scratch(:demo, %{task | scratch_path: scratch_dir})
   end
 end

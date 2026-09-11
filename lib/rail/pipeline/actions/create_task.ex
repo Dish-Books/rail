@@ -8,6 +8,8 @@ defmodule Rail.Pipeline.Actions.CreateTask do
   task when the issue already has one.
   """
 
+  import Rail.Pipeline.Utils.ScratchPath
+
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -27,15 +29,21 @@ defmodule Rail.Pipeline.Actions.CreateTask do
   defp do_create(%Project{} = project, %Issue{} = issue, stage) do
     name = worktree_name(issue)
 
+    # The id is drawn here rather than at insert so the scratch directory can be
+    # named after it: every later stage reads the path off the row instead of
+    # recomputing it and risking a different answer.
+    id = UXID.generate!(prefix: "tsk")
+
     attrs = %{
       issue_id: issue.id,
       stage: stage,
       stage_state: :queued,
       worktree_name: name,
-      worktree_path: Path.join(project.clone_path, ".worktrees/#{name}")
+      worktree_path: Path.join(project.clone_path, ".worktrees/#{name}"),
+      scratch_path: scratch_path(project.id, id)
     }
 
-    case %Task{} |> Task.changeset(attrs, project.id) |> Repo.insert() do
+    case %Task{id: id} |> Task.changeset(attrs, project.id) |> Repo.insert() do
       {:ok, task} ->
         Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :task_created})
         {:ok, task}

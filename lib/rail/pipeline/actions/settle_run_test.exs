@@ -162,7 +162,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     # No Linear mock is set up: a push would raise on the unexpected request.
     assert {:ok, %Task{}, %RoleRun{}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0}, scratch_dir: scratch_dir)
+             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0})
 
     assert %Issue{title: ^title_before} = Repo.get!(Issue, issue.id)
   end
@@ -183,7 +183,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     File.write!(Path.join(plan_dir, "plan.md"), "# Architecture Plan")
     on_exit(fn -> File.rm_rf(plan_dir) end)
 
-    {:ok, _captured} = capture_scratch(:architect, task, plan_dir)
+    {:ok, _captured} = capture_scratch(:architect, %{task | scratch_path: plan_dir})
 
     {:ok, _plan} = Pipeline.get_plan(system_scope(), task_id)
 
@@ -378,7 +378,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :architect,
-        stage_state: :running
+        stage_state: :running,
+        scratch_path: scratch_dir
       })
 
     {:ok, %RoleRun{id: role_run_id}} =
@@ -405,7 +406,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     assert {:ok, %Task{id: ^task_id, stage_state: :awaiting_approval},
             %RoleRun{id: ^role_run_id, status: :finished, output: "Run finished cleanly"}} =
-             Pipeline.settle_run(task_id, role_run_id, outcome, scratch_dir: scratch_dir)
+             Pipeline.settle_run(task_id, role_run_id, outcome)
 
     assert %Run{id: ^run_id, status: :finished} = Repo.get!(Run, run_id)
     assert %Plan{content: plan_content} = Repo.one(from p in Plan, where: p.task_id == ^task_id)
@@ -607,10 +608,27 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         name: "QA Lead"
       })
 
+    # A QA run has to leave a report before its verdict counts.
+    qa_scratch = Path.join("/tmp", "rail_qa_pass_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(Path.join(qa_scratch, "qa"))
+    on_exit(fn -> File.rm_rf(qa_scratch) end)
+
+    File.write!(
+      Path.join([qa_scratch, "qa", "manifest.json"]),
+      Jason.encode!(%{
+        "commit" => "pass_sha",
+        "session" => %{"pid" => 1234},
+        "rows" => [
+          %{"id" => "c1", "check" => "Login", "result" => "pass", "severity" => "cosmetic", "artifacts" => []}
+        ]
+      })
+    )
+
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :qa,
-        stage_state: :running
+        stage_state: :running,
+        scratch_path: qa_scratch
       })
 
     {:ok, role_run} =
@@ -675,7 +693,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       })
 
     scratch_dir = Path.join("/tmp", "rail_qa_base_#{System.unique_integer([:positive])}")
-    qa_dir = Path.join([scratch_dir | List.wrap(["qa"])])
+    qa_dir = Path.join(scratch_dir, "qa")
     File.mkdir_p!(qa_dir)
     on_exit(fn -> File.rm_rf(scratch_dir) end)
 
@@ -738,7 +756,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               stage_state: :queued,
               outstanding_reports: [^role_qa_id]
             }, %RoleRun{status: :finished, exit_code: 0}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output}, scratch_dir: scratch_dir)
+             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0, output: output})
 
     assert %QaReport{
              task_id: ^task_id,
@@ -761,7 +779,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       })
 
     scratch_dir = Path.join("/tmp", "rail_qa_base_#{System.unique_integer([:positive])}")
-    qa_dir = Path.join([scratch_dir | List.wrap(["qa"])])
+    qa_dir = Path.join(scratch_dir, "qa")
     File.mkdir_p!(qa_dir)
     on_exit(fn -> File.rm_rf(scratch_dir) end)
 
@@ -792,12 +810,12 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               stage_state: :failed,
               error: err_msg
             }, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: "VERDICT: PASS"}, scratch_dir: scratch_dir)
+             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0, output: "VERDICT: PASS"})
 
     assert err_msg =~ "Failed to parse QA manifest"
   end
 
-  test "settles clean exit 0 for qa stage with missing manifest and require_qa_manifest: true fails stage", %{
+  test "settles clean exit 0 for qa stage with a missing manifest by failing the stage", %{
     task: task,
     roles: roles
   } do
@@ -828,341 +846,55 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               id: ^task_id,
               stage: :qa,
               stage_state: :failed,
-              error: "QA manifest not found."
+              error: err_msg
             }, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: "VERDICT: PASS"},
-               scratch_dir: scratch_dir,
-               require_qa_manifest: true
-             )
+             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{
+               exit_code: 0,
+               output: "VERDICT: PASS"
+             })
+
+    assert err_msg =~ "QA left no manifest"
   end
 
-  test "settles clean exit 0 for qa stage resolving manifest from worktree .rail/qa, worktree qa, and root", %{
-    project: project,
+  test "settles clean exit 0 for qa stage reading the manifest from the task's scratch directory", %{
     task: task,
     roles: roles
   } do
-    {:ok, role_qa} =
-      Roles.update_role(system_scope(), roles[:qa], %{
-        name: "QA Tester"
-      })
-
-    {:ok, _role_lead} =
-      Roles.update_role(system_scope(), roles[:qa_lead], %{
-        name: "QA Lead"
-      })
-
-    # Case A: Worktree with .rail/qa
-    worktree_rail = Path.join("/tmp", "rail_qa_base_#{System.unique_integer([:positive])}")
-    qa_dir = Path.join([worktree_rail | List.wrap([".rail", "qa"])])
+    scratch_dir = Path.join("/tmp", "rail_qa_base_#{System.unique_integer([:positive])}")
+    qa_dir = Path.join(scratch_dir, "qa")
     File.mkdir_p!(qa_dir)
-    on_exit(fn -> File.rm_rf(worktree_rail) end)
-
-    File.write!(Path.join(qa_dir, "screenshot.png"), "fake png content")
-    File.write!(Path.join(qa_dir, "log.txt"), "All checks passed")
+    on_exit(fn -> File.rm_rf(scratch_dir) end)
 
     File.write!(
       Path.join(qa_dir, "manifest.json"),
       Jason.encode!(%{
-        "commit" => "rail_sha",
-        "session" => %{"port" => 4000, "url" => "http://localhost:4000"},
+        "commit" => "scratch_sha",
+        "session" => %{"pid" => 1234},
         "rows" => [
-          %{
-            "id" => "check_1",
-            "check" => "Login works",
-            "result" => "pass",
-            "severity" => "blocker",
-            "caused_by_change" => true,
-            "command" => "mix test",
-            "exit_code" => 0,
-            "note" => "Passed cleanly",
-            "artifacts" => [
-              %{"name" => "log.txt", "kind" => "text", "path" => "log.txt", "text" => "All checks passed"}
-            ]
-          }
+          %{"id" => "c1", "check" => "Login", "result" => "pass", "severity" => "cosmetic", "artifacts" => []}
         ]
       })
     )
 
-    {:ok, task_rail} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :qa,
-        stage_state: :running,
-        worktree_path: worktree_rail
-      })
+    {:ok, task} =
+      Pipeline.update_task(system_scope(), task.id, %{stage: :qa, stage_state: :running})
 
-    {:ok, role_run_rail} =
+    {:ok, role_run} =
       Runs.create_role_run(%{
-        task_id: task_rail.id,
-        role_id: role_qa.id,
+        task_id: task.id,
+        role_id: roles[:qa].id,
         conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
 
     assert {:ok, %Task{stage: :qa_lead}, %RoleRun{}} =
-             Pipeline.settle_run(task_rail, role_run_rail, %{exit_code: 0, output: "VERDICT: PASS"})
+             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{
+               exit_code: 0,
+               output: "VERDICT: PASS"
+             })
 
-    assert %QaReport{commit: "rail_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task_rail.id)
-
-    # Case B: Worktree with qa/
-    worktree_qa = Path.join("/tmp", "rail_qa_base_#{System.unique_integer([:positive])}")
-    qa_dir = Path.join([worktree_qa | List.wrap(["qa"])])
-    File.mkdir_p!(qa_dir)
-    on_exit(fn -> File.rm_rf(worktree_qa) end)
-
-    File.write!(Path.join(qa_dir, "screenshot.png"), "fake png content")
-    File.write!(Path.join(qa_dir, "log.txt"), "All checks passed")
-
-    File.write!(
-      Path.join(qa_dir, "manifest.json"),
-      Jason.encode!(%{
-        "commit" => "wt_qa_sha",
-        "session" => %{"port" => 4000, "url" => "http://localhost:4000"},
-        "rows" => [
-          %{
-            "id" => "check_1",
-            "check" => "Login works",
-            "result" => "pass",
-            "severity" => "blocker",
-            "caused_by_change" => true,
-            "command" => "mix test",
-            "exit_code" => 0,
-            "note" => "Passed cleanly",
-            "artifacts" => [
-              %{"name" => "log.txt", "kind" => "text", "path" => "log.txt", "text" => "All checks passed"}
-            ]
-          }
-        ]
-      })
-    )
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_settle_run_14502",
-      "identifier" => "TSK-14502",
-      "title" => "Task 14502"
-    })
-
-    {:ok, issue_14502} = Issues.capture_issue(system_scope(), project, "Task 14502")
-
-    {:ok, task_qa} = Pipeline.create_task(issue_14502, :product)
-
-    {:ok, task_qa} = Pipeline.update_task(system_scope(), task_qa.id, %{issue_id: nil})
-
-    {:ok, task_qa} =
-      Pipeline.update_task(system_scope(), task_qa.id, %{
-        stage: :qa,
-        stage_state: :running,
-        worktree_path: worktree_qa
-      })
-
-    {:ok, role_run_qa} =
-      Runs.create_role_run(%{
-        task_id: task_qa.id,
-        role_id: role_qa.id,
-        conversation_id: "sess_fixture",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-
-    assert {:ok, %Task{stage: :qa_lead}, %RoleRun{}} =
-             Pipeline.settle_run(task_qa, role_run_qa, %{exit_code: 0, output: "VERDICT: PASS"})
-
-    assert %QaReport{commit: "wt_qa_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task_qa.id)
-
-    # Case C: Scratch with manifest in root
-    scratch_root = Path.join("/tmp", "rail_qa_base_#{System.unique_integer([:positive])}")
-    qa_dir = Path.join([scratch_root | List.wrap([])])
-    File.mkdir_p!(qa_dir)
-    on_exit(fn -> File.rm_rf(scratch_root) end)
-
-    File.write!(Path.join(qa_dir, "screenshot.png"), "fake png content")
-    File.write!(Path.join(qa_dir, "log.txt"), "All checks passed")
-
-    File.write!(
-      Path.join(qa_dir, "manifest.json"),
-      Jason.encode!(%{
-        "commit" => "root_sha",
-        "session" => %{"port" => 4000, "url" => "http://localhost:4000"},
-        "rows" => [
-          %{
-            "id" => "check_1",
-            "check" => "Login works",
-            "result" => "pass",
-            "severity" => "blocker",
-            "caused_by_change" => true,
-            "command" => "mix test",
-            "exit_code" => 0,
-            "note" => "Passed cleanly",
-            "artifacts" => [
-              %{"name" => "log.txt", "kind" => "text", "path" => "log.txt", "text" => "All checks passed"}
-            ]
-          }
-        ]
-      })
-    )
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_settle_run_14503",
-      "identifier" => "TSK-14503",
-      "title" => "Task 14503"
-    })
-
-    {:ok, issue_14503} = Issues.capture_issue(system_scope(), project, "Task 14503")
-
-    {:ok, task_root} = Pipeline.create_task(issue_14503, :product)
-
-    {:ok, task_root} = Pipeline.update_task(system_scope(), task_root.id, %{issue_id: nil})
-
-    {:ok, task_root} =
-      Pipeline.update_task(system_scope(), task_root.id, %{
-        stage: :qa,
-        stage_state: :running
-      })
-
-    {:ok, role_run_root} =
-      Runs.create_role_run(%{
-        task_id: task_root.id,
-        role_id: role_qa.id,
-        conversation_id: "sess_fixture",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-
-    assert {:ok, %Task{stage: :qa_lead}, %RoleRun{}} =
-             Pipeline.settle_run(task_root, role_run_root, %{exit_code: 0, output: "VERDICT: PASS"},
-               scratch_dir: scratch_root
-             )
-
-    assert %QaReport{commit: "root_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task_root.id)
-
-    # Case D: Worktree with manifest in root
-    worktree_root = Path.join("/tmp", "rail_qa_base_#{System.unique_integer([:positive])}")
-    qa_dir = Path.join([worktree_root | List.wrap([])])
-    File.mkdir_p!(qa_dir)
-    on_exit(fn -> File.rm_rf(worktree_root) end)
-
-    File.write!(Path.join(qa_dir, "screenshot.png"), "fake png content")
-    File.write!(Path.join(qa_dir, "log.txt"), "All checks passed")
-
-    File.write!(
-      Path.join(qa_dir, "manifest.json"),
-      Jason.encode!(%{
-        "commit" => "wt_root_sha",
-        "session" => %{"port" => 4000, "url" => "http://localhost:4000"},
-        "rows" => [
-          %{
-            "id" => "check_1",
-            "check" => "Login works",
-            "result" => "pass",
-            "severity" => "blocker",
-            "caused_by_change" => true,
-            "command" => "mix test",
-            "exit_code" => 0,
-            "note" => "Passed cleanly",
-            "artifacts" => [
-              %{"name" => "log.txt", "kind" => "text", "path" => "log.txt", "text" => "All checks passed"}
-            ]
-          }
-        ]
-      })
-    )
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_settle_run_14504",
-      "identifier" => "TSK-14504",
-      "title" => "Task 14504"
-    })
-
-    {:ok, issue_14504} = Issues.capture_issue(system_scope(), project, "Task 14504")
-
-    {:ok, task_wt_root} = Pipeline.create_task(issue_14504, :product)
-
-    {:ok, task_wt_root} = Pipeline.update_task(system_scope(), task_wt_root.id, %{issue_id: nil})
-
-    {:ok, task_wt_root} =
-      Pipeline.update_task(system_scope(), task_wt_root.id, %{
-        stage: :qa,
-        stage_state: :running,
-        worktree_path: worktree_root
-      })
-
-    {:ok, role_run_wt_root} =
-      Runs.create_role_run(%{
-        task_id: task_wt_root.id,
-        role_id: role_qa.id,
-        conversation_id: "sess_fixture",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-
-    assert {:ok, %Task{stage: :qa_lead}, %RoleRun{}} =
-             Pipeline.settle_run(task_wt_root, role_run_wt_root, %{exit_code: 0, output: "VERDICT: PASS"})
-
-    assert %QaReport{commit: "wt_root_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task_wt_root.id)
-
-    # Case E: scratch_path option pointing directly to manifest or subfolder
-    scratch_p = Path.join("/tmp", "rail_qa_base_#{System.unique_integer([:positive])}")
-    qa_dir = Path.join([scratch_p | List.wrap(["qa"])])
-    File.mkdir_p!(qa_dir)
-    on_exit(fn -> File.rm_rf(scratch_p) end)
-
-    File.write!(Path.join(qa_dir, "screenshot.png"), "fake png content")
-    File.write!(Path.join(qa_dir, "log.txt"), "All checks passed")
-
-    File.write!(
-      Path.join(qa_dir, "manifest.json"),
-      Jason.encode!(%{
-        "commit" => "scratch_p_sha",
-        "session" => %{"port" => 4000, "url" => "http://localhost:4000"},
-        "rows" => [
-          %{
-            "id" => "check_1",
-            "check" => "Login works",
-            "result" => "pass",
-            "severity" => "blocker",
-            "caused_by_change" => true,
-            "command" => "mix test",
-            "exit_code" => 0,
-            "note" => "Passed cleanly",
-            "artifacts" => [
-              %{"name" => "log.txt", "kind" => "text", "path" => "log.txt", "text" => "All checks passed"}
-            ]
-          }
-        ]
-      })
-    )
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_settle_run_14505",
-      "identifier" => "TSK-14505",
-      "title" => "Task 14505"
-    })
-
-    {:ok, issue_14505} = Issues.capture_issue(system_scope(), project, "Task 14505")
-
-    {:ok, task_p} = Pipeline.create_task(issue_14505, :product)
-
-    {:ok, task_p} = Pipeline.update_task(system_scope(), task_p.id, %{issue_id: nil})
-
-    {:ok, task_p} =
-      Pipeline.update_task(system_scope(), task_p.id, %{
-        stage: :qa,
-        stage_state: :running
-      })
-
-    {:ok, role_run_p} =
-      Runs.create_role_run(%{
-        task_id: task_p.id,
-        role_id: role_qa.id,
-        conversation_id: "sess_fixture",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-
-    assert {:ok, %Task{stage: :qa_lead}, %RoleRun{}} =
-             Pipeline.settle_run(task_p, role_run_p, %{exit_code: 0, output: "VERDICT: PASS"}, scratch_path: scratch_p)
-
-    assert %QaReport{commit: "scratch_p_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task_p.id)
+    assert %QaReport{commit: "scratch_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task.id)
   end
 
   test "settles clean exit 0 for qa stage with VERDICT: FAIL captures QA report and routes to engineer", %{
@@ -1180,7 +912,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       })
 
     scratch_dir = Path.join("/tmp", "rail_qa_base_#{System.unique_integer([:positive])}")
-    qa_dir = Path.join([scratch_dir | List.wrap(["qa"])])
+    qa_dir = Path.join(scratch_dir, "qa")
     File.mkdir_p!(qa_dir)
     on_exit(fn -> File.rm_rf(scratch_dir) end)
 
@@ -1245,7 +977,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               stage_state: :queued,
               rework_cycles: 1
             }, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: output}, scratch_dir: scratch_dir)
+             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0, output: output})
 
     assert %QaReport{commit: "fail_qa_commit"} = Repo.one(from q in QaReport, where: q.task_id == ^task_id)
 
@@ -1268,7 +1000,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       })
 
     scratch_dir = Path.join("/tmp", "rail_qa_base_#{System.unique_integer([:positive])}")
-    qa_dir = Path.join([scratch_dir | List.wrap(["qa"])])
+    qa_dir = Path.join(scratch_dir, "qa")
     File.mkdir_p!(qa_dir)
     on_exit(fn -> File.rm_rf(scratch_dir) end)
 
@@ -1324,7 +1056,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               stage_state: :failed,
               error: err_msg
             }, %RoleRun{status: :finished}} =
-             Pipeline.settle_run(task, role_run, %{exit_code: 0, output: "VERDICT: PASS"}, scratch_dir: scratch_dir)
+             Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0, output: "VERDICT: PASS"})
 
     assert err_msg =~ "linear_api_error"
   end
@@ -1343,7 +1075,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       })
 
     qa_scratch_dir = Path.join("/tmp", "rail_qa_base_#{System.unique_integer([:positive])}")
-    qa_dir = Path.join([qa_scratch_dir | List.wrap(["qa"])])
+    qa_dir = Path.join(qa_scratch_dir, "qa")
     File.mkdir_p!(qa_dir)
     on_exit(fn -> File.rm_rf(qa_scratch_dir) end)
 
@@ -1384,11 +1116,14 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     # Step 1: Settle QA run
     assert {:ok, %Task{stage: :qa_lead, stage_state: :queued} = task_lead_queued, _rr} =
-             Pipeline.settle_run(task, role_run_qa, %{exit_code: 0, output: "VERDICT: PASS"}, scratch_dir: qa_scratch_dir)
+             Pipeline.settle_run(%{task | scratch_path: qa_scratch_dir}, role_run_qa, %{
+               exit_code: 0,
+               output: "VERDICT: PASS"
+             })
 
     # Step 2: Scratch prepare for QA Lead
     lead_scratch_dir = create_temp_git_repo()
-    assert {:ok, ^lead_scratch_dir} = prepare_scratch(task_lead_queued, lead_scratch_dir)
+    assert {:ok, ^lead_scratch_dir} = prepare_scratch(%{task_lead_queued | scratch_path: lead_scratch_dir})
 
     # Verify materialization into lead scratch dir
     assert File.exists?(Path.join([lead_scratch_dir, "qa", "manifest.json"]))
@@ -1405,9 +1140,10 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       })
 
     assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, _rr2} =
-             Pipeline.settle_run(task_lead_queued, role_run_lead, %{exit_code: 0, output: "VERDICT: PASS"},
-               scratch_dir: lead_scratch_dir
-             )
+             Pipeline.settle_run(%{task_lead_queued | scratch_path: lead_scratch_dir}, role_run_lead, %{
+               exit_code: 0,
+               output: "VERDICT: PASS"
+             })
   end
 
   test "settles clean exit 0 for qa_lead stage with passed verdict advancing to demo if configured", %{
@@ -1616,10 +1352,27 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         name: "QA Tester"
       })
 
+    # A QA run has to leave a report before its verdict counts.
+    qa_scratch = Path.join("/tmp", "rail_qa_gate_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(Path.join(qa_scratch, "qa"))
+    on_exit(fn -> File.rm_rf(qa_scratch) end)
+
+    File.write!(
+      Path.join([qa_scratch, "qa", "manifest.json"]),
+      Jason.encode!(%{
+        "commit" => "gate_sha",
+        "session" => %{"pid" => 1234},
+        "rows" => [
+          %{"id" => "c1", "check" => "Login", "result" => "pass", "severity" => "cosmetic", "artifacts" => []}
+        ]
+      })
+    )
+
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :qa,
         stage_state: :running,
+        scratch_path: qa_scratch,
         rework_cycles: 5,
         rework_budget_base: 0,
         rework_cycles_by_gate: %{"other_gate" => 2, role_qa.id => 1}
@@ -1892,12 +1645,27 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     git_repo = create_temp_git_repo()
 
+    # A QA run has to leave a report before its verdict counts.
+    File.mkdir_p!(Path.join(git_repo, "qa"))
+
+    File.write!(
+      Path.join([git_repo, "qa", "manifest.json"]),
+      Jason.encode!(%{
+        "commit" => "gate_sha",
+        "session" => %{"pid" => 1234},
+        "rows" => [
+          %{"id" => "c1", "check" => "Login", "result" => "pass", "severity" => "cosmetic", "artifacts" => []}
+        ]
+      })
+    )
+
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :qa,
         stage_state: :running,
         rework_cycles: 1,
-        worktree_path: git_repo
+        worktree_path: git_repo,
+        scratch_path: git_repo
       })
 
     {:ok, _role_run} =
@@ -2290,7 +2058,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
 
       worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-      design_dir = Path.join([worktree_dir, ".rail", "design"])
+      design_dir = Path.join(worktree_dir, "design")
       File.mkdir_p!(design_dir)
       on_exit(fn -> File.rm_rf(worktree_dir) end)
 
@@ -2308,13 +2076,13 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               "key" => "dir-1",
               "title" => "Minimal Light",
               "notes" => "Clean aesthetic with spacious white layout",
-              "stillPath" => ".rail/design/dir-1.png"
+              "stillPath" => "dir-1.png"
             },
             %{
               "key" => "dir-2",
               "title" => "Bold Dark",
               "notes" => "Dark mode with high contrast neon highlights",
-              "stillPath" => ".rail/design/dir-2.png"
+              "stillPath" => "dir-2.png"
             }
           ]
         })
@@ -2324,7 +2092,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :design,
           stage_state: :running,
-          worktree_path: worktree_dir
+          worktree_path: worktree_dir,
+          scratch_path: worktree_dir
         })
 
       {:ok, role_run} =
@@ -2360,12 +2129,12 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
           "key" => "dir-other",
           "title" => "Other",
           "notes" => "Notes",
-          "stillPath" => ".rail/design/dir-1.png"
+          "stillPath" => "dir-1.png"
         }
       ]
 
       worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-      design_dir = Path.join([worktree_dir, ".rail", "design"])
+      design_dir = Path.join(worktree_dir, "design")
       File.mkdir_p!(design_dir)
       on_exit(fn -> File.rm_rf(worktree_dir) end)
 
@@ -2386,7 +2155,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :design,
           stage_state: :running,
-          worktree_path: worktree_dir
+          worktree_path: worktree_dir,
+          scratch_path: worktree_dir
         })
 
       # A previous design version already exists with dir-1 picked.
@@ -2434,7 +2204,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
 
       worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-      design_dir = Path.join([worktree_dir, ".rail", "design"])
+      design_dir = Path.join(worktree_dir, "design")
       File.mkdir_p!(design_dir)
       on_exit(fn -> File.rm_rf(worktree_dir) end)
 
@@ -2452,13 +2222,13 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               "key" => "dir-1",
               "title" => "Minimal Light",
               "notes" => "Clean aesthetic with spacious white layout",
-              "stillPath" => ".rail/design/dir-1.png"
+              "stillPath" => "dir-1.png"
             },
             %{
               "key" => "dir-2",
               "title" => "Bold Dark",
               "notes" => "Dark mode with high contrast neon highlights",
-              "stillPath" => ".rail/design/dir-2.png"
+              "stillPath" => "dir-2.png"
             }
           ]
         })
@@ -2468,7 +2238,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :design,
           stage_state: :running,
-          worktree_path: worktree_dir
+          worktree_path: worktree_dir,
+          scratch_path: worktree_dir
         })
 
       # A previous design version already exists with dir-1 picked.
@@ -2516,7 +2287,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
 
       worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-      design_dir = Path.join([worktree_dir, ".rail", "design"])
+      design_dir = Path.join(worktree_dir, "design")
       File.mkdir_p!(design_dir)
       on_exit(fn -> File.rm_rf(worktree_dir) end)
 
@@ -2534,13 +2305,13 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               "key" => "dir-1",
               "title" => "Minimal Light",
               "notes" => "Clean aesthetic with spacious white layout",
-              "stillPath" => ".rail/design/dir-1.png"
+              "stillPath" => "dir-1.png"
             },
             %{
               "key" => "dir-2",
               "title" => "Bold Dark",
               "notes" => "Dark mode with high contrast neon highlights",
-              "stillPath" => ".rail/design/dir-2.png"
+              "stillPath" => "dir-2.png"
             }
           ]
         })
@@ -2550,7 +2321,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :design,
           stage_state: :running,
-          worktree_path: worktree_dir
+          worktree_path: worktree_dir,
+          scratch_path: worktree_dir
         })
 
       # A previous design version already exists with dir-1 picked.
@@ -2598,7 +2370,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
 
       worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-      design_dir = Path.join([worktree_dir, ".rail", "design"])
+      design_dir = Path.join(worktree_dir, "design")
       File.mkdir_p!(design_dir)
       on_exit(fn -> File.rm_rf(worktree_dir) end)
 
@@ -2616,13 +2388,13 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               "key" => "dir-1",
               "title" => "Minimal Light",
               "notes" => "Clean aesthetic with spacious white layout",
-              "stillPath" => ".rail/design/dir-1.png"
+              "stillPath" => "dir-1.png"
             },
             %{
               "key" => "dir-2",
               "title" => "Bold Dark",
               "notes" => "Dark mode with high contrast neon highlights",
-              "stillPath" => ".rail/design/dir-2.png"
+              "stillPath" => "dir-2.png"
             }
           ]
         })
@@ -2632,7 +2404,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :design,
           stage_state: :running,
-          worktree_path: worktree_dir
+          worktree_path: worktree_dir,
+          scratch_path: worktree_dir
         })
 
       # A previous design version already exists with dir-1 picked.
@@ -2680,7 +2453,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
 
       worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-      design_dir = Path.join([worktree_dir, ".rail", "design"])
+      design_dir = Path.join(worktree_dir, "design")
       File.mkdir_p!(design_dir)
       on_exit(fn -> File.rm_rf(worktree_dir) end)
 
@@ -2698,13 +2471,13 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               "key" => "dir-1",
               "title" => "Minimal Light",
               "notes" => "Clean aesthetic with spacious white layout",
-              "stillPath" => ".rail/design/dir-1.png"
+              "stillPath" => "dir-1.png"
             },
             %{
               "key" => "dir-2",
               "title" => "Bold Dark",
               "notes" => "Dark mode with high contrast neon highlights",
-              "stillPath" => ".rail/design/dir-2.png"
+              "stillPath" => "dir-2.png"
             }
           ]
         })
@@ -2750,10 +2523,9 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
       assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %RoleRun{status: :finished}} =
                Pipeline.settle_run(
-                 task,
+                 %{task | scratch_path: worktree_dir},
                  role_run,
                  %{exit_code: 0},
-                 scratch_path: worktree_dir,
                  url_probe: fn _uri -> true end
                )
     end
@@ -2768,7 +2540,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
 
       worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
-      design_dir = Path.join([worktree_dir, ".rail", "design"])
+      design_dir = Path.join(worktree_dir, "design")
       File.mkdir_p!(design_dir)
       on_exit(fn -> File.rm_rf(worktree_dir) end)
 
@@ -2786,13 +2558,13 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
               "key" => "dir-1",
               "title" => "Minimal Light",
               "notes" => "Clean aesthetic with spacious white layout",
-              "stillPath" => ".rail/design/dir-1.png"
+              "stillPath" => "dir-1.png"
             },
             %{
               "key" => "dir-2",
               "title" => "Bold Dark",
               "notes" => "Dark mode with high contrast neon highlights",
-              "stillPath" => ".rail/design/dir-2.png"
+              "stillPath" => "dir-2.png"
             }
           ]
         })
@@ -2838,10 +2610,9 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
       assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %RoleRun{status: :finished}} =
                Pipeline.settle_run(
-                 task,
+                 %{task | scratch_path: worktree_dir},
                  role_run,
                  %{exit_code: 0},
-                 scratch_dir: worktree_dir,
                  url_probe: fn _uri -> true end
                )
     end
@@ -2874,7 +2645,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       worktree = create_temp_git_repo()
       %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree)
 
-      demo_dir = Path.join([worktree, ".rail", "demo"])
+      demo_dir = Path.join(worktree, "demo")
       File.mkdir_p!(demo_dir)
       File.write!(Path.join(demo_dir, "frame-1.png"), "frame")
 
@@ -2898,7 +2669,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :demo,
           stage_state: :running,
-          worktree_path: worktree
+          worktree_path: worktree,
+          scratch_path: worktree
         })
 
       {:ok, role_run} =
@@ -2925,7 +2697,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       worktree = create_temp_git_repo()
       %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree)
 
-      demo_dir = Path.join([worktree, ".rail", "demo"])
+      demo_dir = Path.join(worktree, "demo")
       File.mkdir_p!(demo_dir)
       File.write!(Path.join(demo_dir, "frame-1.png"), "frame")
 
@@ -2951,7 +2723,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :demo,
           stage_state: :running,
-          worktree_path: worktree
+          worktree_path: worktree,
+          scratch_path: worktree
         })
 
       {:ok, role_run} =
@@ -2971,7 +2744,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
                Pipeline.settle_run(task, role_run, %{exit_code: 0})
     end
 
-    test "demo run settlement succeeds when untracked frames exist in .rail/demo/", %{task: task, roles: roles} do
+    test "demo run settlement succeeds with the recording written to scratch", %{task: task, roles: roles} do
       {:ok, _workspace} =
         Projects.upsert_linear_workspace(system_scope(), %{
           name: "Settle Run Workspace 14609",
@@ -2983,7 +2756,10 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       worktree = create_temp_git_repo()
       %{head_sha: original_sha, dirty_digest: original_digest} = Git.branch_fingerprint(worktree)
 
-      demo_dir = Path.join([worktree, ".rail", "demo"])
+      # Scratch sits outside the worktree, so recording leaves the tree untouched.
+      scratch = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+      on_exit(fn -> File.rm_rf(scratch) end)
+      demo_dir = Path.join(scratch, "demo")
       File.mkdir_p!(demo_dir)
       File.write!(Path.join(demo_dir, "frame-1.png"), "frame")
 
@@ -3009,7 +2785,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :demo,
           stage_state: :running,
-          worktree_path: worktree
+          worktree_path: worktree,
+          scratch_path: scratch
         })
 
       {:ok, role_run} =
@@ -3041,7 +2818,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
 
       worktree_dir = Path.join("/tmp", "rail_demo_wt_#{System.unique_integer([:positive])}")
-      demo_dir = Path.join([worktree_dir | List.wrap([".rail", "demo"])])
+      demo_dir = Path.join(worktree_dir, "demo")
       File.mkdir_p!(demo_dir)
       on_exit(fn -> File.rm_rf(worktree_dir) end)
 
@@ -3068,7 +2845,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :demo,
           stage_state: :running,
-          worktree_path: worktree_dir
+          worktree_path: worktree_dir,
+          scratch_path: worktree_dir
         })
 
       # A stale v1 demo already exists; settling captures the v2 manifest on disk.
@@ -3111,7 +2889,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     test "declined outcome records demo with note and advances to ready_to_merge", %{task: task, roles: roles} do
       worktree_dir = Path.join("/tmp", "rail_demo_wt_#{System.unique_integer([:positive])}")
-      demo_dir = Path.join([worktree_dir | List.wrap([".rail", "demo"])])
+      demo_dir = Path.join(worktree_dir, "demo")
       File.mkdir_p!(demo_dir)
       on_exit(fn -> File.rm_rf(worktree_dir) end)
 
@@ -3131,7 +2909,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :demo,
           stage_state: :running,
-          worktree_path: worktree_dir
+          worktree_path: worktree_dir,
+          scratch_path: worktree_dir
         })
 
       {:ok, role_run} =
@@ -3153,7 +2932,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     test "failed outcome records failure and stops at demo failed", %{task: task, roles: roles} do
       worktree_dir = Path.join("/tmp", "rail_demo_wt_#{System.unique_integer([:positive])}")
-      demo_dir = Path.join([worktree_dir | List.wrap([".rail", "demo"])])
+      demo_dir = Path.join(worktree_dir, "demo")
       File.mkdir_p!(demo_dir)
       on_exit(fn -> File.rm_rf(worktree_dir) end)
 
@@ -3173,7 +2952,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :demo,
           stage_state: :running,
-          worktree_path: worktree_dir
+          worktree_path: worktree_dir,
+          scratch_path: worktree_dir
         })
 
       {:ok, role_run} =
@@ -3225,7 +3005,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
 
       scratch_1 = Path.join("/tmp", "rail_demo_wt_#{System.unique_integer([:positive])}")
-      demo_dir = Path.join([scratch_1 | List.wrap([".rail", "demo"])])
+      demo_dir = Path.join(scratch_1, "demo")
       File.mkdir_p!(demo_dir)
       on_exit(fn -> File.rm_rf(scratch_1) end)
 
@@ -3249,7 +3029,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       )
 
       scratch_2 = Path.join("/tmp", "rail_demo_wt_#{System.unique_integer([:positive])}")
-      demo_dir = Path.join([scratch_2 | List.wrap([".rail", "demo"])])
+      demo_dir = Path.join(scratch_2, "demo")
       File.mkdir_p!(demo_dir)
       on_exit(fn -> File.rm_rf(scratch_2) end)
 
@@ -3291,7 +3071,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       mock_demo_uploads(1)
 
       assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
-               Pipeline.settle_run(task1, role_run1, %{exit_code: 0}, scratch_path: scratch_1)
+               Pipeline.settle_run(%{task1 | scratch_path: scratch_1}, role_run1, %{exit_code: 0})
 
       LinearMock.mock_create_issue_success(%{
         "id" => "lin_task_settle_run_14511",
@@ -3324,12 +3104,12 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       mock_demo_uploads(1)
 
       assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
-               Pipeline.settle_run(task2, role_run2, %{exit_code: 0}, scratch_dir: scratch_2)
+               Pipeline.settle_run(%{task2 | scratch_path: scratch_2}, role_run2, %{exit_code: 0})
     end
 
     test "fails when manifest format is invalid during capture", %{task: task, roles: roles} do
       scratch_dir = create_temp_git_repo()
-      demo_dir = Path.join([scratch_dir, ".rail", "demo"])
+      demo_dir = Path.join(scratch_dir, "demo")
       File.mkdir_p!(demo_dir)
 
       File.write!(
@@ -3354,7 +3134,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
 
       assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
-               Pipeline.settle_run(task, role_run, %{exit_code: 0}, scratch_dir: scratch_dir)
+               Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0})
 
       assert err =~ "segments"
     end
@@ -3369,7 +3149,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
 
       scratch_dir = create_temp_git_repo()
-      demo_dir = Path.join([scratch_dir, ".rail", "demo"])
+      demo_dir = Path.join(scratch_dir, "demo")
       File.mkdir_p!(demo_dir)
       frame = Path.join(demo_dir, "frame-1.png")
       File.write!(frame, "frame")
@@ -3409,7 +3189,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
 
       assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
-               Pipeline.settle_run(task, role_run, %{exit_code: 0}, scratch_dir: scratch_dir)
+               Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0})
 
       assert byte_size(err) > 0
     end
@@ -3428,7 +3208,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
 
       scratch_dir = Path.join("/tmp", "rail_demo_wt_#{System.unique_integer([:positive])}")
-      demo_dir = Path.join([scratch_dir | List.wrap([".rail", "demo"])])
+      demo_dir = Path.join(scratch_dir, "demo")
       File.mkdir_p!(demo_dir)
       on_exit(fn -> File.rm_rf(scratch_dir) end)
 
@@ -3479,7 +3259,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       LinearMock.mock_create_comment_success(%{"id" => "lin_cmt_demo_criteria", "body" => "Demo"})
 
       assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
-               Pipeline.settle_run(task, role_run, %{exit_code: 0}, scratch_dir: scratch_dir)
+               Pipeline.settle_run(%{task | scratch_path: scratch_dir}, role_run, %{exit_code: 0})
     end
 
     test "handles non-git worktree directory gracefully during demo settlement", %{task: task, roles: roles} do
@@ -3494,7 +3274,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       scratch_dir = Path.join("/tmp", "rail_non_git_#{System.unique_integer([:positive])}")
       File.mkdir_p!(scratch_dir)
       on_exit(fn -> File.rm_rf(scratch_dir) end)
-      demo_dir = Path.join([scratch_dir, ".rail", "demo"])
+      demo_dir = Path.join(scratch_dir, "demo")
       File.mkdir_p!(demo_dir)
       frame = Path.join(demo_dir, "frame-1.png")
       File.write!(frame, "frame")
@@ -3519,7 +3299,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :demo,
           stage_state: :running,
-          worktree_path: scratch_dir
+          worktree_path: scratch_dir,
+          scratch_path: scratch_dir
         })
 
       {:ok, role_run} =
@@ -3602,7 +3383,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         })
 
       worktree_dir = Path.join("/tmp", "rail_demo_wt_#{System.unique_integer([:positive])}")
-      demo_dir = Path.join([worktree_dir | List.wrap([".rail", "demo"])])
+      demo_dir = Path.join(worktree_dir, "demo")
       File.mkdir_p!(demo_dir)
       on_exit(fn -> File.rm_rf(worktree_dir) end)
 
@@ -3629,7 +3410,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :demo,
           stage_state: :running,
-          worktree_path: worktree_dir
+          worktree_path: worktree_dir,
+          scratch_path: worktree_dir
         })
 
       {:ok, role_run} =

@@ -21,66 +21,36 @@ defmodule Rail.Artifacts.Actions.ReadQaReportTest do
       assert {:error, :not_authorized} = Artifacts.read_qa_report(scope, dir)
     end
 
-    test "reads QA report directly from qa directory", %{qa_dir: qa_dir} do
+    test "reads the manifest out of the scratch directory's qa/", %{dir: dir, qa_dir: qa_dir} do
       scope = Scope.for_system()
       ArtifactHelpers.write_qa_manifest(qa_dir)
 
-      assert {:ok, %{commit: "abc1234", rows: [_row]}} = Artifacts.read_qa_report(scope, qa_dir)
+      assert {:ok, %{commit: "abc1234", rows: [_row]}} = Artifacts.read_qa_report(scope, dir)
     end
 
-    test "reads QA report from parent scratch directory", %{dir: dir, qa_dir: qa_dir} do
-      scope = Scope.user_scope()
-      ArtifactHelpers.write_qa_manifest(qa_dir)
-
-      assert {:ok, %{commit: "abc1234"}} = Artifacts.read_qa_report(scope, dir)
-    end
-
-    test "reads QA report using task struct and scratch option", %{dir: dir, qa_dir: qa_dir} do
-      scope = Scope.user_scope()
-      ArtifactHelpers.write_qa_manifest(qa_dir)
-
-      assert {:ok, %{commit: "abc1234"}} = Artifacts.read_qa_report(scope, %{id: "tsk_qa_1"}, scratch_dir: dir)
-    end
-
-    test "reads QA report using task id string and scratch option", %{dir: dir, qa_dir: qa_dir} do
-      scope = Scope.user_scope()
-      ArtifactHelpers.write_qa_manifest(qa_dir)
-
-      assert {:ok, %{commit: "abc1234"}} = Artifacts.read_qa_report(scope, "tsk_qa_1", scratch_dir: dir)
-    end
-
-    test "reads QA report directly from manifest in root directory", %{dir: dir} do
-      scope = Scope.for_system()
-      ArtifactHelpers.write_qa_manifest(dir)
-
-      assert {:ok, %{commit: "abc1234"}} = Artifacts.read_qa_report(scope, dir)
-    end
-
-    test "reads QA report from worktree .rail/qa directory", %{dir: dir} do
+    # The scratch directory is the only place a report is looked for: one written
+    # into the worktree instead is a report Rail never saw.
+    test "ignores a manifest left in the worktree's .rail/qa", %{dir: dir} do
       scope = Scope.for_system()
       rail_qa = Path.join([dir, ".rail", "qa"])
       File.mkdir_p!(rail_qa)
       ArtifactHelpers.write_qa_manifest(rail_qa)
 
-      # Via worktree path string
-      assert {:ok, %{commit: "abc1234"}} = Artifacts.read_qa_report(scope, dir)
-
-      # Via Task struct with worktree_path
-      task = %Rail.Pipeline.Schemas.Task{id: "tsk_wt_qa", worktree_path: dir}
-      assert {:ok, %{commit: "abc1234"}} = Artifacts.read_qa_report(scope, task)
+      assert {:error, msg} = Artifacts.read_qa_report(scope, dir)
+      assert msg =~ "QA manifest not found"
     end
 
-    test "returns validation failure when manifest is invalid", %{qa_dir: qa_dir} do
+    test "returns validation failure when manifest is invalid", %{dir: dir, qa_dir: qa_dir} do
       scope = Scope.for_system()
       File.write!(Path.join(qa_dir, "manifest.json"), "{bad_json")
 
-      assert {:error, msg} = Artifacts.read_qa_report(scope, qa_dir)
+      assert {:error, msg} = Artifacts.read_qa_report(scope, dir)
       assert msg =~ "Failed to parse QA manifest"
     end
 
     test "returns error when manifest does not exist" do
       scope = Scope.for_system()
-      assert {:error, msg} = Artifacts.read_qa_report(scope, "/nonexistent/qa/dir")
+      assert {:error, msg} = Artifacts.read_qa_report(scope, "/nonexistent/scratch")
       assert msg =~ "QA manifest not found"
     end
   end

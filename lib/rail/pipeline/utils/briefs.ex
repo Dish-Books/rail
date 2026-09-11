@@ -23,11 +23,11 @@ defmodule Rail.Pipeline.Utils.Briefs do
   @doc """
   Stage brief for the Design role.
   """
-  def design_brief(_opts \\ []) do
+  def design_brief(opts \\ []) do
     String.trim("""
-    Rail reads your design directions from $RAIL_SCRATCH/design/. Save a still screenshot of each direction there, and never edit application code on this stage.
+    Rail reads your design directions from #{scratch(opts)}/design/. Save a still screenshot of each direction there, and never edit application code on this stage.
 
-    Write the manifest to $RAIL_SCRATCH/design/manifest.json with this shape:
+    Write the manifest to #{scratch(opts)}/design/manifest.json with this shape:
     {
       "canvasUrl": "<absolute https URL to the published canvas>",
       "version": 1,
@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
           "key": "<unique-key>",
           "title": "<title of direction>",
           "notes": "<notes on what it does differently>",
-          "stillPath": "$RAIL_SCRATCH/design/<still>.png"
+          "stillPath": "#{scratch(opts)}/design/<still>.png"
         }
       ],
       "pickedKey": null
@@ -62,14 +62,14 @@ defmodule Rail.Pipeline.Utils.Briefs do
   How the Architect writes its implementation plan into scratch.
   """
   def plan_write_brief(opts \\ []) do
-    file = "$RAIL_SCRATCH/plans/#{resolve_identifier(opts)}.md"
+    file = "#{scratch(opts)}/plans/#{resolve_identifier(opts)}.md"
 
     String.trim("""
     The plan is the file #{file}. Rail captures it when your run completes cleanly. The ticket itself is not yours to write.
 
     Write it from your worktree with a heredoc, the body and its closing PLAN line at column zero:
 
-    mkdir -p $RAIL_SCRATCH/plans
+    mkdir -p #{scratch(opts)}/plans
     cat > #{file} <<'PLAN'
     ## Implementation plan
 
@@ -78,7 +78,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
 
     - A heredoc into #{file}, never an inline string.
     - Keep the `## Implementation plan` heading on the first line.
-    - A ticket you split out is its own file, $RAIL_SCRATCH/tickets/split-<n>.md, with `---` front matter carrying its `title`. Rail opens each one as a new ticket.
+    - A ticket you split out is its own file, #{scratch(opts)}/tickets/split-<n>.md, with `---` front matter carrying its `title`. Rail opens each one as a new ticket.
     """)
   end
 
@@ -121,7 +121,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
     String.trim("""
     The human picked direction "#{title}" (key: "#{key}").
 
-    Re-shoot its still under $RAIL_SCRATCH/design/ with a new versioned filename (e.g. #{key}-v2.png), and rewrite $RAIL_SCRATCH/design/manifest.json with an incremented `version`, the same `canvasUrl`, `pickedKey` set to "#{key}", and this direction as the only entry in `directions`, carrying the updated `stillPath` and `notes`.
+    Re-shoot its still under #{scratch(opts)}/design/ with a new versioned filename (e.g. #{key}-v2.png), and rewrite #{scratch(opts)}/design/manifest.json with an incremented `version`, the same `canvasUrl`, `pickedKey` set to "#{key}", and this direction as the only entry in `directions`, carrying the updated `stillPath` and `notes`.
     """)
   end
 
@@ -137,22 +137,22 @@ defmodule Rail.Pipeline.Utils.Briefs do
   @doc """
   Brief handed to the Designer when revisions are requested on the picked design.
   """
-  def design_revise_brief(comment) when is_binary(comment) do
+  def design_revise_brief(comment, opts \\ []) when is_binary(comment) do
     String.trim("""
     The human requested revisions to the picked design:
 
     #{comment}
 
-    Re-shoot the still under $RAIL_SCRATCH/design/ with a new versioned filename (e.g. <key>-v<version>.png), and rewrite $RAIL_SCRATCH/design/manifest.json with an incremented `version`, the same `canvasUrl`, and the updated `stillPath` and `notes` for this direction.
+    Re-shoot the still under #{scratch(opts)}/design/ with a new versioned filename (e.g. <key>-v<version>.png), and rewrite #{scratch(opts)}/design/manifest.json with an incremented `version`, the same `canvasUrl`, and the updated `stillPath` and `notes` for this direction.
     """)
   end
 
   @doc """
   Stage brief for the Engineer role.
   """
-  def engineer_brief(_opts \\ []) do
+  def engineer_brief(opts \\ []) do
     String.trim("""
-    Never commit anything under $RAIL_SCRATCH into the pull request.
+    Never commit anything under #{scratch(opts)} into the pull request.
 
     Review comments, reviewer findings and QA findings come back as further turns of this same conversation, so keep your worktree as you left it.
     """)
@@ -191,7 +191,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
       end
 
     String.trim("""
-    #{branch_line}Write your evidence to $RAIL_SCRATCH/qa/ with a manifest.json, and leave the app running with its VM service URL recorded there so the QA Lead can attach to it.
+    #{branch_line}Write your evidence to #{scratch(opts)}/qa/ with a manifest.json, and leave the app running with its VM service URL recorded there so the QA Lead can attach to it.
 
     Rail reads your last line as your verdict, exactly `VERDICT: PASS` or `VERDICT: FAIL`. FAIL sends your findings back to the engineer; PASS hands your evidence to the QA Lead.
     """)
@@ -211,7 +211,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
       end
 
     String.trim("""
-    #{branch_line}The QA engineer's report is above and its evidence is in $RAIL_SCRATCH/qa/, with the running app reachable at the VM service URL recorded there.
+    #{branch_line}The QA engineer's report is above and its evidence is in #{scratch(opts)}/qa/, with the running app reachable at the VM service URL recorded there.
 
     Rail reads your last line as your verdict, exactly `VERDICT: PASS` or `VERDICT: FAIL`. FAIL sends your findings and QA's back to the engineer; PASS leaves the change ready to merge.
     """)
@@ -238,7 +238,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
     Each part of the recording corresponds to an acceptance criterion from the ticket, in order:
     #{criteria_section}
 
-    Rail reads the recording from $RAIL_SCRATCH/demo/. Write your frames there and the manifest to $RAIL_SCRATCH/demo/manifest.json with this shape:
+    Rail reads the recording from #{scratch(opts)}/demo/. Write your frames there and the manifest to #{scratch(opts)}/demo/manifest.json with this shape:
     {
       "version": 1,
       "outcome": "recorded",
@@ -249,7 +249,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
           "outcome": "recorded",
           "frames": [
             {
-              "path": "$RAIL_SCRATCH/demo/<frame>.png",
+              "path": "#{scratch(opts)}/demo/<frame>.png",
               "holdMs": 1000,
               "caption": "<written caption explaining what is shown>"
             }
@@ -265,13 +265,13 @@ defmodule Rail.Pipeline.Utils.Briefs do
   @doc """
   Brief handed to the Demo role when a demo re-record is requested.
   """
-  def demo_rerecord_brief(comment_or_opts \\ [])
+  def demo_rerecord_brief(comment_or_opts, opts \\ [])
 
-  def demo_rerecord_brief(comment) when is_binary(comment) do
-    demo_rerecord_brief(comment: comment)
+  def demo_rerecord_brief(comment, opts) when is_binary(comment) do
+    demo_rerecord_brief(Keyword.put(opts, :comment, comment), [])
   end
 
-  def demo_rerecord_brief(opts) do
+  def demo_rerecord_brief(opts, _extra) do
     comment = get_opt(opts, :comment) || get_opt(opts, :reason)
     version = get_opt(opts, :version) || 2
     criteria = resolve_criteria(opts)
@@ -306,7 +306,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
     Each part of the recording corresponds to an acceptance criterion from the ticket, in order:
     #{criteria_section}
 
-    Rail reads the recording from $RAIL_SCRATCH/demo/. Write your frames there and the manifest to $RAIL_SCRATCH/demo/manifest.json with this shape:
+    Rail reads the recording from #{scratch(opts)}/demo/. Write your frames there and the manifest to #{scratch(opts)}/demo/manifest.json with this shape:
     {
       "version": #{version},
       "outcome": "recorded",
@@ -317,7 +317,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
           "outcome": "recorded",
           "frames": [
             {
-              "path": "$RAIL_SCRATCH/demo/<frame>.png",
+              "path": "#{scratch(opts)}/demo/<frame>.png",
               "holdMs": 1000,
               "caption": "<written caption explaining what is shown>"
             }
@@ -496,6 +496,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
       identifier: get_field(task, :identifier) || get_field(task, :issue_identifier),
       branch: get_field(task, :worktree_name) || get_field(task, :branch_name),
       is_rebasing: get_field(task, :is_rebasing),
+      scratch_path: get_field(task, :scratch_path),
       design: get_field(task, :design),
       ticket: get_field(task, :ticket) || get_field(task, :description) || issue_field(task, :description),
       pr_number: get_field(task, :pr_number),
@@ -511,6 +512,9 @@ defmodule Rail.Pipeline.Utils.Briefs do
   end
 
   defp extract_stage_and_opts(_other, opts), do: {nil, opts}
+
+  # Every brief names scratch paths absolutely; the task carries the directory.
+  defp scratch(opts), do: get_opt(opts, :scratch_path)
 
   defp get_opt(opts, key) when is_list(opts) do
     Keyword.get(opts, key)

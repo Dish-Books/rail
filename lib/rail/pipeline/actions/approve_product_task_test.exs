@@ -58,7 +58,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
     {:ok, issue} = Issues.capture_issue(scope, project, "Attachments follow their source document")
 
     scratch_dir = temp_scratch_dir()
-    task = insert_task(project, issue)
+    task = insert_task(project, issue, scratch_dir)
 
     %{scope: scope, project: project, issue: issue, task: task, scratch_dir: scratch_dir}
   end
@@ -86,7 +86,6 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
 
     assert {:ok, %{task: %Task{id: ^task_id, stage: :design, stage_state: :running}, run: %Run{}}} =
              Pipeline.approve_product_task(task,
-               scratch_dir: scratch_dir,
                executable: System.find_executable("true") || "/usr/bin/true",
                skip_follower: true
              )
@@ -118,7 +117,6 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
 
     assert {:ok, %{task: %Task{stage: :design}}} =
              Pipeline.approve_product_task(task,
-               scratch_dir: scratch_dir,
                executable: System.find_executable("true") || "/usr/bin/true",
                skip_follower: true
              )
@@ -127,21 +125,21 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
   end
 
   test "refuses a task that is not awaiting approval", %{project: project, issue: issue, scratch_dir: scratch_dir} do
-    task = insert_task(project, issue, stage_state: :running)
+    task = insert_task(project, issue, scratch_dir, stage_state: :running)
 
     assert {:error, {:invalid_stage_state, :running}} =
-             Pipeline.approve_product_task(task, scratch_dir: scratch_dir)
+             Pipeline.approve_product_task(task)
   end
 
   test "refuses a task that is past the product stage", %{project: project, issue: issue, scratch_dir: scratch_dir} do
-    task = insert_task(project, issue, stage: :engineer)
+    task = insert_task(project, issue, scratch_dir, stage: :engineer)
 
     assert {:error, {:invalid_stage, :engineer}} =
-             Pipeline.approve_product_task(task, scratch_dir: scratch_dir)
+             Pipeline.approve_product_task(task)
   end
 
-  test "records the error when the run left no ticket", %{task: task, scratch_dir: scratch_dir} do
-    assert {:error, :no_ticket} = Pipeline.approve_product_task(task, scratch_dir: scratch_dir)
+  test "records the error when the run left no ticket", %{task: task} do
+    assert {:error, :no_ticket} = Pipeline.approve_product_task(task)
 
     assert %Task{stage: :product, stage_state: :awaiting_approval, error: error} = Repo.get!(Task, task.id)
     assert error =~ "no ticket"
@@ -151,13 +149,13 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
     write_ticket(scratch_dir, issue.identifier, "---\ntitle: The ticket\n---\n\nThe body.\n")
     LinearMock.mock_api_error(500, %{"error" => "boom"})
 
-    assert {:error, {:push_failed, _reason}} = Pipeline.approve_product_task(task, scratch_dir: scratch_dir)
+    assert {:error, {:push_failed, _reason}} = Pipeline.approve_product_task(task)
 
     assert %Task{stage: :product, stage_state: :awaiting_approval, error: error} = Repo.get!(Task, task.id)
     assert error =~ "Failed to publish the ticket"
   end
 
-  defp insert_task(project, issue, attrs \\ []) do
+  defp insert_task(project, issue, scratch_dir, attrs \\ []) do
     name = "apt-#{System.unique_integer([:positive])}"
 
     base = %{
@@ -167,7 +165,8 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
       stage: :product,
       stage_state: :awaiting_approval,
       worktree_name: name,
-      worktree_path: Path.join(project.clone_path, ".worktrees/#{name}")
+      worktree_path: Path.join(project.clone_path, ".worktrees/#{name}"),
+      scratch_path: scratch_dir
     }
 
     %Task{}

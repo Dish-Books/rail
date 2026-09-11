@@ -82,8 +82,8 @@ defmodule Rail.Runs.Actions.StartRunTest do
     scratch_dir = Path.join(tmp_dir, "scratch")
     File.mkdir_p!(scratch_dir)
 
-    script =
-      ~s(printf '{"stream":"%s","scratch":"%s","gh":"%s"}\n' "$RAIL_STREAM" "$RAIL_SCRATCH" "$GH_TOKEN")
+    # RAIL_SCRATCH is gone: the brief names the scratch directory by absolute path.
+    script = ~s(printf '{"stream":"%s","gh":"%s"}\n' "$RAIL_STREAM" "$GH_TOKEN")
 
     {:ok, run} =
       Runs.start_run(
@@ -92,7 +92,6 @@ defmodule Rail.Runs.Actions.StartRunTest do
         ["/bin/sh", "-c", script],
         backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
         stream_path: stream_path,
-        scratch_path: scratch_dir,
         gh_token: "gh_test_123",
         skip_follower: true
       )
@@ -102,7 +101,7 @@ defmodule Rail.Runs.Actions.StartRunTest do
       Enum.reduce_while(1..200, "", fn _i, _acc ->
         content = if File.exists?(stream_path), do: File.read!(stream_path), else: ""
 
-        if content =~ "gh_test_123" and content =~ scratch_dir and content =~ stream_path do
+        if content =~ "gh_test_123" and content =~ stream_path do
           {:halt, content}
         else
           Process.sleep(10)
@@ -113,7 +112,6 @@ defmodule Rail.Runs.Actions.StartRunTest do
     assert File.exists?(stream_path)
     assert File.exists?("#{stream_path}.err")
     assert content =~ "gh_test_123"
-    assert content =~ scratch_dir
     assert content =~ stream_path
 
     # Clean up child if still running

@@ -21,60 +21,41 @@ defmodule Rail.Artifacts.Actions.ReadDemoTest do
       assert {:error, :not_authorized} = Artifacts.read_demo(scope, dir)
     end
 
-    test "reads demo directly from demo directory", %{demo_dir: demo_dir} do
+    test "reads the manifest out of the scratch directory's demo/", %{dir: dir, demo_dir: demo_dir} do
       scope = Scope.for_system()
       ArtifactHelpers.write_demo_manifest(demo_dir)
 
-      assert {:ok, %{outcome: "recorded", segments: [_seg]}} = Artifacts.read_demo(scope, demo_dir)
+      assert {:ok, %{outcome: "recorded", segments: [_segment]}} = Artifacts.read_demo(scope, dir)
     end
 
-    test "reads demo from parent scratch directory", %{dir: dir, demo_dir: demo_dir} do
-      scope = Scope.user_scope()
-      ArtifactHelpers.write_demo_manifest(demo_dir)
-
-      assert {:ok, %{outcome: "recorded"}} = Artifacts.read_demo(scope, dir)
-    end
-
-    test "reads demo using task struct and scratch option", %{dir: dir, demo_dir: demo_dir} do
-      scope = Scope.user_scope()
-      ArtifactHelpers.write_demo_manifest(demo_dir)
-
-      assert {:ok, %{outcome: "recorded"}} = Artifacts.read_demo(scope, %{id: "tsk_1"}, scratch_dir: dir)
-    end
-
-    test "reads demo using task id string and scratch option", %{dir: dir, demo_dir: demo_dir} do
-      scope = Scope.user_scope()
-      ArtifactHelpers.write_demo_manifest(demo_dir)
-
-      assert {:ok, %{outcome: "recorded"}} = Artifacts.read_demo(scope, "tsk_1", scratch_dir: dir)
-    end
-
-    test "reads demo from .rail/demo directory and task struct with worktree_path", %{dir: dir} do
+    # The scratch directory is the only place a recording is looked for: one written
+    # into the worktree instead is a demo Rail never saw.
+    test "ignores a manifest left in the worktree's .rail/demo", %{dir: dir} do
       scope = Scope.for_system()
-      rail_demo_dir = Path.join([dir, ".rail", "demo"])
-      File.mkdir_p!(rail_demo_dir)
-      ArtifactHelpers.write_demo_manifest(rail_demo_dir)
+      rail_demo = Path.join([dir, ".rail", "demo"])
+      File.mkdir_p!(rail_demo)
+      ArtifactHelpers.write_demo_manifest(rail_demo)
 
-      assert {:ok, %{outcome: "recorded"}} = Artifacts.read_demo(scope, dir)
-      assert {:ok, %{outcome: "recorded"}} = Artifacts.read_demo(scope, %{id: "tsk_2", worktree_path: dir})
+      assert {:error, msg} = Artifacts.read_demo(scope, dir)
+      assert msg =~ "Demo manifest not found"
     end
 
-    test "returns validation failure when manifest is invalid", %{demo_dir: demo_dir} do
+    test "returns validation failure when manifest is invalid", %{dir: dir, demo_dir: demo_dir} do
       scope = Scope.for_system()
       File.write!(Path.join(demo_dir, "manifest.json"), "{bad_json")
 
-      assert {:error, msg} = Artifacts.read_demo(scope, demo_dir)
+      assert {:error, msg} = Artifacts.read_demo(scope, dir)
       assert msg =~ "Failed to parse demo manifest"
     end
 
     test "returns error when manifest does not exist" do
       scope = Scope.for_system()
-      assert {:error, msg} = Artifacts.read_demo(scope, "/nonexistent/demo/dir")
+      assert {:error, msg} = Artifacts.read_demo(scope, "/nonexistent/scratch")
       assert msg =~ "Demo manifest not found"
     end
 
-    test "rejects non-scope caller", %{demo_dir: demo_dir} do
-      assert {:error, :not_authorized} = Artifacts.read_demo(:not_a_scope, demo_dir, [])
+    test "rejects non-scope caller", %{dir: dir} do
+      assert {:error, :not_authorized} = Artifacts.read_demo(:not_a_scope, dir, [])
     end
   end
 end

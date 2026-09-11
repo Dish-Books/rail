@@ -1,6 +1,6 @@
 defmodule Rail.Pipeline.Utils.PrepareScratch do
   @moduledoc """
-  Materializes the inputs a stage's agent reads out of `$RAIL_SCRATCH`.
+  Materializes the inputs a stage's agent reads out of the task's scratch directory.
   """
 
   import Ecto.Query
@@ -18,9 +18,9 @@ defmodule Rail.Pipeline.Utils.PrepareScratch do
   @subdirs ["tickets", "plans", "design", "qa", "demo"]
 
   @doc """
-  Prepares the `$RAIL_SCRATCH` tree for `task` and writes its stage's inputs.
+  Prepares the scratch tree for `task` and writes its stage's inputs.
   """
-  def prepare_scratch(%Task{} = task, scratch_dir) when is_binary(scratch_dir) do
+  def prepare_scratch(%Task{scratch_path: scratch_dir} = task) when is_binary(scratch_dir) do
     ensure_directories(scratch_dir)
 
     identifier = issue_identifier(task)

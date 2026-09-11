@@ -7,8 +7,6 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
   both, and the spawned run.
   """
 
-  import Rail.Pipeline.Utils.ScratchPath
-
   alias Rail.Domain.TicketBody
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
@@ -33,7 +31,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
          {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :design),
          {:ok, worktree_path} <- ensure_worktree(project, task),
          {:ok, task} <- claim_stage(task, worktree_path),
-         scratch_path = write_scratch(project, task, opts),
+         scratch_path = write_scratch(task),
          {:ok, role_run} <- Runs.start_or_resume_role_run(task, role, worktree_path) do
       spawn_run(task, role, role_run, worktree_path, scratch_path, opts)
     else
@@ -57,12 +55,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
     |> Repo.update()
   end
 
-  defp write_scratch(%Project{} = project, %Task{} = task, opts) do
-    scratch_path =
-      Keyword.get(opts, :scratch_dir) ||
-        Keyword.get(opts, :scratch_path) ||
-        scratch_path(project.id, task.id)
-
+  defp write_scratch(%Task{scratch_path: scratch_path} = task) do
     File.mkdir_p!(Path.join(scratch_path, "design"))
 
     case task.issue do
@@ -87,11 +80,11 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
     scratch_path
   end
 
-  defp brief(%Task{} = task) do
+  defp brief(%Task{scratch_path: scratch_path} = task) do
     ticket_line =
       case task.issue do
         %Issue{identifier: identifier} ->
-          "The ticket you are designing for is the file $RAIL_SCRATCH/tickets/#{identifier}.md. It is not yours to edit.\n\n"
+          "The ticket you are designing for is the file #{scratch_path}/tickets/#{identifier}.md. It is not yours to edit.\n\n"
 
         nil ->
           ""
@@ -100,7 +93,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
     String.trim("""
     #{ticket_line}Produce three distinct design directions on a single published canvas, and never edit application code on this stage.
 
-    Rail reads the directions from $RAIL_SCRATCH/design/. Save a still screenshot of each one there, and write the manifest to $RAIL_SCRATCH/design/manifest.json with this shape:
+    Rail reads the directions from #{scratch_path}/design/. Save a still screenshot of each one there, and write the manifest to #{scratch_path}/design/manifest.json with this shape:
     {
       "canvasUrl": "<absolute https URL to the published canvas>",
       "version": 1,
@@ -109,7 +102,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
           "key": "<unique-key>",
           "title": "<title of direction>",
           "notes": "<notes on what it does differently>",
-          "stillPath": "$RAIL_SCRATCH/design/<still>.png"
+          "stillPath": "#{scratch_path}/design/<still>.png"
         }
       ],
       "pickedKey": null

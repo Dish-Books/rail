@@ -22,7 +22,7 @@ defmodule Rail.Artifacts.Actions.CaptureDesign do
 
   defp normalize_args(target, opts, _extra_opts) when is_list(opts) do
     task_id = extract_task_id(target)
-    scratch_dir = Keyword.get(opts, :scratch_dir) || "/tmp/rail_scratch/#{task_id}"
+    scratch_dir = Keyword.fetch!(opts, :scratch_dir)
     {task_id, scratch_dir, opts}
   end
 
@@ -62,14 +62,7 @@ defmodule Rail.Artifacts.Actions.CaptureDesign do
     end
   end
 
-  defp resolve_design_dir(path) do
-    cond do
-      File.exists?(Path.join(path, "manifest.json")) -> path
-      File.exists?(Path.join([path, "design", "manifest.json"])) -> Path.join(path, "design")
-      File.exists?(Path.join([path, ".rail", "design", "manifest.json"])) -> Path.join([path, ".rail", "design"])
-      true -> Path.join(path, "design")
-    end
-  end
+  defp resolve_design_dir(scratch_dir), do: Path.join(scratch_dir, "design")
 
   defp next_version(task_id, manifest_version) do
     query =

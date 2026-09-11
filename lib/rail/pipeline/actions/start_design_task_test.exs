@@ -63,8 +63,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     %Role{id: role_id} = role
-    %Task{id: task_id} = task = insert_task(project, issue)
-    scratch_dir = temp_scratch_dir()
+    %Task{id: task_id, scratch_path: scratch_dir} = task = insert_task(project, issue)
 
     assert {:ok,
             %{
@@ -73,7 +72,6 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
               run: %Run{task_id: ^task_id}
             }} =
              Pipeline.start_design_task(task,
-               scratch_dir: scratch_dir,
                executable: System.find_executable("true") || "/usr/bin/true",
                skip_follower: true
              )
@@ -115,17 +113,11 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
         stage: :product,
         stage_state: :awaiting_approval,
         worktree_name: name,
-        worktree_path: Path.join(project.clone_path, ".worktrees/#{name}")
+        worktree_path: Path.join(project.clone_path, ".worktrees/#{name}"),
+        scratch_path: Path.join(System.tmp_dir!(), "rail_test_scratch_#{System.unique_integer([:positive])}")
       },
       project.id
     )
     |> Repo.insert!()
-  end
-
-  defp temp_scratch_dir do
-    dir = Path.join(System.tmp_dir!(), "rail_scratch_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(dir)
-    on_exit(fn -> File.rm_rf(dir) end)
-    dir
   end
 end

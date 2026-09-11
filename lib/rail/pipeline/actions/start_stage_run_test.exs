@@ -276,7 +276,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
     File.write!(Path.join(scratch_dir, "plan.md"), "# Architectural Plan\nSteps to implement.")
     on_exit(fn -> File.rm_rf(scratch_dir) end)
 
-    {:ok, _captured} = capture_scratch(:architect, task, scratch_dir)
+    {:ok, _captured} = capture_scratch(:architect, %{task | scratch_path: scratch_dir})
 
     {:ok, %Plan{}} = Pipeline.get_plan(system_scope(), task)
 

@@ -98,7 +98,7 @@ defmodule Rail.Pipeline.Actions.RequestChanges do
     else
       case Repo.one(from d in Design, where: d.task_id == ^task.id, order_by: [desc: d.version], limit: 1) do
         %Design{picked_key: picked_key} when is_binary(picked_key) and picked_key != "" ->
-          design_revise_brief(comment)
+          design_revise_brief(comment, scratch_path: task.scratch_path)
 
         _other ->
           comment

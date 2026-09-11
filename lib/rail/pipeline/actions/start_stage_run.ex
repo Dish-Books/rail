@@ -7,7 +7,6 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
   import Rail.Pipeline.Utils.Briefs
   import Rail.Pipeline.Utils.IssueIdentifier
   import Rail.Pipeline.Utils.PrepareScratch
-  import Rail.Pipeline.Utils.ScratchPath
 
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Plan
@@ -23,7 +22,7 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
   Initiates a stage run for a given task:
   - Resolves stage role (or engineer role for rebasing).
   - Ensures worktree directory exists.
-  - Prepares `$RAIL_SCRATCH`.
+  - Prepares the task's scratch directory.
   - Records branch fingerprints and increments role run attempt.
   - Generates stage brief and CLI argv/prompt.
   - Spawns runner process and attaches follower.
@@ -63,22 +62,17 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
 
     case Git.get_or_create_worktree(project, task) do
       {:ok, resolved_wt_path} ->
-        proceed_with_worktree(task, project, role, stage, resolved_wt_path, base_branch, opts)
+        proceed_with_worktree(task, role, stage, resolved_wt_path, base_branch, opts)
 
       {:error, reason} ->
         handle_worktree_failure(task, reason)
     end
   end
 
-  defp proceed_with_worktree(task, project, role, stage, worktree_path, base_branch, opts) do
+  defp proceed_with_worktree(task, role, stage, worktree_path, base_branch, opts) do
     task = maybe_update_worktree_path(task, worktree_path)
 
-    scratch_path =
-      Keyword.get(opts, :scratch_dir) ||
-        Keyword.get(opts, :scratch_path) ||
-        scratch_path(project.id, task.id)
-
-    {:ok, _scratch} = prepare_scratch(task, scratch_path)
+    {:ok, _scratch} = prepare_scratch(task)
 
     {:ok, role_run} = Runs.start_or_resume_role_run(task, role, worktree_path)
 
@@ -109,10 +103,10 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
         work_dir: worktree_path
       )
 
-    spawn_and_finalize(task, role, role_run, argv, scratch_path, worktree_path, opts)
+    spawn_and_finalize(task, role, role_run, argv, worktree_path, opts)
   end
 
-  defp spawn_and_finalize(task, role, role_run, argv, scratch_path, worktree_path, opts) do
+  defp spawn_and_finalize(task, role, role_run, argv, worktree_path, opts) do
     on_finished_cb =
       Keyword.get(opts, :on_finished) ||
         fn _run, outcome ->
@@ -123,7 +117,6 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
       opts
       |> Keyword.put_new(:backend, role.backend)
       |> Keyword.put_new(:cd, worktree_path)
-      |> Keyword.put_new(:scratch_path, scratch_path)
       |> Keyword.put(:on_finished, on_finished_cb)
 
     case Runs.start_run(role_run, :stage, argv, spawner_opts) do

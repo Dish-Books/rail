@@ -113,7 +113,6 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
         ]
       })
 
-    expect(File, :exists?, fn _path -> true end)
     expect(File, :read, fn _path -> {:ok, recorded_manifest} end)
     expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
     expect(File, :read, fn _path -> {:ok, "PNG_FRAME"} end)
@@ -130,7 +129,6 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
     declined_manifest =
       Jason.encode!(%{"version" => 2, "outcome" => "declined", "note" => "Not needed", "segments" => []})
 
-    expect(File, :exists?, fn _path -> true end)
     expect(File, :read, fn _path -> {:ok, declined_manifest} end)
 
     LinearMock.mock_create_comment_success(%{
@@ -152,23 +150,21 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
       })
     end
 
-    expect(File, :exists?, 2, fn _path -> true end)
     expect(File, :read, fn _path -> {:ok, design_manifest.(1, nil)} end)
     expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
     expect(File, :read, fn _path -> {:ok, "PNG_STILL"} end)
     mock_design_uploads(1)
 
     {:ok, _design1} =
-      Artifacts.capture_design(scope, task, "/tmp/rail_scratch/design_1", url_probe: fn _url -> true end)
+      Artifacts.capture_design(scope, task, "/tmp/rail_scratch/task_1", url_probe: fn _url -> true end)
 
-    expect(File, :exists?, 2, fn _path -> true end)
     expect(File, :read, fn _path -> {:ok, design_manifest.(2, "dir-2")} end)
     expect(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
     expect(File, :read, fn _path -> {:ok, "PNG_STILL"} end)
     mock_design_uploads(1)
 
     {:ok, %{id: design2_id}} =
-      Artifacts.capture_design(scope, task, "/tmp/rail_scratch/design_2", url_probe: fn _url -> true end)
+      Artifacts.capture_design(scope, task, "/tmp/rail_scratch/task_2", url_probe: fn _url -> true end)
 
     assert {:ok,
             %Task{

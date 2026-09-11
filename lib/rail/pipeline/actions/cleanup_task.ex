@@ -4,8 +4,6 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
   Releases local disk resources when a task is completed or being torn down.
   """
 
-  import Rail.Pipeline.Utils.ScratchPath
-
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -18,7 +16,7 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
   def cleanup_task(scope, task_or_id, opts) when is_list(opts) do
     with :ok <- authorize_scope(scope),
          %Task{} = task <- resolve_task(task_or_id) do
-      do_cleanup_task(task, opts)
+      do_cleanup_task(task)
     else
       {:error, reason} -> {:error, reason}
       nil -> {:error, :not_found}
@@ -42,21 +40,21 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
   defp authorize_scope(nil), do: :ok
   defp authorize_scope(_scope), do: {:error, :not_authorized}
 
-  defp do_cleanup_task(%Task{} = task, opts) do
+  defp do_cleanup_task(%Task{} = task) do
     if Task.busy?(task) do
       {:error, :task_busy}
     else
-      execute_cleanup(task, opts)
+      execute_cleanup(task)
     end
   end
 
-  defp execute_cleanup(%Task{} = task, opts) do
+  defp execute_cleanup(%Task{} = task) do
     project = Repo.get(Project, task.project_id)
 
     if project do
       remove_worktree_if_present(project, task)
       delete_branch_if_present(project, task)
-      remove_scratch_files(project, task, opts)
+      remove_scratch_files(task)
     end
 
     Rail.Pipeline.broadcast_pipeline_changed(%{
@@ -79,9 +77,7 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
     end
   end
 
-  defp remove_scratch_files(project, task, opts) do
-    scratch_dir = Keyword.get(opts, :scratch_dir) || scratch_path(project.id, task.id)
-
+  defp remove_scratch_files(%Task{scratch_path: scratch_dir}) do
     if is_binary(scratch_dir) and File.exists?(scratch_dir) do
       File.rm_rf!(scratch_dir)
     end

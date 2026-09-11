@@ -189,11 +189,12 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         stage: :merged,
         stage_state: :queued,
         worktree_name: "cleanup-branch",
-        worktree_path: worktree_path
+        worktree_path: worktree_path,
+        scratch_path: scratch_dir
       })
 
     assert {:ok, %Task{worktree_path: ^worktree_path} = cleaned} =
-             Pipeline.cleanup_task(scope, task, scratch_dir: scratch_dir)
+             Pipeline.cleanup_task(scope, task)
 
     refute Task.worktree_present?(cleaned)
 
@@ -288,6 +289,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
       })
 
     assert {:ok, %Task{}} = Pipeline.cleanup_task(nil, task)
-    assert {:ok, %Task{}} = Pipeline.cleanup_task(task.id, scratch_dir: "/tmp/nonexistent")
+    assert {:ok, %Task{}} = Pipeline.cleanup_task(task.id)
   end
 end

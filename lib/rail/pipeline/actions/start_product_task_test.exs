@@ -151,7 +151,8 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
         stage: :product,
         stage_state: :queued,
         worktree_name: name,
-        worktree_path: Path.join(project.clone_path, ".worktrees/#{name}")
+        worktree_path: Path.join(project.clone_path, ".worktrees/#{name}"),
+        scratch_path: Path.join(System.tmp_dir!(), "rail_test_scratch_#{System.unique_integer([:positive])}")
       },
       project.id
     )

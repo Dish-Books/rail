@@ -807,16 +807,17 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
       worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
 
-      expect(File, :read, 4, fn _path -> {:ok, design_manifest} end)
-      expect(File, :exists?, 7, fn _path -> true end)
-      expect(File, :stat, 4, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
+      stub(File, :read, fn _path -> {:ok, design_manifest} end)
+      stub(File, :exists?, fn _path -> true end)
+      stub(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
 
       {:ok, task} =
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :design,
           stage_state: :failed,
           error: "Initial canvas 404",
-          worktree_path: worktree_dir
+          worktree_path: worktree_dir,
+          scratch_path: worktree_dir
         })
 
       {:ok, role_run} =
@@ -893,15 +894,16 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
       worktree_dir = Path.join("/tmp", "rail_design_wt_#{System.unique_integer([:positive])}")
 
-      expect(File, :read, 1, fn _path -> {:ok, design_manifest} end)
-      expect(File, :exists?, 2, fn _path -> true end)
+      stub(File, :read, fn _path -> {:ok, design_manifest} end)
+      stub(File, :exists?, fn _path -> true end)
 
       {:ok, task} =
         Pipeline.update_task(system_scope(), task.id, %{
           stage: :design,
           stage_state: :failed,
           error: "Design manifest canvasUrl must be an absolute https URL.",
-          worktree_path: worktree_dir
+          worktree_path: worktree_dir,
+          scratch_path: worktree_dir
         })
 
       {:ok, role_run} =

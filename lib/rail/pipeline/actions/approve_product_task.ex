@@ -8,8 +8,6 @@ defmodule Rail.Pipeline.Actions.ApproveProductTask do
   description, and the design stage starts.
   """
 
-  import Rail.Pipeline.Utils.ScratchPath
-
   alias Rail.Domain.TicketBody
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -34,7 +32,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductTask do
     with %Task{} = task <- resolve_task(task_or_id),
          :ok <- approvable(task),
          {:ok, %Issue{} = issue} <- issue_for(task),
-         {:ok, task} <- publish(task, issue, opts) do
+         {:ok, task} <- publish(task, issue) do
       Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :product_approved})
       hand_off(task, opts)
     else
@@ -75,8 +73,8 @@ defmodule Rail.Pipeline.Actions.ApproveProductTask do
 
   # Linear
 
-  defp publish(%Task{project: %Project{} = project} = task, %Issue{} = issue, opts) do
-    scratch_path = resolve_scratch_path(project, task, opts)
+  defp publish(%Task{project: %Project{} = project} = task, %Issue{} = issue) do
+    scratch_path = task.scratch_path
     ticket_file = Path.join([scratch_path, "tickets", "#{issue.identifier}.md"])
 
     if File.exists?(ticket_file) do
@@ -125,12 +123,6 @@ defmodule Rail.Pipeline.Actions.ApproveProductTask do
     {:ok, _task} = task |> Task.changeset(%{error: message}) |> Repo.update()
     Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :product_approval_failed})
     {:error, reason}
-  end
-
-  defp resolve_scratch_path(%Project{} = project, %Task{} = task, opts) do
-    Keyword.get(opts, :scratch_dir) ||
-      Keyword.get(opts, :scratch_path) ||
-      scratch_path(project.id, task.id)
   end
 
   defp owner_user(%Issue{owner_user_id: user_id}) when is_binary(user_id), do: %{id: user_id}

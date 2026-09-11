@@ -10,7 +10,6 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   import Ecto.Query
   import Rail.Pipeline.Utils.CaptureScratch
   import Rail.Pipeline.Utils.CarriedReports
-  import Rail.Pipeline.Utils.ScratchPath
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Design
@@ -66,16 +65,13 @@ defmodule Rail.Pipeline.Actions.SettleRun do
 
     {:ok, role_run} = update_role_run(role_run, exit_code, error, output, usage)
 
-    scratch_dir =
-      Keyword.get(opts, :scratch_dir) ||
-        Keyword.get(opts, :scratch_path) ||
-        scratch_path(task.project_id, task.id)
+    scratch_dir = task.scratch_path
 
     {:ok, task} =
       if task.stage in [:product, :design, :demo, :qa] do
         {:ok, task}
       else
-        capture_scratch(task.stage, task, scratch_dir)
+        capture_scratch(task.stage, task)
       end
 
     {task_attrs, updated_role_run} = resolve_settle_outcome(task, role_run, exit_code, error, scratch_dir, opts)
@@ -153,7 +149,6 @@ defmodule Rail.Pipeline.Actions.SettleRun do
 
   defp handle_clean_exit(%Task{stage: :design} = task, role_run, scratch_dir, opts) do
     scope = Scope.for_system()
-    design_target = resolve_design_target(task, scratch_dir, opts)
     read_opts = Keyword.take(opts, [:url_probe, :req_options])
     capture_opts = Keyword.take(opts, [:project, :issue, :owner_user, :url_probe, :req_options])
 
@@ -165,9 +160,9 @@ defmodule Rail.Pipeline.Actions.SettleRun do
           limit: 1
       )
 
-    with {:ok, manifest_data} <- Artifacts.read_design(scope, design_target, read_opts),
+    with {:ok, manifest_data} <- Artifacts.read_design(scope, scratch_dir, read_opts),
          :ok <- validate_design_manifest_transition(manifest_data, previous_design),
-         {:ok, _design} <- Artifacts.capture_design(scope, task, design_target, capture_opts) do
+         {:ok, _design} <- Artifacts.capture_design(scope, task, scratch_dir, capture_opts) do
       {:ok, role_run} =
         role_run
         |> RoleRun.changeset(%{auto_retries: 0})
@@ -241,24 +236,21 @@ defmodule Rail.Pipeline.Actions.SettleRun do
 
   defp handle_clean_exit(%Task{stage: :qa} = task, role_run, scratch_dir, opts) do
     scope = Scope.for_system()
-    qa_target = resolve_qa_target(task, scratch_dir, opts)
 
-    if qa_manifest_exists?(qa_target) do
+    # The report lives in the task's scratch directory or nowhere: a QA run that left
+    # no manifest has not reported, whatever its exit code said.
+    if qa_manifest_exists?(scratch_dir) do
       read_opts = Keyword.take(opts, [:req_options])
 
-      case Artifacts.read_qa_report(scope, qa_target, read_opts) do
+      case Artifacts.read_qa_report(scope, scratch_dir, read_opts) do
         {:ok, qa_data} ->
-          capture_and_advance_qa(scope, task, role_run, qa_target, qa_data, opts)
+          capture_and_advance_qa(scope, task, role_run, scratch_dir, qa_data, opts)
 
         {:error, reason} ->
           fail_qa_stage(role_run, reason)
       end
     else
-      if opts[:require_qa_manifest] == true do
-        fail_qa_stage(role_run, "QA manifest not found.")
-      else
-        handle_gate_exit(task, role_run)
-      end
+      fail_qa_stage(role_run, "QA left no manifest at #{Path.join([scratch_dir, "qa", "manifest.json"])}.")
     end
   end
 
@@ -268,7 +260,6 @@ defmodule Rail.Pipeline.Actions.SettleRun do
 
   defp handle_clean_exit(%Task{stage: :demo} = task, role_run, scratch_dir, opts) do
     scope = Scope.for_system()
-    demo_target = resolve_demo_target(task, scratch_dir, opts)
 
     criteria =
       case Keyword.get(opts, :criteria) do
@@ -287,9 +278,9 @@ defmodule Rail.Pipeline.Actions.SettleRun do
       |> Keyword.take([:scratch_dir, :req_options])
       |> Keyword.put(:criteria, criteria)
 
-    with {:ok, manifest} <- Artifacts.read_demo(scope, demo_target, read_opts),
+    with {:ok, manifest} <- Artifacts.read_demo(scope, scratch_dir, read_opts),
          :ok <- validate_demo_worktree_stability(task, role_run) do
-      capture_and_advance_demo(scope, task, role_run, demo_target, manifest, opts, criteria)
+      capture_and_advance_demo(scope, task, role_run, scratch_dir, manifest, opts, criteria)
     else
       {:error, reason} ->
         err_msg = if is_binary(reason), do: reason, else: inspect(reason)
@@ -319,7 +310,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     {attrs, role_run}
   end
 
-  defp capture_and_advance_qa(scope, task, role_run, qa_target, qa_data, opts) do
+  defp capture_and_advance_qa(scope, task, role_run, scratch_dir, qa_data, opts) do
     {head_sha, _dirty_digest} = resolve_fingerprint(task, role_run)
     commit = head_sha || qa_data[:commit]
 
@@ -329,7 +320,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
       |> Keyword.put(:role_run_id, role_run.id)
       |> Keyword.put(:commit, commit)
 
-    case Artifacts.capture_qa_report(scope, task, qa_target, capture_opts) do
+    case Artifacts.capture_qa_report(scope, task, scratch_dir, capture_opts) do
       {:ok, _report} ->
         handle_gate_exit(task, role_run)
 
@@ -647,25 +638,6 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   defp resolve_role_run(id) when is_binary(id), do: Repo.get(RoleRun, id)
   defp resolve_role_run(_other), do: nil
 
-  defp resolve_design_target(task, scratch_dir, opts) do
-    cond do
-      is_binary(opts[:scratch_dir]) ->
-        opts[:scratch_dir]
-
-      is_binary(opts[:scratch_path]) ->
-        opts[:scratch_path]
-
-      is_binary(task.worktree_path) and
-          (File.exists?(Path.join([task.worktree_path, ".rail", "design", "manifest.json"])) or
-             File.exists?(Path.join([task.worktree_path, "design", "manifest.json"])) or
-             File.exists?(Path.join([task.worktree_path, "manifest.json"]))) ->
-        task.worktree_path
-
-      true ->
-        scratch_dir
-    end
-  end
-
   defp validate_design_manifest_transition(_manifest_data, nil), do: :ok
 
   defp validate_design_manifest_transition(manifest_data, %Design{} = prev) do
@@ -726,15 +698,15 @@ defmodule Rail.Pipeline.Actions.SettleRun do
 
   defp validate_demo_worktree_stability(_task, _role_run), do: :ok
 
-  defp capture_and_advance_demo(scope, task, role_run, demo_target, manifest, opts, criteria) do
+  defp capture_and_advance_demo(scope, task, role_run, scratch_dir, manifest, opts, criteria) do
     capture_opts = build_demo_capture_opts(task, role_run, opts, criteria)
 
     case manifest.outcome || manifest[:outcome] do
       outcome when outcome in ["recorded", "declined"] ->
-        advance_captured_demo(scope, task, role_run, demo_target, capture_opts)
+        advance_captured_demo(scope, task, role_run, scratch_dir, capture_opts)
 
       "failed" ->
-        advance_failed_demo(scope, task, role_run, demo_target, manifest, capture_opts)
+        advance_failed_demo(scope, task, role_run, scratch_dir, manifest, capture_opts)
     end
   end
 
@@ -768,8 +740,8 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
   end
 
-  defp advance_captured_demo(scope, task, role_run, demo_target, capture_opts) do
-    case Artifacts.capture_demo(scope, task, demo_target, capture_opts) do
+  defp advance_captured_demo(scope, task, role_run, scratch_dir, capture_opts) do
+    case Artifacts.capture_demo(scope, task, scratch_dir, capture_opts) do
       {:ok, _demo} ->
         {:ok, updated_role_run} =
           role_run
@@ -798,8 +770,8 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     end
   end
 
-  defp advance_failed_demo(scope, task, role_run, demo_target, manifest, capture_opts) do
-    _capture_result = Artifacts.capture_demo(scope, task, demo_target, capture_opts)
+  defp advance_failed_demo(scope, task, role_run, scratch_dir, manifest, capture_opts) do
+    _capture_result = Artifacts.capture_demo(scope, task, scratch_dir, capture_opts)
 
     {:ok, updated_role_run} =
       role_run
@@ -828,52 +800,9 @@ defmodule Rail.Pipeline.Actions.SettleRun do
 
   defp issue_description(%Task{}), do: nil
 
-  defp resolve_demo_target(task, scratch_dir, opts) do
-    cond do
-      is_binary(opts[:scratch_dir]) ->
-        opts[:scratch_dir]
-
-      is_binary(opts[:scratch_path]) ->
-        opts[:scratch_path]
-
-      File.exists?(Path.join([scratch_dir, "demo", "manifest.json"])) or
-          File.exists?(Path.join([scratch_dir, "manifest.json"])) ->
-        scratch_dir
-
-      is_binary(task.worktree_path) and
-          (File.exists?(Path.join([task.worktree_path, ".rail", "demo", "manifest.json"])) or
-             File.exists?(Path.join([task.worktree_path, "demo", "manifest.json"])) or
-             File.exists?(Path.join([task.worktree_path, "manifest.json"]))) ->
-        task.worktree_path
-
-      true ->
-        scratch_dir
-    end
-  end
-
-  defp resolve_qa_target(task, scratch_dir, opts) do
-    cond do
-      is_binary(opts[:scratch_dir]) ->
-        opts[:scratch_dir]
-
-      is_binary(opts[:scratch_path]) ->
-        opts[:scratch_path]
-
-      is_binary(task.worktree_path) and
-          (File.exists?(Path.join([task.worktree_path, ".rail", "qa", "manifest.json"])) or
-             File.exists?(Path.join([task.worktree_path, "qa", "manifest.json"])) or
-             File.exists?(Path.join([task.worktree_path, "manifest.json"]))) ->
-        task.worktree_path
-
-      true ->
-        scratch_dir
-    end
-  end
-
   defp qa_manifest_exists?(target) do
     is_binary(target) and
       (File.exists?(Path.join(target, "manifest.json")) or
-         File.exists?(Path.join([target, "qa", "manifest.json"])) or
-         File.exists?(Path.join([target, ".rail", "qa", "manifest.json"])))
+         File.exists?(Path.join([target, "qa", "manifest.json"])))
   end
 end

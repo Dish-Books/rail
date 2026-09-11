@@ -99,7 +99,7 @@ defmodule Rail.Pipeline.Utils.PrepareScratchTest do
 
     scratch_dir = create_temp_git_repo()
 
-    assert {:ok, ^scratch_dir} = prepare_scratch(task, scratch_dir)
+    assert {:ok, ^scratch_dir} = prepare_scratch(%{task | scratch_path: scratch_dir})
 
     assert File.dir?(Path.join(scratch_dir, "tickets"))
     assert File.dir?(Path.join(scratch_dir, "plans"))
@@ -138,7 +138,7 @@ defmodule Rail.Pipeline.Utils.PrepareScratchTest do
 
     scratch_dir = create_temp_git_repo()
 
-    assert {:ok, ^scratch_dir} = prepare_scratch(task, scratch_dir)
+    assert {:ok, ^scratch_dir} = prepare_scratch(%{task | scratch_path: scratch_dir})
 
     plan_path = Path.join(scratch_dir, "plan.md")
     assert File.exists?(plan_path)
@@ -158,7 +158,7 @@ defmodule Rail.Pipeline.Utils.PrepareScratchTest do
 
     scratch_dir = create_temp_git_repo()
 
-    assert {:ok, ^scratch_dir} = prepare_scratch(task, scratch_dir)
+    assert {:ok, ^scratch_dir} = prepare_scratch(%{task | scratch_path: scratch_dir})
     refute File.exists?(Path.join(scratch_dir, "plan.md"))
   end
 
@@ -188,7 +188,7 @@ defmodule Rail.Pipeline.Utils.PrepareScratchTest do
 
     scratch_dir = create_temp_git_repo()
 
-    assert {:ok, ^scratch_dir} = prepare_scratch(task, scratch_dir)
+    assert {:ok, ^scratch_dir} = prepare_scratch(%{task | scratch_path: scratch_dir})
     reports_file = Path.join(scratch_dir, "outstanding_reports.md")
     assert File.exists?(reports_file)
     assert File.read!(reports_file) =~ "### Reviewer\n\nNeeds better tests"
@@ -228,13 +228,13 @@ defmodule Rail.Pipeline.Utils.PrepareScratchTest do
 
     scratch_dir = create_temp_git_repo()
 
-    assert {:ok, ^scratch_dir} = prepare_scratch(task, scratch_dir)
+    assert {:ok, ^scratch_dir} = prepare_scratch(%{task | scratch_path: scratch_dir})
     assert File.exists?(Path.join([scratch_dir, "design", "manifest.json"]))
 
     # Test architect stage with string stage
     task_arch = %{task | stage: :architect}
     scratch_dir2 = create_temp_git_repo()
-    assert {:ok, ^scratch_dir2} = prepare_scratch(task_arch, scratch_dir2)
+    assert {:ok, ^scratch_dir2} = prepare_scratch(%{task_arch | scratch_path: scratch_dir2})
     assert File.exists?(Path.join([scratch_dir2, "design", "manifest.json"]))
   end
 
@@ -246,10 +246,10 @@ defmodule Rail.Pipeline.Utils.PrepareScratchTest do
 
     scratch_dir = create_temp_git_repo()
 
-    assert {:ok, ^scratch_dir} = prepare_scratch(task, scratch_dir)
+    assert {:ok, ^scratch_dir} = prepare_scratch(%{task | scratch_path: scratch_dir})
 
     task_generic = %{task | stage: :ready_to_merge}
-    assert {:ok, ^scratch_dir} = prepare_scratch(task_generic, scratch_dir)
+    assert {:ok, ^scratch_dir} = prepare_scratch(%{task_generic | scratch_path: scratch_dir})
   end
 
   test "prepare_scratch for qa_lead materializes latest QA report into scratch/qa", %{task: task} do
@@ -280,7 +280,7 @@ defmodule Rail.Pipeline.Utils.PrepareScratchTest do
       })
       |> Repo.insert()
 
-    assert {:ok, ^scratch_dir} = prepare_scratch(task, scratch_dir)
+    assert {:ok, ^scratch_dir} = prepare_scratch(%{task | scratch_path: scratch_dir})
     assert File.exists?(Path.join([scratch_dir, "qa", "manifest.json"]))
     assert File.exists?(Path.join([scratch_dir, "qa", "output.txt"]))
     assert File.read!(Path.join([scratch_dir, "qa", "output.txt"])) == "PASS EVIDENCE"

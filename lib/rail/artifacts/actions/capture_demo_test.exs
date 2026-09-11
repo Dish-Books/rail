@@ -17,7 +17,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
 
   setup do
     dir = Path.join(@tmp_base, "demo_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(dir)
+    File.mkdir_p!(Path.join(dir, "demo"))
 
     {:ok, ws} =
       Projects.upsert_linear_workspace(system_scope(), %{
@@ -79,7 +79,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
           github_token: "gho_token_12206"
         })
 
-      ArtifactHelpers.write_demo_manifest(dir)
+      ArtifactHelpers.write_demo_manifest(Path.join(dir, "demo"))
 
       LinearMock.mock_file_upload_success(
         upload_url: "https://api.linear.app/upload/dmo_1",
@@ -129,7 +129,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
       scope = Scope.user_scope()
 
       File.write!(
-        Path.join(dir, "manifest.json"),
+        Path.join([dir, "demo", "manifest.json"]),
         Jason.encode!(%{
           "outcome" => "declined",
           "note" => "No UI touched",
@@ -143,7 +143,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
 
     test "propagates validator failure", %{dir: dir} do
       scope = Scope.for_system()
-      File.write!(Path.join(dir, "manifest.json"), "{invalid")
+      File.write!(Path.join([dir, "demo", "manifest.json"]), "{invalid")
 
       assert {:error, msg} = Artifacts.capture_demo(scope, "tsk_err", dir)
       assert msg =~ "Failed to parse demo manifest"
@@ -185,17 +185,17 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
       project: project
     } do
       scope = Scope.for_system()
-      ArtifactHelpers.write_demo_manifest(dir)
+      ArtifactHelpers.write_demo_manifest(Path.join(dir, "demo"))
 
       # Frame file unreadable before upload
-      frame_file = Path.join(dir, "ac1-0.png")
+      frame_file = Path.join([dir, "demo", "ac1-0.png"])
       File.chmod!(frame_file, 0o000)
       assert {:error, msg} = Artifacts.capture_demo(scope, "tsk_unreadable_frame", dir, project: project)
       assert msg =~ "Failed to read demo frame"
       File.chmod!(frame_file, 0o644)
 
       # Re-write manifest and frame
-      ArtifactHelpers.write_demo_manifest(dir)
+      ArtifactHelpers.write_demo_manifest(Path.join(dir, "demo"))
 
       # Upload error
       Req.Test.expect(Rail.Linear, fn conn ->
@@ -225,7 +225,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
     test "handles unfilmable segment in recorded demo", %{dir: dir, project: project} do
       scope = Scope.for_system()
 
-      ArtifactHelpers.write_demo_manifest(dir, %{
+      ArtifactHelpers.write_demo_manifest(Path.join(dir, "demo"), %{
         "segments" => [
           %{
             "criterionIndex" => 1,
@@ -302,7 +302,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
           owner_user_id: owner.id
         })
 
-      ArtifactHelpers.write_demo_manifest(dir)
+      ArtifactHelpers.write_demo_manifest(Path.join(dir, "demo"))
 
       LinearMock.mock_file_upload_success(
         upload_url: "https://api.linear.app/upload/dmo_owner",
