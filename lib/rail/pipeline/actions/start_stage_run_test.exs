@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.StartStageRunTest do
   use Rail.DataCase, async: true
 
-  import Rail.Pipeline.Utils.Scratch, only: [capture: 3]
+  import Rail.Pipeline.Utils.CaptureScratch
 
   alias Rail.Issues
   alias Rail.Pipeline
@@ -269,7 +269,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
     File.write!(Path.join(scratch_dir, "plan.md"), "# Architectural Plan\nSteps to implement.")
     on_exit(fn -> File.rm_rf(scratch_dir) end)
 
-    {:ok, _captured} = capture(:architect, task, scratch_dir)
+    {:ok, _captured} = capture_scratch(:architect, task, scratch_dir)
 
     {:ok, %Plan{}} = Pipeline.get_plan(system_scope(), task)
 
@@ -382,7 +382,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
     true_bin = System.find_executable("true") || "/usr/bin/true"
 
     assert {:ok, %{task: %Task{id: ^task_id, stage_state: :running}}} =
-             Pipeline.start_stage_run(task, executable: true_bin)
+             Pipeline.start_stage_run(task, executable: true_bin, skip_follower: false)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}, 2000
     assert %Task{stage: :product, stage_state: :awaiting_approval} = Repo.get!(Task, task_id)

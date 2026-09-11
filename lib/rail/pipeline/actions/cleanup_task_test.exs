@@ -130,7 +130,12 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     clone_path = create_temp_git_repo(prefix: "rail_cleanup_main")
     wt_dir = Path.join(System.tmp_dir!(), "rail_cleanup_wt_#{System.unique_integer([:positive])}")
-    {:ok, worktree_path} = Git.get_or_create_worktree(%Project{clone_path: clone_path}, %Task{worktree_path: wt_dir, worktree_name: "cleanup-branch"})
+
+    {:ok, worktree_path} =
+      Git.get_or_create_worktree(%Project{clone_path: clone_path}, %Task{
+        worktree_path: wt_dir,
+        worktree_name: "cleanup-branch"
+      })
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{

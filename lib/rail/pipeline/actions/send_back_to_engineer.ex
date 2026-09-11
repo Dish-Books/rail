@@ -6,7 +6,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
   """
 
   import Ecto.Query
-  import Rail.Pipeline.Utils.CarriedReports, only: [build_carried_gate_reports: 1]
+  import Rail.Pipeline.Utils.CarriedReports
 
   alias Rail.Pipeline.Dispatcher
   alias Rail.Pipeline.Schemas.Task

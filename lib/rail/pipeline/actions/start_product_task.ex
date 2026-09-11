@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.ScratchPath
 
   alias Rail.Domain.TicketBody
   alias Rail.Git
@@ -29,13 +30,13 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
   Reuses the issue's existing task when there is one, otherwise creates one at the
   `:product` stage. Returns `{:ok, %{task: task, role_run: role_run, run: run}}`.
   """
-  def start_product_task(%Issue{project: %Project{} = project} = issue, opts \\ []) do
+  def start_product_task(%Issue{project: %Project{} = project} = issue) do
     with {:ok, task} <- Pipeline.create_task(issue, :product),
          {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :product),
          {:ok, worktree_path} <- ensure_worktree(project, task),
-         scratch_path = write_scratch(project, task, issue, opts),
+         scratch_path = write_scratch(project, task, issue),
          {:ok, role_run} <- role_run_for(task, role, worktree_path) do
-      spawn_run(task, project, issue, role, role_run, worktree_path, scratch_path, opts)
+      spawn_run(task, project, issue, role, role_run, worktree_path, scratch_path)
     end
   end
 
@@ -46,12 +47,8 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     end
   end
 
-  defp write_scratch(%Project{} = project, %Task{} = task, %Issue{} = issue, opts) do
-    scratch_path =
-      Keyword.get(opts, :scratch_dir) ||
-        Keyword.get(opts, :scratch_path) ||
-        Path.join([workspace_root(), project.id, "scratch", task.id])
-
+  defp write_scratch(%Project{} = project, %Task{} = task, %Issue{} = issue) do
+    scratch_path = scratch_path(project.id, task.id)
     tickets_dir = Path.join(scratch_path, "tickets")
     File.mkdir_p!(tickets_dir)
 
@@ -68,15 +65,11 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     scratch_path
   end
 
-  defp workspace_root do
-    System.get_env("RAIL_WORKSPACE_ROOT") || Path.join(System.tmp_dir!(), "rail")
-  end
-
   # The run
 
   defp role_run_for(%Task{} = task, %Role{} = role, worktree_path) do
     {head_sha, dirty_digest} =
-      case Git.branch_fingerprint(worktree_path, []) do
+      case Git.branch_fingerprint(worktree_path) do
         %{head_sha: sha, dirty_digest: digest} -> {sha, digest}
         _other -> {nil, nil}
       end
@@ -138,7 +131,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     """)
   end
 
-  defp spawn_run(task, project, issue, role, role_run, worktree_path, scratch_path, opts) do
+  defp spawn_run(task, project, issue, role, role_run, worktree_path, scratch_path) do
     context =
       [workspace_brief(task, project, worktree_path), brief(issue)]
       |> Enum.reject(&(&1 == ""))
@@ -166,14 +159,12 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
         work_dir: worktree_path
       )
 
-    spawner_opts =
-      opts
-      |> Keyword.put_new(:backend, role.cli_backend)
-      |> Keyword.put_new(:cd, worktree_path)
-      |> Keyword.put_new(:scratch_path, scratch_path)
-      |> Keyword.put_new(:on_finished, fn _run, outcome ->
-        Pipeline.settle_run(task.id, role_run.id, outcome, opts)
-      end)
+    spawner_opts = [
+      backend: role.cli_backend,
+      cd: worktree_path,
+      scratch_path: scratch_path,
+      on_finished: fn _run, outcome -> Pipeline.settle_run(task.id, role_run.id, outcome) end
+    ]
 
     case Runs.start_run(role_run, :stage, argv, spawner_opts) do
       {:ok, run} -> finalize(task, role_run, run)

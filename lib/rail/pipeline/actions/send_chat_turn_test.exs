@@ -583,7 +583,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
                task_id,
                role_id,
                "Async message",
-               executable: stub_bin
+               executable: stub_bin,
+               skip_follower: false
              )
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :chat_dispatched}}, 1_000

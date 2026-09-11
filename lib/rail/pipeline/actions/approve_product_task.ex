@@ -8,13 +8,14 @@ defmodule Rail.Pipeline.Actions.ApproveProductTask do
   description, and the design stage starts.
   """
 
+  import Rail.Pipeline.Utils.ScratchPath
+
   alias Rail.Domain.TicketBody
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Dispatcher
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Pipeline.Utils.Scratch
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
@@ -75,7 +76,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductTask do
   # Linear
 
   defp publish(%Task{project: %Project{} = project} = task, %Issue{} = issue, opts) do
-    scratch_path = scratch_path(project, task, opts)
+    scratch_path = resolve_scratch_path(project, task, opts)
     ticket_file = Path.join([scratch_path, "tickets", "#{issue.identifier}.md"])
 
     if File.exists?(ticket_file) do
@@ -126,10 +127,10 @@ defmodule Rail.Pipeline.Actions.ApproveProductTask do
     {:error, reason}
   end
 
-  defp scratch_path(%Project{} = project, %Task{} = task, opts) do
+  defp resolve_scratch_path(%Project{} = project, %Task{} = task, opts) do
     Keyword.get(opts, :scratch_dir) ||
       Keyword.get(opts, :scratch_path) ||
-      Scratch.default_scratch_path(project, task)
+      scratch_path(project.id, task.id)
   end
 
   defp owner_user(%Issue{owner_user_id: user_id}) when is_binary(user_id), do: %{id: user_id}

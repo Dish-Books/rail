@@ -2,8 +2,7 @@ defmodule Rail.Domain.TicketBody do
   @moduledoc """
   Represents a parsed Linear ticket specification written to `$RAIL_SCRATCH/tickets/<identifier>.md`.
 
-  Also provides utilities for legacy plan extraction, acceptance criteria parsing,
-  and split-out ticket management.
+  Also provides utilities for acceptance criteria parsing and split-out ticket management.
   """
   use Ecto.Schema
 
@@ -11,7 +10,6 @@ defmodule Rail.Domain.TicketBody do
 
   @derive Jason.Encoder
 
-  @plan_heading_pattern ~r/^##\s+implementation plan\s*$/i
   @fence_pattern ~r/^(```|~~~)/
   @criteria_heading_pattern ~r/^##\s+acceptance criteria\s*$/i
   @bullet_pattern ~r/^[-*]\s+(.*)$/
@@ -121,41 +119,6 @@ defmodule Rail.Domain.TicketBody do
 
   def format(title, description) when is_binary(title) do
     format(%__MODULE__{title: title, description: description})
-  end
-
-  @doc """
-  Splits a body into the original ticket specification and an optional implementation plan.
-
-  Headings inside fenced code blocks are ignored.
-  Returns `%{ticket: String.t(), plan: String.t() | nil}`.
-  """
-  def split(""), do: %{ticket: "", plan: nil}
-
-  def split(body) when is_binary(body) do
-    normalized = String.replace(body, "\r\n", "\n")
-    lines = String.split(normalized, "\n")
-
-    split_index = find_plan_heading_index(lines, 0, false)
-
-    if is_nil(split_index) do
-      %{ticket: body, plan: nil}
-    else
-      {ticket_lines, plan_lines} = Enum.split(lines, split_index)
-      ticket = ticket_lines |> Enum.join("\n") |> String.trim_trailing()
-
-      after_heading =
-        plan_lines
-        |> Enum.drop(1)
-        |> Enum.join("\n")
-        |> String.trim()
-
-      if after_heading == "" do
-        %{ticket: ticket, plan: nil}
-      else
-        plan = plan_lines |> Enum.join("\n") |> String.trim()
-        %{ticket: ticket, plan: plan}
-      end
-    end
   end
 
   @doc """
@@ -352,23 +315,6 @@ defmodule Rail.Domain.TicketBody do
       end
 
     %{base | priority: cast_priority(Map.get(fields, "priority")), estimate: cast_estimate(Map.get(fields, "estimate"))}
-  end
-
-  defp find_plan_heading_index([], _idx, _in_fence), do: nil
-
-  defp find_plan_heading_index([line | rest], idx, in_fence) do
-    trimmed_left = String.trim_leading(line)
-    trimmed = String.trim(line)
-
-    if Regex.match?(@fence_pattern, trimmed_left) do
-      find_plan_heading_index(rest, idx + 1, not in_fence)
-    else
-      if not in_fence and Regex.match?(@plan_heading_pattern, trimmed) do
-        idx
-      else
-        find_plan_heading_index(rest, idx + 1, in_fence)
-      end
-    end
   end
 
   defp process_criteria_line(line, acc, {section_state, in_fence, current_item}) do

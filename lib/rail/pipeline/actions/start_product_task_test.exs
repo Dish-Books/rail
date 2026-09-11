@@ -1,6 +1,8 @@
 defmodule Rail.Pipeline.Actions.StartProductTaskTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.ScratchPath
+
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -63,8 +65,7 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     %Role{id: role_id} = role
-    %Task{id: task_id} = insert_task(project, issue)
-    scratch_dir = temp_scratch_dir()
+    %Task{id: task_id} = task = insert_task(project, issue)
 
     assert {:ok,
             %{
@@ -72,16 +73,16 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
               role_run: %RoleRun{task_id: ^task_id, role_id: ^role_id, attempts: 1, status: :running},
               run: %Run{task_id: ^task_id}
             }} =
-             Pipeline.start_product_task(issue,
-               executable: System.find_executable("true") || "/usr/bin/true",
-               skip_follower: true,
-               scratch_dir: scratch_dir
-             )
+             Pipeline.start_product_task(issue)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :dispatched}}
     assert byte_size(worktree_path) > 0
 
-    content = scratch_dir |> Path.join("tickets/#{issue.identifier}.md") |> File.read!()
+    content =
+      project.id
+      |> scratch_path(task.id)
+      |> Path.join("tickets/#{issue.identifier}.md")
+      |> File.read!()
 
     assert content =~ "title: Attachments follow their source document"
     assert content =~ "priority: medium"
@@ -103,11 +104,7 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
     LinearMock.mock_update_issue_success(%{"id" => issue.external_id})
 
     assert {:ok, %{task: %Task{issue_id: ^issue_id, stage: :product} = task}} =
-             Pipeline.start_product_task(issue,
-               executable: System.find_executable("true") || "/usr/bin/true",
-               skip_follower: true,
-               scratch_dir: temp_scratch_dir()
-             )
+             Pipeline.start_product_task(issue)
 
     # The owner lives on the issue; the task only links to it.
     assert %Issue{owner_user_id: ^user_id} = Repo.get!(Issue, task.issue_id)
@@ -154,12 +151,5 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
       project.id
     )
     |> Repo.insert!()
-  end
-
-  defp temp_scratch_dir do
-    dir = Path.join("/tmp", "rail_scratch_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(dir)
-    on_exit(fn -> File.rm_rf(dir) end)
-    dir
   end
 end

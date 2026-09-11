@@ -4,7 +4,7 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
   Releases local disk resources when a task is completed or being torn down.
   """
 
-  import Rail.Pipeline.Utils.Scratch, only: [default_scratch_path: 2]
+  import Rail.Pipeline.Utils.ScratchPath
 
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
@@ -80,7 +80,7 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
   end
 
   defp remove_scratch_files(project, task, opts) do
-    scratch_dir = Keyword.get(opts, :scratch_dir) || default_scratch_path(project, task)
+    scratch_dir = Keyword.get(opts, :scratch_dir) || scratch_path(project.id, task.id)
 
     if is_binary(scratch_dir) and File.exists?(scratch_dir) do
       File.rm_rf!(scratch_dir)

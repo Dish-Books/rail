@@ -331,6 +331,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
       %Project{} = project ->
         task = Repo.get(Task, task.id) || task
         role_run = Repo.get(RoleRun, role_run.id) || role_run
+
         case Git.get_or_create_worktree(project, task) do
           {:ok, resolved_wt_path} ->
             proceed_with_chat_execution(task, project, role, role_run, resolved_wt_path, opts)

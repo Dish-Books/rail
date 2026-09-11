@@ -78,12 +78,21 @@ defmodule Rail.Runs.Actions.StartRun do
             if String.starts_with?(first, "/") or File.exists?(first) do
               {first, rest}
             else
-              {ArgvBuilder.executable_path(backend, opts), argv}
+              {backend_executable(backend, opts), argv}
             end
 
           _other ->
-            {ArgvBuilder.executable_path(backend, opts), []}
+            {backend_executable(backend, opts), []}
         end
+    end
+  end
+
+  # Tests configure `:run_executable` as the stub the backends table would name in
+  # production.
+  defp backend_executable(backend, opts) do
+    case ArgvBuilder.executable_path(backend, opts) do
+      path when is_binary(path) and path != "" -> path
+      _unconfigured -> Application.get_env(:rail, :run_executable, "")
     end
   end
 
@@ -144,7 +153,7 @@ defmodule Rail.Runs.Actions.StartRun do
   end
 
   defp follow(run, role_run, port, os_pid, stream_path, backend, opts) do
-    if Keyword.get(opts, :skip_follower, false) do
+    if Keyword.get(opts, :skip_follower, Application.get_env(:rail, :skip_follower, false)) do
       Tools.connect_port(port, nil)
       {:ok, run}
     else

@@ -1,7 +1,8 @@
 defmodule Rail.Pipeline.Actions.SettleRunTest do
   use Rail.DataCase, async: true
 
-  import Rail.Pipeline.Utils.Scratch
+  import Rail.Pipeline.Utils.CaptureScratch
+  import Rail.Pipeline.Utils.PrepareScratch
   import RailTest.Mocks.GitHub
   import RailTest.PipelineHelpers
 
@@ -175,7 +176,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     File.write!(Path.join(plan_dir, "plan.md"), "# Architecture Plan")
     on_exit(fn -> File.rm_rf(plan_dir) end)
 
-    {:ok, _captured} = capture(:architect, task, plan_dir)
+    {:ok, _captured} = capture_scratch(:architect, task, plan_dir)
 
     {:ok, _plan} = Pipeline.get_plan(system_scope(), task_id)
 
@@ -1339,7 +1340,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     # Step 2: Scratch prepare for QA Lead
     lead_scratch_dir = create_temp_git_repo()
-    assert {:ok, ^lead_scratch_dir} = prepare(task_lead_queued, lead_scratch_dir)
+    assert {:ok, ^lead_scratch_dir} = prepare_scratch(task_lead_queued, lead_scratch_dir)
 
     # Verify materialization into lead scratch dir
     assert File.exists?(Path.join([lead_scratch_dir, "qa", "manifest.json"]))

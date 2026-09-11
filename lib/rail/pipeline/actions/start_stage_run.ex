@@ -5,7 +5,9 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
 
   import Ecto.Query
   import Rail.Pipeline.Utils.Briefs
-  import Rail.Pipeline.Utils.Scratch
+  import Rail.Pipeline.Utils.IssueIdentifier
+  import Rail.Pipeline.Utils.PrepareScratch
+  import Rail.Pipeline.Utils.ScratchPath
 
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Plan
@@ -76,16 +78,16 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
     scratch_path =
       Keyword.get(opts, :scratch_dir) ||
         Keyword.get(opts, :scratch_path) ||
-        default_scratch_path(project, task)
+        scratch_path(project.id, task.id)
 
-    {:ok, _scratch} = prepare(task, scratch_path)
+    {:ok, _scratch} = prepare_scratch(task, scratch_path)
 
     fp_opts = if stage == :demo, do: [ignore_rail: true], else: []
     {head_sha, dirty_digest} = resolve_fingerprint(worktree_path, fp_opts)
 
     {:ok, role_run} = resolve_or_create_role_run(task, role, head_sha, dirty_digest)
 
-    identifier = resolve_identifier(task)
+    identifier = issue_identifier(task)
     brief = build_brief(task, worktree_path, base_branch, identifier, role, stage)
     plan_content = latest_plan_content(task)
 

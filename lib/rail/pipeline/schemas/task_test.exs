@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Schemas.TaskTest do
   use Rail.DataCase, async: true
 
-  import Rail.Pipeline.Utils.Scratch, only: [capture: 3]
+  import Rail.Pipeline.Utils.CaptureScratch
   import RailTest.PipelineHelpers
 
   alias Rail.Artifacts
@@ -235,7 +235,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     on_exit(fn -> File.rm_rf(plan_scratch_45368) end)
     File.write!(Path.join(plan_scratch_45368, "plan.md"), "# Plan 13101")
 
-    {:ok, _captured} = capture(:architect, task, plan_scratch_45368)
+    {:ok, _captured} = capture_scratch(:architect, task, plan_scratch_45368)
 
     {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
 

@@ -4,7 +4,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReady do
   Promotes draft pull requests, clears errors, and initiates a mergeability refresh.
   """
 
-  import Rail.Pipeline.Utils.GitHubTokenResolver, only: [resolve_github_token: 3]
+  import Rail.Pipeline.Utils.GitHubTokenResolver
 
   alias Rail.GitHub
   alias Rail.Pipeline.Schemas.Task

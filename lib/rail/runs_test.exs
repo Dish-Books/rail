@@ -199,11 +199,7 @@ defmodule Rail.RunsTest do
       })
 
     {:ok, run} =
-      Runs.start_run(
-        role_run,
-        :stage,
-        ["/bin/sleep", "30"]
-      )
+      Runs.start_run(role_run, :stage, ["/bin/sleep", "30"], skip_follower: false)
 
     follower_pid = Runs.get_follower_pid(run.id)
     assert is_pid(follower_pid)

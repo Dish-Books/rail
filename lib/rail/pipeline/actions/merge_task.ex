@@ -5,7 +5,7 @@ defmodule Rail.Pipeline.Actions.MergeTask do
   transitions the Linear issue to Done, and marks the task as merged.
   """
 
-  import Rail.Pipeline.Utils.GitHubTokenResolver, only: [resolve_github_token: 3]
+  import Rail.Pipeline.Utils.GitHubTokenResolver
 
   alias Rail.Git
   alias Rail.GitHub

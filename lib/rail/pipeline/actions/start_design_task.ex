@@ -8,13 +8,13 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.ScratchPath
 
   alias Rail.Domain.TicketBody
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Pipeline.Utils.Scratch
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
@@ -64,7 +64,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
     scratch_path =
       Keyword.get(opts, :scratch_dir) ||
         Keyword.get(opts, :scratch_path) ||
-        Scratch.default_scratch_path(project, task)
+        scratch_path(project.id, task.id)
 
     File.mkdir_p!(Path.join(scratch_path, "design"))
 

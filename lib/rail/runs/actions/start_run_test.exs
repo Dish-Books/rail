@@ -202,7 +202,7 @@ defmodule Rail.Runs.Actions.StartRunTest do
     assert run1.status == :running
     Tools.terminate_os_process(run1.os_pid, grace_period: 50)
 
-    {:ok, run2} = Runs.start_run(role_run, :stage, ["/bin/sleep", "1"])
+    {:ok, run2} = Runs.start_run(role_run, :stage, ["/bin/sleep", "1"], skip_follower: false)
     assert run2.status == :running
     follower_pid = Runs.get_follower_pid(run2.id)
     if is_pid(follower_pid), do: Rail.Runs.FollowerSupervisor.stop_follower(follower_pid)

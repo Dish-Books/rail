@@ -12,7 +12,6 @@ defmodule Rail.Runs.PromptBuilder do
   - Direct chat turns: passes `prompt_override` through unchanged.
   """
 
-  alias Rail.Domain.TicketBody
 
   @doc """
   Constructs the interactive chat turn prompt for the agent.
@@ -107,13 +106,13 @@ defmodule Rail.Runs.PromptBuilder do
           opts[:ticket]
 
         is_binary(opts[:task_description]) ->
-          TicketBody.split(opts[:task_description]).ticket
+          opts[:task_description]
 
         is_binary(opts[:description]) ->
-          TicketBody.split(opts[:description]).ticket
+          opts[:description]
 
         is_map(opts[:task]) and is_binary(Map.get(opts[:task], :description)) ->
-          TicketBody.split(Map.get(opts[:task], :description)).ticket
+          Map.get(opts[:task], :description)
 
         true ->
           ""

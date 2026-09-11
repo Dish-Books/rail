@@ -1,12 +1,11 @@
 defmodule Rail.Domain.FormattersTest do
   use Rail.DataCase, async: true
 
-  import Rail.Pipeline.Utils.Scratch, only: [capture: 3]
-
   alias Rail.Domain.Formatters
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Plan
   alias Rail.Projects
   alias Rail.Repo
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -512,38 +511,27 @@ defmodule Rail.Domain.FormattersTest do
   end
 
   describe "ticket_for/1 and plan_for/1" do
-    test "ticket_for returns ticket content or fallback" do
-      assert Formatters.ticket_for(%{description: "Build user auth\n\n## Implementation plan\n1. Do stuff"}) ==
-               "Build user auth"
+    test "ticket_for returns the description or fallback" do
+      assert Formatters.ticket_for(%{description: "Build user auth"}) == "Build user auth"
 
       assert Formatters.ticket_for(%{description: "   "}) == "_No ticket body yet._"
       assert Formatters.ticket_for(nil) == "_No ticket body yet._"
     end
 
-    test "plan_for returns stored plan or plan from description split", %{task: task} do
-      {:ok, _issue} =
-        Issue
-        |> Repo.get!(task.issue_id)
-        |> Issue.changeset(%{description: "Ticket text\n\n## Implementation plan\nStep 1\nStep 2"}, task.project_id)
-        |> Repo.update()
-
+    test "plan_for returns the stored plan", %{task: task} do
       {:ok, task} = Pipeline.get_task(system_scope(), task.id)
 
-      assert Formatters.plan_for(task) == "## Implementation plan\nStep 1\nStep 2"
+      assert is_nil(Formatters.plan_for(task))
 
-      # Stored plan takes precedence
-      plan_scratch_33706 = Path.join("/tmp", "rail_plan_scratch_#{System.unique_integer([:positive])}")
-      File.mkdir_p!(plan_scratch_33706)
-      on_exit(fn -> File.rm_rf(plan_scratch_33706) end)
-      File.write!(Path.join(plan_scratch_33706, "plan.md"), "# Database Plan")
-
-      {:ok, _captured} = capture(:architect, task, plan_scratch_33706)
+      %Plan{}
+      |> Plan.changeset(%{content: "# Database Plan", captured_at: DateTime.utc_now()}, task.id)
+      |> Repo.insert!()
 
       {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
       assert Formatters.plan_for(task) == "# Database Plan"
 
       # Task with plans association loaded
-      task_with_plans = %{plans: [%Rail.Pipeline.Schemas.Plan{content: "# In-memory plan"}]}
+      task_with_plans = %{plans: [%Plan{content: "# In-memory plan"}]}
       assert Formatters.plan_for(task_with_plans) == "# In-memory plan"
 
       # Empty plan returns nil

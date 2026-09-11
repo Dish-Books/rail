@@ -3,7 +3,6 @@ defmodule RailWeb.TaskDetailLiveTest do
 
   import Ecto.Query
   import Phoenix.LiveViewTest
-  import Rail.Pipeline.Utils.Scratch, only: [capture: 3]
   import RailTest.PipelineHelpers
 
   alias Ecto.Adapters.SQL.Sandbox
@@ -12,6 +11,7 @@ defmodule RailWeb.TaskDetailLiveTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
@@ -220,12 +220,12 @@ defmodule RailWeb.TaskDetailLiveTest do
         worktree_path: tab_worktree
       })
 
-    plan_scratch_94904 = Path.join("/tmp", "rail_plan_scratch_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(plan_scratch_94904)
-    on_exit(fn -> File.rm_rf(plan_scratch_94904) end)
-    File.write!(Path.join(plan_scratch_94904, "plan.md"), "## Architectural Plan\n1. Step one\n2. Step two")
-
-    {:ok, _captured} = capture(:architect, task, plan_scratch_94904)
+    %Plan{}
+    |> Plan.changeset(
+      %{content: "## Architectural Plan\n1. Step one\n2. Step two", captured_at: DateTime.utc_now()},
+      task.id
+    )
+    |> Repo.insert!()
 
     {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
 

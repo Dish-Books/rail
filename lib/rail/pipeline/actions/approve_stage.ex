@@ -4,7 +4,7 @@ defmodule Rail.Pipeline.Actions.ApproveStage do
   """
 
   import Ecto.Query
-  import Rail.Pipeline.Utils.Scratch
+  import Rail.Pipeline.Utils.PrepareScratch
 
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Issues
@@ -74,7 +74,7 @@ defmodule Rail.Pipeline.Actions.ApproveStage do
          {:ok, design, direction} <- validate_design_and_direction(task),
          :ok <- publish_design_comment(scope, task, issue, design, direction) do
       scratch_dir = Keyword.get(opts, :scratch_dir)
-      if scratch_dir, do: prepare(task, scratch_dir)
+      if scratch_dir, do: prepare_scratch(task, scratch_dir)
       advance_stage(task, :architect, opts)
     end
   end

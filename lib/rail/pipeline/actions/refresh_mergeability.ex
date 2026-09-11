@@ -7,7 +7,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeability do
   - Skipped when there is no pull request or when the task is already merged.
   """
 
-  import Rail.Pipeline.Utils.GitHubTokenResolver, only: [resolve_github_token: 3]
+  import Rail.Pipeline.Utils.GitHubTokenResolver
 
   alias Rail.GitHub
   alias Rail.Pipeline.Schemas.Task

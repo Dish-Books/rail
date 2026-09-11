@@ -148,14 +148,14 @@ defmodule Rail.E2E.TicketLifecycleTest do
       "updatedAt" => "2026-09-10T00:01:00Z"
     })
 
-    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir)
+    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir, skip_follower: false)
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}, 10_000
 
     task = Repo.get!(Task, task_id)
     assert %Task{stage: :product, stage_state: :awaiting_approval} = task
 
     assert {:ok, %{task: %Task{stage: :architect, stage_state: :queued} = task}} =
-             Rail.Pipeline.approve_product_task(task, scratch_dir: scratch_dir)
+             Rail.Pipeline.approve_product_task(task, scratch_dir: scratch_dir, skip_follower: false)
 
     assert {:ok,
             %RoleRun{
@@ -188,7 +188,7 @@ defmodule Rail.E2E.TicketLifecycleTest do
       "updatedAt" => "2026-09-10T00:02:00Z"
     })
 
-    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir)
+    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir, skip_follower: false)
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}, 10_000
 
     task = Repo.get!(Task, task_id)
@@ -203,12 +203,12 @@ defmodule Rail.E2E.TicketLifecycleTest do
     # 4. Human approves plan -> advances to :engineer
     # -------------------------------------------------------------------------
     assert {:ok, %Task{stage: :engineer, stage_state: :queued} = task} =
-             Rail.Pipeline.approve_stage(scope, task, scratch_dir: scratch_dir)
+             Rail.Pipeline.approve_stage(scope, task, scratch_dir: scratch_dir, skip_follower: false)
 
     # -------------------------------------------------------------------------
     # 5. Engineer run starts and settles -> touches worktree, commits, advances to :review
     # -------------------------------------------------------------------------
-    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir)
+    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir, skip_follower: false)
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}, 10_000
 
     assert %Task{stage: :review, stage_state: :queued, worktree_path: eng_wt_path} = task = Repo.get!(Task, task_id)
@@ -224,7 +224,7 @@ defmodule Rail.E2E.TicketLifecycleTest do
     # -------------------------------------------------------------------------
     # 6. Reviewer run starts and settles -> parses VERDICT: PASSED, advances to :qa
     # -------------------------------------------------------------------------
-    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir)
+    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir, skip_follower: false)
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}, 10_000
 
     task = Repo.get!(Task, task_id)
@@ -243,7 +243,7 @@ defmodule Rail.E2E.TicketLifecycleTest do
       "body" => "QA Report"
     })
 
-    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir)
+    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir, skip_follower: false)
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}, 10_000
 
     task = Repo.get!(Task, task_id)
@@ -258,7 +258,7 @@ defmodule Rail.E2E.TicketLifecycleTest do
     # -------------------------------------------------------------------------
     # 8. QA Lead run starts and settles -> parses VERDICT: PASSED, advances to :demo
     # -------------------------------------------------------------------------
-    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir)
+    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir, skip_follower: false)
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}, 10_000
 
     task = Repo.get!(Task, task_id)
@@ -283,7 +283,7 @@ defmodule Rail.E2E.TicketLifecycleTest do
       "body" => "Demo recorded"
     })
 
-    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir)
+    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir, skip_follower: false)
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}, 10_000
 
     assert %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, worktree_path: worktree_path_before_merge} =
@@ -400,14 +400,14 @@ defmodule Rail.E2E.TicketLifecycleTest do
       "state" => %{"name" => "In Progress"}
     })
 
-    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir)
+    {:ok, _dispatched} = Rail.Pipeline.start_stage_run(task, scratch_dir: scratch_dir, skip_follower: false)
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}, 10_000
 
     task = Repo.get!(Task, task_id)
     assert %Task{stage: :product, stage_state: :awaiting_approval} = task
 
     assert {:ok, %{task: %Task{stage: :architect, stage_state: :queued}}} =
-             Rail.Pipeline.approve_product_task(task, scratch_dir: scratch_dir)
+             Rail.Pipeline.approve_product_task(task, scratch_dir: scratch_dir, skip_follower: false)
 
     assert {:ok, %RoleRun{status: :finished, exit_code: 0}} = Rail.Runs.get_latest_role_run_for_task(task_id)
   end

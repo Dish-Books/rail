@@ -8,7 +8,7 @@ defmodule Rail.Pipeline do
   alias Rail.Pipeline.Dispatcher
   alias Rail.Pipeline.Queue
 
-  defdelegate start_product_task(issue, opts \\ []), to: Actions.StartProductTask
+  defdelegate start_product_task(issue), to: Actions.StartProductTask
   defdelegate approve_product_task(task, opts \\ []), to: Actions.ApproveProductTask
   defdelegate start_design_task(task, opts \\ []), to: Actions.StartDesignTask
 

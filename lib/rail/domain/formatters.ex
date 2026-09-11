@@ -3,7 +3,6 @@ defmodule Rail.Domain.Formatters do
   This module is deprecated and should not be added to
   """
 
-  alias Rail.Domain.TicketBody
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
 
@@ -241,37 +240,25 @@ defmodule Rail.Domain.Formatters do
   """
   def ticket_for(task) do
     desc = description_of(task) || ""
-    %{ticket: ticket} = TicketBody.split(desc)
-    trimmed = String.trim(ticket)
-    if trimmed == "", do: "_No ticket body yet._", else: ticket
+    if String.trim(desc) == "", do: "_No ticket body yet._", else: desc
   end
 
   @doc """
-  Returns the architectural plan for a task, resolving from stored Plan or task description split.
+  Returns the architectural plan for a task from its stored Plan, or `nil`.
   """
   def plan_for(task) do
-    desc = description_of(task) || ""
+    case task do
+      %{plans: [%Plan{content: content} | _rest]} when is_binary(content) ->
+        if String.trim(content) == "", do: nil, else: content
 
-    stored_plan =
-      case task do
-        %{plans: [%Plan{content: content} | _rest]} when is_binary(content) ->
-          if String.trim(content) == "", do: nil, else: content
+      _other ->
+        case Rail.Pipeline.get_plan(task) do
+          {:ok, %Plan{content: content}} when is_binary(content) ->
+            if String.trim(content) == "", do: nil, else: content
 
-        _other ->
-          case Rail.Pipeline.get_plan(task) do
-            {:ok, %Plan{content: content}} when is_binary(content) ->
-              if String.trim(content) == "", do: nil, else: content
-
-            _other ->
-              nil
-          end
-      end
-
-    if stored_plan do
-      stored_plan
-    else
-      %{plan: fallback_plan} = TicketBody.split(desc)
-      if is_binary(fallback_plan) and String.trim(fallback_plan) != "", do: fallback_plan
+          _other ->
+            nil
+        end
     end
   end
 

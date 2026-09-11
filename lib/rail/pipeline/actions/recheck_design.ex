@@ -5,7 +5,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
   """
 
   import Ecto.Query
-  import Rail.Pipeline.Utils.Scratch
+  import Rail.Pipeline.Utils.ScratchPath
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Design
@@ -195,7 +195,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
         task.worktree_path
 
       true ->
-        default_scratch_path(task.project_id, task.id)
+        scratch_path(task.project_id, task.id)
     end
   end
 

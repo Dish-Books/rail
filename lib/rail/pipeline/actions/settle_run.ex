@@ -5,8 +5,9 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   """
 
   import Ecto.Query
-  import Rail.Pipeline.Utils.CarriedReports, only: [build_carried_gate_reports: 2]
-  import Rail.Pipeline.Utils.Scratch
+  import Rail.Pipeline.Utils.CaptureScratch
+  import Rail.Pipeline.Utils.CarriedReports
+  import Rail.Pipeline.Utils.ScratchPath
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Design
@@ -29,7 +30,7 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   @doc """
   Settles a finished run for a task:
   - Updates `RoleRun` and `Run` records with exit codes, outputs, and usage.
-  - Captures scratch artifacts via `Scratch.capture/3`.
+  - Captures scratch artifacts via `capture_scratch/3`.
   - Advances stage or sets approval gates on exit 0.
   - Applies retry backoff or marks failure on non-zero exit.
   - Broadcasts `pipeline_changed`.
@@ -66,13 +67,13 @@ defmodule Rail.Pipeline.Actions.SettleRun do
     scratch_dir =
       Keyword.get(opts, :scratch_dir) ||
         Keyword.get(opts, :scratch_path) ||
-        default_scratch_path(task.project_id, task.id)
+        scratch_path(task.project_id, task.id)
 
     {:ok, task} =
       if task.stage in [:product, :design, :demo, :qa] do
         {:ok, task}
       else
-        capture(task.stage, task, scratch_dir)
+        capture_scratch(task.stage, task, scratch_dir)
       end
 
     {task_attrs, updated_role_run} = resolve_settle_outcome(task, role_run, exit_code, error, scratch_dir, opts)
