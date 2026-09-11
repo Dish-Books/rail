@@ -14,7 +14,7 @@ defmodule Rail.Runs.Boot do
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
-  alias Rail.Runs.Spawner
+  alias Rail.Tools
 
   @default_starting_timeout_seconds 60
 
@@ -68,7 +68,7 @@ defmodule Rail.Runs.Boot do
       run.status == :starting and is_nil(run.os_pid) ->
         handle_starting_run(run, now, timeout_seconds)
 
-      is_integer(run.os_pid) and run.os_pid > 0 and Spawner.process_alive?(run.os_pid) ->
+      is_integer(run.os_pid) and run.os_pid > 0 and Tools.os_process_alive?(run.os_pid) ->
         handle_live_run(run, opts)
 
       true ->

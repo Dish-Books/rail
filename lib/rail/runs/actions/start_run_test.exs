@@ -1,12 +1,13 @@
-defmodule Rail.Runs.SpawnerTest do
+defmodule Rail.Runs.Actions.StartRunTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
-  alias Rail.Runs.Spawner
+  alias Rail.Tools
 
   setup do
-    tmp_dir = Path.join(System.tmp_dir!(), "spawner_test_#{System.unique_integer([:positive])}")
+    tmp_dir = Path.join(System.tmp_dir!(), "start_run_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp_dir)
 
     role_run =
@@ -26,14 +27,14 @@ defmodule Rail.Runs.SpawnerTest do
     %{role_run: role_run, tmp_dir: tmp_dir}
   end
 
-  test "spawn_run/4 spawns child, records runs row, sets os_pid and running status", %{
+  test "spawns child, records runs row, sets os_pid and running status", %{
     role_run: role_run,
     tmp_dir: tmp_dir
   } do
     stream_path = Path.join(tmp_dir, "test.ndjson")
 
     {:ok, run} =
-      Spawner.spawn_run(
+      Runs.start_run(
         role_run,
         :stage,
         ["/bin/sleep", "2"],
@@ -47,17 +48,17 @@ defmodule Rail.Runs.SpawnerTest do
     assert run.status == :running
     assert is_integer(run.os_pid)
     assert run.os_pid > 0
-    assert Spawner.process_alive?(run.os_pid)
+    assert Tools.os_process_alive?(run.os_pid)
 
     # Clean up the sleeping child
-    Spawner.terminate_os_process(run.os_pid, grace_period: 100)
+    Tools.terminate_os_process(run.os_pid, grace_period: 100)
   end
 
-  test "spawn_run/4 accepts role_run_id binary", %{role_run: role_run, tmp_dir: tmp_dir} do
+  test "accepts a role_run_id binary", %{role_run: role_run, tmp_dir: tmp_dir} do
     stream_path = Path.join(tmp_dir, "test_id.ndjson")
 
     {:ok, run} =
-      Spawner.spawn_run(
+      Runs.start_run(
         role_run.id,
         :stage,
         ["/bin/echo", "hello"],
@@ -70,7 +71,7 @@ defmodule Rail.Runs.SpawnerTest do
     Process.sleep(50)
   end
 
-  test "spawn_run/4 injects environment and streams output to files", %{
+  test "injects environment and streams output to files", %{
     role_run: role_run,
     tmp_dir: tmp_dir
   } do
@@ -82,7 +83,7 @@ defmodule Rail.Runs.SpawnerTest do
       ~s(printf '{"stream":"%s","scratch":"%s","gh":"%s"}\n' "$RAIL_STREAM" "$RAIL_SCRATCH" "$GH_TOKEN")
 
     {:ok, run} =
-      Spawner.spawn_run(
+      Runs.start_run(
         role_run,
         :stage,
         ["/bin/sh", "-c", script],
@@ -112,10 +113,10 @@ defmodule Rail.Runs.SpawnerTest do
     assert content =~ stream_path
 
     # Clean up child if still running
-    Spawner.terminate_os_process(run.os_pid, grace_period: 50)
+    Tools.terminate_os_process(run.os_pid, grace_period: 50)
   end
 
-  test "spawn_run/4 with missing binary reports error and settles run", %{
+  test "with a missing binary reports error and settles the run", %{
     role_run: role_run,
     tmp_dir: tmp_dir
   } do
@@ -123,7 +124,7 @@ defmodule Rail.Runs.SpawnerTest do
     missing_bin = "/path/to/nonexistent/cli_binary_xyz"
 
     result =
-      Spawner.spawn_run(
+      Runs.start_run(
         role_run,
         :stage,
         [missing_bin, "--help"],
@@ -133,21 +134,17 @@ defmodule Rail.Runs.SpawnerTest do
 
     assert {:error, {:missing_binary, ^missing_bin, %Run{status: :finished}}} = result
 
-    # Verify role_run row in DB
     reloaded_role_run = Repo.get!(RoleRun, role_run.id)
     assert reloaded_role_run.status == :finished
     assert reloaded_role_run.exit_code == -1
     assert reloaded_role_run.error =~ "No such CLI binary"
   end
 
-  test "spawn_run/4 starts Follower under FollowerSupervisor", %{
-    role_run: role_run,
-    tmp_dir: tmp_dir
-  } do
+  test "starts a Follower under FollowerSupervisor", %{role_run: role_run, tmp_dir: tmp_dir} do
     stream_path = Path.join(tmp_dir, "follow.ndjson")
 
     {:ok, run} =
-      Spawner.spawn_run(
+      Runs.start_run(
         role_run,
         :stage,
         ["/bin/sleep", "2"],
@@ -156,51 +153,14 @@ defmodule Rail.Runs.SpawnerTest do
       )
 
     assert run.status == :running
-    follower_pid = Rail.Runs.get_follower_pid(run.id)
+    follower_pid = Runs.get_follower_pid(run.id)
     assert is_pid(follower_pid)
     assert Process.alive?(follower_pid)
 
-    Spawner.terminate_os_process(run.os_pid, grace_period: 100)
+    Tools.terminate_os_process(run.os_pid, grace_period: 100)
   end
 
-  test "process_alive?/1 checks OS PID liveness" do
-    self_pid = String.to_integer(System.pid())
-    assert Spawner.process_alive?(self_pid)
-
-    refute Spawner.process_alive?(999_999)
-    refute Spawner.process_alive?(nil)
-    refute Spawner.process_alive?(-1)
-  end
-
-  test "terminate_os_process/2 stops live child and handles dead PID" do
-    # Spawn a sleeping child
-    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
-    {:os_pid, pid} = Port.info(port, :os_pid)
-    assert Spawner.process_alive?(pid)
-
-    assert Spawner.terminate_os_process(pid, grace_period: 100) == :ok
-    refute Spawner.process_alive?(pid)
-
-    # Dead PID call returns :ok
-    assert Spawner.terminate_os_process(999_999) == :ok
-    assert Spawner.terminate_os_process(nil) == :ok
-  end
-
-  test "terminate_os_process/2 escalates to SIGKILL if child ignores SIGTERM" do
-    port =
-      Port.open(
-        {:spawn_executable, "/bin/sh"},
-        [:binary, args: ["-c", "trap '' TERM; sleep 30"]]
-      )
-
-    {:os_pid, pid} = Port.info(port, :os_pid)
-    assert Spawner.process_alive?(pid)
-
-    assert Spawner.terminate_os_process(pid, grace_period: 40) == :ok
-    refute Spawner.process_alive?(pid)
-  end
-
-  test "spawn_run/4 supports opts[:executable], opts[:cd], opts[:state_dir], and opts[:credential_helper]", %{
+  test "supports opts[:executable], opts[:cd], opts[:state_dir], and opts[:credential_helper]", %{
     role_run: role_run,
     tmp_dir: tmp_dir
   } do
@@ -212,7 +172,7 @@ defmodule Rail.Runs.SpawnerTest do
     File.mkdir_p!(custom_state_dir)
 
     {:ok, run} =
-      Spawner.spawn_run(
+      Runs.start_run(
         role_run,
         :stage,
         ["3"],
@@ -225,25 +185,27 @@ defmodule Rail.Runs.SpawnerTest do
 
     assert run.status == :running
     assert run.stream_path =~ custom_state_dir
-    Spawner.terminate_os_process(run.os_pid, grace_period: 50)
+    Tools.terminate_os_process(run.os_pid, grace_period: 50)
   end
 
-  test "spawn_run/3 works with 3 arguments and resolves default executable with empty argv", %{
+  test "works with 3 arguments and resolves the default executable with empty argv", %{
     role_run: role_run
   } do
-    # When argv is empty, resolve_executable_and_args uses the configured backend path
+    # When argv is empty, the configured backend path is used
     {:ok, _backend} =
-      Rail.Backends.create_backend(Rail.Scope.for_system(), %{name: :claude, executable_path: "/bin/sleep"})
+      Rail.Backends.create_backend(Rail.Scope.for_system(), %{
+        name: :claude,
+        executable_path: "/bin/sleep"
+      })
 
-    {:ok, run1} = Spawner.spawn_run(role_run, :stage, [], skip_follower: true)
+    {:ok, run1} = Runs.start_run(role_run, :stage, [], skip_follower: true)
     assert run1.status == :running
-    Spawner.terminate_os_process(run1.os_pid, grace_period: 50)
+    Tools.terminate_os_process(run1.os_pid, grace_period: 50)
 
-    # 3-argument call without opts
-    {:ok, run2} = Spawner.spawn_run(role_run, :stage, ["/bin/sleep", "1"])
+    {:ok, run2} = Runs.start_run(role_run, :stage, ["/bin/sleep", "1"])
     assert run2.status == :running
-    follower_pid = Rail.Runs.get_follower_pid(run2.id)
+    follower_pid = Runs.get_follower_pid(run2.id)
     if is_pid(follower_pid), do: Rail.Runs.FollowerSupervisor.stop_follower(follower_pid)
-    Spawner.terminate_os_process(run2.os_pid, grace_period: 50)
+    Tools.terminate_os_process(run2.os_pid, grace_period: 50)
   end
 end

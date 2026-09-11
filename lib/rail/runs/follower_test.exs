@@ -15,7 +15,7 @@ defmodule Rail.Runs.FollowerTest do
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
-  alias Rail.Runs.Spawner
+  alias Rail.Tools
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -112,7 +112,7 @@ defmodule Rail.Runs.FollowerTest do
 
     # Stop process and follower
     FollowerSupervisor.stop_follower(follower_pid)
-    Spawner.terminate_os_process(pid, grace_period: 50)
+    Tools.terminate_os_process(pid, grace_period: 50)
   end
 
   test "250ms batching writes to run_events table and broadcasts on PubSub", %{
@@ -157,7 +157,7 @@ defmodule Rail.Runs.FollowerTest do
     assert Enum.at(saved_events, 1).line == line2
 
     FollowerSupervisor.stop_follower(follower_pid)
-    Spawner.terminate_os_process(pid, grace_period: 50)
+    Tools.terminate_os_process(pid, grace_period: 50)
   end
 
   test "child exit drains stderr, marks run finished, computes outcome and broadcasts", %{
@@ -238,11 +238,11 @@ defmodule Rail.Runs.FollowerTest do
 
     Sandbox.allow(Repo, self(), _follower_pid)
 
-    assert Spawner.process_alive?(pid)
+    assert Tools.os_process_alive?(pid)
 
     {:ok, stopped_run} = Runs.stop_run(run.id, grace_period: 100)
     assert stopped_run.status == :finished
-    refute Spawner.process_alive?(pid)
+    refute Tools.os_process_alive?(pid)
   end
 
   test "lenient UTF-8 handles invalid byte sequences gracefully", %{
@@ -277,7 +277,7 @@ defmodule Rail.Runs.FollowerTest do
     assert state.event_state.assistant_text =~ "byte"
 
     FollowerSupervisor.stop_follower(follower_pid)
-    Spawner.terminate_os_process(pid, grace_period: 50)
+    Tools.terminate_os_process(pid, grace_period: 50)
   end
 
   test "skip_log_lines skips already recorded lines from being re-inserted", %{
@@ -325,7 +325,7 @@ defmodule Rail.Runs.FollowerTest do
     assert Enum.at(events, 1).line == line2
 
     FollowerSupervisor.stop_follower(follower_pid)
-    Spawner.terminate_os_process(pid, grace_period: 50)
+    Tools.terminate_os_process(pid, grace_period: 50)
   end
 
   test "custom name, get_state call, and ignored info messages", %{
@@ -362,7 +362,7 @@ defmodule Rail.Runs.FollowerTest do
     assert Process.alive?(follower_pid)
 
     FollowerSupervisor.stop_follower(follower_pid)
-    Spawner.terminate_os_process(pid, grace_period: 50)
+    Tools.terminate_os_process(pid, grace_period: 50)
   end
 
   test "stop_run/2 accepts %Run{} struct and role_run_id string", %{
@@ -389,7 +389,7 @@ defmodule Rail.Runs.FollowerTest do
     # Stop via role_run_id
     {:ok, stopped} = Follower.stop_run(role_run.id)
     assert stopped.status == :finished
-    refute Spawner.process_alive?(pid)
+    refute Tools.os_process_alive?(pid)
 
     # Stop via %Run{} struct (when follower is not running, falls back)
     {:ok, stopped2} = Follower.stop_run(stopped)

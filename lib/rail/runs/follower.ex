@@ -13,7 +13,7 @@ defmodule Rail.Runs.Follower do
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
-  alias Rail.Runs.Spawner
+  alias Rail.Tools
 
   @default_tail_interval 120
   @default_batch_interval 250
@@ -184,7 +184,7 @@ defmodule Rail.Runs.Follower do
   @impl true
   def handle_call({:stop_run, opts}, _from, state) do
     if is_integer(state.os_pid) and state.os_pid > 0 do
-      Spawner.terminate_os_process(state.os_pid, opts)
+      Tools.terminate_os_process(state.os_pid, opts)
     end
 
     state = %{state | exit_code: -1}
@@ -227,7 +227,7 @@ defmodule Rail.Runs.Follower do
 
     alive? =
       if is_integer(updated_state.os_pid) and updated_state.os_pid > 0 do
-        Spawner.process_alive?(updated_state.os_pid)
+        Tools.os_process_alive?(updated_state.os_pid)
       else
         false
       end
@@ -331,7 +331,7 @@ defmodule Rail.Runs.Follower do
 
   defp fallback_stop_run(run, opts) do
     if is_integer(run.os_pid) and run.os_pid > 0 do
-      Spawner.terminate_os_process(run.os_pid, opts)
+      Tools.terminate_os_process(run.os_pid, opts)
     end
 
     {:ok, updated_run} =

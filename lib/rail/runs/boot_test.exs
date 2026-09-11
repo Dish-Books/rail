@@ -6,7 +6,7 @@ defmodule Rail.Runs.BootTest do
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
-  alias Rail.Runs.Spawner
+  alias Rail.Tools
 
   setup do
     tmp_dir = Path.join(System.tmp_dir!(), "boot_test_#{System.unique_integer([:positive])}")
@@ -64,7 +64,7 @@ defmodule Rail.Runs.BootTest do
     assert [{:already_following, _run, ^follower_pid}] = repeat
 
     FollowerSupervisor.stop_follower(follower_pid)
-    Spawner.terminate_os_process(pid, grace_period: 50)
+    Tools.terminate_os_process(pid, grace_period: 50)
   end
 
   test "settles dead child process as finished while unwatched", %{tmp_dir: tmp_dir} do

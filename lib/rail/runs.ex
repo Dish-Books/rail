@@ -8,6 +8,7 @@ defmodule Rail.Runs do
 
   alias Rail.Domain.RunFailure
   alias Rail.Repo
+  alias Rail.Runs.Actions
   alias Rail.Runs.AgyEvents
   alias Rail.Runs.ArgvBuilder
   alias Rail.Runs.Boot
@@ -19,7 +20,6 @@ defmodule Rail.Runs do
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
-  alias Rail.Runs.Spawner
   alias Rail.Runs.ToolSummarizer
 
   @boot_id_key {__MODULE__, :boot_id}
@@ -113,9 +113,7 @@ defmodule Rail.Runs do
   @doc """
   Spawns a detached CLI runner, records the `runs` row, and starts its Follower.
   """
-  def start_run(role_run, kind, argv, opts \\ []) do
-    Spawner.spawn_run(role_run, kind, argv, opts)
-  end
+  defdelegate start_run(role_run, kind, argv, opts \\ []), to: Actions.StartRun
 
   @doc """
   Terminates an active agent execution by run, role_run, or task ID.

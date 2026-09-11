@@ -5,7 +5,7 @@ defmodule Rail.Runs.FollowerSupervisorTest do
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
-  alias Rail.Runs.Spawner
+  alias Rail.Tools
 
   setup do
     tmp_dir = Path.join(System.tmp_dir!(), "supervisor_test_#{System.unique_integer([:positive])}")
@@ -74,6 +74,6 @@ defmodule Rail.Runs.FollowerSupervisorTest do
     Process.sleep(10)
     assert Runs.get_follower_pid(run.id) == nil
 
-    Spawner.terminate_os_process(pid, grace_period: 50)
+    Tools.terminate_os_process(pid, grace_period: 50)
   end
 end
