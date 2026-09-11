@@ -29,6 +29,7 @@ defmodule Rail.Issues.Actions.PushTicketTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_push_1",
         linear_team_key: "PT1",
+        default_branch: "main",
         clone_path: "/tmp/repos/push-ticket-6301"
       })
 
@@ -96,6 +97,7 @@ defmodule Rail.Issues.Actions.PushTicketTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_push_2",
         linear_team_key: "PT4",
+        default_branch: "main",
         clone_path: "/tmp/repos/push-ticket-6304"
       })
 
@@ -171,6 +173,7 @@ defmodule Rail.Issues.Actions.PushTicketTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_push_ticket_6307",
         linear_team_key: "PT7",
+        default_branch: "main",
         clone_path: "/tmp/repos/push-ticket-6307"
       })
 
@@ -189,6 +192,7 @@ defmodule Rail.Issues.Actions.PushTicketTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_push_ticket_6308",
         linear_team_key: "PT8",
+        default_branch: "main",
         clone_path: "/tmp/repos/push-ticket-6308"
       })
 
@@ -222,6 +226,7 @@ defmodule Rail.Issues.Actions.PushTicketTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_push_ticket_6310",
         linear_team_key: "PT10",
+        default_branch: "main",
         clone_path: "/tmp/repos/push-ticket-6310"
       })
 

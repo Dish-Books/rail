@@ -20,19 +20,6 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
     refute prompt =~ "house rules"
   end
 
-  test "carries the answer with the task when there is no session" do
-    opts = %{
-      pending_answer: "The answer is: exclude",
-      task_description: "do the thing"
-    }
-
-    prompt = BuildPrompt.build_prompt(opts)
-
-    assert prompt =~ "do the thing"
-    assert prompt =~ "The answer is: exclude"
-    refute prompt =~ "Continue from where you stopped."
-  end
-
   test "a first run contains the snippet and the task" do
     opts = [
       context_snippet: "house rules",

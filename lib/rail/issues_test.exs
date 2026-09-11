@@ -26,6 +26,7 @@ defmodule Rail.IssuesTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_issues_context",
         linear_team_key: "ICT",
+        default_branch: "main",
         clone_path: "/tmp/repos/issues-context"
       })
 

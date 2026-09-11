@@ -28,6 +28,7 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_sync_issues",
         linear_team_key: "SYN",
+        default_branch: "main",
         clone_path: "/tmp/repos/sync-issues"
       })
 

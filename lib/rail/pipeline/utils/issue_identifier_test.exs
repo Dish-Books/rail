@@ -29,6 +29,7 @@ defmodule Rail.Pipeline.Utils.IssueIdentifierTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_issue_identifier_13511",
         linear_team_key: "P13511",
+        default_branch: "main",
         clone_path: "/tmp/repos/issue-identifier-13511"
       })
 

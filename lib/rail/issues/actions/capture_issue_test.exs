@@ -31,6 +31,7 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_cap_1",
         linear_team_key: "CI1",
+        default_branch: "main",
         clone_path: "/tmp/repos/capture-issue-6101",
         linear_state_ids: %{"triage" => "st_triage_1"}
       })
@@ -83,6 +84,7 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_cap_2",
         linear_team_key: "CI3",
+        default_branch: "main",
         clone_path: "/tmp/repos/capture-issue-6103",
         linear_state_ids: %{"triage" => "st_triage_2"}
       })
@@ -126,6 +128,7 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_capture_6105",
         linear_team_key: "CI5",
+        default_branch: "main",
         clone_path: "/tmp/repos/capture-issue-6105"
       })
 
@@ -146,6 +149,7 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_capture_6106",
         linear_team_key: "CI6",
+        default_branch: "main",
         clone_path: "/tmp/repos/capture-issue-6106"
       })
 
@@ -161,6 +165,7 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_cap_pri",
         linear_team_key: "CI7",
+        default_branch: "main",
         clone_path: "/tmp/repos/capture-issue-6107",
         linear_state_ids: %{"triage" => "st_triage_pri"}
       })
@@ -195,6 +200,7 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_cap_str",
         linear_team_key: "CI8",
+        default_branch: "main",
         clone_path: "/tmp/repos/capture-issue-6108",
         linear_state_ids: %{"triage" => "st_triage_str"}
       })
@@ -229,6 +235,7 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_cap_inv",
         linear_team_key: "CI9",
+        default_branch: "main",
         clone_path: "/tmp/repos/capture-issue-6109",
         linear_state_ids: %{"triage" => "st_triage_inv"}
       })
@@ -263,6 +270,7 @@ defmodule Rail.Issues.Actions.CaptureIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_cap_nil",
         linear_team_key: "CI10",
+        default_branch: "main",
         clone_path: "/tmp/repos/capture-issue-6110",
         linear_state_ids: %{"triage" => "st_triage_nil"}
       })

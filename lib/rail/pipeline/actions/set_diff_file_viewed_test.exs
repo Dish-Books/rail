@@ -26,6 +26,7 @@ defmodule Rail.Pipeline.Actions.SetDiffFileViewedTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_set_diff_viewed_7001",
         linear_team_key: "P7001",
+        default_branch: "main",
         clone_path: "/tmp/repos/set-diff-viewed-7001",
         linear_state_ids: %{
           "triage" => "st_triage",

@@ -35,6 +35,7 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_start_product_7001",
         linear_team_key: "P7001",
+        default_branch: "main",
         clone_path: create_temp_git_repo(),
         linear_state_ids: %{
           "triage" => "st_triage",

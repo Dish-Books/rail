@@ -6,7 +6,7 @@ defmodule Rail.Domain.TaskFormattersTest do
   test "delegates all formatting functions to Formatters" do
     task = %{
       title: "Implement Task",
-      description: "Ticket text\n\n## Implementation plan\nStep 1",
+      description: "Ticket text",
       stage: :engineer,
       stage_state: :running,
       rework_cycles: 1,
@@ -21,6 +21,6 @@ defmodule Rail.Domain.TaskFormattersTest do
     refute TaskFormatters.has_merge_conflicts?(task)
     refute TaskFormatters.uses_design?(task)
     assert TaskFormatters.ticket_for(task) == "Ticket text"
-    assert TaskFormatters.plan_for(task) == "## Implementation plan\nStep 1"
+    assert is_nil(TaskFormatters.plan_for(task))
   end
 end

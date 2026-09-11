@@ -32,6 +32,7 @@ defmodule Rail.Pipeline.Utils.GitHubTokenResolverTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_gh_token_9901",
         linear_team_key: "P9901",
+        default_branch: "main",
         clone_path: "/tmp/repos/gh-token-9901",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -76,6 +77,7 @@ defmodule Rail.Pipeline.Utils.GitHubTokenResolverTest do
         github_installation_id: 9902,
         linear_team_id: "team_gh_token_9902",
         linear_team_key: "P9902",
+        default_branch: "main",
         clone_path: "/tmp/repos/gh-token-9902",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -106,6 +108,7 @@ defmodule Rail.Pipeline.Utils.GitHubTokenResolverTest do
         github_installation_id: 9904,
         linear_team_id: "team_gh_token_9904",
         linear_team_key: "P9904",
+        default_branch: "main",
         clone_path: "/tmp/repos/gh-token-9904",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -138,6 +141,7 @@ defmodule Rail.Pipeline.Utils.GitHubTokenResolverTest do
         github_installation_id: 9906,
         linear_team_id: "team_gh_token_9906",
         linear_team_key: "P9906",
+        default_branch: "main",
         clone_path: "/tmp/repos/gh-token-9906",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -161,6 +165,7 @@ defmodule Rail.Pipeline.Utils.GitHubTokenResolverTest do
         github_installation_id: 88_888,
         linear_team_id: "team_gh_token_9907",
         linear_team_key: "P9907",
+        default_branch: "main",
         clone_path: "/tmp/repos/gh-token-9907",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -194,6 +199,7 @@ defmodule Rail.Pipeline.Utils.GitHubTokenResolverTest do
         github_installation_id: 77_777,
         linear_team_id: "team_gh_token_9909",
         linear_team_key: "P9909",
+        default_branch: "main",
         clone_path: "/tmp/repos/gh-token-9909",
         linear_state_ids: %{
           "triage" => "st_triage",

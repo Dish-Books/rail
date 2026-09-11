@@ -25,6 +25,7 @@ defmodule Rail.Pipeline.Actions.ExpandDiffGapTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_expand_diff_7301",
         linear_team_key: "P7301",
+        default_branch: "main",
         clone_path: "/tmp/repos/expand-diff-7301",
         linear_state_ids: %{
           "triage" => "st_triage",

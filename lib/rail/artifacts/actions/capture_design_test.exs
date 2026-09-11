@@ -31,6 +31,7 @@ defmodule Rail.Artifacts.Actions.CaptureDesignTest do
         github_installation_id: 12_103,
         linear_team_id: "team_capture_design_12103",
         linear_team_key: "P12103",
+        default_branch: "main",
         clone_path: "/tmp/repos/capture-design-12103",
         linear_state_ids: %{
           "triage" => "st_triage",

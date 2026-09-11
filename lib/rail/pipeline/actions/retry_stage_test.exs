@@ -31,6 +31,7 @@ defmodule Rail.Pipeline.Actions.RetryStageTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_retry_stage_8001",
         linear_team_key: "P8001",
+        default_branch: "main",
         clone_path: "/tmp/repos/retry-stage-8001",
         linear_state_ids: %{
           "triage" => "st_triage",

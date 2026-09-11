@@ -36,6 +36,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_merge_task_9201",
         linear_team_key: "P9201",
+        default_branch: "main",
         clone_path: "/tmp/repos/merge-task-9201",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -80,6 +81,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         github_installation_id: 9202,
         linear_team_id: "team_merge_task_9202",
         linear_team_key: "P9202",
+        default_branch: "main",
         clone_path: "/tmp/repos/merge-task-9202",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -119,6 +121,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         github_installation_id: 9204,
         linear_team_id: "team_merge_task_9204",
         linear_team_key: "P9204",
+        default_branch: "main",
         clone_path: "/tmp/repos/merge-task-9204",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -158,6 +161,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         github_installation_id: 9206,
         linear_team_id: "team_merge_task_9206",
         linear_team_key: "P9206",
+        default_branch: "main",
         clone_path: "/tmp/repos/merge-task-9206",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -201,6 +205,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         github_installation_id: 9208,
         linear_team_id: "team_merge_task_9208",
         linear_team_key: "P9208",
+        default_branch: "main",
         clone_path: "/tmp/repos/merge-task-9208",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -244,7 +249,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     wt_dir = Path.join(System.tmp_dir!(), "rail_merge_wt_#{System.unique_integer([:positive])}")
 
     {:ok, worktree_path} =
-      Git.get_or_create_worktree(%Project{clone_path: clone_path}, %Task{
+      Git.get_or_create_worktree(%Project{clone_path: clone_path, default_branch: "main"}, %Task{
         worktree_path: wt_dir,
         worktree_name: "feature-branch"
       })
@@ -256,6 +261,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         github_installation_id: 9210,
         linear_team_id: "team_merge_task_9210",
         linear_team_key: "P9210",
+        default_branch: "main",
         clone_path: clone_path,
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -357,6 +363,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         github_installation_id: 9214,
         linear_team_id: "team_merge_task_9214",
         linear_team_key: "P9214",
+        default_branch: "main",
         clone_path: "/tmp/repos/merge-task-9214",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -403,6 +410,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         github_installation_id: 9216,
         linear_team_id: "team_merge_task_9216",
         linear_team_key: "P9216",
+        default_branch: "main",
         clone_path: "/tmp/repos/merge-task-9216",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -450,6 +458,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         github_installation_id: 9218,
         linear_team_id: "team_merge_task_9218",
         linear_team_key: "P9218",
+        default_branch: "main",
         clone_path: "/tmp/repos/merge-task-9218",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -513,6 +522,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         github_installation_id: 9220,
         linear_team_id: "team_merge_task_9220",
         linear_team_key: "P9220",
+        default_branch: "main",
         clone_path: "/tmp/repos/merge-task-9220",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -554,6 +564,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         github_installation_id: 9222,
         linear_team_id: "team_merge_task_9222",
         linear_team_key: "P9222",
+        default_branch: "main",
         clone_path: "/tmp/repos/merge-task-9222",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -613,6 +624,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         github_installation_id: 9225,
         linear_team_id: "team_merge_task_9225",
         linear_team_key: "P9225",
+        default_branch: "main",
         clone_path: "/tmp/repos/merge-task-9225",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -659,6 +671,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         github_installation_id: 9227,
         linear_team_id: "team_merge_task_9227",
         linear_team_key: "P9227",
+        default_branch: "main",
         clone_path: "/tmp/repos/merge-task-9227",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -711,6 +724,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         github_installation_id: 9229,
         linear_team_id: "team_merge_task_9229",
         linear_team_key: "P9229",
+        default_branch: "main",
         clone_path: "/tmp/repos/merge-task-9229",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -755,6 +769,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         github_installation_id: 9231,
         linear_team_id: "team_merge_task_9231",
         linear_team_key: "P9231",
+        default_branch: "main",
         clone_path: "/tmp/repos/merge-task-9231",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -807,6 +822,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         github_installation_id: 9233,
         linear_team_id: "team_merge_task_9233",
         linear_team_key: "P9233",
+        default_branch: "main",
         clone_path: "/tmp/repos/merge-task-9233",
         linear_state_ids: %{
           "triage" => "st_triage",

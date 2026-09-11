@@ -16,6 +16,7 @@ defmodule Rail.Roles.Actions.UpdateRoleTest do
         github_installation_id: 4103,
         linear_team_id: "team_update_role",
         linear_team_key: "UPR",
+        default_branch: "main",
         clone_path: "/tmp/repos/update-role"
       })
 

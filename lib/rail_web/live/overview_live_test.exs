@@ -77,6 +77,7 @@ defmodule RailWeb.OverviewLiveTest do
                github_installation_id: 111,
                linear_team_id: "t1",
                linear_team_key: "P1",
+               default_branch: "main",
                clone_path: "/tmp/p1",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -89,6 +90,7 @@ defmodule RailWeb.OverviewLiveTest do
                github_installation_id: 222,
                linear_team_id: "t2",
                linear_team_key: "P2",
+               default_branch: "main",
                clone_path: "/tmp/p2",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -150,6 +152,7 @@ defmodule RailWeb.OverviewLiveTest do
                github_installation_id: 333,
                linear_team_id: "tp",
                linear_team_key: "PRE",
+               default_branch: "main",
                clone_path: "/tmp/preset",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -278,6 +281,7 @@ defmodule RailWeb.OverviewLiveTest do
                github_installation_id: 444,
                linear_team_id: "t_att",
                linear_team_key: "ATT",
+               default_branch: "main",
                clone_path: "/tmp/att",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -291,10 +295,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13416} = Issues.capture_issue(system_scope(), project, "Task 13416")
 
-    {:ok, _task} = Pipeline.create_task(issue_13416, :product)
+    {:ok, task} = Pipeline.create_task(issue_13416, :product)
 
     {:ok, _task} =
-      Pipeline.update_task(system_scope(), _task.id, %{
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :engineer,
         stage_state: :failed
       })
@@ -340,6 +344,7 @@ defmodule RailWeb.OverviewLiveTest do
                github_installation_id: 555,
                linear_team_id: "t_run",
                linear_team_key: "RUN",
+               default_branch: "main",
                clone_path: "/tmp/running",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -353,10 +358,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13417} = Issues.capture_issue(system_scope(), project, "Task 13417")
 
-    {:ok, _task} = Pipeline.create_task(issue_13417, :product)
+    {:ok, task} = Pipeline.create_task(issue_13417, :product)
 
     {:ok, _task} =
-      Pipeline.update_task(system_scope(), _task.id, %{
+      Pipeline.update_task(system_scope(), task.id, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -373,10 +378,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13418} = Issues.capture_issue(system_scope(), project, "Task 13418")
 
-    {:ok, _task2} = Pipeline.create_task(issue_13418, :product)
+    {:ok, task2} = Pipeline.create_task(issue_13418, :product)
 
     {:ok, _task2} =
-      Pipeline.update_task(system_scope(), _task2.id, %{
+      Pipeline.update_task(system_scope(), task2.id, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -416,6 +421,7 @@ defmodule RailWeb.OverviewLiveTest do
                github_installation_id: 881,
                linear_team_id: "t_p1",
                linear_team_key: "P1R",
+               default_branch: "main",
                clone_path: "/tmp/p1-run",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -428,6 +434,7 @@ defmodule RailWeb.OverviewLiveTest do
                github_installation_id: 882,
                linear_team_id: "t_p2",
                linear_team_key: "P2R",
+               default_branch: "main",
                clone_path: "/tmp/p2-run",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -441,10 +448,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13419} = Issues.capture_issue(system_scope(), p1, "Task 13419")
 
-    {:ok, _task1} = Pipeline.create_task(issue_13419, :product)
+    {:ok, task1} = Pipeline.create_task(issue_13419, :product)
 
     {:ok, _task1} =
-      Pipeline.update_task(system_scope(), _task1.id, %{
+      Pipeline.update_task(system_scope(), task1.id, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -457,10 +464,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, issue_13420} = Issues.capture_issue(system_scope(), p2, "Task 13420")
 
-    {:ok, _task2} = Pipeline.create_task(issue_13420, :product)
+    {:ok, task2} = Pipeline.create_task(issue_13420, :product)
 
     {:ok, _task2} =
-      Pipeline.update_task(system_scope(), _task2.id, %{
+      Pipeline.update_task(system_scope(), task2.id, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -505,6 +512,7 @@ defmodule RailWeb.OverviewLiveTest do
                github_installation_id: 991,
                linear_team_id: "t_empty",
                linear_team_key: "EMP",
+               default_branch: "main",
                clone_path: "/tmp/empty",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -597,6 +605,7 @@ defmodule RailWeb.OverviewLiveTest do
                github_installation_id: 992,
                linear_team_id: "t_q",
                linear_team_key: "QST",
+               default_branch: "main",
                clone_path: "/tmp/qapp",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -716,6 +725,7 @@ defmodule RailWeb.OverviewLiveTest do
                github_installation_id: 993,
                linear_team_id: "t_fq",
                linear_team_key: "FQA",
+               default_branch: "main",
                clone_path: "/tmp/formq",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -797,6 +807,7 @@ defmodule RailWeb.OverviewLiveTest do
                github_installation_id: 994,
                linear_team_id: "t_appr",
                linear_team_key: "APR",
+               default_branch: "main",
                clone_path: "/tmp/approval",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -953,6 +964,7 @@ defmodule RailWeb.OverviewLiveTest do
                github_installation_id: 995,
                linear_team_id: "t_c",
                linear_team_key: "CMP",
+               default_branch: "main",
                clone_path: "/tmp/compact",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -1096,6 +1108,7 @@ defmodule RailWeb.OverviewLiveTest do
                github_installation_id: 996,
                linear_team_id: "t_ag",
                linear_team_key: "AGP",
+               default_branch: "main",
                clone_path: "/tmp/agentapp",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -1201,6 +1214,7 @@ defmodule RailWeb.OverviewLiveTest do
                github_installation_id: 997,
                linear_team_id: "t_rst",
                linear_team_key: "RST",
+               default_branch: "main",
                clone_path: "/tmp/roster",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}

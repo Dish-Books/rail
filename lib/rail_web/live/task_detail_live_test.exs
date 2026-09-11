@@ -39,6 +39,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_task_detail_13801",
         linear_team_key: "P13801",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-detail-13801",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -96,6 +97,7 @@ defmodule RailWeb.TaskDetailLiveTest do
                github_installation_id: 603,
                linear_team_id: "t_det",
                linear_team_key: "DET",
+               default_branch: "main",
                clone_path: "/tmp/detail-project",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -192,6 +194,7 @@ defmodule RailWeb.TaskDetailLiveTest do
                github_installation_id: 605,
                linear_team_id: "t_tab",
                linear_team_key: "TAB",
+               default_branch: "main",
                clone_path: "/tmp/tab-project",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -282,6 +285,7 @@ defmodule RailWeb.TaskDetailLiveTest do
                github_installation_id: 606,
                linear_team_id: "t_np",
                linear_team_key: "NP",
+               default_branch: "main",
                clone_path: "/tmp/no-plan",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -331,6 +335,7 @@ defmodule RailWeb.TaskDetailLiveTest do
                github_installation_id: 607,
                linear_team_id: "t_nw",
                linear_team_key: "NW",
+               default_branch: "main",
                clone_path: "/tmp/no-wt",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -381,6 +386,7 @@ defmodule RailWeb.TaskDetailLiveTest do
                github_installation_id: 608,
                linear_team_id: "t_cf",
                linear_team_key: "CF",
+               default_branch: "main",
                clone_path: "/tmp/conflict",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -460,6 +466,7 @@ defmodule RailWeb.TaskDetailLiveTest do
                github_installation_id: 609,
                linear_team_id: "t_err",
                linear_team_key: "ERR",
+               default_branch: "main",
                clone_path: "/tmp/error",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -510,6 +517,7 @@ defmodule RailWeb.TaskDetailLiveTest do
                github_installation_id: 610,
                linear_team_id: "t_out",
                linear_team_key: "OUT",
+               default_branch: "main",
                clone_path: "/tmp/outcome",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -582,6 +590,7 @@ defmodule RailWeb.TaskDetailLiveTest do
                github_installation_id: 611,
                linear_team_id: "t_nd",
                linear_team_key: "ND",
+               default_branch: "main",
                clone_path: "/tmp/no-design",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -632,6 +641,7 @@ defmodule RailWeb.TaskDetailLiveTest do
                github_installation_id: 612,
                linear_team_id: "t_ps",
                linear_team_key: "PS",
+               default_branch: "main",
                clone_path: "/tmp/pubsub",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -729,6 +739,7 @@ defmodule RailWeb.TaskDetailLiveTest do
                github_installation_id: 604,
                linear_team_id: "t_pst",
                linear_team_key: "PST",
+               default_branch: "main",
                clone_path: "/tmp/pst",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -764,6 +775,7 @@ defmodule RailWeb.TaskDetailLiveTest do
                github_installation_id: 613,
                linear_team_id: "t_fb",
                linear_team_key: "FB",
+               default_branch: "main",
                clone_path: "/tmp/fallback",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -836,6 +848,7 @@ defmodule RailWeb.TaskDetailLiveTest do
                github_installation_id: 614,
                linear_team_id: "t_ec",
                linear_team_key: "EC",
+               default_branch: "main",
                clone_path: "/tmp/edge-case",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -948,6 +961,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         github_installation_id: 13_801,
         linear_team_id: "team_task_detail_tabs",
         linear_team_key: "TDT",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-detail-tabs",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -1020,6 +1034,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         github_installation_id: 13_802,
         linear_team_id: "team_task_detail_13802",
         linear_team_key: "P13802",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-detail-13802",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -1119,6 +1134,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         github_installation_id: 13_803,
         linear_team_id: "team_task_detail_13803",
         linear_team_key: "P13803",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-detail-13803",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -1188,6 +1204,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         github_installation_id: 13_804,
         linear_team_id: "team_task_detail_13804",
         linear_team_key: "P13804",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-detail-13804",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -1277,6 +1294,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         github_installation_id: 13_805,
         linear_team_id: "team_task_detail_13805",
         linear_team_key: "P13805",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-detail-13805",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -1348,6 +1366,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         github_installation_id: 13_806,
         linear_team_id: "team_task_detail_13806",
         linear_team_key: "P13806",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-detail-13806",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -1439,6 +1458,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         github_installation_id: 13_807,
         linear_team_id: "team_task_detail_13807",
         linear_team_key: "P13807",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-detail-13807",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -1534,6 +1554,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         github_installation_id: 13_808,
         linear_team_id: "team_task_detail_13808",
         linear_team_key: "P13808",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-detail-13808",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -1822,6 +1843,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         github_installation_id: 13_809,
         linear_team_id: "team_task_detail_13809",
         linear_team_key: "P13809",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-detail-13809",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -1903,6 +1925,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         github_installation_id: 13_810,
         linear_team_id: "team_task_detail_13810",
         linear_team_key: "P13810",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-detail-13810",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -1999,6 +2022,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         github_installation_id: 13_811,
         linear_team_id: "team_task_detail_13811",
         linear_team_key: "P13811",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-detail-13811",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -2201,6 +2225,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         github_installation_id: 13_812,
         linear_team_id: "team_task_detail_13812",
         linear_team_key: "P13812",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-detail-13812",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -2255,6 +2280,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         github_installation_id: 13_813,
         linear_team_id: "team_task_detail_13813",
         linear_team_key: "P13813",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-detail-13813",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -2406,6 +2432,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         github_installation_id: 13_814,
         linear_team_id: "team_task_detail_13814",
         linear_team_key: "P13814",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-detail-13814",
         linear_state_ids: %{
           "triage" => "st_triage",

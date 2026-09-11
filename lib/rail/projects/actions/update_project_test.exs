@@ -16,6 +16,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                github_installation_id: 55_667,
                linear_team_id: "team_upd",
                linear_team_key: "ORIG",
+               default_branch: "main",
                clone_path: "/tmp/orig"
              })
 
@@ -38,6 +39,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                github_installation_id: 55_668,
                linear_team_id: "team_by_id",
                linear_team_key: "PBI",
+               default_branch: "main",
                clone_path: "/tmp/pbi"
              })
 
@@ -61,6 +63,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                github_installation_id: 55_669,
                linear_team_id: "team_inv",
                linear_team_key: "INV",
+               default_branch: "main",
                clone_path: "/tmp/inv"
              })
 
@@ -79,6 +82,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                github_installation_id: 55_670,
                linear_team_id: "team_guard",
                linear_team_key: "GRD",
+               default_branch: "main",
                clone_path: "/tmp/guard"
              })
 
@@ -97,6 +101,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                github_installation_id: 55_671,
                linear_team_id: "team_guard_nil",
                linear_team_key: "GRDN",
+               default_branch: "main",
                clone_path: "/tmp/guard_nil"
              })
 

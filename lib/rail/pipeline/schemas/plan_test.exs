@@ -28,6 +28,7 @@ defmodule Rail.Pipeline.Schemas.PlanTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_plan_schema_7601",
         linear_team_key: "P7601",
+        default_branch: "main",
         clone_path: "/tmp/repos/plan-schema-7601",
         linear_state_ids: %{
           "triage" => "st_triage",

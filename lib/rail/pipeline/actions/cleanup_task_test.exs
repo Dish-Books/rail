@@ -31,6 +31,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_cleanup_task_8701",
         linear_team_key: "P8701",
+        default_branch: "main",
         clone_path: "/tmp/repos/cleanup-task-8701",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -75,6 +76,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         github_installation_id: 8702,
         linear_team_id: "team_cleanup_task_8702",
         linear_team_key: "P8702",
+        default_branch: "main",
         clone_path: "/tmp/repos/cleanup-task-8702",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -132,7 +134,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     wt_dir = Path.join(System.tmp_dir!(), "rail_cleanup_wt_#{System.unique_integer([:positive])}")
 
     {:ok, worktree_path} =
-      Git.get_or_create_worktree(%Project{clone_path: clone_path}, %Task{
+      Git.get_or_create_worktree(%Project{clone_path: clone_path, default_branch: "main"}, %Task{
         worktree_path: wt_dir,
         worktree_name: "cleanup-branch"
       })
@@ -144,6 +146,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         github_installation_id: 8705,
         linear_team_id: "team_cleanup_task_8705",
         linear_team_key: "P8705",
+        default_branch: "main",
         clone_path: clone_path,
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -204,6 +207,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         github_installation_id: 8708,
         linear_team_id: "team_cleanup_task_8708",
         linear_team_key: "P8708",
+        default_branch: "main",
         clone_path: "/tmp/repos/cleanup-task-8708",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -251,6 +255,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         github_installation_id: 8710,
         linear_team_id: "team_cleanup_task_8710",
         linear_team_key: "P8710",
+        default_branch: "main",
         clone_path: "/tmp/repos/cleanup-task-8710",
         linear_state_ids: %{
           "triage" => "st_triage",

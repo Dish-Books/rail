@@ -30,6 +30,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_approve_product_7101",
         linear_team_key: "P7101",
+        default_branch: "main",
         clone_path: create_temp_git_repo(),
         linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
       })

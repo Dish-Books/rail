@@ -34,6 +34,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_demo_freshness_9501",
         linear_team_key: "P9501",
+        default_branch: "main",
         clone_path: "/tmp/repos/demo-freshness-9501",
         linear_state_ids: %{
           "triage" => "st_triage",

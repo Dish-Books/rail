@@ -29,6 +29,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_start_rebase_8801",
         linear_team_key: "P8801",
+        default_branch: "main",
         clone_path: "/tmp/repos/start-rebase-8801",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -73,6 +74,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
         github_installation_id: 8802,
         linear_team_id: "team_start_rebase_8802",
         linear_team_key: "P8802",
+        default_branch: "main",
         clone_path: "/tmp/repos/start-rebase-8802",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -134,6 +136,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
         github_installation_id: 8805,
         linear_team_id: "team_start_rebase_8805",
         linear_team_key: "P8805",
+        default_branch: "main",
         clone_path: "/tmp/repos/start-rebase-8805",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -200,6 +203,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
         github_installation_id: 8808,
         linear_team_id: "team_start_rebase_8808",
         linear_team_key: "P8808",
+        default_branch: "main",
         clone_path: "/tmp/repos/start-rebase-8808",
         linear_state_ids: %{
           "triage" => "st_triage",

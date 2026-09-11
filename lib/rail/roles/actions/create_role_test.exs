@@ -15,6 +15,7 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
         github_installation_id: 4101,
         linear_team_id: "team_create_role",
         linear_team_key: "CRR",
+        default_branch: "main",
         clone_path: "/tmp/repos/create-role"
       })
 
@@ -35,7 +36,7 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
              Roles.create_role(scope, project, attrs)
   end
 
-  test "creates role for project id with system scope", %{project: %Project{id: project_id} = project} do
+  test "creates role for project id with system scope", %{project: %Project{id: project_id}} do
     scope = Scope.for_system()
 
     attrs = %{

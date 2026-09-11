@@ -30,6 +30,7 @@ defmodule Rail.Pipeline.DispatcherTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_dispatcher_13301",
         linear_team_key: "P13301",
+        default_branch: "main",
         clone_path: "/tmp/repos/dispatcher-13301",
         linear_state_ids: %{
           "triage" => "st_triage",

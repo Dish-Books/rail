@@ -9,7 +9,7 @@ defmodule Rail.Git.Actions.ListWorktreesTest do
   test "lists root worktree and additional worktrees" do
     repo = create_temp_git_repo()
     wt_path = Path.join(repo, ".worktrees/wt1")
-    assert {:ok, ^wt_path} = Git.get_or_create_worktree(%Project{clone_path: repo}, %Task{worktree_path: wt_path, worktree_name: "feature-wt1"})
+    assert {:ok, ^wt_path} = Git.get_or_create_worktree(%Project{clone_path: repo, default_branch: "main"}, %Task{worktree_path: wt_path, worktree_name: "feature-wt1"})
 
     worktrees = Git.list_worktrees(repo)
 

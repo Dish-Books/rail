@@ -34,6 +34,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_refresh_merge_9001",
         linear_team_key: "P9001",
+        default_branch: "main",
         clone_path: "/tmp/repos/refresh-merge-9001",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -78,6 +79,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
         github_installation_id: 9002,
         linear_team_id: "team_refresh_merge_9002",
         linear_team_key: "P9002",
+        default_branch: "main",
         clone_path: "/tmp/repos/refresh-merge-9002",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -117,6 +119,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
         github_installation_id: 9004,
         linear_team_id: "team_refresh_merge_9004",
         linear_team_key: "P9004",
+        default_branch: "main",
         clone_path: "/tmp/repos/refresh-merge-9004",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -158,6 +161,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
         github_installation_id: 9006,
         linear_team_id: "team_refresh_merge_9006",
         linear_team_key: "P9006",
+        default_branch: "main",
         clone_path: "/tmp/repos/refresh-merge-9006",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -210,6 +214,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
         github_installation_id: 9009,
         linear_team_id: "team_refresh_merge_9009",
         linear_team_key: "P9009",
+        default_branch: "main",
         clone_path: "/tmp/repos/refresh-merge-9009",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -252,6 +257,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
         github_installation_id: 9011,
         linear_team_id: "team_refresh_merge_9011",
         linear_team_key: "P9011",
+        default_branch: "main",
         clone_path: "/tmp/repos/refresh-merge-9011",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -303,6 +309,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
         github_installation_id: 9013,
         linear_team_id: "team_refresh_merge_9013",
         linear_team_key: "P9013",
+        default_branch: "main",
         clone_path: "/tmp/repos/refresh-merge-9013",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -343,6 +350,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
         github_installation_id: 12_345,
         linear_team_id: "team_refresh_merge_9015",
         linear_team_key: "P9015",
+        default_branch: "main",
         clone_path: "/tmp/repos/refresh-merge-9015",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -379,6 +387,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
         github_installation_id: 9017,
         linear_team_id: "team_refresh_merge_9017",
         linear_team_key: "P9017",
+        default_branch: "main",
         clone_path: "/tmp/repos/refresh-merge-9017",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -418,6 +427,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
         github_installation_id: 9019,
         linear_team_id: "team_refresh_merge_9019",
         linear_team_key: "P9019",
+        default_branch: "main",
         clone_path: "/tmp/repos/refresh-merge-9019",
         linear_state_ids: %{
           "triage" => "st_triage",

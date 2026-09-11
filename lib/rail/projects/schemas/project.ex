@@ -9,13 +9,14 @@ defmodule Rail.Projects.Schemas.Project do
     field :name, :string
     field :github_repo, :string
     field :github_installation_id, :integer
-    field :default_branch, :string, default: "main"
-    belongs_to :linear_workspace, LinearWorkspace
+    field :default_branch, :string
     field :linear_team_id, :string
     field :linear_team_key, :string
     field :linear_state_ids, :map, default: %{}
     field :clone_path, :string
     field :active, :boolean, default: true
+
+    belongs_to :linear_workspace, LinearWorkspace
 
     timestamps()
   end
@@ -46,7 +47,6 @@ defmodule Rail.Projects.Schemas.Project do
   def changeset(project, attrs) do
     project
     |> cast(attrs, @fields)
-    |> cast(attrs, [:default_branch])
     |> validate_required(@required_fields)
     |> unique_constraint(:github_repo)
     |> foreign_key_constraint(:linear_workspace_id)

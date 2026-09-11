@@ -41,6 +41,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_task_schema_12601",
         linear_team_key: "P12601",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-schema-12601",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -138,6 +139,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
         github_installation_id: 12_604,
         linear_team_id: "team_task_schema_12604",
         linear_team_key: "P12604",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-schema-12604",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -177,6 +179,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
         github_installation_id: 12_605,
         linear_team_id: "team_task_schema_12605",
         linear_team_key: "P12605",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-schema-12605",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -356,6 +359,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
           github_installation_id: 12_606,
           linear_team_id: "team_task_schema_12606",
           linear_team_key: "P12606",
+          default_branch: "main",
           clone_path: "/tmp/repos/task-schema-12606",
           linear_state_ids: %{
             "triage" => "st_triage",

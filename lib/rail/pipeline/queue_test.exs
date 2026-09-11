@@ -32,6 +32,7 @@ defmodule Rail.Pipeline.QueueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_queue_10101",
         linear_team_key: "P10101",
+        default_branch: "main",
         clone_path: "/tmp/repos/queue-10101",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -119,10 +120,10 @@ defmodule Rail.Pipeline.QueueTest do
 
     {:ok, issue_10102} = Issues.capture_issue(system_scope(), project, "Task 10102")
 
-    {:ok, _chat_task} = Pipeline.create_task(issue_10102, :product)
+    {:ok, chat_task} = Pipeline.create_task(issue_10102, :product)
 
     {:ok, _chat_task} =
-      Pipeline.update_task(system_scope(), _chat_task.id, %{
+      Pipeline.update_task(system_scope(), chat_task.id, %{
         stage: :engineer,
         stage_state: :idle,
         active_chat_role_id: role.id
@@ -140,10 +141,10 @@ defmodule Rail.Pipeline.QueueTest do
 
     {:ok, issue_10103} = Issues.capture_issue(system_scope(), project, "Task 10103")
 
-    {:ok, _another_running} = Pipeline.create_task(issue_10103, :product)
+    {:ok, another_running} = Pipeline.create_task(issue_10103, :product)
 
     {:ok, _another_running} =
-      Pipeline.update_task(system_scope(), _another_running.id, %{
+      Pipeline.update_task(system_scope(), another_running.id, %{
         stage: :product,
         stage_state: :running
       })
@@ -221,10 +222,10 @@ defmodule Rail.Pipeline.QueueTest do
 
     {:ok, issue_10105} = Issues.capture_issue(system_scope(), project, "Third In")
 
-    {:ok, _t3} = Pipeline.create_task(issue_10105, :product)
+    {:ok, t3} = Pipeline.create_task(issue_10105, :product)
 
     {:ok, _t3} =
-      Pipeline.update_task(system_scope(), _t3.id, %{
+      Pipeline.update_task(system_scope(), t3.id, %{
         stage: :product,
         stage_state: :queued
       })
@@ -380,6 +381,7 @@ defmodule Rail.Pipeline.QueueTest do
         github_installation_id: 10_108,
         linear_team_id: "team_queue_10108",
         linear_team_key: "P10108",
+        default_branch: "main",
         clone_path: "/tmp/repos/queue-10108",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -397,6 +399,7 @@ defmodule Rail.Pipeline.QueueTest do
         github_installation_id: 10_109,
         linear_team_id: "team_queue_10109",
         linear_team_key: "P10109",
+        default_branch: "main",
         clone_path: "/tmp/repos/queue-10109",
         linear_state_ids: %{
           "triage" => "st_triage",

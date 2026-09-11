@@ -30,6 +30,7 @@ defmodule Rail.Issues.Actions.MoveStateTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_move_state_cached",
         linear_team_key: "MV1",
+        default_branch: "main",
         clone_path: "/tmp/repos/move-state-cached",
         linear_state_ids: %{"done" => "st_done_cached"}
       })
@@ -77,6 +78,7 @@ defmodule Rail.Issues.Actions.MoveStateTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_move_state_fetched",
         linear_team_key: "MV2",
+        default_branch: "main",
         clone_path: "/tmp/repos/move-state-fetched",
         linear_state_ids: %{}
       })
@@ -209,6 +211,7 @@ defmodule Rail.Issues.Actions.MoveStateTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_move_state_mut_err",
         linear_team_key: "MV3",
+        default_branch: "main",
         clone_path: "/tmp/repos/move-state-mut-err",
         linear_state_ids: %{"done" => "st_done"}
       })
@@ -243,6 +246,7 @@ defmodule Rail.Issues.Actions.MoveStateTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_move_state_ws_err",
         linear_team_key: "MV4",
+        default_branch: "main",
         clone_path: "/tmp/repos/move-state-ws-err",
         linear_state_ids: %{}
       })
@@ -277,6 +281,7 @@ defmodule Rail.Issues.Actions.MoveStateTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_move_state_unresolved",
         linear_team_key: "MV5",
+        default_branch: "main",
         clone_path: "/tmp/repos/move-state-unresolved",
         linear_state_ids: %{}
       })

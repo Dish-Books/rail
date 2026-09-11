@@ -28,6 +28,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_list_questions_7201",
         linear_team_key: "P7201",
+        default_branch: "main",
         clone_path: "/tmp/repos/list-questions-7201",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -95,6 +96,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
         github_installation_id: 7204,
         linear_team_id: "team_list_questions_two",
         linear_team_key: "LQ2",
+        default_branch: "main",
         clone_path: "/tmp/repos/list-questions-two",
         linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
       })
@@ -217,7 +219,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     end
   end
 
-  test "supports preload option", %{task: %Rail.Pipeline.Schemas.Task{id: expected_task_id} = task} do
+  test "supports preload option", %{task: %Rail.Pipeline.Schemas.Task{id: expected_task_id}} do
     {:ok, %Question{id: q_id}} =
       Pipeline.register_question(expected_task_id, %{
         prompt: "Question prompt 7213?"

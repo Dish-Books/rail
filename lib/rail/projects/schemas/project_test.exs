@@ -12,6 +12,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
              name: ["can't be blank"],
              github_repo: ["can't be blank"],
              github_installation_id: ["can't be blank"],
+             default_branch: ["can't be blank"],
              linear_team_id: ["can't be blank"],
              linear_team_key: ["can't be blank"],
              clone_path: ["can't be blank"]
@@ -34,6 +35,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
       name: "Rail Project",
       github_repo: "example/rail-app",
       github_installation_id: 12_345,
+      default_branch: "main",
       linear_team_id: "team_abc",
       linear_team_key: "RAIL",
       clone_path: "/tmp/rail"
@@ -52,6 +54,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
       name: "Project 1",
       github_repo: repo,
       github_installation_id: 99_001,
+      default_branch: "main",
       linear_team_id: "team_1",
       linear_team_key: "P1",
       clone_path: "/tmp/p1"
@@ -76,6 +79,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
       github_repo: "example/repo-fk-#{System.unique_integer([:positive])}",
       github_installation_id: 99_002,
       linear_workspace_id: "lw_000000000000000000000000",
+      default_branch: "main",
       linear_team_id: "team_fk",
       linear_team_key: "PFK",
       clone_path: "/tmp/pfk"
@@ -111,6 +115,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
                github_repo: repo,
                github_installation_id: 99_003,
                linear_workspace_id: workspace_id,
+               default_branch: "main",
                linear_team_id: "team_ws",
                linear_team_key: "PWS",
                clone_path: "/tmp/pws"

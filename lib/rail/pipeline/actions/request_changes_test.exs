@@ -35,6 +35,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_request_changes_8501",
         linear_team_key: "P8501",
+        default_branch: "main",
         clone_path: "/tmp/repos/request-changes-8501",
         linear_state_ids: %{
           "triage" => "st_triage",

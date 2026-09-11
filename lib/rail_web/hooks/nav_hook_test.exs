@@ -24,6 +24,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_102,
         linear_team_id: "team_nav_hook_13102",
         linear_team_key: "ONE",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13102",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -43,6 +44,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_103,
         linear_team_id: "team_nav_hook_13103",
         linear_team_key: "TWO",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13103",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -96,6 +98,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_105,
         linear_team_id: "team_nav_hook_13105",
         linear_team_key: "P13105",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13105",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -115,6 +118,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_106,
         linear_team_id: "team_nav_hook_13106",
         linear_team_key: "ACT",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13106",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -163,6 +167,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_108,
         linear_team_id: "team_nav_hook_13108",
         linear_team_key: "P13108",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13108",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -210,6 +215,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_110,
         linear_team_id: "team_nav_hook_13110",
         linear_team_key: "P13110",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13110",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -229,6 +235,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_111,
         linear_team_id: "team_nav_hook_13111",
         linear_team_key: "P13111",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13111",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -286,6 +293,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_113,
         linear_team_id: "team_nav_hook_13113",
         linear_team_key: "P13113",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13113",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -365,6 +373,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_115,
         linear_team_id: "team_nav_ok",
         linear_team_key: "P13115",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13115",
         linear_state_ids: %{"triage" => "st_triage_ok"},
         linear_workspace_id: ws_id,
@@ -432,6 +441,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_117,
         linear_team_id: "team_nav_err",
         linear_team_key: "P13117",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13117",
         linear_state_ids: %{"triage" => "st_triage_err"},
         linear_workspace_id: ws_id,
@@ -486,6 +496,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_119,
         linear_team_id: "team_nav_hook_13119",
         linear_team_key: "P13119",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13119",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -620,6 +631,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_121,
         linear_team_id: "team_late",
         linear_team_key: "P13121",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13121",
         linear_state_ids: %{"triage" => "st_triage_late"},
         linear_workspace_id: ws_id,
@@ -665,6 +677,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_123,
         linear_team_id: "team_nav_hook_13123",
         linear_team_key: "P13123",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13123",
         linear_state_ids: %{
           "triage" => "st_triage",

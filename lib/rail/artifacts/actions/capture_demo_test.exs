@@ -34,6 +34,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
         github_installation_id: 12_204,
         linear_team_id: "team_capture_demo_12204",
         linear_team_key: "P12204",
+        default_branch: "main",
         clone_path: "/tmp/repos/capture-demo-12204",
         linear_state_ids: %{
           "triage" => "st_triage",

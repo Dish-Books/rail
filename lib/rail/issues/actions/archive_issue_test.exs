@@ -33,6 +33,7 @@ defmodule Rail.Issues.Actions.ArchiveIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_arc_1",
         linear_team_key: "ARC",
+        default_branch: "main",
         clone_path: "/tmp/repos/archive",
         linear_state_ids: %{"canceled" => "st_canceled_1"}
       })
@@ -78,6 +79,7 @@ defmodule Rail.Issues.Actions.ArchiveIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_arc_user",
         linear_team_key: "ARU",
+        default_branch: "main",
         clone_path: "/tmp/repos/archive-user",
         linear_state_ids: %{canceled: "st_canceled_atom"}
       })
@@ -139,6 +141,7 @@ defmodule Rail.Issues.Actions.ArchiveIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_arc_2",
         linear_team_key: "ARF",
+        default_branch: "main",
         clone_path: "/tmp/repos/archive-failure",
         linear_state_ids: %{"canceled" => "st_canceled_2"}
       })

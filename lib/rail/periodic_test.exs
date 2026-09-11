@@ -37,6 +37,7 @@ defmodule Rail.PeriodicTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_periodic_12701",
         linear_team_key: "P12701",
+        default_branch: "main",
         clone_path: "/tmp/repos/periodic-12701",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -158,6 +159,7 @@ defmodule Rail.PeriodicTest do
         github_installation_id: 12_703,
         linear_team_id: "team_periodic_12703",
         linear_team_key: "P12703",
+        default_branch: "main",
         clone_path: "/tmp/repos/periodic-12703",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -215,10 +217,10 @@ defmodule Rail.PeriodicTest do
 
     {:ok, issue_12706} = Issues.capture_issue(system_scope(), project, "Task 12706")
 
-    {:ok, _task_no_pr} = Pipeline.create_task(issue_12706, :product)
+    {:ok, task_no_pr} = Pipeline.create_task(issue_12706, :product)
 
     {:ok, _task_no_pr} =
-      Pipeline.update_task(system_scope(), _task_no_pr.id, %{
+      Pipeline.update_task(system_scope(), task_no_pr.id, %{
         stage: :engineer,
         pr_number: nil
       })
@@ -232,10 +234,10 @@ defmodule Rail.PeriodicTest do
 
     {:ok, issue_12707} = Issues.capture_issue(system_scope(), project, "Task 12707")
 
-    {:ok, _task_merged} = Pipeline.create_task(issue_12707, :product)
+    {:ok, task_merged} = Pipeline.create_task(issue_12707, :product)
 
     {:ok, _task_merged} =
-      Pipeline.update_task(system_scope(), _task_merged.id, %{
+      Pipeline.update_task(system_scope(), task_merged.id, %{
         stage: :merged,
         pr_number: 30
       })
@@ -249,10 +251,10 @@ defmodule Rail.PeriodicTest do
 
     {:ok, issue_12708} = Issues.capture_issue(system_scope(), project, "Task 12708")
 
-    {:ok, _task_merged_at} = Pipeline.create_task(issue_12708, :product)
+    {:ok, task_merged_at} = Pipeline.create_task(issue_12708, :product)
 
     {:ok, _task_merged_at} =
-      Pipeline.update_task(system_scope(), _task_merged_at.id, %{
+      Pipeline.update_task(system_scope(), task_merged_at.id, %{
         stage: :ready_to_merge,
         pr_number: 40,
         merged_at: DateTime.utc_now()
@@ -287,6 +289,7 @@ defmodule Rail.PeriodicTest do
         github_installation_id: 12_709,
         linear_team_id: "team_periodic_12709",
         linear_team_key: "P12709",
+        default_branch: "main",
         clone_path: "/tmp/repos/periodic-12709",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -372,6 +375,7 @@ defmodule Rail.PeriodicTest do
         github_installation_id: 12_713,
         linear_team_id: "team_p1",
         linear_team_key: "P12713",
+        default_branch: "main",
         clone_path: "/tmp/repos/periodic-12713",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -392,6 +396,7 @@ defmodule Rail.PeriodicTest do
         github_installation_id: 12_714,
         linear_team_id: "team_inactive",
         linear_team_key: "P12714",
+        default_branch: "main",
         clone_path: "/tmp/repos/periodic-12714",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -439,6 +444,7 @@ defmodule Rail.PeriodicTest do
         github_installation_id: 12_716,
         linear_team_id: "team_bad",
         linear_team_key: "P12716",
+        default_branch: "main",
         clone_path: "/tmp/repos/periodic-12716",
         linear_state_ids: %{
           "triage" => "st_triage",

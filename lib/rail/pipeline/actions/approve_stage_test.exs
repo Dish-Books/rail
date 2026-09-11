@@ -32,6 +32,7 @@ defmodule Rail.Pipeline.Actions.ApproveStageTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_approve_stage_10501",
         linear_team_key: "P10501",
+        default_branch: "main",
         clone_path: "/tmp/repos/approve-stage-10501",
         linear_state_ids: %{
           "triage" => "st_triage",

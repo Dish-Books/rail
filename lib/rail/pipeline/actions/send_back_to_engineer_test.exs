@@ -31,6 +31,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_send_back_8401",
         linear_team_key: "P8401",
+        default_branch: "main",
         clone_path: "/tmp/repos/send-back-8401",
         linear_state_ids: %{
           "triage" => "st_triage",

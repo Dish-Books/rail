@@ -189,6 +189,7 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
           github_installation_id: 12_403,
           linear_team_id: "team_materialize_12403",
           linear_team_key: "P12403",
+          default_branch: "main",
           clone_path: "/tmp/repos/materialize-12403",
           linear_state_ids: %{
             "triage" => "st_triage",
@@ -376,6 +377,7 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
           github_installation_id: 12_405,
           linear_team_id: "team_materialize_12405",
           linear_team_key: "P12405",
+          default_branch: "main",
           clone_path: "/tmp/repos/materialize-12405",
           linear_state_ids: %{
             "triage" => "st_triage",

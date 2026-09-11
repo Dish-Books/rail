@@ -30,6 +30,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_release_blocked_6801",
         linear_team_key: "P6801",
+        default_branch: "main",
         clone_path: "/tmp/repos/release-blocked-6801",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -63,6 +64,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         github_installation_id: 6802,
         linear_team_id: "team_release_blocked_6802",
         linear_team_key: "P6802",
+        default_branch: "main",
         clone_path: "/tmp/repos/release-blocked-6802",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -127,6 +129,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         github_installation_id: 6803,
         linear_team_id: "team_release_blocked_6803",
         linear_team_key: "P6803",
+        default_branch: "main",
         clone_path: "/tmp/repos/release-blocked-6803",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -190,6 +193,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         github_installation_id: 6804,
         linear_team_id: "team_release_blocked_6804",
         linear_team_key: "P6804",
+        default_branch: "main",
         clone_path: "/tmp/repos/release-blocked-6804",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -253,6 +257,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         github_installation_id: 6805,
         linear_team_id: "team_release_blocked_6805",
         linear_team_key: "P6805",
+        default_branch: "main",
         clone_path: "/tmp/repos/release-blocked-6805",
         linear_state_ids: %{
           "triage" => "st_triage",

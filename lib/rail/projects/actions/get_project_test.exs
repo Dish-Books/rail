@@ -16,6 +16,7 @@ defmodule Rail.Projects.Actions.GetProjectTest do
                github_installation_id: 11_223,
                linear_team_id: "team_get",
                linear_team_key: "RC",
+               default_branch: "main",
                clone_path: "/tmp/get"
              })
 
@@ -50,6 +51,7 @@ defmodule Rail.Projects.Actions.GetProjectTest do
                github_installation_id: 44_556,
                linear_team_id: "team_bang",
                linear_team_key: "BP",
+               default_branch: "main",
                clone_path: "/tmp/bang"
              })
 

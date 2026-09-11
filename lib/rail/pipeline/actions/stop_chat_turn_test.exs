@@ -33,6 +33,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_stop_chat_8301",
         linear_team_key: "P8301",
+        default_branch: "main",
         clone_path: "/tmp/repos/stop-chat-8301",
         linear_state_ids: %{
           "triage" => "st_triage",

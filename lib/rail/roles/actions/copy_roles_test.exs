@@ -16,6 +16,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
         github_installation_id: 4301,
         linear_team_id: "team_copy_source",
         linear_team_key: "CPS",
+        default_branch: "main",
         clone_path: "/tmp/repos/copy-roles-source"
       })
 
@@ -26,6 +27,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
         github_installation_id: 4302,
         linear_team_id: "team_copy_target",
         linear_team_key: "CPT",
+        default_branch: "main",
         clone_path: "/tmp/repos/copy-roles-target"
       })
 

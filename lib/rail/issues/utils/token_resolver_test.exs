@@ -35,6 +35,7 @@ defmodule Rail.Issues.Utils.TokenResolverTest do
         github_installation_id: 5301,
         linear_team_id: "team_token_resolver",
         linear_team_key: "TKR",
+        default_branch: "main",
         clone_path: "/tmp/repos/token-resolver"
       })
 
@@ -58,6 +59,7 @@ defmodule Rail.Issues.Utils.TokenResolverTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_token_resolver_fallback",
         linear_team_key: "TKF",
+        default_branch: "main",
         clone_path: "/tmp/repos/token-resolver-fallback"
       })
 
@@ -86,6 +88,7 @@ defmodule Rail.Issues.Utils.TokenResolverTest do
         github_installation_id: 5303,
         linear_team_id: "team_token_resolver_none",
         linear_team_key: "TKN",
+        default_branch: "main",
         clone_path: "/tmp/repos/token-resolver-none"
       })
 

@@ -27,6 +27,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_skip_ready_6601",
         linear_team_key: "P6601",
+        default_branch: "main",
         clone_path: "/tmp/repos/skip-ready-6601",
         linear_state_ids: %{
           "triage" => "st_triage",

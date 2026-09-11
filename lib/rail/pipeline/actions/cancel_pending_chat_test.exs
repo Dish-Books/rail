@@ -33,6 +33,7 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_cancel_chat_8201",
         linear_team_key: "P8201",
+        default_branch: "main",
         clone_path: "/tmp/repos/cancel-chat-8201",
         linear_state_ids: %{
           "triage" => "st_triage",

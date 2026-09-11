@@ -16,7 +16,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
   test "redirects non-admin user to /", %{conn: conn} do
     # The first registered user is promoted to admin, so seed one before the regular user
-    {:ok, _admin} =
+    {:ok, admin} =
       Users.register_oauth_user(%{
         github_id: "gh_backends_live_1",
         login: "backends_live_user_1",
@@ -24,7 +24,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
         admin: true
       })
 
-    _admin_conn = log_in_user(conn, _admin)
+    _admin_conn = log_in_user(conn, admin)
 
     {:ok, user} =
       Users.register_oauth_user(%{

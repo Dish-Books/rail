@@ -32,6 +32,7 @@ defmodule Rail.ArtifactsTest do
         linear_workspace_id: ws.id,
         linear_team_id: "team_artifacts_facade",
         linear_team_key: "AFC",
+        default_branch: "main",
         clone_path: "/tmp/repos/artifacts-facade"
       })
 

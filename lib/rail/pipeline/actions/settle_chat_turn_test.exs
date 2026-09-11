@@ -751,6 +751,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
           github_installation_id: 11_004,
           linear_team_id: "team_settle_chat_11004",
           linear_team_key: "P11004",
+          default_branch: "main",
           clone_path: "/tmp/repos/settle-chat-11004",
           linear_state_ids: %{
             "triage" => "st_triage",
@@ -842,6 +843,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
           github_installation_id: 11_005,
           linear_team_id: "team_settle_chat_11005",
           linear_team_key: "P11005",
+          default_branch: "main",
           clone_path: "/tmp/repos/settle-chat-11005",
           linear_state_ids: %{
             "triage" => "st_triage",

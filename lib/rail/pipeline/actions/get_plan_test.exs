@@ -29,6 +29,7 @@ defmodule Rail.Pipeline.Actions.GetPlanTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_get_plan",
         linear_team_key: "GPL",
+        default_branch: "main",
         clone_path: "/tmp/repos/get-plan",
         linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
       })

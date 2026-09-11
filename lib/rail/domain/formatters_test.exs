@@ -3,7 +3,6 @@ defmodule Rail.Domain.FormattersTest do
 
   alias Rail.Domain.Formatters
   alias Rail.Issues
-  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Projects
@@ -29,6 +28,7 @@ defmodule Rail.Domain.FormattersTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_formatters_7701",
         linear_team_key: "P7701",
+        default_branch: "main",
         clone_path: "/tmp/repos/formatters-7701",
         linear_state_ids: %{
           "triage" => "st_triage",

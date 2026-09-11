@@ -31,6 +31,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_start_design_7201",
         linear_team_key: "P7201",
+        default_branch: "main",
         clone_path: create_temp_git_repo(),
         linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
       })

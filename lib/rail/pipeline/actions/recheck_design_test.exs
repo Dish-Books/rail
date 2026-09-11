@@ -35,6 +35,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_recheck_design_13701",
         linear_team_key: "P13701",
+        default_branch: "main",
         clone_path: "/tmp/repos/recheck-design-13701",
         linear_state_ids: %{
           "triage" => "st_triage",

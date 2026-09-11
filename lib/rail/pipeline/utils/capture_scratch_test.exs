@@ -33,6 +33,7 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_scratch_13501",
         linear_team_key: "P13501",
+        default_branch: "main",
         clone_path: "/tmp/repos/scratch-13501",
         linear_state_ids: %{
           "triage" => "st_triage",

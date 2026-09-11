@@ -27,6 +27,7 @@ defmodule Rail.Pipeline.Actions.LoadDiffTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_load_diff_7401",
         linear_team_key: "P7401",
+        default_branch: "main",
         clone_path: "/tmp/repos/load-diff-7401",
         linear_state_ids: %{
           "triage" => "st_triage",

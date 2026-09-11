@@ -27,6 +27,7 @@ defmodule Rail.Pipeline.Actions.ReconcileViewedDiffFilesTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_reconcile_diff_6901",
         linear_team_key: "P6901",
+        default_branch: "main",
         clone_path: "/tmp/repos/reconcile-diff-6901",
         linear_state_ids: %{
           "triage" => "st_triage",

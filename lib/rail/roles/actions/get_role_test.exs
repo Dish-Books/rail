@@ -15,6 +15,7 @@ defmodule Rail.Roles.Actions.GetRoleTest do
         github_installation_id: 4102,
         linear_team_id: "team_get_role",
         linear_team_key: "GTR",
+        default_branch: "main",
         clone_path: "/tmp/repos/get-role"
       })
 

@@ -30,6 +30,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_dismiss_question_6701",
         linear_team_key: "P6701",
+        default_branch: "main",
         clone_path: "/tmp/repos/dismiss-question-6701",
         linear_state_ids: %{
           "triage" => "st_triage",

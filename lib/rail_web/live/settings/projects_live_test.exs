@@ -84,6 +84,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                github_installation_id: 111,
                linear_team_id: "team_act",
                linear_team_key: "ACT",
+               default_branch: "main",
                clone_path: "/tmp/active",
                active: true
              })
@@ -95,6 +96,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                github_installation_id: 222,
                linear_team_id: "team_inact",
                linear_team_key: "INACT",
+               default_branch: "main",
                clone_path: "/tmp/inactive",
                active: false
              })
@@ -180,6 +182,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                github_installation_id: 333,
                linear_team_id: "team_edit",
                linear_team_key: "EDT",
+               default_branch: "main",
                clone_path: "/tmp/edit",
                active: true
              })
@@ -275,6 +278,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                github_installation_id: 444,
                linear_team_id: "team_ee",
                linear_team_key: "EE",
+               default_branch: "main",
                clone_path: "/tmp/ee"
              })
 
@@ -319,6 +323,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                github_installation_id: 111,
                linear_team_id: "t1",
                linear_team_key: "P1",
+               default_branch: "main",
                clone_path: "/tmp/p1"
              })
 
@@ -329,6 +334,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                github_installation_id: 222,
                linear_team_id: "t2",
                linear_team_key: "P2",
+               default_branch: "main",
                clone_path: "/tmp/p2"
              })
 

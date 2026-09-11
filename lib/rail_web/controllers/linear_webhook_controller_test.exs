@@ -64,6 +64,7 @@ defmodule RailWeb.LinearWebhookControllerTest do
         github_installation_id: 12_903,
         linear_team_id: "team_wh_1",
         linear_team_key: "P12903",
+        default_branch: "main",
         clone_path: "/tmp/repos/webhook-12903",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -134,6 +135,7 @@ defmodule RailWeb.LinearWebhookControllerTest do
         github_installation_id: 12_905,
         linear_team_id: "team_wh_default",
         linear_team_key: "P12905",
+        default_branch: "main",
         clone_path: "/tmp/repos/webhook-12905",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -232,6 +234,7 @@ defmodule RailWeb.LinearWebhookControllerTest do
         github_installation_id: 12_908,
         linear_team_id: "team_wh_2",
         linear_team_key: "P12908",
+        default_branch: "main",
         clone_path: "/tmp/repos/webhook-12908",
         linear_state_ids: %{
           "triage" => "st_triage",

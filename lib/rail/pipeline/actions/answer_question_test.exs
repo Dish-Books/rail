@@ -32,6 +32,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_answer_question_7801",
         linear_team_key: "P7801",
+        default_branch: "main",
         clone_path: "/tmp/repos/answer-question-7801",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -292,6 +293,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
         github_installation_id: 7803,
         linear_team_id: "team_answer_question_7803",
         linear_team_key: "P7803",
+        default_branch: "main",
         clone_path: "/tmp/repos/answer-question-7803",
         linear_state_ids: %{
           "triage" => "st_triage",

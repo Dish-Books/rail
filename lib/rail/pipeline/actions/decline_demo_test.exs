@@ -33,6 +33,7 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_decline_demo_8601",
         linear_team_key: "P8601",
+        default_branch: "main",
         clone_path: "/tmp/repos/decline-demo-8601",
         linear_state_ids: %{
           "triage" => "st_triage",

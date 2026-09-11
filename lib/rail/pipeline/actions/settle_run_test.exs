@@ -47,6 +47,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_settle_run_14501",
         linear_team_key: "P14501",
+        default_branch: "main",
         clone_path: "/tmp/repos/settle-run-14501",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -100,7 +101,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
              Pipeline.settle_run("tsk_000000000000000000000000", role_run_id)
   end
 
-  test "returns not_found when role_run cannot be resolved", %{task: %Task{id: task_id} = task} do
+  test "returns not_found when role_run cannot be resolved", %{task: %Task{id: task_id}} do
     assert {:error, :not_found} =
              Pipeline.settle_run(task_id, "rr_000000000000000000000000")
   end
@@ -1818,6 +1819,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         github_installation_id: 14_512,
         linear_team_id: "team_settle_run_14512",
         linear_team_key: "P14512",
+        default_branch: "main",
         clone_path: "/tmp/repos/settle-run-14512",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -1983,6 +1985,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         github_installation_id: 14_513,
         linear_team_id: "team_settle_run_14513",
         linear_team_key: "P14513",
+        default_branch: "main",
         clone_path: "/tmp/repos/settle-run-14513",
         linear_state_ids: %{
           "triage" => "st_triage",

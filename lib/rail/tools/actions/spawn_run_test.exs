@@ -30,7 +30,7 @@ defmodule Rail.Tools.Actions.SpawnRunTest do
     err = Path.join(tmp_dir, "streams.err")
 
     {:ok, _port, os_pid} =
-      Tools.spawn_run("/bin/sh", ["-c", "echo to_stdout; echo to_stderr >&2"],
+      Tools.spawn_run("/bin/sh", ["-c", "echo to_stdout; echo to_stderr >&2; sleep 5"],
         stdout_path: out,
         stderr_path: err
       )
@@ -45,7 +45,7 @@ defmodule Rail.Tools.Actions.SpawnRunTest do
     out = Path.join(tmp_dir, "env.log")
 
     {:ok, _port, os_pid} =
-      Tools.spawn_run("/bin/sh", ["-c", ~s(printf '%s' "$CUSTOM_VAR")],
+      Tools.spawn_run("/bin/sh", ["-c", ~s(printf '%s' "$CUSTOM_VAR"; sleep 5)],
         env: %{"CUSTOM_VAR" => "spawned_value"},
         stdout_path: out,
         stderr_path: "#{out}.err"
@@ -60,7 +60,7 @@ defmodule Rail.Tools.Actions.SpawnRunTest do
     out = Path.join(tmp_dir, "cwd.log")
 
     {:ok, _port, os_pid} =
-      Tools.spawn_run("/bin/sh", ["-c", "pwd"],
+      Tools.spawn_run("/bin/sh", ["-c", "pwd; sleep 5"],
         cd: tmp_dir,
         stdout_path: out,
         stderr_path: "#{out}.err"

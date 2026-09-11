@@ -30,6 +30,7 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_question_schema_7501",
         linear_team_key: "P7501",
+        default_branch: "main",
         clone_path: "/tmp/repos/question-schema-7501",
         linear_state_ids: %{
           "triage" => "st_triage",

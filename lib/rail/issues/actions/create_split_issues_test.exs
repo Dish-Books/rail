@@ -30,6 +30,7 @@ defmodule Rail.Issues.Actions.CreateSplitIssuesTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_split_1",
         linear_team_key: "SP1",
+        default_branch: "main",
         clone_path: "/tmp/repos/split-issues-6201",
         linear_state_ids: %{"triage" => "st_triage_split"}
       })
@@ -123,6 +124,7 @@ defmodule Rail.Issues.Actions.CreateSplitIssuesTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_split_2",
         linear_team_key: "SP3",
+        default_branch: "main",
         clone_path: "/tmp/repos/split-issues-6203",
         linear_state_ids: %{"triage" => "st_triage_split"}
       })
@@ -155,6 +157,7 @@ defmodule Rail.Issues.Actions.CreateSplitIssuesTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_split_issues_6204",
         linear_team_key: "SP4",
+        default_branch: "main",
         clone_path: "/tmp/repos/split-issues-6204"
       })
 
@@ -174,6 +177,7 @@ defmodule Rail.Issues.Actions.CreateSplitIssuesTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_split_issues_6205",
         linear_team_key: "SP5",
+        default_branch: "main",
         clone_path: "/tmp/repos/split-issues-6205"
       })
 

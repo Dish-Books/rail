@@ -30,6 +30,7 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_carried_reports_9801",
         linear_team_key: "P9801",
+        default_branch: "main",
         clone_path: "/tmp/repos/carried-reports-9801",
         linear_state_ids: %{
           "triage" => "st_triage",

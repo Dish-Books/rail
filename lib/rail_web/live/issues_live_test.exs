@@ -77,6 +77,7 @@ defmodule RailWeb.IssuesLiveTest do
                github_installation_id: 601,
                linear_team_id: "t_iss",
                linear_team_key: "ISS",
+               default_branch: "main",
                clone_path: "/tmp/issues-project",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -146,6 +147,7 @@ defmodule RailWeb.IssuesLiveTest do
                github_installation_id: 701,
                linear_team_id: "t_demo",
                linear_team_key: "DEMO",
+               default_branch: "main",
                clone_path: "/tmp/demo-project",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -220,6 +222,7 @@ defmodule RailWeb.IssuesLiveTest do
                github_installation_id: 702,
                linear_team_id: "t_prio",
                linear_team_key: "PRIO",
+               default_branch: "main",
                clone_path: "/tmp/priority-project",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -350,6 +353,7 @@ defmodule RailWeb.IssuesLiveTest do
                github_installation_id: 703,
                linear_team_id: "t_fin",
                linear_team_key: "FIN",
+               default_branch: "main",
                clone_path: "/tmp/finished-project",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -443,6 +447,7 @@ defmodule RailWeb.IssuesLiveTest do
                linear_team_id: "t_bl",
                linear_team_key: "BL",
                linear_state_ids: %{"in_progress" => "st_in_prog_bl"},
+               default_branch: "main",
                clone_path: "/tmp/bring-local-proj",
                active: true
              })
@@ -517,6 +522,7 @@ defmodule RailWeb.IssuesLiveTest do
                linear_workspace_id: ws_id,
                linear_team_id: "t_ed",
                linear_team_key: "ED",
+               default_branch: "main",
                clone_path: "/tmp/editor-proj",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -632,6 +638,7 @@ defmodule RailWeb.IssuesLiveTest do
                linear_team_id: "t_arc",
                linear_team_key: "ARC",
                linear_state_ids: %{"canceled" => "st_canceled_arc"},
+               default_branch: "main",
                clone_path: "/tmp/archive-proj",
                active: true
              })
@@ -735,6 +742,7 @@ defmodule RailWeb.IssuesLiveTest do
                linear_workspace_id: ws_id,
                linear_team_id: "t_sync",
                linear_team_key: "SYNC",
+               default_branch: "main",
                clone_path: "/tmp/sync-proj",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -781,6 +789,7 @@ defmodule RailWeb.IssuesLiveTest do
                github_installation_id: 708,
                linear_team_id: "t_ps",
                linear_team_key: "PS",
+               default_branch: "main",
                clone_path: "/tmp/pubsub-proj",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -943,6 +952,7 @@ defmodule RailWeb.IssuesLiveTest do
                github_installation_id: 801,
                linear_team_id: "t_key",
                linear_team_key: "KEY",
+               default_branch: "main",
                clone_path: "/tmp/with-key",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}

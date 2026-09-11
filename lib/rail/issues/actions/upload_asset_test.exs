@@ -26,6 +26,7 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_upload_asset",
         linear_team_key: "UPA",
+        default_branch: "main",
         clone_path: "/tmp/repos/upload-asset"
       })
 

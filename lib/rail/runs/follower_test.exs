@@ -224,7 +224,7 @@ defmodule Rail.Runs.FollowerTest do
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["30"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
 
-    {:ok, _follower_pid} =
+    {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
         role_run: role_run,
@@ -235,7 +235,7 @@ defmodule Rail.Runs.FollowerTest do
 
     # The follower runs in its own process, so lend it this test's DB connection.
 
-    Sandbox.allow(Repo, self(), _follower_pid)
+    Sandbox.allow(Repo, self(), follower_pid)
 
     assert Tools.os_process_alive?(pid)
 
@@ -372,7 +372,7 @@ defmodule Rail.Runs.FollowerTest do
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
 
-    {:ok, _follower_pid} =
+    {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
         role_run: role_run,
@@ -383,7 +383,7 @@ defmodule Rail.Runs.FollowerTest do
 
     # The follower runs in its own process, so lend it this test's DB connection.
 
-    Sandbox.allow(Repo, self(), _follower_pid)
+    Sandbox.allow(Repo, self(), follower_pid)
 
     # Stop via role_run_id
     {:ok, stopped} = Follower.stop_run(role_run.id)
@@ -495,7 +495,7 @@ defmodule Rail.Runs.FollowerTest do
       })
       |> Repo.insert!()
 
-    {:ok, _follower_pid} =
+    {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run1,
         role_run: role_run1,
@@ -507,7 +507,7 @@ defmodule Rail.Runs.FollowerTest do
 
     # The follower runs in its own process, so lend it this test's DB connection.
 
-    Sandbox.allow(Repo, self(), _follower_pid)
+    Sandbox.allow(Repo, self(), follower_pid)
 
     Process.unlink(port1)
 
@@ -546,7 +546,7 @@ defmodule Rail.Runs.FollowerTest do
       })
       |> Repo.insert!()
 
-    {:ok, _follower_pid} =
+    {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run2,
         role_run: role_run2,
@@ -558,7 +558,7 @@ defmodule Rail.Runs.FollowerTest do
 
     # The follower runs in its own process, so lend it this test's DB connection.
 
-    Sandbox.allow(Repo, self(), _follower_pid)
+    Sandbox.allow(Repo, self(), follower_pid)
 
     Process.unlink(port2)
 
@@ -658,6 +658,7 @@ defmodule Rail.Runs.FollowerTest do
         github_installation_id: 12_502,
         linear_team_id: "team_follower_12502",
         linear_team_key: "P12502",
+        default_branch: "main",
         clone_path: "/tmp/repos/follower-12502",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -718,7 +719,7 @@ defmodule Rail.Runs.FollowerTest do
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
 
-    {:ok, _follower_pid} =
+    {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         run: run,
         role_run: role_run,
@@ -730,7 +731,7 @@ defmodule Rail.Runs.FollowerTest do
 
     # The follower runs in its own process, so lend it this test's DB connection.
 
-    Sandbox.allow(Repo, self(), _follower_pid)
+    Sandbox.allow(Repo, self(), follower_pid)
 
     question_line =
       ~s({"type":"assistant","message":{"content":[{"type":"text","text":"[QUESTION: Which db to choose?] [OPTIONS: PG, MySQL]"}]}}\n)

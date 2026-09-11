@@ -27,6 +27,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_list_issues_one",
         linear_team_key: "LI1",
+        default_branch: "main",
         clone_path: "/tmp/repos/list-issues-one"
       })
 
@@ -38,6 +39,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_list_issues_two",
         linear_team_key: "LI2",
+        default_branch: "main",
         clone_path: "/tmp/repos/list-issues-two"
       })
 

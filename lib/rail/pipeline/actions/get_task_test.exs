@@ -30,6 +30,7 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_get_task",
         linear_team_key: "GTK",
+        default_branch: "main",
         clone_path: "/tmp/repos/get-task",
         linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
       })

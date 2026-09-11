@@ -32,6 +32,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_list_tasks_7101",
         linear_team_key: "P7101",
+        default_branch: "main",
         clone_path: "/tmp/repos/list-tasks-7101",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -116,10 +117,10 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, issue_7104} = Issues.capture_issue(system_scope(), project, "Task 7104")
 
-    {:ok, _t_eng_running} = Pipeline.create_task(issue_7104, :product)
+    {:ok, t_eng_running} = Pipeline.create_task(issue_7104, :product)
 
     {:ok, _t_eng_running} =
-      Pipeline.update_task(system_scope(), _t_eng_running.id, %{
+      Pipeline.update_task(system_scope(), t_eng_running.id, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -164,6 +165,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         github_installation_id: 7107,
         linear_team_id: "team_list_tasks_7107",
         linear_team_key: "P7107",
+        default_branch: "main",
         clone_path: "/tmp/repos/list-tasks-7107",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -181,6 +183,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         github_installation_id: 7108,
         linear_team_id: "team_list_tasks_7108",
         linear_team_key: "P7108",
+        default_branch: "main",
         clone_path: "/tmp/repos/list-tasks-7108",
         linear_state_ids: %{
           "triage" => "st_triage",

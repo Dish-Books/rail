@@ -35,6 +35,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
         github_installation_id: 12_303,
         linear_team_id: "team_capture_qa_12303",
         linear_team_key: "P12303",
+        default_branch: "main",
         clone_path: "/tmp/repos/capture-qa-12303",
         linear_state_ids: %{
           "triage" => "st_triage",

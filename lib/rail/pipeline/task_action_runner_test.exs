@@ -29,6 +29,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_task_runner_10301",
         linear_team_key: "P10301",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-runner-10301",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -78,6 +79,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
         github_installation_id: 10_302,
         linear_team_id: "team_task_runner_10302",
         linear_team_key: "P10302",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-runner-10302",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -134,6 +136,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
         github_installation_id: 10_304,
         linear_team_id: "team_task_runner_10304",
         linear_team_key: "P10304",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-runner-10304",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -178,6 +181,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
         github_installation_id: 10_306,
         linear_team_id: "team_task_runner_10306",
         linear_team_key: "P10306",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-runner-10306",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -219,6 +223,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
         github_installation_id: 10_308,
         linear_team_id: "team_task_runner_10308",
         linear_team_key: "P10308",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-runner-10308",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -260,6 +265,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
         github_installation_id: 10_310,
         linear_team_id: "team_task_runner_10310",
         linear_team_key: "P10310",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-runner-10310",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -303,6 +309,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
         github_installation_id: 10_312,
         linear_team_id: "team_task_runner_10312",
         linear_team_key: "P10312",
+        default_branch: "main",
         clone_path: "/tmp/repos/task-runner-10312",
         linear_state_ids: %{
           "triage" => "st_triage",

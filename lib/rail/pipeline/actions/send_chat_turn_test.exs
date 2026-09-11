@@ -468,6 +468,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
         github_installation_id: 11_203,
         linear_team_id: "team_send_chat_11203",
         linear_team_key: "P11203",
+        default_branch: "main",
         clone_path: bad_repo,
         linear_state_ids: %{
           "triage" => "st_triage",

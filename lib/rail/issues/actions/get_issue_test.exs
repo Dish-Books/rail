@@ -26,6 +26,7 @@ defmodule Rail.Issues.Actions.GetIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_get_issue",
         linear_team_key: "GTI",
+        default_branch: "main",
         clone_path: "/tmp/repos/get-issue"
       })
 

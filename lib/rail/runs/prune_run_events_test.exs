@@ -31,6 +31,7 @@ defmodule Rail.Runs.PruneRunEventsTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_prune_events_10401",
         linear_team_key: "P10401",
+        default_branch: "main",
         clone_path: "/tmp/repos/prune-events-10401",
         linear_state_ids: %{
           "triage" => "st_triage",

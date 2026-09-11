@@ -29,6 +29,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_cancel_task_8101",
         linear_team_key: "P8101",
+        default_branch: "main",
         clone_path: "/tmp/repos/cancel-task-8101",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -75,6 +76,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
         github_installation_id: 8102,
         linear_team_id: "team_cancel_task_8102",
         linear_team_key: "P8102",
+        default_branch: "main",
         clone_path: "/tmp/repos/cancel-task-8102",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -129,6 +131,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
         github_installation_id: 8105,
         linear_team_id: "team_cancel_task_8105",
         linear_team_key: "P8105",
+        default_branch: "main",
         clone_path: "/tmp/repos/cancel-task-8105",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -174,6 +177,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
         github_installation_id: 8107,
         linear_team_id: "team_cancel_task_8107",
         linear_team_key: "P8107",
+        default_branch: "main",
         clone_path: "/tmp/repos/cancel-task-8107",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -226,6 +230,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
         github_installation_id: 8109,
         linear_team_id: "team_cancel_task_8109",
         linear_team_key: "P8109",
+        default_branch: "main",
         clone_path: "/tmp/repos/cancel-task-8109",
         linear_state_ids: %{
           "triage" => "st_triage",

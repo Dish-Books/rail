@@ -35,6 +35,7 @@ defmodule Rail.Pipeline.Actions.PickDesignDirectionTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_pick_design_9301",
         linear_team_key: "P9301",
+        default_branch: "main",
         clone_path: "/tmp/repos/pick-design-9301",
         linear_state_ids: %{
           "triage" => "st_triage",

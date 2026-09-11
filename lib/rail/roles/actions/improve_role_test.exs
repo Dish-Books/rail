@@ -18,6 +18,7 @@ defmodule Rail.Roles.Actions.ImproveRoleTest do
         github_installation_id: 4502,
         linear_team_id: "team_improve_role",
         linear_team_key: "IMP",
+        default_branch: "main",
         clone_path: "/tmp/repos/improve-role"
       })
 

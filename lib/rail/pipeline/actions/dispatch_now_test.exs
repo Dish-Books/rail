@@ -28,6 +28,7 @@ defmodule Rail.Pipeline.Actions.DispatchNowTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_dispatch_now_9101",
         linear_team_key: "P9101",
+        default_branch: "main",
         clone_path: "/tmp/repos/dispatch-now-9101",
         linear_state_ids: %{
           "triage" => "st_triage",

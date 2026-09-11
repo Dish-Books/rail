@@ -76,6 +76,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_001,
         linear_team_id: "team_roles_live_13001",
         linear_team_key: "P13001",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13001",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -118,6 +119,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_002,
         linear_team_id: "team_roles_live_13002",
         linear_team_key: "P13002",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13002",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -142,6 +144,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_003,
         linear_team_id: "team_roles_live_13003",
         linear_team_key: "P13003",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13003",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -227,6 +230,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_004,
         linear_team_id: "team_roles_live_13004",
         linear_team_key: "P13004",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13004",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -274,6 +278,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_005,
         linear_team_id: "team_roles_live_13005",
         linear_team_key: "P13005",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13005",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -342,6 +347,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_006,
         linear_team_id: "team_roles_live_13006",
         linear_team_key: "P13006",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13006",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -396,6 +402,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_007,
         linear_team_id: "team_roles_live_13007",
         linear_team_key: "P13007",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13007",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -422,6 +429,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_008,
         linear_team_id: "team_roles_live_13008",
         linear_team_key: "P13008",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13008",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -456,6 +464,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_009,
         linear_team_id: "team_roles_live_13009",
         linear_team_key: "P13009",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13009",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -500,6 +509,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_010,
         linear_team_id: "team_roles_live_13010",
         linear_team_key: "P13010",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13010",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -589,6 +599,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_011,
         linear_team_id: "team_roles_live_13011",
         linear_team_key: "P13011",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13011",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -640,6 +651,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_012,
         linear_team_id: "team_roles_live_13012",
         linear_team_key: "P13012",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13012",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -670,6 +682,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_013,
         linear_team_id: "team_roles_live_13013",
         linear_team_key: "P13013",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13013",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -687,6 +700,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_014,
         linear_team_id: "team_roles_live_13014",
         linear_team_key: "P13014",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13014",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -707,7 +721,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert_patched(view, ~p"/settings/roles?project=#{project2.id}")
   end
 
-  test "renders available models dropdown and validates model and name in create modal", %{
+  test "renders available models dropdown and validates name in create modal", %{
     admin_conn: conn,
     admin_user: _admin_user
   } do
@@ -718,6 +732,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_015,
         linear_team_id: "team_roles_live_13015",
         linear_team_key: "P13015",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13015",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -739,7 +754,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
     refute has_element?(view, "#role-model-select option[value='__custom__']")
 
-    # Submit invalid form with empty name and a blank model choice
+    # Submit the form with an empty name and an unparseable max_concurrent
     view
     |> form("#role-form", %{
       "role" => %{
@@ -747,7 +762,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         "description" => "A description",
         "stage" => "product",
         "cli_backend" => "claude",
-        "model_choice" => "",
+        "model_choice" => "claude-sonnet-5",
         "reasoning_effort" => "high",
         "system_prompt" => "Prompt",
         "max_concurrent" => "invalid"
@@ -756,7 +771,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
     |> render_submit()
 
     assert has_element?(view, "#role-name-error", "can't be blank")
-    assert has_element?(view, "#role-model-error", "can't be blank")
 
     # Validate with model_choice: nil
     render_hook(view, "validate_role", %{
@@ -782,6 +796,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_016,
         linear_team_id: "team_roles_live_13016",
         linear_team_key: "P13016",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13016",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -809,7 +824,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       "role" => %{
         "name" => "Valid Name",
         "description" => "Desc",
-        "stage" => "",
+        "stage" => "engineer",
         "cli_backend" => "claude",
         "model_choice" => "claude-sonnet-5",
         "reasoning_effort" => "high",
@@ -830,12 +845,12 @@ defmodule RailWeb.Settings.RolesLiveTest do
       "role" => %{
         "name" => "Another Valid Name",
         "description" => "Desc",
-        "stage" => "",
+        "stage" => "qa",
         "cli_backend" => "claude",
         "model_choice" => "claude-sonnet-5",
         "reasoning_effort" => "high",
         "system_prompt" => "Prompt",
-        "max_concurrent" => nil
+        "max_concurrent" => ""
       }
     })
     |> render_submit()
@@ -854,6 +869,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_017,
         linear_team_id: "team_roles_live_13017",
         linear_team_key: "P13017",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13017",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -884,6 +900,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_018,
         linear_team_id: "team_roles_live_13018",
         linear_team_key: "P13018",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13018",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -901,6 +918,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_019,
         linear_team_id: "team_roles_live_13019",
         linear_team_key: "P13019",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13019",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -943,6 +961,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_020,
         linear_team_id: "team_roles_live_13020",
         linear_team_key: "P13020",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13020",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -1012,6 +1031,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_021,
         linear_team_id: "team_roles_live_13021",
         linear_team_key: "P13021",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13021",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -1070,6 +1090,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         github_installation_id: 13_022,
         linear_team_id: "team_roles_live_13022",
         linear_team_key: "P13022",
+        default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13022",
         linear_state_ids: %{
           "triage" => "st_triage",

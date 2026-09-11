@@ -32,6 +32,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_mark_pr_ready_8901",
         linear_team_key: "P8901",
+        default_branch: "main",
         clone_path: "/tmp/repos/mark-pr-ready-8901",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -78,6 +79,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
         github_installation_id: 8902,
         linear_team_id: "team_mark_pr_ready_8902",
         linear_team_key: "P8902",
+        default_branch: "main",
         clone_path: "/tmp/repos/mark-pr-ready-8902",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -123,6 +125,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
         github_installation_id: 8904,
         linear_team_id: "team_mark_pr_ready_8904",
         linear_team_key: "P8904",
+        default_branch: "main",
         clone_path: "/tmp/repos/mark-pr-ready-8904",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -182,6 +185,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
         github_installation_id: 8907,
         linear_team_id: "team_mark_pr_ready_8907",
         linear_team_key: "P8907",
+        default_branch: "main",
         clone_path: "/tmp/repos/mark-pr-ready-8907",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -229,6 +233,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
         github_installation_id: 8909,
         linear_team_id: "team_mark_pr_ready_8909",
         linear_team_key: "P8909",
+        default_branch: "main",
         clone_path: "/tmp/repos/mark-pr-ready-8909",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -273,6 +278,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
         github_installation_id: 8911,
         linear_team_id: "team_mark_pr_ready_8911",
         linear_team_key: "P8911",
+        default_branch: "main",
         clone_path: "/tmp/repos/mark-pr-ready-8911",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -326,6 +332,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
         github_installation_id: 8913,
         linear_team_id: "team_mark_pr_ready_8913",
         linear_team_key: "P8913",
+        default_branch: "main",
         clone_path: "/tmp/repos/mark-pr-ready-8913",
         linear_state_ids: %{
           "triage" => "st_triage",

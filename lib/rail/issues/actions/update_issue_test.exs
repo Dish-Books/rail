@@ -29,6 +29,7 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_update_issue_one",
         linear_team_key: "U01",
+        default_branch: "main",
         clone_path: "/tmp/repos/update-issue-one",
         linear_state_ids: %{"in_progress" => "st_prog_1"}
       })
@@ -78,6 +79,7 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_update_issue_user",
         linear_team_key: "U02",
+        default_branch: "main",
         clone_path: "/tmp/repos/update-issue-user"
       })
 
@@ -136,6 +138,7 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_update_issue_nostate",
         linear_team_key: "U03",
+        default_branch: "main",
         clone_path: "/tmp/repos/update-issue-nostate"
       })
 
@@ -168,6 +171,7 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_update_issue_empty",
         linear_team_key: "U04",
+        default_branch: "main",
         clone_path: "/tmp/repos/update-issue-empty"
       })
 
@@ -200,6 +204,7 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_update_issue_failure",
         linear_team_key: "U05",
+        default_branch: "main",
         clone_path: "/tmp/repos/update-issue-failure"
       })
 

@@ -27,6 +27,7 @@ defmodule Rail.Issues.Actions.CommentTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_comment",
         linear_team_key: "CMT",
+        default_branch: "main",
         clone_path: "/tmp/repos/comment"
       })
 

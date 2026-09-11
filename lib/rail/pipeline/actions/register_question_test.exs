@@ -36,6 +36,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_register_question_7901",
         linear_team_key: "P7901",
+        default_branch: "main",
         clone_path: "/tmp/repos/register-question-7901",
         linear_state_ids: %{
           "triage" => "st_triage",

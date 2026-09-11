@@ -17,6 +17,7 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
         github_installation_id: 4501,
         linear_team_id: "team_recent_runs",
         linear_team_key: "RCR",
+        default_branch: "main",
         clone_path: "/tmp/repos/recent-runs"
       })
 

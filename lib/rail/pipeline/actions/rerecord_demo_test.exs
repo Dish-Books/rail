@@ -33,6 +33,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
         linear_workspace_id: workspace.id,
         linear_team_id: "team_rerecord_demo_9401",
         linear_team_key: "P9401",
+        default_branch: "main",
         clone_path: "/tmp/repos/rerecord-demo-9401",
         linear_state_ids: %{
           "triage" => "st_triage",

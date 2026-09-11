@@ -17,6 +17,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
         github_installation_id: 4503,
         linear_team_id: "team_role_schema",
         linear_team_key: "RLS",
+        default_branch: "main",
         clone_path: "/tmp/repos/role-schema"
       })
 

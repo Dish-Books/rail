@@ -16,6 +16,7 @@ defmodule Rail.Roles.Actions.ApplyImprovedInstructionsTest do
         github_installation_id: 4404,
         linear_team_id: "team_apply_instructions",
         linear_team_key: "API",
+        default_branch: "main",
         clone_path: "/tmp/repos/apply-instructions"
       })
 
