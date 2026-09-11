@@ -233,7 +233,6 @@ defmodule Rail.RunsTest do
              Runs.append_run_event(role_run, "Line from struct")
 
     assert Runs.chat_prompt("Hi") =~ "Human message:\nHi"
-    assert Runs.build_chat_prompt("Hi") =~ "Human message:\nHi"
   end
 
   test "get_latest_role_run_for_task/2 returns latest run" do

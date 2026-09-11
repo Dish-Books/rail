@@ -20,7 +20,6 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
   alias Rail.Runs.ArgvBuilder
-  alias Rail.Runs.PromptBuilder
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Scope
 
@@ -371,7 +370,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
     Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :chat_dispatched})
 
     message = updated_role_run.pending_chat || Keyword.get(opts, :text, "")
-    chat_prompt = PromptBuilder.chat_prompt(message)
+    chat_prompt = Runs.chat_prompt(message)
 
     argv =
       ArgvBuilder.build_argv(

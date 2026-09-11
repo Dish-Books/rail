@@ -1,7 +1,7 @@
-defmodule Rail.Runs.PromptBuilderTest do
+defmodule Rail.Runs.Actions.BuildPromptTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Runs.PromptBuilder
+  alias Rail.Runs.Actions.BuildPrompt
 
   test "sends the answer, not the task again, when resuming a session" do
     opts = [
@@ -12,7 +12,7 @@ defmodule Rail.Runs.PromptBuilderTest do
       backend: :agy
     ]
 
-    prompt = PromptBuilder.build_prompt(opts)
+    prompt = BuildPrompt.build_prompt(opts)
 
     assert prompt =~ "The answer is: exclude"
     assert prompt =~ "Continue from where you stopped."
@@ -26,7 +26,7 @@ defmodule Rail.Runs.PromptBuilderTest do
       task_description: "do the thing"
     }
 
-    prompt = PromptBuilder.build_prompt(opts)
+    prompt = BuildPrompt.build_prompt(opts)
 
     assert prompt =~ "do the thing"
     assert prompt =~ "The answer is: exclude"
@@ -39,7 +39,7 @@ defmodule Rail.Runs.PromptBuilderTest do
       task_description: "do the thing"
     ]
 
-    prompt = PromptBuilder.build_prompt(opts)
+    prompt = BuildPrompt.build_prompt(opts)
 
     assert prompt =~ "house rules"
     assert prompt =~ "do the thing"
@@ -54,7 +54,7 @@ defmodule Rail.Runs.PromptBuilderTest do
       task_description: "do the thing"
     ]
 
-    first_prompt = PromptBuilder.build_prompt(first_opts)
+    first_prompt = BuildPrompt.build_prompt(first_opts)
 
     assert String.starts_with?(
              first_prompt,
@@ -71,7 +71,7 @@ defmodule Rail.Runs.PromptBuilderTest do
       role_instructions: "Act as a principal engineer."
     ]
 
-    resume_prompt = PromptBuilder.build_prompt(resume_opts)
+    resume_prompt = BuildPrompt.build_prompt(resume_opts)
 
     assert String.starts_with?(
              resume_prompt,
@@ -90,7 +90,7 @@ defmodule Rail.Runs.PromptBuilderTest do
       task_description: "do the thing"
     ]
 
-    prompt = PromptBuilder.build_prompt(opts)
+    prompt = BuildPrompt.build_prompt(opts)
 
     refute prompt =~ "<role-instructions>"
     refute prompt =~ "Act as a principal engineer."
@@ -105,7 +105,7 @@ defmodule Rail.Runs.PromptBuilderTest do
       plan: plan
     ]
 
-    prompt = PromptBuilder.build_prompt(opts)
+    prompt = BuildPrompt.build_prompt(opts)
 
     assert prompt =~ plan
 
@@ -124,7 +124,7 @@ defmodule Rail.Runs.PromptBuilderTest do
       task_description: "do the thing"
     ]
 
-    prompt = PromptBuilder.build_prompt(opts)
+    prompt = BuildPrompt.build_prompt(opts)
 
     assert prompt =~ "My answer"
     refute prompt =~ plan
@@ -137,15 +137,15 @@ defmodule Rail.Runs.PromptBuilderTest do
       task_description: "do the thing"
     }
 
-    assert PromptBuilder.build_prompt(opts) == "Direct chat turn message"
+    assert BuildPrompt.build_prompt(opts) == "Direct chat turn message"
   end
 
   test "extracts ticket from task struct or map" do
     task = %{description: "task description text"}
-    assert PromptBuilder.build_prompt(task: task) == "task description text\n"
+    assert BuildPrompt.build_prompt(task: task) == "task description text\n"
 
-    assert PromptBuilder.build_prompt(ticket: "explicit ticket text") == "explicit ticket text\n"
-    assert PromptBuilder.build_prompt(description: "simple description") == "simple description\n"
+    assert BuildPrompt.build_prompt(ticket: "explicit ticket text") == "explicit ticket text\n"
+    assert BuildPrompt.build_prompt(description: "simple description") == "simple description\n"
   end
 
   test "handles empty context snippet and plan gracefully" do
@@ -155,7 +155,7 @@ defmodule Rail.Runs.PromptBuilderTest do
       task_description: "do work"
     ]
 
-    assert PromptBuilder.build_prompt(opts) == "do work\n"
+    assert BuildPrompt.build_prompt(opts) == "do work\n"
   end
 
   test "supports explicit is_resume boolean" do
@@ -164,22 +164,14 @@ defmodule Rail.Runs.PromptBuilderTest do
       pending_answer: "Done with refactor"
     ]
 
-    prompt = PromptBuilder.build_prompt(opts)
+    prompt = BuildPrompt.build_prompt(opts)
     assert prompt =~ "Done with refactor"
     assert prompt =~ "Continue from where you stopped."
   end
 
   test "handles empty options and non-standard backends" do
-    assert PromptBuilder.build_prompt(%{}) == "\n"
-    assert PromptBuilder.build_prompt(backend: nil, task_description: "Hello") == "Hello\n"
-    assert PromptBuilder.build_prompt(backend: 123, task_description: "Hello") == "Hello\n"
-  end
-
-  test "chat_prompt and build_chat_prompt helpers" do
-    assert PromptBuilder.chat_prompt("How are you?") =~ "How are you?"
-    assert PromptBuilder.chat_prompt(nil) =~ "Human message:\n\n"
-    assert PromptBuilder.build_chat_prompt("Direct call") =~ "Direct call"
-    assert Rail.Runs.chat_prompt("Via Runs") =~ "Via Runs"
-    assert Rail.Runs.build_chat_prompt("Via Runs 2") =~ "Via Runs 2"
+    assert BuildPrompt.build_prompt(%{}) == "\n"
+    assert BuildPrompt.build_prompt(backend: nil, task_description: "Hello") == "Hello\n"
+    assert BuildPrompt.build_prompt(backend: 123, task_description: "Hello") == "Hello\n"
   end
 end

@@ -20,7 +20,6 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
   alias Rail.Runs.ArgvBuilder
-  alias Rail.Runs.PromptBuilder
   alias Rail.Runs.Schemas.RoleRun
 
   @doc """
@@ -71,7 +70,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
       |> Enum.join("\n\n")
 
     prompt =
-      PromptBuilder.build_prompt(
+      Runs.build_prompt(
         task: task,
         backend: role.cli_backend,
         role_instructions: role.system_prompt,
