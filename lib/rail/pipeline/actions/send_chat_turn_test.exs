@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
   import RailTest.PipelineHelpers
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -11,6 +12,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
+  alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
@@ -18,8 +20,10 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    stub_bin = create_chat_stub_cli(conversation_id: "sess-chat-1")
+
     {:ok, backend} =
-      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: stub_bin})
 
     {:ok, workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{
@@ -85,8 +89,6 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
         worktree_path: repo_dir
       })
 
-    stub_bin = create_chat_stub_cli(conversation_id: "sess-chat-1")
-
     %{
       backend: backend,
       workspace: workspace,
@@ -94,8 +96,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
       role: role,
       reviewer_role: reviewer_role,
       task: task,
-      repo_dir: repo_dir,
-      stub_bin: stub_bin
+      repo_dir: repo_dir
     }
   end
 
@@ -167,8 +168,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
   test "delivers chat turn immediately when idle, creates Run kind: :chat, and leaves stage intact", %{
     task: %Task{id: task_id},
-    role: %Role{id: role_id},
-    stub_bin: stub_bin
+    role: %Role{id: role_id}
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
@@ -188,8 +188,11 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
                task_id,
                role_id,
                "Line 1\nLine 2",
-               executable: stub_bin,
-               async: false
+               async: false,
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :chat_dispatched}}
@@ -299,8 +302,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
   test "stop_and_send during stage run for different role stops run and dispatches chat first", %{
     task: %Task{id: task_id} = task,
     role: %Role{id: eng_role_id},
-    reviewer_role: %Role{id: rev_role_id},
-    stub_bin: stub_bin
+    reviewer_role: %Role{id: rev_role_id}
   } do
     {:ok, %RoleRun{id: eng_role_run_id}} =
       Runs.create_role_run(%{
@@ -330,8 +332,11 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
                rev_role_id,
                "Reviewer urgent question",
                delivery: :stop_and_send,
-               executable: stub_bin,
-               async: false
+               async: false,
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
 
     eng_events = Runs.list_run_events(eng_role_run_id)
@@ -350,8 +355,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
   test "stop_and_send while chat to role A is running clears role A pendingChat and runs role B", %{
     task: %Task{id: task_id} = task,
     role: %Role{id: role_a_id},
-    reviewer_role: %Role{id: role_b_id},
-    stub_bin: stub_bin
+    reviewer_role: %Role{id: role_b_id}
   } do
     {:ok, %RoleRun{id: role_a_run_id}} =
       Runs.create_role_run(%{
@@ -382,8 +386,11 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
                role_b_id,
                "Question for B",
                delivery: :stop_and_send,
-               executable: stub_bin,
-               async: false
+               async: false,
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
 
     role_a_events = Runs.list_run_events(role_a_run_id)
@@ -404,8 +411,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
   test "stop_and_send while chat to role A is running keeps pendingChat and resends to role A", %{
     task: %Task{id: task_id} = task,
-    role: %Role{id: role_a_id},
-    stub_bin: stub_bin
+    role: %Role{id: role_a_id}
   } do
     {:ok, %RoleRun{id: role_a_run_id}} =
       Runs.create_role_run(%{
@@ -425,8 +431,11 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
                role_a_id,
                "Urgent correction for A",
                delivery: :stop_and_send,
-               executable: stub_bin,
-               async: false
+               async: false,
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
 
     role_a_events = Runs.list_run_events(role_a_run_id)
@@ -537,7 +546,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
            end)
   end
 
-  test "handles spawn failure during chat turn", %{task: %Task{id: task_id}, role: role} do
+  test "handles spawn failure during chat turn", %{backend: backend, task: %Task{id: task_id}, role: role} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     {:ok, %RoleRun{id: role_run_id}} =
@@ -550,12 +559,14 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
         conversation_id: "sess-spawn-fail"
       })
 
+    {:ok, _backend} =
+      Rail.Backends.update_backend(system_scope(), backend, %{executable_path: "/nonexistent/binary"})
+
     assert {:error, {:spawn_failed, _reason}} =
              Pipeline.send_chat_turn(
                task_id,
                role.id,
                "Missing binary",
-               executable: "/nonexistent/binary",
                async: false
              )
 
@@ -570,8 +581,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
   test "async dispatch with default on_finished callback and user scope", %{
     task: %Task{id: task_id},
-    role: %Role{id: role_id},
-    stub_bin: stub_bin
+    role: %Role{id: role_id}
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
@@ -594,8 +604,10 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
                task_id,
                role_id,
                "Async message",
-               executable: stub_bin,
-               skip_follower: false
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :chat_dispatched}}, 1_000
@@ -609,6 +621,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
   end
 
   test "invalid targets and missing worktree fingerprint handling", %{
+    backend: backend,
     task: %Task{} = task,
     role: role,
     project: project
@@ -630,7 +643,10 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     non_git_dir = Path.join(System.tmp_dir!(), "non_git_#{System.unique_integer([:positive])}")
     File.mkdir_p!(non_git_dir)
 
-    stub_bin = create_chat_stub_cli(conversation_id: "sess-fp-none")
+    {:ok, _backend} =
+      Rail.Backends.update_backend(system_scope(), backend, %{
+        executable_path: create_chat_stub_cli(conversation_id: "sess-fp-none")
+      })
 
     assert {:ok, :sent, %Task{}} =
              Pipeline.send_chat_turn(
@@ -638,7 +654,6 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
                role.id,
                "Msg",
                worktree_path: non_git_dir,
-               executable: stub_bin,
                async: false
              )
 
@@ -677,7 +692,6 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
   test "stop_and_send to same role during stage run, missing chat runs, and empty pending_chat", %{
     task: task,
     role: %Role{id: target_role_id} = role,
-    stub_bin: stub_bin,
     project: project
   } do
     {:ok, %RoleRun{id: role_run_id}} =
@@ -709,8 +723,11 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
                role,
                "Restart with this instruction",
                delivery: :stop_and_send,
-               executable: stub_bin,
-               async: false
+               async: false,
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
 
     # Missing stopped role runs in DB
@@ -766,15 +783,21 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     assert {:ok, :sent, %Task{}} =
              Pipeline.send_chat_turn(orphan_same_task, role, "Orphan same",
                delivery: :stop_and_send,
-               executable: stub_bin,
-               async: false
+               async: false,
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
 
     assert {:ok, :sent, %Task{}} =
              Pipeline.send_chat_turn(orphan_other_task, role, "Orphan other",
                delivery: :stop_and_send,
-               executable: stub_bin,
-               async: false
+               async: false,
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
   end
 end

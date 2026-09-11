@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
   alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
   alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -120,7 +121,6 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
   end
 
   test "stop_chat_turn terminates running chat run, clears active_chat_role_id, and appends stop log", %{
-    backend: backend,
     task: %Task{id: task_id} = task,
     role: %Role{id: role_id}
   } do
@@ -141,8 +141,17 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
 
     {:ok, task} = task |> Task.changeset(%{active_chat_role_id: role_id}) |> Repo.update()
 
-    {:ok, _run} =
-      Runs.start_run(role_run_id, :chat, ["/bin/sleep", "5"], backend: backend, skip_follower: true)
+    %Run{}
+    |> Run.changeset(%{
+      role_run_id: role_run_id,
+      task_id: task_id,
+      kind: :chat,
+      stream_path: "/tmp/stop_chat_turn/#{role_run_id}.ndjson",
+      node: to_string(Node.self()),
+      status: :running,
+      started_at: DateTime.utc_now()
+    })
+    |> Repo.insert!()
 
     assert {:ok, %Task{active_chat_role_id: nil}} = Pipeline.stop_chat_turn(task.id)
 

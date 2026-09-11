@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
   use Rail.DataCase, async: true
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -8,6 +9,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -72,8 +74,10 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
               run: %Run{task_id: ^task_id}
             }} =
              Pipeline.start_design_task(task,
-               executable: System.find_executable("true") || "/usr/bin/true",
-               skip_follower: true
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :dispatched}}

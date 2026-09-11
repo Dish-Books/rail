@@ -1,6 +1,7 @@
 defmodule Rail.RunsTest do
   use Rail.DataCase, async: true
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Backends.Schemas.Backend
   alias Rail.Runs
   alias Rail.Runs.AgyEvents
@@ -115,25 +116,70 @@ defmodule Rail.RunsTest do
   end
 
   test "get_run/1, get_run!/1, list_runs/1, list_active_runs/1" do
-    task_id = UXID.generate!(prefix: "tsk")
-    role_id = UXID.generate!(prefix: "rol")
+    scope = system_scope()
+    unique = System.unique_integer([:positive])
+    tmp_dir = Path.join(System.tmp_dir!(), "runs_test_#{unique}")
+    File.mkdir_p!(Path.join(tmp_dir, "worktree"))
+    on_exit(fn -> File.rm_rf(tmp_dir) end)
+
+    {:ok, workspace} =
+      Rail.Projects.upsert_linear_workspace(scope, %{
+        name: "Runs Workspace #{unique}",
+        external_id: "lin_ws_runs_#{unique}",
+        token: "lin_api_token_runs_#{unique}",
+        webhook_secret: "whsec_runs_#{unique}"
+      })
+
+    {:ok, project} =
+      Rail.Projects.create_project(scope, %{
+        name: "Runs Project #{unique}",
+        github_repo: "org/runs-#{unique}",
+        github_installation_id: unique,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_runs_#{unique}",
+        linear_team_key: "RUN#{unique}",
+        default_branch: "main",
+        clone_path: Path.join(tmp_dir, "clone")
+      })
+
+    {:ok, backend} =
+      Rail.Backends.create_backend(scope, %{name: :claude, executable_path: "/bin/sleep"})
+
+    {:ok, role} =
+      Rail.Roles.create_role(scope, project, %{
+        backend_id: backend.id,
+        stage: :engineer,
+        name: "engineer role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the engineer."
+      })
+
+    {:ok, task} =
+      %Rail.Pipeline.Schemas.Task{id: UXID.generate!(prefix: "tsk")}
+      |> Rail.Pipeline.Schemas.Task.changeset(
+        %{
+          stage: :engineer,
+          stage_state: :queued,
+          worktree_name: "runs-#{unique}",
+          worktree_path: Path.join(tmp_dir, "worktree"),
+          scratch_path: Path.join(tmp_dir, "scratch")
+        },
+        project.id
+      )
+      |> Repo.insert()
 
     {:ok, role_run} =
       Runs.create_role_run(%{
-        task_id: task_id,
-        role_id: role_id,
+        task_id: task.id,
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
 
+    task_id = task.id
+
     {:ok, run} =
-      Runs.start_run(
-        role_run,
-        :stage,
-        ["/bin/sleep", "5"],
-        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
-        skip_follower: true
-      )
+      Runs.start_run(role_run, :stage, ["5"], allow_fun: fn pid -> Sandbox.allow(Repo, self(), pid) end)
 
     assert Runs.get_run(run.id).id == run.id
     assert Runs.get_run!(run.id).id == run.id
@@ -187,22 +233,70 @@ defmodule Rail.RunsTest do
   end
 
   test "start_run/4 and stop_run/2 through Runs context" do
-    task_id = UXID.generate!(prefix: "tsk")
-    role_id = UXID.generate!(prefix: "rol")
+    scope = system_scope()
+    unique = System.unique_integer([:positive])
+    tmp_dir = Path.join(System.tmp_dir!(), "runs_test_#{unique}")
+    File.mkdir_p!(Path.join(tmp_dir, "worktree"))
+    on_exit(fn -> File.rm_rf(tmp_dir) end)
+
+    {:ok, workspace} =
+      Rail.Projects.upsert_linear_workspace(scope, %{
+        name: "Runs Workspace #{unique}",
+        external_id: "lin_ws_runs_#{unique}",
+        token: "lin_api_token_runs_#{unique}",
+        webhook_secret: "whsec_runs_#{unique}"
+      })
+
+    {:ok, project} =
+      Rail.Projects.create_project(scope, %{
+        name: "Runs Project #{unique}",
+        github_repo: "org/runs-#{unique}",
+        github_installation_id: unique,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_runs_#{unique}",
+        linear_team_key: "RUN#{unique}",
+        default_branch: "main",
+        clone_path: Path.join(tmp_dir, "clone")
+      })
+
+    {:ok, backend} =
+      Rail.Backends.create_backend(scope, %{name: :claude, executable_path: "/bin/sleep"})
+
+    {:ok, role} =
+      Rail.Roles.create_role(scope, project, %{
+        backend_id: backend.id,
+        stage: :engineer,
+        name: "engineer role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the engineer."
+      })
+
+    {:ok, task} =
+      %Rail.Pipeline.Schemas.Task{id: UXID.generate!(prefix: "tsk")}
+      |> Rail.Pipeline.Schemas.Task.changeset(
+        %{
+          stage: :engineer,
+          stage_state: :queued,
+          worktree_name: "runs-#{unique}",
+          worktree_path: Path.join(tmp_dir, "worktree"),
+          scratch_path: Path.join(tmp_dir, "scratch")
+        },
+        project.id
+      )
+      |> Repo.insert()
 
     {:ok, role_run} =
       Runs.create_role_run(%{
-        task_id: task_id,
-        role_id: role_id,
+        task_id: task.id,
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
 
+    task_id = task.id
+
     {:ok, run} =
-      Runs.start_run(role_run, :stage, ["/bin/sleep", "30"],
-        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
-        skip_follower: false
-      )
+      Runs.start_run(role_run, :stage, ["30"], allow_fun: fn pid -> Sandbox.allow(Repo, self(), pid) end)
 
     follower_pid = Runs.get_follower_pid(run.id)
     assert is_pid(follower_pid)

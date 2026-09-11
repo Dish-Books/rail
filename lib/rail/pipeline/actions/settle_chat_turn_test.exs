@@ -104,7 +104,6 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   end
 
   test "settles clean chat turn, clears active_chat_role_id and pending_chat, and accumulates chat_usage", %{
-    backend: backend,
     task: %Task{id: task_id} = task,
     rev_role: %Role{id: rev_role_id}
   } do
@@ -129,8 +128,18 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
     {:ok, task} = task |> Task.changeset(%{active_chat_role_id: rev_role_id}) |> Repo.update()
 
-    {:ok, run} =
-      Runs.start_run(role_run_id, :chat, ["/bin/sleep", "5"], backend: backend, skip_follower: true)
+    run =
+      %Run{}
+      |> Run.changeset(%{
+        role_run_id: role_run_id,
+        task_id: task_id,
+        kind: :chat,
+        stream_path: "/tmp/settle_chat_turn/#{role_run_id}.ndjson",
+        node: to_string(Node.self()),
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
 
     turn_usage = %TaskUsage{input_tokens: 100, output_tokens: 50, total_cost: Decimal.new("0.05")}
 
@@ -448,11 +457,15 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   end
 
   test "dispatches queued pending_chat when task becomes idle after settlement", %{
+    backend: backend,
     task: %Task{id: task_id} = task,
     eng_role: %Role{id: eng_role_id},
     rev_role: %Role{id: rev_role_id}
   } do
-    stub_bin = create_chat_stub_cli(conversation_id: "sess-rev-queued")
+    {:ok, _backend} =
+      Rail.Backends.update_backend(system_scope(), backend, %{
+        executable_path: create_chat_stub_cli(conversation_id: "sess-rev-queued")
+      })
 
     {:ok, %RoleRun{id: eng_role_run_id}} =
       Runs.create_role_run(%{
@@ -485,10 +498,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     }
 
     assert {:ok, %Task{}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task, eng_role_run_id, outcome,
-               executable: stub_bin,
-               async: false
-             )
+             Pipeline.settle_chat_turn(task, eng_role_run_id, outcome, async: false)
 
     refreshed_task = Repo.get!(Task, task_id)
     assert refreshed_task.active_chat_role_id == rev_role_id
@@ -499,7 +509,6 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   end
 
   test "settle_run delegates to settle_chat_turn when run kind is :chat", %{
-    backend: backend,
     task: %Task{id: task_id} = task,
     rev_role: %Role{id: rev_role_id}
   } do
@@ -515,8 +524,18 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
     {:ok, task} = task |> Task.changeset(%{active_chat_role_id: rev_role_id}) |> Repo.update()
 
-    {:ok, run} =
-      Runs.start_run(role_run_id, :chat, ["/bin/sleep", "5"], backend: backend, skip_follower: true)
+    run =
+      %Run{}
+      |> Run.changeset(%{
+        role_run_id: role_run_id,
+        task_id: task_id,
+        kind: :chat,
+        stream_path: "/tmp/settle_chat_turn/#{role_run_id}.ndjson",
+        node: to_string(Node.self()),
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
 
     outcome = %{
       exit_code: 0,
@@ -536,7 +555,10 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     eng_role: %Role{id: eng_role_id},
     rev_role: %Role{id: rev_role_id}
   } do
-    stub_bin = create_chat_stub_cli(conversation_id: "sess-rev-stage-finish")
+    {:ok, _backend} =
+      Rail.Backends.update_backend(system_scope(), backend, %{
+        executable_path: create_chat_stub_cli(conversation_id: "sess-rev-stage-finish")
+      })
 
     {:ok, %RoleRun{id: eng_role_run_id}} =
       Runs.create_role_run(%{
@@ -564,8 +586,18 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       |> Task.changeset(%{stage: :engineer, stage_state: :running})
       |> Repo.update()
 
-    {:ok, stage_run} =
-      Runs.start_run(eng_role_run_id, :stage, ["/bin/sleep", "5"], backend: backend, skip_follower: true)
+    stage_run =
+      %Run{}
+      |> Run.changeset(%{
+        role_run_id: eng_role_run_id,
+        task_id: task_id,
+        kind: :stage,
+        stream_path: "/tmp/settle_chat_turn/#{eng_role_run_id}.ndjson",
+        node: to_string(Node.self()),
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
 
     outcome = %{
       exit_code: 0,
@@ -576,10 +608,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     }
 
     assert {:ok, %Task{stage: :review, stage_state: :queued}, %RoleRun{}} =
-             Pipeline.settle_run(task.id, eng_role_run_id, outcome,
-               executable: stub_bin,
-               async: false
-             )
+             Pipeline.settle_run(task.id, eng_role_run_id, outcome, async: false)
 
     refreshed_task = Repo.get!(Task, task_id)
     assert refreshed_task.active_chat_role_id == rev_role_id
@@ -685,7 +714,6 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   end
 
   test "settle_chat_turn resolves string-keyed maps, raw maps, and finishes in-flight run", %{
-    backend: backend,
     task: task,
     eng_role: eng_role
   } do
@@ -699,8 +727,18 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         error: "role run error"
       })
 
-    {:ok, in_flight_run} =
-      Runs.start_run(role_run.id, :chat, ["/bin/sleep", "5"], backend: backend, skip_follower: true)
+    in_flight_run =
+      %Run{}
+      |> Run.changeset(%{
+        role_run_id: role_run.id,
+        task_id: task.id,
+        kind: :chat,
+        stream_path: "/tmp/settle_chat_turn/#{role_run.id}.ndjson",
+        node: to_string(Node.self()),
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
 
     # Finishing in_flight_run when passed as %Run{}
     assert {:ok, %Task{}, %RoleRun{}} =

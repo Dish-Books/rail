@@ -31,9 +31,9 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
          {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :design),
          {:ok, worktree_path} <- ensure_worktree(project, task),
          {:ok, task} <- claim_stage(task, worktree_path),
-         scratch_path = write_scratch(task),
+         _scratch = write_scratch(task),
          {:ok, role_run} <- Runs.start_or_resume_role_run(task, role, worktree_path) do
-      spawn_run(task, role, role_run, worktree_path, scratch_path, opts)
+      spawn_run(task, role, role_run, worktree_path, opts)
     else
       nil -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
@@ -112,7 +112,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
     """)
   end
 
-  defp spawn_run(task, role, role_run, worktree_path, scratch_path, opts) do
+  defp spawn_run(task, role, role_run, worktree_path, opts) do
     prompt =
       Runs.build_prompt(
         task: task,
@@ -136,9 +136,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
 
     spawner_opts =
       opts
-      |> Keyword.put_new(:backend, role.backend)
-      |> Keyword.put_new(:cd, worktree_path)
-      |> Keyword.put_new(:scratch_path, scratch_path)
+      |> Keyword.take([:allow_fun, :on_finished])
       |> Keyword.put_new(:on_finished, fn _run, outcome ->
         Pipeline.settle_run(task.id, role_run.id, outcome, opts)
       end)

@@ -1,8 +1,6 @@
 defmodule Rail.Pipeline.Actions.StartProductTaskTest do
   use Rail.DataCase, async: true
 
-  import Rail.Pipeline.Utils.ScratchPath
-
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -84,8 +82,7 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
     assert byte_size(worktree_path) > 0
 
     content =
-      project.id
-      |> scratch_path(task.id)
+      task.scratch_path
       |> Path.join("tickets/#{issue.identifier}.md")
       |> File.read!()
 

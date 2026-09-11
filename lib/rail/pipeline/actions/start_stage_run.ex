@@ -103,10 +103,10 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
         work_dir: worktree_path
       )
 
-    spawn_and_finalize(task, role, role_run, argv, worktree_path, opts)
+    spawn_and_finalize(task, role_run, argv, opts)
   end
 
-  defp spawn_and_finalize(task, role, role_run, argv, worktree_path, opts) do
+  defp spawn_and_finalize(task, role_run, argv, opts) do
     on_finished_cb =
       Keyword.get(opts, :on_finished) ||
         fn _run, outcome ->
@@ -114,10 +114,7 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
         end
 
     spawner_opts =
-      opts
-      |> Keyword.put_new(:backend, role.backend)
-      |> Keyword.put_new(:cd, worktree_path)
-      |> Keyword.put(:on_finished, on_finished_cb)
+      [on_finished: on_finished_cb] ++ Keyword.take(opts, [:allow_fun])
 
     case Runs.start_run(role_run, :stage, argv, spawner_opts) do
       {:ok, run} ->

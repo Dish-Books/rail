@@ -388,10 +388,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
     end
 
     spawner_opts =
-      opts
-      |> Keyword.put_new(:backend, role.backend)
-      |> Keyword.put_new(:cd, worktree_path)
-      |> Keyword.put(:on_finished, on_finished_cb)
+      [on_finished: on_finished_cb] ++ Keyword.take(opts, [:allow_fun])
 
     case Runs.start_run(updated_role_run, :chat, argv, spawner_opts) do
       {:ok, run} ->

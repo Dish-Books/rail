@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
   use Rail.DataCase, async: true
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -8,6 +9,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -86,8 +88,10 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
 
     assert {:ok, %{task: %Task{id: ^task_id, stage: :design, stage_state: :running}, run: %Run{}}} =
              Pipeline.approve_product_task(task,
-               executable: System.find_executable("true") || "/usr/bin/true",
-               skip_follower: true
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :product_approved}}
@@ -117,8 +121,10 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
 
     assert {:ok, %{task: %Task{stage: :design}}} =
              Pipeline.approve_product_task(task,
-               executable: System.find_executable("true") || "/usr/bin/true",
-               skip_follower: true
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
 
     assert %Issue{title: "The split ticket"} = Repo.get_by!(Issue, identifier: "APT-2")

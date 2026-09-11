@@ -369,7 +369,6 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
   end
 
   test "resolves string keys, updates associated Run, and captures scratch artifacts", %{
-    backend: backend,
     task: task,
     roles: roles
   } do
@@ -391,8 +390,19 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, %Run{id: run_id} = run} =
-      Runs.start_run(role_run_id, :stage, ["/bin/sleep", "5"], backend: backend, skip_follower: true)
+    %Run{id: run_id} =
+      run =
+      %Run{}
+      |> Run.changeset(%{
+        role_run_id: role_run_id,
+        task_id: task_id,
+        kind: :stage,
+        stream_path: "/tmp/settle_run/#{role_run_id}.ndjson",
+        node: to_string(Node.self()),
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
 
     plan_path = Path.join(scratch_dir, "plan.md")
     File.write!(plan_path, "# Captured Architecture Plan")
@@ -436,7 +446,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
              Pipeline.settle_run(task, role_run, %{})
   end
 
-  test "maybe_finish_run updates run when passed as top-level run struct", %{backend: backend, task: task, roles: roles} do
+  test "maybe_finish_run updates run when passed as top-level run struct", %{task: task, roles: roles} do
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :design,
@@ -452,8 +462,19 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, %Run{id: run_id} = run} =
-      Runs.start_run(role_run.id, :stage, ["/bin/sleep", "5"], backend: backend, skip_follower: true)
+    %Run{id: run_id} =
+      run =
+      %Run{}
+      |> Run.changeset(%{
+        role_run_id: role_run.id,
+        task_id: task_id,
+        kind: :stage,
+        stream_path: "/tmp/settle_run/#{role_run.id}.ndjson",
+        node: to_string(Node.self()),
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
 
     assert {:ok, _task, _role_run} = Pipeline.settle_run(task, role_run, run)
     assert %Run{id: ^run_id, status: :finished} = Repo.get!(Run, run_id)

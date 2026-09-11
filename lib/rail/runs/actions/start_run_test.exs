@@ -1,47 +1,100 @@
 defmodule Rail.Runs.Actions.StartRunTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Backends.Schemas.Backend
+  alias Ecto.Adapters.SQL.Sandbox
+  alias Rail.Backends
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
+  alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Runs
+  alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
   alias Rail.Tools
 
   setup do
-    tmp_dir = Path.join(System.tmp_dir!(), "start_run_test_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(tmp_dir)
+    scope = system_scope()
+    unique = System.unique_integer([:positive])
 
-    role_run =
-      %RoleRun{}
-      |> RoleRun.changeset(%{
-        task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+    tmp_dir = Path.join(System.tmp_dir!(), "start_run_test_#{unique}")
+    worktree_path = Path.join(tmp_dir, "worktree")
+    scratch_path = Path.join(tmp_dir, "scratch")
+    File.mkdir_p!(worktree_path)
+    File.mkdir_p!(scratch_path)
+    on_exit(fn -> File.rm_rf(tmp_dir) end)
+
+    {:ok, workspace} =
+      Projects.upsert_linear_workspace(scope, %{
+        name: "Start Run Workspace #{unique}",
+        external_id: "lin_ws_start_run_#{unique}",
+        token: "lin_api_token_start_run_#{unique}",
+        webhook_secret: "whsec_start_run_#{unique}"
+      })
+
+    {:ok, project} =
+      Projects.create_project(scope, %{
+        name: "Start Run Project #{unique}",
+        github_repo: "org/start-run-#{unique}",
+        github_installation_id: unique,
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_start_run_#{unique}",
+        linear_team_key: "SR#{unique}",
+        default_branch: "main",
+        clone_path: Path.join(tmp_dir, "clone")
+      })
+
+    # The executable is whatever the role's backend points at, so a test that
+    # wants to spawn something else repoints this row before calling start_run.
+    {:ok, backend} = Backends.create_backend(scope, %{name: :claude, executable_path: "/bin/sleep"})
+
+    {:ok, role} =
+      Roles.create_role(scope, project, %{
+        backend_id: backend.id,
+        stage: :engineer,
+        name: "engineer role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the engineer."
+      })
+
+    {:ok, task} =
+      %Task{id: UXID.generate!(prefix: "tsk")}
+      |> Task.changeset(
+        %{
+          stage: :engineer,
+          stage_state: :queued,
+          worktree_name: "start-run-#{unique}",
+          worktree_path: worktree_path,
+          scratch_path: scratch_path
+        },
+        project.id
+      )
+      |> Repo.insert()
+
+    {:ok, role_run} =
+      Runs.create_role_run(%{
+        task_id: task.id,
+        role_id: role.id,
         status: :starting,
         started_at: DateTime.utc_now()
       })
-      |> Repo.insert!()
 
-    on_exit(fn ->
-      File.rm_rf(tmp_dir)
-    end)
-
-    %{role_run: role_run, tmp_dir: tmp_dir}
+    %{
+      backend: backend,
+      role_run: role_run,
+      scratch_path: scratch_path,
+      scope: scope,
+      worktree_path: worktree_path
+    }
   end
 
-  test "spawns child, records runs row, sets os_pid and running status", %{
-    role_run: role_run,
-    tmp_dir: tmp_dir
-  } do
-    stream_path = Path.join(tmp_dir, "test.ndjson")
-
+  test "spawns child, records runs row, sets os_pid and running status", %{role_run: role_run} do
     {:ok, run} =
-      Runs.start_run(
-        role_run,
-        :stage,
-        ["/bin/sleep", "2"],
-        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
-        stream_path: stream_path,
-        skip_follower: true
+      Runs.start_run(role_run, :stage, ["2"],
+        allow_fun: fn pid ->
+          Sandbox.allow(Repo, self(), pid)
+          on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+        end
       )
 
     assert %Run{} = run
@@ -52,56 +105,51 @@ defmodule Rail.Runs.Actions.StartRunTest do
     assert run.os_pid > 0
     assert Tools.os_process_alive?(run.os_pid)
 
-    # Clean up the sleeping child
     Tools.terminate_os_process(run.os_pid, grace_period: 100)
   end
 
-  test "accepts a role_run_id binary", %{role_run: role_run, tmp_dir: tmp_dir} do
-    stream_path = Path.join(tmp_dir, "test_id.ndjson")
-
+  test "writes the stream under the task's scratch directory, one file per role run", %{
+    role_run: role_run,
+    scratch_path: scratch_path
+  } do
     {:ok, run} =
-      Runs.start_run(
-        role_run.id,
-        :stage,
-        ["/bin/echo", "hello"],
-        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
-        stream_path: stream_path,
-        skip_follower: true
+      Runs.start_run(role_run, :stage, ["2"],
+        allow_fun: fn pid ->
+          Sandbox.allow(Repo, self(), pid)
+          on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+        end
       )
 
-    assert run.role_run_id == role_run.id
-    assert run.status == :running
-    Process.sleep(50)
+    assert run.stream_path == Path.join([scratch_path, "streams", "#{role_run.id}.ndjson"])
+    assert File.exists?(run.stream_path)
+    assert File.exists?("#{run.stream_path}.err")
+
+    Tools.terminate_os_process(run.os_pid, grace_period: 100)
   end
 
-  test "injects environment and streams output to files", %{
+  test "runs the child in the task's worktree and points it at the stream files", %{
+    backend: backend,
     role_run: role_run,
-    tmp_dir: tmp_dir
+    scope: scope,
+    worktree_path: worktree_path
   } do
-    stream_path = Path.join(tmp_dir, "env_test.ndjson")
-    scratch_dir = Path.join(tmp_dir, "scratch")
-    File.mkdir_p!(scratch_dir)
+    {:ok, _backend} = Backends.update_backend(scope, backend, %{executable_path: "/bin/sh"})
 
-    # RAIL_SCRATCH is gone: the brief names the scratch directory by absolute path.
-    script = ~s(printf '{"stream":"%s","gh":"%s"}\n' "$RAIL_STREAM" "$GH_TOKEN")
+    script = ~s(printf '{"cwd":"%s","stream":"%s"}\n' "$PWD" "$RAIL_STREAM")
 
     {:ok, run} =
-      Runs.start_run(
-        role_run,
-        :stage,
-        ["/bin/sh", "-c", script],
-        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
-        stream_path: stream_path,
-        gh_token: "gh_test_123",
-        skip_follower: true
+      Runs.start_run(role_run, :stage, ["-c", script],
+        allow_fun: fn pid ->
+          Sandbox.allow(Repo, self(), pid)
+          on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+        end
       )
 
-    # Wait for the child to write its environment to the stream file.
     content =
       Enum.reduce_while(1..200, "", fn _i, _acc ->
-        content = if File.exists?(stream_path), do: File.read!(stream_path), else: ""
+        content = if File.exists?(run.stream_path), do: File.read!(run.stream_path), else: ""
 
-        if content =~ "gh_test_123" and content =~ stream_path do
+        if content =~ run.stream_path do
           {:halt, content}
         else
           Process.sleep(10)
@@ -109,31 +157,21 @@ defmodule Rail.Runs.Actions.StartRunTest do
         end
       end)
 
-    assert File.exists?(stream_path)
-    assert File.exists?("#{stream_path}.err")
-    assert content =~ "gh_test_123"
-    assert content =~ stream_path
+    assert content =~ run.stream_path
+    assert content =~ Path.basename(worktree_path)
 
-    # Clean up child if still running
     Tools.terminate_os_process(run.os_pid, grace_period: 50)
   end
 
-  test "with a missing binary reports error and settles the run", %{
+  test "with a missing backend binary reports error and settles the run", %{
+    backend: backend,
     role_run: role_run,
-    tmp_dir: tmp_dir
+    scope: scope
   } do
-    stream_path = Path.join(tmp_dir, "missing.ndjson")
     missing_bin = "/path/to/nonexistent/cli_binary_xyz"
+    {:ok, _backend} = Backends.update_backend(scope, backend, %{executable_path: missing_bin})
 
-    result =
-      Runs.start_run(
-        role_run,
-        :stage,
-        [missing_bin, "--help"],
-        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
-        stream_path: stream_path,
-        skip_follower: true
-      )
+    result = Runs.start_run(role_run, :stage, ["--help"])
 
     assert {:error, {:missing_binary, ^missing_bin, %Run{status: :finished}}} = result
 
@@ -143,17 +181,13 @@ defmodule Rail.Runs.Actions.StartRunTest do
     assert reloaded_role_run.error =~ "No such CLI binary"
   end
 
-  test "starts a Follower under FollowerSupervisor", %{role_run: role_run, tmp_dir: tmp_dir} do
-    stream_path = Path.join(tmp_dir, "follow.ndjson")
-
+  test "always starts a Follower under FollowerSupervisor", %{role_run: role_run} do
     {:ok, run} =
-      Runs.start_run(
-        role_run,
-        :stage,
-        ["/bin/sleep", "2"],
-        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
-        stream_path: stream_path,
-        skip_follower: false
+      Runs.start_run(role_run, :stage, ["2"],
+        allow_fun: fn pid ->
+          Sandbox.allow(Repo, self(), pid)
+          on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+        end
       )
 
     assert run.status == :running
@@ -164,63 +198,21 @@ defmodule Rail.Runs.Actions.StartRunTest do
     Tools.terminate_os_process(run.os_pid, grace_period: 100)
   end
 
-  test "supports opts[:executable], opts[:cd], opts[:state_dir], and opts[:credential_helper]", %{
-    role_run: role_run,
-    tmp_dir: tmp_dir
-  } do
-    helper_path = Path.join(tmp_dir, "fake_helper.sh")
-    File.write!(helper_path, "#!/bin/sh\necho token\n")
-    File.chmod!(helper_path, 0o755)
-
-    custom_state_dir = Path.join(tmp_dir, "custom_state")
-    File.mkdir_p!(custom_state_dir)
+  test "calls opts[:allow_fun] with the Follower pid", %{role_run: role_run} do
+    test_pid = self()
 
     {:ok, run} =
-      Runs.start_run(
-        role_run,
-        :stage,
-        ["3"],
-        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
-        executable: "/bin/sleep",
-        cd: tmp_dir,
-        state_dir: custom_state_dir,
-        credential_helper: helper_path,
-        skip_follower: true
+      Runs.start_run(role_run, :stage, ["2"],
+        allow_fun: fn pid ->
+          Sandbox.allow(Repo, test_pid, pid)
+          on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+          send(test_pid, {:allowed, pid})
+        end
       )
 
-    assert run.status == :running
-    assert run.stream_path =~ custom_state_dir
-    Tools.terminate_os_process(run.os_pid, grace_period: 50)
-  end
+    assert_receive {:allowed, follower_pid}
+    assert follower_pid == Runs.get_follower_pid(run.id)
 
-  test "works with 3 arguments and resolves the default executable with empty argv", %{
-    role_run: role_run
-  } do
-    # When argv is empty, the configured backend path is used
-    {:ok, _backend} =
-      Rail.Backends.create_backend(Rail.Scope.for_system(), %{
-        name: :claude,
-        executable_path: "/bin/sleep"
-      })
-
-    {:ok, run1} =
-      Runs.start_run(role_run, :stage, [],
-        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
-        skip_follower: true
-      )
-
-    assert run1.status == :running
-    Tools.terminate_os_process(run1.os_pid, grace_period: 50)
-
-    {:ok, run2} =
-      Runs.start_run(role_run, :stage, ["/bin/sleep", "1"],
-        backend: %Backend{name: :claude, executable_path: "/usr/bin/true"},
-        skip_follower: false
-      )
-
-    assert run2.status == :running
-    follower_pid = Runs.get_follower_pid(run2.id)
-    if is_pid(follower_pid), do: Rail.Runs.FollowerSupervisor.stop_follower(follower_pid)
-    Tools.terminate_os_process(run2.os_pid, grace_period: 50)
+    Tools.terminate_os_process(run.os_pid, grace_period: 100)
   end
 end

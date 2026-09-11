@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
 
   import Rail.Pipeline.Utils.CaptureScratch
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Plan
@@ -12,6 +13,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
+  alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.RoleRun
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -145,16 +147,12 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
         backend_id: backend.id
       })
 
-    scratch_dir = create_temp_git_repo()
-
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :product,
         stage_state: :queued,
         worktree_name: "test-wt-#{System.unique_integer([:positive])}"
       })
-
-    true_bin = System.find_executable("true") || "/usr/bin/true"
 
     assert {:ok,
             %{
@@ -169,9 +167,10 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
               run: %Run{task_id: ^task_id, role_run_id: role_run_id}
             }} =
              Pipeline.start_stage_run(task,
-               executable: true_bin,
-               skip_follower: true,
-               scratch_dir: scratch_dir
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :dispatched}}
@@ -193,8 +192,6 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
       Roles.update_role(system_scope(), roles[:product], %{
         backend_id: backend.id
       })
-
-    scratch_dir = create_temp_git_repo()
 
     wt_name = "existing-wt-#{System.unique_integer([:positive])}"
     wt_path = Path.join(project.clone_path, ".worktrees/#{wt_name}")
@@ -218,8 +215,6 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
         attempt_log_lines: 50
       })
 
-    true_bin = System.find_executable("true") || "/usr/bin/true"
-
     assert {:ok,
             %{
               task: %Task{worktree_path: ^wt_path},
@@ -230,9 +225,10 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
               }
             }} =
              Pipeline.start_stage_run(task.id,
-               executable: true_bin,
-               skip_follower: true,
-               scratch_path: scratch_dir
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
   end
 
@@ -247,12 +243,12 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
         worktree_name: "rebase-wt-#{System.unique_integer([:positive])}"
       })
 
-    true_bin = System.find_executable("true") || "/usr/bin/true"
-
     assert {:ok, %{role_run: %RoleRun{role_id: ^engineer_role_id}}} =
              Pipeline.start_stage_run(task,
-               executable: true_bin,
-               skip_follower: true
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
   end
 
@@ -280,16 +276,20 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
 
     {:ok, %Plan{}} = Pipeline.get_plan(system_scope(), task)
 
-    true_bin = System.find_executable("true") || "/usr/bin/true"
-
     assert {:ok, %{task: %Task{stage_state: :running}}} =
              Pipeline.start_stage_run(task,
-               executable: true_bin,
-               skip_follower: true
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
   end
 
-  test "handles spawn failure when runner binary cannot be executed", %{task: task, roles: roles} do
+  test "handles spawn failure when runner binary cannot be executed", %{
+    backend: backend,
+    task: task,
+    roles: roles
+  } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     _role = roles[:product]
@@ -303,10 +303,15 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
 
     missing_bin = "/path/to/definitely/missing/runner_binary_xyz"
 
+    {:ok, _backend} =
+      Rail.Backends.update_backend(system_scope(), backend, %{executable_path: missing_bin})
+
     assert {:error, {:spawn_failed, _reason, %Task{stage_state: :failed, error: error_msg}}} =
              Pipeline.start_stage_run(task,
-               executable: missing_bin,
-               skip_follower: true
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :dispatch_failed}}
@@ -330,13 +335,13 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
       Pipeline.settle_run(task.id, run.role_run_id, outcome)
     end
 
-    true_bin = System.find_executable("true") || "/usr/bin/true"
-
     assert {:ok, %{role_run: %RoleRun{id: role_run_id}, run: run}} =
              Pipeline.start_stage_run(task,
-               executable: true_bin,
-               skip_follower: true,
-               on_finished: custom_cb
+               on_finished: custom_cb,
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
 
     assert byte_size(role_run_id) > 0
@@ -364,12 +369,12 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
         worktree_path: non_git_dir
       })
 
-    true_bin = System.find_executable("true") || "/usr/bin/true"
-
     assert {:ok, %{role_run: %RoleRun{stage_fingerprint_head_sha: nil}}} =
              Pipeline.start_stage_run(task,
-               executable: true_bin,
-               skip_follower: true
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
              )
   end
 
@@ -386,10 +391,13 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
         worktree_name: "live-follower-wt-#{System.unique_integer([:positive])}"
       })
 
-    true_bin = System.find_executable("true") || "/usr/bin/true"
-
     assert {:ok, %{task: %Task{id: ^task_id, stage_state: :running}}} =
-             Pipeline.start_stage_run(task, executable: true_bin, skip_follower: false)
+             Pipeline.start_stage_run(task,
+               allow_fun: fn pid ->
+                 Sandbox.allow(Repo, self(), pid)
+                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
+               end
+             )
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}, 2000
     assert %Task{stage: :product, stage_state: :awaiting_approval} = Repo.get!(Task, task_id)

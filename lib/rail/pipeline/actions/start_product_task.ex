@@ -7,8 +7,6 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
   and the spawned run.
   """
 
-  import Rail.Pipeline.Utils.ScratchPath
-
   alias Rail.Domain.TicketBody
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
@@ -27,13 +25,13 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
   Reuses the issue's existing task when there is one, otherwise creates one at the
   `:product` stage. Returns `{:ok, %{task: task, role_run: role_run, run: run}}`.
   """
-  def start_product_task(%Issue{project: %Project{} = project} = issue) do
+  def start_product_task(%Issue{project: %Project{} = project} = issue, opts \\ []) do
     with {:ok, task} <- Pipeline.create_task(issue, :product),
          {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :product),
          {:ok, worktree_path} <- ensure_worktree(project, task),
-         scratch_path = write_scratch(project, task, issue),
+         _scratch = write_scratch(task, issue),
          {:ok, role_run} <- Runs.start_or_resume_role_run(task, role, worktree_path) do
-      spawn_run(task, issue, role, role_run, worktree_path, scratch_path)
+      spawn_run(task, issue, role, role_run, worktree_path, opts)
     end
   end
 
@@ -44,8 +42,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     end
   end
 
-  defp write_scratch(%Project{} = project, %Task{} = task, %Issue{} = issue) do
-    scratch_path = scratch_path(project.id, task.id)
+  defp write_scratch(%Task{scratch_path: scratch_path}, %Issue{} = issue) do
     tickets_dir = Path.join(scratch_path, "tickets")
     File.mkdir_p!(tickets_dir)
 
@@ -62,7 +59,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     scratch_path
   end
 
-  defp spawn_run(task, issue, role, role_run, worktree_path, scratch_path) do
+  defp spawn_run(task, issue, role, role_run, worktree_path, opts) do
     prompt =
       Runs.build_prompt(
         task: task,
@@ -84,12 +81,9 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
         work_dir: worktree_path
       )
 
-    spawner_opts = [
-      backend: role.backend,
-      cd: worktree_path,
-      scratch_path: scratch_path,
-      on_finished: fn run, outcome -> Pipeline.settle_product_run(run, outcome) end
-    ]
+    spawner_opts =
+      [on_finished: fn run, outcome -> Pipeline.settle_product_run(run, outcome) end] ++
+        Keyword.take(opts, [:allow_fun])
 
     case Runs.start_run(role_run, :stage, args, spawner_opts) do
       {:ok, run} -> finalize(task, role_run, run)

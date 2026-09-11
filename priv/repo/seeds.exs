@@ -45,11 +45,15 @@ default_project =
     })
     |> Repo.insert!()
 
-# 3. CLI Backends — a role cannot exist without the backend it runs on.
+# 3. CLI Backends — a role cannot exist without the backend it runs on, and the
+# path it records is the absolute one the spawner executes.
 claude_backend =
   Repo.get_by(Backend, name: :claude) ||
     %Backend{}
-    |> Backend.changeset(%{name: :claude, executable_path: "claude"})
+    |> Backend.changeset(%{
+      name: :claude,
+      executable_path: System.find_executable("claude") || "claude"
+    })
     |> Repo.insert!()
 
 # 4. Default Roles for Project

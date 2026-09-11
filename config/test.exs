@@ -41,6 +41,4 @@ config :rail, :linear_oauth,
 
 config :rail, :no_dispatch, true
 config :rail, :periodic, auto_start: false
-config :rail, :run_executable, "/usr/bin/true"
-config :rail, :skip_follower, true
 config :rail, dev_routes: true
