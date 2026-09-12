@@ -32,6 +32,29 @@ defmodule Rail.Runs.FollowerTest do
         webhook_secret: "whsec_follower"
       })
 
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Follower Project",
+        github_repo: "org/follower",
+        github_installation_id: System.unique_integer([:positive]),
+        linear_workspace_id: workspace.id,
+        linear_team_id: "team_follower",
+        linear_team_key: "FOL",
+        default_branch: "main",
+        clone_path: Path.join(System.tmp_dir!(), "follower_clone")
+      })
+
+    # The Follower reads the stream in its backend's format, and the backend comes
+    # off the run's role.
+    {:ok, role} =
+      Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
+        stage: :engineer,
+        name: "follower role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the engineer."
+      })
+
     tmp_dir = Path.join(System.tmp_dir!(), "follower_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp_dir)
 
@@ -39,11 +62,12 @@ defmodule Rail.Runs.FollowerTest do
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
+      |> Repo.preload(role: :backend)
 
     stream_path = Path.join(tmp_dir, "test.ndjson")
     File.write!(stream_path, "")
@@ -67,6 +91,7 @@ defmodule Rail.Runs.FollowerTest do
 
     %{
       backend: backend,
+      role: role,
       workspace: workspace,
       run: run,
       os_process: os_process,
@@ -76,7 +101,6 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "tail polling, partial-line hold, and event parsing", %{
-    backend: backend,
     run: run,
     os_process: os_process,
     stream_path: stream_path
@@ -86,12 +110,7 @@ defmodule Rail.Runs.FollowerTest do
     {:os_pid, pid} = Port.info(port, :os_pid)
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream_path,
-        os_pid: pid,
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
         tail_interval_ms: 30,
         batch_interval_ms: 50
       )
@@ -128,7 +147,6 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "250ms batching writes to run_events table and broadcasts on PubSub", %{
-    backend: backend,
     run: run,
     os_process: os_process,
     stream_path: stream_path
@@ -139,12 +157,7 @@ defmodule Rail.Runs.FollowerTest do
     {:os_pid, pid} = Port.info(port, :os_pid)
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream_path,
-        os_pid: pid,
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
         tail_interval_ms: 20,
         batch_interval_ms: 50
       )
@@ -165,17 +178,15 @@ defmodule Rail.Runs.FollowerTest do
     # Check database persistence
     saved_events = Runs.list_run_events(run.id)
     assert length(saved_events) == 2
-    assert Enum.at(saved_events, 0).seq == 1
     assert Enum.at(saved_events, 0).line == line1
-    assert Enum.at(saved_events, 1).seq == 2
     assert Enum.at(saved_events, 1).line == line2
+    assert Enum.all?(saved_events, &(&1.os_process_id == os_process.id))
 
     FollowerSupervisor.stop_follower(follower_pid)
     Tools.terminate_os_process(pid, grace_period: 50)
   end
 
   test "child exit drains stderr, marks run finished, computes outcome and broadcasts", %{
-    backend: backend,
     run: run,
     os_process: os_process,
     stream_path: stream_path
@@ -193,12 +204,7 @@ defmodule Rail.Runs.FollowerTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream_path,
-        os_pid: pid,
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
         tail_interval_ms: 20,
         batch_interval_ms: 50
       )
@@ -228,23 +234,14 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "stop_os_process/2 terminates live process and settles run", %{
-    backend: backend,
     run: run,
-    os_process: os_process,
-    stream_path: stream_path
+    os_process: os_process
   } do
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["30"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream_path,
-        os_pid: pid,
-        tail_interval_ms: 30
-      )
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run}, tail_interval_ms: 30)
 
     # The follower runs in its own process, so lend it this test's DB connection.
 
@@ -258,7 +255,6 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "lenient UTF-8 handles invalid byte sequences gracefully", %{
-    backend: backend,
     run: run,
     os_process: os_process,
     stream_path: stream_path
@@ -267,14 +263,7 @@ defmodule Rail.Runs.FollowerTest do
     {:os_pid, pid} = Port.info(port, :os_pid)
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream_path,
-        os_pid: pid,
-        tail_interval_ms: 20
-      )
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run}, tail_interval_ms: 20)
 
     # The follower runs in its own process, so lend it this test's DB connection.
 
@@ -295,13 +284,12 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "skip_log_lines skips already recorded lines from being re-inserted", %{
-    backend: backend,
     run: run,
     os_process: os_process,
     stream_path: stream_path
   } do
     # Seed 1 event in database
-    Repo.insert!(%RunEvent{run_id: run.id, seq: 1, line: "already saved line"})
+    Repo.insert!(%RunEvent{run_id: run.id, os_process_id: os_process.id, line: "already saved line"})
 
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["5"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
@@ -311,14 +299,7 @@ defmodule Rail.Runs.FollowerTest do
     File.write!(stream_path, "#{line1}\n#{line2}\n")
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream_path,
-        os_pid: pid,
-        # A real spawn starts at max(seq) + 1; the seeded row already holds seq 1.
-        next_seq: 2,
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
         skip_log_lines: 1,
         tail_interval_ms: 20,
         batch_interval_ms: 40
@@ -349,8 +330,7 @@ defmodule Rail.Runs.FollowerTest do
   test "custom name, get_state call, and ignored info messages", %{
     backend: backend,
     os_process: os_process,
-    run: run,
-    stream_path: stream_path
+    run: run
   } do
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["5"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
@@ -358,15 +338,7 @@ defmodule Rail.Runs.FollowerTest do
     custom_name = :custom_follower_test_proc
 
     {:ok, follower_pid} =
-      Follower.start_link(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream_path,
-        os_pid: pid,
-        name: custom_name,
-        tail_interval_ms: 50_000
-      )
+      Follower.start_link({%{os_process | os_pid: pid, run: run}, name: custom_name, tail_interval_ms: 50_000})
 
     # The follower runs in its own process, so lend it this test's DB connection.
 
@@ -374,6 +346,11 @@ defmodule Rail.Runs.FollowerTest do
 
     state = GenServer.call(follower_pid, :get_state)
     assert state.os_process_id == os_process.id
+    assert state.run_id == run.id
+    assert state.os_pid == pid
+    assert state.stream_path == os_process.stream_path
+    # The backend comes off the run's role, not off the caller.
+    assert state.backend.id == backend.id
 
     dummy_pid = spawn(fn -> :ok end)
     send(follower_pid, {:EXIT, dummy_pid, :normal})
@@ -386,23 +363,14 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "stop_os_process/2 accepts %OsProcess{} struct and run_id string", %{
-    backend: backend,
     os_process: os_process,
-    run: run,
-    stream_path: stream_path
+    run: run
   } do
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream_path,
-        os_pid: pid,
-        tail_interval_ms: 30
-      )
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run}, tail_interval_ms: 30)
 
     # The follower runs in its own process, so lend it this test's DB connection.
 
@@ -419,14 +387,14 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "child exit handles clean success without errors and passes exit_code from port", %{
-    backend: backend,
+    role: role,
     tmp_dir: tmp_dir
   } do
     run =
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -455,12 +423,7 @@ defmodule Rail.Runs.FollowerTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream,
-        os_pid: pid,
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
         port: port,
         tail_interval_ms: 10,
         batch_interval_ms: 20
@@ -482,7 +445,7 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "child exit handles both result_error only and result_error with stderr", %{
-    backend: backend,
+    role: role,
     tmp_dir: tmp_dir
   } do
     # Part 1: result_error only (empty stderr)
@@ -490,7 +453,7 @@ defmodule Rail.Runs.FollowerTest do
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -519,14 +482,7 @@ defmodule Rail.Runs.FollowerTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run1.id}")
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process1,
-        backend: backend,
-        run: run1,
-        stream_path: stream1,
-        os_pid: pid1,
-        tail_interval_ms: 10
-      )
+      FollowerSupervisor.start_follower(%{os_process1 | os_pid: pid1, run: run1}, tail_interval_ms: 10)
 
     # The follower runs in its own process, so lend it this test's DB connection.
 
@@ -542,7 +498,7 @@ defmodule Rail.Runs.FollowerTest do
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -571,14 +527,7 @@ defmodule Rail.Runs.FollowerTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run2.id}")
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process2,
-        backend: backend,
-        run: run2,
-        stream_path: stream2,
-        os_pid: pid2,
-        tail_interval_ms: 10
-      )
+      FollowerSupervisor.start_follower(%{os_process2 | os_pid: pid2, run: run2}, tail_interval_ms: 10)
 
     # The follower runs in its own process, so lend it this test's DB connection.
 
@@ -591,12 +540,12 @@ defmodule Rail.Runs.FollowerTest do
     assert outcome2.error =~ "stderr text here"
   end
 
-  test "records exit_status from port message and sets exit_code on clean exit", %{backend: backend, tmp_dir: tmp_dir} do
+  test "records exit_status from port message and sets exit_code on clean exit", %{role: role, tmp_dir: tmp_dir} do
     run =
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -622,14 +571,7 @@ defmodule Rail.Runs.FollowerTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream,
-        os_pid: 999_999,
-        tail_interval_ms: 20
-      )
+      FollowerSupervisor.start_follower(%{os_process | os_pid: 999_999, run: run}, tail_interval_ms: 20)
 
     # The follower runs in its own process, so lend it this test's DB connection.
 
@@ -754,12 +696,7 @@ defmodule Rail.Runs.FollowerTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream,
-        os_pid: pid,
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
         port: port,
         tail_interval_ms: 20,
         batch_interval_ms: 30
@@ -785,7 +722,6 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "chat child exit preserves run status but updates conversation_id if new", %{
-    backend: backend,
     tmp_dir: tmp_dir
   } do
     task_id = UXID.generate!(prefix: "tsk")
@@ -823,12 +759,7 @@ defmodule Rail.Runs.FollowerTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream,
-        os_pid: pid,
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
         tail_interval_ms: 20,
         batch_interval_ms: 30
       )
@@ -847,7 +778,7 @@ defmodule Rail.Runs.FollowerTest do
     assert reloaded_rr.conversation_id == "sess-updated"
   end
 
-  test "chat child exit with same conversation_id leaves run unchanged", %{backend: backend, tmp_dir: tmp_dir} do
+  test "chat child exit with same conversation_id leaves run unchanged", %{tmp_dir: tmp_dir} do
     task_id = UXID.generate!(prefix: "tsk")
     role_id = UXID.generate!(prefix: "rol")
 
@@ -883,12 +814,7 @@ defmodule Rail.Runs.FollowerTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream,
-        os_pid: pid,
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
         tail_interval_ms: 20,
         batch_interval_ms: 30
       )
@@ -906,7 +832,7 @@ defmodule Rail.Runs.FollowerTest do
     assert reloaded_rr.conversation_id == "sess-same"
   end
 
-  test "stage child exit without usage map updates run with nil usage", %{backend: backend, tmp_dir: tmp_dir} do
+  test "stage child exit without usage map updates run with nil usage", %{tmp_dir: tmp_dir} do
     task_id = UXID.generate!(prefix: "tsk")
     role_id = UXID.generate!(prefix: "rol")
 
@@ -940,12 +866,7 @@ defmodule Rail.Runs.FollowerTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream,
-        os_pid: pid,
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
         tail_interval_ms: 20,
         batch_interval_ms: 30
       )

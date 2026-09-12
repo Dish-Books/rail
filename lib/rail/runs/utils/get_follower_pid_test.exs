@@ -3,7 +3,6 @@ defmodule Rail.Runs.Utils.GetFollowerPidTest do
 
   import Rail.Runs.Utils.GetFollowerPid
 
-  alias Rail.Backends.Schemas.Backend
   alias Rail.Runs
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.OsProcess
@@ -41,12 +40,7 @@ defmodule Rail.Runs.Utils.GetFollowerPidTest do
       |> Repo.insert!()
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: %Backend{name: :claude},
-        run: run,
-        stream_path: stream_path
-      )
+      FollowerSupervisor.start_follower(%{os_process | run: run})
 
     on_exit(fn -> FollowerSupervisor.stop_follower(follower_pid) end)
 

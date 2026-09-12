@@ -17,7 +17,6 @@ defmodule Rail.Runs.Schemas.OsProcess do
   @primary_key {:id, UXID, autogenerate: true, prefix: "proc"}
   schema "os_processes" do
     field :is_chat, :boolean, default: false
-    field :start_seq, :integer, default: 1
     field :os_pid, :integer
     field :stream_path, :string
     field :node, :string
@@ -34,7 +33,6 @@ defmodule Rail.Runs.Schemas.OsProcess do
     :run_id,
     :task_id,
     :is_chat,
-    :start_seq,
     :os_pid,
     :stream_path,
     :node,

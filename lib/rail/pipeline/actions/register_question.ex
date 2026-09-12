@@ -21,7 +21,6 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
   alias Rail.Runs
   alias Rail.Runs.DetectedQuestion
   alias Rail.Runs.Schemas.Run
-  alias Rail.Runs.Schemas.RunEvent
 
   require Logger
 
@@ -95,7 +94,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
     Logger.info(msg)
 
     if run do
-      append_run_event(run.id, msg)
+      Runs.append_run_event(run.id, msg)
     end
 
     {:ok, :dropped}
@@ -252,28 +251,5 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
       {:ok, %Role{id: role_id}} -> role_id
       _other -> nil
     end
-  end
-
-  defp append_run_event(run_id, line) do
-    max_seq =
-      Repo.one(
-        from e in RunEvent,
-          where: e.run_id == ^run_id,
-          select: max(e.seq)
-      ) || 0
-
-    now = DateTime.utc_now()
-
-    event_attrs = %{
-      run_id: run_id,
-      seq: max_seq + 1,
-      line: line,
-      inserted_at: now,
-      updated_at: now
-    }
-
-    {:ok, event} = %RunEvent{} |> RunEvent.changeset(event_attrs) |> Repo.insert()
-    Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run_id}", {:run_events, run_id, [event]})
-    event
   end
 end

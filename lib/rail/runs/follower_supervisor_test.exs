@@ -3,7 +3,6 @@ defmodule Rail.Runs.FollowerSupervisorTest do
 
   import Rail.Runs.Utils.GetFollowerPid
 
-  alias Rail.Backends.Schemas.Backend
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
@@ -43,26 +42,18 @@ defmodule Rail.Runs.FollowerSupervisorTest do
       File.rm_rf(tmp_dir)
     end)
 
-    %{backend: %Backend{name: :claude}, run: run, os_process: os_process, stream_path: stream_path}
+    %{run: run, os_process: os_process, stream_path: stream_path}
   end
 
   test "starts and stops follower children under supervision", %{
-    backend: backend,
     run: run,
-    os_process: os_process,
-    stream_path: stream_path
+    os_process: os_process
   } do
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream_path,
-        os_pid: pid
-      )
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run})
 
     assert is_pid(follower_pid)
     assert Process.alive?(follower_pid)
@@ -80,7 +71,6 @@ defmodule Rail.Runs.FollowerSupervisorTest do
   end
 
   test "hands a spawned port to the follower and unlinks it from the caller", %{
-    backend: backend,
     run: run,
     os_process: os_process,
     stream_path: stream_path
@@ -88,14 +78,7 @@ defmodule Rail.Runs.FollowerSupervisorTest do
     {:ok, port, os_pid} = Tools.spawn_os_process("/bin/sleep", ["10"], stdout_path: stream_path)
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(
-        os_process: os_process,
-        backend: backend,
-        run: run,
-        stream_path: stream_path,
-        os_pid: os_pid,
-        port: port
-      )
+      FollowerSupervisor.start_follower(%{os_process | os_pid: os_pid, run: run}, port: port)
 
     assert Port.info(port, :connected) == {:connected, follower_pid}
     {:links, links} = Process.info(self(), :links)

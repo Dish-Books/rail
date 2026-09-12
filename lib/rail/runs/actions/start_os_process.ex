@@ -1,7 +1,6 @@
 defmodule Rail.Runs.Actions.StartOsProcess do
   @moduledoc false
 
-  import Ecto.Query
   import Rail.Runs.Utils.EnsureExecutable
 
   alias Rail.Backends.Schemas.Backend
@@ -12,7 +11,6 @@ defmodule Rail.Runs.Actions.StartOsProcess do
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
-  alias Rail.Runs.Schemas.RunEvent
   alias Rail.Tools
 
   @doc """
@@ -44,7 +42,7 @@ defmodule Rail.Runs.Actions.StartOsProcess do
 
     result =
       case ensure_executable(executable, os_process, run) do
-        :ok -> launch(os_process, run, executable, argv, stream_path, task, backend)
+        :ok -> launch(os_process, run, executable, argv, stream_path, task)
         {:error, reason} -> {:error, reason}
       end
 
@@ -89,7 +87,6 @@ defmodule Rail.Runs.Actions.StartOsProcess do
       run_id: run.id,
       task_id: run.task_id,
       is_chat: is_chat,
-      start_seq: next_seq(run),
       stream_path: stream_path,
       node: to_string(Node.self()),
       status: :starting,
@@ -111,7 +108,7 @@ defmodule Rail.Runs.Actions.StartOsProcess do
     stream_path
   end
 
-  defp launch(os_process, run, executable, args, stream_path, task, backend) do
+  defp launch(os_process, run, executable, args, stream_path, task) do
     spawn_opts = [
       stdout_path: stream_path,
       stderr_path: "#{stream_path}.err",
@@ -120,12 +117,12 @@ defmodule Rail.Runs.Actions.StartOsProcess do
 
     case Tools.spawn_os_process(executable, args, spawn_opts) do
       {:ok, port, os_pid} ->
-        {:ok, updated_run} =
+        {:ok, os_process} =
           os_process
           |> OsProcess.changeset(%{status: :running, os_pid: os_pid})
           |> Repo.update()
 
-        follow(updated_run, run, port, os_pid, stream_path, backend)
+        follow(os_process, run, port)
 
       # coveralls-ignore-start (defensive: port died before reporting a PID)
       {:error, reason} ->
@@ -134,30 +131,13 @@ defmodule Rail.Runs.Actions.StartOsProcess do
     end
   end
 
-  defp follow(os_process, run, port, os_pid, stream_path, backend) do
-    follower_opts = [
-      os_process: os_process,
-      run: run,
-      stream_path: stream_path,
-      os_pid: os_pid,
-      port: port,
-      backend: backend,
-      next_seq: os_process.start_seq
-    ]
+  # The run is already loaded down to its backend, so handing it over on the row
+  # saves the Follower the preload.
+  defp follow(%OsProcess{} = os_process, run, port) do
+    os_process = %{os_process | run: run}
 
-    with {:ok, _follower_pid} <- FollowerSupervisor.start_follower(follower_opts) do
+    with {:ok, _follower_pid} <- FollowerSupervisor.start_follower(os_process, port: port) do
       {:ok, os_process}
     end
-  end
-
-  defp next_seq(run) do
-    max_seq =
-      Repo.one(
-        from e in RunEvent,
-          where: e.run_id == ^run.id,
-          select: max(e.seq)
-      ) || 0
-
-    max_seq + 1
   end
 end

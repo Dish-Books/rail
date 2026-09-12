@@ -89,7 +89,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
   end
 
   test "spawns child, records runs row, sets os_pid and running status", %{run: run} do
-    expect(FollowerSupervisor, :start_follower, fn _opts -> {:ok, self()} end)
+    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
 
     {:ok, os_process} = Runs.start_os_process(run, ["2"])
 
@@ -108,7 +108,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
     run: run,
     scratch_path: scratch_path
   } do
-    expect(FollowerSupervisor, :start_follower, fn _opts -> {:ok, self()} end)
+    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
 
     {:ok, os_process} = Runs.start_os_process(run, ["2"])
 
@@ -129,7 +129,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
 
     script = ~s(printf '{"cwd":"%s"}\n' "$PWD")
 
-    expect(FollowerSupervisor, :start_follower, fn _opts -> {:ok, self()} end)
+    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
 
     {:ok, os_process} = Runs.start_os_process(run, ["-c", script])
 
@@ -173,20 +173,20 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
   test "hands the spawned port and stream to a Follower", %{backend: %Backend{id: backend_id}, run: run} do
     test_pid = self()
 
-    expect(FollowerSupervisor, :start_follower, fn opts ->
-      send(test_pid, {:follower_opts, opts})
+    expect(FollowerSupervisor, :start_follower, fn followed, opts ->
+      send(test_pid, {:followed, followed, opts})
       {:ok, test_pid}
     end)
 
     {:ok, os_process} = Runs.start_os_process(run, ["2"])
 
-    assert_receive {:follower_opts, opts}
-    assert opts[:os_process].id == os_process.id
-    assert opts[:run].id == run.id
-    assert opts[:stream_path] == os_process.stream_path
-    assert opts[:os_pid] == os_process.os_pid
-    assert opts[:next_seq] == os_process.start_seq
-    assert opts[:backend].id == backend_id
+    # Everything the Follower needs rides on the row it is handed.
+    assert_receive {:followed, followed, opts}
+    assert followed.id == os_process.id
+    assert followed.stream_path == os_process.stream_path
+    assert followed.os_pid == os_process.os_pid
+    assert followed.run.id == run.id
+    assert followed.run.role.backend.id == backend_id
     assert is_port(opts[:port])
 
     Tools.terminate_os_process(os_process.os_pid, grace_period: 100)

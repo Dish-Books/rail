@@ -7,9 +7,11 @@ defmodule Rail.Runs.Schemas.RunEventTest do
   test "changeset/2 with valid attributes" do
     run_id = UXID.generate!(prefix: "run")
 
+    os_process_id = UXID.generate!(prefix: "proc")
+
     attrs = %{
       run_id: run_id,
-      seq: 1,
+      os_process_id: os_process_id,
       line: ~s({"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}})
     }
 
@@ -17,7 +19,7 @@ defmodule Rail.Runs.Schemas.RunEventTest do
     assert changeset.valid?
 
     assert get_change(changeset, :run_id) == run_id
-    assert get_change(changeset, :seq) == 1
+    assert get_change(changeset, :os_process_id) == os_process_id
     assert get_change(changeset, :line) =~ "hello"
   end
 
@@ -27,8 +29,8 @@ defmodule Rail.Runs.Schemas.RunEventTest do
 
     errors = errors_on(changeset)
     assert "can't be blank" in errors.run_id
-    assert "can't be blank" in errors.seq
     assert "can't be blank" in errors.line
+    refute Map.has_key?(errors, :seq)
   end
 
   test "insert and retrieve run_event" do
@@ -44,16 +46,13 @@ defmodule Rail.Runs.Schemas.RunEventTest do
 
     {:ok, event} =
       %RunEvent{}
-      |> RunEvent.changeset(%{
-        run_id: run.id,
-        seq: 1,
-        line: "some raw line"
-      })
+      |> RunEvent.changeset(%{run_id: run.id, line: "some raw line"})
       |> Repo.insert()
 
     assert is_binary(event.id) and byte_size(event.id) > 0
     assert event.run_id == run.id
-    assert event.seq == 1
+    # The database hands back the position it assigned.
+    assert is_integer(event.seq)
     assert event.line == "some raw line"
   end
 end

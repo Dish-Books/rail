@@ -17,9 +17,17 @@ defmodule Rail.Runs.Actions.AppendRunEventTest do
     %{run: run}
   end
 
-  test "takes a run struct or an id and keeps seq sequential", %{run: run} do
-    assert %RunEvent{line: "from struct", seq: 1} = Runs.append_run_event(run, "from struct")
-    assert %RunEvent{line: "from id", seq: 2} = Runs.append_run_event(run.id, "from id")
+  test "takes a run struct or an id and keeps the log in order", %{run: run} do
+    assert %RunEvent{line: "from struct", seq: first} = Runs.append_run_event(run, "from struct")
+    assert %RunEvent{line: "from id", seq: second} = Runs.append_run_event(run.id, "from id")
+
+    # The position is the database's to assign; all this asks is that it advances.
+    assert is_integer(first)
+    assert second > first
+  end
+
+  test "leaves the line on the run rather than any one of its processes", %{run: run} do
+    assert %RunEvent{os_process_id: nil} = Runs.append_run_event(run, "[rail] between turns")
   end
 
   test "broadcasts the event on the run topic", %{run: %Run{id: run_id} = run} do

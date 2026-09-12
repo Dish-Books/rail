@@ -57,7 +57,7 @@ defmodule Rail.Runs.Boot do
       Repo.all(
         from r in OsProcess,
           where: r.node == ^current_node and r.status in [:starting, :running],
-          preload: [:run],
+          preload: [run: [role: :backend]],
           order_by: [asc: r.started_at]
       )
 
@@ -115,28 +115,9 @@ defmodule Rail.Runs.Boot do
         {:already_following, os_process, pid}
 
       [] ->
-        max_seq =
-          if os_process.run do
-            Repo.one(
-              from e in Rail.Runs.Schemas.RunEvent,
-                where: e.run_id == ^os_process.run.id,
-                select: max(e.seq)
-            ) || 0
-          else
-            0
-          end
+        skip_log_lines = (os_process.run && os_process.run.attempt_log_lines) || 0
 
-        follower_opts = [
-          os_process: os_process,
-          run: os_process.run,
-          stream_path: os_process.stream_path,
-          os_pid: os_process.os_pid,
-          next_seq: max_seq + 1,
-          skip_log_lines: (os_process.run && os_process.run.attempt_log_lines) || 0,
-          backend: backend_for(os_process.run)
-        ]
-
-        case FollowerSupervisor.start_follower(follower_opts) do
+        case FollowerSupervisor.start_follower(os_process, skip_log_lines: skip_log_lines) do
           {:ok, follower_pid} ->
             allow_sandbox(follower_pid)
             {:adopted_live, os_process, follower_pid}
@@ -151,12 +132,8 @@ defmodule Rail.Runs.Boot do
 
   # A stream is parsed by the backend that wrote it, so adoption reads the backend off
   # the role that produced the run rather than guessing.
-  defp backend_for(%Run{} = run) do
-    case Repo.preload(run, role: :backend) do
-      %Run{role: %{backend: %Backend{} = backend}} -> backend
-      _unconfigured -> %Backend{name: :claude}
-    end
-  end
+  defp backend_for(%Run{role: %{backend: %Backend{} = backend}}), do: backend
+  defp backend_for(%Run{}), do: %Backend{name: :claude}
 
   defp backend_for(_run), do: %Backend{name: :claude}
 

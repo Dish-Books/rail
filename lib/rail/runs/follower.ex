@@ -10,6 +10,7 @@ defmodule Rail.Runs.Follower do
   import Rail.Runs.Utils.OnOsProcessFinished
   import Rail.Runs.Utils.ParseLine
 
+  alias Rail.Backends.Schemas.Backend
   alias Rail.Pipeline
   alias Rail.Repo
   alias Rail.Runs.FollowerRegistry
@@ -37,16 +38,13 @@ defmodule Rail.Runs.Follower do
     file_offset: 0,
     partial_line: "",
     pending_events: [],
-    next_seq: 1,
     skip_log_lines: 0
   ]
 
   @doc """
   Starts a new Follower GenServer.
   """
-  def start_link(opts) when is_list(opts) do
-    os_process = Keyword.fetch!(opts, :os_process)
-
+  def start_link({%OsProcess{} = os_process, opts}) when is_list(opts) do
     name =
       case opts[:name] do
         custom_name when is_tuple(custom_name) or (is_atom(custom_name) and custom_name not in [nil, false]) ->
@@ -56,7 +54,7 @@ defmodule Rail.Runs.Follower do
           {:via, Registry, {FollowerRegistry, os_process.id}}
       end
 
-    GenServer.start_link(__MODULE__, opts, name: name)
+    GenServer.start_link(__MODULE__, {os_process, opts}, name: name)
   end
 
   @doc """
@@ -140,11 +138,10 @@ defmodule Rail.Runs.Follower do
   end
 
   @impl true
-  def init(opts) do
-    os_process = Keyword.fetch!(opts, :os_process)
-    run = Keyword.get(opts, :run) || Repo.get!(Run, os_process.run_id)
-    stream_path = Keyword.get(opts, :stream_path) || os_process.stream_path
-    backend = Keyword.fetch!(opts, :backend)
+  def init({%OsProcess{} = os_process, opts}) do
+    %OsProcess{stream_path: stream_path} = os_process
+    run = run_for(os_process)
+    backend = backend_for(run)
     tail_interval_ms = Keyword.get(opts, :tail_interval_ms, @default_tail_interval)
     batch_interval_ms = Keyword.get(opts, :batch_interval_ms, @default_batch_interval)
     skip_log_lines = Keyword.get(opts, :skip_log_lines, 0)
@@ -157,23 +154,20 @@ defmodule Rail.Runs.Follower do
         conversation_id: run.conversation_id
       )
 
-    next_seq = Keyword.get(opts, :next_seq, 1)
-
     state = %__MODULE__{
       os_process_id: os_process.id,
       run_id: run.id,
       task_id: os_process.task_id,
       stream_path: stream_path,
       err_path: "#{stream_path}.err",
-      os_pid: Keyword.get(opts, :os_pid) || os_process.os_pid,
+      os_pid: os_process.os_pid,
       port: Keyword.get(opts, :port),
       backend: backend,
       event_state: event_state,
       tail_interval_ms: tail_interval_ms,
       batch_interval_ms: batch_interval_ms,
       file_offset: file_offset,
-      skip_log_lines: skip_log_lines,
-      next_seq: next_seq
+      skip_log_lines: skip_log_lines
     }
 
     Process.send_after(self(), :tail_tick, tail_interval_ms)
@@ -203,7 +197,7 @@ defmodule Rail.Runs.Follower do
     {lines, new_offset, new_partial} =
       pump_stream(state.stream_path, state.file_offset, state.partial_line)
 
-    {event_state, pending_events, next_seq, skip_log_lines} =
+    {event_state, pending_events, skip_log_lines} =
       process_incoming_lines(lines, state)
 
     updated_state = %{
@@ -212,7 +206,6 @@ defmodule Rail.Runs.Follower do
         partial_line: new_partial,
         event_state: event_state,
         pending_events: pending_events,
-        next_seq: next_seq,
         skip_log_lines: skip_log_lines
     }
 
@@ -254,17 +247,27 @@ defmodule Rail.Runs.Follower do
     {:noreply, state}
   end
 
+  # The row is the whole brief, so a caller that already holds the run hands it over
+  # loaded rather than making this read it back.
+  defp run_for(%OsProcess{run: %Run{} = run}), do: run
+  defp run_for(%OsProcess{run_id: run_id}), do: Repo.get!(Run, run_id)
+
+  # A role with no backend configured still streams something; claude's format is
+  # what Rail parses by default.
+  defp backend_for(%Run{role: %{backend: %Backend{} = backend}}), do: backend
+  defp backend_for(_unconfigured), do: %Backend{name: :claude}
+
   defp process_incoming_lines(lines, state) do
     Enum.reduce(
       lines,
-      {state.event_state, state.pending_events, state.next_seq, state.skip_log_lines},
-      fn line, {ev_state, pending, seq, skip} ->
+      {state.event_state, state.pending_events, state.skip_log_lines},
+      fn line, {ev_state, pending, skip} ->
         new_ev_state = parse_line(ev_state, line)
 
         if skip > 0 do
-          {new_ev_state, pending, seq, skip - 1}
+          {new_ev_state, pending, skip - 1}
         else
-          {new_ev_state, [{seq, line} | pending], seq + 1, 0}
+          {new_ev_state, [line | pending], 0}
         end
       end
     )
@@ -274,24 +277,26 @@ defmodule Rail.Runs.Follower do
     if state.pending_events == [] do
       state
     else
-      flush_pending_events(state.pending_events, state.run_id)
+      flush_pending_events(state.pending_events, state.run_id, state.os_process_id)
       %{state | pending_events: []}
     end
   end
 
-  defp flush_pending_events([], _run_id), do: []
+  defp flush_pending_events([], _run_id, _os_process_id), do: []
 
-  defp flush_pending_events(pending_events, run_id) do
+  # `seq` is left to the database: it orders the run's whole log, and this process
+  # is not the only writer appending to it.
+  defp flush_pending_events(pending_events, run_id, os_process_id) do
     now = DateTime.utc_now()
 
     entries =
       pending_events
       |> Enum.reverse()
-      |> Enum.map(fn {seq, line} ->
+      |> Enum.map(fn line ->
         %{
           id: UXID.generate!(),
           run_id: run_id,
-          seq: seq,
+          os_process_id: os_process_id,
           line: line,
           inserted_at: now,
           updated_at: now
@@ -394,11 +399,11 @@ defmodule Rail.Runs.Follower do
     {final_lines, final_offset, _remaining_partial} =
       pump_stream(state.stream_path, state.file_offset, state.partial_line, final: true)
 
-    {event_state, pending_events, _next_seq, _skip} =
+    {event_state, pending_events, _skip} =
       process_incoming_lines(final_lines, %{state | file_offset: final_offset})
 
     err_lines = drain_err_file(state.err_path)
-    flush_pending_events(pending_events, state.run_id)
+    flush_pending_events(pending_events, state.run_id, state.os_process_id)
 
     raw_stderr =
       err_lines
