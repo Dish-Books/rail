@@ -33,10 +33,6 @@ defmodule RailWeb.Hooks.NavHook do
 
     current_project_id = url_project || saved_project
 
-    if connected?(socket) do
-      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-    end
-
     socket =
       socket
       |> assign(:is_rail_extended, true)
@@ -54,7 +50,6 @@ defmodule RailWeb.Hooks.NavHook do
       |> assign(:current_section, :overview)
       |> attach_hook(:nav_handle_params, :handle_params, &handle_nav_params/3)
       |> attach_hook(:nav_handle_events, :handle_event, &handle_nav_events/3)
-      |> attach_hook(:nav_handle_info, :handle_info, &handle_nav_info/2)
 
     {:cont, socket}
   end
@@ -181,10 +176,13 @@ defmodule RailWeb.Hooks.NavHook do
 
         case Issues.capture_issue(scope, project, ask, priority: priority) do
           {:ok, issue} ->
+            # Other views still learn about the issue over PubSub; this one owns
+            # the capture, so it refreshes its own counts directly.
             Pipeline.broadcast_pipeline_changed(%{event: :issue_captured, issue_id: issue.id})
 
             socket =
               socket
+              |> refresh_nav_state()
               |> assign(:show_new_issue_modal, false)
               |> assign(:capture_ask, "")
               |> assign(:capture_project_id, nil)
@@ -210,14 +208,6 @@ defmodule RailWeb.Hooks.NavHook do
   end
 
   defp handle_nav_events(_event, _params, socket) do
-    {:cont, socket}
-  end
-
-  defp handle_nav_info({:pipeline_changed, _meta}, socket) do
-    {:cont, refresh_nav_state(socket)}
-  end
-
-  defp handle_nav_info(_msg, socket) do
     {:cont, socket}
   end
 

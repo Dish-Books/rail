@@ -16,10 +16,6 @@ defmodule RailWeb.IssuesLive do
   alias Rail.Projects
 
   def mount(_params, _session, socket) do
-    if connected?(socket) do
-      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-    end
-
     socket =
       socket
       |> assign(:page_title, "Issues")
@@ -427,15 +423,6 @@ defmodule RailWeb.IssuesLive do
       _error ->
         {:noreply, socket}
     end
-  end
-
-  def handle_info({:pipeline_changed, _meta}, socket) do
-    socket = reload_data(socket)
-    {:noreply, socket}
-  end
-
-  def handle_info(_msg, socket) do
-    {:noreply, socket}
   end
 
   def subtitle_for(nil), do: "Linear issues across all projects"

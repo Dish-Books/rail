@@ -762,63 +762,6 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view_all, "#sync-issues-button", "Sync Issues")
   end
 
-  test "reloads on a pipeline_changed broadcast", %{conn: conn} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_issues_live_11",
-        login: "issues_live_user_11",
-        email: "issues_live_user_11@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-    scope = Scope.for_user(user)
-
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
-    assert {:ok, %Project{id: _project_id} = project} =
-             Projects.create_project(scope, %{
-               name: "PubSub Project",
-               github_repo: "example/pubsub-proj",
-               github_installation_id: 708,
-               linear_team_id: "t_ps",
-               linear_team_key: "PS",
-               default_branch: "main",
-               clone_path: "/tmp/pubsub-proj",
-               active: true,
-               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
-             })
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_issues_live_13211",
-      "identifier" => "PS-1",
-      "title" => "Pubsub created issue"
-    })
-
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Pubsub created issue")
-
-    {:ok, issue} =
-      Issues.update_issue(system_scope(), issue, %{
-        state: :backlog
-      })
-
-    refute has_element?(view, "#issue-card-#{issue.id}")
-
-    send(view.pid, {:pipeline_changed, %{event: :issue_captured}})
-    assert has_element?(view, "#issue-card-#{issue.id}")
-
-    send(view.pid, :unknown_info)
-    assert has_element?(view, "#issue-card-#{issue.id}")
-  end
-
   test "component helper functions cover all edge cases", %{conn: _conn} do
     # card_body_for edge cases
     assert IssueCard.card_body_for(%{title: "Test", description: ""}) == ""

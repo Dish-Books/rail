@@ -534,25 +534,6 @@ defmodule RailWeb.Hooks.NavHookTest do
     assert_patched(view, ~p"/issues")
   end
 
-  test "refreshes nav state on a pipeline_changed broadcast", %{conn: conn} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_nav_hook_10",
-        login: "nav_hook_user_10",
-        email: "nav_hook_user_10@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
-
-    send(view.pid, {:pipeline_changed, %{event: :task_created}})
-    send(view.pid, :unhandled_message)
-
-    assert has_element?(view, "#issues-view")
-  end
-
   test "open_new_issue sets default_project_id to nil when no active projects exist", %{
     conn: conn
   } do
