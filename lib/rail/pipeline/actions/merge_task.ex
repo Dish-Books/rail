@@ -89,21 +89,12 @@ defmodule Rail.Pipeline.Actions.MergeTask do
 
     attrs = %{
       stage: :merged,
-      merged_at: Keyword.get(opts, :merged_at) || DateTime.utc_now(),
-      error: nil
+      merged_at: Keyword.get(opts, :merged_at) || DateTime.utc_now()
     }
 
-    {:ok, updated_task} =
-      task
-      |> Task.changeset(attrs)
-      |> Repo.update()
-
-    Rail.Pipeline.broadcast_pipeline_changed(%{
-      task_id: updated_task.id,
-      event: :task_merged
-    })
-
-    {:ok, updated_task}
+    task
+    |> Task.changeset(attrs)
+    |> Repo.update()
   end
 
   defp maybe_transition_linear_issue(scope, project, %Task{issue_id: issue_id}) when is_binary(issue_id) do
@@ -115,20 +106,9 @@ defmodule Rail.Pipeline.Actions.MergeTask do
 
   defp maybe_transition_linear_issue(_scope, _project, _task), do: :ok
 
-  defp handle_merge_failure(%Task{} = task, reason) do
-    error_msg = "Failed to merge pull request: #{format_reason(reason)}"
-
-    {:ok, updated_task} =
-      task
-      |> Task.changeset(%{error: error_msg})
-      |> Repo.update()
-
-    Rail.Pipeline.broadcast_pipeline_changed(%{
-      task_id: updated_task.id,
-      event: :merge_failed
-    })
-
-    {:error, reason}
+  # The failure belongs to whoever asked for the merge, not to the task.
+  defp handle_merge_failure(%Task{}, reason) do
+    {:error, "Failed to merge pull request: #{format_reason(reason)}"}
   end
 
   defp format_reason({:github_api_error, _status, %{"message" => msg}}), do: msg

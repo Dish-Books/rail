@@ -127,14 +127,12 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(task, %{
         stage: :review,
-        error: "Parked on findings"
       })
 
     assert {:ok,
             %Task{
               id: ^task_id,
               stage: :ready_to_merge,
-              error: nil
             }} = Pipeline.skip_to_ready_to_merge(task)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :skipped_to_ready_to_merge}}

@@ -11,7 +11,6 @@ defmodule Rail.Pipeline.Actions.CreateTask do
   import Rail.Pipeline.Utils.ScratchPath
 
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -42,14 +41,7 @@ defmodule Rail.Pipeline.Actions.CreateTask do
       scratch_path: scratch_path(project.id, id)
     }
 
-    case %Task{id: id} |> Task.changeset(attrs, project.id) |> Repo.insert() do
-      {:ok, task} ->
-        Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :task_created})
-        {:ok, task}
-
-      {:error, changeset} ->
-        {:error, changeset}
-    end
+    %Task{id: id} |> Task.changeset(attrs, project.id) |> Repo.insert()
   end
 
   defp worktree_name(%Issue{branch_name: branch}) when is_binary(branch) and branch != "", do: branch

@@ -5,40 +5,26 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
   """
 
   import Ecto.Query
-  import Rail.Pipeline.Utils.StageRun
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Design
-  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
-  alias Rail.Roles
-  alias Rail.Roles.Schemas.Role
   alias Rail.Runs
   alias Rail.Runs.Schemas.Run
   alias Rail.Scope
 
   @doc """
-  Re-checks the design manifest for a task:
-  - If task stage is not :design, returns {:ok, task}.
-  - If the designer is currently running, returns {:error, "The Designer is still running; wait for it to finish."}.
-  - Reads and validates manifest without requiring an incremented version.
-  - Checks that any previously chosen direction (`picked_key`) is preserved.
-  - If valid:
-    - Captures the design artifact.
-    - Latches the designer's run done.
-    - Logs success event on the designer's run.
-    - Broadcasts `pipeline_changed`.
-    - Returns `{:ok, updated_task}`.
-  - If invalid:
-    - Records the reason on the designer's run and leaves it open.
-    - Logs turn-down event on the designer's run.
-    - Broadcasts `pipeline_changed`.
-    - Returns `{:error, reason}`.
+  Re-checks the design manifest `run` wrote.
+
+  The verdict is about that run's work, so it is recorded there: a manifest that
+  reads cleanly latches the run done, and one that does not leaves it open with
+  the reason, which is what a message to the designer then fixes.
   """
-  def recheck_design(%Task{} = task, opts \\ []) do
-    do_recheck_design(task, opts)
+  def recheck_design(%Run{} = run, opts \\ []) do
+    %Run{task: %Task{} = task} = run = Repo.preload(run, task: :runs)
+    do_recheck_design(run, task, opts)
   end
 
   @doc """
@@ -94,66 +80,38 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
 
   def design_manifest_stamp(_other), do: nil
 
-  defp do_recheck_design(%Task{stage: stage} = task, _opts) when stage != :design do
+  defp do_recheck_design(_run, %Task{stage: stage} = task, _opts) when stage != :design do
     {:ok, task}
   end
 
-  defp do_recheck_design(%Task{} = task, opts) do
-    if task |> stage_run() |> Run.running?() do
+  defp do_recheck_design(%Run{} = run, %Task{} = task, opts) do
+    if Task.running?(task) do
       {:error, "The Designer is still running; wait for it to finish."}
     else
-      execute_recheck(task, opts)
+      execute_recheck(run, task, opts)
     end
   end
 
-  defp execute_recheck(task, opts) do
+  defp execute_recheck(%Run{} = run, %Task{} = task, opts) do
     apply_opts = Keyword.put(opts, :require_new_version, false)
 
     case apply_design_manifest(task, apply_opts) do
       {:ok, %Design{} = design} ->
-        record_recheck(task, nil)
-        {:ok, task} = task |> Task.changeset(%{error: nil}) |> Repo.update()
-        log_designer_event(task, "[rail] Design re-checked: manifest v#{design.version} accepted.")
-        Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :design_rechecked})
+        record_recheck(run, nil)
+        Runs.append_run_event(run, "[rail] Design re-checked: manifest v#{design.version} accepted.")
         {:ok, task}
 
       {:error, reason} ->
         err_msg = if is_binary(reason), do: reason, else: inspect(reason)
-
-        record_recheck(task, err_msg)
-        {:ok, task} = task |> Task.changeset(%{error: err_msg}) |> Repo.update()
-        log_designer_event(task, "[rail] Design re-check turned it down: #{err_msg}")
-        Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :design_recheck_failed})
+        record_recheck(run, err_msg)
+        Runs.append_run_event(run, "[rail] Design re-check turned it down: #{err_msg}")
         {:error, err_msg}
     end
   end
 
-  # The verdict is about the designer's work, so it is recorded on the designer's
-  # run: accepted latches it done, turned down leaves it open with the reason.
-  defp record_recheck(%Task{} = task, error) do
-    case stage_run(task, :design) do
-      %Run{} = run ->
-        outcome = if error, do: :in_progress, else: :done
-        run |> Run.changeset(%{error: error, stage_outcome: outcome}) |> Repo.update!()
-
-      nil ->
-        :ok
-    end
-  end
-
-  defp log_designer_event(task, line) do
-    with {:ok, %Role{} = designer_role} <- Roles.get_role(project_id: task.project_id, stage: :design),
-         %Run{} = run <-
-           Repo.one(
-             from r in Run,
-               where: r.task_id == ^task.id and r.role_id == ^designer_role.id,
-               order_by: [desc: r.inserted_at],
-               limit: 1
-           ) do
-      Runs.append_run_event(run, line)
-    else
-      _other -> :ok
-    end
+  defp record_recheck(%Run{} = run, error) do
+    outcome = if error, do: :in_progress, else: :done
+    run |> Run.changeset(%{error: error, stage_outcome: outcome}) |> Repo.update!()
   end
 
   defp validate_transition(_manifest_data, nil, _require_new_version), do: :ok

@@ -29,6 +29,7 @@ defmodule RailWeb.IssuesLive do
       |> assign(:filtered_issues, [])
       |> assign(:priority_counts, %{})
       |> assign(:tasks_by_issue_id, %{})
+      |> assign(:runs_by_issue_id, %{})
       |> assign(:is_syncing, false)
       |> assign(:editing_issue, nil)
       |> assign(:archiving_issue, nil)
@@ -88,7 +89,7 @@ defmodule RailWeb.IssuesLive do
               id="issues-subtitle"
               data-qa="issues-subtitle"
             >
-              {subtitle_for(@current_project)}
+              {project_subtitle(@current_project)}
             </p>
           </div>
 
@@ -245,6 +246,7 @@ defmodule RailWeb.IssuesLive do
               <.issue_card
                 issue={issue}
                 task={Map.get(@tasks_by_issue_id, issue.id)}
+                run={Map.get(@runs_by_issue_id, issue.id)}
               />
             </div>
           </div>
@@ -368,7 +370,7 @@ defmodule RailWeb.IssuesLive do
             state: Map.get(params, "state")
           }
 
-          Issues.update_issue(scope, issue, attrs)
+          Issues.update_issue(issue, attrs)
 
           socket =
             socket
@@ -425,17 +427,24 @@ defmodule RailWeb.IssuesLive do
     end
   end
 
-  def subtitle_for(nil), do: "Linear issues across all projects"
+  # Where a task got to is what the run for the stage it sits at says, picked out
+  # of the runs already loaded rather than queried per row.
+  defp stage_run(%{runs: runs, stage: stage, is_rebasing: rebasing}) when is_list(runs) do
+    wanted = if rebasing, do: :engineer, else: stage
+    Enum.find(runs, &(&1.role.stage == wanted))
+  end
 
-  def subtitle_for(%{linear_team_key: key, name: name}) when is_binary(key) and key != "" do
+  defp project_subtitle(nil), do: "Linear issues across all projects"
+
+  defp project_subtitle(%{linear_team_key: key, name: name}) when is_binary(key) and key != "" do
     "Linear issues in #{key} (#{name})"
   end
 
-  def subtitle_for(%{name: name}) when is_binary(name) and name != "" do
+  defp project_subtitle(%{name: name}) when is_binary(name) and name != "" do
     "Linear issues for #{name}"
   end
 
-  def subtitle_for(_other), do: "No target repository set • Issues live in Linear; set one in Settings"
+  defp project_subtitle(_other), do: "No target repository set • Issues live in Linear; set one in Settings"
 
   # --- Private Helpers ---
 
@@ -469,8 +478,11 @@ defmodule RailWeb.IssuesLive do
         Issues.list_issues(scope, opts)
       end
 
-    tasks = Pipeline.list_tasks(project_id)
+    tasks = Pipeline.list_tasks(project_id: project_id, preload: [runs: :role])
     tasks_by_issue_id = Map.new(tasks, fn task -> {task.issue_id, task} end)
+
+    # The card shows where a task got to, which is what the run for its stage says.
+    runs_by_issue_id = Map.new(tasks, fn task -> {task.issue_id, stage_run(task)} end)
 
     visible_issues =
       if show_finished do
@@ -489,6 +501,7 @@ defmodule RailWeb.IssuesLive do
     |> assign(:visible_issues, visible_issues)
     |> assign(:priority_counts, priority_counts)
     |> assign(:tasks_by_issue_id, tasks_by_issue_id)
+    |> assign(:runs_by_issue_id, runs_by_issue_id)
     |> apply_filters()
   end
 

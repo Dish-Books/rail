@@ -7,28 +7,17 @@ defmodule Rail.Pipeline.Actions.GetTask do
   alias Rail.Repo
 
   @doc """
-  Gets a single task by ID, with its project, issue and artifacts loaded.
+  Gets a single task by ID, with its project, issue and runs loaded.
+
+  Artifacts are not loaded here. What a page shows is the page's business: the
+  one that draws a design panel asks for the design.
   """
   def get_task(id) when is_binary(id) do
-    query = from(t in Task, where: t.id == ^id, preload: [:project, :issue, :plans, :runs, :designs, :demos])
+    query = from(t in Task, where: t.id == ^id, preload: [:project, :issue, runs: :role])
 
     case Repo.one(query) do
-      %Task{} = task -> {:ok, attach_latest_artifacts(task)}
+      %Task{} = task -> {:ok, task}
       nil -> {:error, :not_found}
     end
-  end
-
-  defp attach_latest_artifacts(%Task{} = task) do
-    latest_demo =
-      if is_list(task.demos) and task.demos != [] do
-        Enum.max_by(task.demos, & &1.version)
-      end
-
-    latest_design =
-      if is_list(task.designs) and task.designs != [] do
-        Enum.max_by(task.designs, & &1.version)
-      end
-
-    %{task | demo: latest_demo, design: latest_design}
   end
 end

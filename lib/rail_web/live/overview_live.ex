@@ -17,19 +17,15 @@ defmodule RailWeb.OverviewLive do
   alias Rail.Domain.CompactStripBlock
   alias Rail.Domain.OverviewQueue
   alias Rail.Domain.OverviewQueueState
-  alias Rail.Domain.QuestionAttentionItem
+  alias Rail.Domain.RunAttentionItem
   alias Rail.Domain.SingleCardBlock
-  alias Rail.Domain.TaskAttentionItem
   alias Rail.Pipeline
   alias Rail.Projects
   alias Rail.Roles
+  alias Rail.Runs
   alias Rail.Runs.Schemas.Run
 
   def mount(_params, _session, socket) do
-    if connected?(socket) do
-      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-    end
-
     socket =
       socket
       |> assign(:page_title, "Overview")
@@ -325,6 +321,14 @@ defmodule RailWeb.OverviewLive do
     {:noreply, socket}
   end
 
+  def handle_event("send_answers", %{"run_id" => run_id}, socket) do
+    with {:ok, run} <- Runs.get_run(run_id) do
+      Pipeline.send_answers(run)
+    end
+
+    {:noreply, load_overview_state(socket, socket.assigns[:current_project_id])}
+  end
+
   def handle_event("submit_question_answer", %{"question_id" => question_id, "answer" => answer}, socket) do
     case String.trim(answer) do
       "" ->
@@ -459,122 +463,88 @@ defmodule RailWeb.OverviewLive do
     {:noreply, socket}
   end
 
-  def handle_info({:pipeline_changed, _meta}, socket) do
-    socket = load_overview_state(socket, socket.assigns[:current_project_id])
-    {:noreply, socket}
-  end
-
   def handle_info(_msg, socket) do
     {:noreply, socket}
   end
 
+  # The overview is a list of runs. What each one is doing it says itself, and the
+  # questions it asked hang off it, so nothing here has to work out which run a
+  # task means.
   defp load_overview_state(socket, project_id) do
-    scope = socket.assigns[:current_scope]
-    tasks = Pipeline.list_tasks(project_id, preload: [:project, :issue])
-    questions = Pipeline.list_questions(project_id, status: :pending, preload: [:task, run: :role])
-
-    questions_by_task_id = Map.new(questions, &{&1.task_id, &1})
-
-    question_for = fn task -> questions_by_task_id[task.id] end
-
-    waiting_tasks = Enum.filter(tasks, &OverviewQueue.needs_attention?/1)
-    waiting_task_ids = MapSet.new(Enum.map(waiting_tasks, & &1.id))
-
-    orphan_questions =
-      Enum.filter(questions, fn q ->
-        is_nil(q.task_id) or not MapSet.member?(waiting_task_ids, q.task_id)
-      end)
+    runs =
+      Runs.list_runs(
+        project_id: project_id,
+        preload: [:role, :questions, task: [:project, :issue]]
+      )
 
     waiting_items =
-      Enum.map(waiting_tasks, &TaskAttentionItem.new/1) ++
-        Enum.map(orphan_questions, &QuestionAttentionItem.new/1)
+      runs
+      |> Enum.filter(&OverviewQueue.needs_attention?/1)
+      |> Enum.map(&RunAttentionItem.new/1)
 
-    {ordered_waiting_items, updated_attention_queue} =
+    {ordered_waiting_items, attention_queue} =
       AttentionQueue.reconcile(socket.assigns.attention_queue, waiting_items)
 
     overview_queue =
-      OverviewQueue.build_overview_queue(
-        ordered_waiting_items,
-        tasks,
-        question_for,
-        fn key -> AttentionQueue.waiting_since(updated_attention_queue, key) end
-      )
-
-    running_count = Enum.count(tasks, &Run.running?(&1.run))
-    roster_groups = build_roster_groups(scope, project_id, tasks)
-    dispatch_disabled = check_dispatch_disabled()
+      OverviewQueue.build_overview_queue(ordered_waiting_items, runs, fn key ->
+        AttentionQueue.waiting_since(attention_queue, key)
+      end)
 
     socket
-    |> assign(:attention_queue, updated_attention_queue)
+    |> assign(:attention_queue, attention_queue)
     |> assign(:overview_queue, overview_queue)
-    |> assign(:running_count, running_count)
-    |> assign(:roster_groups, roster_groups)
-    |> assign(:dispatch_disabled, dispatch_disabled)
+    |> assign(:running_count, Enum.count(runs, &Run.running?/1))
+    |> assign(:roster_groups, build_roster_groups(socket.assigns[:current_scope], project_id, runs))
+    |> assign(:dispatch_disabled, check_dispatch_disabled())
   end
 
-  defp build_roster_groups(scope, project_id, tasks) when is_binary(project_id) do
+  defp build_roster_groups(scope, project_id, runs) when is_binary(project_id) do
     case Projects.get_project(scope, project_id) do
-      {:ok, project} ->
-        roles = Roles.list_roles(scope, project.id)
-        entries = Enum.map(roles, &build_role_entry(&1, tasks))
-        [{project, entries}]
-
-      _other ->
-        []
+      {:ok, project} -> [{project, role_entries(scope, project, runs)}]
+      _no_project -> []
     end
   end
 
-  defp build_roster_groups(scope, nil, tasks) do
-    projects = Projects.list_projects(scope)
-
-    Enum.map(projects, fn project ->
-      project_tasks = Enum.filter(tasks, &(&1.project_id == project.id))
-      roles = Roles.list_roles(scope, project.id)
-      entries = Enum.map(roles, &build_role_entry(&1, project_tasks))
-      {project, entries}
+  defp build_roster_groups(scope, nil, runs) do
+    scope
+    |> Projects.list_projects()
+    |> Enum.map(fn project ->
+      project_runs = Enum.filter(runs, &(&1.task.project_id == project.id))
+      {project, role_entries(scope, project, project_runs)}
     end)
   end
 
-  # A role is busy on a task when the task is parked at that role's stage and its
-  # run has something to say — running, blocked, or waiting on a human.
-  defp role_busy_on?(task, role) do
-    Map.get(task, :current_role_id) == role.id or
-      (role.stage != nil and task.stage == role.stage and
-         Run.state(task.run) in [:running, :blocked, :done])
+  defp role_entries(scope, project, runs) do
+    scope
+    |> Roles.list_roles(project.id)
+    |> Enum.map(&build_role_entry(&1, runs))
   end
 
-  defp build_role_entry(role, tasks) do
-    active_task = Enum.find(tasks, &role_busy_on?(&1, role))
-    waiting? = active_task != nil and Run.state(active_task.run) in [:blocked, :done]
+  # A role is busy on its own run — the one it is holding — and on nothing else.
+  defp build_role_entry(role, runs) do
+    active_run = Enum.find(runs, &(&1.role_id == role.id and Run.state(&1) in [:running, :blocked, :done]))
+    waiting? = active_run != nil and Run.state(active_run) in [:blocked, :done]
 
     subtitle =
       cond do
-        is_nil(active_task) -> "Idle"
-        waiting? -> "Waiting on you · #{task_key(active_task)}"
-        true -> "#{task_key(active_task)} · running"
+        is_nil(active_run) -> "Idle"
+        waiting? -> "Waiting on you · #{task_key(active_run.task)}"
+        true -> "#{task_key(active_run.task)} · running"
       end
 
-    %{
-      role: role,
-      active_task: active_task,
-      waiting?: waiting?,
-      subtitle: subtitle
-    }
+    %{role: role, active_run: active_run, waiting?: waiting?, subtitle: subtitle}
   end
 
   defp task_key(%{issue: %{identifier: identifier}}) when is_binary(identifier) and identifier != "", do: identifier
-  defp task_key(%{id: id}) when is_binary(id) and id != "", do: id
+  defp task_key(%{id: id}), do: id
 
-  defp check_dispatch_disabled do
-    System.get_env("RAIL_NO_DISPATCH") == "1" or Application.get_env(:rail, :no_dispatch, false)
-  end
+  defp check_dispatch_disabled, do: Application.get_env(:rail, :no_dispatch, false)
 
-  # Answers go back a round at a time: this records one and the task stays parked
-  # until nothing is pending, so the agent hears the whole batch at once.
+  # Answering records and nothing more: the agent hears the whole round when the
+  # human presses Send answers.
   defp answer_one(question_id, answer) do
-    with {:ok, question} <- Pipeline.get_question(question_id),
-         {:ok, task} <- Pipeline.get_task(question.task_id) do
-      Pipeline.answer_questions(task, %{question_id => answer})
+    with {:ok, question} <- Pipeline.get_question(question_id) do
+      Pipeline.answer_question(question, answer)
     end
   end
 

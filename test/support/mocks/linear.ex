@@ -367,4 +367,29 @@ defmodule RailTest.Mocks.Linear do
       |> send_resp(status, Jason.encode!(body))
     end)
   end
+  @doc """
+  Queues `count` successful file upload responses for a design's stills.
+  """
+  def mock_design_uploads(count \\ 1), do: mock_uploads("dsg", "dir", count)
+
+  @doc """
+  Queues `count` successful file upload responses for a demo's frames.
+  """
+  def mock_demo_uploads(count \\ 1), do: mock_uploads("dmo", "frame", count)
+
+  @doc """
+  Queues `count` successful file upload responses for a QA report's screenshots.
+  """
+  def mock_qa_uploads(count \\ 1), do: mock_uploads("qa", "screenshot", count)
+
+  defp mock_uploads(prefix, name, count) do
+    Enum.each(1..count, fn index ->
+      mock_file_upload_success(
+        upload_url: "https://api.linear.app/upload/#{prefix}_#{index}",
+        asset_url: "https://uploads.linear.app/#{prefix}_#{index}/#{name}-#{index}.png",
+        asset_id: "ast_#{prefix}_#{index}"
+      )
+    end)
+  end
+
 end

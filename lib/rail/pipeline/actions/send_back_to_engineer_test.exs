@@ -168,7 +168,6 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
         rework_budget_base: 0,
         rework_cycles_by_gate: %{role_rev.id => 3},
         outstanding_reports: [role_rev.id],
-        error: "Rework limit reached"
       })
 
     {:ok, rev_run} =
@@ -201,7 +200,6 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
               rework_budget_base: 4,
               rework_cycles_by_gate: ^expected_empty,
               outstanding_reports: [],
-              error: nil
             }} = Pipeline.send_back_to_engineer(task, comment: "Please address memory leak.")
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :sent_back_to_engineer}}

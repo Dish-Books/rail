@@ -9,7 +9,7 @@ defmodule Rail.Pipeline.Schemas.Task do
   alias Rail.Artifacts.Schemas.Demo
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline.Schemas.Plan
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -45,7 +45,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :mergeability, Ecto.Enum, values: @mergeabilities
     field :pr_is_draft, :boolean
     field :is_rebasing, :boolean, default: false
-    field :error, :string
     field :rework_cycles, :integer, default: 0
     field :rework_budget_base, :integer, default: 0
     field :rework_cycles_by_gate, :map, default: %{}
@@ -57,13 +56,10 @@ defmodule Rail.Pipeline.Schemas.Task do
     belongs_to :issue, Issue
 
     has_many :questions, Question
-    has_many :plans, Plan
+    has_one :implementation_plan, ImplementationPlan
     has_many :runs, Run
     has_many :designs, Design
     has_many :demos, Demo
-
-    field :demo, :any, virtual: true
-    field :design, :any, virtual: true
 
     timestamps()
   end
@@ -79,7 +75,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     :mergeability,
     :pr_is_draft,
     :is_rebasing,
-    :error,
     :rework_cycles,
     :rework_budget_base,
     :rework_cycles_by_gate,
@@ -119,6 +114,23 @@ defmodule Rail.Pipeline.Schemas.Task do
   def worktree_present?(%__MODULE__{worktree_path: path}) do
     File.dir?(path)
   end
+
+  @doc """
+  True when any run on this task is executing.
+
+  A task has no state of its own, so this is the whole of what "busy" can mean:
+  not the one run something guessed was active, but every run there is. Requires
+  `runs` to be preloaded.
+  """
+  def running?(%__MODULE__{runs: runs}) when is_list(runs), do: Enum.any?(runs, &Run.running?/1)
+  def running?(%__MODULE__{}), do: false
+
+  @doc """
+  True when GitHub cannot merge this task's branch and it is not already rebasing.
+  """
+  def conflicted?(%__MODULE__{is_rebasing: true}), do: false
+  def conflicted?(%__MODULE__{mergeability: :conflicting}), do: true
+  def conflicted?(%__MODULE__{}), do: false
 
   def stages, do: @stages
   def mergeabilities, do: @mergeabilities

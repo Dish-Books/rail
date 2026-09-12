@@ -5,16 +5,25 @@ defmodule Rail.Runs.Actions.GetActiveOsProcess do
 
   alias Rail.Repo
   alias Rail.Runs.Schemas.OsProcess
+  alias Rail.Runs.Schemas.Run
 
   @doc """
-  Fetches the most recent live os process for a run or task ID, or `nil` when nothing is running.
+  Fetches the live OS process carrying `run`.
+
+  Returns `{:error, :os_process_not_active}` when the run is not executing, which
+  is an ordinary answer rather than a failure — a run spends most of its life that
+  way.
   """
-  def get_active_os_process(id) when is_binary(id) do
-    Repo.one(
-      from r in OsProcess,
-        where: (r.run_id == ^id or r.task_id == ^id) and r.status in [:starting, :running],
-        order_by: [desc: r.inserted_at],
+  def get_active_os_process(%Run{id: run_id}) do
+    query =
+      from p in OsProcess,
+        where: p.run_id == ^run_id and p.status in [:starting, :running],
+        order_by: [desc: p.inserted_at],
         limit: 1
-    )
+
+    case Repo.one(query) do
+      %OsProcess{} = os_process -> {:ok, os_process}
+      nil -> {:error, :os_process_not_active}
+    end
   end
 end

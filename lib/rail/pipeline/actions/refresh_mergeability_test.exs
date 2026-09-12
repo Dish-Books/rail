@@ -2,7 +2,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
   use Rail.DataCase, async: true
 
   import RailTest.Mocks.GitHub
-  import RailTest.PipelineHelpers
+  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
 
   alias Rail.Artifacts
   alias Rail.Issues

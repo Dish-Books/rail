@@ -7,18 +7,17 @@ defmodule Rail.Pipeline.Actions.StartRebase do
   whole of it. `rebase_run_finished/2` clears the flag when the branch lands.
   """
 
-  import Rail.Pipeline.Utils.StageRun
-
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Runs.Schemas.Run
 
   @doc """
   Starts a rebase pass on `task`.
   """
   def start_rebase(%Task{} = task, opts \\ []) do
-    if task |> stage_run() |> Run.running?() do
+    task = Repo.preload(task, :runs)
+
+    if Task.running?(task) do
       {:error, :task_busy}
     else
       execute_rebase_start(task, opts)
@@ -28,10 +27,9 @@ defmodule Rail.Pipeline.Actions.StartRebase do
   defp execute_rebase_start(%Task{} = task, opts) do
     {:ok, task} =
       task
-      |> Task.changeset(%{is_rebasing: true, error: nil})
+      |> Task.changeset(%{is_rebasing: true})
       |> Repo.update()
 
-    Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :rebase_started})
 
     # The task never leaves its stage, so this re-enters the one it is parked at;
     # `is_rebasing` is what makes the brief a rebase brief.

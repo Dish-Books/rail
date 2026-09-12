@@ -1,9 +1,9 @@
-defmodule Rail.Pipeline.Schemas.PlanTest do
+defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Plan
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
@@ -57,7 +57,7 @@ defmodule Rail.Pipeline.Schemas.PlanTest do
              task_id: ["can't be blank"],
              content: ["can't be blank"],
              captured_at: ["can't be blank"]
-           } = errors_on(Plan.changeset(%Plan{}, %{}))
+           } = errors_on(ImplementationPlan.changeset(%ImplementationPlan{}, %{}))
   end
 
   test "changeset accepts valid attributes", %{task: task} do
@@ -68,7 +68,7 @@ defmodule Rail.Pipeline.Schemas.PlanTest do
       captured_at: now
     }
 
-    changeset = Plan.changeset(%Plan{}, attrs, task.id)
+    changeset = ImplementationPlan.changeset(%ImplementationPlan{}, attrs, task.id)
 
     assert changeset.valid?
     assert get_field(changeset, :task_id) == task.id
@@ -80,8 +80,8 @@ defmodule Rail.Pipeline.Schemas.PlanTest do
     now = DateTime.utc_now()
 
     assert {:error, %{errors: [task_id: {"does not exist", _details}]}} =
-             %Plan{}
-             |> Plan.changeset(
+             %ImplementationPlan{}
+             |> ImplementationPlan.changeset(
                %{content: "Content", captured_at: now},
                "tsk_000000000000000000000000"
              )
@@ -93,8 +93,8 @@ defmodule Rail.Pipeline.Schemas.PlanTest do
 
     plan =
       Repo.insert!(
-        Plan.changeset(
-          %Plan{},
+        ImplementationPlan.changeset(
+          %ImplementationPlan{},
           %{
             content: "Content for preloaded task",
             captured_at: DateTime.utc_now()
@@ -105,6 +105,6 @@ defmodule Rail.Pipeline.Schemas.PlanTest do
 
     preloaded = Repo.preload(plan, :task)
 
-    assert %Plan{task: %Task{id: ^task_id}} = preloaded
+    assert %ImplementationPlan{task: %Task{id: ^task_id}} = preloaded
   end
 end

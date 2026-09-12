@@ -9,6 +9,7 @@ defmodule Rail.Application do
     children = [
       Rail.Vault,
       Rail.Repo,
+      {Oban, Application.fetch_env!(:rail, Oban)},
       {Phoenix.PubSub, name: Rail.PubSub},
       {Task.Supervisor, name: Rail.TaskSupervisor},
       Rail.Runs,

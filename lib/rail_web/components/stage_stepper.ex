@@ -7,8 +7,8 @@ defmodule RailWeb.Components.StageStepper do
 
   import RailWeb.CoreComponents, only: [icon: 1]
 
-  alias Rail.Domain.Formatters
   alias Rail.Pipeline.Schemas.Task
+  alias RailWeb.Components.RunState
 
   @canonical_stages [
     :product,
@@ -24,18 +24,14 @@ defmodule RailWeb.Components.StageStepper do
 
   attr :task, :any, required: true
   attr :runs, :any, default: []
+  attr :run, :any, default: nil
   attr :class, :string, default: nil
 
   def stage_stepper(assigns) do
-    task = assigns.task
-    runs = assigns.runs
-    stages = stages_for_task(task, runs)
-    current_stage = stage_atom(task)
-
     assigns =
       assigns
-      |> assign(:stages, stages)
-      |> assign(:current_stage, current_stage)
+      |> assign(:stages, stages_for_task(assigns.task, assigns.runs))
+      |> assign(:current_stage, assigns.task.stage)
 
     ~H"""
     <div
@@ -46,8 +42,8 @@ defmodule RailWeb.Components.StageStepper do
       <%= for {st, idx} <- Enum.with_index(@stages) do %>
         <% is_current = st == @current_stage
         is_done = Task.before?(st, @current_stage)
-        icon_name = stage_icon(st, is_current, is_done, @task)
-        chip_style = stage_chip_classes(is_current, is_done, @task)
+        icon_name = stage_icon(is_current, is_done, @task, @run)
+        chip_style = stage_chip_classes(is_current, is_done, @task, @run)
         label = Task.stage_label(st) %>
 
         <div
@@ -77,29 +73,15 @@ defmodule RailWeb.Components.StageStepper do
   end
 
   defp stages_for_task(task, runs) do
-    uses_design = Formatters.uses_design?(task, runs: runs)
-
-    if uses_design do
-      @canonical_stages
-    else
-      List.delete(@canonical_stages, :design)
-    end
+    if Task.uses_design?(task, runs), do: @canonical_stages, else: List.delete(@canonical_stages, :design)
   end
 
-  defp stage_icon(_stage, true = _is_current, _is_done, task) do
-    Formatters.stage_state_icon(task)
-  end
+  defp stage_icon(true = _is_current, _is_done, task, run), do: RunState.icon(task, run)
+  defp stage_icon(_is_current, true = _is_done, _task, _run), do: "pi-check-circle-fill"
+  defp stage_icon(_is_current, _is_done, _task, _run), do: "pi-circle"
 
-  defp stage_icon(_stage, _is_current, true = _is_done, _task) do
-    "pi-check-circle-fill"
-  end
-
-  defp stage_icon(_stage, _is_current, _is_done, _task) do
-    "pi-circle"
-  end
-
-  defp stage_chip_classes(true = _is_current, _is_done, task) do
-    case Formatters.stage_state_color(task) do
+  defp stage_chip_classes(true = _is_current, _is_done, task, run) do
+    case RunState.color(task, run) do
       :primary ->
         "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border-blue-600 dark:border-blue-500 font-semibold shadow-xs"
 
@@ -114,21 +96,12 @@ defmodule RailWeb.Components.StageStepper do
     end
   end
 
-  defp stage_chip_classes(_is_current, true = _is_done, _task) do
+  defp stage_chip_classes(_is_current, true = _is_done, _task, _run) do
     "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-500/40"
   end
 
-  defp stage_chip_classes(_is_current, _is_done, _task) do
+  defp stage_chip_classes(_is_current, _is_done, _task, _run) do
     "bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600"
   end
 
-  defp stage_atom(%{stage: stage}) when is_atom(stage), do: stage
-
-  defp stage_atom(%{stage: stage}) when is_binary(stage) do
-    String.to_existing_atom(stage)
-  rescue
-    _error -> :product
-  end
-
-  defp stage_atom(_other), do: :product
 end

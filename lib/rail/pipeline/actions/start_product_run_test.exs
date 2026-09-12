@@ -75,7 +75,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
     issue: issue,
     task: %Task{id: task_id} = task
   } do
-    expect(Runs, :start_os_process, fn %Run{task_id: ^task_id, role_id: ^role_id, attempts: 1, status: :running} = run,
+    expect(Runs, :start_os_process, fn %Run{task_id: ^task_id, role_id: ^role_id, status: :running} = run,
                                        argv ->
       assert ["-p", prompt, "--model", "claude-3-7-sonnet", "--effort", "high" | _flags] = argv
       assert prompt =~ "tickets/#{issue.identifier}.md"

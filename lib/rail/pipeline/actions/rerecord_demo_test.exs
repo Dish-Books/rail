@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.RerecordDemoTest do
   use Rail.DataCase, async: true
 
-  import RailTest.PipelineHelpers
+  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Demo
@@ -82,7 +82,6 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
       Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         worktree_path: worktree,
-        error: "Previous failure"
       })
 
     demo_scratch_9901 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
@@ -123,7 +122,6 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
             %Task{
               id: task_id,
               stage: :demo,
-              error: nil
             }} = Pipeline.rerecord_demo(task)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :demo_rerecord}}
@@ -138,10 +136,9 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
       Pipeline.update_task(task, %{
         stage: :demo,
         worktree_path: worktree,
-        error: "Recording failed"
       })
 
-    assert {:ok, %Task{stage: :demo, error: nil}} =
+    assert {:ok, %Task{stage: :demo}} =
              Pipeline.rerecord_demo(task, [])
   end
 

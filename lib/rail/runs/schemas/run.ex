@@ -9,6 +9,7 @@ defmodule Rail.Runs.Schemas.Run do
   use Rail.Schema
 
   alias Rail.Domain.TaskUsage
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs.Schemas.OsProcess
@@ -32,8 +33,6 @@ defmodule Rail.Runs.Schemas.Run do
     field :error, :string
     field :pending_answer, :string
     field :pending_chat, :string
-    field :attempts, :integer, default: 0
-    field :attempt_log_lines, :integer, default: 0
     field :stage_fingerprint_head_sha, :string
     field :stage_fingerprint_dirty_digest, :string
 
@@ -43,6 +42,7 @@ defmodule Rail.Runs.Schemas.Run do
     belongs_to :task, Task
 
     has_many :os_processes, OsProcess
+    has_many :questions, Question
     has_many :run_events, RunEvent
 
     timestamps()
@@ -60,8 +60,6 @@ defmodule Rail.Runs.Schemas.Run do
     :error,
     :pending_answer,
     :pending_chat,
-    :attempts,
-    :attempt_log_lines,
     :stage_fingerprint_head_sha,
     :stage_fingerprint_dirty_digest
   ]
@@ -81,6 +79,7 @@ defmodule Rail.Runs.Schemas.Run do
       run
       |> cast(attrs, @cast_fields)
       |> validate_required(@required_fields)
+      |> validate_conversation_id_unchanged()
 
     handle_embed(changeset, :usage, attrs)
   end
@@ -118,7 +117,7 @@ defmodule Rail.Runs.Schemas.Run do
   Returns true if this run has started execution previously.
   """
   def has_started?(%__MODULE__{} = run) do
-    is_struct(run.started_at, DateTime) or (run.attempts || 0) > 0
+    is_struct(run.started_at, DateTime)
   end
 
   def has_started?(_other), do: false
@@ -147,6 +146,19 @@ defmodule Rail.Runs.Schemas.Run do
   end
 
   def can_chat?(_other), do: false
+
+  # A run is one conversation with one agent. Moving it to another would silently
+  # strand everything said so far, so a caller trying it is told rather than
+  # having the write dropped underneath it.
+  defp validate_conversation_id_unchanged(changeset) do
+    case {changeset.data.conversation_id, get_change(changeset, :conversation_id)} do
+      {existing, changed} when is_binary(existing) and is_binary(changed) and existing != changed ->
+        add_error(changeset, :conversation_id, "is already set and cannot be changed")
+
+      _unset_or_unchanged ->
+        changeset
+    end
+  end
 
   defp handle_embed(changeset, field, attrs) do
     case Map.get(attrs, field) || Map.get(attrs, to_string(field)) do

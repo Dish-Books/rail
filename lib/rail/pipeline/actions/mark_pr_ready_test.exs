@@ -153,7 +153,6 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
         stage: :ready_to_merge,
         pr_number: 123,
         pr_is_draft: true,
-        error: "Previous error",
         mergeability: :unknown
       })
 
@@ -162,7 +161,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
     mock_installation_token_success(installation_id: 8904)
     mock_pull_request_state_success("testorg/markready", 123, mergeable: true, draft: false)
 
-    assert {:ok, %Task{pr_is_draft: false, error: nil, mergeability: :mergeable}} =
+    assert {:ok, %Task{pr_is_draft: false, mergeability: :mergeable}} =
              Pipeline.mark_pr_ready(task)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :pr_marked_ready}}

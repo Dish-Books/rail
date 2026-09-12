@@ -2,14 +2,14 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   use Rail.DataCase, async: true
 
   import Rail.Pipeline.Utils.CaptureScratch
-  import RailTest.PipelineHelpers
+  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Plan
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
@@ -235,7 +235,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
            } = preloaded
   end
 
-  test "preloads has_many questions, plans, runs, and designs", %{task: task, roles: roles} do
+  test "preloads its questions, its plan, its runs and its designs", %{task: task, roles: roles} do
     %Task{id: task_id} = task = task
 
     {:ok, run} =
@@ -258,7 +258,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
     {:ok, _captured} = capture_scratch(:architect, %{task | scratch_path: plan_scratch_45368})
 
-    {:ok, _plan} = Pipeline.get_plan(task)
+    {:ok, _plan} = Pipeline.get_implementation_plan(task)
 
     design_scratch_13102 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
     design_dir_13102 = Path.join(design_scratch_13102, "design")
@@ -284,11 +284,11 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     {:ok, _design} =
       Artifacts.capture_design(system_scope(), task, design_scratch_13102, url_probe: fn _url -> true end)
 
-    preloaded = Repo.preload(task, [:questions, :plans, :runs, :designs])
+    preloaded = Repo.preload(task, [:questions, :implementation_plan, :runs, :designs])
 
     assert %Task{
              questions: [%Question{task_id: ^task_id}],
-             plans: [%Plan{task_id: ^task_id}],
+             implementation_plan: %ImplementationPlan{task_id: ^task_id},
              runs: [%Run{task_id: ^task_id}],
              designs: [%Design{task_id: ^task_id}]
            } = preloaded

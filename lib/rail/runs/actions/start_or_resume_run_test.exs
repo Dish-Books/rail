@@ -25,7 +25,6 @@ defmodule Rail.Runs.Actions.StartOrResumeRunTest do
     assert {:ok,
             %Run{
               status: :running,
-              attempts: 1,
               task_id: ^task_id,
               role_id: ^role_id,
               started_at: %DateTime{},
@@ -36,7 +35,7 @@ defmodule Rail.Runs.Actions.StartOrResumeRunTest do
     assert byte_size(dirty_digest) > 0
   end
 
-  test "resumes the existing run, bumping attempts and restamping the fingerprint", %{
+  test "resumes the existing run, keeping its history and restamping the fingerprint", %{
     task: task,
     role: role,
     worktree: worktree
@@ -49,7 +48,6 @@ defmodule Rail.Runs.Actions.StartOrResumeRunTest do
     {:ok, second} = Runs.start_or_resume_run(task, role, worktree)
 
     assert second.id == first.id
-    assert second.attempts == 2
     assert second.stage_fingerprint_head_sha == Git.branch_fingerprint(worktree).head_sha
     assert second.stage_fingerprint_head_sha != first.stage_fingerprint_head_sha
     assert Repo.aggregate(Run, :count) == 1
@@ -96,6 +94,5 @@ defmodule Rail.Runs.Actions.StartOrResumeRunTest do
     {:ok, other} = Runs.start_or_resume_run(task, other_role, worktree)
 
     assert first.id != other.id
-    assert other.attempts == 1
   end
 end

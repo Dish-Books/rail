@@ -26,6 +26,10 @@ config :rail, Rail.Repo,
   migration_primary_key: [type: :text],
   migration_timestamps: [type: :utc_datetime_usec]
 
+config :rail, Oban,
+  repo: Rail.Repo,
+  queues: [issues: 5]
+
 config :rail, Rail.Vault,
   ciphers: [
     aes_gcm:

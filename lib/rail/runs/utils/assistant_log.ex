@@ -6,6 +6,7 @@ defmodule Rail.Runs.Utils.AssistantLog do
 
   alias Rail.Backends.Schemas.Backend
   alias Rail.Repo
+  alias Rail.Roles.Schemas.Role
   alias Rail.Runs
   alias Rail.Runs.Schemas.Run
 
@@ -35,20 +36,17 @@ defmodule Rail.Runs.Utils.AssistantLog do
   to store, and it spans every run on that run, chat turns included.
   """
   def assistant_log(%Run{} = run) do
-    run = Repo.preload(run, role: :backend)
+    %Run{role: %Role{backend: %Backend{} = backend}} = run = Repo.preload(run, role: :backend)
 
     run
     |> Runs.list_run_events()
-    |> Enum.reduce(new_event_state(backend_for(run)), fn event, state ->
+    |> Enum.reduce(new_event_state(backend), fn event, state ->
       parse_line(state, event.line)
     end)
     |> Map.fetch!(:logs)
     |> Enum.reject(&tagged?/1)
     |> Enum.join("\n")
   end
-
-  defp backend_for(%Run{role: %{backend: %Backend{} = backend}}), do: backend
-  defp backend_for(_unconfigured), do: %Backend{name: :claude}
 
   defp tagged?(line) when is_binary(line), do: Enum.any?(@markers, &String.starts_with?(line, &1))
   defp tagged?(_other), do: true

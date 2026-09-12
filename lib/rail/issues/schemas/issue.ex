@@ -2,6 +2,7 @@ defmodule Rail.Issues.Schemas.Issue do
   @moduledoc false
   use Rail.Schema
 
+  alias Rail.Issues.Workers.SyncIssue
   alias Rail.Projects.Schemas.Project
   alias Rail.Users.Schemas.User
 
@@ -60,7 +61,25 @@ defmodule Rail.Issues.Schemas.Issue do
     |> unique_constraint(:external_id)
     |> foreign_key_constraint(:project_id)
     |> foreign_key_constraint(:owner_user_id)
+    |> sync_to_linear()
   end
+
+  # Every write goes up to Linear, so no caller can forget to say so. This runs
+  # inside the write's own transaction, which is what makes the job and the row
+  # land together or not at all. An insert has nothing to sync back: the ticket
+  # is opened in Linear first and the row is what came back from it.
+  defp sync_to_linear(%Ecto.Changeset{data: %__MODULE__{id: id}, changes: changes} = changeset)
+       when is_binary(id) and changes != %{} do
+    prepare_changes(changeset, fn prepared ->
+      %{issue_id: id, fields: Map.keys(prepared.changes)}
+      |> SyncIssue.new()
+      |> Oban.insert!()
+
+      prepared
+    end)
+  end
+
+  defp sync_to_linear(%Ecto.Changeset{} = changeset), do: changeset
 
   def priorities, do: @priorities
   def states, do: @states

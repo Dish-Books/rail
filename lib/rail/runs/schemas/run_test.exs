@@ -16,7 +16,6 @@ defmodule Rail.Runs.Schemas.RunTest do
       started_at: now,
       conversation_id: "conv-123",
       exit_code: 0,
-      error: nil,
       usage: %{input_tokens: 100, output_tokens: 50}
     }
 
@@ -80,23 +79,23 @@ defmodule Rail.Runs.Schemas.RunTest do
   end
 
   test "has_started?/1 and can_chat?/1 logic" do
-    unstarted = %Run{started_at: nil, attempts: 0, conversation_id: nil}
+    unstarted = %Run{started_at: nil, conversation_id: nil}
     refute Run.has_started?(unstarted)
     refute Run.can_chat?(unstarted)
 
-    started_no_conv = %Run{started_at: DateTime.utc_now(), attempts: 1, conversation_id: nil}
+    started_no_conv = %Run{started_at: DateTime.utc_now(), conversation_id: nil}
     assert Run.has_started?(started_no_conv)
     refute Run.can_chat?(started_no_conv)
 
-    started_empty_conv = %Run{started_at: DateTime.utc_now(), attempts: 1, conversation_id: "  "}
+    started_empty_conv = %Run{started_at: DateTime.utc_now(), conversation_id: "  "}
     assert Run.has_started?(started_empty_conv)
     refute Run.can_chat?(started_empty_conv)
 
-    started_with_conv = %Run{started_at: DateTime.utc_now(), attempts: 1, conversation_id: "sess-123"}
+    started_with_conv = %Run{started_at: DateTime.utc_now(), conversation_id: "sess-123"}
     assert Run.has_started?(started_with_conv)
     assert Run.can_chat?(started_with_conv)
 
-    attempt_only_with_conv = %Run{started_at: nil, attempts: 2, conversation_id: "sess-456"}
+    attempt_only_with_conv = %Run{started_at: nil, conversation_id: "sess-456"}
     assert Run.has_started?(attempt_only_with_conv)
     assert Run.can_chat?(attempt_only_with_conv)
 

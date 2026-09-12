@@ -44,6 +44,6 @@ defmodule Rail.Pipeline.Actions.GetPlanTest do
   end
 
   test "returns not found error when plan does not exist", %{task: task} do
-    assert {:error, :not_found} = Pipeline.get_plan(task)
+    assert {:error, :not_found} = Pipeline.get_implementation_plan(task)
   end
 end

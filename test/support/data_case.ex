@@ -21,6 +21,7 @@ defmodule Rail.DataCase do
       alias Rail.Repo
 
       setup :verify_on_exit!
+      setup :stub_agent_spawn
     end
   end
 
@@ -37,6 +38,24 @@ defmodule Rail.DataCase do
 
   setup tags do
     Rail.DataCase.setup_sandbox(tags)
+    :ok
+  end
+
+  @doc """
+  Keeps every test off the real agent CLIs.
+
+  Dispatch is on in test, the same as anywhere else, so what stops a test
+  spawning `claude` is this: the spawn boundary answers with a pretend pid. A
+  test that is about spawning overrides it with its own `expect/3`.
+  """
+  def stub_agent_spawn(_context) do
+    Mimic.stub(Rail.Tools, :spawn_os_process, fn _executable, _args, _opts ->
+      {:ok, nil, System.unique_integer([:positive])}
+    end)
+
+    Mimic.stub(Rail.Tools, :os_process_alive?, fn _os_pid -> false end)
+    Mimic.stub(Rail.Tools, :terminate_os_process, fn _os_pid, _opts -> :ok end)
+
     :ok
   end
 

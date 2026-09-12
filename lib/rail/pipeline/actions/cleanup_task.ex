@@ -11,10 +11,14 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
 
   @doc """
   Cleans up worktree, branch, and scratch artifacts for a task.
-  """
 
+  Every run on the task has to be stopped, not just the one for the stage it sits
+  at: the worktree this deletes is the one all of them are working in.
+  """
   def cleanup_task(%Task{} = task) do
-    if Task.busy?(task) do
+    task = Repo.preload(task, :runs, force: true)
+
+    if Task.running?(task) do
       {:error, :task_busy}
     else
       execute_cleanup(task)
@@ -30,10 +34,6 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
       remove_scratch_files(task)
     end
 
-    Rail.Pipeline.broadcast_pipeline_changed(%{
-      task_id: task.id,
-      event: :task_cleaned_up
-    })
 
     {:ok, task}
   end

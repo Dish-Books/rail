@@ -25,6 +25,8 @@ defmodule Rail.Pipeline.Utils.Briefs do
   """
   def design_brief(opts \\ []) do
     String.trim("""
+    #{design_ticket_line(opts)}Produce three distinct design directions on a single published canvas.
+
     Rail reads your design directions from #{scratch(opts)}/design/. Save a still screenshot of each direction there, and never edit application code on this stage.
 
     Write the manifest to #{scratch(opts)}/design/manifest.json with this shape:
@@ -78,7 +80,6 @@ defmodule Rail.Pipeline.Utils.Briefs do
 
     - A heredoc into #{file}, never an inline string.
     - Keep the `## Implementation plan` heading on the first line.
-    - A ticket you split out is its own file, #{scratch(opts)}/tickets/split-<n>.md, with `---` front matter carrying its `title`. Rail opens each one as a new ticket.
     """)
   end
 
@@ -381,6 +382,18 @@ defmodule Rail.Pipeline.Utils.Briefs do
     end
   end
 
+  # The ticket the designer is designing for, when there is one. It is not theirs
+  # to edit.
+  defp design_ticket_line(opts) do
+    case resolve_identifier(opts) do
+      identifier when is_binary(identifier) and identifier != "" ->
+        "The ticket you are designing for is the file #{scratch(opts)}/tickets/#{identifier}.md. It is not yours to edit.\n\n"
+
+      _unidentified ->
+        ""
+    end
+  end
+
   defp resolve_identifier(opts) do
     get_opt(opts, :identifier) || get_opt(opts, :issue_identifier) || get_opt(opts, :issue_number)
   end
@@ -477,7 +490,7 @@ defmodule Rail.Pipeline.Utils.Briefs do
     {stage, _unused_opts} = extract_stage_and_opts(stage_raw, [])
 
     task_opts = [
-      identifier: get_field(task, :identifier) || get_field(task, :issue_identifier),
+      identifier: get_field(task, :identifier) || get_field(task, :issue_identifier) || issue_field(task, :identifier),
       branch: get_field(task, :worktree_name) || get_field(task, :branch_name),
       is_rebasing: get_field(task, :is_rebasing),
       scratch_path: get_field(task, :scratch_path),

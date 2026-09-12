@@ -4,8 +4,8 @@ defmodule RailWeb.Components.WithAgentSection do
 
   import RailWeb.CoreComponents, only: [project_badge: 1]
 
-  alias Rail.Domain.Formatters
   alias Rail.Runs.Schemas.Run
+  alias RailWeb.Components.RunState
 
   attr :rows, :list, required: true
 
@@ -23,22 +23,22 @@ defmodule RailWeb.Components.WithAgentSection do
       <div class="space-y-2">
         <div
           :for={row <- @rows}
-          id={"with-agent-card-#{row.task.id}"}
+          id={"with-agent-card-#{row.run.id}"}
           data-qa="with-agent-card"
           class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3.5 hover:bg-slate-100 dark:hover:bg-slate-700/30 transition-colors shadow-xs"
         >
           <div class="flex items-center justify-between gap-3">
             <div class="min-w-0 flex-1">
               <div class="flex items-center space-x-2 mb-1">
-                <.project_badge project={row.task.project} />
+                <.project_badge project={row.run.task.project} />
 
                 <.link
-                  navigate={~p"/tasks/#{row.task.id}"}
-                  id={"with-agent-title-#{row.task.id}"}
+                  navigate={~p"/tasks/#{row.run.task_id}"}
+                  id={"with-agent-title-#{row.run.id}"}
                   data-qa="with-agent-title"
                   class="text-sm font-semibold text-slate-900 dark:text-slate-100 hover:underline truncate"
                 >
-                  {row.task.issue && row.task.issue.title}
+                  {row.run.task.issue && row.run.task.issue.title}
                 </.link>
               </div>
 
@@ -48,27 +48,27 @@ defmodule RailWeb.Components.WithAgentSection do
                   data-qa="with-agent-state-pill"
                   class={[
                     "px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0",
-                    state_pill_class(row.task)
+                    state_pill_class(row.run)
                   ]}
                 >
-                  {state_pill_label(row.task)}
+                  {state_pill_label(row.run)}
                 </span>
 
                 <span data-qa="with-agent-role-line" class="truncate">
-                  {task_role_line(row.task)}
+                  {role_line(row.run)}
                 </span>
               </div>
             </div>
 
             <!-- Trailing: Elapsed since updated_at -->
             <span
-              id={"elapsed-with-agent-#{row.task.id}"}
+              id={"elapsed-with-agent-#{row.run.id}"}
               phx-hook="Elapsed"
-              data-started-at={format_started_at(row.task.updated_at)}
+              data-started-at={format_started_at(row.run.started_at)}
               data-qa="elapsed-text"
               class="text-xs text-slate-500 dark:text-slate-400 font-mono shrink-0"
             >
-              {format_elapsed(row.task.updated_at)}
+              {format_elapsed(row.run.started_at)}
             </span>
           </div>
         </div>
@@ -77,53 +77,26 @@ defmodule RailWeb.Components.WithAgentSection do
     """
   end
 
-  defp state_pill_label(%{is_rebasing: true}), do: "Rebasing"
-  defp state_pill_label(task), do: task |> stage_state() |> pill_label()
+  defp state_pill_label(%Run{task: %{is_rebasing: true}}), do: "Rebasing"
+  defp state_pill_label(%Run{} = run), do: run |> Run.state() |> RunState.pill_label()
 
-  defp pill_label(:running), do: "Running"
-  defp pill_label(:queued), do: "Queued"
-  defp pill_label(:blocked), do: "Blocked"
-  defp pill_label(:done), do: "Awaiting approval"
-  defp pill_label(:failed), do: "Failed"
-  defp pill_label(:stopped), do: "Stopped"
+  defp state_pill_class(%Run{task: %{is_rebasing: true}}), do: RunState.pill_class(:running)
+  defp state_pill_class(%Run{} = run), do: run |> Run.state() |> RunState.pill_class()
 
-  defp state_pill_class(%{is_rebasing: true}), do: "bg-blue-100 dark:bg-blue-950 text-blue-900 dark:text-blue-200"
-  defp state_pill_class(task), do: task |> stage_state() |> pill_class()
-
-  defp pill_class(:running), do: "bg-blue-100 dark:bg-blue-950 text-blue-900 dark:text-blue-200"
-
-  defp pill_class(state) when state in [:blocked, :done],
-    do: "bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200"
-
-  defp pill_class(:failed), do: "bg-red-100 dark:bg-red-950 text-red-900 dark:text-red-200"
-  defp pill_class(_other), do: "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200"
-
-  # A task has no state of its own: this is what the run for its stage says.
-  defp stage_state(task), do: task |> Map.get(:run) |> Run.state()
-
-  defp task_role_line(task) do
-    task_key = task_key(task)
-    role = role_name(task)
-    "#{task_key} · #{role}"
-  end
+  defp role_line(%Run{task: task} = run), do: "#{task_key(task)} · #{role_name(run)}"
 
   defp task_key(%{issue: %{identifier: identifier}}) when is_binary(identifier) and identifier != "", do: identifier
-  defp task_key(%{id: id}) when is_binary(id) and id != "", do: id
+  defp task_key(%{id: id}), do: id
 
-  defp role_name(%{role: %{name: name}}) when is_binary(name) and name != "", do: name
-  defp role_name(%{stage: stage}) when stage != nil, do: format_role_id(to_string(stage))
-  defp role_name(_task), do: "Agent"
+  defp role_name(%Run{role: %{name: name}}) when is_binary(name) and name != "", do: name
+  defp role_name(%Run{}), do: "Agent"
 
-  defp format_role_id(other) when is_binary(other) do
-    other
-    |> String.split("_")
-    |> Enum.map_join(" ", &String.capitalize/1)
+  defp format_elapsed(%DateTime{} = datetime) do
+    DateTime.utc_now() |> DateTime.diff(datetime, :second) |> max(0) |> format_duration()
   end
 
-  defp format_elapsed(%DateTime{} = dt) do
-    secs = max(0, DateTime.diff(DateTime.utc_now(), dt, :second))
-    Formatters.format_duration(secs)
-  end
+  defp format_elapsed(_never), do: ""
 
-  defp format_started_at(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
+  defp format_started_at(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
+  defp format_started_at(_never), do: nil
 end

@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.RecheckDesignTest do
   use Rail.DataCase, async: true
 
-  import RailTest.PipelineHelpers
+  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Design
@@ -124,7 +124,6 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :design,
-        error: "Canvas URL could not be opened or returned 404/410",
         scratch_path: scratch_dir
       })
 
@@ -139,11 +138,11 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     mock_design_uploads(2)
 
-    assert {:ok, %Task{id: task_id, stage: :design, error: nil}} =
+    assert {:ok, %Task{id: task_id, stage: :design}} =
              Pipeline.recheck_design(task, url_probe: fn _uri -> true end)
 
     assert is_nil(Repo.get!(Task, task_id).error)
-    assert %Run{stage_outcome: :done, error: nil} = Repo.reload!(run)
+    assert %Run{stage_outcome: :done} = Repo.reload!(run)
 
     design = Repo.one(from d in Design, where: d.task_id == ^task_id, order_by: [desc: d.version], limit: 1)
     assert design.canvas_url == "https://claude.ai/design/valid-canvas"
@@ -200,7 +199,6 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :design,
-        error: "Initial gate failure",
         scratch_path: scratch_dir
       })
 
@@ -211,10 +209,10 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     mock_design_uploads(4)
 
-    assert {:ok, %Task{error: nil}} =
+    assert {:ok, %Task{}} =
              Pipeline.recheck_design(task, url_probe: fn _uri -> true end)
 
-    assert {:ok, %Task{error: nil}} =
+    assert {:ok, %Task{}} =
              Pipeline.recheck_design(task, url_probe: fn _uri -> true end)
   end
 
@@ -258,7 +256,6 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :design,
-        error: "Initial failure",
         scratch_path: scratch_dir
       })
 

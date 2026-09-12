@@ -7,10 +7,11 @@ defmodule RailWeb.Components.TaskActionModals do
 
   use RailWeb, :html
 
-  alias Rail.Domain.Formatters
+  alias RailWeb.Components.StageLabel
 
   attr :active_modal, :map, default: nil
   attr :task, :any, default: nil
+  attr :run, :any, default: nil
   attr :current_role_name, :string, default: nil
 
   def task_action_modals(assigns) do
@@ -99,7 +100,7 @@ defmodule RailWeb.Components.TaskActionModals do
             )}.
           </p>
           <p>
-            The task stays at "{Formatters.stage_label(@task)}" - nothing already reviewed or approved is run again.
+            The task stays at "{StageLabel.stage_label(@task, @run)}" - nothing already reviewed or approved is run again.
           </p>
         </div>
 

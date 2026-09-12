@@ -1,39 +1,50 @@
-defmodule RailWeb.Components.ConversationTab do
+defmodule RailWeb.Live.RunConversation do
   @moduledoc """
-  Renders the Conversation tab for a task.
-  Includes role selector chips, run metadata row, ChatPane with message kinds,
-  collapsible tool activity, autoscroll hook, Composer with delivery modes and banners,
-  in-flight delivery modal, and the Raw Log view per spec 05 §4.
+  One task's conversation with its agents, and the composer that talks to them.
+
+  Which run is being read, what is typed into the box, whether the raw log is
+  showing — none of it means anything outside this view, so it lives here rather
+  than on the page. What the page still owns is the subscription: a LiveComponent
+  cannot subscribe, so new log lines arrive through `send_update/3`.
   """
-  use RailWeb, :html
+  use RailWeb, :live_component
 
   import RailWeb.CoreComponents, only: [icon: 1, markdown: 1]
 
-  alias Rail.Domain.Formatters
+  alias Rail.Domain.ChatTranscript
   alias Rail.Domain.HandoffLine
   alias Rail.Domain.TaskUsage
+  alias Rail.Pipeline
+  alias Rail.Runs
   alias Rail.Runs.Schemas.Run
 
-  attr :task, :any, required: true
-  attr :ordered_runs, :list, default: []
-  attr :selected_run, :any, default: nil
-  attr :selected_role_id, :string, default: nil
-  attr :selected_role, :any, default: nil
-  attr :roles_map, :map, default: %{}
-  attr :log_lines, :list, default: []
-  attr :transcript, :any, default: nil
-  attr :show_raw_log, :boolean, default: false
-  attr :expanded_activities, :any, default: []
-  attr :chat_input, :string, default: ""
-  attr :chat_sending, :boolean, default: false
+  @doc """
+  Takes the task and its runs; everything else the conversation decides itself.
 
-  def conversation_tab(assigns) do
-    runs = assigns.ordered_runs || []
+  `run_events` may arrive on its own from the page's `run:<id>` subscription, in
+  which case only the log is replaced.
+  """
+  @impl true
+  def update(%{appended_events: events}, socket) do
+    {:ok, assign_run_events(socket, socket.assigns.run_events ++ events)}
+  end
 
-    assigns =
-      assigns
-      |> assign(:runs, runs)
-      |> assign(:has_runs, runs != [])
+  def update(assigns, socket) do
+    socket = assign_defaults(socket)
+    runs = sort_runs(assigns.runs)
+    selected_run = pick_run(runs, socket.assigns.selected_run)
+
+    {:ok,
+     socket
+     |> assign(assigns)
+     |> assign(:runs, runs)
+     |> assign(:selected_run, selected_run)
+     |> assign_run_events(load_run_events(selected_run))}
+  end
+
+  @impl true
+  def render(assigns) do
+    assigns = assign(assigns, :has_runs, assigns.runs != [])
 
     ~H"""
     <div id="conversation-tab-root" data-qa="conversation-tab" class="space-y-4">
@@ -66,6 +77,7 @@ defmodule RailWeb.Components.ConversationTab do
                   id={"role-chip-#{run.role_id}"}
                   data-qa={"role-chip-#{run.role_id}"}
                   phx-click="select_role"
+                  phx-target={@myself}
                   phx-value-role_id={run.role_id}
                   class={[
                     "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer border",
@@ -87,6 +99,7 @@ defmodule RailWeb.Components.ConversationTab do
               id="toggle-raw-log"
               data-qa="toggle-raw-log"
               phx-click="toggle_raw_log"
+              phx-target={@myself}
               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer shrink-0 ml-auto"
             >
               <.icon
@@ -106,7 +119,7 @@ defmodule RailWeb.Components.ConversationTab do
           >
             <!-- 1. selected.status name in lowerCamel -->
             <span id="metadata-run-status" class="font-mono font-semibold">
-              {Formatters.format_run_status(@selected_run.status)}
+              {format_run_status(@selected_run.status)}
             </span>
 
             <!-- 2. ElapsedTimeText -->
@@ -118,11 +131,6 @@ defmodule RailWeb.Components.ConversationTab do
               class="font-mono"
             >
               {format_elapsed_run(@selected_run)}
-            </span>
-
-            <!-- 3. Attempts count passes -->
-            <span :if={(@selected_run.attempts || 0) > 1} id="metadata-run-passes">
-              {"#{@selected_run.attempts} passes"}
             </span>
 
             <!-- 4. Usage describe -->
@@ -149,19 +157,21 @@ defmodule RailWeb.Components.ConversationTab do
                 log_lines={@log_lines}
                 runs={@runs}
                 roles_map={@roles_map}
+                target={@myself}
               />
             <% else %>
               <!-- 4.7 - 4.12 ChatPane Layout & Composer -->
               <.chat_pane
                 task={@task}
                 run={@selected_run}
-                role={@selected_role}
+                role={selected_role(@selected_run, @roles_map)}
                 transcript={@transcript}
                 expanded_activities={@expanded_activities}
                 runs={@runs}
                 roles_map={@roles_map}
                 chat_input={@chat_input}
                 chat_sending={@chat_sending}
+                target={@myself}
               />
             <% end %>
           </div>
@@ -182,6 +192,7 @@ defmodule RailWeb.Components.ConversationTab do
   attr :roles_map, :map, default: %{}
   attr :chat_input, :string, default: ""
   attr :chat_sending, :boolean, default: false
+  attr :target, :any, required: true
 
   def chat_pane(assigns) do
     messages =
@@ -221,6 +232,7 @@ defmodule RailWeb.Components.ConversationTab do
               runs={@runs}
               roles_map={@roles_map}
               expanded_activities={@expanded_activities}
+              target={@target}
             />
           <% end %>
         <% end %>
@@ -233,6 +245,7 @@ defmodule RailWeb.Components.ConversationTab do
         role={@role}
         chat_input={@chat_input}
         chat_sending={@chat_sending}
+        target={@target}
       />
     </div>
     """
@@ -246,6 +259,7 @@ defmodule RailWeb.Components.ConversationTab do
   attr :runs, :list, default: []
   attr :roles_map, :map, default: %{}
   attr :expanded_activities, :any, default: []
+  attr :target, :any, required: true
 
   def message_item(assigns) do
     msg = assigns.msg
@@ -301,6 +315,7 @@ defmodule RailWeb.Components.ConversationTab do
           <button
             type="button"
             phx-click="toggle_activity"
+            phx-target={@target}
             phx-value-index={@idx}
             class="w-full flex items-center justify-between px-3 py-2 text-xs font-mono text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer text-left"
           >
@@ -355,6 +370,7 @@ defmodule RailWeb.Components.ConversationTab do
                 id={"open-role-conv-#{@idx}"}
                 data-qa="open-role-conversation"
                 phx-click="select_role"
+                phx-target={@target}
                 phx-value-role_id={@handoff.role_id}
                 class="px-2 py-0.5 rounded text-[11px] font-semibold text-amber-800 dark:text-amber-200 hover:bg-amber-500/20 transition-colors cursor-pointer"
               >
@@ -402,6 +418,7 @@ defmodule RailWeb.Components.ConversationTab do
   attr :role, :any, required: true
   attr :chat_input, :string, default: ""
   attr :chat_sending, :boolean, default: false
+  attr :target, :any, required: true
 
   def composer(assigns) do
     role = assigns.role
@@ -457,6 +474,7 @@ defmodule RailWeb.Components.ConversationTab do
           id="stop-run"
           data-qa="stop-run"
           phx-click="stop_run"
+          phx-target={@target}
           class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold text-red-600 dark:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
         >
           <.icon name="pi-stop-fill" class="h-3.5 w-3.5 shrink-0" />
@@ -484,6 +502,7 @@ defmodule RailWeb.Components.ConversationTab do
             id="send-queued-now"
             data-qa="send-queued-now"
             phx-click="stop_and_send_message"
+            phx-target={@target}
             class="px-2.5 py-1 rounded text-xs font-semibold text-blue-600 dark:text-blue-500 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors cursor-pointer"
           >
             Send now
@@ -494,6 +513,7 @@ defmodule RailWeb.Components.ConversationTab do
             id="cancel-queued-message"
             data-qa="cancel-queued-message"
             phx-click="stop_run"
+            phx-target={@target}
             class="px-2.5 py-1 rounded text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors cursor-pointer"
           >
             Cancel
@@ -516,6 +536,7 @@ defmodule RailWeb.Components.ConversationTab do
         id="chat-composer-form"
         phx-submit="send_chat"
         phx-change="chat_input_change"
+        phx-target={@target}
         class="flex items-center gap-2"
       >
         <input type="hidden" name="role_id" value={@role_id} />
@@ -565,6 +586,7 @@ defmodule RailWeb.Components.ConversationTab do
   attr :log_lines, :list, default: []
   attr :runs, :list, default: []
   attr :roles_map, :map, default: %{}
+  attr :target, :any, required: true
 
   def raw_log_view(assigns) do
     lines = assigns.log_lines || []
@@ -613,6 +635,7 @@ defmodule RailWeb.Components.ConversationTab do
                 id={"open-role-log-#{idx}"}
                 data-qa="open-role-log"
                 phx-click="select_role"
+                phx-target={@target}
                 phx-value-role_id={handoff.role_id}
                 class="px-2 py-0.5 rounded text-[11px] border border-amber-400/40 text-amber-200 hover:bg-amber-400/20 transition-colors cursor-pointer"
               >
@@ -635,7 +658,143 @@ defmodule RailWeb.Components.ConversationTab do
     """
   end
 
+  @impl true
+  def handle_event("select_role", %{"role_id" => role_id}, socket) do
+    case Enum.find(socket.assigns.runs, &(&1.role_id == role_id)) do
+      %Run{} = run -> {:noreply, select(socket, run)}
+      nil -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("toggle_raw_log", _params, socket) do
+    {:noreply, assign(socket, :show_raw_log, not socket.assigns.show_raw_log)}
+  end
+
+  def handle_event("toggle_activity", %{"index" => index}, socket) do
+    index = to_index(index)
+    expanded = socket.assigns.expanded_activities
+
+    expanded =
+      if MapSet.member?(expanded, index), do: MapSet.delete(expanded, index), else: MapSet.put(expanded, index)
+
+    {:noreply, assign(socket, :expanded_activities, expanded)}
+  end
+
+  def handle_event("chat_input_change", params, socket) do
+    {:noreply, assign(socket, :chat_input, Map.get(params, "message") || "")}
+  end
+
+  def handle_event("send_chat", params, socket) do
+    message = Map.get(params, "message") || socket.assigns.chat_input
+
+    case socket.assigns.selected_run do
+      %Run{} = run -> {:noreply, send_chat(socket, run, message)}
+      nil -> {:noreply, socket}
+    end
+  end
+
+  # Stopping hands back whatever had not been delivered, and the composer is where
+  # it belongs: still the human's to edit, re-send or throw away.
+  def handle_event("stop_run", _params, socket) do
+    case socket.assigns.selected_run do
+      %Run{} = run ->
+        {:ok, run, queued} = Pipeline.stop_run(run)
+
+        {:noreply,
+         socket
+         |> assign(:chat_input, restore_draft(queued, socket.assigns.chat_input))
+         |> select(run)}
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("stop_and_send_message", _params, socket) do
+    case socket.assigns.selected_run do
+      %Run{} = run ->
+        _sent = Pipeline.stop_and_send_message(run)
+        {:noreply, select(socket, run)}
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
+
   # --- Private Helpers ---
+
+  defp send_chat(socket, %Run{} = run, message) do
+    if String.trim(message) == "" or socket.assigns.chat_sending do
+      socket
+    else
+      case Pipeline.send_message(run, message) do
+        {:ok, _delivery, run} -> socket |> assign(:chat_input, "") |> select(run)
+        {:error, _reason} -> socket
+      end
+    end
+  end
+
+  defp select(socket, %Run{} = run) do
+    run = Runs.get_run(run.id) |> elem(1) |> then(&(&1 || run))
+
+    socket
+    |> assign(:selected_run, run)
+    |> assign(:runs, replace_run(socket.assigns.runs, run))
+    |> assign_run_events(load_run_events(run))
+  end
+
+  defp replace_run(runs, %Run{id: id} = run) do
+    Enum.map(runs, fn existing -> if existing.id == id, do: %{run | role: existing.role}, else: existing end)
+  end
+
+  defp assign_defaults(socket) do
+    socket
+    |> assign_new(:selected_run, fn -> nil end)
+    |> assign_new(:show_raw_log, fn -> false end)
+    |> assign_new(:expanded_activities, fn -> MapSet.new() end)
+    |> assign_new(:chat_input, fn -> "" end)
+    |> assign_new(:chat_sending, fn -> false end)
+    |> assign_new(:run_events, fn -> [] end)
+  end
+
+  # The log the component holds; the rendered lines and the parsed transcript are
+  # both derived from it, so an appended batch only updates one list.
+  defp assign_run_events(socket, run_events) do
+    lines = Enum.map(run_events, & &1.line)
+
+    socket
+    |> assign(:run_events, run_events)
+    |> assign(:log_lines, lines)
+    |> assign(:transcript, ChatTranscript.parse(lines))
+  end
+
+  defp load_run_events(%Run{} = run), do: Runs.list_run_events(run)
+  defp load_run_events(_no_run), do: []
+
+  # The run the human was reading stays selected across a refresh; otherwise the
+  # most recent one is what they want to see.
+  defp pick_run(runs, %Run{id: id}), do: Enum.find(runs, &(&1.id == id)) || List.last(runs)
+  defp pick_run(runs, nil), do: List.last(runs)
+
+  defp sort_runs(runs) do
+    Enum.sort_by(runs, &{&1.started_at || &1.inserted_at, &1.inserted_at, &1.id})
+  end
+
+  defp selected_role(%Run{role_id: role_id}, roles_map), do: resolve_role(role_id, roles_map)
+  defp selected_role(nil, _roles_map), do: nil
+
+  defp to_index(index) when is_integer(index), do: index
+
+  defp to_index(index) do
+    case Integer.parse(to_string(index)) do
+      {parsed, _rest} -> parsed
+      :error -> index
+    end
+  end
+
+  defp restore_draft(nil, draft), do: draft || ""
+  defp restore_draft(queued, draft) when draft in [nil, ""], do: queued
+  defp restore_draft(queued, draft), do: "#{queued}\n\n#{draft}"
 
   defp resolve_role(role_id, roles_map) do
     if is_map(roles_map) and Map.has_key?(roles_map, role_id) do
@@ -662,12 +821,12 @@ defmodule RailWeb.Components.ConversationTab do
 
   defp format_elapsed_run(%Run{started_at: %DateTime{} = dt, completed_at: %DateTime{} = completed}) do
     secs = max(0, DateTime.diff(completed, dt, :second))
-    Formatters.format_duration(secs)
+    format_duration(secs)
   end
 
   defp format_elapsed_run(%Run{started_at: %DateTime{} = dt}) do
     secs = max(0, DateTime.diff(DateTime.utc_now(), dt, :second))
-    Formatters.format_duration(secs)
+    format_duration(secs)
   end
 
   defp format_elapsed_run(_other), do: ""

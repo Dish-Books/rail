@@ -2,10 +2,11 @@ defmodule RailWeb.Hooks.NavHook do
   @moduledoc false
   use RailWeb, :live_view
 
+  alias Rail.Domain.OverviewQueue
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline
   alias Rail.Projects
+  alias Rail.Runs
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
@@ -175,11 +176,7 @@ defmodule RailWeb.Hooks.NavHook do
         socket = assign(socket, :capture_submitting, true)
 
         case Issues.capture_issue(scope, project, ask, priority: priority) do
-          {:ok, issue} ->
-            # Other views still learn about the issue over PubSub; this one owns
-            # the capture, so it refreshes its own counts directly.
-            Pipeline.broadcast_pipeline_changed(%{event: :issue_captured, issue_id: issue.id})
-
+          {:ok, _issue} ->
             socket =
               socket
               |> refresh_nav_state()
@@ -221,13 +218,13 @@ defmodule RailWeb.Hooks.NavHook do
     |> assign(:attention_count, attention_count)
   end
 
+  # What needs a human is counted in runs, the same as the overview lists them.
   defp count_attention(projects) do
-    tasks =
-      Enum.flat_map(projects, fn project ->
-        Pipeline.list_tasks(project.id)
-      end)
-
-    Enum.count(tasks, &Rail.Domain.OverviewQueue.needs_attention?/1)
+    projects
+    |> Enum.flat_map(fn project ->
+      Runs.list_runs(project_id: project.id, preload: [:questions, task: :issue])
+    end)
+    |> Enum.count(&OverviewQueue.needs_attention?/1)
   end
 
   defp default_capture_project_id(projects, current_project_id) do

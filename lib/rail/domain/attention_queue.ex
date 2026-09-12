@@ -1,122 +1,43 @@
-defmodule Rail.Domain.TaskAttentionItem do
+defmodule Rail.Domain.RunAttentionItem do
   @moduledoc """
-  An attention item representing a task waiting for human decision.
+  A run waiting on a human.
+
+  What is waiting is always a run: the questions it asked, the verdict it stated
+  and the failure it hit all belong to it, and the task it carries is context for
+  showing them, not the thing that waits.
   """
-  @enforce_keys [:key, :waiting_since, :task]
-  defstruct [:key, :waiting_since, :task]
+  @enforce_keys [:key, :waiting_since, :run]
+  defstruct [:key, :waiting_since, :run]
 
-  @type t :: %__MODULE__{
-          key: String.t(),
-          waiting_since: DateTime.t(),
-          task: map() | struct()
-        }
+  alias Rail.Runs.Schemas.Run
 
-  @doc "Creates a new TaskAttentionItem from a task map or struct."
-  def new(task, opts \\ []) do
-    id = (is_map(task) && (Map.get(task, :id) || Map.get(task, "id"))) || nil
-    key = Keyword.get(opts, :key, "task:#{id}")
+  @type t :: %__MODULE__{key: String.t(), waiting_since: DateTime.t(), run: Run.t()}
 
-    waiting_since =
-      Keyword.get(opts, :waiting_since) ||
-        (is_map(task) &&
-           (Map.get(task, :created_at) || Map.get(task, :inserted_at) || Map.get(task, "created_at") ||
-              Map.get(task, "inserted_at"))) ||
-        DateTime.utc_now()
-
+  @doc "Wraps `run` as the thing it is waiting as."
+  def new(%Run{} = run) do
     %__MODULE__{
-      key: key,
-      waiting_since: waiting_since,
-      task: task
+      key: "run:#{run.id}",
+      waiting_since: run.completed_at || run.updated_at || run.inserted_at,
+      run: run
     }
   end
-end
-
-defmodule Rail.Domain.QuestionAttentionItem do
-  @moduledoc """
-  An attention item representing an agent question waiting for human decision.
-  """
-  @enforce_keys [:key, :waiting_since, :question]
-  defstruct [:key, :waiting_since, :question]
-
-  @type t :: %__MODULE__{
-          key: String.t(),
-          waiting_since: DateTime.t(),
-          question: map() | struct()
-        }
-
-  @doc "Creates a new QuestionAttentionItem from a question map or struct."
-  def new(question, opts \\ []) do
-    id = (is_map(question) && (Map.get(question, :id) || Map.get(question, "id"))) || nil
-    key = Keyword.get(opts, :key, "question:#{id}")
-
-    waiting_since =
-      Keyword.get(opts, :waiting_since) ||
-        (is_map(question) &&
-           (Map.get(question, :created_at) || Map.get(question, :inserted_at) ||
-              Map.get(question, "created_at") || Map.get(question, "inserted_at"))) ||
-        DateTime.utc_now()
-
-    %__MODULE__{
-      key: key,
-      waiting_since: waiting_since,
-      question: question
-    }
-  end
-end
-
-defmodule Rail.Domain.AttentionQueue.TaskAttentionItem do
-  @moduledoc false
-  defdelegate new(task, opts \\ []), to: Rail.Domain.TaskAttentionItem
-end
-
-defmodule Rail.Domain.AttentionQueue.QuestionAttentionItem do
-  @moduledoc false
-  defdelegate new(question, opts \\ []), to: Rail.Domain.QuestionAttentionItem
 end
 
 defprotocol Rail.Domain.AttentionItem do
   @moduledoc """
   Protocol for items waiting on human decision in the attention queue.
   """
-  @fallback_to_any true
 
-  @doc "Returns the unique key for the item (e.g. 'task:id' or 'question:id')."
+  @doc "Returns the unique key for the item."
   def key(item)
 
   @doc "Returns the timestamp when this item started waiting."
   def waiting_since(item)
 end
 
-defimpl Rail.Domain.AttentionItem, for: Rail.Domain.TaskAttentionItem do
+defimpl Rail.Domain.AttentionItem, for: Rail.Domain.RunAttentionItem do
   def key(item), do: item.key
   def waiting_since(item), do: item.waiting_since
-end
-
-defimpl Rail.Domain.AttentionItem, for: Rail.Domain.QuestionAttentionItem do
-  def key(item), do: item.key
-  def waiting_since(item), do: item.waiting_since
-end
-
-defimpl Rail.Domain.AttentionItem, for: Map do
-  def key(%{key: key}) when is_binary(key), do: key
-  def key(%{id: id}), do: "task:#{id}"
-  def key(%{task: %{id: id}}), do: "task:#{id}"
-  def key(%{question: %{id: id}}), do: "question:#{id}"
-  def key(_item), do: "item:unknown"
-
-  def waiting_since(%{waiting_since: %DateTime{} = ws}), do: ws
-  def waiting_since(%{created_at: %DateTime{} = ca}), do: ca
-  def waiting_since(%{inserted_at: %DateTime{} = ia}), do: ia
-  def waiting_since(%{task: %{created_at: %DateTime{} = ca}}), do: ca
-  def waiting_since(%{task: %{inserted_at: %DateTime{} = ia}}), do: ia
-  def waiting_since(%{question: %{created_at: %DateTime{} = ca}}), do: ca
-  def waiting_since(%{question: %{inserted_at: %DateTime{} = ia}}), do: ia
-  def waiting_since(_item), do: DateTime.utc_now()
-end
-
-defimpl Rail.Domain.AttentionItem, for: Any do
-  def key(item), do: "item:#{inspect(item)}"
-  def waiting_since(_item), do: DateTime.utc_now()
 end
 
 defmodule Rail.Domain.AttentionQueue do

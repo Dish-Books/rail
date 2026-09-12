@@ -17,7 +17,6 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
   import Ecto.Query
 
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -57,11 +56,6 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
 
     run |> Run.changeset(%{status: :blocked_on_input}) |> Repo.update!()
 
-    Pipeline.broadcast_pipeline_changed(%{
-      task_id: task.id,
-      event: :question_registered,
-      question_id: question.id
-    })
 
     {:ok, question}
   end

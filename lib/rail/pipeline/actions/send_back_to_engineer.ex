@@ -10,7 +10,6 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
 
   import Ecto.Query
   import Rail.Pipeline.Utils.CarriedReports
-  import Rail.Pipeline.Utils.StageRun
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -36,7 +35,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
   end
 
   def send_back_to_engineer(%Task{} = task, opts) do
-    if task |> stage_run() |> Run.running?() do
+    if task |> Repo.preload(:runs) |> Task.running?() do
       {:error, :stage_running}
     else
       resolve_engineer(task, opts)
@@ -76,7 +75,6 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
       |> Repo.update()
 
     {:ok, _run} = Pipeline.enter_stage(task, :engineer, opts)
-    Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :sent_back_to_engineer})
 
     {:ok, Repo.reload!(task)}
   end

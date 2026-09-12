@@ -3,7 +3,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
   import Ecto.Query
   import Phoenix.LiveViewTest
-  import RailTest.PipelineHelpers
+  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Phoenix.LiveView.Socket
@@ -11,7 +11,7 @@ defmodule RailWeb.TaskDetailLiveTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Plan
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
@@ -55,7 +55,21 @@ defmodule RailWeb.TaskDetailLiveTest do
         }
       })
 
-    %{backend: backend, workspace: workspace, project: project}
+    roles =
+      Map.new(Task.stages() -- [:ready_to_merge, :merged], fn stage ->
+        {:ok, role} =
+          Roles.create_role(system_scope(), project, %{
+            backend_id: backend.id,
+            stage: stage,
+            name: "#{stage} role",
+            model: "claude-3-7-sonnet",
+            system_prompt: "You are the #{stage} agent."
+          })
+
+        {stage, role}
+      end)
+
+    %{backend: backend, workspace: workspace, project: project, roles: roles}
   end
 
   test "redirects unauthenticated user to /auth/github", %{conn: conn} do
@@ -82,6 +96,7 @@ defmodule RailWeb.TaskDetailLiveTest do
   end
 
   test "renders task details with header, project badge, tabs, stepper, metadata wrap, and ticket", %{
+    roles: roles,
     conn: conn
   } do
     {:ok, user} =
@@ -117,7 +132,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, issue} = Issues.capture_issue(system_scope(), project, "Task Detail Issue 13823")
 
     {:ok, issue} =
-      Issues.update_issue(system_scope(), issue, %{
+      Issues.update_issue(issue, %{
         branch_name: "feature-branch"
       })
 
@@ -144,7 +159,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         pr_url: "https://github.com/example/detail-project/pull/101"
       })
 
-    _stage = put_stage_state(task, :running)
+    Repo.delete_all(from r in Run, where: r.task_id == ^task.id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: (roles[Repo.reload!(task).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :running,
+        stage_outcome: :in_progress
+      })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
 
@@ -167,7 +191,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     # Metadata Wrap
     assert has_element?(view, "#task-metadata-wrap")
     assert has_element?(view, "#metadata-status-chip")
-    assert has_element?(view, "#meta-branch", "rail/login-flow")
+    assert has_element?(view, "#meta-branch", "login-flow")
     assert has_element?(view, "#meta-issue", "DET-42")
     assert has_element?(view, "#meta-pr", "PR #101")
     assert has_element?(view, "#meta-priority")
@@ -181,7 +205,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     refute has_element?(view, "#task-error-card")
   end
 
-  test "switches tabs and displays tab panes", %{conn: conn, project: project} do
+  test "switches tabs and displays tab panes", %{roles: roles, conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_3",
@@ -228,16 +252,25 @@ defmodule RailWeb.TaskDetailLiveTest do
         worktree_path: tab_worktree
       })
 
-    _stage = put_stage_state(task, :running)
+    Repo.delete_all(from r in Run, where: r.task_id == ^task.id)
 
-    %Plan{}
-    |> Plan.changeset(
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: (roles[Repo.reload!(task).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :running,
+        stage_outcome: :in_progress
+      })
+
+    %ImplementationPlan{}
+    |> ImplementationPlan.changeset(
       %{content: "## Architectural Plan\n1. Step one\n2. Step two", captured_at: DateTime.utc_now()},
       task.id
     )
     |> Repo.insert!()
 
-    {:ok, _plan} = Pipeline.get_plan(task)
+    {:ok, _plan} = Pipeline.get_implementation_plan(task)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
 
@@ -317,7 +350,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :product
       })
 
-    _stage = put_stage_state(task, :queued)
+    Repo.delete_all(from r in Run, where: r.task_id == ^task.id)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=plan")
     assert has_element?(view, "#plan-empty-state")
@@ -369,14 +402,18 @@ defmodule RailWeb.TaskDetailLiveTest do
         worktree_path: "/tmp/rail-removed-worktree"
       })
 
-    _stage = put_stage_state(task, :queued)
+    Repo.delete_all(from r in Run, where: r.task_id == ^task.id)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=diff")
     assert has_element?(view, "#diff-empty-state")
     assert has_element?(view, "#diff-empty-state", "This task has no worktree.")
   end
 
-  test "renders conflict banner when task has merge conflicts and not rebasing", %{conn: conn, project: project} do
+  test "renders conflict banner when task has merge conflicts and not rebasing", %{
+    roles: roles,
+    conn: conn,
+    project: project
+  } do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_6",
@@ -423,7 +460,17 @@ defmodule RailWeb.TaskDetailLiveTest do
         pr_number: 42
       })
 
-    _stage = put_stage_state(conflicted_task, :failed)
+    Repo.delete_all(from r in Run, where: r.task_id == ^conflicted_task.id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: conflicted_task.id,
+        role_id: (roles[Repo.reload!(conflicted_task).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :in_progress,
+        error: "Run failed."
+      })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{conflicted_task.id}")
     assert has_element?(view, "#conflict-banner")
@@ -452,13 +499,22 @@ defmodule RailWeb.TaskDetailLiveTest do
         pr_number: 43
       })
 
-    _stage = put_stage_state(rebasing_task, :running)
+    Repo.delete_all(from r in Run, where: r.task_id == ^rebasing_task.id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: rebasing_task.id,
+        role_id: (roles[Repo.reload!(rebasing_task).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :running,
+        stage_outcome: :in_progress
+      })
 
     assert {:ok, rebasing_view, _html} = live(authed_conn, ~p"/tasks/#{rebasing_task.id}")
     refute has_element?(rebasing_view, "#conflict-banner")
   end
 
-  test "renders error card when task has error", %{conn: conn, project: project} do
+  test "renders the error the run recorded", %{roles: roles, conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_7",
@@ -499,11 +555,20 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, task} =
       Pipeline.update_task(task, %{
-        stage: :engineer,
-        error: "Elixir compilation error in test/dummy_test.exs:10"
+        stage: :engineer
       })
 
-    _stage = put_stage_state(task, :failed)
+    Repo.delete_all(from r in Run, where: r.task_id == ^task.id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: (roles[Repo.reload!(task).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :in_progress,
+        error: "Elixir compilation error"
+      })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
     assert has_element?(view, "#task-error-card")
@@ -585,7 +650,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert has_element?(view, "#stage-failure-box", "Unit tests failed with exit code 1")
   end
 
-  test "skips design stage when project/task does not use design", %{conn: conn, project: project} do
+  test "skips design stage when project/task does not use design", %{roles: roles, conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_9",
@@ -629,7 +694,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :engineer
       })
 
-    _stage = put_stage_state(task, :running)
+    Repo.delete_all(from r in Run, where: r.task_id == ^task.id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: (roles[Repo.reload!(task).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :running,
+        stage_outcome: :in_progress
+      })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
     assert has_element?(view, "#stage-stepper")
@@ -637,7 +711,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     refute has_element?(view, "#stage-chip-design")
   end
 
-  test "reloads reactively on pipeline and task-action broadcasts", %{conn: conn, project: project} do
+  test "ignores messages it has no use for", %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_10",
@@ -677,30 +751,20 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :product
       })
 
-    _stage = put_stage_state(Repo.get!(Task, target_id), :queued)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, target_id).id)
 
     issue_id = Repo.get!(Task, target_id).issue_id
+
+    _issue_id = issue_id
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{target_id}")
     assert has_element?(view, "#task-detail-title", "Initial Title")
 
-    # 1. PubSub :pipeline_changed with matching task_id
-    Repo.update_all(
-      from(i in Issue, where: i.id == ^issue_id),
-      set: [title: "Updated via Pipeline Event"]
-    )
-
-    send(view.pid, {:pipeline_changed, %{task_id: target_id}})
-    assert render(view) =~ "Updated via Pipeline Event"
-
-    # PubSub :pipeline_changed with non-matching task_id is ignored
-    send(view.pid, {:pipeline_changed, %{task_id: "tsk_other"}})
-    assert render(view) =~ "Updated via Pipeline Event"
-
-    # 2. Unknown messages are ignored
     send(view.pid, :some_unknown_info)
     send(view.pid, {:unknown, "message"})
-    assert render(view) =~ "Updated via Pipeline Event"
+    send(view.pid, {:run_events, "run_someone_else", []})
+
+    assert has_element?(view, "#task-detail-title", "Initial Title")
   end
 
   test "handles ?project=<id> param and project switcher", %{conn: conn, project: _project} do
@@ -774,7 +838,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, issue} = Issues.capture_issue(system_scope(), project, "Task Detail Issue 13824")
 
     {:ok, issue} =
-      Issues.update_issue(system_scope(), issue, %{
+      Issues.update_issue(issue, %{
         branch_name: "rail/issue-branch",
         priority: :urgent
       })
@@ -803,17 +867,17 @@ defmodule RailWeb.TaskDetailLiveTest do
         priority: nil
       })
 
-    _stage = put_stage_state(task, :queued)
+    Repo.delete_all(from r in Run, where: r.task_id == ^task.id)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
-    assert has_element?(view, "#meta-branch", "rail/removed-worktree")
+    assert has_element?(view, "#meta-branch", "removed-worktree")
     assert has_element?(view, "#meta-issue", "FB-99")
     assert has_element?(view, "#meta-pr", "PR #55")
     assert has_element?(view, "#meta-priority", "Urgent")
     assert has_element?(view, "#ticket-section", "Ticket description content")
   end
 
-  test "exercises LiveView callbacks and edge-case branches", %{conn: conn, project: project} do
+  test "exercises LiveView callbacks and edge-case branches", %{roles: roles, conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_13",
@@ -847,7 +911,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, issue} = Issues.capture_issue(system_scope(), project, "Task Detail Issue 13825")
 
     {:ok, issue} =
-      Issues.update_issue(system_scope(), issue, %{
+      Issues.update_issue(issue, %{
         priority: :high
       })
 
@@ -872,7 +936,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         pr_url: nil
       })
 
-    _stage = put_stage_state(Repo.get!(Task, task_id), :running)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :running,
+        stage_outcome: :in_progress
+      })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
 
@@ -881,7 +954,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     Req.Test.allow(Rail.GitHub, self(), view.pid)
 
     Sandbox.allow(Repo, self(), view.pid)
-    assert has_element?(view, "#meta-branch", "rail/existing-prefix")
+    assert has_element?(view, "#meta-branch", "existing-prefix")
     assert has_element?(view, "#meta-issue", "EC-1")
     assert has_element?(view, "#meta-priority", "High")
 
@@ -917,12 +990,12 @@ defmodule RailWeb.TaskDetailLiveTest do
       })
 
     assert {:ok, view_min, _html} = live(authed_conn, ~p"/tasks/#{minimal_id}")
-    assert has_element?(view_min, "#meta-branch", "rail/removed-worktree")
+    assert has_element?(view_min, "#meta-branch", "removed-worktree")
     refute has_element?(view_min, "#meta-issue")
     refute has_element?(view_min, "#meta-pr")
   end
 
-  test "clicking chat and diff actions navigates to respective tabs", %{conn: conn, project: project} do
+  test "clicking chat and diff actions navigates to respective tabs", %{roles: roles, conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_14",
@@ -968,7 +1041,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         worktree_path: create_temp_git_repo()
       })
 
-    _stage = put_stage_state(Repo.get!(Task, task_id), :awaiting_approval)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :done
+      })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
 
@@ -988,6 +1070,7 @@ defmodule RailWeb.TaskDetailLiveTest do
   end
 
   test "confirm merge modal flow (open, cancel, submit with and without ignore_conflicts)", %{
+    roles: roles,
     conn: conn,
     project: project
   } do
@@ -1044,7 +1127,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         mergeability: :mergeable
       })
 
-    _stage = put_stage_state(Repo.get!(Task, task_id), :awaiting_approval)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :done
+      })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
 
@@ -1088,7 +1180,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         mergeability: :conflicting
       })
 
-    _stage = put_stage_state(Repo.get!(Task, conf_task_id), :awaiting_approval)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, conf_task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, conf_task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, conf_task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :done
+      })
 
     assert {:ok, conf_view, _html} = live(authed_conn, ~p"/tasks/#{conf_task_id}")
     conf_view |> element("#action-merge-anyway") |> render_click()
@@ -1098,7 +1199,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     refute has_element?(conf_view, "#confirm-merge-modal")
   end
 
-  test "confirm rebase modal flow (open, cancel, submit)", %{conn: conn, project: project} do
+  test "confirm rebase modal flow (open, cancel, submit)", %{roles: roles, conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_16",
@@ -1145,7 +1246,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         mergeability: :conflicting
       })
 
-    _stage = put_stage_state(Repo.get!(Task, task_id), :awaiting_approval)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :done
+      })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
 
@@ -1169,7 +1279,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     refute has_element?(view, "#confirm-rebase-modal")
   end
 
-  test "confirm cleanup modal flow and rejection when busy", %{conn: conn, project: project} do
+  test "confirm cleanup modal flow and rejection when busy", %{roles: roles, conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_17",
@@ -1214,7 +1324,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :engineer
       })
 
-    _stage = put_stage_state(Repo.get!(Task, task_id), :awaiting_approval)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :done
+      })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
 
@@ -1253,7 +1372,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :engineer
       })
 
-    _stage = put_stage_state(Repo.get!(Task, busy_task_id), :running)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, busy_task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, busy_task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, busy_task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :running,
+        stage_outcome: :in_progress
+      })
 
     assert {:ok, busy_view, _html} = live(authed_conn, ~p"/tasks/#{busy_task_id}")
     assert has_element?(busy_view, "#action-cleanup[disabled]")
@@ -1261,7 +1389,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     refute has_element?(busy_view, "#confirm-cleanup-modal")
   end
 
-  test "prompt send back to engineer modal flow (empty comment allowed)", %{conn: conn, project: project} do
+  test "prompt send back to engineer modal flow (empty comment allowed)", %{roles: roles, conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_19",
@@ -1307,7 +1435,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         pr_number: 404
       })
 
-    _stage = put_stage_state(Repo.get!(Task, task_id), :awaiting_approval)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :done
+      })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
 
@@ -1347,7 +1484,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         pr_number: 405
       })
 
-    _stage = put_stage_state(Repo.get!(Task, task_id_2), :awaiting_approval)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, task_id_2).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, task_id_2).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, task_id_2)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :done
+      })
 
     assert {:ok, view_2, _html} = live(authed_conn, ~p"/tasks/#{task_id_2}")
     view_2 |> element("#action-send-back-to-engineer") |> render_click()
@@ -1355,7 +1501,11 @@ defmodule RailWeb.TaskDetailLiveTest do
     refute has_element?(view_2, "#prompt-send-back-engineer-modal")
   end
 
-  test "prompt decline demo modal flow (empty reason defaults to 'Declined by human')", %{conn: conn, project: project} do
+  test "prompt decline demo modal flow (empty reason defaults to 'Declined by human')", %{
+    roles: roles,
+    conn: conn,
+    project: project
+  } do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_20",
@@ -1400,7 +1550,17 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :demo
       })
 
-    _stage = put_stage_state(Repo.get!(Task, task_id), :failed)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :in_progress,
+        error: "Run failed."
+      })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
 
@@ -1439,7 +1599,17 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :demo
       })
 
-    _stage = put_stage_state(Repo.get!(Task, task_id_2), :failed)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, task_id_2).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, task_id_2).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, task_id_2)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :in_progress,
+        error: "Run failed."
+      })
 
     assert {:ok, view_2, _html} = live(authed_conn, ~p"/tasks/#{task_id_2}")
     view_2 |> element("#action-decline-demo") |> render_click()
@@ -1447,7 +1617,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     refute has_element?(view_2, "#prompt-decline-demo-modal")
   end
 
-  test "direct action buttons dispatch corresponding pipeline actions", %{conn: conn, project: project} do
+  test "direct action buttons dispatch corresponding pipeline actions", %{roles: roles, conn: conn, project: project} do
     Req.Test.stub(Rail.GitHub, fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
@@ -1499,7 +1669,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :qa
       })
 
-    _stage = put_stage_state(Repo.get!(Task, qa_task_id), :awaiting_approval)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, qa_task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, qa_task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, qa_task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :done
+      })
 
     assert {:ok, qa_view, _html} = live(authed_conn, ~p"/tasks/#{qa_task_id}")
     assert has_element?(qa_view, "#action-skip", "Skip")
@@ -1521,7 +1700,17 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :engineer
       })
 
-    _stage = put_stage_state(Repo.get!(Task, retry_task_id), :failed)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, retry_task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, retry_task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, retry_task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :in_progress,
+        error: "Run failed."
+      })
 
     assert {:ok, retry_view, _html} = live(authed_conn, ~p"/tasks/#{retry_task_id}")
     assert has_element?(retry_view, "#action-retry", "Retry")
@@ -1543,7 +1732,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :engineer
       })
 
-    _stage = put_stage_state(Repo.get!(Task, running_task_id), :running)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, running_task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, running_task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, running_task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :running,
+        stage_outcome: :in_progress
+      })
 
     assert {:ok, running_view, _html} = live(authed_conn, ~p"/tasks/#{running_task_id}")
     refute has_element?(running_view, "#action-cancel")
@@ -1564,7 +1762,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :engineer
       })
 
-    _stage = put_stage_state(Repo.get!(Task, queued_task_id), :queued)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, queued_task_id).id)
 
     assert {:ok, queued_view, _html} = live(authed_conn, ~p"/tasks/#{queued_task_id}")
     refute has_element?(queued_view, "#action-dispatch")
@@ -1587,7 +1785,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         pr_is_draft: true
       })
 
-    _stage = put_stage_state(Repo.get!(Task, draft_task_id), :awaiting_approval)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, draft_task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, draft_task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, draft_task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :done
+      })
 
     assert {:ok, draft_view, _html} = live(authed_conn, ~p"/tasks/#{draft_task_id}")
     assert has_element?(draft_view, "#action-mark-ready", "Mark ready for review")
@@ -1609,7 +1816,17 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :demo
       })
 
-    _stage = put_stage_state(Repo.get!(Task, demo_task_id), :failed)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, demo_task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, demo_task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, demo_task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :in_progress,
+        error: "Run failed."
+      })
 
     assert {:ok, demo_view, _html} = live(authed_conn, ~p"/tasks/#{demo_task_id}")
     assert has_element?(demo_view, "#action-rerecord-demo", "Re-record demo")
@@ -1631,7 +1848,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :design
       })
 
-    _stage = put_stage_state(Repo.get!(Task, design_task_id), :awaiting_approval)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, design_task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, design_task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, design_task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :done
+      })
 
     design_scratch_14302 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
     design_dir_14302 = Path.join(design_scratch_14302, "design")
@@ -1677,14 +1903,28 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :design
       })
 
-    _stage = put_stage_state(Repo.get!(Task, design_failed_id), :failed)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, design_failed_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, design_failed_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, design_failed_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :in_progress,
+        error: "Run failed."
+      })
 
     assert {:ok, design_failed_view, _html} = live(authed_conn, ~p"/tasks/#{design_failed_id}")
     assert has_element?(design_failed_view, "#action-recheck-design", "Design is done")
     design_failed_view |> element("#action-recheck-design") |> render_click()
   end
 
-  test "single-flight action locking, spinner, error clearing, and PubSub broadcasts", %{conn: conn, project: project} do
+  test "single-flight action locking, spinner, error clearing, and PubSub broadcasts", %{
+    roles: roles,
+    conn: conn,
+    project: project
+  } do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_22",
@@ -1728,11 +1968,19 @@ defmodule RailWeb.TaskDetailLiveTest do
       Pipeline.update_task(Repo.get!(Task, task_id), %{
         stage: :ready_to_merge,
         pr_number: 606,
-        pr_is_draft: false,
-        error: "Previous error message"
+        pr_is_draft: false
       })
 
-    _stage = put_stage_state(Repo.get!(Task, task_id), :awaiting_approval)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :done
+      })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
 
@@ -1767,7 +2015,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     refute has_element?(view, "#action-merge[disabled]")
   end
 
-  test "exercises TaskDetailLive action callbacks and modal error paths", %{conn: conn, project: project} do
+  test "exercises TaskDetailLive action callbacks and modal error paths", %{roles: roles, conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_23",
@@ -1812,7 +2060,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :product
       })
 
-    _stage = put_stage_state(Repo.get!(Task, task_id), :awaiting_approval)
+    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, task_id).id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: Repo.get!(Task, task_id).id,
+        role_id: (roles[Repo.reload!(Repo.get!(Task, task_id)).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :done
+      })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
 
@@ -1866,7 +2123,7 @@ defmodule RailWeb.TaskDetailLiveTest do
   end
 
   test "Overview tab renders AnswerField when blocked with pending question, handles option click, answer, and dismiss",
-       %{backend: backend, conn: conn, project: project} do
+       %{roles: roles, backend: backend, conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_24",
@@ -1903,14 +2160,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13863} = Issues.capture_issue(system_scope(), project, "Task 13863")
 
-    {:ok, engineer_role} =
-      Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
-        stage: :engineer,
-        name: "engineer role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the engineer agent."
-      })
+    engineer_role = roles[:engineer]
 
     asking_run = fn task ->
       {:ok, run} =
@@ -2060,7 +2310,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :engineer
       })
 
-    _stage = put_stage_state(bad_task, :blocked)
+    Repo.delete_all(from r in Run, where: r.task_id == ^bad_task.id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: bad_task.id,
+        role_id: (roles[Repo.reload!(bad_task).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :blocked_on_input,
+        stage_outcome: :in_progress
+      })
 
     assert {:ok, view_bad, _html} = live(authed_conn, ~p"/tasks/#{bad_task.id}")
     refute has_element?(view_bad, "#answer-field-card")
@@ -2110,327 +2369,13 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :engineer
       })
 
-    _stage = put_stage_state(task, :queued)
+    Repo.delete_all(from r in Run, where: r.task_id == ^task.id)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=conversation")
 
     assert has_element?(view, "#conversation-tab-root")
     assert has_element?(view, "#tab-conversation[data-active='true']")
     assert has_element?(view, "#conversation-empty-state", "No role has run this task yet.")
-  end
-
-  test "Conversation tab handles role switching, raw log toggle, tool activity, and pubsub streaming", %{
-    backend: backend,
-    conn: conn,
-    project: project
-  } do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_task_detail_26",
-        login: "task_detail_user_26",
-        email: "task_detail_user_26@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-
-    {:ok, %Project{id: project_id}} =
-      Projects.create_project(system_scope(), %{
-        name: "Task Detail Project 13813",
-        github_repo: "org/task-detail-13813",
-        github_installation_id: 13_813,
-        linear_team_id: "team_task_detail_13813",
-        linear_team_key: "P13813",
-        default_branch: "main",
-        clone_path: "/tmp/repos/task-detail-13813",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
-
-    {:ok, role_arch} =
-      Roles.create_role(system_scope(), project_id, %{
-        backend_id: backend.id,
-        name: "Architect",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are an expert agent for role 13816.",
-        stage: :architect,
-        icon_name: "pi-compass-tool"
-      })
-
-    {:ok, role_eng} =
-      Roles.create_role(system_scope(), project_id, %{
-        backend_id: backend.id,
-        name: "Engineer",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are an expert agent for role 13817.",
-        stage: :engineer,
-        icon_name: "pi-code"
-      })
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_task_detail_13869",
-      "identifier" => "TSK-13869",
-      "title" => "Task 13869"
-    })
-
-    {:ok, issue_13869} = Issues.capture_issue(system_scope(), project, "Task 13869")
-
-    {:ok, task} = Pipeline.create_task(issue_13869, :product)
-
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        stage: :engineer
-      })
-
-    _stage = put_stage_state(task, :running)
-
-    now = DateTime.utc_now()
-
-    {:ok, run_arch} =
-      Runs.create_run(%{
-        task_id: task.id,
-        role_id: role_arch.id,
-        status: :finished,
-        started_at: DateTime.shift(now, minute: -10),
-        completed_at: DateTime.shift(now, minute: -5),
-        conversation_id: "conv_arch"
-      })
-
-    Runs.append_run_event(run_arch, "[human] Architect instructions")
-    Runs.append_run_event(run_arch, "[run] claude")
-    Runs.append_run_event(run_arch, "Architecture design complete.")
-
-    {:ok, run_eng} =
-      Runs.create_run(%{
-        task_id: task.id,
-        role_id: role_eng.id,
-        status: :running,
-        started_at: DateTime.shift(now, second: -200),
-        conversation_id: "conv_eng"
-      })
-
-    Runs.append_run_event(run_eng, "[human] Engineer instructions")
-    Runs.append_run_event(run_eng, "[run] claude")
-    Runs.append_run_event(run_eng, "[tool read_file] lib/app.ex")
-    Runs.append_run_event(run_eng, "Writing the code now.")
-
-    {:ok, run_custom} =
-      Runs.create_run(%{
-        task_id: task.id,
-        role_id: "custom_tester",
-        status: :finished,
-        started_at: DateTime.shift(now, second: -100),
-        conversation_id: "conv_custom"
-      })
-
-    Runs.append_run_event(run_custom, "Custom agent report")
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=conversation")
-
-    # Role chips rendered
-    assert has_element?(view, "#role-chip-#{role_arch.id}")
-    assert has_element?(view, "#role-chip-#{role_eng.id}")
-    assert has_element?(view, "#role-chip-custom_tester")
-
-    # Switch to architect role
-    render_hook(view, "select_role", %{"role_id" => role_arch.id})
-    assert has_element?(view, "#role-chip-#{role_arch.id}")
-    assert has_element?(view, "[data-qa='role-bubble']", "Architecture design complete.")
-
-    # Switch to unmapped custom role
-    render_hook(view, "select_role", %{"role_id" => "custom_tester"})
-    assert has_element?(view, "#role-chip-custom_tester")
-    assert has_element?(view, "[data-qa='role-chip-custom_tester']", "Custom Tester")
-
-    # Switch to engineer role
-    render_hook(view, "select_role", %{"role_id" => role_eng.id})
-    assert has_element?(view, "[data-qa='role-bubble']", "Writing the code now.")
-
-    # Toggle tool activity with integer index
-    assert has_element?(view, "[data-qa='activity-tile']")
-    render_hook(view, "toggle_activity", %{"index" => "2"})
-    assert has_element?(view, "[data-qa='activity-content']")
-    assert has_element?(view, "[data-qa='activity-content']", "lib/app.ex")
-    render_hook(view, "toggle_activity", %{"index" => "2"})
-    refute has_element?(view, "[data-qa='activity-content']")
-
-    # Toggle tool activity with non-numeric string index
-    render_hook(view, "toggle_activity", %{"index" => "non_numeric_step"})
-    render_hook(view, "toggle_activity", %{"index" => "non_numeric_step"})
-
-    # Toggle raw log view
-    render_hook(view, "toggle_raw_log", %{})
-    assert has_element?(view, "#raw-log-container")
-    assert has_element?(view, "[data-qa='raw-log-line']", "Writing the code now.")
-    render_hook(view, "toggle_raw_log", %{})
-    assert has_element?(view, "[data-qa='chat-pane']")
-
-    # Batched run events append to the selected run's log in the order broadcast
-    send(
-      view.pid,
-      {:run_events, run_eng.id, [%{line: "[tool bash] mix test"}, %{line: "Tests pass"}]}
-    )
-
-    render_hook(view, "toggle_raw_log", %{})
-    raw_log = render(view)
-    assert raw_log =~ "Tests pass"
-
-    assert raw_log |> :binary.match("mix test") |> elem(0) <
-             raw_log |> :binary.match("Tests pass") |> elem(0)
-
-    render_hook(view, "toggle_raw_log", %{})
-
-    # A batch for a run that is not selected is ignored
-    send(view.pid, {:run_events, "rr_other_run", [%{line: "other line"}]})
-    refute render(view) =~ "other line"
-
-    # PubSub {:os_process_finished, run_id, outcome}
-    send(view.pid, {:os_process_finished, run_eng.id, :completed})
-    assert has_element?(view, "[data-qa='chat-pane']")
-  end
-
-  test "Conversation tab chat input, delivery modal for running task, and dispatch options", %{
-    backend: backend,
-    conn: conn,
-    project: project
-  } do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_task_detail_27",
-        login: "task_detail_user_27",
-        email: "task_detail_user_27@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-    _scope = Scope.for_user(user)
-
-    {:ok, %Project{id: project_id}} =
-      Projects.create_project(system_scope(), %{
-        name: "Task Detail Project 13814",
-        github_repo: "org/task-detail-13814",
-        github_installation_id: 13_814,
-        linear_team_id: "team_task_detail_13814",
-        linear_team_key: "P13814",
-        default_branch: "main",
-        clone_path: "/tmp/repos/task-detail-13814",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
-
-    {:ok, role_eng} =
-      Roles.create_role(system_scope(), project_id, %{
-        backend_id: backend.id,
-        name: "Engineer",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are an expert agent for role 13818.",
-        stage: :engineer,
-        icon_name: "pi-code"
-      })
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_task_detail_13870",
-      "identifier" => "TSK-13870",
-      "title" => "Task 13870"
-    })
-
-    {:ok, issue_13870} = Issues.capture_issue(system_scope(), project, "Task 13870")
-
-    {:ok, task} = Pipeline.create_task(issue_13870, :product)
-
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        stage: :engineer
-      })
-
-    _stage = put_stage_state(task, :running)
-
-    {:ok, run_eng_chat} =
-      Runs.create_run(%{
-        task_id: task.id,
-        role_id: role_eng.id,
-        status: :running,
-        started_at: DateTime.utc_now(),
-        conversation_id: "conv_eng_chat"
-      })
-
-    Runs.append_run_event(run_eng_chat, "[human] Hello")
-    Runs.append_run_event(run_eng_chat, "[run] start")
-    Runs.append_run_event(run_eng_chat, "Hi there")
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=conversation")
-
-    # Chat input change
-    render_hook(view, "chat_input_change", %{"message" => "Please review tests"})
-    assert has_element?(view, "#chat-input")
-
-    # Chat input change with empty params no-ops
-    render_hook(view, "chat_input_change", %{})
-
-    # A message typed while the role works waits on its run rather than
-    # interrupting the turn.
-    render_hook(view, "send_chat", %{"message" => "Please review tests"})
-    assert has_element?(view, ~s(#queued-banner))
-    assert has_element?(view, ~s(#send-queued-now))
-
-    # Send now stops the turn and delivers it.
-    render_hook(view, "stop_and_send_message", %{})
-
-    # Stopping hands an undelivered message back to the composer.
-    render_hook(view, "send_chat", %{"message" => "Second thought"})
-    render_hook(view, "stop_run", %{})
-
-    # Neither event does anything without a run selected.
-    render_hook(view, "stop_run", %{})
-    render_hook(view, "stop_and_send_message", %{})
-  end
-
-  test "sends a message straight out when the role is idle", %{conn: conn, project: project} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_task_detail_idle",
-        login: "task_detail_user_idle",
-        email: "task_detail_user_idle@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_task_detail_idle",
-      "identifier" => "TSK-13870I",
-      "title" => "Task idle"
-    })
-
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Task idle")
-    {:ok, task} = Pipeline.create_task(issue, :product)
-    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
-    _stage = put_stage_state(task, :awaiting_approval)
-
-    {:ok, engineer_run} =
-      task
-      |> put_stage_state(:awaiting_approval)
-      |> then(fn t -> Repo.get_by!(Run, task_id: t.id) end)
-      |> Runs.update_run(%{conversation_id: "sess_idle", attempts: 1})
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=conversation")
-
-    # An empty message is not a message.
-    render_hook(view, "send_chat", %{"message" => "  "})
-    assert Runs.list_run_events(engineer_run) == []
-
-    render_hook(view, "send_chat", %{"message" => "Hello idle agent"})
-    assert [%{line: "[human] Hello idle agent"}] = Runs.list_run_events(engineer_run)
   end
 
   test "diff tab displays empty state when branch has no changes and refreshes", %{conn: conn, project: project} do
@@ -2641,7 +2586,7 @@ defmodule RailWeb.TaskDetailLiveTest do
              )
   end
 
-  test "renders design panel when task has design attached", %{conn: conn, project: project} do
+  test "renders design panel when task has design attached", %{roles: roles, conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_31",
@@ -2668,7 +2613,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :engineer
       })
 
-    _stage = put_stage_state(task, :running)
+    Repo.delete_all(from r in Run, where: r.task_id == ^task.id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: (roles[Repo.reload!(task).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :running,
+        stage_outcome: :in_progress
+      })
 
     design_scratch_14303 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
     design_dir_14303 = Path.join(design_scratch_14303, "design")
@@ -2704,7 +2658,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert has_element?(view, "#design-canvas-link")
   end
 
-  test "renders demo panel when task has demo attached", %{conn: conn, project: project} do
+  test "renders demo panel when task has demo attached", %{roles: roles, conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_32",
@@ -2731,7 +2685,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :engineer
       })
 
-    _stage = put_stage_state(task, :running)
+    Repo.delete_all(from r in Run, where: r.task_id == ^task.id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: (roles[Repo.reload!(task).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :running,
+        stage_outcome: :in_progress
+      })
 
     demo_scratch_14304 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
     demo_dir_14304 = Path.join(demo_scratch_14304, "demo")
@@ -2777,7 +2740,11 @@ defmodule RailWeb.TaskDetailLiveTest do
     refute has_element?(view, "#no-demo-banner")
   end
 
-  test "renders no-demo banner when stage is ready_to_merge and no demo exists", %{conn: conn, project: project} do
+  test "renders no-demo banner when stage is ready_to_merge and no demo exists", %{
+    roles: roles,
+    conn: conn,
+    project: project
+  } do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_33",
@@ -2804,7 +2771,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage: :ready_to_merge
       })
 
-    _stage = put_stage_state(task, :awaiting_approval)
+    Repo.delete_all(from r in Run, where: r.task_id == ^task.id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: (roles[Repo.reload!(task).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :done
+      })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
 
@@ -2820,7 +2796,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     refute has_element?(view, "#demo-panel")
   end
 
-  test "opens demo player modal, navigates controls, and closes modal", %{conn: conn, project: project} do
+  test "opens demo player modal, navigates controls, and closes modal", %{roles: roles, conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_34",
@@ -2848,7 +2824,16 @@ defmodule RailWeb.TaskDetailLiveTest do
         worktree_path: "/tmp/fake-worktree"
       })
 
-    _stage = put_stage_state(task, :awaiting_approval)
+    Repo.delete_all(from r in Run, where: r.task_id == ^task.id)
+
+    {:ok, _staged} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: (roles[Repo.reload!(task).stage] || roles[:demo]).id,
+        started_at: DateTime.utc_now(),
+        status: :finished,
+        stage_outcome: :done
+      })
 
     demo_scratch_14305 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
     demo_dir_14305 = Path.join(demo_scratch_14305, "demo")

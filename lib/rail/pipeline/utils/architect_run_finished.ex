@@ -8,10 +8,8 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinished do
   A human approves the plan, and that is what enters the next stage.
   """
 
-  import Ecto.Query
   import Rail.Pipeline.Utils.CaptureScratch
 
-  alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Runs.Schemas.Run
@@ -20,7 +18,7 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinished do
   def architect_run_finished(%Run{task: %Task{} = task} = run, _opts) do
     {:ok, task} = capture_scratch(:architect, task)
 
-    if Repo.exists?(from p in Plan, where: p.task_id == ^task.id) do
+    if Repo.exists?(Ecto.assoc(task, :implementation_plan)) do
       run
     else
       fail(run, "Architect exited 0 without writing a plan file.")

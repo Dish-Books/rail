@@ -4,7 +4,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
   import Rail.Pipeline.Utils.QaLeadRunFinished
   import Rail.Pipeline.Utils.QaRunFinished
   import Rail.Pipeline.Utils.ReviewRunFinished
-  import RailTest.PipelineHelpers
+  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
 
   alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Issues

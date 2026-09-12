@@ -1,25 +1,27 @@
 defmodule Rail.Domain.WaitingRow do
-  @moduledoc "A row waiting for human action in the Overview queue."
-  @enforce_keys [:item, :kind, :waiting_since]
-  defstruct [:item, :kind, :waiting_since, :question, :task]
+  @moduledoc "A run waiting for human action in the Overview queue."
+  @enforce_keys [:item, :kind, :waiting_since, :run]
+  defstruct [:item, :kind, :waiting_since, :run]
+
+  alias Rail.Domain.RunAttentionItem
+  alias Rail.Runs.Schemas.Run
 
   @type t :: %__MODULE__{
-          item: any(),
+          item: RunAttentionItem.t(),
           kind: :question | :approval | :failed | :ready_to_merge | :conflicts,
           waiting_since: DateTime.t() | nil,
-          question: map() | struct() | nil,
-          task: map() | struct() | nil
+          run: Run.t()
         }
 end
 
 defmodule Rail.Domain.AgentRow do
-  @moduledoc "A row for a task currently being processed by an agent."
-  @enforce_keys [:task]
-  defstruct [:task]
+  @moduledoc "A row for a run an agent is working on right now."
+  @enforce_keys [:run]
+  defstruct [:run]
 
-  @type t :: %__MODULE__{
-          task: map() | struct()
-        }
+  alias Rail.Runs.Schemas.Run
+
+  @type t :: %__MODULE__{run: Run.t()}
 end
 
 defmodule Rail.Domain.SingleCardBlock do
@@ -27,9 +29,7 @@ defmodule Rail.Domain.SingleCardBlock do
   @enforce_keys [:row]
   defstruct [:row]
 
-  @type t :: %__MODULE__{
-          row: Rail.Domain.WaitingRow.t()
-        }
+  @type t :: %__MODULE__{row: Rail.Domain.WaitingRow.t()}
 end
 
 defmodule Rail.Domain.CompactStripBlock do
@@ -37,9 +37,7 @@ defmodule Rail.Domain.CompactStripBlock do
   @enforce_keys [:rows]
   defstruct [:rows]
 
-  @type t :: %__MODULE__{
-          rows: list(Rail.Domain.WaitingRow.t())
-        }
+  @type t :: %__MODULE__{rows: list(Rail.Domain.WaitingRow.t())}
 end
 
 defmodule Rail.Domain.OverviewQueueState do
@@ -48,235 +46,84 @@ defmodule Rail.Domain.OverviewQueueState do
   defstruct [:waiting, :with_agent]
 
   @type t :: %__MODULE__{
-          waiting:
-            list(
-              Rail.Domain.SingleCardBlock.t()
-              | Rail.Domain.CompactStripBlock.t()
-            ),
+          waiting: list(Rail.Domain.SingleCardBlock.t() | Rail.Domain.CompactStripBlock.t()),
           with_agent: list(Rail.Domain.AgentRow.t())
         }
 end
 
-defmodule Rail.Domain.OverviewQueue.WaitingRow do
-  @moduledoc false
-  @enforce_keys [:item, :kind, :waiting_since]
-  defstruct [:item, :kind, :waiting_since, :question, :task]
-end
-
-defmodule Rail.Domain.OverviewQueue.AgentRow do
-  @moduledoc false
-  @enforce_keys [:task]
-  defstruct [:task]
-end
-
-defmodule Rail.Domain.OverviewQueue.SingleCardBlock do
-  @moduledoc false
-  @enforce_keys [:row]
-  defstruct [:row]
-end
-
-defmodule Rail.Domain.OverviewQueue.CompactStripBlock do
-  @moduledoc false
-  @enforce_keys [:rows]
-  defstruct [:rows]
-end
-
-defmodule Rail.Domain.OverviewQueue.State do
-  @moduledoc false
-  @enforce_keys [:waiting, :with_agent]
-  defstruct [:waiting, :with_agent]
-end
-
 defmodule Rail.Domain.OverviewQueue do
   @moduledoc """
-  Builds the Overview screen queue state from waiting attention items, all tasks,
-  and question/waitingSince lookups.
+  Builds the Overview screen from runs.
+
+  A row is a run. What a run is doing it says itself, and the questions it asked
+  hang off it — so nothing here has to work out which run a task means, and a run
+  that asked something shows up as itself rather than as the task it belongs to.
+  The task each run carries is what a row renders around it: the ticket, the
+  branch, the stage it sits at.
   """
 
   alias Rail.Domain.AgentRow
   alias Rail.Domain.AttentionItem
   alias Rail.Domain.CompactStripBlock
-  alias Rail.Domain.Formatters
   alias Rail.Domain.OverviewQueueState
-  alias Rail.Domain.QuestionAttentionItem
   alias Rail.Domain.SingleCardBlock
-  alias Rail.Domain.TaskAttentionItem
   alias Rail.Domain.WaitingRow
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Runs.Schemas.Run
 
   @doc """
-  Builds the Overview queue state. Accepts either keyword list/map or 4 arguments:
-  `waiting`, `tasks`, `question_for`, `waiting_since`.
+  Builds the Overview queue state from the runs waiting and the runs there are.
+
+  `waiting` is already in arrival order; `waiting_since` answers when each key
+  started waiting.
   """
-  def build_overview_queue(opts) when is_list(opts) do
-    waiting = Keyword.get(opts, :waiting, [])
-    tasks = Keyword.get(opts, :tasks, [])
-    question_for = Keyword.get(opts, :question_for, fn _task -> nil end)
-    waiting_since = Keyword.get(opts, :waiting_since, fn _key -> nil end)
-
-    build_overview_queue(waiting, tasks, question_for, waiting_since)
-  end
-
-  def build_overview_queue(opts) when is_map(opts) do
-    waiting = Map.get(opts, :waiting) || Map.get(opts, "waiting") || []
-    tasks = Map.get(opts, :tasks) || Map.get(opts, "tasks") || []
-    question_for = Map.get(opts, :question_for) || Map.get(opts, "question_for") || fn _task -> nil end
-    waiting_since = Map.get(opts, :waiting_since) || Map.get(opts, "waiting_since") || fn _key -> nil end
-
-    build_overview_queue(waiting, tasks, question_for, waiting_since)
-  end
-
-  def build_overview_queue(waiting, tasks, question_for, waiting_since) do
+  def build_overview_queue(waiting, runs, waiting_since) do
     waiting_rows =
-      Enum.map(waiting, fn item ->
-        task = task_for_item(item)
-        question = question_for_item(item, task, question_for)
-        kind = waiting_kind_for(task, question)
-        key = key_for(item)
-        since = waiting_since.(key) || waiting_since_for(item)
-
+      Enum.map(waiting, fn %{run: %Run{} = run} = item ->
         %WaitingRow{
           item: item,
-          kind: kind,
-          waiting_since: since,
-          question: question,
-          task: task
+          kind: waiting_kind_for(run),
+          waiting_since: waiting_since.(AttentionItem.key(item)) || AttentionItem.waiting_since(item),
+          run: run
         }
       end)
 
-    waiting_blocks = group_waiting_blocks(waiting_rows)
-
-    with_agent_tasks =
-      tasks
-      |> Enum.filter(fn t -> not merged?(t) and not needs_attention?(t) end)
-      |> Enum.sort(fn a, b ->
-        time_a = get_field(a, :updated_at) || get_field(a, :inserted_at) || get_field(a, :created_at)
-        time_b = get_field(b, :updated_at) || get_field(b, :inserted_at) || get_field(b, :created_at)
-
-        case {time_a, time_b} do
-          {%DateTime{} = dt_a, %DateTime{} = dt_b} ->
-            DateTime.compare(dt_a, dt_b) in [:gt, :eq]
-
-          {%DateTime{}, nil} ->
-            true
-
-          {nil, %DateTime{}} ->
-            false
-
-          _other ->
-            true
-        end
-      end)
-
-    with_agent_rows = Enum.map(with_agent_tasks, fn t -> %AgentRow{task: t} end)
-
     %OverviewQueueState{
-      waiting: waiting_blocks,
-      with_agent: with_agent_rows
+      waiting: group_waiting_blocks(waiting_rows),
+      with_agent: runs |> Enum.filter(&Run.running?/1) |> Enum.sort_by(& &1.started_at, {:desc, DateTime}) |> rows()
     }
   end
 
   @doc """
-  Determines the waiting kind (:question, :approval, :failed, :ready_to_merge, :conflicts)
-  for a task and optional pending question.
+  What this run is waiting on a human for.
   """
-  def waiting_kind_for(task, question) do
+  def waiting_kind_for(%Run{task: %Task{} = task} = run) do
     cond do
-      question != nil or is_nil(task) ->
-        :question
-
-      stage_state(task) == :done and stage(task) != :ready_to_merge and not conflicted?(task) ->
-        :approval
-
-      stage_state(task) == :failed ->
-        :failed
-
-      stage(task) == :ready_to_merge ->
-        :ready_to_merge
-
-      conflicted?(task) ->
-        :conflicts
-
-      true ->
-        :approval
+      # A blocked run stays blocked until its answers are sent, so it keeps its
+      # question card while the human works through the batch.
+      Run.state(run) == :blocked -> :question
+      Task.conflicted?(task) -> :conflicts
+      task.stage == :ready_to_merge -> :ready_to_merge
+      Run.state(run) == :failed -> :failed
+      true -> :approval
     end
   end
 
   @doc """
-  Returns true if the waiting kind renders as a compact strip row rather than an individual card.
-  Compact kinds are :failed, :ready_to_merge, :conflicts.
+  Returns true if this run is waiting on a human at all.
   """
-  def compact_kind?(:failed), do: true
-  def compact_kind?(:ready_to_merge), do: true
-  def compact_kind?(:conflicts), do: true
-  def compact_kind?("failed"), do: true
-  def compact_kind?("ready_to_merge"), do: true
-  def compact_kind?("conflicts"), do: true
-  def compact_kind?(_other), do: false
-
-  @doc """
-  Returns true if the task is merged.
-  """
-  def merged?(task) do
-    get_field(task, :is_merged) == true or
-      stage(task) == :merged or
-      get_field(task, :merged_at) != nil
+  def needs_attention?(%Run{task: %Task{} = task} = run) do
+    task.stage != :merged and is_nil(task.merged_at) and
+      (Run.state(run) in [:done, :failed, :blocked, :stopped] or
+         (Task.conflicted?(task) and not Run.running?(run)))
   end
 
   @doc """
-  Returns true if the task requires human attention.
+  Returns true if the waiting kind renders as a compact strip row rather than a card.
   """
-  def needs_attention?(task) do
-    case get_field(task, :needs_attention) do
-      bool when is_boolean(bool) ->
-        bool
+  def compact_kind?(kind), do: kind in [:failed, :ready_to_merge, :conflicts]
 
-      nil ->
-        # Private Helpers
-        not merged?(task) and
-          not busy?(task) and
-          ((stage(task) == :ready_to_merge and not rebasing?(task)) or
-             stage_state(task) in [:done, :failed, :blocked, :stopped] or
-             (conflicted?(task) and not rebasing?(task)))
-    end
-  end
-
-  @doc """
-  Returns true if the task has merge conflicts.
-  """
-  def conflicted?(task) do
-    cond do
-      get_field(task, :shows_as_conflicted) == true ->
-        true
-
-      get_field(task, :conflicted) == true ->
-        true
-
-      get_field(task, :has_merge_conflicts) == true and not rebasing?(task) ->
-        stage_state(task) in [:queued, :done, :stopped]
-
-      get_field(task, :mergeability) in [:conflicts, "conflicts", :conflicting, "conflicting"] and
-          not rebasing?(task) ->
-        stage_state(task) in [:queued, :done, :stopped]
-
-      true ->
-        false
-    end
-  end
-
-  defp task_for_item(%TaskAttentionItem{task: task}), do: task
-  defp task_for_item(%QuestionAttentionItem{}), do: nil
-  defp task_for_item(%{task: task}), do: task
-  defp task_for_item(%{question: _question}), do: nil
-  defp task_for_item(_other), do: nil
-
-  defp question_for_item(%QuestionAttentionItem{question: question}, _task, _fun), do: question
-  defp question_for_item(%TaskAttentionItem{task: task}, _task, question_for), do: question_for.(task)
-  defp question_for_item(%{question: question}, _task, _fun), do: question
-  defp question_for_item(%{task: task}, _task, question_for), do: question_for.(task)
-  defp question_for_item(_item, _task, _fun), do: nil
-
-  defp key_for(item), do: AttentionItem.key(item)
-  defp waiting_since_for(item), do: AttentionItem.waiting_since(item)
+  defp rows(runs), do: Enum.map(runs, &%AgentRow{run: &1})
 
   defp group_waiting_blocks(waiting_rows) do
     {blocks_rev, pending_compact} =
@@ -284,8 +131,7 @@ defmodule Rail.Domain.OverviewQueue do
         if compact_kind?(row.kind) do
           {blocks_acc, [row | compact_acc]}
         else
-          blocks_acc = flush_compact(blocks_acc, compact_acc)
-          {[%SingleCardBlock{row: row} | blocks_acc], []}
+          {[%SingleCardBlock{row: row} | flush_compact(blocks_acc, compact_acc)], []}
         end
       end)
 
@@ -295,45 +141,6 @@ defmodule Rail.Domain.OverviewQueue do
   end
 
   defp flush_compact(blocks_acc, []), do: blocks_acc
+  defp flush_compact(blocks_acc, compact_acc), do: [%CompactStripBlock{rows: Enum.reverse(compact_acc)} | blocks_acc]
 
-  defp flush_compact(blocks_acc, compact_acc) do
-    compact_rows = Enum.reverse(compact_acc)
-    [%CompactStripBlock{rows: compact_rows} | blocks_acc]
-  end
-
-  defp busy?(task), do: get_field(task, :is_busy) == true or stage_state(task) == :running
-  defp rebasing?(task), do: get_field(task, :is_rebasing) == true
-
-  defp stage(task), do: task |> get_field(:stage) |> to_atom()
-
-  defp stage_state(task), do: Formatters.stage_state(task)
-
-  defp to_atom(nil), do: nil
-  defp to_atom(atom) when is_atom(atom), do: atom
-
-  defp to_atom(string) when is_binary(string) do
-    String.to_existing_atom(string)
-  rescue
-    _error -> nil
-  end
-
-  defp to_atom(_other), do: nil
-
-  defp get_field(nil, _field), do: nil
-  defp get_field(%_struct_mod{} = struct, field), do: Map.get(struct, field)
-
-  defp get_field(map, field) when is_map(map) do
-    case Map.fetch(map, field) do
-      {:ok, val} ->
-        val
-
-      :error ->
-        case Map.fetch(map, to_string(field)) do
-          {:ok, val} -> val
-          :error -> nil
-        end
-    end
-  end
-
-  defp get_field(_other, _field), do: nil
 end

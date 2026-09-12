@@ -120,13 +120,11 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(task, %{
         stage: :qa,
-        error: "Some previous error"
       })
 
     assert {:ok,
             %Task{
               is_rebasing: true,
-              error: nil
             }} = Pipeline.start_rebase(task, [])
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :rebase_started}}

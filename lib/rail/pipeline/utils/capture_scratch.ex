@@ -9,9 +9,8 @@ defmodule Rail.Pipeline.Utils.CaptureScratch do
   alias Rail.Domain.TicketBody
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline.Schemas.Plan
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
 
@@ -25,7 +24,7 @@ defmodule Rail.Pipeline.Utils.CaptureScratch do
     updated_task =
       case stage do
         s when s in [:product, :architect] ->
-          task_after_ticket = capture_ticket_and_splits(scope, task, identifier, scratch_dir)
+          task_after_ticket = capture_ticket(task, identifier, scratch_dir)
           if s == :architect, do: capture_plan(task_after_ticket, identifier, scratch_dir)
           task_after_ticket
 
@@ -48,48 +47,26 @@ defmodule Rail.Pipeline.Utils.CaptureScratch do
     {:ok, updated_task}
   end
 
-  defp capture_ticket_and_splits(scope, task, identifier, scratch_dir) do
-    project = Repo.get!(Project, task.project_id)
-    issue = task.issue_id && Repo.get(Issue, task.issue_id)
-    owner_user = issue && issue.owner_user_id && %{id: issue.owner_user_id}
+  # The ticket the agent rewrote replaces the issue's title and body. Linear hears
+  # about it from the sync the write enqueues, not from here.
+  defp capture_ticket(task, identifier, scratch_dir) when is_binary(identifier) and identifier != "" do
+    ticket_file = Path.join([scratch_dir, "tickets", "#{identifier}.md"])
 
-    task =
-      if is_binary(identifier) and identifier != "" do
-        ticket_file = Path.join([scratch_dir, "tickets", "#{identifier}.md"])
-
-        if File.exists?(ticket_file) do
-          content = File.read!(ticket_file)
-          _push_res = Issues.push_ticket(scope, project, identifier, content, owner_user)
-          parsed = TicketBody.parse(content)
-          _adopted = adopt_ticket(issue, parsed, project)
-
-          task
-        else
-          task
-        end
-      else
-        task
-      end
-
-    split_files = Path.wildcard(Path.join([scratch_dir, "tickets", "split-*.md"]))
-
-    if split_files != [] do
-      split_contents = Enum.map(split_files, &File.read!/1)
-      _create_splits_res = Issues.create_split_issues(scope, project, split_contents, owner_user)
+    if File.exists?(ticket_file) do
+      parsed = ticket_file |> File.read!() |> TicketBody.parse()
+      _adopted = task.issue_id && Issue |> Repo.get(task.issue_id) |> adopt_ticket(parsed)
     end
 
     task
   end
 
-  # The ticket the agent wrote replaces the issue's own title and body: the task
-  # keeps no copy of either.
-  defp adopt_ticket(%Issue{} = issue, %TicketBody{} = parsed, %Project{} = project) do
-    issue
-    |> Issue.changeset(%{title: parsed.title, description: parsed.description}, project.id)
-    |> Repo.update()
+  defp capture_ticket(task, _no_identifier, _scratch_dir), do: task
+
+  defp adopt_ticket(%Issue{} = issue, %TicketBody{} = parsed) do
+    Issues.update_issue(issue, %{title: parsed.title, description: parsed.description})
   end
 
-  defp adopt_ticket(nil, _parsed, _project), do: :ok
+  defp adopt_ticket(nil, _parsed), do: :ok
 
   defp capture_plan(task, identifier, scratch_dir) do
     candidates = [
@@ -103,9 +80,12 @@ defmodule Rail.Pipeline.Utils.CaptureScratch do
       content = File.read!(plan_path)
 
       if String.trim(content) != "" do
-        %Plan{}
-        |> Plan.changeset(%{content: content, captured_at: DateTime.utc_now()}, task.id)
-        |> Repo.insert!()
+        # One plan per task: a second architect pass replaces what the first said.
+        existing = Repo.get_by(ImplementationPlan, task_id: task.id) || %ImplementationPlan{}
+
+        existing
+        |> ImplementationPlan.changeset(%{content: content, captured_at: DateTime.utc_now()}, task.id)
+        |> Repo.insert_or_update!()
       end
     end
   end

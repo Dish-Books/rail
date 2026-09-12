@@ -50,7 +50,6 @@ defmodule Rail.Pipeline.Actions.DeclineDemo do
          {:ok, _run} <- Rail.Pipeline.enter_stage(task, :ready_to_merge) do
       task = Repo.reload!(task)
 
-      Rail.Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :demo_declined})
 
       {:ok, task}
     end

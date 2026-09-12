@@ -101,8 +101,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
     - A heredoc into #{file}, never an inline string.
     - The `---` front matter block starts on the first line of the file. `title` is required; `priority` and `estimate` keep whatever they are already set to when left out.
     - Everything below the closing `---` becomes the ticket body verbatim, and the file replaces the ticket in full.
-    - A ticket you split out is its own file, #{scratch_path}/tickets/split-<n>.md, in this same format. Rail opens each one as a new ticket.
-    - These files are the only way to publish a ticket.
+    - This file is the only way to publish a ticket.
     """)
   end
 

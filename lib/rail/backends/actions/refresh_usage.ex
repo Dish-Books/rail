@@ -33,11 +33,7 @@ defmodule Rail.Backends.Actions.RefreshUsage do
     claude_account = upsert_account(Map.put(claude_raw, :node, node))
     agy_account = upsert_account(Map.put(agy_raw, :node, node))
 
-    accounts = [claude_account, agy_account]
-
-    Phoenix.PubSub.broadcast(Rail.PubSub, "backends:usage_updated", {:usage_updated, accounts})
-
-    {:ok, accounts}
+    {:ok, [claude_account, agy_account]}
   end
 
   defp upsert_account(attrs) do

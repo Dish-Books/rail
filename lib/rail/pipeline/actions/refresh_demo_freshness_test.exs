@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
   use Rail.DataCase, async: true
 
-  import RailTest.PipelineHelpers
+  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Demo
@@ -470,7 +470,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
             %Task{
               id: task_id,
               stage: :demo,
-              error: nil
             }} = Pipeline.refresh_demo_freshness(task, [])
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :demo_stale_requeued}}

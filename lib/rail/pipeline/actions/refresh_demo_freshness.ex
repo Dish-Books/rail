@@ -6,13 +6,11 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshness do
   """
 
   import Ecto.Query
-  import Rail.Pipeline.Utils.StageRun
 
   alias Rail.Artifacts.Schemas.Demo
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Runs.Schemas.Run
 
   @doc """
   Checks demo freshness against the current worktree fingerprint:
@@ -20,8 +18,8 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshness do
   - If demo is not already stale and worktree exists:
     - Compares current fingerprint against demo's `head_sha` and `dirty_digest`.
     - If drifted: marks demo `stale: true`.
-    - If task is sitting at `ready_to_merge` awaiting approval and not busy:
-      re-queues to `demo` queued, broadcasts, and pumps dispatcher.
+    - If the task is sitting at `ready_to_merge` with nothing running on it,
+      enters the demo stage again.
   """
 
   def refresh_demo_freshness(task, opts \\ [])
@@ -77,22 +75,14 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshness do
       |> Demo.changeset(%{stale: true})
       |> Repo.update()
 
-    # The demo run is the one that would be re-recorded, so it is the one that
-    # has to be idle — the task itself sits at :ready_to_merge, which runs nothing.
-    if task.stage == :ready_to_merge and not (task |> stage_run(:demo) |> Run.running?()) do
+    # Re-recording writes into the worktree everything else is working in, so
+    # nothing on the task may still be running — not only the demo.
+    if task.stage == :ready_to_merge and not (task |> Repo.preload(:runs) |> Task.running?()) do
       {:ok, _run} = Rail.Pipeline.enter_stage(task, :demo)
 
-      Rail.Pipeline.broadcast_pipeline_changed(%{
-        task_id: task.id,
-        event: :demo_stale_requeued
-      })
 
       {:ok, Repo.reload!(task)}
     else
-      Rail.Pipeline.broadcast_pipeline_changed(%{
-        task_id: task.id,
-        event: :demo_marked_stale
-      })
 
       {:ok, task}
     end

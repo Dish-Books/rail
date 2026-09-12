@@ -6,7 +6,7 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinishedTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Plan
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
@@ -96,13 +96,13 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinishedTest do
     File.write!(Path.join(task.scratch_path, "plan.md"), "# Plan\n\nDo the thing.")
 
     assert %Run{error: nil} = architect_run_finished(run, [])
-    assert Repo.exists?(from p in Plan, where: p.task_id == ^task.id)
+    assert Repo.exists?(from p in ImplementationPlan, where: p.task_id == ^task.id)
     assert %Task{stage: :architect} = Repo.get!(Task, task.id)
   end
 
   test "an architect that wrote no plan records that on its run", %{task: task, run: run} do
     assert %Run{error: error} = architect_run_finished(run, [])
     assert error =~ "without writing a plan file"
-    refute Repo.exists?(from p in Plan, where: p.task_id == ^task.id)
+    refute Repo.exists?(from p in ImplementationPlan, where: p.task_id == ^task.id)
   end
 end

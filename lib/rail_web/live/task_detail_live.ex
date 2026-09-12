@@ -12,7 +12,6 @@ defmodule RailWeb.TaskDetailLive do
       task_actions: 1,
       task_action_modals: 1,
       answer_field: 1,
-      conversation_tab: 1,
       diff_pane: 1,
       demo_panel: 1,
       no_demo_banner: 1,
@@ -20,15 +19,17 @@ defmodule RailWeb.TaskDetailLive do
       design_panel: 1
     ]
 
-  alias Rail.Domain.ChatTranscript
-  alias Rail.Domain.Formatters
+  alias Rail.Artifacts
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.TaskActionRunner
-  alias Rail.Runs
   alias Rail.Runs.Schemas.Run
   alias RailWeb.Components.DemoPlayerState
+  alias RailWeb.Components.RunState
+  alias RailWeb.Components.StageLabel
+  alias RailWeb.Live.ProductStage
+  alias RailWeb.Live.RunConversation
 
   def mount(_params, _session, socket) do
     socket =
@@ -39,7 +40,6 @@ defmodule RailWeb.TaskDetailLive do
       |> assign(:page_title, "Task")
       |> assign(:current_section, :tasks)
       |> assign(:active_tab, :overview)
-      |> assign(:current_run, nil)
       |> assign(:current_role_name, nil)
       |> assign(:runs, [])
       |> assign(:running_action, nil)
@@ -53,18 +53,8 @@ defmodule RailWeb.TaskDetailLive do
       |> assign(:pending_questions, [])
       |> assign(:selected_question_id, nil)
       |> assign(:answer_text, "")
-      |> assign(:ordered_runs, [])
-      |> assign(:selected_role_id, nil)
       |> assign(:selected_run, nil)
-      |> assign(:selected_role, nil)
       |> assign(:roles_map, %{})
-      |> assign(:run_events, [])
-      |> assign(:log_lines, [])
-      |> assign(:transcript, nil)
-      |> assign(:show_raw_log, false)
-      |> assign(:expanded_activities, MapSet.new())
-      |> assign(:chat_input, "")
-      |> assign(:chat_sending, false)
       |> assign(:subscribed_run_id, nil)
       |> assign(:file_diffs, [])
       |> assign(:viewed_diff_files, %{})
@@ -95,7 +85,6 @@ defmodule RailWeb.TaskDetailLive do
             |> assign(:task, nil)
             |> assign(:task_id, task_id)
             |> assign(:page_title, "Task")
-            |> assign(:current_run, nil)
             |> assign(:current_role_name, nil)
             |> assign(:runs, [])
             |> assign(:running_action, nil)
@@ -109,12 +98,8 @@ defmodule RailWeb.TaskDetailLive do
             |> assign(:pending_questions, [])
             |> assign(:selected_question_id, nil)
             |> assign(:answer_text, "")
-            |> assign(:ordered_runs, [])
-            |> assign(:selected_role_id, nil)
             |> assign(:selected_run, nil)
-            |> assign(:selected_role, nil)
             |> assign(:roles_map, %{})
-            |> assign_run_events([])
         end
       else
         socket
@@ -269,7 +254,7 @@ defmodule RailWeb.TaskDetailLive do
             class={[@active_tab != :overview && "hidden", "space-y-6"]}
           >
             <!-- Stage Stepper -->
-            <.stage_stepper task={@task} runs={@runs} />
+            <.stage_stepper task={@task} runs={@runs} run={@selected_run} />
 
             <!-- Metadata Wrap -->
             <div
@@ -283,11 +268,11 @@ defmodule RailWeb.TaskDetailLive do
                 data-qa="metadata-status-chip"
                 class={[
                   "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shrink-0",
-                  Formatters.stage_state_color_class(@task, :chip)
+                  RunState.color_class(@task, @selected_run, :chip)
                 ]}
               >
-                <.icon name={Formatters.stage_state_icon(@task)} class="h-4 w-4 shrink-0" />
-                <span>{Formatters.stage_label(@task)}</span>
+                <.icon name={RunState.icon(@task, @selected_run)} class="h-4 w-4 shrink-0" />
+                <span>{StageLabel.stage_label(@task, @selected_run)}</span>
               </span>
 
               <!-- Branch / Worktree Meta -->
@@ -297,7 +282,7 @@ defmodule RailWeb.TaskDetailLive do
                 class="flex items-center gap-1.5 shrink-0 font-mono"
               >
                 <.icon name="pi-tree-structure" class="h-4 w-4 shrink-0" />
-                <span>{branch_name_for(@task)}</span>
+                <span>{@task.worktree_name}</span>
               </div>
 
               <!-- Issue Meta -->
@@ -339,7 +324,7 @@ defmodule RailWeb.TaskDetailLive do
 
             <!-- Conflict Banner -->
             <div
-              :if={Formatters.has_merge_conflicts?(@task) and not @task.is_rebasing}
+              :if={Task.conflicted?(@task)}
               id="conflict-banner"
               data-qa="conflict_banner"
               class="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200"
@@ -354,27 +339,36 @@ defmodule RailWeb.TaskDetailLive do
               </div>
             </div>
 
-            <!-- Error Card -->
+            <!-- Error Card: an error belongs to the run that hit it. -->
             <div
-              :if={is_binary(@task.error) and @task.error != ""}
+              :if={@selected_run != nil and is_binary(@selected_run.error)}
               id="task-error-card"
               data-qa="task_error_card"
               class="p-4 rounded-xl bg-red-100 dark:bg-red-900 border border-red-600 dark:border-red-500 text-red-800 dark:text-red-200"
             >
-              <p class="text-xs font-mono whitespace-pre-wrap leading-relaxed">{@task.error}</p>
+              <p class="text-xs font-mono whitespace-pre-wrap leading-relaxed">{@selected_run.error}</p>
             </div>
 
             <!-- Task Actions Matrix -->
             <.task_actions
               task={@task}
+              run={@selected_run}
               running_action={@running_action}
               design={@design}
               on_action="action_click"
             />
 
             <!-- Pending Question Card on Overview (spec 05 §2.6 / §5) -->
+            <.live_component
+              :if={@task.stage == :product and @selected_run != nil}
+              module={ProductStage}
+              id="product-stage-component"
+              task={@task}
+              run={@selected_run}
+            />
+
             <.answer_field
-              :if={Run.state(@task.run) == :blocked and @pending_question != nil}
+              :if={Run.state(@selected_run) == :blocked and @pending_question != nil}
               question={@pending_question}
               questions={@pending_questions}
               answer_text={@answer_text}
@@ -385,15 +379,15 @@ defmodule RailWeb.TaskDetailLive do
 
             <!-- Demo Panel / No-Demo Banner (spec 05 §2.8 / §9) -->
             <%= if @demo != nil do %>
-              <.demo_panel demo={@demo} task={@task} />
+              <.demo_panel demo={@demo} task={@task} run={@selected_run} />
             <% else %>
-              <.no_demo_banner :if={@task.stage == :ready_to_merge} task={@task} />
+              <.no_demo_banner :if={@task.stage == :ready_to_merge} task={@task} run={@selected_run} />
             <% end %>
 
             <!-- Stage Outcome Component -->
             <.stage_outcome
               task={@task}
-              run={@current_run}
+              run={@selected_run}
               role_name={@current_role_name}
             />
 
@@ -439,19 +433,12 @@ defmodule RailWeb.TaskDetailLive do
             data-qa="tab-conversation-pane"
             class={[@active_tab != :conversation && "hidden"]}
           >
-            <.conversation_tab
+            <.live_component
+              module={RunConversation}
+              id="run-conversation"
               task={@task}
-              ordered_runs={@ordered_runs}
-              selected_run={@selected_run}
-              selected_role_id={@selected_role_id}
-              selected_role={@selected_role}
+              runs={@runs}
               roles_map={@roles_map}
-              log_lines={@log_lines}
-              transcript={@transcript}
-              show_raw_log={@show_raw_log}
-              expanded_activities={@expanded_activities}
-              chat_input={@chat_input}
-              chat_sending={@chat_sending}
             />
           </div>
 
@@ -518,6 +505,7 @@ defmodule RailWeb.TaskDetailLive do
           <.task_action_modals
             active_modal={@active_modal}
             task={@task}
+            run={@selected_run}
             current_role_name={@current_role_name}
           />
 
@@ -589,9 +577,7 @@ defmodule RailWeb.TaskDetailLive do
         Map.get(params, "question_id") ||
           (socket.assigns[:pending_question] && socket.assigns.pending_question.id)
 
-      if question_id do
-        Pipeline.answer_questions(socket.assigns.task, %{question_id => trimmed})
-      end
+      if question_id, do: answer_one(question_id, trimmed)
 
       socket =
         socket
@@ -600,6 +586,17 @@ defmodule RailWeb.TaskDetailLive do
         |> refresh_task()
 
       {:noreply, socket}
+    end
+  end
+
+  def handle_event("send_answers", _params, socket) do
+    case socket.assigns[:selected_run] do
+      %Run{} = run ->
+        _sent = Pipeline.send_answers(run)
+        {:noreply, refresh_task(socket)}
+
+      nil ->
+        {:noreply, socket}
     end
   end
 
@@ -621,116 +618,13 @@ defmodule RailWeb.TaskDetailLive do
     {:noreply, socket}
   end
 
-  def handle_event("select_role", %{"role_id" => role_id}, socket) do
-    ordered_runs = socket.assigns[:ordered_runs] || []
 
-    selected_run =
-      Enum.find(ordered_runs, fn r ->
-        r.role_id == role_id or to_string(r.role_id) == to_string(role_id)
-      end) || socket.assigns[:selected_run]
 
-    roles_map = socket.assigns[:roles_map] || %{}
-    selected_role = resolve_role(role_id, roles_map)
 
-    prev_run_id = socket.assigns[:subscribed_run_id]
-    new_run_id = if selected_run, do: selected_run.id
 
-    sync_run_subscription(socket, prev_run_id, new_run_id)
 
-    socket =
-      socket
-      |> assign(:selected_role_id, role_id)
-      |> assign(:selected_run, selected_run)
-      |> assign(:selected_role, selected_role)
-      |> assign(:subscribed_run_id, new_run_id)
-      |> assign_run_events(load_run_events(selected_run))
 
-    {:noreply, socket}
-  end
 
-  def handle_event("toggle_raw_log", _params, socket) do
-    {:noreply, assign(socket, :show_raw_log, not socket.assigns.show_raw_log)}
-  end
-
-  def handle_event("toggle_activity", %{"index" => idx_val}, socket) do
-    idx =
-      case Integer.parse(to_string(idx_val)) do
-        {num, _rem} -> num
-        :error -> idx_val
-      end
-
-    current_expanded = socket.assigns[:expanded_activities] || MapSet.new()
-
-    new_expanded =
-      if MapSet.member?(current_expanded, idx) do
-        MapSet.delete(current_expanded, idx)
-      else
-        MapSet.put(current_expanded, idx)
-      end
-
-    {:noreply, assign(socket, :expanded_activities, new_expanded)}
-  end
-
-  def handle_event("chat_input_change", %{"message" => message}, socket) do
-    {:noreply, assign(socket, :chat_input, message)}
-  end
-
-  def handle_event("chat_input_change", _params, socket) do
-    {:noreply, socket}
-  end
-
-  def handle_event("send_chat", params, socket) do
-    message = Map.get(params, "message") || socket.assigns[:chat_input] || ""
-    run = socket.assigns[:selected_run]
-
-    if String.trim(message) == "" or socket.assigns[:chat_sending] or is_nil(run) do
-      {:noreply, socket}
-    else
-      socket = assign(socket, :chat_sending, true)
-
-      case Pipeline.send_message(run, message) do
-        {:error, _reason} ->
-          {:noreply, assign(socket, :chat_sending, false)}
-
-        {:ok, _delivery, _run} ->
-          socket =
-            socket
-            |> assign(:chat_sending, false)
-            |> assign(:chat_input, "")
-            |> refresh_task()
-
-          {:noreply, socket}
-      end
-    end
-  end
-
-  def handle_event("stop_run", _params, socket) do
-    case socket.assigns[:selected_run] do
-      %Run{} = run ->
-        {:ok, _run, queued} = Pipeline.stop_run(run)
-
-        socket =
-          socket
-          |> assign(:chat_input, restore_draft(queued, socket.assigns[:chat_input]))
-          |> refresh_task()
-
-        {:noreply, socket}
-
-      _no_run ->
-        {:noreply, socket}
-    end
-  end
-
-  def handle_event("stop_and_send_message", _params, socket) do
-    case socket.assigns[:selected_run] do
-      %Run{} = run ->
-        _sent = Pipeline.stop_and_send_message(run)
-        {:noreply, refresh_task(socket)}
-
-      _no_run ->
-        {:noreply, socket}
-    end
-  end
 
   def handle_event("refresh_diff", _params, socket) do
     {:noreply, do_load_diff(socket)}
@@ -920,46 +814,16 @@ defmodule RailWeb.TaskDetailLive do
 
   def handle_event(_event, _params, socket), do: {:noreply, socket}
 
-  def handle_info({:task_action_started, task_id, kind}, socket) do
-    if socket.assigns[:task] && socket.assigns.task.id == task_id do
-      socket =
-        socket
-        |> assign(:running_action, kind)
-        |> assign(:task, %{socket.assigns.task | error: nil})
 
-      {:noreply, socket}
-    else
-      {:noreply, socket}
-    end
-  end
 
-  def handle_info({:task_action_finished, task_id, _kind}, socket) do
-    if socket.assigns[:task] && socket.assigns.task.id == task_id do
-      socket =
-        socket
-        |> assign(:running_action, nil)
-        |> refresh_task()
 
-      {:noreply, socket}
-    else
-      {:noreply, socket}
-    end
-  end
-
-  def handle_info({:pipeline_changed, %{task_id: task_id}}, socket) do
-    if socket.assigns[:task] && socket.assigns.task.id == task_id do
-      {:noreply, refresh_task(socket)}
-    else
-      {:noreply, socket}
-    end
-  end
-
+  # The conversation owns the log; the page only owns the subscription.
   def handle_info({:run_events, run_id, events}, socket) do
     if socket.assigns[:subscribed_run_id] == run_id do
-      {:noreply, assign_run_events(socket, socket.assigns.run_events ++ events)}
-    else
-      {:noreply, socket}
+      send_update(RunConversation, id: "run-conversation", appended_events: events)
     end
+
+    {:noreply, socket}
   end
 
   def handle_info({:os_process_finished, _run, _outcome}, socket) do
@@ -1055,13 +919,13 @@ defmodule RailWeb.TaskDetailLive do
   end
 
   defp handle_action_click("rerecord_demo", _params, socket) do
-    task = socket.assigns.task
-    execute_action(socket, :rerecord_demo, fn -> Pipeline.rerecord_demo(task) end)
+    run = socket.assigns[:selected_run]
+    execute_action(socket, :rerecord_demo, fn -> Pipeline.rerecord_demo(run) end)
   end
 
   defp handle_action_click("recheck_design", _params, socket) do
-    task = socket.assigns.task
-    execute_action(socket, :recheck_design, fn -> Pipeline.recheck_design(task) end)
+    run = socket.assigns[:selected_run]
+    execute_action(socket, :recheck_design, fn -> Pipeline.recheck_design(run) end)
   end
 
   defp handle_action_click("mark_ready", _params, socket) do
@@ -1141,10 +1005,7 @@ defmodule RailWeb.TaskDetailLive do
     else
       task_id = task.id
 
-      socket =
-        socket
-        |> assign(:running_action, kind)
-        |> assign(:task, %{task | error: nil})
+      socket = assign(socket, :running_action, kind)
 
       socket =
         start_async(socket, {:task_action, kind}, fn ->
@@ -1155,26 +1016,12 @@ defmodule RailWeb.TaskDetailLive do
     end
   end
 
-  defp restore_draft(nil, draft), do: draft || ""
-  defp restore_draft(queued, nil), do: queued
-  defp restore_draft(queued, ""), do: queued
-  defp restore_draft(queued, draft), do: "#{queued}\n\n#{draft}"
+
+
 
   defp task_busy?(task, running_action) do
-    running_action != nil or
-      (is_struct(task) and (task.is_rebasing == true or Formatters.stage_state(task) == :running))
+    running_action != nil or (is_struct(task) and Task.running?(task))
   end
-
-  defp resolve_current_run(%Task{} = task) do
-    run = if is_list(task.runs) and task.runs != [], do: List.last(task.runs)
-
-    role_id = if run != nil and run.role_id != nil, do: run.role_id, else: task.stage
-
-    {run, RailWeb.Components.StageOutcome.format_role_id(role_id)}
-  end
-
-  defp branch_name_for(%Task{worktree_name: "rail/" <> _rest = name}), do: name
-  defp branch_name_for(%Task{worktree_name: name}), do: "rail/#{name}"
 
   defp issue_identifier_for(task) do
     if is_map(task.issue), do: task.issue.identifier
@@ -1199,6 +1046,20 @@ defmodule RailWeb.TaskDetailLive do
     Issue.priority_label(priority || :medium) || "Medium"
   end
 
+  # The ticket is the issue's own body; the plan is the architect's file.
+  defp ticket_content(%Task{issue: %Issue{description: description}}) when is_binary(description) do
+    if String.trim(description) == "", do: "_No ticket body yet._", else: description
+  end
+
+  defp ticket_content(%Task{}), do: "_No ticket body yet._"
+
+  defp plan_content(%Task{} = task) do
+    case Pipeline.get_implementation_plan(task) do
+      {:ok, %{content: content}} -> if String.trim(content) == "", do: nil, else: content
+      {:error, :not_found} -> nil
+    end
+  end
+
   defp refresh_task(socket) do
     case Pipeline.get_task(socket.assigns.task_id) do
       {:ok, task} -> apply_task_data(socket, task)
@@ -1209,31 +1070,15 @@ defmodule RailWeb.TaskDetailLive do
   defp apply_task_data(socket, task) do
     scope = socket.assigns.current_scope
     roles = if task.project_id, do: Rail.Roles.list_roles(scope, task.project_id), else: []
-    roles_map = Map.new(roles, fn r -> {r.id, r} end)
-    pending_questions = resolve_pending_questions(task)
+    roles_map = Map.new(roles, fn role -> {role.id, role} end)
 
-    {current_run, role_name} = resolve_current_run(task)
-
-    design =
-      task.design ||
-        if(is_list(task.designs) and task.designs != [], do: List.last(task.designs))
-
-    demo =
-      task.demo ||
-        if(is_list(task.demos) and task.demos != [], do: List.last(task.demos))
-
-    running_action = socket.assigns[:running_action] || TaskActionRunner.running_on(task.id)
+    # The page follows the run for the stage the task is at; the conversation
+    # follows whichever run the human picked there.
+    selected_run = stage_run(task)
+    pending_questions = resolve_pending_questions(selected_run)
     pending_question = select_pending_question(pending_questions, socket.assigns[:selected_question_id])
-    selected_question_id = question_id(pending_question)
 
-    ordered_runs = sort_runs(task.runs || [])
-    selected_role_id = resolve_selected_role_id(ordered_runs, socket.assigns[:selected_role_id])
-    selected_run = find_selected_run(ordered_runs, selected_role_id)
-    selected_role = if selected_role_id, do: resolve_role(selected_role_id, roles_map)
-
-    prev_run_id = socket.assigns[:subscribed_run_id]
-    new_run_id = if selected_run, do: selected_run.id
-    sync_run_subscription(socket, prev_run_id, new_run_id)
+    sync_run_subscription(socket, selected_run)
 
     socket
     |> assign(:task, task)
@@ -1241,34 +1086,65 @@ defmodule RailWeb.TaskDetailLive do
     |> assign(:page_title, task.issue && task.issue.title)
     |> assign(:project_id, task.project_id)
     |> assign(:current_project_id, task.project_id)
-    |> assign(:current_run, current_run)
-    |> assign(:current_role_name, role_name)
+    |> assign(:current_role_name, role_name(selected_run, roles_map))
     |> assign(:runs, task.runs || [])
-    |> assign(:running_action, running_action)
-    |> assign(:design, design)
-    |> assign(:demo, demo)
-    |> assign(:ticket_content, Formatters.ticket_for(task))
-    |> assign(:plan_content, Formatters.plan_for(task))
+    |> assign(:running_action, socket.assigns[:running_action] || TaskActionRunner.running_on(task.id))
+    |> assign(:design, Artifacts.latest_design(task))
+    |> assign(:demo, Artifacts.latest_demo(task))
+    |> assign(:ticket_content, ticket_content(task))
+    |> assign(:plan_content, plan_content(task))
     |> assign(:pending_question, pending_question)
     |> assign(:pending_questions, pending_questions)
-    |> assign(:selected_question_id, selected_question_id)
+    |> assign(:selected_question_id, question_id(pending_question))
     |> assign(:roles_map, roles_map)
-    |> assign(:ordered_runs, ordered_runs)
-    |> assign(:selected_role_id, selected_role_id)
     |> assign(:selected_run, selected_run)
-    |> assign(:selected_role, selected_role)
-    |> assign(:subscribed_run_id, new_run_id)
+    |> assign(:subscribed_run_id, selected_run && selected_run.id)
     |> assign(:viewed_diff_files, task.viewed_diff_files || %{})
-    |> assign_run_events(load_run_events(selected_run))
   end
 
-  # A run can ask several things at once, so a blocked task shows the whole queue as
+  # The run for the stage this task sits at, picked out of the runs already loaded.
+  # `:ready_to_merge` and `:merged` have no role of their own, so what the page
+  # reads there is the last run that did any work.
+  defp stage_run(%Task{runs: runs} = task) when is_list(runs) do
+    stage = if task.is_rebasing, do: :engineer, else: task.stage
+
+    Enum.find(runs, &(&1.role.stage == stage)) || latest_run(task.stage, runs)
+  end
+
+  defp latest_run(stage, runs) when stage in [:ready_to_merge, :merged] do
+    Enum.max_by(runs, & &1.started_at, DateTime, fn -> nil end)
+  end
+
+  defp latest_run(_stage, _runs), do: nil
+
+  defp role_name(%Run{role_id: role_id}, roles_map) do
+    case Map.get(roles_map, role_id) do
+      %{name: name} -> name
+      nil -> RailWeb.Components.StageOutcome.format_role_id(role_id)
+    end
+  end
+
+  defp role_name(nil, _roles_map), do: nil
+
+  # A run can ask several things at once, so a blocked run shows the whole queue as
   # tabs, in the order they were asked.
-  defp resolve_pending_questions(%{run: %Run{status: :blocked_on_input}, id: task_id}) do
+  defp resolve_pending_questions(%Run{status: :blocked_on_input, task_id: task_id}) do
     Pipeline.list_questions(task_id, status: :pending, order_by: [asc: :inserted_at, asc: :id])
   end
 
-  defp resolve_pending_questions(_task), do: []
+  defp resolve_pending_questions(_not_blocked), do: []
+
+  # `run:<id>` carries the run's log lines and the finish of its OS process. A
+  # LiveComponent cannot subscribe, so the page holds this and forwards.
+  defp sync_run_subscription(socket, run) do
+    previous = socket.assigns[:subscribed_run_id]
+    current = run && run.id
+
+    if connected?(socket) and current != previous do
+      if previous, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "run:#{previous}")
+      if current, do: Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{current}")
+    end
+  end
 
   # The tab the human picked stays put across refreshes; once it is answered the
   # front of the queue takes over.
@@ -1279,87 +1155,10 @@ defmodule RailWeb.TaskDetailLive do
   defp question_id(%{id: id}), do: id
   defp question_id(_none), do: nil
 
-  defp resolve_selected_role_id(ordered_runs, current_selected_role_id) do
-    cond do
-      current_selected_role_id &&
-          Enum.any?(ordered_runs, fn r ->
-            r.role_id == current_selected_role_id or
-                to_string(r.role_id) == to_string(current_selected_role_id)
-          end) ->
-        current_selected_role_id
 
-      ordered_runs != [] ->
-        List.last(ordered_runs).role_id
-
-      true ->
-        nil
-    end
-  end
-
-  defp find_selected_run(ordered_runs, selected_role_id) do
-    if selected_role_id do
-      Enum.find(ordered_runs, fn r ->
-        r.role_id == selected_role_id or to_string(r.role_id) == to_string(selected_role_id)
-      end) || List.last(ordered_runs)
-    else
-      List.last(ordered_runs)
-    end
-  end
 
   # `run:<id>` carries the run's log lines and the finish of its OS process.
-  defp sync_run_subscription(socket, prev_run_id, new_run_id) do
-    if connected?(socket) and new_run_id != prev_run_id do
-      if prev_run_id, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "run:#{prev_run_id}")
-      if new_run_id, do: Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{new_run_id}")
-    end
-  end
 
-  defp load_run_events(%Run{} = run), do: Runs.list_run_events(run)
-  defp load_run_events(_other), do: []
-
-  # `:run_events` is the log the page holds; the rendered lines and the parsed
-  # transcript are derived from it, so an appended batch only updates one list.
-  defp assign_run_events(socket, run_events) do
-    lines = Enum.map(run_events, & &1.line)
-
-    socket
-    |> assign(:run_events, run_events)
-    |> assign(:log_lines, lines)
-    |> assign(:transcript, ChatTranscript.parse(lines))
-  end
-
-  defp sort_runs(runs) do
-    Enum.sort_by(runs, fn r ->
-      {r.started_at || ~U[1970-01-01 00:00:00Z], r.inserted_at || ~U[1970-01-01 00:00:00Z], r.id || ""}
-    end)
-  end
-
-  defp resolve_role(role_id, roles_map) do
-    if is_map(roles_map) and Map.has_key?(roles_map, role_id) do
-      role = Map.get(roles_map, role_id)
-      %{id: role_id, name: role.name, icon_name: Map.get(role, :icon_name, "pi-terminal-window")}
-    else
-      %{id: role_id, name: format_role_id(role_id), icon_name: "pi-terminal-window"}
-    end
-  end
-
-  defp format_role_id(role_id) do
-    role_id
-    |> to_string()
-    |> String.split("_")
-    |> Enum.map_join(" ", &String.capitalize/1)
-  end
-
-  defp maybe_load_diff(socket, :diff) do
-    task = socket.assigns.task
-
-    if task && Task.worktree_present?(task) && socket.assigns.file_diffs == [] &&
-         not socket.assigns.loading_diff do
-      do_load_diff(socket)
-    else
-      socket
-    end
-  end
 
   defp maybe_load_diff(socket, _other_tab), do: socket
 
@@ -1382,6 +1181,12 @@ defmodule RailWeb.TaskDetailLive do
         |> assign(:file_diffs, [])
         |> assign(:diff_rev, nil)
         |> assign(:loading_diff, false)
+    end
+  end
+
+  defp answer_one(question_id, answer) do
+    with {:ok, question} <- Pipeline.get_question(question_id) do
+      Pipeline.answer_question(question, answer)
     end
   end
 

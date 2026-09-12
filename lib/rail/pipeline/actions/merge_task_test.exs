@@ -301,7 +301,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     LinearMock.mock_update_issue_success(%{"id" => "lin_iss_ext_1"})
 
     {:ok, issue} =
-      Issues.update_issue(system_scope(), issue, %{
+      Issues.update_issue(issue, %{
         state: :in_progress,
         branch_name: "feature-branch"
       })
@@ -351,7 +351,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_merge_done"})
 
-    assert {:ok, %Task{stage: :merged, merged_at: %DateTime{}, error: nil}} =
+    assert {:ok, %Task{stage: :merged, merged_at: %DateTime{}}} =
              Pipeline.merge_task(task, [])
 
     refute File.exists?(worktree_path)
@@ -576,7 +576,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, issue} = Issues.capture_issue(system_scope(), project, "Merge Task Issue 9223")
 
     {:ok, issue} =
-      Issues.update_issue(system_scope(), issue, %{
+      Issues.update_issue(issue, %{
         branch_name: "issue-branch-name"
       })
 

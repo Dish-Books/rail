@@ -7,7 +7,7 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Plan
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
@@ -149,8 +149,8 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
 
     assert {:ok, %Task{id: task_id}} = capture_scratch(:architect, %{task | scratch_path: scratch_dir})
 
-    plan = Repo.one(from p in Plan, where: p.task_id == ^task_id)
-    assert %Plan{content: "## Implementation plan\nStep A\nStep B"} = plan
+    plan = Repo.one(from p in ImplementationPlan, where: p.task_id == ^task_id)
+    assert %ImplementationPlan{content: "## Implementation plan\nStep A\nStep B"} = plan
   end
 
   test "capture_scratch for architect captures plan from plans/identifier.md if plan.md missing", %{
@@ -180,8 +180,8 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
 
     assert {:ok, %Task{id: task_id}} = capture_scratch(:architect, %{task | scratch_path: scratch_dir})
 
-    plan = Repo.one(from p in Plan, where: p.task_id == ^task_id)
-    assert %Plan{content: "## Implementation plan\nFrom subfolder"} = plan
+    plan = Repo.one(from p in ImplementationPlan, where: p.task_id == ^task_id)
+    assert %ImplementationPlan{content: "## Implementation plan\nFrom subfolder"} = plan
   end
 
   test "capture_scratch delegates to artifacts for design, qa, demo when manifests exist", %{task: task} do

@@ -4,7 +4,6 @@ defmodule Rail.Runs.Actions.StartOsProcess do
   import Rail.Runs.Utils.EnsureExecutable
 
   alias Rail.Backends.Schemas.Backend
-  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
@@ -27,8 +26,8 @@ defmodule Rail.Runs.Actions.StartOsProcess do
   task. Returns `{:ok, os_process}` with its `:run` and `:task` loaded, or
   `{:error, {:spawn_failed, reason, run}}` with the reason recorded on the run.
 
-  Returns `{:error, :dispatch_disabled}` when `RAIL_NO_DISPATCH=1` is set or the
-  `:no_dispatch` config is on. This is the one gate on invoking an agent CLI, so
+  Returns `{:error, :dispatch_disabled}` when dispatch is switched off. This is
+  the one gate on invoking an agent CLI, so
   it sits here rather than at each of the places that decide to: Rail still moves
   tasks, records runs and renders everything, it just never spawns.
   """
@@ -40,9 +39,7 @@ defmodule Rail.Runs.Actions.StartOsProcess do
     end
   end
 
-  defp dispatch_disabled? do
-    System.get_env("RAIL_NO_DISPATCH") == "1" or Application.get_env(:rail, :no_dispatch, false)
-  end
+  defp dispatch_disabled?, do: Application.get_env(:rail, :no_dispatch, false)
 
   defp spawn_os_process(%Run{} = run, argv) do
     run = Repo.preload(run, [:task, role: :backend])
@@ -67,10 +64,9 @@ defmodule Rail.Runs.Actions.StartOsProcess do
   defp finalize(task, run, os_process) do
     {:ok, run} =
       run
-      |> Run.changeset(%{pending_answer: nil, attempt_log_lines: 0, error: nil})
+      |> Run.changeset(%{pending_answer: nil, error: nil})
       |> Repo.update()
 
-    Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :dispatched})
 
     {:ok, %{os_process | run: run, task: task}}
   end
@@ -87,7 +83,6 @@ defmodule Rail.Runs.Actions.StartOsProcess do
         run |> Run.changeset(%{error: "Failed to spawn runner: #{inspect(reason)}"}) |> Repo.update!()
       end
 
-    Pipeline.broadcast_pipeline_changed(%{task_id: run.task_id, event: :dispatch_failed})
 
     {:error, {:spawn_failed, reason, run}}
   end

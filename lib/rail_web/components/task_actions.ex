@@ -9,11 +9,12 @@ defmodule RailWeb.Components.TaskActions do
 
   import RailWeb.CoreComponents, only: [icon: 1]
 
-  alias Rail.Domain.Formatters
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Runs.Schemas.Run
   alias Rail.Pipeline.TaskActionRunner
 
   attr :task, :any, required: true
+  attr :run, :any, default: nil
   attr :running_action, :atom, default: nil
   attr :design, :any, default: nil
   attr :on_action, :string, default: "action_click"
@@ -21,9 +22,7 @@ defmodule RailWeb.Components.TaskActions do
   attr :class, :string, default: nil
 
   def task_actions(assigns) do
-    actions = build_actions(assigns.task, assigns.design)
-
-    assigns = assign(assigns, :actions, actions)
+    assigns = assign(assigns, :actions, build_actions(assigns.task, assigns.run, assigns.design))
 
     ~H"""
     <div
@@ -32,7 +31,7 @@ defmodule RailWeb.Components.TaskActions do
       class={["flex flex-wrap items-center gap-2", @class]}
     >
       <%= for action <- @actions do %>
-        <% is_disabled = action_disabled?(@task, action.kind, @running_action)
+        <% is_disabled = action_disabled?(@run, action.kind, @running_action)
 
         show_spinner =
           @running_action == action.kind and TaskActionRunner.shows_progress?(action.kind)
@@ -89,28 +88,26 @@ defmodule RailWeb.Components.TaskActions do
 
   # Helpers for building the exact action list per spec 05 §6.3 and §6.4
 
-  defp build_actions(nil, _design), do: []
+  defp build_actions(nil, _run, _design), do: []
 
-  defp build_actions(task, design) do
+  defp build_actions(task, run, design) do
     is_merged = merged?(task)
-    conflicted = Formatters.has_merge_conflicts?(task) and not task.is_rebasing and not is_merged
+    conflicted = Task.conflicted?(task) and not is_merged
 
     {stage_actions, rebase_offered} =
       if is_merged do
         {[], false}
       else
-        build_stage_actions(task, design, conflicted)
+        build_stage_actions(task, run, design, conflicted)
       end
 
-    trailing_actions = build_trailing_actions(task, conflicted, rebase_offered)
-
-    stage_actions ++ trailing_actions
+    stage_actions ++ build_trailing_actions(task, run, conflicted, rebase_offered)
   end
 
-  defp build_stage_actions(task, design, conflicted) do
-    case Formatters.stage_state(task) do
+  defp build_stage_actions(task, run, design, conflicted) do
+    case Run.state(run) do
       :done ->
-        build_awaiting_approval_actions(task, design, conflicted)
+        build_awaiting_approval_actions(task, run, design, conflicted)
 
       :failed ->
         {build_failed_actions(task), false}
@@ -131,13 +128,13 @@ defmodule RailWeb.Components.TaskActions do
     end
   end
 
-  defp build_awaiting_approval_actions(task, design, conflicted) do
+  defp build_awaiting_approval_actions(task, _run, design, conflicted) do
     cond do
       task.stage == :ready_to_merge ->
         build_ready_to_merge_actions(task, conflicted)
 
-      task.stage == :design and is_nil(get_picked_key(design, task)) ->
-        build_design_pick_actions(task, design)
+      task.stage == :design and is_nil(picked_key(design)) ->
+        build_design_pick_actions(design)
 
       Task.gate?(task.stage) ->
         actions = [
@@ -248,11 +245,11 @@ defmodule RailWeb.Components.TaskActions do
     end
   end
 
-  defp build_design_pick_actions(task, design) do
-    directions = get_directions(design, task)
+  defp build_design_pick_actions(design) do
+    pickable = directions(design)
 
     direction_actions =
-      Enum.map(directions, fn dir ->
+      Enum.map(pickable, fn dir ->
         %{
           id: "action-pick-design-#{dir.key}",
           label: "Use #{dir.title}",
@@ -331,7 +328,7 @@ defmodule RailWeb.Components.TaskActions do
     stage_specific
   end
 
-  defp build_trailing_actions(task, conflicted, rebase_offered) do
+  defp build_trailing_actions(task, run, conflicted, rebase_offered) do
     chat_btn = %{
       id: "action-chat",
       label: "Chat",
@@ -355,7 +352,7 @@ defmodule RailWeb.Components.TaskActions do
     trailing = [chat_btn]
 
     trailing =
-      if conflicted and not rebase_offered and Formatters.stage_state(task) != :running do
+      if conflicted and not rebase_offered and not Run.running?(run) do
         rebase_btn = %{
           id: "action-rebase",
           label: "Rebase branch",
@@ -393,11 +390,8 @@ defmodule RailWeb.Components.TaskActions do
     Enum.reverse([cleanup_btn | trailing])
   end
 
-  defp action_disabled?(_task, nil, _running_kind), do: false
-
-  defp action_disabled?(task, _kind, running_kind) do
-    running_kind != nil or Formatters.stage_state(task) == :running
-  end
+  defp action_disabled?(_run, nil, _running_kind), do: false
+  defp action_disabled?(run, _kind, running_kind), do: running_kind != nil or Run.running?(run)
 
   defp button_style_class(:filled) do
     "px-4 py-2 rounded-full text-xs font-semibold inline-flex items-center gap-2 transition-colors bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-600 dark:hover:bg-blue-500/90 cursor-pointer shadow-xs"
@@ -415,31 +409,10 @@ defmodule RailWeb.Components.TaskActions do
     task.stage == :merged or is_struct(task.merged_at, DateTime)
   end
 
-  defp get_picked_key(design, task) do
-    cond do
-      is_map(design) and Map.has_key?(design, :picked_key) ->
-        design.picked_key
+  # The design is handed in by whoever is drawing this; a task carries no copy.
+  defp picked_key(%{picked_key: picked_key}), do: picked_key
+  defp picked_key(_no_design), do: nil
 
-      is_list(Map.get(task, :designs)) and task.designs != [] ->
-        latest = Enum.max_by(task.designs, & &1.version)
-        latest.picked_key
-
-      true ->
-        nil
-    end
-  end
-
-  defp get_directions(design, task) do
-    cond do
-      is_map(design) and is_list(Map.get(design, :directions)) ->
-        design.directions
-
-      is_list(Map.get(task, :designs)) and task.designs != [] ->
-        latest = Enum.max_by(task.designs, & &1.version)
-        latest.directions || []
-
-      true ->
-        []
-    end
-  end
+  defp directions(%{directions: directions}) when is_list(directions), do: directions
+  defp directions(_no_design), do: []
 end

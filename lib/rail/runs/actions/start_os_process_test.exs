@@ -1,5 +1,5 @@
 defmodule Rail.Runs.Actions.StartOsProcessTest do
-  use Rail.DataCase, async: true
+  use Rail.DataCase, async: false
 
   alias Rail.Backends
   alias Rail.Backends.Schemas.Backend
@@ -12,6 +12,14 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Tools
+
+  setup do
+    # These tests are about the spawn itself, so they turn dispatch back on.
+    previous = Application.get_env(:rail, :no_dispatch)
+    Application.put_env(:rail, :no_dispatch, false)
+    on_exit(fn -> Application.put_env(:rail, :no_dispatch, previous) end)
+    :ok
+  end
 
   setup do
     scope = system_scope()
@@ -62,7 +70,6 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
       |> Task.changeset(
         %{
           stage: :engineer,
-          stage_state: :queued,
           worktree_name: "start-run-#{unique}",
           worktree_path: worktree_path,
           scratch_path: scratch_path
@@ -160,8 +167,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
 
     result = Runs.start_os_process(run, ["--help"])
 
-    assert {:error,
-            {:spawn_failed, {:missing_binary, ^missing_bin, %OsProcess{status: :finished}}, %Task{stage_state: :failed}}} =
+    assert {:error, {:spawn_failed, {:missing_binary, ^missing_bin, %OsProcess{status: :finished}}, %Run{}}} =
              result
 
     reloaded_run = Repo.get!(Run, run.id)

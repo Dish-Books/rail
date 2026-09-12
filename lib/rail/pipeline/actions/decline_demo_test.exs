@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.DeclineDemoTest do
   use Rail.DataCase, async: true
 
-  import RailTest.PipelineHelpers
+  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Demo
@@ -79,14 +79,12 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :demo,
-        error: "Previous error"
       })
 
     assert {:ok,
             %Task{
               id: task_id,
               stage: :ready_to_merge,
-              error: nil
             }} = Pipeline.decline_demo(task)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :demo_declined}}

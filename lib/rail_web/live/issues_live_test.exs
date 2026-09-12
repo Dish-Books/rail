@@ -167,7 +167,7 @@ defmodule RailWeb.IssuesLiveTest do
     LinearMock.mock_update_issue_success(%{"id" => issue.external_id})
 
     {:ok, issue} =
-      Issues.update_issue(system_scope(), issue, %{
+      Issues.update_issue(issue, %{
         description: "Deduplicated title\nDetailed explanation of the issue.",
         priority: :urgent,
         state: :in_progress,
@@ -238,7 +238,7 @@ defmodule RailWeb.IssuesLiveTest do
     {:ok, issue_urgent} = Issues.capture_issue(system_scope(), project, "Urgent issue")
 
     {:ok, issue_urgent} =
-      Issues.update_issue(system_scope(), issue_urgent, %{
+      Issues.update_issue(issue_urgent, %{
         priority: :urgent,
         state: :backlog
       })
@@ -252,7 +252,7 @@ defmodule RailWeb.IssuesLiveTest do
     {:ok, issue_high_1} = Issues.capture_issue(system_scope(), project, "High issue 1")
 
     {:ok, issue_high_1} =
-      Issues.update_issue(system_scope(), issue_high_1, %{
+      Issues.update_issue(issue_high_1, %{
         priority: :high,
         state: :backlog
       })
@@ -266,7 +266,7 @@ defmodule RailWeb.IssuesLiveTest do
     {:ok, issue_high_2} = Issues.capture_issue(system_scope(), project, "High issue 2")
 
     {:ok, issue_high_2} =
-      Issues.update_issue(system_scope(), issue_high_2, %{
+      Issues.update_issue(issue_high_2, %{
         priority: :high,
         state: :backlog
       })
@@ -280,7 +280,7 @@ defmodule RailWeb.IssuesLiveTest do
     {:ok, issue_low} = Issues.capture_issue(system_scope(), project, "Low issue")
 
     {:ok, issue_low} =
-      Issues.update_issue(system_scope(), issue_low, %{
+      Issues.update_issue(issue_low, %{
         priority: :low,
         state: :backlog
       })
@@ -371,7 +371,7 @@ defmodule RailWeb.IssuesLiveTest do
     LinearMock.mock_update_issue_success(%{"id" => active_issue.external_id})
 
     {:ok, active_issue} =
-      Issues.update_issue(system_scope(), active_issue, %{
+      Issues.update_issue(active_issue, %{
         state: :in_progress
       })
 
@@ -384,7 +384,7 @@ defmodule RailWeb.IssuesLiveTest do
     {:ok, done_issue} = Issues.capture_issue(system_scope(), project, "Done task")
 
     {:ok, done_issue} =
-      Issues.update_issue(system_scope(), done_issue, %{
+      Issues.update_issue(done_issue, %{
         state: :done
       })
 
@@ -458,7 +458,7 @@ defmodule RailWeb.IssuesLiveTest do
     {:ok, issue} = Issues.capture_issue(system_scope(), project, "Bring local feature")
 
     {:ok, issue} =
-      Issues.update_issue(system_scope(), issue, %{
+      Issues.update_issue(issue, %{
         state: :backlog
       })
 
@@ -536,7 +536,7 @@ defmodule RailWeb.IssuesLiveTest do
     LinearMock.mock_update_issue_success(%{"id" => "lin_ed_1"})
 
     {:ok, issue} =
-      Issues.update_issue(system_scope(), issue, %{
+      Issues.update_issue(issue, %{
         description: "Initial description",
         priority: :low
       })
@@ -653,7 +653,7 @@ defmodule RailWeb.IssuesLiveTest do
     {:ok, issue} = Issues.capture_issue(system_scope(), project, "Issue to archive")
 
     {:ok, issue} =
-      Issues.update_issue(system_scope(), issue, %{
+      Issues.update_issue(issue, %{
         state: :backlog
       })
 
@@ -816,12 +816,8 @@ defmodule RailWeb.IssuesLiveTest do
           state: :in_progress,
           branch_name: "feat-mock-2"
         },
-        task: %Task{
-          id: "tsk_mock_2",
-          stage: :engineer,
-          run: %Run{status: :running},
-          issue: nil
-        }
+        task: %Task{id: "tsk_mock_2", stage: :engineer, issue: nil},
+        run: %Run{status: :running}
       )
 
     assert rendered_with_task =~ "Engineer running"
