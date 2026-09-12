@@ -101,7 +101,6 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_run/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -151,7 +150,6 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_run/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -187,7 +185,6 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_run/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -222,7 +219,6 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_run/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -251,7 +247,6 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       |> OsProcess.changeset(%{
         run_id: run_err.id,
         task_id: run_err.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_run/#{run_err.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -284,7 +279,6 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_run/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,

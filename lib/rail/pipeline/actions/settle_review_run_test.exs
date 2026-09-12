@@ -114,7 +114,6 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_review/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -209,7 +208,6 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_review/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -273,7 +271,6 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_review/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -327,7 +324,6 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_review/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -400,7 +396,6 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_review/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -453,7 +448,6 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_review/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -519,7 +513,6 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_review/#{run.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -595,7 +588,6 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
       |> OsProcess.changeset(%{
         run_id: run2.id,
         task_id: run2.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_review/#{run2.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -650,7 +642,6 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_review/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,

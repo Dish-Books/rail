@@ -21,7 +21,6 @@ defmodule Rail.Runs.Utils.EnsureExecutableTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/ensure_executable/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :starting,

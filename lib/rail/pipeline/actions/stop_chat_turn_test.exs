@@ -145,7 +145,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
     |> OsProcess.changeset(%{
       run_id: run_id,
       task_id: task_id,
-      kind: :chat,
+      is_chat: true,
       stream_path: "/tmp/stop_chat_turn/#{run_id}.ndjson",
       node: to_string(Node.self()),
       status: :running,

@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Projects
+  alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -80,7 +81,11 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
       })
 
     {:ok, q_answered} = Pipeline.register_question(task, %{prompt: "P1 Answered"})
-    {:ok, _q_answered} = Pipeline.answer_question(q_answered, "Because")
+
+    {:ok, _q_answered} =
+      q_answered
+      |> Question.changeset(%{answer: "Because", status: :answered, answered_at: DateTime.utc_now()})
+      |> Repo.update()
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_list_questions_2",
@@ -150,7 +155,11 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
       })
 
     {:ok, q_answered} = Pipeline.register_question(task, %{prompt: "Answered question?"})
-    {:ok, _q_answered} = Pipeline.answer_question(q_answered, "Because")
+
+    {:ok, _q_answered} =
+      q_answered
+      |> Question.changeset(%{answer: "Because", status: :answered, answered_at: DateTime.utc_now()})
+      |> Repo.update()
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_list_questions_pending",

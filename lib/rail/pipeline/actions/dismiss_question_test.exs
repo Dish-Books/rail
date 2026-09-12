@@ -135,7 +135,11 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
       })
 
     {:ok, q_answered} = Pipeline.register_question(task, %{prompt: "Answered question?"})
-    {:ok, q_answered} = Pipeline.answer_question(q_answered, "Yes")
+
+    {:ok, q_answered} =
+      q_answered
+      |> Question.changeset(%{answer: "Yes", status: :answered, answered_at: DateTime.utc_now()})
+      |> Repo.update()
 
     assert {:error, :already_resolved} = Pipeline.dismiss_question(q_answered.id)
   end

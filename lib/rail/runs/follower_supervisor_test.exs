@@ -31,7 +31,6 @@ defmodule Rail.Runs.FollowerSupervisorTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
         status: :running,

@@ -3,18 +3,21 @@ defmodule Rail.Runs.Schemas.OsProcess do
   Schema for one OS process executing an agent run.
 
   A run spawns a new OS process for each attempt, chat turn, and rebase.
+
+  `is_chat` says who settles the process when it exits: a chat turn rides
+  alongside the stage and leaves it alone, everything else settles it.
   """
   use Rail.Schema
 
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Runs.Schemas.Run
 
-  @kinds [:stage, :chat, :rebase, :probe, :improve]
   @statuses [:starting, :running, :finished, :adopted_dead, :blocked_on_input, :unwatched, :failed]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "proc"}
   schema "os_processes" do
-    field :kind, Ecto.Enum, values: @kinds
+    field :is_chat, :boolean, default: false
+    field :start_seq, :integer, default: 1
     field :os_pid, :integer
     field :stream_path, :string
     field :node, :string
@@ -30,7 +33,8 @@ defmodule Rail.Runs.Schemas.OsProcess do
   @cast_fields [
     :run_id,
     :task_id,
-    :kind,
+    :is_chat,
+    :start_seq,
     :os_pid,
     :stream_path,
     :node,
@@ -41,7 +45,6 @@ defmodule Rail.Runs.Schemas.OsProcess do
   @required_fields [
     :run_id,
     :task_id,
-    :kind,
     :stream_path,
     :node,
     :status,
@@ -58,6 +61,5 @@ defmodule Rail.Runs.Schemas.OsProcess do
     |> foreign_key_constraint(:run_id)
   end
 
-  def kinds, do: @kinds
   def statuses, do: @statuses
 end

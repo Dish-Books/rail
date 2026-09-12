@@ -5,8 +5,11 @@ defmodule Rail.Pipeline do
   """
 
   alias Rail.Pipeline.Actions
+  alias Rail.Pipeline.Utils
 
   defdelegate settle_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleRun
+  defdelegate run_finished(os_process, outcome \\ %{}, opts \\ []), to: Utils.RunFinished
+  defdelegate send_run_message(run, text, opts \\ []), to: Utils.SendRunMessage
 
   defdelegate settle_product_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleProductRun
   defdelegate settle_design_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleDesignRun
@@ -87,8 +90,9 @@ defmodule Rail.Pipeline do
   defdelegate register_question(task_or_id, question_or_attrs), to: Actions.RegisterQuestion
   defdelegate register_questions(task_or_id, run_or_id, questions, opts \\ []), to: Actions.RegisterQuestion
 
-  defdelegate answer_question(scope, question_or_id, answer_text), to: Actions.AnswerQuestion
-  defdelegate answer_question(question_or_id, answer_text), to: Actions.AnswerQuestion
+  defdelegate answer_questions(scope, task_or_id, answers, opts), to: Actions.AnswerQuestions
+  defdelegate answer_questions(a, b, c), to: Actions.AnswerQuestions
+  defdelegate answer_questions(task_or_id, answers), to: Actions.AnswerQuestions
 
   defdelegate dismiss_question(scope, question_or_id), to: Actions.DismissQuestion
   defdelegate dismiss_question(question_or_id), to: Actions.DismissQuestion

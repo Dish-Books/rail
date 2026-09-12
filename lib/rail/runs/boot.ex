@@ -108,7 +108,7 @@ defmodule Rail.Runs.Boot do
     end
   end
 
-  defp handle_live_os_process(os_process, opts) do
+  defp handle_live_os_process(os_process, _opts) do
     case Registry.lookup(Rail.Runs.FollowerRegistry, os_process.id) do
       [{pid, _val}] ->
         {:already_following, os_process, pid}
@@ -132,8 +132,7 @@ defmodule Rail.Runs.Boot do
           os_pid: os_process.os_pid,
           next_seq: max_seq + 1,
           skip_log_lines: (os_process.run && os_process.run.attempt_log_lines) || 0,
-          backend: backend_for(os_process.run),
-          on_finished: Keyword.get(opts, :on_finished)
+          backend: backend_for(os_process.run)
         ]
 
         case FollowerSupervisor.start_follower(follower_opts) do
@@ -169,7 +168,7 @@ defmodule Rail.Runs.Boot do
     _error -> :ok
   end
 
-  defp handle_dead_os_process(os_process, now, opts) do
+  defp handle_dead_os_process(os_process, now, _opts) do
     run = os_process.run || Repo.get(Run, os_process.run_id)
     backend = backend_for(run)
 
@@ -238,26 +237,12 @@ defmodule Rail.Runs.Boot do
         run: updated_run
       }
 
-      # Questions register before the run settles, so whoever handles `on_finished`
-      # already sees the task parked on them.
-      if run.task_id && updated_event_state.detected_questions != [] && updated_os_process.kind != :chat do
-        Pipeline.register_questions(
-          run.task_id,
-          run.id,
-          updated_event_state.detected_questions
-        )
-      end
-
-      # Every stage run settles the same way before anything stage-specific is told
-      # about it; `on_finished` is only asked where a clean run goes next.
-      if updated_os_process.kind != :chat, do: Pipeline.settle_run(updated_os_process, outcome)
+      # A process adopted dead settles exactly as one this node watched exit: the row
+      # says which task and run it belonged to and whether it was a chat turn.
+      Pipeline.run_finished(updated_os_process, outcome)
 
       # coveralls-ignore-stop
-      if is_function(Keyword.get(opts, :on_finished), 2) do
-        opts[:on_finished].(updated_os_process, outcome)
-      else
-        Runs.on_os_process_finished(updated_os_process, outcome)
-      end
+      Runs.on_os_process_finished(updated_os_process, outcome)
 
       Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:os_process_finished, updated_os_process, outcome})
     end

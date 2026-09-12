@@ -44,7 +44,6 @@ defmodule Rail.Runs.BootTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
         status: :running,
@@ -92,7 +91,6 @@ defmodule Rail.Runs.BootTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
         status: :running,
@@ -134,7 +132,6 @@ defmodule Rail.Runs.BootTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
         status: :running,
@@ -174,7 +171,6 @@ defmodule Rail.Runs.BootTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
         status: :starting,
@@ -211,7 +207,6 @@ defmodule Rail.Runs.BootTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
         status: :starting,
@@ -243,7 +238,6 @@ defmodule Rail.Runs.BootTest do
     Repo.insert!(%OsProcess{
       run_id: run.id,
       task_id: run.task_id,
-      kind: :stage,
       stream_path: stream_path,
       node: "other_node@remote_host",
       status: :running,
@@ -255,7 +249,6 @@ defmodule Rail.Runs.BootTest do
     Repo.insert!(%OsProcess{
       run_id: run.id,
       task_id: run.task_id,
-      kind: :stage,
       stream_path: stream_path,
       node: to_string(Node.self()),
       status: :finished,
@@ -283,8 +276,6 @@ defmodule Rail.Runs.BootTest do
   end
 
   test "settles dead run with various error and stderr combinations", %{tmp_dir: tmp_dir} do
-    test_pid = self()
-
     # Case 1: both result_error and stderr
     run1 =
       %Run{}
@@ -303,7 +294,6 @@ defmodule Rail.Runs.BootTest do
     Repo.insert!(%OsProcess{
       run_id: run1.id,
       task_id: run1.task_id,
-      kind: :stage,
       stream_path: stream1,
       node: to_string(Node.self()),
       status: :running,
@@ -311,14 +301,11 @@ defmodule Rail.Runs.BootTest do
       started_at: DateTime.utc_now()
     })
 
-    Boot.adopt_live_os_processes(
-      node: to_string(Node.self()),
-      on_finished: fn os_process, outcome ->
-        send(test_pid, {:custom_boot_finished, os_process, outcome})
-      end
-    )
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run1.id}")
 
-    assert_receive {:custom_boot_finished, _run, outcome1}, 500
+    Boot.adopt_live_os_processes(node: to_string(Node.self()))
+
+    assert_receive {:os_process_finished, _run, outcome1}, 500
     assert outcome1.error =~ "claude reported error"
     assert outcome1.error =~ "stderr log output"
 
@@ -340,7 +327,6 @@ defmodule Rail.Runs.BootTest do
     Repo.insert!(%OsProcess{
       run_id: run2.id,
       task_id: run2.task_id,
-      kind: :stage,
       stream_path: stream2,
       node: to_string(Node.self()),
       status: :running,
@@ -370,7 +356,6 @@ defmodule Rail.Runs.BootTest do
     Repo.insert!(%OsProcess{
       run_id: run3.id,
       task_id: run3.task_id,
-      kind: :stage,
       stream_path: stream3,
       node: to_string(Node.self()),
       status: :running,
@@ -397,7 +382,6 @@ defmodule Rail.Runs.BootTest do
       Repo.insert!(%OsProcess{
         run_id: run4.id,
         task_id: run4.task_id,
-        kind: :stage,
         stream_path: Path.join(tmp_dir, "nonexistent.ndjson"),
         node: to_string(Node.self()),
         status: :running,

@@ -112,7 +112,6 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
       Repo.insert!(%OsProcess{
         run_id: run.id,
         task_id: task_id,
-        kind: :stage,
         status: :running,
         stream_path: "/tmp/fake_stream",
         node: "node_test",
@@ -183,7 +182,6 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
       Repo.insert!(%OsProcess{
         run_id: run.id,
         task_id: task.id,
-        kind: :stage,
         status: :finished,
         stream_path: "/tmp/fake_stream_0",
         node: "node_test",
@@ -248,7 +246,6 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
       Repo.insert!(%OsProcess{
         run_id: run.id,
         task_id: task.id,
-        kind: :stage,
         status: :finished,
         stream_path: "/tmp/fake_stream_err",
         node: "node_test",

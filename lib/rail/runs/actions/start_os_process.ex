@@ -22,25 +22,27 @@ defmodule Rail.Runs.Actions.StartOsProcess do
   Everything the spawn needs is derived from the run: the executable from
   its role's backend, which is an absolute path, and the working directory and
   stream path from its task.
-  `argv` is arguments only. The only options are `:on_finished`, the callback
-  the Follower invokes when the child exits, and `:allow_fun`, a 1-arity
-  function called with the Follower pid so a test can grant it access to
-  sandboxed resources.
+  `argv` is arguments only. The options are `:is_chat`, which marks a chat turn
+  riding alongside the stage rather than the stage's own run, and `:allow_fun`, a
+  1-arity function called with the Follower pid so a test can grant it access to
+  sandboxed resources. Nothing is wired in for the exit: `run_finished/3` works
+  from the row the spawn writes.
 
   Returns `{:ok, %{task: task, run: run, os_process: os_process}}`, or
-  `{:error, {:spawn_failed, reason, task}}`. A `:stage` spawn is the dispatch of
+  `{:error, {:spawn_failed, reason, task}}`. A stage spawn is the dispatch of
   the task's stage, so it carries the task with it: on success the task moves to
   `:running` with the run's pending answer cleared, on failure to `:failed` with
-  the reason recorded, and either way `pipeline_changed` is broadcast. Every
-  other kind rides alongside the stage and leaves the task alone.
+  the reason recorded, and either way `pipeline_changed` is broadcast. A chat
+  turn rides alongside the stage and leaves the task alone.
   """
-  def start_os_process(%Run{} = run, kind, argv, opts \\ []) do
+  def start_os_process(%Run{} = run, argv, opts \\ []) do
     run = Repo.preload(run, [:task, role: :backend])
     %Run{task: %Task{} = task, role: %Role{backend: %Backend{} = backend}} = run
 
+    is_chat = Keyword.get(opts, :is_chat, false)
     executable = backend.executable_path
     stream_path = prepare_stream_files(task, run)
-    os_process = insert_os_process(run, kind, stream_path)
+    os_process = insert_os_process(run, is_chat, stream_path)
 
     result =
       case ensure_executable(executable, os_process, run) do
@@ -49,12 +51,12 @@ defmodule Rail.Runs.Actions.StartOsProcess do
       end
 
     case result do
-      {:ok, os_process} -> finalize(kind, task, run, os_process)
-      {:error, reason} -> fail(kind, task, reason)
+      {:ok, os_process} -> finalize(is_chat, task, run, os_process)
+      {:error, reason} -> fail(is_chat, task, reason)
     end
   end
 
-  defp finalize(:stage, task, run, os_process) do
+  defp finalize(false, task, run, os_process) do
     {:ok, run} =
       run
       |> Run.changeset(%{pending_answer: nil, attempt_log_lines: 0})
@@ -67,11 +69,11 @@ defmodule Rail.Runs.Actions.StartOsProcess do
     {:ok, %{task: task, run: run, os_process: os_process}}
   end
 
-  defp finalize(_kind, task, run, os_process) do
+  defp finalize(true, task, run, os_process) do
     {:ok, %{task: task, run: run, os_process: os_process}}
   end
 
-  defp fail(:stage, task, reason) do
+  defp fail(false, task, reason) do
     {:ok, task} =
       task
       |> Task.changeset(%{stage_state: :failed, error: "Failed to spawn runner: #{inspect(reason)}"})
@@ -82,13 +84,14 @@ defmodule Rail.Runs.Actions.StartOsProcess do
     {:error, {:spawn_failed, reason, task}}
   end
 
-  defp fail(_kind, task, reason), do: {:error, {:spawn_failed, reason, task}}
+  defp fail(true, task, reason), do: {:error, {:spawn_failed, reason, task}}
 
-  defp insert_os_process(run, kind, stream_path) do
+  defp insert_os_process(run, is_chat, stream_path) do
     attrs = %{
       run_id: run.id,
       task_id: run.task_id,
-      kind: kind,
+      is_chat: is_chat,
+      start_seq: next_seq(run),
       stream_path: stream_path,
       node: to_string(Node.self()),
       status: :starting,
@@ -142,8 +145,7 @@ defmodule Rail.Runs.Actions.StartOsProcess do
       os_pid: os_pid,
       port: port,
       backend: backend,
-      next_seq: next_seq(run),
-      on_finished: Keyword.get(opts, :on_finished)
+      next_seq: os_process.start_seq
     ]
 
     case FollowerSupervisor.start_follower(follower_opts) do

@@ -54,7 +54,6 @@ defmodule Rail.Runs.FollowerTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
         status: :running,
@@ -181,9 +180,6 @@ defmodule Rail.Runs.FollowerTest do
     os_process: os_process,
     stream_path: stream_path
   } do
-    test_pid = self()
-    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
-
     # Process that exits after 100ms
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["0.1"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
@@ -194,6 +190,8 @@ defmodule Rail.Runs.FollowerTest do
     File.write!(stream_path, "#{line}\n")
     File.write!("#{stream_path}.err", "warning: minor deprecation\n")
 
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         os_process: os_process,
@@ -202,10 +200,7 @@ defmodule Rail.Runs.FollowerTest do
         stream_path: stream_path,
         os_pid: pid,
         tail_interval_ms: 20,
-        batch_interval_ms: 50,
-        on_finished: fn finished_run, outcome ->
-          send(test_pid, {:callback_finished, finished_run, outcome})
-        end
+        batch_interval_ms: 50
       )
 
     # The follower runs in its own process, so lend it this test's DB connection.
@@ -215,13 +210,11 @@ defmodule Rail.Runs.FollowerTest do
     follower_ref = Process.monitor(follower_pid)
 
     # Wait for process exit and follower settlement
-    assert_receive {:callback_finished, finished_run, outcome}, 2_000
+    assert_receive {:os_process_finished, finished_run, outcome}, 2_000
     assert finished_run.status == :finished
     assert outcome.conversation_id == "sess-exit-1"
     assert %TaskUsage{input_tokens: 50, output_tokens: 25} = outcome.usage
     assert outcome.error =~ "warning: minor deprecation"
-
-    assert_receive {:os_process_finished, _run, _outcome}, 500
 
     # Verify run row in DB
     reloaded_run = Runs.get_run!(run.id)
@@ -324,6 +317,8 @@ defmodule Rail.Runs.FollowerTest do
         run: run,
         stream_path: stream_path,
         os_pid: pid,
+        # A real spawn starts at max(seq) + 1; the seeded row already holds seq 1.
+        next_seq: 2,
         skip_log_lines: 1,
         tail_interval_ms: 20,
         batch_interval_ms: 40
@@ -450,7 +445,6 @@ defmodule Rail.Runs.FollowerTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: stream,
         node: to_string(Node.self()),
         status: :running,
@@ -458,7 +452,7 @@ defmodule Rail.Runs.FollowerTest do
       })
       |> Repo.insert!()
 
-    test_pid = self()
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
 
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
@@ -469,8 +463,7 @@ defmodule Rail.Runs.FollowerTest do
         os_pid: pid,
         port: port,
         tail_interval_ms: 10,
-        batch_interval_ms: 20,
-        on_finished: fn r, outcome -> send(test_pid, {:clean_finished, r, outcome}) end
+        batch_interval_ms: 20
       )
 
     # The follower runs in its own process, so lend it this test's DB connection.
@@ -480,7 +473,7 @@ defmodule Rail.Runs.FollowerTest do
     follower_ref = Process.monitor(follower_pid)
     Process.unlink(port)
 
-    assert_receive {:clean_finished, finished_run, outcome}, 1_000
+    assert_receive {:os_process_finished, finished_run, outcome}, 1_000
     assert finished_run.status == :finished
     assert outcome.exit_code == 0
     assert is_nil(outcome.error)
@@ -492,8 +485,6 @@ defmodule Rail.Runs.FollowerTest do
     backend: backend,
     tmp_dir: tmp_dir
   } do
-    test_pid = self()
-
     # Part 1: result_error only (empty stderr)
     run1 =
       %Run{}
@@ -518,13 +509,14 @@ defmodule Rail.Runs.FollowerTest do
       |> OsProcess.changeset(%{
         run_id: run1.id,
         task_id: run1.task_id,
-        kind: :stage,
         stream_path: stream1,
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run1.id}")
 
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
@@ -533,8 +525,7 @@ defmodule Rail.Runs.FollowerTest do
         run: run1,
         stream_path: stream1,
         os_pid: pid1,
-        tail_interval_ms: 10,
-        on_finished: fn r, outcome -> send(test_pid, {:err_only_finished, r, outcome}) end
+        tail_interval_ms: 10
       )
 
     # The follower runs in its own process, so lend it this test's DB connection.
@@ -543,7 +534,7 @@ defmodule Rail.Runs.FollowerTest do
 
     Process.unlink(port1)
 
-    assert_receive {:err_only_finished, _r1, outcome1}, 1_000
+    assert_receive {:os_process_finished, _r1, outcome1}, 1_000
     assert outcome1.error == "claude reported error"
 
     # Part 2: both result_error and stderr
@@ -570,13 +561,14 @@ defmodule Rail.Runs.FollowerTest do
       |> OsProcess.changeset(%{
         run_id: run2.id,
         task_id: run2.task_id,
-        kind: :stage,
         stream_path: stream2,
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run2.id}")
 
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
@@ -585,8 +577,7 @@ defmodule Rail.Runs.FollowerTest do
         run: run2,
         stream_path: stream2,
         os_pid: pid2,
-        tail_interval_ms: 10,
-        on_finished: fn r, outcome -> send(test_pid, {:both_finished, r, outcome}) end
+        tail_interval_ms: 10
       )
 
     # The follower runs in its own process, so lend it this test's DB connection.
@@ -595,14 +586,12 @@ defmodule Rail.Runs.FollowerTest do
 
     Process.unlink(port2)
 
-    assert_receive {:both_finished, _r, outcome2}, 1_000
+    assert_receive {:os_process_finished, _r, outcome2}, 1_000
     assert outcome2.error =~ "claude reported error"
     assert outcome2.error =~ "stderr text here"
   end
 
   test "records exit_status from port message and sets exit_code on clean exit", %{backend: backend, tmp_dir: tmp_dir} do
-    test_pid = self()
-
     run =
       %Run{}
       |> Run.changeset(%{
@@ -623,13 +612,14 @@ defmodule Rail.Runs.FollowerTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: stream,
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
 
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
@@ -638,8 +628,7 @@ defmodule Rail.Runs.FollowerTest do
         run: run,
         stream_path: stream,
         os_pid: 999_999,
-        tail_interval_ms: 20,
-        on_finished: fn r, outcome -> send(test_pid, {:port_exit_finished, r, outcome}) end
+        tail_interval_ms: 20
       )
 
     # The follower runs in its own process, so lend it this test's DB connection.
@@ -648,7 +637,7 @@ defmodule Rail.Runs.FollowerTest do
 
     send(follower_pid, {nil, {:exit_status, 0}})
 
-    assert_receive {:port_exit_finished, _r, outcome}, 1_000
+    assert_receive {:os_process_finished, _r, outcome}, 1_000
     assert outcome.exit_code == 0
     assert is_nil(outcome.error)
   end
@@ -745,15 +734,24 @@ defmodule Rail.Runs.FollowerTest do
       Repo.insert!(%OsProcess{
         run_id: run.id,
         task_id: task.id,
-        kind: :stage,
         stream_path: stream,
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
 
-    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
+    # The agent ends its step by asking, so both questions are in the log the
+    # process leaves behind rather than read off the stream as it runs.
+    File.write!(
+      stream,
+      ~s({"type":"assistant","message":{"content":[{"type":"text","text":"[QUESTION: Which db to choose?] [OPTIONS: PG, MySQL]"}]}}\n) <>
+        ~s({"type":"assistant","message":{"content":[{"type":"text","text":"[QUESTION: Ship behind a flag?]"}]}}\n)
+    )
+
+    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["0.1"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
 
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
@@ -762,6 +760,7 @@ defmodule Rail.Runs.FollowerTest do
         run: run,
         stream_path: stream,
         os_pid: pid,
+        port: port,
         tail_interval_ms: 20,
         batch_interval_ms: 30
       )
@@ -770,44 +769,25 @@ defmodule Rail.Runs.FollowerTest do
 
     Sandbox.allow(Repo, self(), follower_pid)
 
-    question_line =
-      ~s({"type":"assistant","message":{"content":[{"type":"text","text":"[QUESTION: Which db to choose?] [OPTIONS: PG, MySQL]"}]}}\n)
+    assert_receive {:os_process_finished, _os_process, _outcome}, 2_000
 
-    File.write!(stream, question_line)
-
-    Process.sleep(100)
-
-    reloaded_task = Repo.get!(PipelineTask, task.id)
-    assert reloaded_task.stage_state == :blocked
-    assert reloaded_task.question_id
-
-    reloaded_rr = Repo.get!(Run, run.id)
-    assert reloaded_rr.status == :blocked_on_input
-
-    # A second question in a later chunk queues behind the first rather than replacing it.
-    File.write!(
-      stream,
-      question_line <>
-        ~s({"type":"assistant","message":{"content":[{"type":"text","text":"[QUESTION: Ship behind a flag?]"}]}}\n)
-    )
-
-    Process.sleep(100)
-
+    # Both are filed, in the order asked, and the task parks on the first.
     assert Enum.map(pending_questions(task.id), & &1.prompt) == [
              "Which db to choose?",
              "Ship behind a flag?"
            ]
 
-    assert Repo.get!(PipelineTask, task.id).question_id == reloaded_task.question_id
+    reloaded_task = Repo.get!(PipelineTask, task.id)
+    assert reloaded_task.stage_state == :blocked
+    assert reloaded_task.question_id == hd(pending_questions(task.id)).id
 
-    Runs.stop_os_process(os_process.id, grace_period: 50)
+    assert Repo.get!(Run, run.id).status == :blocked_on_input
   end
 
   test "chat child exit preserves run status but updates conversation_id if new", %{
     backend: backend,
     tmp_dir: tmp_dir
   } do
-    test_pid = self()
     task_id = UXID.generate!(prefix: "tsk")
     role_id = UXID.generate!(prefix: "rol")
 
@@ -830,7 +810,7 @@ defmodule Rail.Runs.FollowerTest do
       Repo.insert!(%OsProcess{
         run_id: run.id,
         task_id: task_id,
-        kind: :chat,
+        is_chat: true,
         stream_path: stream,
         node: to_string(Node.self()),
         status: :running,
@@ -840,6 +820,8 @@ defmodule Rail.Runs.FollowerTest do
     port = Port.open({:spawn_executable, "/bin/echo"}, [:binary, args: ["done"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
 
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         os_process: os_process,
@@ -848,10 +830,7 @@ defmodule Rail.Runs.FollowerTest do
         stream_path: stream,
         os_pid: pid,
         tail_interval_ms: 20,
-        batch_interval_ms: 30,
-        on_finished: fn finished_run, outcome ->
-          send(test_pid, {:chat_finished, finished_run, outcome})
-        end
+        batch_interval_ms: 30
       )
 
     # The follower runs in its own process, so lend it this test's DB connection.
@@ -860,7 +839,7 @@ defmodule Rail.Runs.FollowerTest do
 
     follower_ref = Process.monitor(follower_pid)
 
-    assert_receive {:chat_finished, _run, _outcome}, 2_000
+    assert_receive {:os_process_finished, _run, _outcome}, 2_000
     assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
 
     reloaded_rr = Runs.get_run!(run.id)
@@ -869,7 +848,6 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "chat child exit with same conversation_id leaves run unchanged", %{backend: backend, tmp_dir: tmp_dir} do
-    test_pid = self()
     task_id = UXID.generate!(prefix: "tsk")
     role_id = UXID.generate!(prefix: "rol")
 
@@ -892,7 +870,7 @@ defmodule Rail.Runs.FollowerTest do
       Repo.insert!(%OsProcess{
         run_id: run.id,
         task_id: task_id,
-        kind: :chat,
+        is_chat: true,
         stream_path: stream,
         node: to_string(Node.self()),
         status: :running,
@@ -902,6 +880,8 @@ defmodule Rail.Runs.FollowerTest do
     port = Port.open({:spawn_executable, "/bin/echo"}, [:binary, args: ["done"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
 
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         os_process: os_process,
@@ -910,10 +890,7 @@ defmodule Rail.Runs.FollowerTest do
         stream_path: stream,
         os_pid: pid,
         tail_interval_ms: 20,
-        batch_interval_ms: 30,
-        on_finished: fn finished_run, outcome ->
-          send(test_pid, {:same_chat_finished, finished_run, outcome})
-        end
+        batch_interval_ms: 30
       )
 
     # The follower runs in its own process, so lend it this test's DB connection.
@@ -922,7 +899,7 @@ defmodule Rail.Runs.FollowerTest do
 
     follower_ref = Process.monitor(follower_pid)
 
-    assert_receive {:same_chat_finished, _run, _outcome}, 2_000
+    assert_receive {:os_process_finished, _run, _outcome}, 2_000
     assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
 
     reloaded_rr = Runs.get_run!(run.id)
@@ -930,7 +907,6 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "stage child exit without usage map updates run with nil usage", %{backend: backend, tmp_dir: tmp_dir} do
-    test_pid = self()
     task_id = UXID.generate!(prefix: "tsk")
     role_id = UXID.generate!(prefix: "rol")
 
@@ -952,7 +928,6 @@ defmodule Rail.Runs.FollowerTest do
       Repo.insert!(%OsProcess{
         run_id: run.id,
         task_id: task_id,
-        kind: :stage,
         stream_path: stream,
         node: to_string(Node.self()),
         status: :running,
@@ -962,6 +937,8 @@ defmodule Rail.Runs.FollowerTest do
     port = Port.open({:spawn_executable, "/bin/echo"}, [:binary, args: ["done"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
 
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
         os_process: os_process,
@@ -970,10 +947,7 @@ defmodule Rail.Runs.FollowerTest do
         stream_path: stream,
         os_pid: pid,
         tail_interval_ms: 20,
-        batch_interval_ms: 30,
-        on_finished: fn finished_run, outcome ->
-          send(test_pid, {:stage_no_usage_finished, finished_run, outcome})
-        end
+        batch_interval_ms: 30
       )
 
     # The follower runs in its own process, so lend it this test's DB connection.
@@ -982,7 +956,7 @@ defmodule Rail.Runs.FollowerTest do
 
     follower_ref = Process.monitor(follower_pid)
 
-    assert_receive {:stage_no_usage_finished, _run, _outcome}, 2_000
+    assert_receive {:os_process_finished, _run, _outcome}, 2_000
     assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
 
     reloaded_rr = Runs.get_run!(run.id)

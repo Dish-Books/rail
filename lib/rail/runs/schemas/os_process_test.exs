@@ -12,7 +12,6 @@ defmodule Rail.Runs.Schemas.OsProcessTest do
     attrs = %{
       run_id: run_id,
       task_id: task_id,
-      kind: :stage,
       os_pid: 12_345,
       stream_path: "/tmp/rail/streams/test.ndjson",
       node: "nonode@nohost",
@@ -25,7 +24,7 @@ defmodule Rail.Runs.Schemas.OsProcessTest do
 
     assert get_change(changeset, :run_id) == run_id
     assert get_change(changeset, :task_id) == task_id
-    assert get_change(changeset, :kind) == :stage
+    refute get_field(changeset, :is_chat)
     assert get_change(changeset, :os_pid) == 12_345
     assert get_change(changeset, :status) == :running
   end
@@ -37,7 +36,6 @@ defmodule Rail.Runs.Schemas.OsProcessTest do
     errors = errors_on(changeset)
     assert "can't be blank" in errors.run_id
     assert "can't be blank" in errors.task_id
-    assert "can't be blank" in errors.kind
     assert "can't be blank" in errors.stream_path
     assert "can't be blank" in errors.node
     assert "can't be blank" in errors.status
@@ -49,7 +47,6 @@ defmodule Rail.Runs.Schemas.OsProcessTest do
       OsProcess.changeset(%OsProcess{}, %{
         run_id: UXID.generate!(prefix: "run"),
         task_id: UXID.generate!(prefix: "tsk"),
-        kind: "invalid_kind",
         stream_path: "/tmp/rail/streams/test.ndjson",
         node: "node@host",
         status: "invalid_status",
@@ -58,15 +55,10 @@ defmodule Rail.Runs.Schemas.OsProcessTest do
 
     refute changeset.valid?
     errors = errors_on(changeset)
-    assert "is invalid" in errors.kind
     assert "is invalid" in errors.status
   end
 
-  test "kinds/0 and statuses/0 return expected lists" do
-    assert :stage in OsProcess.kinds()
-    assert :chat in OsProcess.kinds()
-    assert :rebase in OsProcess.kinds()
-
+  test "statuses/0 returns the expected list" do
     assert :starting in OsProcess.statuses()
     assert :running in OsProcess.statuses()
     assert :finished in OsProcess.statuses()
@@ -90,7 +82,6 @@ defmodule Rail.Runs.Schemas.OsProcessTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         os_pid: 12_345,
         stream_path: "/tmp/rail/streams/#{run.id}.ndjson",
         node: "node@host",

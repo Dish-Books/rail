@@ -10,7 +10,6 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
   alias Rail.Domain.TicketBody
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -79,11 +78,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
         work_dir: worktree_path
       )
 
-    spawner_opts =
-      [on_finished: fn os_process, outcome -> Pipeline.settle_product_run(os_process, outcome) end] ++
-        Keyword.take(opts, [:allow_fun])
-
-    Runs.start_os_process(run, :stage, args, spawner_opts)
+    Runs.start_os_process(run, args, Keyword.take(opts, [:allow_fun]))
   end
 
   defp brief(%Task{scratch_path: scratch_path} = task) do

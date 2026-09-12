@@ -10,7 +10,6 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
   alias Rail.Domain.TicketBody
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -133,14 +132,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
         work_dir: worktree_path
       )
 
-    spawner_opts =
-      opts
-      |> Keyword.take([:allow_fun, :on_finished])
-      |> Keyword.put_new(:on_finished, fn os_process, outcome ->
-        Pipeline.settle_design_run(os_process, outcome, opts)
-      end)
-
-    Runs.start_os_process(run, :stage, argv, spawner_opts)
+    Runs.start_os_process(run, argv, Keyword.take(opts, [:allow_fun]))
   end
 
   # The project and the issue are carried on the task from here on: every step below

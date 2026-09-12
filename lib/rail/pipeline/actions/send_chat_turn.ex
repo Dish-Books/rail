@@ -55,7 +55,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
   @doc """
   Executes the dispatch of a chat turn for a task and role.
   Prepares worktree, captures before-fingerprint, constructs prompt and argv,
-  and spawns the runner process with kind `:chat`.
+  and spawns the runner process as a chat turn.
   """
   def dispatch_chat_turn(%Task{} = task, %Role{} = role, %Run{} = run, opts \\ []) do
     if Keyword.get(opts, :async, true) do
@@ -383,14 +383,9 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
         work_dir: worktree_path
       )
 
-    on_finished_cb = fn _os_process, outcome ->
-      Rail.Pipeline.settle_chat_turn(updated_task.id, updated_run.id, outcome, opts)
-    end
+    spawner_opts = [is_chat: true] ++ Keyword.take(opts, [:allow_fun])
 
-    spawner_opts =
-      [on_finished: on_finished_cb] ++ Keyword.take(opts, [:allow_fun])
-
-    case Runs.start_os_process(updated_run, :chat, argv, spawner_opts) do
+    case Runs.start_os_process(updated_run, argv, spawner_opts) do
       {:ok, %{os_process: os_process}} ->
         {:ok, %{task: updated_task, run: updated_run, os_process: os_process}}
 

@@ -132,7 +132,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       |> OsProcess.changeset(%{
         run_id: run_id,
         task_id: task_id,
-        kind: :chat,
+        is_chat: true,
         stream_path: "/tmp/settle_chat_turn/#{run_id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -496,7 +496,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
     rev_runs = Runs.list_os_processes(run_id: rev_run_id)
     assert length(rev_runs) == 1
-    assert hd(rev_runs).kind == :chat
+    assert hd(rev_runs).is_chat
   end
 
   test "settling a stage run dispatches queued pending_chat when the task goes idle", %{
@@ -541,7 +541,6 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       |> OsProcess.changeset(%{
         run_id: eng_run_id,
         task_id: task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_chat_turn/#{eng_run_id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -566,7 +565,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
     rev_runs = Runs.list_os_processes(run_id: rev_run_id)
     assert length(rev_runs) == 1
-    assert hd(rev_runs).kind == :chat
+    assert hd(rev_runs).is_chat
   end
 
   test "settle_chat_turn when branch modified and no review run exists creates new review run", %{
@@ -683,7 +682,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: task.id,
-        kind: :chat,
+        is_chat: true,
         stream_path: "/tmp/settle_chat_turn/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,

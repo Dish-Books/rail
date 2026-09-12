@@ -100,7 +100,6 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_design/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -136,7 +135,6 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
         |> OsProcess.changeset(%{
           run_id: run.id,
           task_id: run.task_id,
-          kind: :stage,
           stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
@@ -216,7 +214,6 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
         |> OsProcess.changeset(%{
           run_id: run.id,
           task_id: run.task_id,
-          kind: :stage,
           stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
@@ -312,7 +309,6 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
         |> OsProcess.changeset(%{
           run_id: run.id,
           task_id: run.task_id,
-          kind: :stage,
           stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
@@ -410,7 +406,6 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
         |> OsProcess.changeset(%{
           run_id: run.id,
           task_id: run.task_id,
-          kind: :stage,
           stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
@@ -508,7 +503,6 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
         |> OsProcess.changeset(%{
           run_id: run.id,
           task_id: run.task_id,
-          kind: :stage,
           stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
@@ -606,7 +600,6 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
         |> OsProcess.changeset(%{
           run_id: run.id,
           task_id: run.task_id,
-          kind: :stage,
           stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
@@ -707,7 +700,6 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
         |> OsProcess.changeset(%{
           run_id: run.id,
           task_id: run.task_id,
-          kind: :stage,
           stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
@@ -806,7 +798,6 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
         |> OsProcess.changeset(%{
           run_id: run.id,
           task_id: run.task_id,
-          kind: :stage,
           stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,

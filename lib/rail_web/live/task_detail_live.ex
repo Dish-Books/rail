@@ -595,7 +595,7 @@ defmodule RailWeb.TaskDetailLive do
       scope = socket.assigns.current_scope
 
       if question_id do
-        Pipeline.answer_question(scope, question_id, trimmed)
+        Pipeline.answer_questions(scope, socket.assigns.task, %{question_id => trimmed})
       end
 
       socket =

@@ -65,7 +65,7 @@ defmodule Rail.Runs do
   @doc """
   Spawns a detached CLI runner, records the `runs` row, and starts its Follower.
   """
-  defdelegate start_os_process(run, kind, argv, opts \\ []), to: Actions.StartOsProcess
+  defdelegate start_os_process(run, argv, opts \\ []), to: Actions.StartOsProcess
 
   @doc """
   Terminates an active agent execution by os process, run, or task ID.

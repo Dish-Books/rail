@@ -8,19 +8,12 @@ defmodule Rail.Pipeline.Actions.SettleProductRun do
   """
 
   import Rail.Pipeline.Utils.AdvanceStage
+  import Rail.Pipeline.Utils.ProductRunFinished
 
-  alias Rail.Repo
   alias Rail.Runs.Schemas.OsProcess
-  alias Rail.Runs.Schemas.Run
 
   @doc "Settles the finished product `run` against `outcome`."
   def settle_product_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
-    advance_stage(os_process, opts, &awaiting_approval/3)
-  end
-
-  defp awaiting_approval(_task, run, _opts) do
-    {:ok, run} = run |> Run.changeset(%{auto_retries: 0}) |> Repo.update()
-
-    {%{stage_state: :awaiting_approval, retry_after: nil, error: nil}, run}
+    advance_stage(os_process, opts, &product_run_finished/3)
   end
 end

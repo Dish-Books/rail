@@ -133,7 +133,6 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -259,7 +258,6 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -332,7 +330,6 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -389,7 +386,6 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -452,7 +448,6 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -550,7 +545,6 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -648,7 +642,6 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -733,7 +726,6 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       |> OsProcess.changeset(%{
         run_id: run_qa.id,
         task_id: run_qa.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_qa/#{run_qa.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -773,7 +765,6 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       |> OsProcess.changeset(%{
         run_id: run_lead.id,
         task_id: run_lead.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_qa/#{run_lead.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -840,7 +831,6 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -930,7 +920,6 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       |> OsProcess.changeset(%{
         run_id: run.id,
         task_id: run.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_qa/#{run.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -1003,7 +992,6 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       |> OsProcess.changeset(%{
         run_id: run2.id,
         task_id: run2.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_qa/#{run2.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -1080,7 +1068,6 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       |> OsProcess.changeset(%{
         run_id: run3.id,
         task_id: run3.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_qa/#{run3.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,
@@ -1112,7 +1099,6 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       |> OsProcess.changeset(%{
         run_id: run_unknown.id,
         task_id: run_unknown.task_id,
-        kind: :stage,
         stream_path: "/tmp/settle_qa/#{run_unknown.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,

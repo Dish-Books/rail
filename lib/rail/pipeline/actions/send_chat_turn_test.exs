@@ -166,7 +166,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
              Pipeline.send_chat_turn(task.id, role.id, "Hello", delivery: :invalid)
   end
 
-  test "delivers chat turn immediately when idle, creates Run kind: :chat, and leaves stage intact", %{
+  test "delivers chat turn immediately when idle, creates Run is_chat: true, and leaves stage intact", %{
     task: %Task{id: task_id},
     role: %Role{id: role_id}
   } do
@@ -204,7 +204,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     assert [
              %OsProcess{
-               kind: :chat,
+               is_chat: true,
                status: :running,
                run_id: ^run_id
              }

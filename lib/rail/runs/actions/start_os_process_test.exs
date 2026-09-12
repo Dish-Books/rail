@@ -90,7 +90,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
 
   test "spawns child, records runs row, sets os_pid and running status", %{run: run} do
     {:ok, %{os_process: os_process}} =
-      Runs.start_os_process(run, :stage, ["2"],
+      Runs.start_os_process(run, ["2"],
         allow_fun: fn pid ->
           Sandbox.allow(Repo, self(), pid)
           on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
@@ -113,7 +113,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
     scratch_path: scratch_path
   } do
     {:ok, %{os_process: os_process}} =
-      Runs.start_os_process(run, :stage, ["2"],
+      Runs.start_os_process(run, ["2"],
         allow_fun: fn pid ->
           Sandbox.allow(Repo, self(), pid)
           on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
@@ -138,7 +138,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
     script = ~s(printf '{"cwd":"%s","stream":"%s"}\n' "$PWD" "$RAIL_STREAM")
 
     {:ok, %{os_process: os_process}} =
-      Runs.start_os_process(run, :stage, ["-c", script],
+      Runs.start_os_process(run, ["-c", script],
         allow_fun: fn pid ->
           Sandbox.allow(Repo, self(), pid)
           on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
@@ -171,7 +171,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
     missing_bin = "/path/to/nonexistent/cli_binary_xyz"
     {:ok, _backend} = Backends.update_backend(scope, backend, %{executable_path: missing_bin})
 
-    result = Runs.start_os_process(run, :stage, ["--help"])
+    result = Runs.start_os_process(run, ["--help"])
 
     assert {:error,
             {:spawn_failed, {:missing_binary, ^missing_bin, %OsProcess{status: :finished}}, %Task{stage_state: :failed}}} =
@@ -185,7 +185,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
 
   test "always starts a Follower under FollowerSupervisor", %{run: run} do
     {:ok, %{os_process: os_process}} =
-      Runs.start_os_process(run, :stage, ["2"],
+      Runs.start_os_process(run, ["2"],
         allow_fun: fn pid ->
           Sandbox.allow(Repo, self(), pid)
           on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
@@ -204,7 +204,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
     test_pid = self()
 
     {:ok, %{os_process: os_process}} =
-      Runs.start_os_process(run, :stage, ["2"],
+      Runs.start_os_process(run, ["2"],
         allow_fun: fn pid ->
           Sandbox.allow(Repo, test_pid, pid)
           on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)

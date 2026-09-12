@@ -311,8 +311,7 @@ defmodule RailWeb.OverviewLive do
   end
 
   def handle_event("answer_question", %{"question_id" => question_id, "answer" => answer}, socket) do
-    scope = socket.assigns[:current_scope]
-    Pipeline.answer_question(scope, question_id, answer)
+    answer_one(socket.assigns[:current_scope], question_id, answer)
 
     socket = load_overview_state(socket, socket.assigns[:current_project_id])
     {:noreply, socket}
@@ -334,7 +333,7 @@ defmodule RailWeb.OverviewLive do
         {:noreply, socket}
 
       trimmed ->
-        Pipeline.answer_question(scope, question_id, trimmed)
+        answer_one(scope, question_id, trimmed)
         socket = load_overview_state(socket, socket.assigns[:current_project_id])
         {:noreply, socket}
     end
@@ -600,6 +599,15 @@ defmodule RailWeb.OverviewLive do
 
   defp check_dispatch_disabled do
     System.get_env("RAIL_NO_DISPATCH") == "1"
+  end
+
+  # Answers go back a round at a time: this records one and the task stays parked
+  # until nothing is pending, so the agent hears the whole batch at once.
+  defp answer_one(scope, question_id, answer) do
+    case Pipeline.get_question(scope, question_id) do
+      {:ok, question} -> Pipeline.answer_questions(scope, question.task_id, %{question_id => answer})
+      _not_found -> :ok
+    end
   end
 
   defp running_agents_label(1), do: "1 agent running"

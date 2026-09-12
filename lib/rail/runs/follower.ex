@@ -30,7 +30,6 @@ defmodule Rail.Runs.Follower do
     :event_state,
     :tail_interval_ms,
     :batch_interval_ms,
-    :on_finished,
     :exit_code,
     file_offset: 0,
     partial_line: "",
@@ -169,7 +168,6 @@ defmodule Rail.Runs.Follower do
       event_state: event_state,
       tail_interval_ms: tail_interval_ms,
       batch_interval_ms: batch_interval_ms,
-      on_finished: Keyword.get(opts, :on_finished),
       file_offset: file_offset,
       skip_log_lines: skip_log_lines,
       next_seq: next_seq
@@ -214,12 +212,6 @@ defmodule Rail.Runs.Follower do
         next_seq: next_seq,
         skip_log_lines: skip_log_lines
     }
-
-    register_new_questions(
-      updated_state,
-      state.event_state.detected_questions,
-      updated_state.event_state.detected_questions
-    )
 
     alive? =
       if is_integer(updated_state.os_pid) and updated_state.os_pid > 0 do
@@ -424,27 +416,18 @@ defmodule Rail.Runs.Follower do
 
     case Repo.get(OsProcess, state.os_process_id) do
       %OsProcess{} = os_process ->
-        if state.task_id && event_state.detected_questions != [] && os_process.kind != :chat do
-          Pipeline.register_questions(
-            state.task_id,
-            state.run_id,
-            event_state.detected_questions
-          )
-        end
-
         {:ok, updated_os_process} =
           os_process
           |> OsProcess.changeset(%{status: :finished})
           |> Repo.update()
 
-        updated_run = update_run(state.run_id, exit_code, error, event_state, os_process.kind)
+        updated_run = update_run(state.run_id, exit_code, error, event_state, os_process.is_chat)
         outcome = build_outcome(exit_code, error, event_state, updated_os_process, updated_run)
 
-        # Every stage run settles the same way before anything stage-specific is
-        # told about it; `on_finished` is only asked where a clean run goes next.
-        if os_process.kind != :chat, do: Pipeline.settle_run(updated_os_process, outcome)
-
-        notify_os_process_finished(state.on_finished, updated_os_process, outcome)
+        # Everything that happens next is derived from the row, so a process whose
+        # exit this Follower missed settles identically when `Rail.Runs.Boot` finds it.
+        Pipeline.run_finished(updated_os_process, outcome)
+        Runs.on_os_process_finished(updated_os_process, outcome)
 
         Phoenix.PubSub.broadcast(
           Rail.PubSub,
@@ -510,11 +493,11 @@ defmodule Rail.Runs.Follower do
     end
   end
 
-  defp update_run(run_id, exit_code, error, event_state, kind) do
+  defp update_run(run_id, exit_code, error, event_state, is_chat) do
     case Repo.get(Run, run_id) do
       %Run{} = run ->
         run_attrs =
-          if kind == :chat do
+          if is_chat do
             conv_id = event_state.conversation_id || run.conversation_id
 
             if conv_id == run.conversation_id do
@@ -565,25 +548,4 @@ defmodule Rail.Runs.Follower do
       run: updated_run
     }
   end
-
-  defp notify_os_process_finished(on_finished, updated_os_process, outcome) do
-    if is_function(on_finished, 2) do
-      on_finished.(updated_os_process, outcome)
-    else
-      Runs.on_os_process_finished(updated_os_process, outcome)
-    end
-  end
-
-  # Questions register as soon as they stream in, so the human sees them without
-  # waiting for the agent to exit. Only the ones this pump newly saw are sent.
-  defp register_new_questions(%{task_id: task_id} = state, before, current) when is_binary(task_id) do
-    seen = MapSet.new(before, & &1.prompt)
-
-    case Enum.reject(current, &MapSet.member?(seen, &1.prompt)) do
-      [] -> :ok
-      new_questions -> Pipeline.register_questions(task_id, state.run_id, new_questions)
-    end
-  end
-
-  defp register_new_questions(_state, _before, _current), do: :ok
 end
