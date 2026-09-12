@@ -77,14 +77,14 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
       assert prompt =~ "tickets/#{issue.identifier}.md"
       assert "--system-prompt" in argv
 
-      {:ok, %{task: task, run: run, os_process: %OsProcess{task_id: task_id}}}
+      {:ok, %OsProcess{task_id: task_id, run: run, task: task}}
     end)
 
     assert {:ok,
-            %{
+            %OsProcess{
+              task_id: ^task_id,
               task: %Task{id: ^task_id},
-              run: %Run{task_id: ^task_id, role_id: ^role_id},
-              os_process: %OsProcess{task_id: ^task_id}
+              run: %Run{task_id: ^task_id, role_id: ^role_id}
             }} =
              Pipeline.start_product_run(task)
 
@@ -114,10 +114,10 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
       issue |> Issue.changeset(%{owner_user_id: user_id}, issue.project_id) |> Repo.update()
 
     expect(Runs, :start_os_process, fn %Run{} = run, _argv ->
-      {:ok, %{task: task, run: run, os_process: %OsProcess{task_id: task.id}}}
+      {:ok, %OsProcess{task_id: task.id, run: run, task: task}}
     end)
 
-    assert {:ok, %{task: %Task{issue_id: ^issue_id, stage: :product} = task}} =
+    assert {:ok, %OsProcess{task: %Task{issue_id: ^issue_id, stage: :product} = task}} =
              Pipeline.start_product_run(task)
 
     # The owner lives on the issue; the task only links to it.

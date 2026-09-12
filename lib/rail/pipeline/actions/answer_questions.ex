@@ -22,10 +22,10 @@ defmodule Rail.Pipeline.Actions.AnswerQuestions do
   @doc """
   Answers pending questions and resumes the run that asked them.
 
-  `answers` maps question id to answer text. Returns
-  `{:ok, %{task: task, run: run, os_process: os_process}}` once the round is on its
-  way back, or `{:ok, %{task: task}}` when questions are still unanswered — the task
-  stays parked on the next one.
+  `answers` maps question id to answer text. Returns `{:ok, os_process}`, with its
+  `:run` and `:task` loaded, once the round is on its way back, or
+  `{:ok, %{task: task}}` when questions are still unanswered — the task stays parked
+  on the next one.
   """
   def answer_questions(%Scope{} = scope, task_or_id, answers, opts) when is_map(answers) and is_list(opts) do
     with :ok <- authorize_scope(scope),

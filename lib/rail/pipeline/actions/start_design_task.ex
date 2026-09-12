@@ -22,7 +22,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
 
   Moves the task to the `:design` stage, reusing the worktree it already has, and
   spawns the design role against the approved ticket. Returns
-  `{:ok, %{task: task, run: run, os_process: os_process}}`.
+  `{:ok, os_process}` with its `:run` and `:task` loaded.
   """
   def start_design_task(task_or_id) do
     with %Task{project: %Project{} = project} = task <- resolve_task(task_or_id),

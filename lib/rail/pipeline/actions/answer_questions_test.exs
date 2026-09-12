@@ -117,10 +117,10 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionsTest do
 
     expect(Runs, :start_os_process, fn %Run{id: ^run_id} = spawned, argv, opts ->
       send(test_pid, {:spawned, argv, opts})
-      {:ok, %{task: task, run: spawned, os_process: %OsProcess{is_chat: false}}}
+      {:ok, %OsProcess{is_chat: false, run: spawned, task: task}}
     end)
 
-    assert {:ok, %{run: %Run{id: ^run_id}, os_process: %OsProcess{is_chat: false}}} =
+    assert {:ok, %OsProcess{is_chat: false, run: %Run{id: ^run_id}}} =
              Pipeline.answer_questions(task, %{first.id => "Postgres", second.id => "Yes, behind a flag"})
 
     # The turn resumes the same conversation rather than starting a new run.

@@ -26,7 +26,7 @@ defmodule Rail.Runs.Actions.StartOsProcess do
   riding alongside the stage rather than the stage's own run. Nothing is wired in
   for the exit: `run_finished/3` works from the row the spawn writes.
 
-  Returns `{:ok, %{task: task, run: run, os_process: os_process}}`, or
+  Returns `{:ok, os_process}` with its `:run` and `:task` loaded, or
   `{:error, {:spawn_failed, reason, task}}`. A stage spawn is the dispatch of
   the task's stage, so it carries the task with it: on success the task moves to
   `:running` with the run's pending answer cleared, on failure to `:failed` with
@@ -64,11 +64,11 @@ defmodule Rail.Runs.Actions.StartOsProcess do
 
     Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :dispatched})
 
-    {:ok, %{task: task, run: run, os_process: os_process}}
+    {:ok, %{os_process | run: run, task: task}}
   end
 
   defp finalize(true, task, run, os_process) do
-    {:ok, %{task: task, run: run, os_process: os_process}}
+    {:ok, %{os_process | run: run, task: task}}
   end
 
   defp fail(false, task, reason) do

@@ -91,7 +91,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
   test "spawns child, records runs row, sets os_pid and running status", %{run: run} do
     expect(FollowerSupervisor, :start_follower, fn _opts -> {:ok, self()} end)
 
-    {:ok, %{os_process: os_process}} = Runs.start_os_process(run, ["2"])
+    {:ok, os_process} = Runs.start_os_process(run, ["2"])
 
     assert %OsProcess{} = os_process
     assert os_process.run_id == run.id
@@ -110,7 +110,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
   } do
     expect(FollowerSupervisor, :start_follower, fn _opts -> {:ok, self()} end)
 
-    {:ok, %{os_process: os_process}} = Runs.start_os_process(run, ["2"])
+    {:ok, os_process} = Runs.start_os_process(run, ["2"])
 
     assert os_process.stream_path == Path.join([scratch_path, "streams", "#{run.id}.ndjson"])
     assert File.exists?(os_process.stream_path)
@@ -131,7 +131,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
 
     expect(FollowerSupervisor, :start_follower, fn _opts -> {:ok, self()} end)
 
-    {:ok, %{os_process: os_process}} = Runs.start_os_process(run, ["-c", script])
+    {:ok, os_process} = Runs.start_os_process(run, ["-c", script])
 
     content =
       Enum.reduce_while(1..200, "", fn _i, _acc ->
@@ -178,7 +178,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
       {:ok, test_pid}
     end)
 
-    {:ok, %{os_process: os_process}} = Runs.start_os_process(run, ["2"])
+    {:ok, os_process} = Runs.start_os_process(run, ["2"])
 
     assert_receive {:follower_opts, opts}
     assert opts[:os_process].id == os_process.id

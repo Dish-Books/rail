@@ -70,13 +70,13 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
 
     expect(Runs, :start_os_process, fn %Run{} = run, argv ->
       send(test_pid, {:spawned, run, argv})
-      {:ok, %{task: Repo.get!(Task, task_id), run: run, os_process: %OsProcess{task_id: task_id}}}
+      {:ok, %OsProcess{task_id: task_id, run: run, task: Repo.get!(Task, task_id)}}
     end)
 
     assert {:ok,
-            %{
-              task: %Task{id: ^task_id, stage: :design, worktree_path: worktree_path},
-              os_process: %OsProcess{task_id: ^task_id}
+            %OsProcess{
+              task_id: ^task_id,
+              task: %Task{id: ^task_id, stage: :design, worktree_path: worktree_path}
             }} = Pipeline.start_design_task(task)
 
     assert_receive {:spawned, %Run{task_id: ^task_id, role_id: ^role_id, attempts: 1, status: :running}, argv}

@@ -184,7 +184,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     expect(Runs, :start_os_process, fn %Run{} = spawned, argv, opts ->
       send(test_pid, {:spawned, spawned.id, argv, opts})
-      {:ok, %{run: spawned, os_process: %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat]}}}
+      {:ok, %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat], run: spawned, task: Repo.get!(Task, spawned.task_id)}}
     end)
 
     assert {:ok, :sent, %Task{active_chat_role_id: ^role_id, stage: :engineer, stage_state: :queued}} =
@@ -323,7 +323,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     expect(Runs, :start_os_process, fn %Run{} = spawned, argv, opts ->
       send(test_pid, {:spawned, spawned.id, argv, opts})
-      {:ok, %{run: spawned, os_process: %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat]}}}
+      {:ok, %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat], run: spawned, task: Repo.get!(Task, spawned.task_id)}}
     end)
 
     assert {:ok, :sent, %Task{active_chat_role_id: ^rev_role_id}} =
@@ -380,7 +380,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     expect(Runs, :start_os_process, fn %Run{} = spawned, argv, opts ->
       send(test_pid, {:spawned, spawned.id, argv, opts})
-      {:ok, %{run: spawned, os_process: %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat]}}}
+      {:ok, %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat], run: spawned, task: Repo.get!(Task, spawned.task_id)}}
     end)
 
     assert {:ok, :sent, %Task{active_chat_role_id: ^role_b_id}} =
@@ -428,7 +428,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     expect(Runs, :start_os_process, fn %Run{} = spawned, argv, opts ->
       send(test_pid, {:spawned, spawned.id, argv, opts})
-      {:ok, %{run: spawned, os_process: %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat]}}}
+      {:ok, %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat], run: spawned, task: Repo.get!(Task, spawned.task_id)}}
     end)
 
     assert {:ok, :sent, %Task{active_chat_role_id: ^role_a_id}} =
@@ -603,7 +603,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     expect(Runs, :start_os_process, fn %Run{} = spawned, argv, opts ->
       send(test_pid, {:spawned, spawned.id, argv, opts})
-      {:ok, %{run: spawned, os_process: %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat]}}}
+      {:ok, %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat], run: spawned, task: Repo.get!(Task, spawned.task_id)}}
     end)
 
     # Arity 5 with Scope and async: true (default)
@@ -723,7 +723,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     expect(Runs, :start_os_process, 3, fn %Run{} = spawned, argv, opts ->
       send(test_pid, {:spawned, spawned.id, argv, opts})
-      {:ok, %{run: spawned, os_process: %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat]}}}
+      {:ok, %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat], run: spawned, task: Repo.get!(Task, spawned.task_id)}}
     end)
 
     # stop_and_send to same role during stage run

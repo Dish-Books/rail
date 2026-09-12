@@ -19,6 +19,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Scope
 
@@ -213,7 +214,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
       |> Repo.update()
 
     case dispatch_chat_turn(task, role, updated_run, opts) do
-      {:ok, %{task: updated_task}} ->
+      {:ok, %OsProcess{task: %Task{} = updated_task}} ->
         {:ok, :sent, updated_task}
 
       {:ok, %Task{} = updated_task} ->
@@ -384,8 +385,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
       )
 
     case Runs.start_os_process(updated_run, argv, is_chat: true) do
-      {:ok, %{os_process: os_process}} ->
-        {:ok, %{task: updated_task, run: updated_run, os_process: os_process}}
+      {:ok, %OsProcess{} = os_process} ->
+        {:ok, os_process}
 
       {:error, {:spawn_failed, reason, _task}} ->
         updated_task

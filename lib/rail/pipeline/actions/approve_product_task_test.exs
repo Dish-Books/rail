@@ -87,10 +87,10 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
     task_id = task.id
 
     expect(Runs, :start_os_process, fn %Run{} = run, _argv ->
-      {:ok, %{task: Repo.get!(Task, task_id), run: run, os_process: %OsProcess{task_id: task_id}}}
+      {:ok, %OsProcess{task_id: task_id, run: run, task: Repo.get!(Task, task_id)}}
     end)
 
-    assert {:ok, %{task: %Task{id: ^task_id, stage: :design}, os_process: %OsProcess{}}} =
+    assert {:ok, %OsProcess{task: %Task{id: ^task_id, stage: :design}}} =
              Pipeline.approve_product_task(task)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :product_approved}}
@@ -119,10 +119,10 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
     })
 
     expect(Runs, :start_os_process, fn %Run{} = run, _argv ->
-      {:ok, %{task: Repo.get!(Task, task.id), run: run, os_process: %OsProcess{}}}
+      {:ok, %OsProcess{run: run, task: Repo.get!(Task, task.id)}}
     end)
 
-    assert {:ok, %{task: %Task{stage: :design}}} = Pipeline.approve_product_task(task)
+    assert {:ok, %OsProcess{task: %Task{stage: :design}}} = Pipeline.approve_product_task(task)
 
     assert %Issue{title: "The split ticket"} = Repo.get_by!(Issue, identifier: "APT-2")
   end

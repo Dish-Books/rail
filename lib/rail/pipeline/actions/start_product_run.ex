@@ -20,7 +20,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
   @doc """
   Starts the product stage for `task`.
 
-  Returns `{:ok, %{task: task, run: run, os_process: os_process}}`.
+  Returns `{:ok, os_process}` with its `:run` and `:task` loaded.
   """
   def start_product_run(%Task{} = task) do
     %Task{project: %Project{} = project} = task = Repo.preload(task, [:project, :issue])
