@@ -7,7 +7,7 @@ defmodule Rail.Runs.Actions.AppendRunEvent do
 
   @doc """
   Appends an individual log or transcript line to the run_events table for a run
-  and broadcasts it to PubSub subscribers.
+  and broadcasts it on the run's topic.
 
   The line belongs to the run rather than to any one of its OS processes: Rail and
   the human write these between turns, and every one carries a marker that keeps it

@@ -8,7 +8,6 @@ defmodule Rail.Issues.Schemas.Issue do
   @priorities [:urgent, :high, :medium, :low]
   @states [:backlog, :triage, :todo, :in_progress, :in_review, :done, :canceled]
 
-  @derive {LiveSync.Watch, subscription_key: :project_id, table: "issues"}
   @primary_key {:id, UXID, autogenerate: true, prefix: "iss"}
   schema "issues" do
     belongs_to :project, Project

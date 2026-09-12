@@ -35,6 +35,7 @@ defmodule RailWeb.TaskDetailLive do
       socket
       |> assign(:task, nil)
       |> assign(:task_id, nil)
+      |> assign(:project_id, nil)
       |> assign(:page_title, "Task")
       |> assign(:current_section, :tasks)
       |> assign(:active_tab, :overview)
@@ -57,6 +58,7 @@ defmodule RailWeb.TaskDetailLive do
       |> assign(:selected_run, nil)
       |> assign(:selected_role, nil)
       |> assign(:roles_map, %{})
+      |> assign(:run_events, [])
       |> assign(:log_lines, [])
       |> assign(:transcript, nil)
       |> assign(:show_raw_log, false)
@@ -85,7 +87,6 @@ defmodule RailWeb.TaskDetailLive do
           {:ok, task} ->
             if connected?(socket) do
               Phoenix.PubSub.subscribe(Rail.PubSub, "tasks:#{task.id}")
-              Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline_changed")
               Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
             end
 
@@ -115,8 +116,7 @@ defmodule RailWeb.TaskDetailLive do
             |> assign(:selected_run, nil)
             |> assign(:selected_role, nil)
             |> assign(:roles_map, %{})
-            |> assign(:log_lines, [])
-            |> assign(:transcript, nil)
+            |> assign_run_events([])
         end
       else
         socket
@@ -638,24 +638,19 @@ defmodule RailWeb.TaskDetailLive do
 
     roles_map = socket.assigns[:roles_map] || %{}
     selected_role = resolve_role(role_id, roles_map)
-    {log_lines, transcript} = load_run_transcript(selected_run)
 
     prev_run_id = socket.assigns[:subscribed_run_id]
     new_run_id = if selected_run, do: selected_run.id
 
-    if connected?(socket) and new_run_id != prev_run_id do
-      if prev_run_id, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "run:#{prev_run_id}")
-      if new_run_id, do: Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{new_run_id}")
-    end
+    sync_run_subscription(socket, prev_run_id, new_run_id)
 
     socket =
       socket
       |> assign(:selected_role_id, role_id)
       |> assign(:selected_run, selected_run)
       |> assign(:selected_role, selected_role)
-      |> assign(:log_lines, log_lines)
-      |> assign(:transcript, transcript)
       |> assign(:subscribed_run_id, new_run_id)
+      |> assign_run_events(load_run_events(selected_run))
 
     {:noreply, socket}
   end
@@ -1018,49 +1013,16 @@ defmodule RailWeb.TaskDetailLive do
     end
   end
 
-  def handle_info({:livesync, :tasks, _table, _event, record}, socket) do
-    target_id =
-      cond do
-        is_map(record) and Map.has_key?(record, :id) -> record.id
-        is_map(record) and Map.has_key?(record, "id") -> record["id"]
-        true -> nil
-      end
-
-    if socket.assigns[:task] && socket.assigns.task.id == target_id do
-      {:noreply, refresh_task(socket)}
-    else
-      {:noreply, socket}
-    end
-  end
-
   def handle_info({:run_events, run_id, events}, socket) do
-    if socket.assigns[:selected_run] && socket.assigns.selected_run.id == run_id do
-      new_lines = Enum.map(events, & &1.line)
-      all_lines = socket.assigns.log_lines ++ new_lines
-      transcript = ChatTranscript.parse(all_lines)
-
-      socket =
-        socket
-        |> assign(:log_lines, all_lines)
-        |> assign(:transcript, transcript)
-
-      {:noreply, socket}
+    if socket.assigns[:subscribed_run_id] == run_id do
+      {:noreply, assign_run_events(socket, socket.assigns.run_events ++ events)}
     else
       {:noreply, socket}
     end
   end
 
-  # Private Helpers
   def handle_info({:os_process_finished, _run, _outcome}, socket) do
     {:noreply, refresh_task(socket)}
-  end
-
-  def handle_info({:task_updated, updated_task}, socket) do
-    if socket.assigns[:task] && socket.assigns.task.id == updated_task.id do
-      {:noreply, apply_task_update(socket, updated_task)}
-    else
-      {:noreply, socket}
-    end
   end
 
   def handle_info(:demo_player_tick, socket) do
@@ -1372,12 +1334,12 @@ defmodule RailWeb.TaskDetailLive do
     end
   end
 
-  defp apply_task_update(socket, task) do
-    apply_task_data(socket, task)
-  end
-
   defp apply_task_data(socket, task) do
     scope = socket.assigns.current_scope
+    roles = if task.project_id, do: Rail.Roles.list_roles(scope, task.project_id), else: []
+    roles_map = Map.new(roles, fn r -> {r.id, r} end)
+    pending_questions = resolve_pending_questions(scope, task)
+
     {current_run, role_name} = resolve_current_run(task)
 
     design =
@@ -1389,23 +1351,17 @@ defmodule RailWeb.TaskDetailLive do
         if(is_list(task.demos) and task.demos != [], do: List.last(task.demos))
 
     running_action = socket.assigns[:running_action] || TaskActionRunner.running_on(task.id)
-    pending_questions = resolve_pending_questions(scope, task)
     pending_question = select_pending_question(pending_questions, socket.assigns[:selected_question_id])
     selected_question_id = question_id(pending_question)
-
-    roles = if task.project_id, do: Rail.Roles.list_roles(scope, task.project_id), else: []
-    roles_map = Map.new(roles, fn r -> {r.id, r} end)
 
     ordered_runs = sort_runs(task.runs || [])
     selected_role_id = resolve_selected_role_id(ordered_runs, socket.assigns[:selected_role_id])
     selected_run = find_selected_run(ordered_runs, selected_role_id)
     selected_role = if selected_role_id, do: resolve_role(selected_role_id, roles_map)
 
-    {log_lines, transcript} = load_run_transcript(selected_run)
-
     prev_run_id = socket.assigns[:subscribed_run_id]
     new_run_id = if selected_run, do: selected_run.id
-    sync_run_pubsub(socket, prev_run_id, new_run_id)
+    sync_run_subscription(socket, prev_run_id, new_run_id)
 
     socket
     |> assign(:task, task)
@@ -1429,10 +1385,9 @@ defmodule RailWeb.TaskDetailLive do
     |> assign(:selected_role_id, selected_role_id)
     |> assign(:selected_run, selected_run)
     |> assign(:selected_role, selected_role)
-    |> assign(:log_lines, log_lines)
-    |> assign(:transcript, transcript)
     |> assign(:subscribed_run_id, new_run_id)
     |> assign(:viewed_diff_files, task.viewed_diff_files || %{})
+    |> assign_run_events(load_run_events(selected_run))
   end
 
   # A run can ask several things at once, so a blocked task shows the whole queue as
@@ -1479,7 +1434,8 @@ defmodule RailWeb.TaskDetailLive do
     end
   end
 
-  defp sync_run_pubsub(socket, prev_run_id, new_run_id) do
+  # `run:<id>` carries the run's log lines and the finish of its OS process.
+  defp sync_run_subscription(socket, prev_run_id, new_run_id) do
     if connected?(socket) and new_run_id != prev_run_id do
       if prev_run_id, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "run:#{prev_run_id}")
       if new_run_id, do: Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{new_run_id}")
@@ -1492,13 +1448,19 @@ defmodule RailWeb.TaskDetailLive do
          Runs.running?(task.id))
   end
 
-  defp load_run_transcript(%Run{id: run_id}) do
-    lines = run_id |> Runs.list_run_events() |> Enum.map(& &1.line)
+  defp load_run_events(%Run{id: run_id}), do: Runs.list_run_events(run_id)
+  defp load_run_events(_other), do: []
 
-    {lines, ChatTranscript.parse(lines)}
+  # `:run_events` is the log the page holds; the rendered lines and the parsed
+  # transcript are derived from it, so an appended batch only updates one list.
+  defp assign_run_events(socket, run_events) do
+    lines = Enum.map(run_events, & &1.line)
+
+    socket
+    |> assign(:run_events, run_events)
+    |> assign(:log_lines, lines)
+    |> assign(:transcript, ChatTranscript.parse(lines))
   end
-
-  defp load_run_transcript(_other), do: {[], ChatTranscript.parse([])}
 
   defp sort_runs(runs) do
     Enum.sort_by(runs, fn r ->

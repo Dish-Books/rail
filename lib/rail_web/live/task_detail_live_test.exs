@@ -627,7 +627,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     refute has_element?(view, "#stage-chip-design")
   end
 
-  test "handles PubSub updates and LiveSync messages reactively", %{conn: conn, project: project} do
+  test "reloads reactively on pipeline and task-action broadcasts", %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_10",
@@ -686,43 +686,10 @@ defmodule RailWeb.TaskDetailLiveTest do
     send(view.pid, {:pipeline_changed, %{task_id: "tsk_other"}})
     assert render(view) =~ "Updated via Pipeline Event"
 
-    # 2. LiveSync event with atom :id
-    Repo.update_all(
-      from(i in Issue, where: i.id == ^issue_id),
-      set: [title: "Updated via LiveSync Atom"]
-    )
-
-    send(view.pid, {:livesync, :tasks, "tasks", :update, %{id: target_id}})
-    assert render(view) =~ "Updated via LiveSync Atom"
-
-    # 3. LiveSync event with string "id"
-    Repo.update_all(
-      from(i in Issue, where: i.id == ^issue_id),
-      set: [title: "Updated via LiveSync String"]
-    )
-
-    send(view.pid, {:livesync, :tasks, "tasks", :update, %{"id" => target_id}})
-    assert render(view) =~ "Updated via LiveSync String"
-
-    # LiveSync with non-matching or invalid record
-    send(view.pid, {:livesync, :tasks, "tasks", :update, %{id: "tsk_other"}})
-    send(view.pid, {:livesync, :tasks, "tasks", :update, :not_a_map})
-    assert render(view) =~ "Updated via LiveSync String"
-
-    # 4. Direct :task_updated message
-    {:ok, updated_task} = Pipeline.get_task(scope, target_id)
-    updated_task = %{updated_task | issue: %{updated_task.issue | title: "Directly Updated Task"}}
-    send(view.pid, {:task_updated, updated_task})
-    assert render(view) =~ "Directly Updated Task"
-
-    # Direct :task_updated message with different task id is ignored
-    send(view.pid, {:task_updated, %Task{id: "tsk_different"}})
-    assert render(view) =~ "Directly Updated Task"
-
-    # 5. Unknown message and async handling
+    # 2. Unknown messages are ignored
     send(view.pid, :some_unknown_info)
     send(view.pid, {:unknown, "message"})
-    assert render(view) =~ "Directly Updated Task"
+    assert render(view) =~ "Updated via Pipeline Event"
   end
 
   test "handles ?project=<id> param and project switcher", %{conn: conn, project: _project} do
@@ -940,11 +907,6 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert has_element?(view_min, "#meta-branch", "rail/removed-worktree")
     refute has_element?(view_min, "#meta-issue")
     refute has_element?(view_min, "#meta-pr")
-
-    {:ok, min_task} = Pipeline.get_task(scope, minimal_id)
-    task_no_repo = %{min_task | pr_number: 123, project: %Project{github_repo: nil}}
-    send(view_min.pid, {:task_updated, task_no_repo})
-    assert has_element?(view_min, "#meta-pr[href='#']")
   end
 
   test "clicking chat and diff actions navigates to respective tabs", %{conn: conn, project: project} do
@@ -2413,12 +2375,24 @@ defmodule RailWeb.TaskDetailLiveTest do
     render_hook(view, "toggle_raw_log", %{})
     assert has_element?(view, "[data-qa='chat-pane']")
 
-    # PubSub live event streaming: {:run_events, run_id, events}
-    send(view.pid, {:run_events, run_eng.id, [%{line: "[tool bash] mix test"}, %{line: "Tests pass"}]})
-    assert has_element?(view, "[data-qa='chat-pane']")
+    # Batched run events append to the selected run's log in the order broadcast
+    send(
+      view.pid,
+      {:run_events, run_eng.id, [%{line: "[tool bash] mix test"}, %{line: "Tests pass"}]}
+    )
 
-    # PubSub live event streaming ignored for different run_id
+    render_hook(view, "toggle_raw_log", %{})
+    raw_log = render(view)
+    assert raw_log =~ "Tests pass"
+
+    assert raw_log |> :binary.match("mix test") |> elem(0) <
+             raw_log |> :binary.match("Tests pass") |> elem(0)
+
+    render_hook(view, "toggle_raw_log", %{})
+
+    # A batch for a run that is not selected is ignored
     send(view.pid, {:run_events, "rr_other_run", [%{line: "other line"}]})
+    refute render(view) =~ "other line"
 
     # PubSub {:os_process_finished, run_id, outcome}
     send(view.pid, {:os_process_finished, run_eng.id, :completed})

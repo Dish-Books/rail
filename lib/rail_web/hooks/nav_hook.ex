@@ -34,8 +34,7 @@ defmodule RailWeb.Hooks.NavHook do
     current_project_id = url_project || saved_project
 
     if connected?(socket) do
-      subscribe_livesync(current_project_id)
-      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline_changed")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     end
 
     socket =
@@ -71,10 +70,6 @@ defmodule RailWeb.Hooks.NavHook do
 
     if socket.assigns[:current_scope] do
       Users.set_project_filter(socket.assigns.current_scope, project_id)
-    end
-
-    if connected?(socket) and project_id != socket.assigns[:current_project_id] do
-      subscribe_livesync(project_id)
     end
 
     socket =
@@ -186,7 +181,6 @@ defmodule RailWeb.Hooks.NavHook do
 
         case Issues.capture_issue(scope, project, ask, priority: priority) do
           {:ok, issue} ->
-            Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline_changed", :pipeline_changed)
             Pipeline.broadcast_pipeline_changed(%{event: :issue_captured, issue_id: issue.id})
 
             socket =
@@ -219,15 +213,7 @@ defmodule RailWeb.Hooks.NavHook do
     {:cont, socket}
   end
 
-  defp handle_nav_info({:live_sync, _data}, socket) do
-    {:cont, refresh_nav_state(socket)}
-  end
-
-  defp handle_nav_info(:pipeline_changed, socket) do
-    {:cont, refresh_nav_state(socket)}
-  end
-
-  defp handle_nav_info(%{event: "pipeline_changed"}, socket) do
+  defp handle_nav_info({:pipeline_changed, _meta}, socket) do
     {:cont, refresh_nav_state(socket)}
   end
 
@@ -252,14 +238,6 @@ defmodule RailWeb.Hooks.NavHook do
       end)
 
     Enum.count(tasks, &Rail.Domain.OverviewQueue.needs_attention?/1)
-  end
-
-  defp subscribe_livesync(nil) do
-    LiveSync.Replication.subscribe("live_sync:all")
-  end
-
-  defp subscribe_livesync(project_id) do
-    LiveSync.Replication.subscribe("live_sync:#{project_id}")
   end
 
   defp default_capture_project_id(projects, current_project_id) do

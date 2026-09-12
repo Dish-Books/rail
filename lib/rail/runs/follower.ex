@@ -7,7 +7,6 @@ defmodule Rail.Runs.Follower do
   import Rail.Runs.Utils.DrainErrFile
   import Rail.Runs.Utils.GetFollowerPid
   import Rail.Runs.Utils.NewEventState
-  import Rail.Runs.Utils.OnOsProcessFinished
   import Rail.Runs.Utils.ParseLine
   import Rail.Runs.Utils.PumpStream
 
@@ -251,7 +250,6 @@ defmodule Rail.Runs.Follower do
         # Everything that happens next is derived from the row, so a process whose
         # exit this Follower missed settles identically when `Rail.Runs.Boot` finds it.
         Pipeline.run_finished(updated_os_process, outcome)
-        on_os_process_finished(updated_os_process, outcome)
 
         Phoenix.PubSub.broadcast(
           Rail.PubSub,

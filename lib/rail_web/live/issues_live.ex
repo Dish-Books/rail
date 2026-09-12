@@ -17,7 +17,7 @@ defmodule RailWeb.IssuesLive do
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
-      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline_changed")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     end
 
     socket =
@@ -429,17 +429,7 @@ defmodule RailWeb.IssuesLive do
     end
   end
 
-  def handle_info(:pipeline_changed, socket) do
-    socket = reload_data(socket)
-    {:noreply, socket}
-  end
-
-  def handle_info(%{event: "pipeline_changed"}, socket) do
-    socket = reload_data(socket)
-    {:noreply, socket}
-  end
-
-  def handle_info({:live_sync, _data}, socket) do
+  def handle_info({:pipeline_changed, _meta}, socket) do
     socket = reload_data(socket)
     {:noreply, socket}
   end

@@ -390,7 +390,6 @@ defmodule RailWeb.Hooks.NavHookTest do
 
     authed_conn = log_in_user(conn, user)
 
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline_changed")
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     LinearMock.mock_create_issue_success(%{
@@ -421,7 +420,6 @@ defmodule RailWeb.Hooks.NavHookTest do
     refute has_element?(view, "#capture-idea-dialog")
 
     # PubSub broadcast received
-    assert_receive :pipeline_changed
     assert_receive {:pipeline_changed, %{event: :issue_captured, issue_id: "iss_" <> _}}
   end
 
@@ -536,7 +534,7 @@ defmodule RailWeb.Hooks.NavHookTest do
     assert_patched(view, ~p"/issues")
   end
 
-  test "handles live_sync and pipeline_changed info messages", %{conn: conn} do
+  test "refreshes nav state on a pipeline_changed broadcast", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_nav_hook_10",
@@ -549,9 +547,7 @@ defmodule RailWeb.Hooks.NavHookTest do
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
-    send(view.pid, {:live_sync, %{}})
-    send(view.pid, :pipeline_changed)
-    send(view.pid, %{event: "pipeline_changed"})
+    send(view.pid, {:pipeline_changed, %{event: :task_created}})
     send(view.pid, :unhandled_message)
 
     assert has_element?(view, "#issues-view")

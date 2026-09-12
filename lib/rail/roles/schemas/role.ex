@@ -60,7 +60,6 @@ defmodule Rail.Roles.Schemas.Role do
 
   @reasoning_efforts [:low, :medium, :high]
 
-  @derive {LiveSync.Watch, subscription_key: :project_id, table: "roles"}
   @primary_key {:id, UXID, autogenerate: true, prefix: "rol"}
   schema "roles" do
     field :stage, Ecto.Enum, values: @allowed_stages

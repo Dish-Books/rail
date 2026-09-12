@@ -48,7 +48,6 @@ defmodule Rail.Pipeline.Schemas.Task do
 
   @mergeabilities [:clean, :mergeable, :conflicting, :blocked, :unknown]
 
-  @derive {LiveSync.Watch, subscription_key: :project_id, table: "tasks"}
   @primary_key {:id, UXID, autogenerate: true, prefix: "tsk"}
   schema "tasks" do
     belongs_to :project, Project

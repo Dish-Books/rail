@@ -8,7 +8,6 @@ defmodule Rail.Runs.Boot do
   import Rail.Runs.Utils.DecodeUtf8Lenient
   import Rail.Runs.Utils.DrainErrFile
   import Rail.Runs.Utils.NewEventState
-  import Rail.Runs.Utils.OnOsProcessFinished
   import Rail.Runs.Utils.ParseLine
 
   alias Ecto.Adapters.SQL.Sandbox
@@ -216,8 +215,6 @@ defmodule Rail.Runs.Boot do
       Pipeline.run_finished(updated_os_process, outcome)
 
       # coveralls-ignore-stop
-      on_os_process_finished(updated_os_process, outcome)
-
       Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:os_process_finished, updated_os_process, outcome})
     end
 

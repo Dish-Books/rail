@@ -22,7 +22,6 @@ config :rail, RailWeb.Endpoint,
   server: false
 
 config :rail, :adopt_on_boot, false
-config :rail, :enable_livesync, false
 
 config :rail, :github,
   app_id: "test_github_app_id",

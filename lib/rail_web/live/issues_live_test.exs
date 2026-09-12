@@ -762,7 +762,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view_all, "#sync-issues-button", "Sync Issues")
   end
 
-  test "reloads on PubSub pipeline_changed and live_sync messages", %{conn: conn} do
+  test "reloads on a pipeline_changed broadcast", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_issues_live_11",
@@ -812,13 +812,7 @@ defmodule RailWeb.IssuesLiveTest do
 
     refute has_element?(view, "#issue-card-#{issue.id}")
 
-    send(view.pid, :pipeline_changed)
-    assert has_element?(view, "#issue-card-#{issue.id}")
-
-    send(view.pid, %{event: "pipeline_changed"})
-    assert has_element?(view, "#issue-card-#{issue.id}")
-
-    send(view.pid, {:live_sync, %{}})
+    send(view.pid, {:pipeline_changed, %{event: :issue_captured}})
     assert has_element?(view, "#issue-card-#{issue.id}")
 
     send(view.pid, :unknown_info)

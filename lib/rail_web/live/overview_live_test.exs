@@ -306,13 +306,7 @@ defmodule RailWeb.OverviewLiveTest do
     assert has_element?(view, "#attention-badge")
 
     # Send PubSub message pipeline_changed
-    send(view.pid, :pipeline_changed)
-    assert has_element?(view, "#attention-badge")
-
-    send(view.pid, %{event: "pipeline_changed"})
-    assert has_element?(view, "#attention-badge")
-
-    send(view.pid, {:live_sync, %{table: "tasks"}})
+    send(view.pid, {:pipeline_changed, %{event: :task_created}})
     assert has_element?(view, "#attention-badge")
   end
 
@@ -393,7 +387,7 @@ defmodule RailWeb.OverviewLiveTest do
     assert has_element?(view, "#running-agent-count-pill", "2 agents running")
   end
 
-  test "running count with project filter updates via live_sync and pipeline_changed", %{conn: conn} do
+  test "running count with project filter updates on a pipeline_changed broadcast", %{conn: conn} do
     {:ok, _workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Overview Live Workspace",
@@ -475,12 +469,7 @@ defmodule RailWeb.OverviewLiveTest do
     assert {:ok, view, _html} = live(authed_conn, ~p"/?project=#{p1_id}")
     assert has_element?(view, "#running-agent-count-pill", "1 agent running")
 
-    # Send live_sync message
-    send(view.pid, {:live_sync, %{table: "tasks"}})
-    assert has_element?(view, "#running-agent-count-pill", "1 agent running")
-
-    # Send event map message
-    send(view.pid, %{event: "pipeline_changed"})
+    send(view.pid, {:pipeline_changed, %{task_id: "tsk_whatever", event: :dispatched}})
     assert has_element?(view, "#running-agent-count-pill", "1 agent running")
   end
 

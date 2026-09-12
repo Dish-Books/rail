@@ -63,7 +63,6 @@ defmodule Rail.MixProject do
       {:jason, "~> 1.2"},
       {:jose, "~> 1.11"},
       {:lazy_html, ">= 0.1.0", only: :test},
-      {:live_sync, "~> 0.1"},
       {:mimic, "~> 2.0", only: :test},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false},

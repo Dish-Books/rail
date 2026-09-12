@@ -26,7 +26,7 @@ defmodule RailWeb.OverviewLive do
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
-      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline_changed")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     end
 
     socket =
@@ -469,17 +469,7 @@ defmodule RailWeb.OverviewLive do
     {:noreply, socket}
   end
 
-  def handle_info(:pipeline_changed, socket) do
-    socket = load_overview_state(socket, socket.assigns[:current_project_id])
-    {:noreply, socket}
-  end
-
-  def handle_info(%{event: "pipeline_changed"}, socket) do
-    socket = load_overview_state(socket, socket.assigns[:current_project_id])
-    {:noreply, socket}
-  end
-
-  def handle_info({:live_sync, _data}, socket) do
+  def handle_info({:pipeline_changed, _meta}, socket) do
     socket = load_overview_state(socket, socket.assigns[:current_project_id])
     {:noreply, socket}
   end
