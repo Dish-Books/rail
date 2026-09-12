@@ -15,7 +15,6 @@ defmodule Rail.Pipeline.Actions.AnswerQuestions do
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Scope
 
   @doc """
   Answers pending questions and resumes the run that asked them.
@@ -25,32 +24,12 @@ defmodule Rail.Pipeline.Actions.AnswerQuestions do
   `{:ok, %{task: task}}` when questions are still unanswered — the task stays parked
   on the next one.
   """
-  def answer_questions(%Scope{} = scope, task_or_id, answers, opts) when is_map(answers) and is_list(opts) do
-    with :ok <- authorize_scope(scope),
-         %Task{} = task <- resolve_task(task_or_id),
-         {:ok, recorded} <- record_answers(task, answers) do
+  # TODO: this should take a run struct
+  def answer_questions(%Task{} = task, answers, opts \\ []) when is_map(answers) do
+    with {:ok, recorded} <- record_answers(task, answers) do
       deliver_or_wait(task, recorded, opts)
-    else
-      {:error, reason} -> {:error, reason}
-      nil -> {:error, :not_found}
     end
   end
-
-  def answer_questions(%Scope{} = scope, task_or_id, answers) do
-    answer_questions(scope, task_or_id, answers, [])
-  end
-
-  def answer_questions(task_or_id, answers, opts) when is_list(opts) do
-    answer_questions(Scope.for_system(), task_or_id, answers, opts)
-  end
-
-  def answer_questions(task_or_id, answers) do
-    answer_questions(Scope.for_system(), task_or_id, answers, [])
-  end
-
-  defp authorize_scope(%Scope{system: true}), do: :ok
-  defp authorize_scope(%Scope{user: %{}}), do: :ok
-  defp authorize_scope(_scope), do: {:error, :not_authorized}
 
   defp record_answers(%Task{} = task, answers) do
     now = DateTime.utc_now()
@@ -101,8 +80,4 @@ defmodule Rail.Pipeline.Actions.AnswerQuestions do
   end
 
   defp deliver(%Task{} = task, opts), do: deliver_resolved_round(task, opts)
-
-  defp resolve_task(%Task{} = task), do: task
-  defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)
-  defp resolve_task(_other), do: nil
 end

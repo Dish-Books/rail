@@ -11,7 +11,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshness do
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Scope
 
   @doc """
   Checks demo freshness against the current worktree fingerprint:
@@ -22,32 +21,14 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshness do
     - If task is sitting at `ready_to_merge` awaiting approval and not busy:
       re-queues to `demo` queued, broadcasts, and pumps dispatcher.
   """
-  def refresh_demo_freshness(scope_or_task, task_or_opts \\ [], opts \\ [])
 
-  def refresh_demo_freshness(%Scope{} = scope, task_or_id, _opts) do
-    if authorized?(scope) do
-      case resolve_task(task_or_id) do
-        %Task{} = task -> do_refresh_demo_freshness(task)
-        nil -> {:error, :not_found}
-      end
-    else
-      {:error, :not_authorized}
-    end
-  end
+  def refresh_demo_freshness(task, opts \\ [])
 
-  def refresh_demo_freshness(task_or_id, opts, _extra) do
-    refresh_demo_freshness(Scope.for_system(), task_or_id, opts)
-  end
+  def refresh_demo_freshness(%Task{stage: :merged} = task, _opts), do: {:ok, task}
 
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
+  def refresh_demo_freshness(%Task{merged_at: %DateTime{}} = task, _opts), do: {:ok, task}
 
-  defp do_refresh_demo_freshness(%Task{stage: :merged} = task), do: {:ok, task}
-
-  defp do_refresh_demo_freshness(%Task{merged_at: %DateTime{}} = task), do: {:ok, task}
-
-  defp do_refresh_demo_freshness(%Task{} = task) do
+  def refresh_demo_freshness(%Task{} = task, _opts) do
     case fetch_latest_demo(task.id) do
       %Demo{stale: false, head_sha: head_sha} = demo when is_binary(head_sha) and head_sha != "" ->
         check_freshness_against_worktree(task, demo)
@@ -120,8 +101,4 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshness do
       {:ok, task}
     end
   end
-
-  defp resolve_task(%Task{} = task), do: task
-  defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)
-  defp resolve_task(_other), do: nil
 end

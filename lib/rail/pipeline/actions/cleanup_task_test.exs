@@ -102,7 +102,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     {:ok, task} = Pipeline.create_task(issue_8703, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -120,7 +120,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     {:ok, task_chat} = Pipeline.create_task(issue_8704, :product)
 
     {:ok, task_chat} =
-      Pipeline.update_task(system_scope(), task_chat.id, %{
+      Pipeline.update_task(task_chat, %{
         stage: :qa,
         stage_state: :awaiting_approval,
         active_chat_role_id: "qa"
@@ -185,7 +185,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8707, :product)
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :merged,
         stage_state: :queued,
         worktree_name: "cleanup-branch",
@@ -194,7 +194,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
       })
 
     assert {:ok, %Task{worktree_path: ^worktree_path} = cleaned} =
-             Pipeline.cleanup_task(scope, task)
+             Pipeline.cleanup_task(task)
 
     refute Task.worktree_present?(cleaned)
 
@@ -234,61 +234,12 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     {:ok, task} = Pipeline.create_task(issue_8709, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :merged,
         worktree_name: "removed-worktree",
         worktree_path: "/tmp/rail-removed-worktree"
       })
 
     assert {:ok, %Task{}} = Pipeline.cleanup_task(task)
-  end
-
-  test "returns error when scope is unauthorized" do
-    assert {:error, :not_authorized} = Pipeline.cleanup_task(:unauthorized, "tsk_123")
-  end
-
-  test "returns error when task is not found" do
-    assert {:error, :not_found} = Pipeline.cleanup_task("tsk_nonexistent")
-    assert {:error, :not_found} = Pipeline.cleanup_task(123)
-  end
-
-  test "accepts nil scope and task with opts", %{project: _project, task: _task} do
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Cleanup Task Project 8710",
-        github_repo: "org/cleanup-task-8710",
-        github_installation_id: 8710,
-        linear_team_id: "team_cleanup_task_8710",
-        linear_team_key: "P8710",
-        default_branch: "main",
-        clone_path: "/tmp/repos/cleanup-task-8710",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_cleanup_task_8711",
-      "identifier" => "TSK-8711",
-      "title" => "Task 8711"
-    })
-
-    {:ok, issue_8711} = Issues.capture_issue(system_scope(), project, "Task 8711")
-
-    {:ok, task} = Pipeline.create_task(issue_8711, :product)
-
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :merged,
-        worktree_name: "removed-worktree",
-        worktree_path: "/tmp/rail-removed-worktree"
-      })
-
-    assert {:ok, %Task{}} = Pipeline.cleanup_task(nil, task)
-    assert {:ok, %Task{}} = Pipeline.cleanup_task(task.id)
   end
 end

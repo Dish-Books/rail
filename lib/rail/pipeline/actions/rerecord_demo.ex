@@ -32,28 +32,10 @@ defmodule Rail.Pipeline.Actions.RerecordDemo do
   - Sets stage to `:demo` queued and clears errors.
   - Broadcasts `pipeline_changed` and pumps the dispatcher.
   """
-  def rerecord_demo(scope_or_task, task_or_opts \\ [], opts \\ [])
 
-  def rerecord_demo(%Scope{} = scope, task_or_id, _opts) do
-    if authorized?(scope) do
-      case resolve_task(task_or_id) do
-        %Task{} = task -> do_rerecord_demo(scope, task)
-        nil -> {:error, :not_found}
-      end
-    else
-      {:error, :not_authorized}
-    end
-  end
+  def rerecord_demo(%Task{} = task, _opts \\ []) do
+    scope = Scope.for_system()
 
-  def rerecord_demo(task_or_id, opts, _extra) do
-    rerecord_demo(Scope.for_system(), task_or_id, opts)
-  end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
-
-  defp do_rerecord_demo(scope, %Task{} = task) do
     cond do
       task.stage == :merged or task.merged_at != nil ->
         {:error, :task_merged}
@@ -94,8 +76,4 @@ defmodule Rail.Pipeline.Actions.RerecordDemo do
         {:ok, updated_task}
     end
   end
-
-  defp resolve_task(%Task{} = task), do: task
-  defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)
-  defp resolve_task(_other), do: nil
 end

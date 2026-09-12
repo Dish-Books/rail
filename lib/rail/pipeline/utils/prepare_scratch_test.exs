@@ -95,7 +95,7 @@ defmodule Rail.Pipeline.Utils.PrepareScratchTest do
       |> Repo.update()
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{issue_id: issue.id, stage: :product})
+      Pipeline.update_task(task, %{issue_id: issue.id, stage: :product})
 
     scratch_dir = create_temp_git_repo()
 
@@ -127,7 +127,7 @@ defmodule Rail.Pipeline.Utils.PrepareScratchTest do
     {:ok, issue} = Issues.capture_issue(system_scope(), project, "Scratch Issue 13506")
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         issue_id: issue.id,
         stage: :engineer
       })
@@ -151,7 +151,7 @@ defmodule Rail.Pipeline.Utils.PrepareScratchTest do
 
   test "prepare_scratch for engineer does nothing if no plan content exists", %{task: task} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         issue_id: nil,
         stage: :engineer
       })
@@ -172,7 +172,7 @@ defmodule Rail.Pipeline.Utils.PrepareScratchTest do
       })
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         outstanding_reports: [role.id]
       })
@@ -205,7 +205,7 @@ defmodule Rail.Pipeline.Utils.PrepareScratchTest do
       })
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         issue_id: nil,
         stage: :design
       })
@@ -241,7 +241,7 @@ defmodule Rail.Pipeline.Utils.PrepareScratchTest do
 
   test "prepare_scratch handles qa_lead and generic stage gracefully", %{task: task} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :qa_lead
       })
 
@@ -255,7 +255,7 @@ defmodule Rail.Pipeline.Utils.PrepareScratchTest do
 
   test "prepare_scratch for qa_lead materializes latest QA report into scratch/qa", %{task: task} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :qa_lead
       })
 

@@ -122,7 +122,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :design,
         stage_state: :failed,
         error: "Canvas URL could not be opened or returned 404/410",
@@ -200,7 +200,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :design,
         stage_state: :failed,
         error: "Initial gate failure",
@@ -259,7 +259,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :design,
         stage_state: :failed,
         error: "Initial failure",
@@ -291,7 +291,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
   test "returns error when designer is actively running", %{task: task} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :design,
         stage_state: :running
       })
@@ -302,7 +302,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
   test "noops and returns ok when task stage is not design", %{task: task} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :awaiting_approval
       })
@@ -352,7 +352,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :design,
         stage_state: :failed,
         scratch_path: scratch_dir
@@ -365,12 +365,12 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     # The human picks dir-1, so the manifest must keep that choice.
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{stage: :design, stage_state: :awaiting_approval})
+      Pipeline.update_task(task, %{stage: :design, stage_state: :awaiting_approval})
 
     {:ok, _picked} = Pipeline.pick_design_direction(task, "dir-1")
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{stage: :design, stage_state: :failed})
+      Pipeline.update_task(task, %{stage: :design, stage_state: :failed})
 
     mock_design_uploads(2)
 
@@ -420,7 +420,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :design,
         stage_state: :failed,
         scratch_path: scratch_dir
@@ -433,12 +433,12 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     # The human picks dir-1, then the agent rewrites the manifest with a different pick.
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{stage: :design, stage_state: :awaiting_approval})
+      Pipeline.update_task(task, %{stage: :design, stage_state: :awaiting_approval})
 
     {:ok, _picked} = Pipeline.pick_design_direction(task, "dir-1")
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{stage: :design, stage_state: :failed})
+      Pipeline.update_task(task, %{stage: :design, stage_state: :failed})
 
     manifest_path = Path.join(design_dir, "manifest.json")
     manifest = manifest_path |> File.read!() |> Jason.decode!()
@@ -479,7 +479,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :design,
         stage_state: :failed,
         scratch_path: scratch_dir
@@ -535,21 +535,6 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     assert is_nil(Pipeline.design_manifest_stamp(nil))
   end
 
-  test "authorizes scope with user and handles invalid task argument", %{task: task} do
-    user_scope = %Scope{user: %{id: "usr_recheck"}, system: false}
-    unauth_scope = %Scope{user: nil, system: false}
-
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :engineer
-      })
-
-    assert {:ok, %Task{stage: :engineer}} = Pipeline.recheck_design(user_scope, task.id)
-    assert {:error, :not_authorized} = Pipeline.recheck_design(unauth_scope, task.id)
-    assert {:error, :not_found} = Pipeline.recheck_design(user_scope, "tsk_000000000000000000000000")
-    assert {:error, :not_found} = Pipeline.recheck_design(user_scope, 12_345)
-  end
-
   test "computes design_manifest_stamp from the task's scratch directory", %{task: task} do
     scratch_dir = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
     design_dir = Path.join(scratch_dir, "design")
@@ -583,7 +568,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         scratch_path: scratch_dir
       })
 
@@ -630,7 +615,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     File.write!(Path.join(design_dir, "manifest.json"), manifest)
 
     {:ok, scratch_task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :design,
         scratch_path: scratch_dir,
         worktree_path: "/tmp/rail-removed-worktree"
@@ -643,7 +628,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     # A manifest written into the worktree instead is a design Rail never saw.
     {:ok, elsewhere_task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         scratch_path: Path.join("/tmp", "rail_design_empty_#{System.unique_integer([:positive])}")
       })
 

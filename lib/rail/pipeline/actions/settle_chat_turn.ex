@@ -22,7 +22,6 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
   alias Rail.Runs
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
-  alias Rail.Scope
 
   @doc """
   Settles a finished chat turn for a task and run.
@@ -108,9 +107,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurn do
   end
 
   defp apply_design_manifest_chat(task, run, opts) do
-    scope = Scope.for_system()
-
-    case Pipeline.apply_design_manifest(scope, task, Keyword.put(opts, :require_new_version, false)) do
+    case Pipeline.apply_design_manifest(task, Keyword.put(opts, :require_new_version, false)) do
       {:ok, _design} ->
         {:ok, updated_task} =
           task

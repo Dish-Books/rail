@@ -21,17 +21,14 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
   alias Rail.Runs
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
-  alias Rail.Scope
 
   @valid_delivery_modes [:immediate, :when_finished, :stop_and_send]
 
   @doc """
   Sends a chat turn with the given delivery options.
   """
-  def send_chat_turn(%Scope{} = scope, task_or_id, role_id, text, opts) when is_list(opts) do
-    with :ok <- authorize_scope(scope),
-         {:ok, %Task{} = task} <- resolve_task(task_or_id),
-         {:ok, %Role{} = role} <- resolve_role(role_id),
+  def send_chat_turn(%Task{} = task, role_id, text, opts \\ []) do
+    with {:ok, %Role{} = role} <- resolve_role(role_id),
          run = resolve_run(task.id, role.id),
          :ok <- validate_can_chat(run),
          {:ok, trimmed_text} <- validate_message(text),
@@ -39,18 +36,6 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
          :ok <- validate_delivery_mode(delivery) do
       do_send_chat_turn(task, role, run, trimmed_text, delivery, opts)
     end
-  end
-
-  def send_chat_turn(%Scope{} = scope, task_or_id, role_id, text) do
-    send_chat_turn(scope, task_or_id, role_id, text, [])
-  end
-
-  def send_chat_turn(task_or_id, role_id, text, opts) when is_list(opts) do
-    send_chat_turn(Scope.for_system(), task_or_id, role_id, text, opts)
-  end
-
-  def send_chat_turn(task_or_id, role_id, text) do
-    send_chat_turn(Scope.for_system(), task_or_id, role_id, text, [])
   end
 
   @doc """
@@ -109,21 +94,6 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
       end
     end
   end
-
-  defp authorize_scope(%Scope{system: true}), do: :ok
-  defp authorize_scope(%Scope{user: %{}}), do: :ok
-  defp authorize_scope(_scope), do: {:error, :not_authorized}
-
-  defp resolve_task(%Task{} = task), do: resolve_task(task.id)
-
-  defp resolve_task(id) when is_binary(id) do
-    case Repo.get(Task, id) do
-      %Task{} = task -> {:ok, task}
-      nil -> {:error, :not_found}
-    end
-  end
-
-  defp resolve_task(_other), do: {:error, :not_found}
 
   defp resolve_role(%Role{} = role), do: {:ok, role}
 

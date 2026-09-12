@@ -105,7 +105,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10303, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         error: "Existing error to be cleared"
       })
 
@@ -162,7 +162,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10305, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         error: nil
       })
 
@@ -207,7 +207,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10307, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         error: nil
       })
 
@@ -249,7 +249,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10309, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         error: nil
       })
 
@@ -291,7 +291,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10311, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         error: nil
       })
 
@@ -335,7 +335,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10313, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         error: nil
       })
 

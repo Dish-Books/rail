@@ -7,69 +7,16 @@ defmodule Rail.Pipeline.Actions.ListQuestions do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
-  alias Rail.Scope
 
   @doc """
   Lists questions for a task, project, or across projects, with optional filters.
+
+  `target` is a `%Task{}`, a `%Project{}`, or `nil` for every project.
   """
-  def list_questions(%Scope{} = scope, target, opts) when is_list(opts) do
-    if authorized?(scope) do
-      fetch_questions(target, opts)
-    else
-      []
-    end
+  def list_questions(target \\ nil, opts \\ []) do
+    # TODO: don't do wrapper functions, just do it inline
+    fetch_questions(target, opts)
   end
-
-  def list_questions(%Scope{} = scope, opts) when is_list(opts) do
-    list_questions(scope, nil, opts)
-  end
-
-  def list_questions(%Scope{} = scope, target) do
-    list_questions(scope, target, [])
-  end
-
-  def list_questions(target, opts) when is_list(opts) do
-    list_questions(Scope.for_system(), target, opts)
-  end
-
-  def list_questions(target) do
-    list_questions(Scope.for_system(), target, [])
-  end
-
-  def list_questions do
-    list_questions(Scope.for_system(), nil, [])
-  end
-
-  @doc """
-  Lists pending questions for a project or across all projects.
-  """
-  def list_pending_questions(%Scope{} = scope, target, opts) when is_list(opts) do
-    list_questions(scope, target, Keyword.put(opts, :status, :pending))
-  end
-
-  def list_pending_questions(%Scope{} = scope, opts) when is_list(opts) do
-    list_pending_questions(scope, nil, opts)
-  end
-
-  def list_pending_questions(%Scope{} = scope, target) do
-    list_pending_questions(scope, target, [])
-  end
-
-  def list_pending_questions(target, opts) when is_list(opts) do
-    list_pending_questions(Scope.for_system(), target, opts)
-  end
-
-  def list_pending_questions(target) do
-    list_pending_questions(Scope.for_system(), target, [])
-  end
-
-  def list_pending_questions do
-    list_pending_questions(Scope.for_system(), nil, [])
-  end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
 
   defp fetch_questions(target, opts) do
     query = base_query(target)

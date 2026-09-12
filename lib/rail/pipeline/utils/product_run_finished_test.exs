@@ -75,7 +75,7 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
 
   defp running_task(task) do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{stage: :product, stage_state: :running})
+      Pipeline.update_task(task, %{stage: :product, stage_state: :running})
 
     task
   end
@@ -182,7 +182,7 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
     {:ok, %Question{id: expected_q_id}} =
       Pipeline.register_question(Repo.preload(asking_run, task: :issue), %DetectedQuestion{prompt: "Which scope?"})
 
-    {:ok, _task} = Pipeline.update_task(system_scope(), task.id, %{stage: :product})
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :product})
 
     os_process = os_process(asking_run)
 

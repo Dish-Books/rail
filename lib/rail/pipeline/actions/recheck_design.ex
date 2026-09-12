@@ -36,33 +36,16 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
     - Broadcasts `pipeline_changed`.
     - Returns `{:error, reason}`.
   """
-  def recheck_design(%Scope{} = scope, task_or_id, opts) when is_list(opts) do
-    with :ok <- authorize_scope(scope),
-         %Task{} = task <- resolve_task(task_or_id) do
-      do_recheck_design(scope, task, opts)
-    else
-      {:error, reason} -> {:error, reason}
-      nil -> {:error, :not_found}
-    end
-  end
-
-  def recheck_design(%Scope{} = scope, task_or_id) do
-    recheck_design(scope, task_or_id, [])
-  end
-
-  def recheck_design(task_or_id, opts) when is_list(opts) do
-    recheck_design(Scope.for_system(), task_or_id, opts)
-  end
-
-  def recheck_design(task_or_id) do
-    recheck_design(Scope.for_system(), task_or_id, [])
+  def recheck_design(%Task{} = task, opts \\ []) do
+    do_recheck_design(task, opts)
   end
 
   @doc """
   Reads, validates, and captures the design manifest for a task.
   Supports `require_new_version: true` (for clean run settlement) or `false` (for recheck / chat turns).
   """
-  def apply_design_manifest(%Scope{} = scope, %Task{} = task, opts \\ []) do
+  def apply_design_manifest(%Task{} = task, opts \\ []) do
+    scope = Scope.for_system()
     design_target = task.scratch_path
     read_opts = Keyword.take(opts, [:url_probe, :req_options])
     require_new_version = Keyword.get(opts, :require_new_version, false)
@@ -110,26 +93,22 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
 
   def design_manifest_stamp(_other), do: nil
 
-  defp authorize_scope(%Scope{system: true}), do: :ok
-  defp authorize_scope(%Scope{user: %{}}), do: :ok
-  defp authorize_scope(_scope), do: {:error, :not_authorized}
-
-  defp do_recheck_design(_scope, %Task{stage: stage} = task, _opts) when stage != :design do
+  defp do_recheck_design(%Task{stage: stage} = task, _opts) when stage != :design do
     {:ok, task}
   end
 
-  defp do_recheck_design(scope, %Task{} = task, opts) do
+  defp do_recheck_design(%Task{} = task, opts) do
     if task.stage_state == :running or Runs.running?(task.id) do
       {:error, "The Designer is still running; wait for it to finish."}
     else
-      execute_recheck(scope, task, opts)
+      execute_recheck(task, opts)
     end
   end
 
-  defp execute_recheck(scope, task, opts) do
+  defp execute_recheck(task, opts) do
     apply_opts = Keyword.put(opts, :require_new_version, false)
 
-    case apply_design_manifest(scope, task, apply_opts) do
+    case apply_design_manifest(task, apply_opts) do
       {:ok, %Design{} = design} ->
         {:ok, updated_task} =
           task
@@ -194,8 +173,4 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
   defp direction_present?(directions, key) when is_binary(key) do
     is_list(directions) and Enum.any?(directions, fn d -> Map.get(d, :key) == key end)
   end
-
-  defp resolve_task(%Task{} = task), do: task
-  defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)
-  defp resolve_task(_other), do: nil
 end

@@ -53,12 +53,12 @@ defmodule Rail.Pipeline.Actions.LoadDiffTest do
 
   test "returns {:error, :no_worktree} when task worktree_path is nil", %{task: task} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         worktree_path: "/tmp/rail-removed-worktree"
       })
 
     assert {:error, :no_worktree} = Pipeline.load_diff(task)
-    assert {:error, :no_worktree} = Pipeline.load_diff(Scope.for_system(), task)
+    assert {:error, :no_worktree} = Pipeline.load_diff(task)
   end
 
   test "loads branch changes against main with diff_rev HEAD and reconciles viewed files", %{task: task} do
@@ -70,7 +70,7 @@ defmodule Rail.Pipeline.Actions.LoadDiffTest do
     git!(repo, ["commit", "-m", "commit feature"])
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         worktree_path: repo,
         viewed_diff_files: %{"stale.txt" => "old_digest"}
       })
@@ -79,11 +79,11 @@ defmodule Rail.Pipeline.Actions.LoadDiffTest do
     assert %FileDiff{path: "feature.txt"} = file
 
     # Reconciled task in DB has stale viewed mark removed
-    reloaded_task = Pipeline.get_task!(Scope.for_system(), task.id)
+    reloaded_task = Pipeline.get_task(task.id)
     assert reloaded_task.viewed_diff_files == %{}
 
     # Pipeline delegate with scope also works
-    assert {:ok, ^files, "HEAD"} = Pipeline.load_diff(Scope.for_system(), task)
+    assert {:ok, ^files, "HEAD"} = Pipeline.load_diff(task)
   end
 
   test "loads uncommitted changes with diff_rev nil when no branch commits against main", %{task: task} do
@@ -91,7 +91,7 @@ defmodule Rail.Pipeline.Actions.LoadDiffTest do
     File.write!(Path.join(repo, "uncommitted.txt"), "uncommitted work\n")
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         worktree_path: repo,
         viewed_diff_files: %{}
       })

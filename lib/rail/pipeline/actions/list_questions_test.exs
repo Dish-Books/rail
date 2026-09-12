@@ -186,7 +186,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     assert Enum.map(asc_order, & &1.id) == [q1.id, q2.id]
   end
 
-  test "list_pending_questions convenience functions", %{project: project, task: task, roles: roles} do
+  test "filters a project's questions down to the pending ones", %{project: project, task: task, roles: roles} do
     {:ok, run} =
       Runs.create_run(%{
         task_id: task.id,
@@ -226,40 +226,21 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
 
     {:ok, q_pending} = Pipeline.register_question(pending_run, %DetectedQuestion{prompt: "Still open?"})
 
-    pending_list = Pipeline.list_pending_questions(project.id)
+    pending_list = Pipeline.list_questions(project.id, status: :pending)
     assert length(pending_list) == 1
     assert hd(pending_list).id == q_pending.id
 
-    global_pending = Pipeline.list_pending_questions()
+    global_pending = Pipeline.list_questions(nil, status: :pending)
     assert Enum.any?(global_pending, &(&1.id == q_pending.id))
   end
 
-  test "scope authorization for list_questions and list_pending_questions" do
-    unauth_scope = %Rail.Scope{}
-    assert Pipeline.list_questions(unauth_scope, "prj_test") == []
-    assert Pipeline.list_pending_questions(unauth_scope, "prj_test") == []
-
-    auth_scope = Rail.Scope.for_system()
-    assert [] = Pipeline.list_questions(auth_scope, "prj_test")
-
-    user_scope = %Rail.Scope{user: %{id: "usr_test"}}
-    assert [] = Pipeline.list_questions(user_scope, "prj_test")
-    assert [] = Pipeline.list_pending_questions(user_scope, "prj_test")
-  end
-
-  test "overloaded variants and convenience functions for list_questions and list_pending_questions" do
-    user_scope = %Rail.Scope{user: %{id: "usr_test"}}
-    assert [] = Pipeline.list_questions(user_scope, status: :pending)
-    assert [] = Pipeline.list_questions(user_scope, "prj_test")
-    assert [] = Pipeline.list_pending_questions(user_scope, status: :pending)
-    assert [] = Pipeline.list_pending_questions(user_scope, "prj_test")
-
+  test "returns nothing for targets that hold no questions" do
     assert [] = Pipeline.list_questions("prj_test")
     assert [] = Pipeline.list_questions("tsk_test")
     assert [] = Pipeline.list_questions()
-    assert [] = Pipeline.list_pending_questions("prj_test")
-    assert [] = Pipeline.list_pending_questions("prj_test", order_by: [asc: :inserted_at])
-    assert [] = Pipeline.list_pending_questions()
+    assert [] = Pipeline.list_questions("prj_test", status: :pending)
+    assert [] = Pipeline.list_questions("prj_test", status: :pending, order_by: [asc: :inserted_at])
+    assert [] = Pipeline.list_questions(nil, status: :pending)
   end
 
   test "get_question and get_question!", %{run: run} do
@@ -275,7 +256,6 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     assert %Question{id: ^expected_id} = Pipeline.get_question!(user_scope, expected_id)
 
     assert {:error, :not_found} = Pipeline.get_question("qst_nonexistent")
-    assert {:error, :not_authorized} = Pipeline.get_question(%Rail.Scope{}, expected_id)
 
     assert_raise Ecto.NoResultsError, fn ->
       Pipeline.get_question!("qst_nonexistent")

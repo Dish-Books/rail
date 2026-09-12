@@ -519,7 +519,7 @@ defmodule Rail.Domain.FormattersTest do
     end
 
     test "plan_for returns the stored plan", %{task: task} do
-      {:ok, task} = Pipeline.get_task(system_scope(), task.id)
+      {:ok, task} = Pipeline.get_task(task.id)
 
       assert is_nil(Formatters.plan_for(task))
 
@@ -527,7 +527,7 @@ defmodule Rail.Domain.FormattersTest do
       |> Plan.changeset(%{content: "# Database Plan", captured_at: DateTime.utc_now()}, task.id)
       |> Repo.insert!()
 
-      {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
+      {:ok, _plan} = Pipeline.get_plan(task)
       assert Formatters.plan_for(task) == "# Database Plan"
 
       # Task with plans association loaded

@@ -617,7 +617,7 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, task} = Pipeline.create_task(issue_12505, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running
       })

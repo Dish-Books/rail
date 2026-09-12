@@ -90,7 +90,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   test "dismissing the only question resumes the run and says it was waved off", %{task: task, run: run} do
     {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
 
-    assert Pipeline.get_task!(system_scope(), task.id).stage_state == :blocked
+    assert Repo.get!(Task, task.id).stage_state == :blocked
 
     test_pid = self()
     run_id = run.id
@@ -100,7 +100,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
       {:ok, %OsProcess{is_chat: false, run: spawned, task: task}}
     end)
 
-    assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(q.id)
+    assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(q)
 
     assert QuestionQueue.pending_questions(task.id) == []
     assert Repo.get!(Question, q.id).delivered_at
@@ -116,7 +116,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     assert Enum.map(QuestionQueue.pending_questions(task.id), & &1.id) == [first.id, second.id]
 
     # No spawn is stubbed: resuming the run here would raise on the unexpected call.
-    assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(first.id)
+    assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(first)
 
     assert Repo.get!(Task, task.id).stage_state == :blocked
     assert Enum.map(QuestionQueue.pending_questions(task.id), & &1.id) == [second.id]
@@ -126,7 +126,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   test "leaves a task that is no longer parked alone", %{task: task, run: run} do
     {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
 
-    {:ok, task} = Pipeline.update_task(system_scope(), task.id, %{stage_state: :running})
+    {:ok, task} = Pipeline.update_task(task, %{stage_state: :running})
 
     stub(Runs, :start_os_process, fn _run, _argv, _opts -> {:error, :not_expected} end)
 
@@ -152,24 +152,13 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
       |> Question.changeset(%{answer: "Yes", status: :answered, answered_at: DateTime.utc_now()})
       |> Repo.update()
 
-    assert {:error, :already_resolved} = Pipeline.dismiss_question(q_answered.id)
+    assert {:error, :already_resolved} = Pipeline.dismiss_question(q_answered)
   end
 
   test "returns error when dismissing an already dismissed question", %{run: run} do
     {:ok, q_dismissed} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Dismissed question?"})
     {:ok, q_dismissed} = Pipeline.dismiss_question(q_dismissed)
 
-    assert {:error, :already_resolved} = Pipeline.dismiss_question(q_dismissed.id)
-  end
-
-  test "validates scope authorization and existence", %{run: run} do
-    assert {:error, :not_authorized} = Pipeline.dismiss_question(%Rail.Scope{}, "qst_any")
-    assert {:error, :not_found} = Pipeline.dismiss_question("qst_nonexistent")
-    assert {:error, :not_found} = Pipeline.dismiss_question(123)
-
-    {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Scoped question?"})
-
-    user_scope = %Rail.Scope{user: %{id: "usr_test"}}
-    assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(user_scope, q.id)
+    assert {:error, :already_resolved} = Pipeline.dismiss_question(q_dismissed)
   end
 end

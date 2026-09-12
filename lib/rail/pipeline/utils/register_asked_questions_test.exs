@@ -70,7 +70,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
 
     # These tests exercise the question read-back, not Linear publishing.
     {:ok, task} =
-      Pipeline.update_task(scope, task.id, %{issue_id: nil, stage: :product, stage_state: :running})
+      Pipeline.update_task(task, %{issue_id: nil, stage: :product, stage_state: :running})
 
     {:ok, run} =
       Runs.create_run(%{

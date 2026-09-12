@@ -79,7 +79,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     worktree = create_temp_git_repo()
 
     {:ok, task_merged} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :merged,
         stage_state: :awaiting_approval,
         worktree_path: worktree
@@ -98,7 +98,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task_merged_at} = Pipeline.create_task(issue_9502, :product)
 
     {:ok, task_merged_at} =
-      Pipeline.update_task(system_scope(), task_merged_at.id, %{
+      Pipeline.update_task(task_merged_at, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: worktree,
@@ -118,7 +118,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task_no_demo} = Pipeline.create_task(issue_9503, :product)
 
     {:ok, task_no_demo} =
-      Pipeline.update_task(system_scope(), task_no_demo.id, %{
+      Pipeline.update_task(task_no_demo, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: worktree
@@ -131,7 +131,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     worktree = create_temp_git_repo()
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: worktree
@@ -192,7 +192,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task_missing_dir} = Pipeline.create_task(issue_9504, :product)
 
     {:ok, task_missing_dir} =
-      Pipeline.update_task(system_scope(), task_missing_dir.id, %{
+      Pipeline.update_task(task_missing_dir, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: "/tmp/nonexistent_#{System.unique_integer([:positive])}"
@@ -256,7 +256,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task_non_git} = Pipeline.create_task(issue_9505, :product)
 
     {:ok, task_non_git} =
-      Pipeline.update_task(system_scope(), task_non_git.id, %{
+      Pipeline.update_task(task_non_git, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: scratch_dir
@@ -316,7 +316,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task_nil_worktree} = Pipeline.create_task(issue_9506, :product)
 
     {:ok, task_nil_worktree} =
-      Pipeline.update_task(system_scope(), task_nil_worktree.id, %{
+      Pipeline.update_task(task_nil_worktree, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: "/tmp/rail-removed-worktree"
@@ -363,8 +363,8 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
       )
 
     assert {:ok, %Task{stage: :ready_to_merge}} = Pipeline.refresh_demo_freshness(task_nil_worktree)
-    assert {:ok, %Task{}} = Pipeline.refresh_demo_freshness(Scope.user_scope(), task_nil_worktree.id, [])
-    assert {:error, :not_found} = Pipeline.refresh_demo_freshness(Scope.for_system(), :bad_id, [])
+    assert {:ok, %Task{}} = Pipeline.refresh_demo_freshness(task_nil_worktree, [])
+    assert {:error, :not_found} = Pipeline.refresh_demo_freshness(:bad_id, [])
   end
 
   test "leaves demo fresh and task at ready_to_merge when fingerprint matches", %{task: task} do
@@ -372,7 +372,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     %{head_sha: sha, dirty_digest: digest} = Git.branch_fingerprint(worktree)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: worktree
@@ -430,7 +430,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     %{dirty_digest: current_digest} = Git.branch_fingerprint(worktree)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: worktree
@@ -482,7 +482,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
               stage: :demo,
               stage_state: :queued,
               error: nil
-            }} = Pipeline.refresh_demo_freshness(Scope.for_system(), task.id, [])
+            }} = Pipeline.refresh_demo_freshness(task, [])
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :demo_stale_requeued}}
 
@@ -496,7 +496,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     %{head_sha: current_sha} = Git.branch_fingerprint(worktree)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: worktree
@@ -552,7 +552,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     worktree = create_temp_git_repo()
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :queued,
         worktree_path: worktree
@@ -612,7 +612,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     worktree = create_temp_git_repo()
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         stage_state: :running,
         worktree_path: worktree
@@ -662,15 +662,5 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
              Pipeline.refresh_demo_freshness(task)
 
     assert Repo.get!(Demo, demo.id).stale
-  end
-
-  test "enforces authorization", %{task: task} do
-    assert {:error, :not_authorized} =
-             Pipeline.refresh_demo_freshness(%Scope{system: false, user: nil}, task)
-  end
-
-  test "returns not found for unknown task" do
-    assert {:error, :not_found} =
-             Pipeline.refresh_demo_freshness("tsk_nonexistent_9999")
   end
 end

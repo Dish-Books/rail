@@ -90,7 +90,7 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
     Repo.update_all(from(i in Issue, where: i.id == ^issue.id), set: [title: "Old Title", description: "Old Desc"])
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         issue_id: issue.id,
         stage: :product
       })
@@ -139,7 +139,7 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
 
   test "capture_scratch for architect captures plan from plan.md", %{task: task} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :architect
       })
 
@@ -167,7 +167,7 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
     {:ok, issue} = Issues.capture_issue(system_scope(), project, "Scratch Issue 13508")
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         issue_id: issue.id,
         stage: :architect
       })
@@ -186,7 +186,7 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
 
   test "capture_scratch delegates to artifacts for design, qa, demo when manifests exist", %{task: task} do
     # Artifact capture only posts to Linear when the task has an issue.
-    {:ok, task} = Pipeline.update_task(system_scope(), task.id, %{issue_id: nil})
+    {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
     scratch_dir = create_temp_git_repo()
 

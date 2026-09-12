@@ -10,32 +10,14 @@ defmodule Rail.Pipeline.Actions.DeclineDemo do
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Scope
 
   @doc """
   Declines recording a demo for a task, recording a reason note and advancing
   the task to `ready_to_merge` awaiting approval.
   """
-  def decline_demo(scope_or_task, task_or_note \\ nil, note \\ nil)
-
-  def decline_demo(%Scope{} = scope, task_or_id, note) do
-    if authorized?(scope) do
-      case resolve_task(task_or_id) do
-        %Task{} = task -> do_decline_demo(task, note)
-        nil -> {:error, :not_found}
-      end
-    else
-      {:error, :not_authorized}
-    end
+  def decline_demo(%Task{} = task, note \\ nil) do
+    do_decline_demo(task, note)
   end
-
-  def decline_demo(task_or_id, note, _extra) do
-    decline_demo(Scope.for_system(), task_or_id, note)
-  end
-
-  defp authorized?(%Scope{system: true}), do: true
-  defp authorized?(%Scope{user: %{}}), do: true
-  defp authorized?(_scope), do: false
 
   defp do_decline_demo(%Task{} = task, note) do
     cleaned_note =
@@ -109,8 +91,4 @@ defmodule Rail.Pipeline.Actions.DeclineDemo do
   end
 
   defp resolve_fingerprint(_task), do: {nil, nil}
-
-  defp resolve_task(%Task{} = task), do: task
-  defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)
-  defp resolve_task(_other), do: nil
 end

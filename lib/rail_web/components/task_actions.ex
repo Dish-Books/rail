@@ -201,19 +201,7 @@ defmodule RailWeb.Components.TaskActions do
         {actions, false}
 
       true ->
-        approve_label = if task.stage == :engineer, do: "Send to review", else: "Approve"
-        approve_id = if task.stage == :engineer, do: "action-send-to-review", else: "action-approve"
-
-        primary_approve = %{
-          id: approve_id,
-          label: approve_label,
-          kind: :approve,
-          style: :filled,
-          icon: "pi-check",
-          action: "approve",
-          params: %{}
-        }
-
+        # Approving is stage-specific and has no action behind it yet.
         send_back = %{
           id: "action-send-back",
           label: "Send back with comments",
@@ -224,24 +212,7 @@ defmodule RailWeb.Components.TaskActions do
           params: %{}
         }
 
-        actions =
-          if task.stage == :product do
-            skip_design_btn = %{
-              id: "action-approve-skip-design",
-              label: "Approve, skip design",
-              kind: :approve,
-              style: :outlined,
-              icon: "pi-fast-forward",
-              action: "approve_skip_design",
-              params: %{}
-            }
-
-            [primary_approve, skip_design_btn, send_back]
-          else
-            [primary_approve, send_back]
-          end
-
-        {actions, false}
+        {[send_back], false}
     end
   end
 

@@ -55,7 +55,7 @@ defmodule Rail.Pipeline.Actions.ExpandDiffGapTest do
     File.write!(Path.join(repo, "sample.txt"), content)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         worktree_path: repo
       })
 
@@ -71,7 +71,7 @@ defmodule Rail.Pipeline.Actions.ExpandDiffGapTest do
     git!(repo, ["commit", "-m", "add committed"])
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         worktree_path: repo
       })
 
@@ -83,7 +83,7 @@ defmodule Rail.Pipeline.Actions.ExpandDiffGapTest do
     repo = create_temp_git_repo()
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         worktree_path: repo
       })
 
@@ -93,7 +93,7 @@ defmodule Rail.Pipeline.Actions.ExpandDiffGapTest do
 
   test "returns empty list when worktree_path is nil", %{task: task} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         worktree_path: "/tmp/rail-removed-worktree"
       })
 

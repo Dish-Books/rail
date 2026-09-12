@@ -47,35 +47,9 @@ defmodule Rail.Pipeline.Actions.GetPlanTest do
     %{project: project, task: task}
   end
 
-  test "returns latest plan for system scope and user scope", %{task: task} do
-    sys_scope = Scope.for_system()
-    user_scope = Scope.for_user(%{admin: false})
-
-    expect(File, :exists?, 2, fn path -> String.ends_with?(path, "plan.md") end)
-    expect(File, :read!, fn _path -> "# Old Plan" end)
-    {:ok, _task} = capture_scratch(:architect, %{task | scratch_path: "/tmp/rail_scratch/get_plan_1"})
-
-    expect(File, :exists?, 2, fn path -> String.ends_with?(path, "plan.md") end)
-    expect(File, :read!, fn _path -> "# New Plan" end)
-    {:ok, _task} = capture_scratch(:architect, %{task | scratch_path: "/tmp/rail_scratch/get_plan_2"})
-
-    assert {:ok, %Plan{id: expected_plan_id, content: "# New Plan"}} = Pipeline.get_plan(sys_scope, task.id)
-
-    assert {:ok, %Plan{id: ^expected_plan_id}} = Pipeline.get_plan(user_scope, task)
-    assert {:ok, %Plan{id: ^expected_plan_id}} = Pipeline.get_plan(task.id)
-    assert {:ok, %Plan{id: ^expected_plan_id}} = Pipeline.get_plan(task)
-  end
-
   test "returns not found error when plan does not exist", %{task: task} do
     sys_scope = Scope.for_system()
 
-    assert {:error, :not_found} = Pipeline.get_plan(sys_scope, task.id)
-    assert {:error, :not_found} = Pipeline.get_plan(sys_scope, "tsk_nonexistent")
-    assert {:error, :not_found} = Pipeline.get_plan(12_345)
-  end
-
-  test "returns not authorized error for invalid scope", %{task: task} do
-    assert {:error, :not_authorized} = Pipeline.get_plan(nil, task.id)
-    assert {:error, :not_authorized} = Pipeline.get_plan(%Scope{user: nil, system: false}, task.id)
+    assert {:error, :not_found} = Pipeline.get_plan(task)
   end
 end

@@ -74,7 +74,7 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinishedTest do
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     # These tests exercise stage transitions, not Linear publishing.
-    {:ok, task} = Pipeline.update_task(scope, task.id, %{issue_id: nil})
+    {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
     %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
@@ -84,7 +84,7 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinishedTest do
     roles: roles
   } do
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :architect,
         stage_state: :running
       })
@@ -97,7 +97,7 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinishedTest do
 
     {:ok, _captured} = capture_scratch(:architect, %{task | scratch_path: plan_dir})
 
-    {:ok, _plan} = Pipeline.get_plan(system_scope(), task_id)
+    {:ok, _plan} = Pipeline.get_plan(Repo.get!(Task, task_id))
 
     {:ok, run} =
       Runs.create_run(%{
@@ -129,7 +129,7 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinishedTest do
 
   test "settles clean exit 0 for architect stage failing when plan file was not written", %{task: task, roles: roles} do
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :architect,
         stage_state: :running
       })
@@ -170,7 +170,7 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinishedTest do
     scratch_dir = create_temp_git_repo()
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :architect,
         stage_state: :running,
         scratch_path: scratch_dir

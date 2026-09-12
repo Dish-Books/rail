@@ -81,7 +81,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     {:ok, task} = Pipeline.create_task(issue_11227, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :queued,
         worktree_path: repo_dir
@@ -98,19 +98,9 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     }
   end
 
-  test "returns not_authorized for invalid scope", %{task: task, role: role} do
-    assert {:error, :not_authorized} =
-             Pipeline.send_chat_turn(%Scope{system: false, user: nil}, task.id, role.id, "Hello")
-  end
-
-  test "returns not_found when task does not exist", %{role: role} do
-    assert {:error, :not_found} =
-             Pipeline.send_chat_turn("tsk_000000000000000000000000", role.id, "Hello")
-  end
-
   test "returns role_not_found when role does not exist", %{task: task} do
     assert {:error, {:role_not_found, "rol_nonexistent"}} =
-             Pipeline.send_chat_turn(task.id, "rol_nonexistent", "Hello")
+             Pipeline.send_chat_turn(task, "rol_nonexistent", "Hello")
   end
 
   test "returns chat_unavailable when run has not started or has no conversation_id", %{
@@ -118,7 +108,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     role: role
   } do
     assert {:error, :chat_unavailable} =
-             Pipeline.send_chat_turn(task.id, role.id, "Hello")
+             Pipeline.send_chat_turn(task, role.id, "Hello")
 
     {:ok, _run} =
       Runs.create_run(%{
@@ -131,7 +121,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
       })
 
     assert {:error, :chat_unavailable} =
-             Pipeline.send_chat_turn(task.id, role.id, "Hello")
+             Pipeline.send_chat_turn(task, role.id, "Hello")
   end
 
   test "returns empty_message when text is blank", %{task: task, role: role} do
@@ -145,8 +135,8 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
         conversation_id: "sess-1"
       })
 
-    assert {:error, :empty_message} = Pipeline.send_chat_turn(task.id, role.id, "   ")
-    assert {:error, :empty_message} = Pipeline.send_chat_turn(task.id, role.id, nil)
+    assert {:error, :empty_message} = Pipeline.send_chat_turn(task, role.id, "   ")
+    assert {:error, :empty_message} = Pipeline.send_chat_turn(task, role.id, nil)
   end
 
   test "returns invalid_delivery_mode for unsupported mode", %{task: task, role: role} do
@@ -161,7 +151,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
       })
 
     assert {:error, {:invalid_delivery_mode, :invalid}} =
-             Pipeline.send_chat_turn(task.id, role.id, "Hello", delivery: :invalid)
+             Pipeline.send_chat_turn(task, role.id, "Hello", delivery: :invalid)
   end
 
   test "delivers chat turn immediately when idle, creates Run is_chat: true, and leaves stage intact", %{
@@ -189,7 +179,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     assert {:ok, :sent, %Task{active_chat_role_id: ^role_id, stage: :engineer, stage_state: :queued}} =
              Pipeline.send_chat_turn(
-               task_id,
+               Repo.get!(Task, task_id),
                role_id,
                "Line 1\nLine 2",
                async: false
@@ -244,7 +234,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     assert {:ok, :queued, %Task{id: ^task_id}} =
              Pipeline.send_chat_turn(
-               task.id,
+               task,
                role_id,
                "Hold this thought",
                delivery: :when_finished
@@ -256,7 +246,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     assert {:ok, :queued, %Task{id: ^task_id}} =
              Pipeline.send_chat_turn(
-               task.id,
+               task,
                role_id,
                "Second thought",
                delivery: :when_finished
@@ -287,7 +277,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     {:ok, _task} = task |> Task.changeset(%{stage_state: :running}) |> Repo.update()
 
     assert {:ok, :queued, %Task{id: ^task_id}} =
-             Pipeline.send_chat_turn(task_id, role_id, "Immediate but busy", delivery: :immediate)
+             Pipeline.send_chat_turn(Repo.get!(Task, task_id), role_id, "Immediate but busy", delivery: :immediate)
 
     assert %Run{pending_chat: "Immediate but busy"} = Repo.get!(Run, run_id)
   end
@@ -328,7 +318,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     assert {:ok, :sent, %Task{active_chat_role_id: ^rev_role_id}} =
              Pipeline.send_chat_turn(
-               task.id,
+               task,
                rev_role_id,
                "Reviewer urgent question",
                delivery: :stop_and_send,
@@ -385,7 +375,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     assert {:ok, :sent, %Task{active_chat_role_id: ^role_b_id}} =
              Pipeline.send_chat_turn(
-               task.id,
+               task,
                role_b_id,
                "Question for B",
                delivery: :stop_and_send,
@@ -433,7 +423,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     assert {:ok, :sent, %Task{active_chat_role_id: ^role_a_id}} =
              Pipeline.send_chat_turn(
-               task.id,
+               task,
                role_a_id,
                "Urgent correction for A",
                delivery: :stop_and_send,
@@ -518,7 +508,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     {:ok, bad_task} = Pipeline.create_task(bad_issue, :product)
 
     {:ok, %Task{id: bad_task_id} = bad_task} =
-      Pipeline.update_task(system_scope(), bad_task.id, %{
+      Pipeline.update_task(bad_task, %{
         stage: :engineer,
         stage_state: :queued
       })
@@ -534,7 +524,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
       })
 
     assert {:error, {:worktree_failed, _reason}} =
-             Pipeline.send_chat_turn(bad_task.id, bad_role.id, "Will fail worktree", async: false)
+             Pipeline.send_chat_turn(bad_task, bad_role.id, "Will fail worktree", async: false)
 
     assert_receive {:pipeline_changed, %{task_id: ^bad_task_id, event: :chat_failed}}
 
@@ -566,7 +556,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     assert {:error, {:spawn_failed, _reason}} =
              Pipeline.send_chat_turn(
-               task_id,
+               Repo.get!(Task, task_id),
                role.id,
                "Missing binary",
                async: false
@@ -581,56 +571,13 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
            end)
   end
 
-  test "async dispatch with default on_finished callback and user scope", %{
-    task: %Task{id: task_id},
-    role: %Role{id: role_id}
-  } do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-
-    {:ok, %Run{id: run_id}} =
-      Runs.create_run(%{
-        task_id: task_id,
-        role_id: role_id,
-        status: :finished,
-        started_at: DateTime.utc_now(),
-        attempts: 1,
-        conversation_id: "sess-async"
-      })
-
-    user_scope = %Scope{system: false, user: %{id: "usr_1"}}
-
-    test_pid = self()
-
-    expect(Runs, :start_os_process, fn %Run{} = spawned, argv, opts ->
-      send(test_pid, {:spawned, spawned.id, argv, opts})
-      {:ok, %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat], run: spawned, task: Repo.get!(Task, spawned.task_id)}}
-    end)
-
-    # Arity 5 with Scope and async: true (default)
-    assert {:ok, :sent, %Task{id: ^task_id}} =
-             Pipeline.send_chat_turn(
-               user_scope,
-               task_id,
-               role_id,
-               "Async message"
-             )
-
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :chat_dispatched}}, 1_000
-    assert_receive {:spawned, ^run_id, argv, _opts}, 1_000
-    assert Enum.any?(argv, &(&1 =~ "Async message"))
-
-    events = Runs.list_run_events(run_id)
-    assert Enum.any?(events, fn %RunEvent{line: line} -> line == "[human] Async message" end)
-  end
-
   test "invalid targets and missing worktree fingerprint handling", %{
     backend: backend,
     task: %Task{} = task,
     role: role,
     project: project
   } do
-    assert {:error, :not_found} = Pipeline.send_chat_turn(12_345, role.id, "Hi")
-    assert {:error, :role_not_found} = Pipeline.send_chat_turn(task.id, 12_345, "Hi")
+    assert {:error, :role_not_found} = Pipeline.send_chat_turn(task, 12_345, "Hi")
 
     {:ok, run} =
       Runs.create_run(%{
@@ -653,7 +600,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     assert {:ok, :sent, %Task{}} =
              Pipeline.send_chat_turn(
-               task.id,
+               task,
                role.id,
                "Msg",
                worktree_path: non_git_dir,
@@ -748,7 +695,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     {:ok, orphan_same_task} = Pipeline.create_task(issue_11229, :product)
 
     {:ok, orphan_same_task} =
-      Pipeline.update_task(system_scope(), orphan_same_task.id, %{
+      Pipeline.update_task(orphan_same_task, %{
         active_chat_role_id: role.id
       })
 
@@ -763,7 +710,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     {:ok, orphan_other_task} = Pipeline.create_task(issue_11230, :product)
 
     {:ok, orphan_other_task} =
-      Pipeline.update_task(system_scope(), orphan_other_task.id, %{
+      Pipeline.update_task(orphan_other_task, %{
         active_chat_role_id: "rol_other_missing"
       })
 

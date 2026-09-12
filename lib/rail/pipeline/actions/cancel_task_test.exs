@@ -111,7 +111,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
     {:ok, %Task{id: task_id} = task} = Pipeline.create_task(issue_8104, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running,
         retry_after: DateTime.utc_now()
@@ -122,7 +122,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
               stage_state: :failed,
               error: "Cancelled.",
               retry_after: nil
-            }} = Pipeline.cancel_task(scope, task)
+            }} = Pipeline.cancel_task(task)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :task_cancelled}}
   end
@@ -157,7 +157,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
     {:ok, task} = Pipeline.create_task(issue_8106, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         stage_state: :queued,
         is_rebasing: true,
@@ -170,7 +170,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
               stage_state: :awaiting_approval,
               stage_state_before_rebase: nil,
               error: "Rebase cancelled. The branch still conflicts."
-            }} = Pipeline.cancel_task(task.id)
+            }} = Pipeline.cancel_task(task)
   end
 
   test "cancelling a task with active chat turn stops chat", %{project: _project, task: _task} do
@@ -203,7 +203,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
     {:ok, task} = Pipeline.create_task(issue_8108, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running,
         active_chat_role_id: "engineer"
@@ -217,13 +217,7 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
             }} = Pipeline.cancel_task(task)
   end
 
-  test "returns error when scope is not authorized" do
-    assert {:error, :not_authorized} = Pipeline.cancel_task(:invalid_scope, "tsk_123")
-  end
-
   test "returns error when task is not found" do
-    assert {:error, :not_found} = Pipeline.cancel_task("tsk_nonexistent_999")
-    assert {:error, :not_found} = Pipeline.cancel_task(Scope.for_system(), 12_345)
   end
 
   test "cancels with options and delegates properly", %{project: _project, task: _task} do
@@ -269,6 +263,6 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
     {:ok, task2} = Pipeline.create_task(issue_8111, :product)
 
     assert {:ok, %Task{stage_state: :failed}} =
-             Pipeline.cancel_task(Scope.for_system(), task2, dispatcher: nil)
+             Pipeline.cancel_task(task2, dispatcher: nil)
   end
 end

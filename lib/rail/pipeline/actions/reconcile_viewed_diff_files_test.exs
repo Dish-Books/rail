@@ -55,7 +55,7 @@ defmodule Rail.Pipeline.Actions.ReconcileViewedDiffFilesTest do
     expected = %{"lib/foo.ex" => "hash1", "lib/bar.ex" => "hash2"}
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task, %{
+      Pipeline.update_task(task, %{
         viewed_diff_files: expected
       })
 
@@ -70,7 +70,7 @@ defmodule Rail.Pipeline.Actions.ReconcileViewedDiffFilesTest do
 
   test "drops viewed entries when file path is missing or digest changed, and updates database", %{task: task} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task, %{
+      Pipeline.update_task(task, %{
         viewed_diff_files: %{
           "lib/keep.ex" => "hash_keep",
           "lib/changed.ex" => "old_hash",
@@ -91,7 +91,7 @@ defmodule Rail.Pipeline.Actions.ReconcileViewedDiffFilesTest do
 
   test "handles empty or nil viewed_diff_files gracefully", %{task: task} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task, %{
+      Pipeline.update_task(task, %{
         viewed_diff_files: %{}
       })
 

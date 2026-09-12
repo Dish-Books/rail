@@ -93,31 +93,12 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
     {:ok, task} = Pipeline.create_task(issue_8304, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :queued
       })
 
     %{project: project, role: role, task: task}
-  end
-
-  test "stop_chat_turn scope authorization and not_found", %{role: role, task: task} do
-    assert {:error, :not_authorized} =
-             Pipeline.stop_chat_turn(%Scope{system: false, user: nil}, task.id)
-
-    assert {:error, :not_found} =
-             Pipeline.stop_chat_turn("tsk_000000000000000000000000")
-
-    assert {:ok, %Task{active_chat_role_id: nil}} = Pipeline.stop_chat_turn(task.id)
-
-    assert {:error, :not_authorized} =
-             Pipeline.cancel_pending_chat(%Scope{system: false, user: nil}, task.id, role.id)
-
-    assert {:error, :not_found} =
-             Pipeline.cancel_pending_chat("tsk_000000000000000000000000", role.id)
-
-    assert {:error, :not_found} =
-             Pipeline.cancel_pending_chat(task.id, "rol_nonexistent")
   end
 
   test "stop_chat_turn terminates running chat run, clears active_chat_role_id, and appends stop log", %{
@@ -153,7 +134,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
     })
     |> Repo.insert!()
 
-    assert {:ok, %Task{active_chat_role_id: nil}} = Pipeline.stop_chat_turn(task.id)
+    assert {:ok, %Task{active_chat_role_id: nil}} = Pipeline.stop_chat_turn(task)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :chat_stopped}}
 
@@ -190,7 +171,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
       })
 
     assert {:ok, %Run{pending_chat: nil}, %Task{}} =
-             Pipeline.cancel_pending_chat(task.id, role_id)
+             Pipeline.cancel_pending_chat(task, role_id)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :pending_chat_cancelled}}
 
@@ -204,27 +185,6 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
            end)
 
     assert {:ok, %Run{pending_chat: nil}, %Task{}} =
-             Pipeline.cancel_pending_chat(task.id, role_id)
-  end
-
-  test "stop_chat_turn with user scope, struct target, invalid target, and missing Run", %{
-    task: task,
-    role: role
-  } do
-    user_scope = %Scope{system: false, user: %{id: "usr_1"}}
-
-    assert {:ok, %Task{active_chat_role_id: nil}} =
-             Pipeline.stop_chat_turn(user_scope, task)
-
-    assert {:error, :not_found} =
-             Pipeline.stop_chat_turn(12_345)
-
-    {:ok, busy_task} =
-      task
-      |> Task.changeset(%{active_chat_role_id: role.id})
-      |> Repo.update()
-
-    assert {:ok, %Task{active_chat_role_id: nil}} =
-             Pipeline.stop_chat_turn(busy_task)
+             Pipeline.cancel_pending_chat(task, role_id)
   end
 end

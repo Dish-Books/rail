@@ -482,7 +482,7 @@ defmodule RailWeb.IssuesLive do
         Issues.list_issues(scope, opts)
       end
 
-    tasks = Pipeline.list_tasks(scope, project_id)
+    tasks = Pipeline.list_tasks(project_id)
     tasks_by_issue_id = Map.new(tasks, fn task -> {task.issue_id, task} end)
 
     visible_issues =

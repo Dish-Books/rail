@@ -14,7 +14,6 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
   alias Rail.Runs.Schemas.Run
-  alias Rail.Scope
 
   @stages_before_engineer [:product, :design, :architect]
 
@@ -27,45 +26,22 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
   - Sets `stage = :engineer`, `stage_state = :queued`, clears `error` and `retry_after`.
   - Broadcasts `pipeline_changed`.
   """
-  def send_back_to_engineer(%Scope{} = scope, task_or_id, opts) do
-    with :ok <- authorize_scope(scope),
-         %Task{} = task <- resolve_task(task_or_id) do
-      do_send_back_to_engineer(task, opts)
-    else
-      {:error, reason} -> {:error, reason}
-      nil -> {:error, :not_found}
-    end
-  end
 
-  def send_back_to_engineer(%Scope{} = scope, task_or_id) do
-    send_back_to_engineer(scope, task_or_id, [])
-  end
+  def send_back_to_engineer(task, opts \\ [])
 
-  def send_back_to_engineer(task_or_id, opts) do
-    send_back_to_engineer(Scope.for_system(), task_or_id, opts)
-  end
-
-  def send_back_to_engineer(task_or_id) do
-    send_back_to_engineer(Scope.for_system(), task_or_id, [])
-  end
-
-  defp authorize_scope(%Scope{system: true}), do: :ok
-  defp authorize_scope(%Scope{user: %{}}), do: :ok
-  defp authorize_scope(_scope), do: {:error, :not_authorized}
-
-  defp do_send_back_to_engineer(%Task{stage_state: :running}, _opts) do
+  def send_back_to_engineer(%Task{stage_state: :running}, _opts) do
     {:error, :task_running}
   end
 
-  defp do_send_back_to_engineer(%Task{stage: stage}, _opts) when stage in @stages_before_engineer do
+  def send_back_to_engineer(%Task{stage: stage}, _opts) when stage in @stages_before_engineer do
     {:error, :stage_before_engineer}
   end
 
-  defp do_send_back_to_engineer(%Task{stage: :merged}, _opts) do
+  def send_back_to_engineer(%Task{stage: :merged}, _opts) do
     {:error, :task_merged}
   end
 
-  defp do_send_back_to_engineer(%Task{} = task, opts) do
+  def send_back_to_engineer(%Task{} = task, opts) do
     case Roles.get_role(project_id: task.project_id, stage: :engineer) do
       {:ok, %Role{} = engineer_role} ->
         execute_send_back(task, engineer_role, opts)
@@ -142,8 +118,4 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
       nil -> nil
     end
   end
-
-  defp resolve_task(%Task{} = task), do: task
-  defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)
-  defp resolve_task(_other), do: nil
 end

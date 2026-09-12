@@ -14,29 +14,15 @@ defmodule Rail.Pipeline.Actions.DismissQuestion do
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Scope
 
   @doc """
   Dismisses a question with scope authorization.
   """
-  def dismiss_question(%Scope{} = scope, question_or_id) do
-    with :ok <- authorize_scope(scope),
-         %Question{} = question <- resolve_question(question_or_id),
-         :ok <- validate_pending(question) do
+  def dismiss_question(%Question{} = question) do
+    with :ok <- validate_pending(question) do
       do_dismiss_question(question)
-    else
-      {:error, reason} -> {:error, reason}
-      nil -> {:error, :not_found}
     end
   end
-
-  def dismiss_question(question_or_id) do
-    dismiss_question(Scope.for_system(), question_or_id)
-  end
-
-  defp authorize_scope(%Scope{system: true}), do: :ok
-  defp authorize_scope(%Scope{user: %{}}), do: :ok
-  defp authorize_scope(_scope), do: {:error, :not_authorized}
 
   defp validate_pending(%Question{status: :pending}), do: :ok
   defp validate_pending(%Question{}), do: {:error, :already_resolved}
@@ -48,6 +34,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestion do
       |> Repo.update()
 
     case Repo.get(Task, updated_question.task_id) do
+      # TODO: we don't need to do this, the frontend has the list of questions and a user is actively working on them and goes to the next
       %Task{} = task -> resolve_front_of_queue(task)
       nil -> :ok
     end
@@ -68,8 +55,4 @@ defmodule Rail.Pipeline.Actions.DismissQuestion do
         deliver_resolved_round(task)
     end
   end
-
-  defp resolve_question(%Question{} = question), do: question
-  defp resolve_question(id) when is_binary(id), do: Repo.get(Question, id)
-  defp resolve_question(_other), do: nil
 end

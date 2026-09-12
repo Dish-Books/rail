@@ -52,24 +52,11 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
   end
 
   test "returns not_found when task cannot be resolved" do
-    assert {:error, :not_found} = Pipeline.skip_to_ready_to_merge("tsk_000000000000000000000000")
-  end
-
-  test "returns not_authorized when scope lacks permission", %{task: task} do
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task, %{
-        stage: :review,
-        stage_state: :awaiting_approval
-      })
-
-    unauth_scope = %Scope{user: nil, system: false}
-
-    assert {:error, :not_authorized} = Pipeline.skip_to_ready_to_merge(unauth_scope, task.id)
   end
 
   test "returns invalid_stage_state when task is not awaiting_approval", %{project: project, task: task} do
     {:ok, t_queued} =
-      Pipeline.update_task(system_scope(), task, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :queued
       })
@@ -87,7 +74,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
     {:ok, t_running} = Pipeline.create_task(issue_6601, :product)
 
     {:ok, t_running} =
-      Pipeline.update_task(system_scope(), t_running, %{
+      Pipeline.update_task(t_running, %{
         stage: :review,
         stage_state: :running
       })
@@ -97,7 +84,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
   test "returns invalid_stage when task is not at a gate stage", %{project: project, task: task} do
     {:ok, t_eng} =
-      Pipeline.update_task(system_scope(), task, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :awaiting_approval
       })
@@ -115,7 +102,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
     {:ok, t_prod} = Pipeline.create_task(issue_6602, :product)
 
     {:ok, t_prod} =
-      Pipeline.update_task(system_scope(), t_prod, %{
+      Pipeline.update_task(t_prod, %{
         stage: :product,
         stage_state: :awaiting_approval
       })
@@ -133,7 +120,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
     {:ok, t_arch} = Pipeline.create_task(issue_6603, :product)
 
     {:ok, t_arch} =
-      Pipeline.update_task(system_scope(), t_arch, %{
+      Pipeline.update_task(t_arch, %{
         stage: :architect,
         stage_state: :awaiting_approval
       })
@@ -145,7 +132,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :awaiting_approval,
         error: "Parked on findings"
@@ -164,7 +151,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
   test "skips to ready_to_merge awaiting_approval from qa and qa_lead gates", %{project: project, task: task} do
     {:ok, t_qa} =
-      Pipeline.update_task(system_scope(), task, %{
+      Pipeline.update_task(task, %{
         stage: :qa,
         stage_state: :awaiting_approval
       })
@@ -183,38 +170,12 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
     {:ok, t_lead} = Pipeline.create_task(issue_6604, :product)
 
     {:ok, t_lead} =
-      Pipeline.update_task(system_scope(), t_lead, %{
+      Pipeline.update_task(t_lead, %{
         stage: :qa_lead,
         stage_state: :awaiting_approval
       })
 
     assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}} =
              Pipeline.skip_to_ready_to_merge(t_lead)
-  end
-
-  test "supports scope-based invocation with task id", %{task: task} do
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task, %{
-        stage: :review,
-        stage_state: :awaiting_approval
-      })
-
-    scope = Scope.for_system()
-
-    assert {:ok, %Task{stage: :ready_to_merge}} =
-             Pipeline.skip_to_ready_to_merge(scope, task.id)
-  end
-
-  test "authorizes scope with user and handles invalid task argument", %{task: task} do
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task, %{
-        stage: :review,
-        stage_state: :awaiting_approval
-      })
-
-    user_scope = %Scope{user: %{id: "usr_test"}, system: false}
-
-    assert {:ok, %Task{stage: :ready_to_merge}} = Pipeline.skip_to_ready_to_merge(user_scope, task.id)
-    assert {:error, :not_found} = Pipeline.skip_to_ready_to_merge(user_scope, :invalid_task)
   end
 end

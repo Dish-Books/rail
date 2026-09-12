@@ -79,7 +79,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     worktree = create_temp_git_repo()
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: worktree,
@@ -138,7 +138,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     worktree = create_temp_git_repo()
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :demo,
         stage_state: :failed,
         worktree_path: worktree,
@@ -146,16 +146,16 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
       })
 
     assert {:ok, %Task{stage: :demo, stage_state: :queued, error: nil}} =
-             Pipeline.rerecord_demo(Scope.user_scope(), task.id, [])
+             Pipeline.rerecord_demo(task, [])
 
-    assert {:error, :not_found} = Pipeline.rerecord_demo(Scope.for_system(), :bad_id, [])
+    assert {:error, :not_found} = Pipeline.rerecord_demo(:bad_id, [])
   end
 
   test "guards against merged tasks", %{project: project, task: task} do
     worktree = create_temp_git_repo()
 
     {:ok, task_merged_stage} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :merged,
         stage_state: :awaiting_approval,
         worktree_path: worktree
@@ -172,7 +172,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     {:ok, task_merged_at} = Pipeline.create_task(issue_9402, :product)
 
     {:ok, task_merged_at} =
-      Pipeline.update_task(system_scope(), task_merged_at.id, %{
+      Pipeline.update_task(task_merged_at, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: worktree,
@@ -188,7 +188,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     nonexistent_path = "/tmp/nonexistent_worktree_#{System.unique_integer([:positive])}"
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: nonexistent_path
@@ -207,7 +207,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     worktree = create_temp_git_repo()
 
     {:ok, eligible_ready} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: worktree
@@ -224,7 +224,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     {:ok, eligible_demo_failed} = Pipeline.create_task(issue_9404, :product)
 
     {:ok, eligible_demo_failed} =
-      Pipeline.update_task(system_scope(), eligible_demo_failed.id, %{
+      Pipeline.update_task(eligible_demo_failed, %{
         stage: :demo,
         stage_state: :failed,
         worktree_path: worktree
@@ -241,7 +241,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     {:ok, busy_task} = Pipeline.create_task(issue_9405, :product)
 
     {:ok, busy_task} =
-      Pipeline.update_task(system_scope(), busy_task.id, %{
+      Pipeline.update_task(busy_task, %{
         stage: :ready_to_merge,
         stage_state: :running,
         worktree_path: worktree
@@ -258,7 +258,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     {:ok, merged_task} = Pipeline.create_task(issue_9406, :product)
 
     {:ok, merged_task} =
-      Pipeline.update_task(system_scope(), merged_task.id, %{
+      Pipeline.update_task(merged_task, %{
         stage: :merged,
         stage_state: :awaiting_approval,
         worktree_path: worktree
@@ -275,7 +275,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     {:ok, missing_path_task} = Pipeline.create_task(issue_9407, :product)
 
     {:ok, missing_path_task} =
-      Pipeline.update_task(system_scope(), missing_path_task.id, %{
+      Pipeline.update_task(missing_path_task, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         worktree_path: "/tmp/rail-removed-worktree"
@@ -287,15 +287,5 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     refute Pipeline.can_rerecord_demo?(merged_task)
     refute Pipeline.can_rerecord_demo?(missing_path_task)
     refute Pipeline.can_rerecord_demo?(nil)
-  end
-
-  test "enforces authorization", %{task: task} do
-    assert {:error, :not_authorized} =
-             Pipeline.rerecord_demo(%Scope{system: false, user: nil}, task)
-  end
-
-  test "returns not found for unknown task" do
-    assert {:error, :not_found} =
-             Pipeline.rerecord_demo("tsk_nonexistent_9999")
   end
 end

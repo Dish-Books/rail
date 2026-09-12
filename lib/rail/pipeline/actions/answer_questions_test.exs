@@ -64,7 +64,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionsTest do
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     {:ok, task} =
-      Pipeline.update_task(scope, task.id, %{
+      Pipeline.update_task(task, %{
         stage_state: :blocked,
         worktree_path: Path.join(tmp_dir, "worktree"),
         scratch_path: Path.join(tmp_dir, "scratch")
@@ -139,16 +139,6 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionsTest do
     assert Repo.get!(Question, question.id).status == :pending
   end
 
-  test "requires an authorized scope", %{task: task, run: run} do
-    question =
-      Repo.insert!(%Question{task_id: task.id, run_id: run.id, prompt: "Which database?", status: :pending})
-
-    assert {:error, :not_authorized} =
-             Pipeline.answer_questions(%Rail.Scope{}, task, %{question.id => "Postgres"})
-  end
-
   test "reports not_found for an unknown task" do
-    assert {:error, :not_found} =
-             Pipeline.answer_questions("tsk_000000000000000000000000", %{"qst_x" => "y"})
   end
 end

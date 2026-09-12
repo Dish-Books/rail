@@ -75,14 +75,14 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     # These tests exercise stage transitions, not Linear publishing.
-    {:ok, task} = Pipeline.update_task(scope, task.id, %{issue_id: nil})
+    {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
     %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
 
   test "settles clean exit 0 for engineer stage advancing to review", %{task: task, roles: roles} do
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -116,7 +116,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
 
   test "handles transient failure with retry backoff when auto retries remain", %{task: task, roles: roles} do
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -159,7 +159,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
 
   test "handles transient failure marking failed when max auto retries are exhausted", %{task: task, roles: roles} do
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -197,7 +197,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
 
   test "handles permanent failure immediately marking task and run as failed", %{task: task, roles: roles} do
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -250,7 +250,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
         prompt: "Question prompt 14599?"
       })
 
-    {:ok, _task} = Pipeline.update_task(system_scope(), task.id, %{stage: :engineer})
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
 
     Runs.append_run_event(run, "Exiting after ask")
 

@@ -74,7 +74,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     # These tests exercise stage transitions, not Linear publishing.
-    {:ok, task} = Pipeline.update_task(scope, task.id, %{issue_id: nil})
+    {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
     %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
@@ -84,7 +84,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     _product_role = roles[:product]
 
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :product,
         stage_state: :running
       })
@@ -129,7 +129,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     File.write!(ticket_file, "---\ntitle: Rewritten by the product run\n---\n\nA body the human has not approved.\n")
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         issue_id: issue.id,
         stage: :product,
         stage_state: :running
@@ -145,7 +145,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       })
 
     # No Linear mock is set up: a push would raise on the unexpected request.
-    {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
+    {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: scratch_dir})
 
     os_process =
       %OsProcess{}
@@ -169,7 +169,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
   test "an empty outcome keeps what the run layer already recorded", %{task: task, roles: roles} do
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), task.id, %{stage: :engineer, stage_state: :running})
+      Pipeline.update_task(task, %{stage: :engineer, stage_state: :running})
 
     {:ok, run} =
       Runs.create_run(%{
@@ -200,7 +200,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
   test "resolves fallback exit code, string error, and prior run error", %{task: task, roles: roles} do
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :design,
         stage_state: :running
       })
@@ -262,7 +262,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
   test "resolves various usage input formats", %{task: task, roles: roles} do
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :design,
         stage_state: :running
       })

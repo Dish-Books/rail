@@ -11,32 +11,13 @@ defmodule Rail.Pipeline.Actions.StopChatTurn do
   alias Rail.Runs
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
-  alias Rail.Scope
 
   @doc """
   Stops the currently running chat turn for the given task.
   """
-  def stop_chat_turn(%Scope{} = scope, task_or_id) do
-    with :ok <- authorize_scope(scope),
-         %Task{} = task <- resolve_task(task_or_id) do
-      do_stop_chat_turn(task)
-    else
-      {:error, reason} -> {:error, reason}
-      nil -> {:error, :not_found}
-    end
+  def stop_chat_turn(%Task{} = task) do
+    do_stop_chat_turn(task)
   end
-
-  def stop_chat_turn(task_or_id) do
-    stop_chat_turn(Scope.for_system(), task_or_id)
-  end
-
-  defp authorize_scope(%Scope{system: true}), do: :ok
-  defp authorize_scope(%Scope{user: %{}}), do: :ok
-  defp authorize_scope(_scope), do: {:error, :not_authorized}
-
-  defp resolve_task(%Task{} = task), do: Repo.get(Task, task.id)
-  defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)
-  defp resolve_task(_other), do: nil
 
   defp do_stop_chat_turn(%Task{active_chat_role_id: nil} = task) do
     {:ok, task}

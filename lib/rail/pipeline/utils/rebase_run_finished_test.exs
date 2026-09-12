@@ -73,14 +73,14 @@ defmodule Rail.Pipeline.Utils.RebaseRunFinishedTest do
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     # These tests exercise stage transitions, not Linear publishing.
-    {:ok, task} = Pipeline.update_task(scope, task.id, %{issue_id: nil})
+    {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
     %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
 
   test "settles clean exit 0 for rebasing task restoring previous stage state", %{task: task, roles: roles} do
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         stage_state: :running,
         is_rebasing: true,
@@ -128,7 +128,7 @@ defmodule Rail.Pipeline.Utils.RebaseRunFinishedTest do
     {:ok, _project} = Projects.update_project(system_scope(), project, %{github_repo: "testorg/rebase_settle"})
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :running,
         is_rebasing: true,
@@ -175,7 +175,7 @@ defmodule Rail.Pipeline.Utils.RebaseRunFinishedTest do
 
   test "settling non-zero exit for rebasing task preserves is_rebasing for retries", %{task: task, roles: roles} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :running,
         is_rebasing: true,
@@ -223,7 +223,7 @@ defmodule Rail.Pipeline.Utils.RebaseRunFinishedTest do
     {:ok, _project} = Projects.update_project(system_scope(), project, %{github_repo: "testorg/rebase_settle_fail"})
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         stage_state: :running,
         is_rebasing: true,

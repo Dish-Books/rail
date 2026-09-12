@@ -20,54 +20,32 @@ defmodule Rail.Pipeline.Actions.MergeTask do
   @doc """
   Squash-merges a task's pull request and finalizes its branch and Linear state.
   """
-  def merge_task(scope, task_or_id, opts) when is_list(opts) do
-    with :ok <- authorize_scope(scope),
-         %Task{} = task <- resolve_task(task_or_id) do
-      do_merge_task(scope, task, opts)
-    else
-      {:error, reason} -> {:error, reason}
-      nil -> {:error, :not_found}
-    end
-  end
 
-  def merge_task(task_or_id, opts) when is_list(opts) do
-    merge_task(Scope.for_system(), task_or_id, opts)
-  end
+  def merge_task(task, opts \\ [])
 
-  def merge_task(scope, task_or_id) do
-    merge_task(scope, task_or_id, [])
-  end
+  def merge_task(%Task{stage: :merged} = task, _opts), do: {:ok, task}
 
-  def merge_task(task_or_id) do
-    merge_task(Scope.for_system(), task_or_id, [])
-  end
+  def merge_task(%Task{pr_number: nil}, _opts), do: {:error, :no_pr}
 
-  defp authorize_scope(%Scope{system: true}), do: :ok
-  defp authorize_scope(%Scope{user: %{}}), do: :ok
-  defp authorize_scope(nil), do: :ok
-  defp authorize_scope(_scope), do: {:error, :not_authorized}
-
-  defp do_merge_task(_scope, %Task{stage: :merged} = task, _opts), do: {:ok, task}
-
-  defp do_merge_task(_scope, %Task{pr_number: nil}, _opts), do: {:error, :no_pr}
-
-  defp do_merge_task(_scope, %Task{pr_is_draft: true}, _opts) do
+  def merge_task(%Task{pr_is_draft: true}, _opts) do
     {:error, :draft_pr}
   end
 
-  defp do_merge_task(scope, %Task{mergeability: :conflicting} = task, opts) do
+  def merge_task(%Task{mergeability: :conflicting} = task, opts) do
     if Keyword.get(opts, :ignore_conflicts, false) do
-      execute_merge_flow(scope, task, opts)
+      execute_merge_flow(task, opts)
     else
       {:error, :has_conflicts}
     end
   end
 
-  defp do_merge_task(scope, %Task{} = task, opts) do
-    execute_merge_flow(scope, task, opts)
+  def merge_task(%Task{} = task, opts) do
+    execute_merge_flow(task, opts)
   end
 
-  defp execute_merge_flow(scope, %Task{} = task, opts) do
+  defp execute_merge_flow(%Task{} = task, opts) do
+    scope = Scope.for_system()
+
     case Repo.get(Project, task.project_id) do
       %Project{} = project ->
         with {:ok, token} <- resolve_github_token(scope, project, opts) do
@@ -156,8 +134,4 @@ defmodule Rail.Pipeline.Actions.MergeTask do
   defp format_reason({:github_api_error, _status, %{"message" => msg}}), do: msg
   defp format_reason({:github_api_error, status, msg}) when is_binary(msg), do: "#{status} #{msg}"
   defp format_reason(reason), do: inspect(reason)
-
-  defp resolve_task(%Task{} = task), do: task
-  defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)
-  defp resolve_task(_other), do: nil
 end

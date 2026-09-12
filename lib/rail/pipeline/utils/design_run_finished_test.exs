@@ -74,14 +74,14 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     # These tests exercise stage transitions, not Linear publishing.
-    {:ok, task} = Pipeline.update_task(scope, task.id, %{issue_id: nil})
+    {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
     %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
 
   test "maybe_finish_os_process updates run when passed as top-level run struct", %{task: task, roles: roles} do
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :design,
         stage_state: :running
       })
@@ -117,7 +117,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
   describe "settle_run at design stage" do
     test "designer run settlement fails when manifest is missing", %{task: task, roles: roles} do
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :design,
           stage_state: :running
         })
@@ -192,7 +192,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       )
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :design,
           stage_state: :running,
           worktree_path: worktree_dir,
@@ -269,7 +269,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       )
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :design,
           stage_state: :running,
           worktree_path: worktree_dir,
@@ -366,7 +366,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       )
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :design,
           stage_state: :running,
           worktree_path: worktree_dir,
@@ -463,7 +463,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       )
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :design,
           stage_state: :running,
           worktree_path: worktree_dir,
@@ -560,7 +560,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       )
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :design,
           stage_state: :running,
           worktree_path: worktree_dir,
@@ -657,7 +657,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       )
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :design,
           stage_state: :running,
           worktree_path: "/tmp/rail-removed-worktree"
@@ -694,7 +694,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
 
       mock_design_uploads(2)
 
-      {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: worktree_dir})
+      {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: worktree_dir})
 
       os_process =
         %OsProcess{}
@@ -755,7 +755,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       )
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :design,
           stage_state: :running,
           worktree_path: "/tmp/rail-removed-worktree"
@@ -792,7 +792,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
 
       mock_design_uploads(2)
 
-      {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: worktree_dir})
+      {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: worktree_dir})
 
       os_process =
         %OsProcess{}

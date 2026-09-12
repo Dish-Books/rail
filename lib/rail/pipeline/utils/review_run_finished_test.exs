@@ -73,7 +73,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     # These tests exercise stage transitions, not Linear publishing.
-    {:ok, task} = Pipeline.update_task(scope, task.id, %{issue_id: nil})
+    {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
     %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
@@ -92,7 +92,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     git_repo = create_temp_git_repo()
 
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :running,
         worktree_path: git_repo
@@ -163,7 +163,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
       })
 
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :running,
         rework_cycles: 0,
@@ -247,7 +247,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
       })
 
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :running,
         rework_cycles: 3,
@@ -303,7 +303,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
       })
 
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :running
       })
@@ -364,7 +364,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     git_repo = create_temp_git_repo()
 
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :running,
         rework_cycles: 1,
@@ -425,7 +425,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     git_repo = create_temp_git_repo()
 
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :running,
         rework_cycles: 1,
@@ -480,7 +480,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
       })
 
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :running,
         rework_cycles: 0,
@@ -564,10 +564,10 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
 
     {:ok, %Task{id: _task_id2} = task2} = Pipeline.create_task(issue_14506, :product)
 
-    {:ok, task2} = Pipeline.update_task(system_scope(), task2.id, %{issue_id: nil})
+    {:ok, task2} = Pipeline.update_task(task2, %{issue_id: nil})
 
     {:ok, %Task{id: task_id2} = _task2} =
-      Pipeline.update_task(system_scope(), task2.id, %{
+      Pipeline.update_task(task2, %{
         stage: :review,
         stage_state: :running,
         rework_cycles: 0,
@@ -618,7 +618,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
       })
 
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :running,
         worktree_path: "/tmp/nonexistent_git_dir_#{System.unique_integer([:positive])}"

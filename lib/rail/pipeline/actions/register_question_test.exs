@@ -82,7 +82,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     role = roles[:engineer]
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -126,7 +126,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     role = roles[:engineer]
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -149,7 +149,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
   test "belongs to the run that asked", %{task: task, roles: roles} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -182,7 +182,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     role = roles[:engineer]
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -214,7 +214,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     role = roles[:engineer]
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -266,7 +266,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
       })
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage_state: :blocked,
         question_id: q.id
       })

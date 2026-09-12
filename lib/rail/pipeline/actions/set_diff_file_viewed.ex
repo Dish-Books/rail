@@ -9,13 +9,11 @@ defmodule Rail.Pipeline.Actions.SetDiffFileViewed do
   When `viewed` is truthy, sets `task.viewed_diff_files[file_path] = file_digest`.
   When falsy, removes `file_path` from `task.viewed_diff_files`.
   """
-  def set_diff_file_viewed(scope_or_task, task_or_path, path_or_digest, digest_or_viewed, viewed \\ nil)
-
-  def set_diff_file_viewed(_scope, %Task{} = task, file_path, file_digest, viewed) do
+  def set_diff_file_viewed(%Task{} = task, file_path, file_digest, viewed) do
     do_set_viewed(task, file_path, file_digest, viewed)
   end
 
-  def set_diff_file_viewed(%Task{} = task, file_path, file_digest, viewed, nil) do
+  def set_diff_file_viewed_unused(%Task{} = task, file_path, file_digest, viewed) do
     do_set_viewed(task, file_path, file_digest, viewed)
   end
 

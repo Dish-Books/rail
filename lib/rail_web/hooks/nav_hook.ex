@@ -17,7 +17,7 @@ defmodule RailWeb.Hooks.NavHook do
       if projects == [] do
         0
       else
-        count_attention(scope, projects)
+        count_attention(projects)
       end
 
     url_project =
@@ -224,17 +224,17 @@ defmodule RailWeb.Hooks.NavHook do
   defp refresh_nav_state(socket) do
     scope = socket.assigns.current_scope
     projects = Projects.list_projects(scope)
-    attention_count = count_attention(scope, projects)
+    attention_count = count_attention(projects)
 
     socket
     |> assign(:projects, projects)
     |> assign(:attention_count, attention_count)
   end
 
-  defp count_attention(scope, projects) do
+  defp count_attention(projects) do
     tasks =
       Enum.flat_map(projects, fn project ->
-        Pipeline.list_tasks(scope, project.id)
+        Pipeline.list_tasks(project.id)
       end)
 
     Enum.count(tasks, &Rail.Domain.OverviewQueue.needs_attention?/1)

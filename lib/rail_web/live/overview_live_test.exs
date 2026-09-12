@@ -298,7 +298,7 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13416, :product)
 
     {:ok, _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :failed
       })
@@ -355,7 +355,7 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13417, :product)
 
     {:ok, _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -375,7 +375,7 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, task2} = Pipeline.create_task(issue_13418, :product)
 
     {:ok, _task2} =
-      Pipeline.update_task(system_scope(), task2.id, %{
+      Pipeline.update_task(task2, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -445,7 +445,7 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, task1} = Pipeline.create_task(issue_13419, :product)
 
     {:ok, _task1} =
-      Pipeline.update_task(system_scope(), task1.id, %{
+      Pipeline.update_task(task1, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -461,7 +461,7 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, task2} = Pipeline.create_task(issue_13420, :product)
 
     {:ok, _task2} =
-      Pipeline.update_task(system_scope(), task2.id, %{
+      Pipeline.update_task(task2, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -519,7 +519,7 @@ defmodule RailWeb.OverviewLiveTest do
     merged_title = issue_13421.title
 
     {:ok, %Task{id: merged_id}} =
-      Pipeline.update_task(system_scope(), merged_id, %{
+      Pipeline.update_task(merged_id, %{
         stage: :merged,
         stage_state: :queued
       })
@@ -614,7 +614,7 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13422, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), task_id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         stage: :engineer,
         stage_state: :blocked
       })
@@ -748,7 +748,7 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13423, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), task_id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         stage: :engineer,
         stage_state: :blocked
       })
@@ -855,7 +855,7 @@ defmodule RailWeb.OverviewLiveTest do
     arch_title = issue_13424.title
 
     {:ok, %Task{id: arch_id}} =
-      Pipeline.update_task(system_scope(), arch_id, %{
+      Pipeline.update_task(arch_id, %{
         stage: :architect,
         stage_state: :awaiting_approval,
         error: "Architect notes here"
@@ -873,7 +873,7 @@ defmodule RailWeb.OverviewLiveTest do
     prod_title = issue_13425.title
 
     {:ok, %Task{id: prod_id}} =
-      Pipeline.update_task(system_scope(), prod_id, %{
+      Pipeline.update_task(prod_id, %{
         stage: :product,
         stage_state: :awaiting_approval
       })
@@ -890,7 +890,7 @@ defmodule RailWeb.OverviewLiveTest do
     eng_title = issue_13426.title
 
     {:ok, %Task{id: eng_id}} =
-      Pipeline.update_task(system_scope(), eng_id, %{
+      Pipeline.update_task(eng_id, %{
         stage: :engineer,
         stage_state: :awaiting_approval
       })
@@ -988,7 +988,7 @@ defmodule RailWeb.OverviewLiveTest do
     failed_title = issue_13427.title
 
     {:ok, %Task{id: failed_id}} =
-      Pipeline.update_task(system_scope(), failed_id, %{
+      Pipeline.update_task(failed_id, %{
         stage: :engineer,
         stage_state: :failed,
         error: "Compilation error in worker.ex"
@@ -1006,7 +1006,7 @@ defmodule RailWeb.OverviewLiveTest do
     merge_title = issue_13428.title
 
     {:ok, %Task{id: merge_id}} =
-      Pipeline.update_task(system_scope(), merge_id, %{
+      Pipeline.update_task(merge_id, %{
         stage: :ready_to_merge,
         stage_state: :queued,
         pr_number: nil
@@ -1024,7 +1024,7 @@ defmodule RailWeb.OverviewLiveTest do
     conflict_title = issue_13429.title
 
     {:ok, %Task{id: conflict_id}} =
-      Pipeline.update_task(system_scope(), conflict_id, %{
+      Pipeline.update_task(conflict_id, %{
         stage: :engineer,
         stage_state: :queued,
         mergeability: :conflicting
@@ -1131,7 +1131,7 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: t_queued_id}} = Pipeline.create_task(issue_13430, :product)
 
     {:ok, %Task{id: t_queued_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: t_queued_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, t_queued_id), %{
         stage: :design,
         stage_state: :queued
       })
@@ -1147,7 +1147,7 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: t_rebase_id}} = Pipeline.create_task(issue_13431, :product)
 
     {:ok, %Task{id: t_rebase_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: t_rebase_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, t_rebase_id), %{
         stage: :engineer,
         stage_state: :running,
         is_rebasing: true
@@ -1164,7 +1164,7 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: t_running_id}} = Pipeline.create_task(issue_13432, :product)
 
     {:ok, %Task{id: t_running_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: t_running_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, t_running_id), %{
         stage: :engineer,
         stage_state: :running
       })
@@ -1318,7 +1318,7 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: t_eng_id}} = Pipeline.create_task(issue_13433, :product)
 
     {:ok, %Task{id: t_eng_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: t_eng_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, t_eng_id), %{
         issue_id: issue_id,
         stage: :engineer,
         stage_state: :running
@@ -1336,7 +1336,7 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: t_arch_id}} = Pipeline.create_task(issue_13434, :product)
 
     {:ok, %Task{id: t_arch_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: t_arch_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, t_arch_id), %{
         issue_id: nil,
         stage: :architect,
         stage_state: :running,
@@ -1355,7 +1355,7 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: t_qa_id}} = Pipeline.create_task(issue_13435, :product)
 
     {:ok, %Task{id: t_qa_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: t_qa_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, t_qa_id), %{
         issue_id: nil,
         stage: :qa,
         stage_state: :awaiting_approval

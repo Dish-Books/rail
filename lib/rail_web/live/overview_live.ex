@@ -311,38 +311,33 @@ defmodule RailWeb.OverviewLive do
   end
 
   def handle_event("answer_question", %{"question_id" => question_id, "answer" => answer}, socket) do
-    answer_one(socket.assigns[:current_scope], question_id, answer)
+    answer_one(question_id, answer)
 
     socket = load_overview_state(socket, socket.assigns[:current_project_id])
     {:noreply, socket}
   end
 
   def handle_event("dismiss_question", %{"question_id" => question_id}, socket) do
-    scope = socket.assigns[:current_scope]
-    Pipeline.dismiss_question(scope, question_id)
+    dismiss_question(question_id)
 
     socket = load_overview_state(socket, socket.assigns[:current_project_id])
     {:noreply, socket}
   end
 
   def handle_event("submit_question_answer", %{"question_id" => question_id, "answer" => answer}, socket) do
-    scope = socket.assigns[:current_scope]
-
     case String.trim(answer) do
       "" ->
         {:noreply, socket}
 
       trimmed ->
-        answer_one(scope, question_id, trimmed)
+        answer_one(question_id, trimmed)
         socket = load_overview_state(socket, socket.assigns[:current_project_id])
         {:noreply, socket}
     end
   end
 
   def handle_event("open_send_back", %{"task_id" => task_id}, socket) do
-    scope = socket.assigns[:current_scope]
-
-    case Pipeline.get_task(scope, task_id) do
+    case Pipeline.get_task(task_id) do
       {:ok, task} ->
         socket =
           socket
@@ -365,13 +360,7 @@ defmodule RailWeb.OverviewLive do
     {:noreply, socket}
   end
 
-  def handle_event("confirm_send_back", %{"task_id" => task_id, "comment" => comment}, socket) do
-    scope = socket.assigns[:current_scope]
-
-    if String.trim(comment) != "" do
-      Pipeline.request_changes(scope, task_id, String.trim(comment))
-    end
-
+  def handle_event("confirm_send_back", _params, socket) do
     socket =
       socket
       |> assign(:show_send_back_modal, false)
@@ -382,9 +371,7 @@ defmodule RailWeb.OverviewLive do
   end
 
   def handle_event("open_merge", %{"task_id" => task_id}, socket) do
-    scope = socket.assigns[:current_scope]
-
-    case Pipeline.get_task(scope, task_id) do
+    case Pipeline.get_task(task_id) do
       {:ok, task} ->
         socket =
           socket
@@ -408,8 +395,7 @@ defmodule RailWeb.OverviewLive do
   end
 
   def handle_event("confirm_merge", %{"task_id" => task_id}, socket) do
-    scope = socket.assigns[:current_scope]
-    Pipeline.merge_task(scope, task_id)
+    Pipeline.merge_task(task_id)
 
     socket =
       socket
@@ -421,9 +407,7 @@ defmodule RailWeb.OverviewLive do
   end
 
   def handle_event("open_rebase", %{"task_id" => task_id}, socket) do
-    scope = socket.assigns[:current_scope]
-
-    case Pipeline.get_task(scope, task_id) do
+    case Pipeline.get_task(task_id) do
       {:ok, task} ->
         socket =
           socket
@@ -447,8 +431,7 @@ defmodule RailWeb.OverviewLive do
   end
 
   def handle_event("confirm_rebase", %{"task_id" => task_id}, socket) do
-    scope = socket.assigns[:current_scope]
-    Pipeline.start_rebase(scope, task_id)
+    Pipeline.start_rebase(task_id)
 
     socket =
       socket
@@ -480,8 +463,8 @@ defmodule RailWeb.OverviewLive do
 
   defp load_overview_state(socket, project_id) do
     scope = socket.assigns[:current_scope]
-    tasks = Pipeline.list_tasks(scope, project_id, preload: [:project, :issue])
-    questions = Pipeline.list_pending_questions(scope, project_id, preload: [:task, run: :role])
+    tasks = Pipeline.list_tasks(project_id, preload: [:project, :issue])
+    questions = Pipeline.list_questions(project_id, status: :pending, preload: [:task, run: :role])
 
     questions_by_task_id = Map.new(questions, &{&1.task_id, &1})
 
@@ -590,13 +573,20 @@ defmodule RailWeb.OverviewLive do
 
   # Answers go back a round at a time: this records one and the task stays parked
   # until nothing is pending, so the agent hears the whole batch at once.
-  defp answer_one(scope, question_id, answer) do
-    case Pipeline.get_question(scope, question_id) do
-      {:ok, question} -> Pipeline.answer_questions(scope, question.task_id, %{question_id => answer})
+  defp answer_one(question_id, answer) do
+    case Pipeline.get_question(question_id) do
+      {:ok, question} -> Pipeline.answer_questions(question.task_id, %{question_id => answer})
       _not_found -> :ok
     end
   end
 
   defp running_agents_label(1), do: "1 agent running"
   defp running_agents_label(n), do: "#{n} agents running"
+
+  defp dismiss_question(question_id) do
+    case Pipeline.get_question(question_id) do
+      {:ok, question} -> Pipeline.dismiss_question(question)
+      _not_found -> :ok
+    end
+  end
 end

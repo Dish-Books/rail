@@ -72,7 +72,7 @@ defmodule Rail.Pipeline.Utils.QaLeadRunFinishedTest do
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     # These tests exercise stage transitions, not Linear publishing.
-    {:ok, task} = Pipeline.update_task(scope, task.id, %{issue_id: nil})
+    {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
     %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
@@ -92,7 +92,7 @@ defmodule Rail.Pipeline.Utils.QaLeadRunFinishedTest do
       })
 
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :qa_lead,
         stage_state: :running
       })
@@ -145,7 +145,7 @@ defmodule Rail.Pipeline.Utils.QaLeadRunFinishedTest do
       })
 
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :qa_lead,
         stage_state: :running
       })

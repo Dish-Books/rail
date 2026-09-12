@@ -52,7 +52,7 @@ defmodule Rail.Pipeline.Actions.SetDiffFileViewedTest do
 
   test "sets viewed status and digest for a file", %{task: task} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task, %{
+      Pipeline.update_task(task, %{
         viewed_diff_files: %{}
       })
 
@@ -60,19 +60,5 @@ defmodule Rail.Pipeline.Actions.SetDiffFileViewedTest do
 
     assert {:ok, %Task{viewed_diff_files: ^expected}} =
              Pipeline.set_diff_file_viewed(task, "lib/example.ex", "sha256_abc", true)
-  end
-
-  test "supports scope as first argument and unsets viewed status when viewed is false", %{task: task} do
-    scope = Rail.Scope.for_system()
-
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task, %{
-        viewed_diff_files: %{"lib/example.ex" => "sha256_abc", "lib/other.ex" => "sha256_def"}
-      })
-
-    expected = %{"lib/other.ex" => "sha256_def"}
-
-    assert {:ok, %Task{viewed_diff_files: ^expected}} =
-             Pipeline.set_diff_file_viewed(scope, task, "lib/example.ex", "sha256_abc", false)
   end
 end

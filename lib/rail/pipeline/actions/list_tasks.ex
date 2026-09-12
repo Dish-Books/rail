@@ -5,22 +5,13 @@ defmodule Rail.Pipeline.Actions.ListTasks do
 
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Scope
 
   @doc """
   Lists tasks for a project with optional filters.
   """
-  def list_tasks(scope, project_id, opts \\ [])
-
-  def list_tasks(%Scope{system: true}, project_id, opts) when is_binary(project_id) or is_nil(project_id) do
+  def list_tasks(project_id, opts \\ []) when is_binary(project_id) or is_nil(project_id) do
     fetch_tasks(project_id, opts)
   end
-
-  def list_tasks(%Scope{user: %{}}, project_id, opts) when is_binary(project_id) or is_nil(project_id) do
-    fetch_tasks(project_id, opts)
-  end
-
-  def list_tasks(_scope, _project_id, _opts), do: []
 
   defp fetch_tasks(project_id, opts) do
     query = from(t in Task)

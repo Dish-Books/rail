@@ -96,39 +96,6 @@ defmodule Rail.Pipeline.Utils.GitHubTokenResolverTest do
     assert {:ok, "custom_tok_2"} = resolve_github_token(nil, project, github_token: "custom_tok_2")
   end
 
-  test "resolves user token from User struct and Scope", %{project: _project} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_gh_token_9903",
-        login: "gh_token_user_9903",
-        email: "gh_token_user_9903@example.com",
-        github_token: "gho_user_tok_1"
-      })
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "GH Token Project 9904",
-        github_repo: "org/gh-token-9904",
-        github_installation_id: 9904,
-        linear_team_id: "team_gh_token_9904",
-        linear_team_key: "P9904",
-        default_branch: "main",
-        clone_path: "/tmp/repos/gh-token-9904",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
-
-    scope = Scope.for_user(user)
-
-    assert {:ok, "gho_user_tok_1"} = resolve_github_token(user, project)
-    assert {:ok, "gho_user_tok_1"} = resolve_github_token(scope, project)
-  end
-
   test "resolves user token from user id string", %{project: _project} do
     {:ok, user} =
       Users.register_oauth_user(%{

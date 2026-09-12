@@ -78,7 +78,7 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :demo,
         stage_state: :queued,
         error: "Previous error"
@@ -107,7 +107,7 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
 
   test "declines demo with custom note and increments version on subsequent demo", %{task: task} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :demo,
         stage_state: :queued
       })
@@ -146,7 +146,7 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
     {:ok, _demo} = Artifacts.capture_demo(system_scope(), task, demo_scratch_8651)
 
     assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}} =
-             Pipeline.decline_demo(Scope.for_system(), task.id, "Non-UI refactor, CLI verified")
+             Pipeline.decline_demo(task, "Non-UI refactor, CLI verified")
 
     latest_demo =
       Repo.one(
@@ -167,7 +167,7 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
     worktree = create_temp_git_repo()
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :demo,
         stage_state: :queued,
         worktree_path: worktree
@@ -186,18 +186,7 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
     assert is_binary(dirty_digest) and dirty_digest != ""
   end
 
-  test "enforces authorization", %{task: task} do
-    assert {:error, :not_authorized} =
-             Pipeline.decline_demo(%Scope{system: false, user: nil}, task, "Note")
-
-    assert {:ok, %Task{}} =
-             Pipeline.decline_demo(Scope.user_scope(), task, "Note")
-  end
-
   test "returns not found for unknown task" do
-    assert {:error, :not_found} =
-             Pipeline.decline_demo("tsk_nonexistent_9999", "Note")
-
     assert {:error, :not_found} =
              Pipeline.decline_demo(:bad_id, "Note")
   end
@@ -206,7 +195,7 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
     scratch_worktree = create_temp_git_repo()
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :demo,
         stage_state: :queued,
         worktree_path: scratch_worktree

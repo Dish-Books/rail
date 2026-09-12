@@ -105,7 +105,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     {:ok, task} = Pipeline.create_task(issue_9003, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :merged,
         pr_number: 101,
         mergeability: :mergeable,
@@ -145,7 +145,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     {:ok, task} = Pipeline.create_task(issue_9005, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         pr_number: nil,
         mergeability: nil,
@@ -195,7 +195,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_9008, :product)
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: 42,
         mergeability: :unknown,
@@ -205,7 +205,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     mock_pull_request_state_success("testorg/testrepo", 42, mergeable: true, draft: false)
 
     scope = Scope.for_user(user)
-    assert {:ok, %Task{mergeability: :mergeable, pr_is_draft: false}} = Pipeline.refresh_mergeability(scope, task)
+    assert {:ok, %Task{mergeability: :mergeable, pr_is_draft: false}} = Pipeline.refresh_mergeability(task)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :mergeability_refreshed}}
   end
@@ -240,7 +240,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     {:ok, task} = Pipeline.create_task(issue_9010, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: 55,
         mergeability: :conflicting,
@@ -283,7 +283,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     {:ok, task} = Pipeline.create_task(issue_9012, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: 66,
         mergeability: :unknown,
@@ -293,16 +293,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     mock_pull_request_state_success("testorg/testrepo", 66, mergeable: true, draft: nil)
 
     assert {:ok, %Task{mergeability: :mergeable, pr_is_draft: true}} =
-             Pipeline.refresh_mergeability(nil, task.id, token: "tok_test")
-  end
-
-  test "returns error when scope is unauthorized" do
-    assert {:error, :not_authorized} = Pipeline.refresh_mergeability(:invalid_scope, "tsk_123")
-  end
-
-  test "returns error when task is not found" do
-    assert {:error, :not_found} = Pipeline.refresh_mergeability("tsk_nonexistent")
-    assert {:error, :not_found} = Pipeline.refresh_mergeability(123)
+             Pipeline.refresh_mergeability(task, token: "tok_test")
   end
 
   test "returns error when project is not found", %{project: _project, task: _task} do
@@ -335,7 +326,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     {:ok, task} = Pipeline.create_task(issue_9014, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         pr_number: 99
       })
 
@@ -376,7 +367,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     {:ok, task} = Pipeline.create_task(issue_9016, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         pr_number: 88
       })
 
@@ -413,7 +404,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     {:ok, task} = Pipeline.create_task(issue_9018, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         pr_number: 77
       })
 
@@ -455,7 +446,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     {:ok, task} = Pipeline.create_task(issue_9020, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         pr_number: 99,

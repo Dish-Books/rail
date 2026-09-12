@@ -261,7 +261,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
       {:ok, %Rail.Pipeline.Schemas.Task{id: _task_id} = task} = Pipeline.create_task(issue_12306, :product)
 
       {:ok, %Rail.Pipeline.Schemas.Task{id: task_id} = task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           issue_id: issue.id,
           owner_user_id: user.id
         })

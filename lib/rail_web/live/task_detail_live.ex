@@ -79,11 +79,10 @@ defmodule RailWeb.TaskDetailLive do
 
   def handle_params(params, _uri, socket) do
     task_id = Map.get(params, "id")
-    scope = socket.assigns[:current_scope]
 
     socket =
       if is_nil(socket.assigns[:task]) or socket.assigns[:task_id] != task_id do
-        case Pipeline.get_task(scope, task_id) do
+        case Pipeline.get_task(task_id) do
           {:ok, task} ->
             if connected?(socket) do
               Phoenix.PubSub.subscribe(Rail.PubSub, "tasks:#{task.id}")
@@ -592,10 +591,8 @@ defmodule RailWeb.TaskDetailLive do
         Map.get(params, "question_id") ||
           (socket.assigns[:pending_question] && socket.assigns.pending_question.id)
 
-      scope = socket.assigns.current_scope
-
       if question_id do
-        Pipeline.answer_questions(scope, socket.assigns.task, %{question_id => trimmed})
+        Pipeline.answer_questions(socket.assigns.task, %{question_id => trimmed})
       end
 
       socket =
@@ -613,10 +610,8 @@ defmodule RailWeb.TaskDetailLive do
       Map.get(params, "question_id") ||
         (socket.assigns[:pending_question] && socket.assigns.pending_question.id)
 
-    scope = socket.assigns.current_scope
-
     if question_id do
-      Pipeline.dismiss_question(scope, question_id)
+      dismiss_question(question_id)
     end
 
     socket =
@@ -704,10 +699,9 @@ defmodule RailWeb.TaskDetailLive do
 
         {:noreply, assign(socket, :active_delivery_modal, modal)}
       else
-        scope = socket.assigns.current_scope
         socket = assign(socket, :chat_sending, true)
 
-        case Pipeline.send_chat_turn(scope, task.id, role.id, trimmed, delivery: :immediate) do
+        case Pipeline.send_chat_turn(task, role.id, trimmed, delivery: :immediate) do
           {:error, _reason} ->
             {:noreply, assign(socket, :chat_sending, false)}
 
@@ -740,7 +734,6 @@ defmodule RailWeb.TaskDetailLive do
           _other -> :when_finished
         end
 
-      scope = socket.assigns.current_scope
       task = socket.assigns[:task]
 
       socket =
@@ -748,7 +741,7 @@ defmodule RailWeb.TaskDetailLive do
         |> assign(:active_delivery_modal, nil)
         |> assign(:chat_sending, true)
 
-      case Pipeline.send_chat_turn(scope, task.id, modal.role_id, modal.text, delivery: delivery_atom) do
+      case Pipeline.send_chat_turn(task, modal.role_id, modal.text, delivery: delivery_atom) do
         {:error, _reason} ->
           {:noreply, assign(socket, :chat_sending, false)}
 
@@ -765,11 +758,10 @@ defmodule RailWeb.TaskDetailLive do
   end
 
   def handle_event("stop_chat_turn", _params, socket) do
-    scope = socket.assigns.current_scope
     task = socket.assigns[:task]
 
     if task do
-      Pipeline.stop_chat_turn(scope, task.id)
+      Pipeline.stop_chat_turn(task)
     end
 
     {:noreply, refresh_task(socket)}
@@ -780,11 +772,10 @@ defmodule RailWeb.TaskDetailLive do
       Map.get(params, "role_id") ||
         (socket.assigns[:selected_role] && socket.assigns.selected_role.id)
 
-    scope = socket.assigns.current_scope
     task = socket.assigns[:task]
 
     if task && role_id do
-      Pipeline.cancel_pending_chat(scope, task.id, role_id)
+      Pipeline.cancel_pending_chat(task, role_id)
     end
 
     {:noreply, refresh_task(socket)}
@@ -795,7 +786,6 @@ defmodule RailWeb.TaskDetailLive do
   end
 
   def handle_event("toggle_viewed", %{"path" => path, "digest" => digest} = params, socket) do
-    scope = socket.assigns.current_scope
     task = socket.assigns.task
     current_viewed = socket.assigns.viewed_diff_files || %{}
 
@@ -806,7 +796,7 @@ defmodule RailWeb.TaskDetailLive do
         _other -> not Map.has_key?(current_viewed, path)
       end
 
-    {:ok, updated_task} = Pipeline.set_diff_file_viewed(scope, task, path, digest, new_state)
+    {:ok, updated_task} = Pipeline.set_diff_file_viewed(task, path, digest, new_state)
 
     socket =
       socket
@@ -1113,83 +1103,51 @@ defmodule RailWeb.TaskDetailLive do
     {:noreply, assign(socket, :active_modal, %{type: :prompt_decline_demo})}
   end
 
-  defp handle_action_click("approve", _params, socket) do
-    scope = socket.assigns.current_scope
-    task = socket.assigns.task
-    execute_action(socket, :approve, fn -> Pipeline.approve_stage(scope, task) end)
-  end
-
-  defp handle_action_click("approve_skip_design", _params, socket) do
-    scope = socket.assigns.current_scope
-    task = socket.assigns.task
-    execute_action(socket, :approve, fn -> Pipeline.approve_stage(scope, task, skip_design: true) end)
-  end
-
-  defp handle_action_click("pick_design_direction", params, socket) do
-    direction_key = params["direction_key"]
-    scope = socket.assigns.current_scope
-    task = socket.assigns.task
-    execute_action(socket, :pick_design_direction, fn -> Pipeline.pick_design_direction(scope, task, direction_key) end)
-  end
-
   defp handle_action_click("skip", _params, socket) do
-    scope = socket.assigns.current_scope
     task = socket.assigns.task
-    execute_action(socket, :skip, fn -> Pipeline.skip_to_ready_to_merge(scope, task) end)
-  end
-
-  defp handle_action_click("retry", _params, socket) do
-    scope = socket.assigns.current_scope
-    task = socket.assigns.task
-    execute_action(socket, :retry, fn -> Pipeline.retry_stage(scope, task) end)
+    execute_action(socket, :skip, fn -> Pipeline.skip_to_ready_to_merge(task) end)
   end
 
   defp handle_action_click("rerecord_demo", _params, socket) do
-    scope = socket.assigns.current_scope
     task = socket.assigns.task
-    execute_action(socket, :rerecord_demo, fn -> Pipeline.rerecord_demo(scope, task) end)
+    execute_action(socket, :rerecord_demo, fn -> Pipeline.rerecord_demo(task) end)
   end
 
   defp handle_action_click("recheck_design", _params, socket) do
-    scope = socket.assigns.current_scope
     task = socket.assigns.task
-    execute_action(socket, :recheck_design, fn -> Pipeline.recheck_design(scope, task) end)
+    execute_action(socket, :recheck_design, fn -> Pipeline.recheck_design(task) end)
   end
 
   defp handle_action_click("cancel", _params, socket) do
-    scope = socket.assigns.current_scope
     task = socket.assigns.task
-    execute_action(socket, :cancel, fn -> Pipeline.cancel_task(scope, task) end)
+    execute_action(socket, :cancel, fn -> Pipeline.cancel_task(task) end)
   end
 
   defp handle_action_click("mark_ready", _params, socket) do
-    scope = socket.assigns.current_scope
     task = socket.assigns.task
-    execute_action(socket, :mark_ready, fn -> Pipeline.mark_pr_ready(scope, task) end)
+    execute_action(socket, :mark_ready, fn -> Pipeline.mark_pr_ready(task) end)
   end
 
   defp handle_action_click(_action, _params, socket), do: {:noreply, socket}
 
   defp handle_submit_modal("merge", params, socket) do
     ignore_conflicts = params["ignore_conflicts"] == "true"
-    scope = socket.assigns.current_scope
     task = socket.assigns.task
 
     socket
     |> assign(:active_modal, nil)
     |> execute_action(:merge, fn ->
-      Pipeline.merge_task(scope, task, ignore_conflicts: ignore_conflicts)
+      Pipeline.merge_task(task, ignore_conflicts: ignore_conflicts)
     end)
   end
 
   defp handle_submit_modal("rebase", _params, socket) do
-    scope = socket.assigns.current_scope
     task = socket.assigns.task
 
     socket
     |> assign(:active_modal, nil)
     |> execute_action(:rebase, fn ->
-      Pipeline.start_rebase(scope, task)
+      Pipeline.start_rebase(task)
     end)
   end
 
@@ -1197,31 +1155,12 @@ defmodule RailWeb.TaskDetailLive do
     if task_busy?(socket.assigns.task, socket.assigns.running_action) do
       {:noreply, assign(socket, :active_modal, nil)}
     else
-      scope = socket.assigns.current_scope
       task = socket.assigns.task
 
       socket
       |> assign(:active_modal, nil)
       |> execute_action(:cleanup, fn ->
-        Pipeline.cleanup_task(scope, task)
-      end)
-    end
-  end
-
-  defp handle_submit_modal("comment", params, socket) do
-    comment = params["comment"]
-    trimmed = if is_binary(comment), do: String.trim(comment), else: ""
-
-    if trimmed == "" do
-      {:noreply, socket}
-    else
-      scope = socket.assigns.current_scope
-      task = socket.assigns.task
-
-      socket
-      |> assign(:active_modal, nil)
-      |> execute_action(:comment, fn ->
-        Pipeline.request_changes(scope, task, trimmed)
+        Pipeline.cleanup_task(task)
       end)
     end
   end
@@ -1230,26 +1169,24 @@ defmodule RailWeb.TaskDetailLive do
     comment = params["comment"]
     trimmed = if is_binary(comment), do: String.trim(comment), else: ""
     opts = if trimmed == "", do: [], else: [comment: trimmed]
-    scope = socket.assigns.current_scope
     task = socket.assigns.task
 
     socket
     |> assign(:active_modal, nil)
     |> execute_action(:send_back_to_engineer, fn ->
-      Pipeline.send_back_to_engineer(scope, task, opts)
+      Pipeline.send_back_to_engineer(task, opts)
     end)
   end
 
   defp handle_submit_modal("decline_demo", params, socket) do
     reason = params["reason"]
     trimmed = if is_binary(reason) and String.trim(reason) != "", do: String.trim(reason), else: "Declined by human"
-    scope = socket.assigns.current_scope
     task = socket.assigns.task
 
     socket
     |> assign(:active_modal, nil)
     |> execute_action(:decline_demo, fn ->
-      Pipeline.decline_demo(scope, task, trimmed)
+      Pipeline.decline_demo(task, trimmed)
     end)
   end
 
@@ -1322,7 +1259,7 @@ defmodule RailWeb.TaskDetailLive do
   end
 
   defp refresh_task(socket) do
-    case Pipeline.get_task(socket.assigns.current_scope, socket.assigns.task_id) do
+    case Pipeline.get_task(socket.assigns.task_id) do
       {:ok, task} -> apply_task_data(socket, task)
       {:error, _reason} -> assign(socket, :task, nil)
     end
@@ -1332,7 +1269,7 @@ defmodule RailWeb.TaskDetailLive do
     scope = socket.assigns.current_scope
     roles = if task.project_id, do: Rail.Roles.list_roles(scope, task.project_id), else: []
     roles_map = Map.new(roles, fn r -> {r.id, r} end)
-    pending_questions = resolve_pending_questions(scope, task)
+    pending_questions = resolve_pending_questions(task)
 
     {current_run, role_name} = resolve_current_run(task)
 
@@ -1385,12 +1322,12 @@ defmodule RailWeb.TaskDetailLive do
   end
 
   # A run can ask several things at once, so a blocked task shows the whole queue as
-  # tabs. task.question_id only names the one the pipeline parks on.
-  defp resolve_pending_questions(scope, %{stage_state: :blocked, id: task_id}) do
-    Pipeline.list_pending_questions(scope, task_id, order_by: [asc: :inserted_at, asc: :id])
+  # tabs, in the order they were asked.
+  defp resolve_pending_questions(%{stage_state: :blocked, id: task_id}) do
+    Pipeline.list_questions(task_id, status: :pending, order_by: [asc: :inserted_at, asc: :id])
   end
 
-  defp resolve_pending_questions(_scope, _task), do: []
+  defp resolve_pending_questions(_task), do: []
 
   # The tab the human picked stays put across refreshes; once it is answered the
   # front of the queue takes over.
@@ -1496,7 +1433,7 @@ defmodule RailWeb.TaskDetailLive do
 
     case Pipeline.load_diff(task) do
       {:ok, parsed_files, diff_rev} ->
-        task = Pipeline.get_task!(socket.assigns.current_scope, task.id)
+        {:ok, task} = Pipeline.get_task(task.id)
 
         socket
         |> assign(:file_diffs, parsed_files)
@@ -1510,6 +1447,13 @@ defmodule RailWeb.TaskDetailLive do
         |> assign(:file_diffs, [])
         |> assign(:diff_rev, nil)
         |> assign(:loading_diff, false)
+    end
+  end
+
+  defp dismiss_question(question_id) do
+    case Pipeline.get_question(question_id) do
+      {:ok, question} -> Pipeline.dismiss_question(question)
+      _not_found -> :ok
     end
   end
 end

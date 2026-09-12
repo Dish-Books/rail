@@ -15,34 +15,10 @@ defmodule Rail.Pipeline.Actions.MarkPrReady do
   @doc """
   Marks a draft pull request as ready for review.
   """
-  def mark_pr_ready(scope, task_or_id, opts) when is_list(opts) do
-    with :ok <- authorize_scope(scope),
-         %Task{} = task <- resolve_task(task_or_id) do
-      do_mark_pr_ready(scope, task, opts)
-    else
-      {:error, reason} -> {:error, reason}
-      nil -> {:error, :not_found}
-    end
-  end
 
-  def mark_pr_ready(task_or_id, opts) when is_list(opts) do
-    mark_pr_ready(Scope.for_system(), task_or_id, opts)
-  end
+  def mark_pr_ready(task, opts \\ [])
 
-  def mark_pr_ready(scope, task_or_id) do
-    mark_pr_ready(scope, task_or_id, [])
-  end
-
-  def mark_pr_ready(task_or_id) do
-    mark_pr_ready(Scope.for_system(), task_or_id, [])
-  end
-
-  defp authorize_scope(%Scope{system: true}), do: :ok
-  defp authorize_scope(%Scope{user: %{}}), do: :ok
-  defp authorize_scope(nil), do: :ok
-  defp authorize_scope(_scope), do: {:error, :not_authorized}
-
-  defp do_mark_pr_ready(_scope, %Task{pr_number: nil} = task, _opts) do
+  def mark_pr_ready(%Task{pr_number: nil} = task, _opts) do
     error_msg = "This task has no pull request to mark ready."
 
     {:ok, updated_task} =
@@ -58,7 +34,9 @@ defmodule Rail.Pipeline.Actions.MarkPrReady do
     {:error, :no_pr}
   end
 
-  defp do_mark_pr_ready(scope, %Task{} = task, opts) do
+  def mark_pr_ready(%Task{} = task, opts) do
+    scope = Scope.for_system()
+
     case Repo.get(Project, task.project_id) do
       %Project{} = project ->
         with {:ok, token} <- resolve_github_token(scope, project, opts) do
@@ -76,7 +54,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReady do
     end
   end
 
-  defp handle_mark_ready_success(scope, %Task{} = task, opts) do
+  defp handle_mark_ready_success(_scope, %Task{} = task, opts) do
     attrs = %{
       pr_is_draft: false,
       error: nil
@@ -92,7 +70,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReady do
       event: :pr_marked_ready
     })
 
-    Rail.Pipeline.refresh_mergeability(scope, updated_task, opts)
+    Rail.Pipeline.refresh_mergeability(updated_task, opts)
   end
 
   defp handle_mark_ready_failure(%Task{} = task, reason) do
@@ -114,8 +92,4 @@ defmodule Rail.Pipeline.Actions.MarkPrReady do
   defp format_reason({:github_api_error, _status, %{"message" => msg}}), do: msg
   defp format_reason({:github_api_error, status, msg}) when is_binary(msg), do: "#{status} #{msg}"
   defp format_reason(reason), do: inspect(reason)
-
-  defp resolve_task(%Task{} = task), do: task
-  defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)
-  defp resolve_task(_other), do: nil
 end

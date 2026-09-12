@@ -9,17 +9,7 @@ defmodule Rail.Pipeline.Actions.LoadDiff do
   Reconciles viewed diff marks against the parsed files.
   Returns `{:ok, parsed_files, diff_rev}` or `{:error, reason}`.
   """
-  def load_diff(scope_or_task, task_or_opts \\ nil)
-
-  def load_diff(%Task{} = task, _opts) do
-    do_load_diff(task)
-  end
-
-  def load_diff(_scope, %Task{} = task) do
-    do_load_diff(task)
-  end
-
-  defp do_load_diff(%Task{worktree_path: worktree_path} = task) do
+  def load_diff(%Task{worktree_path: worktree_path} = task) do
     if Task.worktree_present?(task) do
       do_load_present_diff(task, worktree_path)
     else

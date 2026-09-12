@@ -1,4 +1,4 @@
-defmodule Rail.Pipeline.Utils.RunFinished do
+defmodule Rail.Pipeline.Actions.RunFinished do
   @moduledoc """
   The one thing that happens when an OS process exits.
 

@@ -135,7 +135,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         issue_id: issue.id,
         stage: :engineer,
         stage_state: :running,
@@ -221,7 +221,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     tab_worktree = create_temp_git_repo()
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :product,
         stage_state: :running,
         worktree_path: tab_worktree
@@ -234,7 +234,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     )
     |> Repo.insert!()
 
-    {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
+    {:ok, _plan} = Pipeline.get_plan(task)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
 
@@ -310,7 +310,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :product,
         stage_state: :queued
       })
@@ -360,7 +360,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :product,
         stage_state: :queued,
         worktree_path: "/tmp/rail-removed-worktree"
@@ -411,7 +411,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     )
 
     {:ok, conflicted_task} =
-      Pipeline.update_task(system_scope(), conflicted_task.id, %{
+      Pipeline.update_task(conflicted_task, %{
         stage: :engineer,
         stage_state: :failed,
         mergeability: :conflicting,
@@ -439,7 +439,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     )
 
     {:ok, rebasing_task} =
-      Pipeline.update_task(system_scope(), rebasing_task.id, %{
+      Pipeline.update_task(rebasing_task, %{
         stage: :engineer,
         stage_state: :running,
         mergeability: :conflicting,
@@ -491,7 +491,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :failed,
         error: "Elixir compilation error in test/dummy_test.exs:10"
@@ -555,7 +555,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :failed
       })
@@ -617,7 +617,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -664,7 +664,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: target_id}} = Pipeline.create_task(issue_13835, :product)
 
     {:ok, %Task{id: target_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: target_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, target_id), %{
         stage: :product,
         stage_state: :queued
       })
@@ -784,7 +784,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         issue_id: issue.id,
         stage: :architect,
         stage_state: :queued,
@@ -853,7 +853,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     Repo.update_all(from(i in Issue, where: i.id == ^issue.id), set: [description: "Edge case description"])
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         issue_id: issue.id,
         stage: :demo,
         stage_state: :running,
@@ -897,7 +897,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: minimal_id}} = Pipeline.create_task(issue_13838, :product)
 
     {:ok, %Task{id: minimal_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: minimal_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, minimal_id), %{
         issue_id: nil,
         worktree_name: "removed-worktree",
         pr_number: nil,
@@ -951,7 +951,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13839, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         stage: :engineer,
         stage_state: :awaiting_approval,
         worktree_path: create_temp_git_repo()
@@ -1024,7 +1024,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13840, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         pr_number: 202,
@@ -1067,7 +1067,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: conf_task_id}} = Pipeline.create_task(issue_13841, :product)
 
     {:ok, %Task{id: conf_task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: conf_task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, conf_task_id), %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         pr_number: 203,
@@ -1124,7 +1124,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13842, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         pr_number: 303,
@@ -1194,7 +1194,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13843, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         stage: :engineer,
         stage_state: :awaiting_approval
       })
@@ -1232,7 +1232,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: busy_task_id}} = Pipeline.create_task(issue_13844, :product)
 
     {:ok, %Task{id: busy_task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: busy_task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, busy_task_id), %{
         stage: :engineer,
         stage_state: :running
       })
@@ -1284,7 +1284,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13845, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         stage: :product,
         stage_state: :awaiting_approval
       })
@@ -1356,7 +1356,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13846, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         pr_number: 404
@@ -1395,7 +1395,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: task_id_2}} = Pipeline.create_task(issue_13847, :product)
 
     {:ok, %Task{id: task_id_2}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id_2}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id_2), %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         pr_number: 405
@@ -1448,7 +1448,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13848, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         stage: :demo,
         stage_state: :failed
       })
@@ -1486,7 +1486,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: task_id_2}} = Pipeline.create_task(issue_13849, :product)
 
     {:ok, %Task{id: task_id_2}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id_2}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id_2), %{
         stage: :demo,
         stage_state: :failed
       })
@@ -1545,7 +1545,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: prod_task_id}} = Pipeline.create_task(issue_13850, :product)
 
     {:ok, %Task{id: prod_task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: prod_task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, prod_task_id), %{
         stage: :product,
         stage_state: :awaiting_approval
       })
@@ -1566,7 +1566,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: prod_skip_task_id}} = Pipeline.create_task(issue_13851, :product)
 
     {:ok, %Task{id: prod_skip_task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: prod_skip_task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, prod_skip_task_id), %{
         stage: :product,
         stage_state: :awaiting_approval
       })
@@ -1586,7 +1586,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: qa_task_id}} = Pipeline.create_task(issue_13852, :product)
 
     {:ok, %Task{id: qa_task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: qa_task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, qa_task_id), %{
         stage: :qa,
         stage_state: :awaiting_approval
       })
@@ -1607,7 +1607,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: retry_task_id}} = Pipeline.create_task(issue_13853, :product)
 
     {:ok, %Task{id: retry_task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: retry_task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, retry_task_id), %{
         stage: :engineer,
         stage_state: :failed
       })
@@ -1628,7 +1628,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: running_task_id}} = Pipeline.create_task(issue_13854, :product)
 
     {:ok, %Task{id: running_task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: running_task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, running_task_id), %{
         stage: :engineer,
         stage_state: :running
       })
@@ -1649,7 +1649,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: queued_task_id}} = Pipeline.create_task(issue_13855, :product)
 
     {:ok, %Task{id: queued_task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: queued_task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, queued_task_id), %{
         stage: :engineer,
         stage_state: :queued,
         retry_after: DateTime.utc_now()
@@ -1670,7 +1670,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: blocked_task_id}} = Pipeline.create_task(issue_13856, :product)
 
     {:ok, %Task{id: blocked_task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: blocked_task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, blocked_task_id), %{
         stage: :engineer,
         stage_state: :blocked,
         question_id: nil
@@ -1692,7 +1692,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: draft_task_id}} = Pipeline.create_task(issue_13857, :product)
 
     {:ok, %Task{id: draft_task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: draft_task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, draft_task_id), %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         pr_number: 505,
@@ -1715,7 +1715,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: demo_task_id}} = Pipeline.create_task(issue_13858, :product)
 
     {:ok, %Task{id: demo_task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: demo_task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, demo_task_id), %{
         stage: :demo,
         stage_state: :failed
       })
@@ -1736,7 +1736,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: design_task_id}} = Pipeline.create_task(issue_13859, :product)
 
     {:ok, %Task{id: design_task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: design_task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, design_task_id), %{
         stage: :design,
         stage_state: :awaiting_approval
       })
@@ -1781,7 +1781,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: design_failed_id}} = Pipeline.create_task(issue_13860, :product)
 
     {:ok, %Task{id: design_failed_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: design_failed_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, design_failed_id), %{
         stage: :design,
         stage_state: :failed
       })
@@ -1832,7 +1832,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13861, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
         pr_number: 606,
@@ -1914,7 +1914,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13862, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, task_id), %{
         stage: :product,
         stage_state: :awaiting_approval
       })
@@ -2032,7 +2032,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13863, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :blocked
       })
@@ -2086,7 +2086,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task_answer_fb} = Pipeline.create_task(issue_13864, :product)
 
     {:ok, task_answer_fb} =
-      Pipeline.update_task(system_scope(), task_answer_fb.id, %{
+      Pipeline.update_task(task_answer_fb, %{
         stage: :engineer,
         stage_state: :blocked
       })
@@ -2119,7 +2119,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task_dismiss_exp} = Pipeline.create_task(issue_13865, :product)
 
     {:ok, task_dismiss_exp} =
-      Pipeline.update_task(system_scope(), task_dismiss_exp.id, %{
+      Pipeline.update_task(task_dismiss_exp, %{
         stage: :engineer,
         stage_state: :blocked
       })
@@ -2152,7 +2152,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task_dismiss_fb} = Pipeline.create_task(issue_13866, :product)
 
     {:ok, task_dismiss_fb} =
-      Pipeline.update_task(system_scope(), task_dismiss_fb.id, %{
+      Pipeline.update_task(task_dismiss_fb, %{
         stage: :engineer,
         stage_state: :blocked
       })
@@ -2185,7 +2185,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, bad_task} = Pipeline.create_task(issue_13867, :product)
 
     {:ok, bad_task} =
-      Pipeline.update_task(system_scope(), bad_task.id, %{
+      Pipeline.update_task(bad_task, %{
         stage: :engineer,
         stage_state: :blocked,
         question_id: "qst_nonexistent_99"
@@ -2235,7 +2235,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13868, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :queued
       })
@@ -2311,7 +2311,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13869, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -2476,7 +2476,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13870, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -2635,7 +2635,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13871, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         worktree_path: repo,
         owner_user_id: user.id
       })
@@ -2676,7 +2676,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13872, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         worktree_path: repo,
         owner_user_id: user.id
       })
@@ -2744,7 +2744,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13873, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         worktree_path: repo,
         owner_user_id: user.id
       })
@@ -2775,7 +2775,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13874, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         worktree_path: "/tmp/rail-removed-worktree"
       })
 
@@ -2842,7 +2842,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13875, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         owner_user_id: user.id,
         stage: :engineer,
         stage_state: :running
@@ -2904,7 +2904,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13876, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         owner_user_id: user.id,
         stage: :engineer,
         stage_state: :running
@@ -2976,7 +2976,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13877, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         owner_user_id: user.id,
         stage: :ready_to_merge,
         stage_state: :awaiting_approval
@@ -3018,7 +3018,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13878, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         owner_user_id: user.id,
         stage: :ready_to_merge,
         stage_state: :awaiting_approval,
@@ -3128,7 +3128,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13879, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         worktree_path: "/tmp/rail-removed-worktree"
       })
 

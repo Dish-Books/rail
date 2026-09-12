@@ -79,7 +79,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     # These tests exercise stage transitions, not Linear publishing.
-    {:ok, task} = Pipeline.update_task(scope, task.id, %{issue_id: nil})
+    {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
     %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
@@ -112,7 +112,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
     )
 
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :qa,
         stage_state: :running,
         scratch_path: qa_scratch
@@ -231,7 +231,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
     )
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         issue_id: issue.id,
         owner_user_id: user.id,
         stage: :qa,
@@ -254,7 +254,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
 
     Runs.append_run_event(run, output)
 
-    {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
+    {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: scratch_dir})
 
     os_process =
       %OsProcess{}
@@ -310,7 +310,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
     File.write!(Path.join(qa_dir, "manifest.json"), "{broken_json")
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :qa,
         stage_state: :running
       })
@@ -326,7 +326,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
 
     Runs.append_run_event(run, "VERDICT: PASS")
 
-    {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
+    {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: scratch_dir})
 
     os_process =
       %OsProcess{}
@@ -366,7 +366,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
     scratch_dir = create_temp_git_repo()
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :qa,
         stage_state: :running
       })
@@ -382,7 +382,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
 
     Runs.append_run_event(run, "VERDICT: PASS")
 
-    {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
+    {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: scratch_dir})
 
     os_process =
       %OsProcess{}
@@ -431,7 +431,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{stage: :qa, stage_state: :running})
+      Pipeline.update_task(task, %{stage: :qa, stage_state: :running})
 
     {:ok, run} =
       Runs.create_run(%{
@@ -444,7 +444,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
 
     Runs.append_run_event(run, "VERDICT: PASS")
 
-    {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
+    {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: scratch_dir})
 
     os_process =
       %OsProcess{}
@@ -512,7 +512,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
     )
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :qa,
         stage_state: :running,
         rework_cycles: 0,
@@ -541,7 +541,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
 
     Runs.append_run_event(run, output)
 
-    {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
+    {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: scratch_dir})
 
     os_process =
       %OsProcess{}
@@ -618,7 +618,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
     )
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :qa,
         stage_state: :running
       })
@@ -638,7 +638,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
 
     Runs.append_run_event(run, "VERDICT: PASS")
 
-    {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
+    {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: scratch_dir})
 
     os_process =
       %OsProcess{}
@@ -705,7 +705,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
     )
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :qa,
         stage_state: :running
       })
@@ -722,7 +722,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
     # Step 1: Settle QA run
     Runs.append_run_event(run_qa, "VERDICT: PASS")
 
-    {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: qa_scratch_dir})
+    {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: qa_scratch_dir})
 
     os_process =
       %OsProcess{}
@@ -761,7 +761,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
 
     Runs.append_run_event(run_lead, "VERDICT: PASS")
 
-    {:ok, _persisted} = Pipeline.update_task(system_scope(), task_lead_queued.id, %{scratch_path: lead_scratch_dir})
+    {:ok, _persisted} = Pipeline.update_task(task_lead_queued, %{scratch_path: lead_scratch_dir})
 
     run_2 =
       %OsProcess{}
@@ -807,7 +807,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
     )
 
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :qa,
         stage_state: :running,
         scratch_path: qa_scratch,
@@ -887,7 +887,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
     )
 
     {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :qa,
         stage_state: :running,
         rework_cycles: 1,
@@ -958,10 +958,10 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
 
     {:ok, %Task{id: _task_id2} = task2} = Pipeline.create_task(issue_14507, :product)
 
-    {:ok, task2} = Pipeline.update_task(system_scope(), task2.id, %{issue_id: nil})
+    {:ok, task2} = Pipeline.update_task(task2, %{issue_id: nil})
 
     {:ok, %Task{id: task_id2} = _task2} =
-      Pipeline.update_task(system_scope(), task2.id, %{
+      Pipeline.update_task(task2, %{
         stage: :qa_lead,
         stage_state: :running,
         rework_cycles: 1,
@@ -1045,10 +1045,10 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
 
     {:ok, %Task{id: _task_id3} = task3} = Pipeline.create_task(issue_14508, :product)
 
-    {:ok, task3} = Pipeline.update_task(system_scope(), task3.id, %{issue_id: nil})
+    {:ok, task3} = Pipeline.update_task(task3, %{issue_id: nil})
 
     {:ok, %Task{id: task_id3} = _task3} =
-      Pipeline.update_task(system_scope(), task3.id, %{
+      Pipeline.update_task(task3, %{
         stage: :review,
         stage_state: :running,
         rework_cycles: 1,

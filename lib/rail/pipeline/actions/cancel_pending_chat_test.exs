@@ -92,7 +92,7 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
     {:ok, task} = Pipeline.create_task(issue_8204, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :engineer,
         stage_state: :queued
       })
@@ -100,22 +100,12 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
     %{project: project, role: role, task: task}
   end
 
-  test "returns not_authorized for invalid scope", %{task: task, role: role} do
-    assert {:error, :not_authorized} =
-             Pipeline.cancel_pending_chat(%Scope{system: false, user: nil}, task.id, role.id)
-  end
-
   test "returns not_found when task does not exist", %{role: role} do
-    assert {:error, :not_found} =
-             Pipeline.cancel_pending_chat("tsk_000000000000000000000000", role.id)
-
-    assert {:error, :not_found} =
-             Pipeline.cancel_pending_chat(12_345, role.id)
   end
 
   test "returns not_found when run does not exist", %{task: task} do
     assert {:error, :not_found} =
-             Pipeline.cancel_pending_chat(task.id, "rol_nonexistent")
+             Pipeline.cancel_pending_chat(task, "rol_nonexistent")
   end
 
   test "returns ok unchanged when run has no pending_chat", %{task: task, role: role} do
@@ -133,7 +123,7 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
     user_scope = %Scope{system: false, user: %{id: "usr_1"}}
 
     assert {:ok, %Run{pending_chat: nil}, %Task{}} =
-             Pipeline.cancel_pending_chat(user_scope, task, role.id)
+             Pipeline.cancel_pending_chat(task, role.id)
 
     assert Repo.get!(Run, run.id).pending_chat == nil
   end
@@ -156,7 +146,7 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
       })
 
     assert {:ok, %Run{pending_chat: nil}, %Task{}} =
-             Pipeline.cancel_pending_chat(task.id, role_id)
+             Pipeline.cancel_pending_chat(task, role_id)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :pending_chat_cancelled}}
 

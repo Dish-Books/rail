@@ -82,7 +82,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     {:ok, task} = Pipeline.create_task(issue_11030, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :awaiting_approval,
         worktree_path: repo_dir
@@ -632,7 +632,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     {:ok, task_no_rev} = Pipeline.create_task(issue_11031, :product)
 
     {:ok, task_no_rev} =
-      Pipeline.update_task(system_scope(), task_no_rev.id, %{
+      Pipeline.update_task(task_no_rev, %{
         stage: :review,
         stage_state: :queued,
         worktree_path: orig_task.worktree_path,
@@ -801,7 +801,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       stub(File, :stat, fn _path -> {:ok, %File.Stat{type: :regular, size: 128}} end)
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :design,
           stage_state: :failed,
           error: "Initial canvas 404",
@@ -887,7 +887,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       stub(File, :exists?, fn _path -> true end)
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :design,
           stage_state: :failed,
           error: "Design manifest canvasUrl must be an absolute https URL.",

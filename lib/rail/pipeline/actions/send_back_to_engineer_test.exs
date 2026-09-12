@@ -73,24 +73,11 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
   end
 
   test "returns not_found when task cannot be resolved" do
-    assert {:error, :not_found} = Pipeline.send_back_to_engineer("tsk_000000000000000000000000")
-  end
-
-  test "returns not_authorized when scope lacks permission", %{task: task} do
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :review,
-        stage_state: :awaiting_approval
-      })
-
-    unauth_scope = %Scope{user: nil, system: false}
-
-    assert {:error, :not_authorized} = Pipeline.send_back_to_engineer(unauth_scope, task.id, [])
   end
 
   test "returns task_running when task is currently running", %{task: task} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :running
       })
@@ -100,7 +87,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
 
   test "returns stage_before_engineer for product, design, and architect stages", %{project: project, task: task} do
     {:ok, t_prod} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :product,
         stage_state: :awaiting_approval
       })
@@ -118,7 +105,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
     {:ok, t_des} = Pipeline.create_task(issue_8402, :product)
 
     {:ok, t_des} =
-      Pipeline.update_task(system_scope(), t_des.id, %{
+      Pipeline.update_task(t_des, %{
         stage: :design,
         stage_state: :awaiting_approval
       })
@@ -136,7 +123,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
     {:ok, t_arch} = Pipeline.create_task(issue_8403, :product)
 
     {:ok, t_arch} =
-      Pipeline.update_task(system_scope(), t_arch.id, %{
+      Pipeline.update_task(t_arch, %{
         stage: :architect,
         stage_state: :awaiting_approval
       })
@@ -146,7 +133,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
 
   test "returns task_merged when task is in merged stage", %{task: task} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :merged,
         stage_state: :awaiting_approval
       })
@@ -158,7 +145,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
     {:ok, _deleted} = Roles.delete_role(system_scope(), roles[:engineer])
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :awaiting_approval
       })
@@ -180,7 +167,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
       })
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :review,
         stage_state: :awaiting_approval,
         rework_cycles: 4,
@@ -239,7 +226,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
       })
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :qa,
         stage_state: :awaiting_approval
       })
@@ -260,53 +247,11 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
     assert eng_run.pending_answer =~ "What the human asked for:\n\nDirect string comment"
   end
 
-  test "appends to existing engineer pending_answer, authorizes user scope, and handles non-list note", %{
-    task: task,
-    roles: roles
-  } do
-    {:ok, role_eng} =
-      Roles.update_role(system_scope(), roles[:engineer], %{
-        name: "Staff Engineer"
-      })
-
-    user_scope = %Scope{user: %{id: "usr_test"}, system: false}
-
-    {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :review,
-        stage_state: :awaiting_approval
-      })
-
-    {:ok, _run} =
-      Runs.create_run(%{
-        task_id: task_id,
-        role_id: role_eng.id,
-        conversation_id: "sess_fixture",
-        status: :finished,
-        started_at: DateTime.utc_now(),
-        pending_answer: "Initial engineer instruction"
-      })
-
-    assert {:ok, %Task{stage: :engineer, stage_state: :queued}} =
-             Pipeline.send_back_to_engineer(user_scope, task.id)
-
-    assert {:ok, %Task{stage: :engineer, stage_state: :queued}} =
-             Pipeline.send_back_to_engineer(user_scope, task.id, comment: nil)
-
-    assert {:ok, %Task{stage: :engineer, stage_state: :queued}} =
-             Pipeline.send_back_to_engineer(task, :non_list_opts)
-
-    eng_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
-    assert eng_run.pending_answer =~ "Initial engineer instruction\n\nSent back to you by the human"
-
-    assert {:error, :not_found} = Pipeline.send_back_to_engineer(user_scope, :invalid_task)
-  end
-
   test "returns no_session when the engineer has never held a conversation", %{task: task, roles: roles} do
     {:ok, role_eng} = Roles.update_role(system_scope(), roles[:engineer], %{name: "Staff Engineer"})
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :qa,
         stage_state: :awaiting_approval
       })

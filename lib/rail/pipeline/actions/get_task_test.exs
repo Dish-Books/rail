@@ -48,52 +48,13 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
     %{project: project, issue: issue, task: task}
   end
 
-  test "returns task for authenticated user scope", %{task: %Task{id: task_id} = task} do
-    scope = Scope.for_user(%{admin: false})
-
-    assert {:ok, %Task{id: ^task_id}} = Pipeline.get_task(scope, task.id)
-  end
-
-  test "returns task for system scope", %{task: %Task{id: task_id} = task} do
-    scope = Scope.for_system()
-
-    assert {:ok, %Task{id: ^task_id}} = Pipeline.get_task(scope, task.id)
-  end
-
   test "returns not found error when task does not exist" do
     scope = Scope.for_system()
-    assert {:error, :not_found} = Pipeline.get_task(scope, "tsk_000000000000000000000000")
+    assert {:error, :not_found} = Pipeline.get_task("tsk_000000000000000000000000")
   end
 
-  test "returns not authorized error for nil or invalid scope", %{task: task} do
-    assert {:error, :not_authorized} = Pipeline.get_task(nil, task.id)
-    assert {:error, :not_authorized} = Pipeline.get_task(%Scope{user: nil, system: false}, task.id)
-  end
-
-  test "get_task! returns task for system scope", %{task: %Task{id: task_id} = task} do
-    scope = Scope.for_system()
-
-    assert %Task{id: ^task_id} = Pipeline.get_task!(scope, task.id)
-  end
-
-  test "get_task! returns task for user scope", %{task: %Task{id: task_id} = task} do
-    scope = Scope.for_user(%{admin: false})
-
-    assert %Task{id: ^task_id} = Pipeline.get_task!(scope, task.id)
-  end
-
-  test "get_task! raises Ecto.NoResultsError when task does not exist" do
-    scope = Scope.for_system()
-
-    assert_raise Ecto.NoResultsError, fn ->
-      Pipeline.get_task!(scope, "tsk_000000000000000000000000")
-    end
-  end
-
-  test "get_task! raises Ecto.NoResultsError when scope is unauthorized", %{task: task} do
-    assert_raise Ecto.NoResultsError, fn ->
-      Pipeline.get_task!(nil, task.id)
-    end
+  test "reports not_found when the task does not exist" do
+    assert {:error, :not_found} = Pipeline.get_task("tsk_000000000000000000000000")
   end
 
   test "loads and attaches latest demo and design to task", %{task: %Task{id: task_id} = task} do
@@ -171,19 +132,13 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
               id: ^task_id,
               demo: %{id: ^demo2_id, version: 2},
               design: %{id: ^design2_id, version: 2}
-            }} = Pipeline.get_task(scope, task.id)
-
-    assert %Task{
-             id: ^task_id,
-             demo: %{id: ^demo2_id, version: 2},
-             design: %{id: ^design2_id, version: 2}
-           } = Pipeline.get_task!(scope, task.id)
+            }} = Pipeline.get_task(task.id)
   end
 
   test "returns nil for demo and design when task has no artifacts", %{task: %Task{id: task_id} = task} do
     scope = Scope.for_system()
 
-    assert {:ok, %Task{id: ^task_id, demo: nil, design: nil}} = Pipeline.get_task(scope, task.id)
-    assert %Task{id: ^task_id, demo: nil, design: nil} = Pipeline.get_task!(scope, task.id)
+    assert {:ok, %Task{id: ^task_id, demo: nil, design: nil}} = Pipeline.get_task(task.id)
+    assert {:ok, %Task{id: ^task_id, demo: nil, design: nil}} = Pipeline.get_task(task.id)
   end
 end

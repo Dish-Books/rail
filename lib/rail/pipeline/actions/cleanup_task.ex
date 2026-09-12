@@ -8,39 +8,12 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
-  alias Rail.Scope
 
   @doc """
   Cleans up worktree, branch, and scratch artifacts for a task.
   """
-  def cleanup_task(scope, task_or_id, opts) when is_list(opts) do
-    with :ok <- authorize_scope(scope),
-         %Task{} = task <- resolve_task(task_or_id) do
-      do_cleanup_task(task)
-    else
-      {:error, reason} -> {:error, reason}
-      nil -> {:error, :not_found}
-    end
-  end
 
-  def cleanup_task(task_or_id, opts) when is_list(opts) do
-    cleanup_task(Scope.for_system(), task_or_id, opts)
-  end
-
-  def cleanup_task(scope, task_or_id) do
-    cleanup_task(scope, task_or_id, [])
-  end
-
-  def cleanup_task(task_or_id) do
-    cleanup_task(Scope.for_system(), task_or_id, [])
-  end
-
-  defp authorize_scope(%Scope{system: true}), do: :ok
-  defp authorize_scope(%Scope{user: %{}}), do: :ok
-  defp authorize_scope(nil), do: :ok
-  defp authorize_scope(_scope), do: {:error, :not_authorized}
-
-  defp do_cleanup_task(%Task{} = task) do
+  def cleanup_task(%Task{} = task) do
     if Task.busy?(task) do
       {:error, :task_busy}
     else
@@ -82,8 +55,4 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
       File.rm_rf!(scratch_dir)
     end
   end
-
-  defp resolve_task(%Task{} = task), do: task
-  defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)
-  defp resolve_task(_other), do: nil
 end

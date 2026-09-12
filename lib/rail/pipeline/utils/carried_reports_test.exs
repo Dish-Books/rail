@@ -72,7 +72,7 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
   end
 
   test "returns an empty string when the task has no outstanding reports", %{task: task} do
-    {:ok, task} = Pipeline.update_task(system_scope(), task.id, %{outstanding_reports: []})
+    {:ok, task} = Pipeline.update_task(task, %{outstanding_reports: []})
 
     assert carried_reports(task) == ""
   end
@@ -82,7 +82,7 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
     {:ok, role_qa} = Roles.update_role(system_scope(), roles[:qa], %{name: "QA Tester"})
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         outstanding_reports: [role_rev.id, role_qa.id]
       })
 
@@ -123,7 +123,7 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
     {:ok, role} = Roles.update_role(system_scope(), roles[:review], %{name: "Empty Reviewer"})
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{outstanding_reports: [role.id]})
+      Pipeline.update_task(task, %{outstanding_reports: [role.id]})
 
     {:ok, run} =
       Runs.create_run(%{
@@ -145,7 +145,7 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
     {:ok, role} = Roles.update_role(system_scope(), roles[:review], %{name: "Reviewer"})
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{outstanding_reports: [role.id]})
+      Pipeline.update_task(task, %{outstanding_reports: [role.id]})
 
     {:ok, first_run} =
       Runs.create_run(%{
@@ -176,7 +176,7 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
     non_existent_role_id = "rol_000000000000000000000001"
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         outstanding_reports: [non_existent_role_id]
       })
 

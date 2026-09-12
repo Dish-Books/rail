@@ -56,39 +56,9 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     %{project: project, issue: issue, task: task}
   end
 
-  test "lists tasks for project under system and user scope", %{project: project, task: task} do
-    Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id), set: [title: "T1"])
-
-    {:ok, %Task{id: id1}} =
-      Pipeline.update_task(system_scope(), task.id, %{})
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_list_tasks_7102",
-      "identifier" => "TSK-7102",
-      "title" => "T2"
-    })
-
-    {:ok, issue_7102} = Issues.capture_issue(system_scope(), project, "T2")
-
-    {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7102, :product)
-
-    system_scope = Scope.for_system()
-    user_scope = Scope.for_user(%{admin: false})
-
-    assert [%Task{id: ^id1}, %Task{id: ^id2}] = Pipeline.list_tasks(system_scope, project.id)
-    assert [%Task{id: ^id1}, %Task{id: ^id2}] = Pipeline.list_tasks(user_scope, project.id)
-  end
-
-  test "returns empty list for unauthorized scope", %{project: project, task: task} do
-    _t1 = task
-
-    assert [] = Pipeline.list_tasks(nil, project.id)
-    assert [] = Pipeline.list_tasks(%Scope{user: nil, system: false}, project.id)
-  end
-
   test "filters tasks by stage and stage_state", %{project: project, task: task} do
     {:ok, %Task{id: prod_id}} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :product,
         stage_state: :queued
       })
@@ -104,7 +74,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     {:ok, %Task{id: eng_q_id}} = Pipeline.create_task(issue_7103, :product)
 
     {:ok, %Task{id: eng_q_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: eng_q_id}.id, %{
+      Pipeline.update_task(Repo.get!(Task, eng_q_id), %{
         stage: :engineer,
         stage_state: :queued
       })
@@ -120,7 +90,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     {:ok, t_eng_running} = Pipeline.create_task(issue_7104, :product)
 
     {:ok, _t_eng_running} =
-      Pipeline.update_task(system_scope(), t_eng_running.id, %{
+      Pipeline.update_task(t_eng_running, %{
         stage: :engineer,
         stage_state: :running
       })
@@ -128,18 +98,18 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     scope = Scope.for_system()
 
     # Filter by stage
-    assert [%Task{id: ^prod_id}] = Pipeline.list_tasks(scope, project.id, stage: :product)
+    assert [%Task{id: ^prod_id}] = Pipeline.list_tasks(project.id, stage: :product)
 
     # Filter by stage and stage_state
     assert [%Task{id: ^eng_q_id}] =
-             Pipeline.list_tasks(scope, project.id, stage: :engineer, stage_state: :queued)
+             Pipeline.list_tasks(project.id, stage: :engineer, stage_state: :queued)
   end
 
   test "supports custom order_by", %{project: project, task: task} do
     Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id), set: [title: "Alpha"])
 
     {:ok, %Task{id: id1}} =
-      Pipeline.update_task(system_scope(), task.id, %{})
+      Pipeline.update_task(task, %{})
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_list_tasks_7105",
@@ -154,7 +124,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     scope = Scope.for_system()
 
     assert [%Task{id: ^id2}, %Task{id: ^id1}] =
-             Pipeline.list_tasks(scope, project.id, order_by: [desc: :inserted_at])
+             Pipeline.list_tasks(project.id, order_by: [desc: :inserted_at])
   end
 
   test "lists tasks across all projects when project_id is nil", %{task: task} do
@@ -197,7 +167,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id), set: [title: "P1 Task"])
 
     {:ok, %Task{id: id1}} =
-      Pipeline.update_task(system_scope(), task.id, %{})
+      Pipeline.update_task(task, %{})
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_list_tasks_7106",
@@ -212,12 +182,12 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     system_scope = Scope.for_system()
     user_scope = Scope.for_user(%{admin: false})
 
-    all_tasks_system = Pipeline.list_tasks(system_scope, nil)
+    all_tasks_system = Pipeline.list_tasks(nil)
     all_ids_system = Enum.map(all_tasks_system, & &1.id)
     assert id1 in all_ids_system
     assert id2 in all_ids_system
 
-    all_tasks_user = Pipeline.list_tasks(user_scope, nil)
+    all_tasks_user = Pipeline.list_tasks(nil)
     all_ids_user = Enum.map(all_tasks_user, & &1.id)
     assert id1 in all_ids_user
     assert id2 in all_ids_user
@@ -227,11 +197,11 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id), set: [title: "Preload Task"])
 
     {:ok, %Task{id: id1}} =
-      Pipeline.update_task(system_scope(), task.id, %{})
+      Pipeline.update_task(task, %{})
 
     scope = Scope.for_system()
 
     assert [%Task{id: ^id1, project: %Project{id: ^expected_project_id}}] =
-             Pipeline.list_tasks(scope, expected_project_id, preload: [:project])
+             Pipeline.list_tasks(expected_project_id, preload: [:project])
   end
 end

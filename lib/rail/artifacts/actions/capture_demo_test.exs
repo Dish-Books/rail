@@ -297,7 +297,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
       {:ok, task} = Pipeline.create_task(issue_12202, :product)
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           issue_id: issue.id,
           owner_user_id: owner.id
         })

@@ -100,7 +100,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
     {:ok, task_running} = Pipeline.create_task(issue_8803, :product)
 
     {:ok, task_running} =
-      Pipeline.update_task(system_scope(), task_running.id, %{
+      Pipeline.update_task(task_running, %{
         stage: :review,
         stage_state: :running
       })
@@ -118,7 +118,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
     {:ok, task_chatting} = Pipeline.create_task(issue_8804, :product)
 
     {:ok, task_chatting} =
-      Pipeline.update_task(system_scope(), task_chatting.id, %{
+      Pipeline.update_task(task_chatting, %{
         stage: :review,
         stage_state: :awaiting_approval,
         active_chat_role_id: "reviewer"
@@ -171,7 +171,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
     {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8807, :product)
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :qa,
         stage_state: :awaiting_approval,
         error: "Some previous error",
@@ -185,56 +185,8 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
               stage_state: :queued,
               error: nil,
               retry_after: nil
-            }} = Pipeline.start_rebase(scope, task, [])
+            }} = Pipeline.start_rebase(task, [])
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :rebase_started}}
-  end
-
-  test "returns error when scope is unauthorized" do
-    assert {:error, :not_authorized} = Pipeline.start_rebase(:invalid_scope, "tsk_123")
-  end
-
-  test "returns error when task is not found" do
-    assert {:error, :not_found} = Pipeline.start_rebase("tsk_nonexistent")
-    assert {:error, :not_found} = Pipeline.start_rebase(123)
-  end
-
-  test "accepts nil scope and task with opts", %{project: _project, task: _task} do
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Start Rebase Project 8808",
-        github_repo: "org/start-rebase-8808",
-        github_installation_id: 8808,
-        linear_team_id: "team_start_rebase_8808",
-        linear_team_key: "P8808",
-        default_branch: "main",
-        clone_path: "/tmp/repos/start-rebase-8808",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_start_rebase_8809",
-      "identifier" => "TSK-8809",
-      "title" => "Task 8809"
-    })
-
-    {:ok, issue_8809} = Issues.capture_issue(system_scope(), project, "Task 8809")
-
-    {:ok, task} = Pipeline.create_task(issue_8809, :product)
-
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :qa,
-        stage_state: :awaiting_approval
-      })
-
-    assert {:ok, %Task{is_rebasing: true}} = Pipeline.start_rebase(nil, task)
-    assert {:ok, %Task{is_rebasing: true}} = Pipeline.start_rebase(task.id, dispatcher: :test_dispatcher)
   end
 end

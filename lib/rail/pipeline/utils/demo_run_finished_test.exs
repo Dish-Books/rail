@@ -77,7 +77,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     # These tests exercise stage transitions, not Linear publishing.
-    {:ok, task} = Pipeline.update_task(scope, task.id, %{issue_id: nil})
+    {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
     %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
@@ -85,7 +85,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
   describe "settle_run at demo stage" do
     test "demo run settlement fails when manifest is missing", %{task: task, roles: roles} do
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :demo,
           stage_state: :running
         })
@@ -144,7 +144,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       )
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :demo,
           stage_state: :running,
           worktree_path: worktree,
@@ -212,7 +212,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       File.write!(Path.join(worktree, "uncommitted.txt"), "dirtied worktree")
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :demo,
           stage_state: :running,
           worktree_path: worktree,
@@ -288,7 +288,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       mock_demo_uploads(1)
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :demo,
           stage_state: :running,
           worktree_path: worktree,
@@ -361,7 +361,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       )
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :demo,
           stage_state: :running,
           worktree_path: worktree_dir,
@@ -438,7 +438,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       )
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :demo,
           stage_state: :running,
           worktree_path: worktree_dir,
@@ -494,7 +494,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       )
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :demo,
           stage_state: :running,
           worktree_path: worktree_dir,
@@ -535,7 +535,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
     test "demo run non-zero exit code fails stage", %{task: task, roles: roles} do
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :demo,
           stage_state: :running
         })
@@ -626,7 +626,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       )
 
       {:ok, task1} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :demo,
           stage_state: :running,
           worktree_path: "/tmp/rail-removed-worktree"
@@ -643,7 +643,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
       mock_demo_uploads(1)
 
-      {:ok, _persisted} = Pipeline.update_task(system_scope(), task1.id, %{scratch_path: scratch_1})
+      {:ok, _persisted} = Pipeline.update_task(task1, %{scratch_path: scratch_1})
 
       os_process =
         %OsProcess{}
@@ -672,10 +672,10 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
       {:ok, task2} = Pipeline.create_task(issue_14511, :product)
 
-      {:ok, task2} = Pipeline.update_task(system_scope(), task2.id, %{issue_id: nil})
+      {:ok, task2} = Pipeline.update_task(task2, %{issue_id: nil})
 
       {:ok, task2} =
-        Pipeline.update_task(system_scope(), task2.id, %{
+        Pipeline.update_task(task2, %{
           stage: :demo,
           stage_state: :running,
           worktree_path: "/tmp/rail-removed-worktree"
@@ -692,7 +692,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
       mock_demo_uploads(1)
 
-      {:ok, _persisted} = Pipeline.update_task(system_scope(), task2.id, %{scratch_path: scratch_2})
+      {:ok, _persisted} = Pipeline.update_task(task2, %{scratch_path: scratch_2})
 
       run_2 =
         %OsProcess{}
@@ -723,7 +723,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       )
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :demo,
           stage_state: :running,
           worktree_path: "/tmp/rail-removed-worktree"
@@ -738,7 +738,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
           started_at: DateTime.utc_now()
         })
 
-      {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
+      {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: scratch_dir})
 
       os_process =
         %OsProcess{}
@@ -794,7 +794,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       LinearMock.mock_file_upload_success(put_status: 500)
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :demo,
           stage_state: :running,
           worktree_path: "/tmp/rail-removed-worktree"
@@ -809,7 +809,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
           started_at: DateTime.utc_now()
         })
 
-      {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
+      {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: scratch_dir})
 
       os_process =
         %OsProcess{}
@@ -873,7 +873,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       )
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           issue_id: issue.id,
           stage: :demo,
           stage_state: :running,
@@ -895,7 +895,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
       LinearMock.mock_create_comment_success(%{"id" => "lin_cmt_demo_criteria", "body" => "Demo"})
 
-      {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
+      {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: scratch_dir})
 
       os_process =
         %OsProcess{}
@@ -949,7 +949,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       )
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :demo,
           stage_state: :running,
           worktree_path: scratch_dir,
@@ -997,7 +997,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
         })
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :demo,
           stage_state: :running,
           worktree_path: "/tmp/rail-removed-worktree"
@@ -1088,7 +1088,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       )
 
       {:ok, task} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :demo,
           stage_state: :running,
           worktree_path: worktree_dir,

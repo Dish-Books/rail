@@ -107,7 +107,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, task} = Pipeline.create_task(issue_9203, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :merged,
         pr_number: 100
       })
@@ -147,7 +147,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, task} = Pipeline.create_task(issue_9205, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: nil
       })
@@ -187,7 +187,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, task} = Pipeline.create_task(issue_9207, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: 101,
         pr_is_draft: true
@@ -231,7 +231,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, task} = Pipeline.create_task(issue_9209, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: 102,
         pr_is_draft: false,
@@ -318,7 +318,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_9213, :product)
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         issue_id: issue.id,
         owner_user_id: user.id,
         stage: :ready_to_merge,
@@ -349,7 +349,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     LinearMock.mock_update_issue_success(%{"id" => "lin_merge_done"})
 
     assert {:ok, %Task{stage: :merged, merged_at: %DateTime{}, error: nil}} =
-             Pipeline.merge_task(scope, task, [])
+             Pipeline.merge_task(task, [])
 
     refute File.exists?(worktree_path)
 
@@ -389,7 +389,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, task} = Pipeline.create_task(issue_9215, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: 201,
         pr_is_draft: false,
@@ -436,7 +436,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, task} = Pipeline.create_task(issue_9217, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: 202,
         pr_is_draft: false,
@@ -484,7 +484,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_9219, :product)
 
     {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: 203,
         pr_is_draft: false
@@ -503,19 +503,10 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :merge_failed}}
   end
 
-  test "returns error when scope is unauthorized" do
-    LinearMock.mock_update_issue_success(%{"id" => "lin_merge_done"})
-
-    assert {:error, :not_authorized} = Pipeline.merge_task(:invalid_scope, "tsk_123")
-  end
-
   test "returns error when task is not found" do
     LinearMock.mock_update_issue_success(%{"id" => "lin_merge_done"})
 
-    assert {:error, :not_found} = Pipeline.merge_task("tsk_nonexistent")
     LinearMock.mock_update_issue_success(%{"id" => "lin_merge_done"})
-
-    assert {:error, :not_found} = Pipeline.merge_task(123)
   end
 
   test "returns error when project is not found", %{project: _project, task: _task} do
@@ -548,7 +539,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, task} = Pipeline.create_task(issue_9221, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         pr_number: 204,
         pr_is_draft: false
       })
@@ -603,7 +594,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, task} = Pipeline.create_task(issue_9224, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         issue_id: issue.id,
         stage: :ready_to_merge,
         pr_number: 301,
@@ -650,7 +641,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, task} = Pipeline.create_task(issue_9226, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         issue_id: nil,
         stage: :ready_to_merge,
         pr_number: 302,
@@ -697,7 +688,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, task} = Pipeline.create_task(issue_9228, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: 303,
         pr_is_draft: false
@@ -718,51 +709,6 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     reloaded = Repo.get!(Task, task.id)
     assert reloaded.error == "Failed to merge pull request: Validation Failed"
-  end
-
-  test "accepts nil scope during merge", %{project: _project, task: _task} do
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Merge Task Project 9229",
-        github_repo: "testorg/nil_scope",
-        github_installation_id: 9229,
-        linear_team_id: "team_merge_task_9229",
-        linear_team_key: "P9229",
-        default_branch: "main",
-        clone_path: "/tmp/repos/merge-task-9229",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_merge_task_9230",
-      "identifier" => "TSK-9230",
-      "title" => "Task 9230"
-    })
-
-    {:ok, issue_9230} = Issues.capture_issue(system_scope(), project, "Task 9230")
-
-    {:ok, task} = Pipeline.create_task(issue_9230, :product)
-
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :ready_to_merge,
-        pr_number: 304,
-        pr_is_draft: false,
-        worktree_name: "removed-worktree"
-      })
-
-    mock_merge_pull_request_success("testorg/nil_scope", 304)
-    mock_delete_remote_branch_success("testorg/nil_scope", "removed-worktree")
-
-    LinearMock.mock_update_issue_success(%{"id" => "lin_merge_done"})
-
-    assert {:ok, %Task{stage: :merged}} = Pipeline.merge_task(nil, task, token: "tok_test")
   end
 
   test "formats error reason with string message", %{project: _project, task: _task} do
@@ -795,7 +741,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, task} = Pipeline.create_task(issue_9232, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: 305,
         pr_is_draft: false
@@ -848,7 +794,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     {:ok, task} = Pipeline.create_task(issue_9234, :product)
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
+      Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: 306,
         pr_is_draft: false

@@ -264,7 +264,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
     {:ok, _captured} = capture_scratch(:architect, %{task | scratch_path: plan_scratch_45368})
 
-    {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
+    {:ok, _plan} = Pipeline.get_plan(task)
 
     design_scratch_13102 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
     design_dir_13102 = Path.join(design_scratch_13102, "design")
@@ -331,7 +331,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       designer = roles[:design]
 
       {:ok, task_with_run} =
-        Pipeline.update_task(system_scope(), task.id, %{
+        Pipeline.update_task(task, %{
           stage: :architect
         })
 
@@ -346,7 +346,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       {:ok, task_without_run} = Pipeline.create_task(issue_12602, :product)
 
       {:ok, task_without_run} =
-        Pipeline.update_task(system_scope(), task_without_run.id, %{
+        Pipeline.update_task(task_without_run, %{
           stage: :architect
         })
 
@@ -397,7 +397,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       {:ok, task_no_designer} = Pipeline.create_task(issue_12603, :product)
 
       {:ok, task_no_designer} =
-        Pipeline.update_task(system_scope(), task_no_designer.id, %{
+        Pipeline.update_task(task_no_designer, %{
           stage: :architect
         })
 

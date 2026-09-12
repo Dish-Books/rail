@@ -18,49 +18,24 @@ defmodule Rail.Pipeline.Actions.RefreshMergeability do
   @doc """
   Refreshes mergeability and draft status of a task's pull request.
   """
-  def refresh_mergeability(scope, task_or_id, opts) when is_list(opts) do
-    effective_scope = if is_struct(scope, Scope), do: scope, else: Scope.for_system()
-
-    with :ok <- authorize_scope(scope),
-         %Task{} = task <- resolve_task(task_or_id) do
-      do_refresh(effective_scope, task, opts)
-    else
-      {:error, reason} -> {:error, reason}
-      nil -> {:error, :not_found}
-    end
+  def refresh_mergeability(%Task{} = task, opts \\ []) do
+    do_refresh(task, opts)
   end
 
-  def refresh_mergeability(task_or_id, opts) when is_list(opts) do
-    refresh_mergeability(Scope.for_system(), task_or_id, opts)
+  defp do_refresh(%Task{stage: :merged} = task, _opts), do: {:ok, task}
+
+  defp do_refresh(%Task{pr_number: nil} = task, opts) do
+    Rail.Pipeline.refresh_demo_freshness(task, opts)
   end
 
-  def refresh_mergeability(scope, task_or_id) do
-    refresh_mergeability(scope, task_or_id, [])
-  end
-
-  def refresh_mergeability(task_or_id) do
-    refresh_mergeability(Scope.for_system(), task_or_id, [])
-  end
-
-  defp authorize_scope(%Scope{system: true}), do: :ok
-  defp authorize_scope(%Scope{user: %{}}), do: :ok
-  defp authorize_scope(nil), do: :ok
-  defp authorize_scope(_scope), do: {:error, :not_authorized}
-
-  defp do_refresh(_scope, %Task{stage: :merged} = task, _opts), do: {:ok, task}
-
-  defp do_refresh(scope, %Task{pr_number: nil} = task, opts) do
-    Rail.Pipeline.refresh_demo_freshness(scope, task, opts)
-  end
-
-  defp do_refresh(scope, %Task{} = task, opts) do
+  defp do_refresh(%Task{} = task, opts) do
     case Repo.get(Project, task.project_id) do
       %Project{} = project ->
         poll_opts = Keyword.put_new(opts, :known_draft, task.pr_is_draft)
 
-        with {:ok, token} <- resolve_github_token(scope, project, opts),
+        with {:ok, token} <- resolve_github_token(Scope.for_system(), project, opts),
              {:ok, state} <- GitHub.pull_request_state(project.github_repo, task.pr_number, token, poll_opts) do
-          apply_pr_state(scope, task, state, opts)
+          apply_pr_state(task, state, opts)
         end
 
       nil ->
@@ -68,7 +43,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeability do
     end
   end
 
-  defp apply_pr_state(scope, %Task{} = task, %{mergeable: mergeable} = state, opts) do
+  defp apply_pr_state(%Task{} = task, %{mergeable: mergeable} = state, opts) do
     resolved_mergeability =
       if mergeable == :unknown and task.mergeability == :conflicting do
         :conflicting
@@ -91,10 +66,6 @@ defmodule Rail.Pipeline.Actions.RefreshMergeability do
       event: :mergeability_refreshed
     })
 
-    Rail.Pipeline.refresh_demo_freshness(scope, updated_task, opts)
+    Rail.Pipeline.refresh_demo_freshness(updated_task, opts)
   end
-
-  defp resolve_task(%Task{} = task), do: task
-  defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)
-  defp resolve_task(_other), do: nil
 end
