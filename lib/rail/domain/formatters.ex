@@ -251,7 +251,7 @@ defmodule Rail.Domain.Formatters do
       %{plans: [%Plan{content: content} | _rest]} when is_binary(content) ->
         if String.trim(content) == "", do: nil, else: content
 
-      _other ->
+      %Task{} ->
         case Rail.Pipeline.get_plan(task) do
           {:ok, %Plan{content: content}} when is_binary(content) ->
             if String.trim(content) == "", do: nil, else: content
@@ -259,6 +259,9 @@ defmodule Rail.Domain.Formatters do
           _other ->
             nil
         end
+
+      _other ->
+        nil
     end
   end
 

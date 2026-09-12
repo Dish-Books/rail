@@ -11,7 +11,6 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -184,11 +183,6 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
 
     assert is_binary(head_sha) and head_sha != ""
     assert is_binary(dirty_digest) and dirty_digest != ""
-  end
-
-  test "returns not found for unknown task" do
-    assert {:error, :not_found} =
-             Pipeline.decline_demo(:bad_id, "Note")
   end
 
   test "declines demo when worktree path is a non-git directory", %{task: task} do

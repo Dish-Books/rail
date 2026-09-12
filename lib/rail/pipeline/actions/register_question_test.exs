@@ -162,15 +162,13 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
         started_at: DateTime.utc_now()
       })
 
-    run = Repo.preload(run, task: :issue)
+    %Run{id: expected_run_id} = run = Repo.preload(run, task: :issue)
 
     question = %DetectedQuestion{
       prompt: "Which cache eviction policy?",
       options: ["Yes", "No"],
       context_summary: "Context details"
     }
-
-    expected_run_id = run.id
 
     assert {:ok, %Question{prompt: "Which cache eviction policy?", options: ["Yes", "No"], run_id: ^expected_run_id}} =
              Pipeline.register_question(run, question)
@@ -260,16 +258,12 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     run = Repo.preload(run, task: :issue)
 
-    {:ok, q} =
+    {:ok, %Question{id: first_id}} =
       Pipeline.register_question(run, %DetectedQuestion{
         prompt: "Question prompt 7909?"
       })
 
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        stage_state: :blocked,
-        question_id: q.id
-      })
+    {:ok, task} = Pipeline.update_task(task, %{stage_state: :blocked})
 
     {:ok, run} =
       Runs.create_run(%{
@@ -283,13 +277,13 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     detector = %DetectedQuestion{prompt: "Second question in same run?", options: []}
 
-    assert {:ok, %Question{} = second} = Pipeline.register_question(run, detector)
+    assert {:ok, %Question{id: second_id}} = Pipeline.register_question(run, detector)
 
     # The second question queues behind the first: the human keeps answering the one
     # already in front, and the stage stays parked.
-    assert Repo.get!(Task, task.id).stage_state == :blocked
+    assert %Task{stage_state: :blocked} = Repo.get!(Task, task.id)
 
-    assert Enum.map(pending_questions(task.id), & &1.id) == [q.id, second.id]
+    assert Enum.map(pending_questions(task.id), & &1.id) == [first_id, second_id]
   end
 
   test "rejects a blank prompt", %{task: task, roles: roles} do

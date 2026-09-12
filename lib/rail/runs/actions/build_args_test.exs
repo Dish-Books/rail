@@ -2,7 +2,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
   use Rail.DataCase, async: true
 
   alias Rail.Backends.Schemas.Backend
-  alias Rail.Runs.Actions.BuildArgs
+  alias Rail.Runs
 
   test "builds standard Claude args in exact flag order" do
     opts = [
@@ -12,7 +12,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
       effort: "high"
     ]
 
-    args = BuildArgs.build_args(opts)
+    args = Runs.build_args(opts)
 
     assert args == [
              "-p",
@@ -37,7 +37,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
       read_only: true
     }
 
-    args = BuildArgs.build_args(opts)
+    args = Runs.build_args(opts)
 
     assert args == [
              "-p",
@@ -66,7 +66,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
       conversation_id: "sess-abc-123"
     ]
 
-    args = BuildArgs.build_args(opts)
+    args = Runs.build_args(opts)
 
     assert Enum.take(args, -4) == [
              "--system-prompt",
@@ -85,7 +85,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
       conversation_id: nil
     ]
 
-    args = BuildArgs.build_args(opts)
+    args = Runs.build_args(opts)
 
     refute "--system-prompt" in args
     refute "--resume" in args
@@ -101,7 +101,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
       log_file: "/tmp/rail/agy-logs/task-1.log"
     ]
 
-    args = BuildArgs.build_args(opts)
+    args = Runs.build_args(opts)
 
     assert args == [
              "-p",
@@ -134,7 +134,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
       print_timeout: "2h"
     }
 
-    args = BuildArgs.build_args(opts)
+    args = Runs.build_args(opts)
 
     assert args == [
              "-p",
@@ -164,7 +164,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
       conversation_id: "conv-xyz-789"
     ]
 
-    args = BuildArgs.build_args(opts)
+    args = Runs.build_args(opts)
 
     assert Enum.take(args, -2) == ["--conversation", "conv-xyz-789"]
     refute "--resume" in args
@@ -179,15 +179,15 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
       model: "default-model"
     ]
 
-    args = BuildArgs.build_args(opts)
+    args = Runs.build_args(opts)
 
     assert "--mode" in args
     assert "--print-timeout" in args
 
-    nil_args = BuildArgs.build_args(backend: nil, prompt: "Nil engine")
+    nil_args = Runs.build_args(backend: nil, prompt: "Nil engine")
     assert "--mode" in nil_args
 
-    int_args = BuildArgs.build_args(backend: 123, prompt: "Int engine")
+    int_args = Runs.build_args(backend: 123, prompt: "Int engine")
     assert "--mode" in int_args
   end
 
@@ -201,7 +201,7 @@ defmodule Rail.Runs.Actions.BuildArgsTest do
       conversation_id: "   "
     ]
 
-    args = BuildArgs.build_args(opts)
+    args = Runs.build_args(opts)
     refute "--add-dir" in args
     refute "--log-file" in args
     refute "--conversation" in args

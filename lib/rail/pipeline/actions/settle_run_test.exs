@@ -119,12 +119,15 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}
   end
 
-  test "settling the product stage writes nothing to Linear", %{task: task, issue: issue, roles: roles} do
+  test "settling the product stage writes nothing to Linear", %{
+    task: task,
+    issue: %Issue{title: title_before} = issue,
+    roles: roles
+  } do
     scratch_dir = Path.join(System.tmp_dir!(), "settle_product_#{System.unique_integer([:positive])}")
     File.mkdir_p!(Path.join(scratch_dir, "tickets"))
     on_exit(fn -> File.rm_rf(scratch_dir) end)
 
-    title_before = issue.title
     ticket_file = Path.join([scratch_dir, "tickets", "#{issue.identifier}.md"])
     File.write!(ticket_file, "---\ntitle: Rewritten by the product run\n---\n\nA body the human has not approved.\n")
 

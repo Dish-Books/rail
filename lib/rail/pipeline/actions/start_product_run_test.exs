@@ -13,6 +13,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Users
+  alias Rail.Users.Schemas.User
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -67,10 +68,11 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
     %{scope: scope, project: project, role: role, issue: issue, task: task}
   end
 
-  test "starts the product run for a task", %{role: role, issue: issue, task: task} do
-    %Role{id: role_id} = role
-    %Task{id: task_id} = task
-
+  test "starts the product run for a task", %{
+    role: %Role{id: role_id},
+    issue: issue,
+    task: %Task{id: task_id} = task
+  } do
     expect(Runs, :start_os_process, fn %Run{task_id: ^task_id, role_id: ^role_id, attempts: 1, status: :running} = run,
                                        argv ->
       assert ["-p", prompt, "--model", "claude-3-7-sonnet", "--effort", "high" | _flags] = argv
@@ -101,14 +103,12 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
   end
 
   test "leaves the owner on the issue the task links to", %{issue: issue, task: task} do
-    {:ok, user} =
+    {:ok, %User{id: user_id}} =
       Users.register_oauth_user(%{
         github_id: "gh_start_product_1",
         login: "start_product_user",
         email: "start_product_user@example.com"
       })
-
-    user_id = user.id
 
     {:ok, %Issue{id: issue_id}} =
       issue |> Issue.changeset(%{owner_user_id: user_id}, issue.project_id) |> Repo.update()
@@ -130,14 +130,15 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
     assert {:error, :role_not_found} = Pipeline.start_product_run(task)
   end
 
-  test "returns worktree_failed when the worktree cannot be created", %{project: project, task: task} do
+  test "returns worktree_failed when the worktree cannot be created", %{
+    project: project,
+    task: %Task{id: task_id} = task
+  } do
     not_a_repo = Path.join("/tmp", "not_a_repo_#{System.unique_integer([:positive])}")
     File.mkdir_p!(not_a_repo)
     on_exit(fn -> File.rm_rf(not_a_repo) end)
 
     {:ok, _broken_project} = Projects.update_project(system_scope(), project, %{clone_path: not_a_repo})
-
-    %Task{id: task_id} = task
 
     assert {:error, {:worktree_failed, _reason}} = Pipeline.start_product_run(task)
 

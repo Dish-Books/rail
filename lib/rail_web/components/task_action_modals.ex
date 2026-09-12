@@ -172,63 +172,7 @@ defmodule RailWeb.Components.TaskActionModals do
         </div>
       </div>
 
-      <!-- 4. Prompt Send Back Modal -->
-      <div
-        :if={@active_modal[:type] == :prompt_send_back}
-        id="prompt-send-back-modal"
-        data-qa="prompt-send-back-modal"
-        class="w-full max-w-[520px] rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-2xl space-y-4"
-      >
-        <h2
-          class="text-base font-semibold text-slate-900 dark:text-slate-100"
-          id="prompt-send-back-title"
-        >
-          Comment to {@active_modal[:role_name] || @current_role_name || "the agent"}
-        </h2>
-
-        <form
-          id="prompt-send-back-form"
-          phx-change="modal_form_change"
-          phx-submit="submit_modal"
-          class="space-y-4"
-        >
-          <input type="hidden" name="action" value="comment" />
-          <div>
-            <textarea
-              id="send-back-comment-input"
-              data-qa="send-back-comment-input"
-              name="comment"
-              rows="4"
-              autofocus
-              placeholder="What should change?"
-              class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:border-blue-600 dark:focus:border-blue-500 focus:outline-hidden"
-            ></textarea>
-          </div>
-
-          <div class="flex justify-end space-x-3 pt-2">
-            <button
-              type="button"
-              id="cancel-send-back-button"
-              data-qa="cancel-send-back-button"
-              phx-click="close_modal"
-              class="px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
-            >
-              Cancel
-            </button>
-
-            <button
-              type="submit"
-              id="submit-send-back-button"
-              data-qa="submit-send-back-button"
-              class="px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 hover:bg-blue-600 dark:hover:bg-blue-500/90 text-white text-xs font-semibold cursor-pointer shadow-xs"
-            >
-              Send back
-            </button>
-          </div>
-        </form>
-      </div>
-
-      <!-- 5. Prompt Send Back To Engineer Modal -->
+      <!-- 4. Prompt Send Back To Engineer Modal -->
       <div
         :if={@active_modal[:type] == :prompt_send_back_to_engineer}
         id="prompt-send-back-engineer-modal"
@@ -292,7 +236,7 @@ defmodule RailWeb.Components.TaskActionModals do
         </form>
       </div>
 
-      <!-- 6. Prompt Decline Demo Modal -->
+      <!-- 5. Prompt Decline Demo Modal -->
       <div
         :if={@active_modal[:type] == :prompt_decline_demo}
         id="prompt-decline-demo-modal"

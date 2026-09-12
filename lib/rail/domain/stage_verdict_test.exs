@@ -12,7 +12,9 @@ defmodule Rail.Domain.StageVerdictTest do
     assert "can't be blank" in errors_on(invalid_changeset).verdict
   end
 
-  test "defaults to unclear" do
-    assert %StageVerdict{verdict: :unclear, status: :unclear, explanation: nil} = %StageVerdict{}
+  test "leaves verdict and status unclear until a run says otherwise" do
+    applied = %StageVerdict{} |> StageVerdict.changeset(%{}) |> Ecto.Changeset.apply_changes()
+
+    assert %StageVerdict{verdict: :unclear, status: :unclear, explanation: nil} = applied
   end
 end

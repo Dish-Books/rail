@@ -38,15 +38,10 @@ defmodule RailWeb.Components.TaskActions do
           @running_action == action.kind and TaskActionRunner.shows_progress?(action.kind)
 
         data_qa =
-          cond do
-            action.id == "action-send-back" ->
-              "#{action.id} action-request-changes"
-
-            String.starts_with?(action.id, "action-pick-design-") ->
-              "#{action.id} pick-direction-button"
-
-            true ->
-              action.id
+          if String.starts_with?(action.id, "action-pick-design-") do
+            "#{action.id} pick-direction-button"
+          else
+            action.id
           end %>
         <button
           type="button"
@@ -137,19 +132,7 @@ defmodule RailWeb.Components.TaskActions do
         }
 
       :queued ->
-        actions = [
-          %{
-            id: "action-send-back",
-            label: "Send back with comments",
-            kind: :comment,
-            style: :outlined,
-            icon: "pi-arrow-bend-up-left",
-            action: "comment",
-            params: %{}
-          }
-        ]
-
-        {actions, false}
+        {[], false}
 
       :blocked ->
         {[], false}
@@ -186,15 +169,6 @@ defmodule RailWeb.Components.TaskActions do
             icon: "pi-skip-forward",
             action: "skip",
             params: %{}
-          },
-          %{
-            id: "action-send-back",
-            label: "Send back with comments",
-            kind: :comment,
-            style: :outlined,
-            icon: "pi-arrow-bend-up-left",
-            action: "comment",
-            params: %{}
           }
         ]
 
@@ -202,17 +176,7 @@ defmodule RailWeb.Components.TaskActions do
 
       true ->
         # Approving is stage-specific and has no action behind it yet.
-        send_back = %{
-          id: "action-send-back",
-          label: "Send back with comments",
-          kind: :comment,
-          style: :outlined,
-          icon: "pi-arrow-bend-up-left",
-          action: "comment",
-          params: %{}
-        }
-
-        {[send_back], false}
+        {[], false}
     end
   end
 
@@ -311,17 +275,7 @@ defmodule RailWeb.Components.TaskActions do
         }
       end)
 
-    send_back = %{
-      id: "action-send-back",
-      label: "Send back with comments",
-      kind: :comment,
-      style: :outlined,
-      icon: "pi-arrow-bend-up-left",
-      action: "comment",
-      params: %{}
-    }
-
-    {Enum.reverse([send_back | Enum.reverse(direction_actions)]), false}
+    {direction_actions, false}
   end
 
   defp build_failed_actions(task) do
@@ -385,17 +339,7 @@ defmodule RailWeb.Components.TaskActions do
           ]
       end
 
-    send_back = %{
-      id: "action-send-back",
-      label: "Send back with comments",
-      kind: :comment,
-      style: :outlined,
-      icon: "pi-arrow-bend-up-left",
-      action: "comment",
-      params: %{}
-    }
-
-    Enum.reverse([send_back | Enum.reverse(stage_specific)])
+    stage_specific
   end
 
   defp build_trailing_actions(task, conflicted, rebase_offered) do

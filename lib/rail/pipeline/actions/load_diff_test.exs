@@ -4,8 +4,8 @@ defmodule Rail.Pipeline.Actions.LoadDiffTest do
   alias Rail.Domain.Diff.FileDiff
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
-  alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -79,10 +79,8 @@ defmodule Rail.Pipeline.Actions.LoadDiffTest do
     assert %FileDiff{path: "feature.txt"} = file
 
     # Reconciled task in DB has stale viewed mark removed
-    reloaded_task = Pipeline.get_task(task.id)
-    assert reloaded_task.viewed_diff_files == %{}
+    assert {:ok, %Task{viewed_diff_files: %{}}} = Pipeline.get_task(task.id)
 
-    # Pipeline delegate with scope also works
     assert {:ok, ^files, "HEAD"} = Pipeline.load_diff(task)
   end
 

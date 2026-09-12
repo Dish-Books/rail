@@ -11,7 +11,6 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -147,8 +146,6 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
 
     assert {:ok, %Task{stage: :demo, stage_state: :queued, error: nil}} =
              Pipeline.rerecord_demo(task, [])
-
-    assert {:error, :not_found} = Pipeline.rerecord_demo(:bad_id, [])
   end
 
   test "guards against merged tasks", %{project: project, task: task} do

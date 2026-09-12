@@ -13,7 +13,6 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -329,7 +328,13 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
         worktree_path: worktree_path
       })
 
-    mock_merge_pull_request_success("testorg/merge_repo", 200, user_token: "gho_merger_token", merge_method: "squash")
+    mock_installation_token_success(installation_id: 9210)
+
+    mock_merge_pull_request_success("testorg/merge_repo", 200,
+      user_token: "mock_installation_token",
+      merge_method: "squash"
+    )
+
     mock_delete_remote_branch_success("testorg/merge_repo", "feature-branch")
 
     mock_update_issue_success(%{
@@ -343,8 +348,6 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "createdAt" => "2026-09-01T10:00:00.000Z",
       "updatedAt" => "2026-09-09T17:00:00.000Z"
     })
-
-    scope = Scope.for_user(user)
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_merge_done"})
 
@@ -501,12 +504,6 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     assert reloaded.error =~ "Failed to merge pull request: Method Not Allowed"
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :merge_failed}}
-  end
-
-  test "returns error when task is not found" do
-    LinearMock.mock_update_issue_success(%{"id" => "lin_merge_done"})
-
-    LinearMock.mock_update_issue_success(%{"id" => "lin_merge_done"})
   end
 
   test "returns error when project is not found", %{project: _project, task: _task} do

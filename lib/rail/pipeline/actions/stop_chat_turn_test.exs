@@ -12,7 +12,6 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
-  alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do

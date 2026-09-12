@@ -1,13 +1,9 @@
 defmodule Rail.Pipeline.Actions.GetPlanTest do
   use Rail.DataCase, async: true
 
-  import Rail.Pipeline.Utils.CaptureScratch
-
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Plan
   alias Rail.Projects
-  alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -48,8 +44,6 @@ defmodule Rail.Pipeline.Actions.GetPlanTest do
   end
 
   test "returns not found error when plan does not exist", %{task: task} do
-    sys_scope = Scope.for_system()
-
     assert {:error, :not_found} = Pipeline.get_plan(task)
   end
 end

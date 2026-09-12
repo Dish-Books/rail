@@ -5,7 +5,6 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
-  alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -49,9 +48,6 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task}
-  end
-
-  test "returns not_found when task cannot be resolved" do
   end
 
   test "returns invalid_stage_state when task is not awaiting_approval", %{project: project, task: task} do

@@ -11,8 +11,6 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Scope
-  alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -176,14 +174,6 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
         }
       })
 
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_refresh_merge_9007",
-        login: "refresh_merge_user_9007",
-        email: "refresh_merge_user_9007@example.com",
-        github_token: "gho_token_9007"
-      })
-
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_refresh_merge_9008",
       "identifier" => "TSK-9008",
@@ -202,9 +192,9 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
         pr_is_draft: true
       })
 
+    mock_installation_token_success(installation_id: 9006)
     mock_pull_request_state_success("testorg/testrepo", 42, mergeable: true, draft: false)
 
-    scope = Scope.for_user(user)
     assert {:ok, %Task{mergeability: :mergeable, pr_is_draft: false}} = Pipeline.refresh_mergeability(task)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :mergeability_refreshed}}

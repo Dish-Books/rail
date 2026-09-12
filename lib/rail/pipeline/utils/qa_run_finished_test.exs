@@ -1,7 +1,6 @@
 defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
   use Rail.DataCase, async: true
 
-  import Rail.Pipeline.Utils.PrepareScratch
   import Rail.Pipeline.Utils.QaLeadRunFinished
   import Rail.Pipeline.Utils.QaRunFinished
   import Rail.Pipeline.Utils.ReviewRunFinished
@@ -741,15 +740,9 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
     assert {:ok, %Task{stage: :qa_lead, stage_state: :queued} = task_lead_queued, _rr} =
              finish_qa_run(os_process)
 
-    # Step 2: Scratch prepare for QA Lead
+    # Step 2: Settle QA Lead run
     lead_scratch_dir = create_temp_git_repo()
-    assert {:ok, ^lead_scratch_dir} = prepare_scratch(%{task_lead_queued | scratch_path: lead_scratch_dir})
 
-    # Verify materialization into lead scratch dir
-    assert File.exists?(Path.join([lead_scratch_dir, "qa", "manifest.json"]))
-    assert File.read!(Path.join([lead_scratch_dir, "qa", "proof.txt"])) == "FLOW PROOF TEXT"
-
-    # Step 3: Settle QA Lead run
     {:ok, run_lead} =
       Runs.create_run(%{
         task_id: task.id,

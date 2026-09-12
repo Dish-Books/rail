@@ -9,7 +9,6 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
   alias Rail.Roles
   alias Rail.Runs
   alias Rail.Runs.Schemas.Run
-  alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -70,9 +69,6 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
-  end
-
-  test "returns not_found when task cannot be resolved" do
   end
 
   test "returns task_running when task is currently running", %{task: task} do

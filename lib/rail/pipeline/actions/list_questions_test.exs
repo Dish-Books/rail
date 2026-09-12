@@ -243,27 +243,12 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     assert [] = Pipeline.list_questions(nil, status: :pending)
   end
 
-  test "get_question and get_question!", %{run: run} do
+  test "get_question", %{run: run} do
     {:ok, %Question{id: expected_id}} =
       Pipeline.register_question(run, %DetectedQuestion{prompt: "Which option?"})
 
-    user_scope = %Rail.Scope{user: %{id: "usr_test"}}
-
     assert {:ok, %Question{id: ^expected_id}} = Pipeline.get_question(expected_id)
-    assert %Question{id: ^expected_id} = Pipeline.get_question!(expected_id)
-
-    assert {:ok, %Question{id: ^expected_id}} = Pipeline.get_question(user_scope, expected_id)
-    assert %Question{id: ^expected_id} = Pipeline.get_question!(user_scope, expected_id)
-
     assert {:error, :not_found} = Pipeline.get_question("qst_nonexistent")
-
-    assert_raise Ecto.NoResultsError, fn ->
-      Pipeline.get_question!("qst_nonexistent")
-    end
-
-    assert_raise Ecto.NoResultsError, fn ->
-      Pipeline.get_question!(%Rail.Scope{}, expected_id)
-    end
   end
 
   test "supports preload option", %{task: %Rail.Pipeline.Schemas.Task{id: expected_task_id}, run: run} do

@@ -10,6 +10,7 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
+  alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
@@ -513,13 +514,13 @@ defmodule RailWeb.OverviewLiveTest do
       "title" => "Already Merged Task"
     })
 
-    {:ok, issue_13421} = Issues.capture_issue(system_scope(), project, "Already Merged Task")
+    {:ok, %Issue{title: merged_title} = issue_13421} =
+      Issues.capture_issue(system_scope(), project, "Already Merged Task")
 
     {:ok, %Task{id: merged_id}} = Pipeline.create_task(issue_13421, :product)
-    merged_title = issue_13421.title
 
     {:ok, %Task{id: merged_id}} =
-      Pipeline.update_task(merged_id, %{
+      Pipeline.update_task(Repo.get!(Task, merged_id), %{
         stage: :merged,
         stage_state: :queued
       })
@@ -627,7 +628,7 @@ defmodule RailWeb.OverviewLiveTest do
         started_at: DateTime.utc_now()
       })
 
-    run = Rail.Repo.preload(run, task: :issue)
+    run = Repo.preload(run, task: :issue)
 
     {:ok, %Question{id: _q1_id, prompt: q1_prompt}} =
       Pipeline.register_question(run, %DetectedQuestion{
@@ -655,7 +656,7 @@ defmodule RailWeb.OverviewLiveTest do
       })
 
     {:ok, %Question{prompt: q_orphan_prompt}} =
-      Pipeline.register_question(Rail.Repo.preload(orphan_run, task: :issue), %DetectedQuestion{
+      Pipeline.register_question(Repo.preload(orphan_run, task: :issue), %DetectedQuestion{
         prompt: "Orphan clarification prompt?",
         options: ["Option Alpha", "Option Beta"]
       })
@@ -761,7 +762,7 @@ defmodule RailWeb.OverviewLiveTest do
         started_at: DateTime.utc_now()
       })
 
-    run = Rail.Repo.preload(run, task: :issue)
+    run = Repo.preload(run, task: :issue)
 
     {:ok, %Question{id: q_id}} =
       Pipeline.register_question(run, %DetectedQuestion{
@@ -849,13 +850,13 @@ defmodule RailWeb.OverviewLiveTest do
       "title" => "Architect Approval Task"
     })
 
-    {:ok, issue_13424} = Issues.capture_issue(system_scope(), project, "Architect Approval Task")
+    {:ok, %Issue{title: arch_title} = issue_13424} =
+      Issues.capture_issue(system_scope(), project, "Architect Approval Task")
 
     {:ok, %Task{id: arch_id}} = Pipeline.create_task(issue_13424, :product)
-    arch_title = issue_13424.title
 
     {:ok, %Task{id: arch_id}} =
-      Pipeline.update_task(arch_id, %{
+      Pipeline.update_task(Repo.get!(Task, arch_id), %{
         stage: :architect,
         stage_state: :awaiting_approval,
         error: "Architect notes here"
@@ -867,13 +868,13 @@ defmodule RailWeb.OverviewLiveTest do
       "title" => "Product Approval Task"
     })
 
-    {:ok, issue_13425} = Issues.capture_issue(system_scope(), project, "Product Approval Task")
+    {:ok, %Issue{title: prod_title} = issue_13425} =
+      Issues.capture_issue(system_scope(), project, "Product Approval Task")
 
     {:ok, %Task{id: prod_id}} = Pipeline.create_task(issue_13425, :product)
-    prod_title = issue_13425.title
 
     {:ok, %Task{id: prod_id}} =
-      Pipeline.update_task(prod_id, %{
+      Pipeline.update_task(Repo.get!(Task, prod_id), %{
         stage: :product,
         stage_state: :awaiting_approval
       })
@@ -884,13 +885,13 @@ defmodule RailWeb.OverviewLiveTest do
       "title" => "Engineer Approval Task"
     })
 
-    {:ok, issue_13426} = Issues.capture_issue(system_scope(), project, "Engineer Approval Task")
+    {:ok, %Issue{title: eng_title} = issue_13426} =
+      Issues.capture_issue(system_scope(), project, "Engineer Approval Task")
 
     {:ok, %Task{id: eng_id}} = Pipeline.create_task(issue_13426, :product)
-    eng_title = issue_13426.title
 
     {:ok, %Task{id: eng_id}} =
-      Pipeline.update_task(eng_id, %{
+      Pipeline.update_task(Repo.get!(Task, eng_id), %{
         stage: :engineer,
         stage_state: :awaiting_approval
       })
@@ -982,13 +983,12 @@ defmodule RailWeb.OverviewLiveTest do
       "title" => "Failed Build Task"
     })
 
-    {:ok, issue_13427} = Issues.capture_issue(system_scope(), project, "Failed Build Task")
+    {:ok, %Issue{title: failed_title} = issue_13427} = Issues.capture_issue(system_scope(), project, "Failed Build Task")
 
     {:ok, %Task{id: failed_id}} = Pipeline.create_task(issue_13427, :product)
-    failed_title = issue_13427.title
 
     {:ok, %Task{id: failed_id}} =
-      Pipeline.update_task(failed_id, %{
+      Pipeline.update_task(Repo.get!(Task, failed_id), %{
         stage: :engineer,
         stage_state: :failed,
         error: "Compilation error in worker.ex"
@@ -1000,13 +1000,12 @@ defmodule RailWeb.OverviewLiveTest do
       "title" => "Ready PR Task"
     })
 
-    {:ok, issue_13428} = Issues.capture_issue(system_scope(), project, "Ready PR Task")
+    {:ok, %Issue{title: merge_title} = issue_13428} = Issues.capture_issue(system_scope(), project, "Ready PR Task")
 
     {:ok, %Task{id: merge_id}} = Pipeline.create_task(issue_13428, :product)
-    merge_title = issue_13428.title
 
     {:ok, %Task{id: merge_id}} =
-      Pipeline.update_task(merge_id, %{
+      Pipeline.update_task(Repo.get!(Task, merge_id), %{
         stage: :ready_to_merge,
         stage_state: :queued,
         pr_number: nil
@@ -1018,13 +1017,13 @@ defmodule RailWeb.OverviewLiveTest do
       "title" => "Conflicted Branch Task"
     })
 
-    {:ok, issue_13429} = Issues.capture_issue(system_scope(), project, "Conflicted Branch Task")
+    {:ok, %Issue{title: conflict_title} = issue_13429} =
+      Issues.capture_issue(system_scope(), project, "Conflicted Branch Task")
 
     {:ok, %Task{id: conflict_id}} = Pipeline.create_task(issue_13429, :product)
-    conflict_title = issue_13429.title
 
     {:ok, %Task{id: conflict_id}} =
-      Pipeline.update_task(conflict_id, %{
+      Pipeline.update_task(Repo.get!(Task, conflict_id), %{
         stage: :engineer,
         stage_state: :queued,
         mergeability: :conflicting

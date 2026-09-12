@@ -25,24 +25,4 @@ defmodule Rail.Roles do
 
   @decorate can?(resource: :roles, action: :manage)
   defdelegate copy_roles(scope, target_project_or_id, source_project_id, opts), to: Actions.CopyRoles
-
-  @decorate can?(resource: :roles, action: :view)
-  defdelegate recent_finished_runs(scope, role_id), to: Actions.RecentFinishedRuns
-
-  @decorate can?(resource: :roles, action: :view)
-  defdelegate recent_finished_runs(scope, role_id, opts), to: Actions.RecentFinishedRuns
-
-  defdelegate build_meta_prompt(role, sources), to: Actions.BuildMetaPrompt
-  defdelegate parse_proposal(output, role_id, chosen_model, current_prompt, sources), to: Actions.ParseProposal
-  defdelegate parse_proposal(output, role_id, chosen_model, current_prompt, sources, usage), to: Actions.ParseProposal
-
-  @decorate can?(resource: :roles, action: :manage)
-  defdelegate improve_role(scope, role, chosen_model), to: Actions.ImproveRole
-
-  @decorate can?(resource: :roles, action: :manage)
-  defdelegate improve_role(scope, role, chosen_model, opts), to: Actions.ImproveRole
-
-  @decorate can?(resource: :roles, action: :manage)
-  defdelegate apply_improved_instructions(scope, role, proposed_instructions),
-    to: Actions.ApplyImprovedInstructions
 end

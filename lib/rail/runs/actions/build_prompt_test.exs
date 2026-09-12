@@ -2,7 +2,7 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
   use Rail.DataCase, async: true
 
   alias Rail.Backends.Schemas.Backend
-  alias Rail.Runs.Actions.BuildPrompt
+  alias Rail.Runs
 
   test "sends the answer, not the task again, when resuming a session" do
     opts = [
@@ -13,7 +13,7 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
       backend: %Backend{name: :agy}
     ]
 
-    prompt = BuildPrompt.build_prompt(opts)
+    prompt = Runs.build_prompt(opts)
 
     assert prompt =~ "The answer is: exclude"
     assert prompt =~ "Continue from where you stopped."
@@ -27,7 +27,7 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
       task_description: "do the thing"
     ]
 
-    prompt = BuildPrompt.build_prompt(opts)
+    prompt = Runs.build_prompt(opts)
 
     assert prompt =~ "house rules"
     assert prompt =~ "do the thing"
@@ -42,7 +42,7 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
       task_description: "do the thing"
     ]
 
-    first_prompt = BuildPrompt.build_prompt(first_opts)
+    first_prompt = Runs.build_prompt(first_opts)
 
     assert String.starts_with?(
              first_prompt,
@@ -59,7 +59,7 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
       role_instructions: "Act as a principal engineer."
     ]
 
-    resume_prompt = BuildPrompt.build_prompt(resume_opts)
+    resume_prompt = Runs.build_prompt(resume_opts)
 
     refute resume_prompt =~ "<role-instructions>"
     assert String.starts_with?(resume_prompt, "My answer")
@@ -76,7 +76,7 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
       task_description: "do the thing"
     ]
 
-    prompt = BuildPrompt.build_prompt(opts)
+    prompt = Runs.build_prompt(opts)
 
     refute prompt =~ "<role-instructions>"
     refute prompt =~ "Act as a principal engineer."
@@ -91,7 +91,7 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
       plan: plan
     ]
 
-    prompt = BuildPrompt.build_prompt(opts)
+    prompt = Runs.build_prompt(opts)
 
     assert prompt =~ plan
 
@@ -110,7 +110,7 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
       task_description: "do the thing"
     ]
 
-    prompt = BuildPrompt.build_prompt(opts)
+    prompt = Runs.build_prompt(opts)
 
     assert prompt =~ "My answer"
     refute prompt =~ plan
@@ -119,10 +119,10 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
 
   test "extracts ticket from task struct or map" do
     task = %{description: "task description text"}
-    assert BuildPrompt.build_prompt(task: task) == "task description text\n"
+    assert Runs.build_prompt(task: task) == "task description text\n"
 
-    assert BuildPrompt.build_prompt(ticket: "explicit ticket text") == "explicit ticket text\n"
-    assert BuildPrompt.build_prompt(description: "simple description") == "simple description\n"
+    assert Runs.build_prompt(ticket: "explicit ticket text") == "explicit ticket text\n"
+    assert Runs.build_prompt(description: "simple description") == "simple description\n"
   end
 
   test "handles empty context snippet and plan gracefully" do
@@ -132,7 +132,7 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
       task_description: "do work"
     ]
 
-    assert BuildPrompt.build_prompt(opts) == "do work\n"
+    assert Runs.build_prompt(opts) == "do work\n"
   end
 
   test "supports explicit is_resume boolean" do
@@ -141,14 +141,14 @@ defmodule Rail.Runs.Actions.BuildPromptTest do
       pending_answer: "Done with refactor"
     ]
 
-    prompt = BuildPrompt.build_prompt(opts)
+    prompt = Runs.build_prompt(opts)
     assert prompt =~ "Done with refactor"
     assert prompt =~ "Continue from where you stopped."
   end
 
   test "handles empty options and non-standard backends" do
-    assert BuildPrompt.build_prompt(%{}) == "\n"
-    assert BuildPrompt.build_prompt(backend: nil, task_description: "Hello") == "Hello\n"
-    assert BuildPrompt.build_prompt(backend: 123, task_description: "Hello") == "Hello\n"
+    assert Runs.build_prompt(%{}) == "\n"
+    assert Runs.build_prompt(backend: nil, task_description: "Hello") == "Hello\n"
+    assert Runs.build_prompt(backend: 123, task_description: "Hello") == "Hello\n"
   end
 end

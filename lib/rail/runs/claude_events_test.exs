@@ -64,9 +64,8 @@ defmodule Rail.Runs.ClaudeEventsTest do
              "[QUESTION: Scope to one repo?] [OPTIONS: yes, no]"
            ]
 
-    assert [%DetectedQuestion{} = question] = state.detected_questions
-    assert question.prompt == "Scope to one repo?"
-    assert question.options == ["yes", "no"]
+    assert [%DetectedQuestion{prompt: "Scope to one repo?", options: ["yes", "no"]}] =
+             state.detected_questions
   end
 
   test "assistant text ignores placeholder questions and keeps every real question" do

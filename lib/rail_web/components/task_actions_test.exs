@@ -5,7 +5,6 @@ defmodule RailWeb.Components.TaskActionsTest do
 
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Domain.Embeds.DesignDirection
-  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias RailWeb.Components.TaskActionModals
   alias RailWeb.Components.TaskActions
@@ -135,7 +134,6 @@ defmodule RailWeb.Components.TaskActionsTest do
     assert html =~ "action-pick-design-dir_a"
     assert html =~ "Use Compact"
     assert html =~ "action-pick-design-dir_b"
-    assert html =~ "Send back with comments"
     refute html =~ "action-approve"
   end
 
@@ -153,13 +151,11 @@ defmodule RailWeb.Components.TaskActionsTest do
       assert html =~ "action-send-back-to-engineer"
       assert html =~ "Skip"
       assert html =~ "action-skip"
-      assert html =~ "Send back with comments"
-      assert html =~ "action-send-back"
       refute html =~ "action-approve"
     end
   end
 
-  test "renders standard approve and approve-skip-design at product stage" do
+  test "offers no stage actions at product stage, since approving is stage-specific" do
     html =
       render_component(&TaskActions.task_actions/1,
         task: %Task{
@@ -168,14 +164,12 @@ defmodule RailWeb.Components.TaskActionsTest do
         }
       )
 
-    assert html =~ "Approve"
-    assert html =~ "action-approve"
-    assert html =~ "Approve, skip design"
-    assert html =~ "action-approve-skip-design"
-    assert html =~ "Send back with comments"
+    refute html =~ "action-approve"
+    refute html =~ "Approve, skip design"
+    assert html =~ "action-chat"
   end
 
-  test "renders Send to review at engineer stage" do
+  test "offers no stage actions at engineer stage, since approving is stage-specific" do
     html =
       render_component(&TaskActions.task_actions/1,
         task: %Task{
@@ -184,10 +178,9 @@ defmodule RailWeb.Components.TaskActionsTest do
         }
       )
 
-    assert html =~ "Send to review"
-    assert html =~ "action-send-to-review"
+    refute html =~ "action-send-to-review"
     refute html =~ "Approve, skip design"
-    assert html =~ "Send back with comments"
+    assert html =~ "action-chat"
   end
 
   test "renders failed demo stage with Re-record and Continue without demo" do
@@ -203,7 +196,6 @@ defmodule RailWeb.Components.TaskActionsTest do
     assert html =~ "action-rerecord-demo"
     assert html =~ "Continue without a demo"
     assert html =~ "action-decline-demo"
-    assert html =~ "Send back with comments"
   end
 
   test "renders failed design stage with Design is done and Re-run designer (no Retry)" do
@@ -220,7 +212,6 @@ defmodule RailWeb.Components.TaskActionsTest do
     assert html =~ "Re-run designer"
     assert html =~ "action-retry"
     refute html =~ ">Retry<"
-    assert html =~ "Send back with comments"
   end
 
   test "renders failed other stage with Retry" do
@@ -234,7 +225,6 @@ defmodule RailWeb.Components.TaskActionsTest do
 
     assert html =~ ">Retry<"
     assert html =~ "action-retry"
-    assert html =~ "Send back with comments"
   end
 
   test "renders Cancel run when running, stays enabled, while cleanup is disabled" do
@@ -267,10 +257,10 @@ defmodule RailWeb.Components.TaskActionsTest do
       )
 
     refute html =~ "action-dispatch"
-    assert html =~ "action-send-back"
+    refute html =~ "action-send-back"
   end
 
-  test "renders Unblock when blocked with nothing pending" do
+  test "offers no stage actions while blocked, only the trailing common ones" do
     html =
       render_component(&TaskActions.task_actions/1,
         task: %Task{
@@ -279,22 +269,10 @@ defmodule RailWeb.Components.TaskActionsTest do
         }
       )
 
-    assert html =~ "Unblock"
-    assert html =~ "action-unblock"
-    refute html =~ ~s(id="action-unblock" data-qa="action-unblock" disabled)
-  end
-
-  test "does not render Unblock while a question is still pending" do
-    html =
-      render_component(&TaskActions.task_actions/1,
-        task: %Task{
-          stage: :architect,
-          stage_state: :blocked
-        },
-        pending_questions: [%Question{id: "qst_123", prompt: "Which one?"}]
-      )
-
     refute html =~ "Unblock"
+    refute html =~ "action-send-back"
+    assert html =~ "action-chat"
+    assert html =~ "action-cleanup"
   end
 
   test "renders progress spinner when action is running and shows progress" do
@@ -368,20 +346,6 @@ defmodule RailWeb.Components.TaskActionsTest do
     assert html =~ "Clean up"
   end
 
-  test "renders prompt_send_back modal with role name" do
-    task = %Task{id: "tsk_1"}
-
-    html =
-      render_component(&TaskActionModals.task_action_modals/1,
-        task: task,
-        active_modal: %{type: :prompt_send_back, role_name: "Engineer"}
-      )
-
-    assert html =~ "Comment to Engineer"
-    assert html =~ "What should change?"
-    assert html =~ "Send back"
-  end
-
   test "renders prompt_send_back_to_engineer modal with subtitle" do
     task = %Task{id: "tsk_1"}
 
@@ -440,8 +404,8 @@ defmodule RailWeb.Components.TaskActionsTest do
     }
 
     html = render_component(&TaskActions.task_actions/1, task: task, design: nil)
-    assert html =~ "action-approve"
-    assert html =~ "action-send-back"
+    refute html =~ "action-pick-design-dir_a"
+    assert html =~ "action-chat"
   end
 
   test "resolves design directions and unpicked key from task.designs fallback" do

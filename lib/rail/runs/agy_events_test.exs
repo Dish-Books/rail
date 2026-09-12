@@ -290,9 +290,8 @@ defmodule Rail.Runs.AgyEventsTest do
 
     state = AgyEvents.handle_event(state, step)
 
-    assert [%DetectedQuestion{} = question] = state.detected_questions
-    assert question.prompt == "Which schema?"
-    assert question.options == ["public", "private"]
+    assert [%DetectedQuestion{prompt: "Which schema?", options: ["public", "private"]}] =
+             state.detected_questions
 
     # Subsequent line in later step preserves existing question
     later_step = %{

@@ -57,14 +57,34 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Attachments follow their source document")
 
-    %{scope: scope, project: project, role: role, issue: issue}
+    name = "sdt-#{System.unique_integer([:positive])}"
+
+    task =
+      %Task{}
+      |> Task.changeset(
+        %{
+          issue_id: issue.id,
+          title: issue.title,
+          description: issue.description,
+          stage: :product,
+          stage_state: :awaiting_approval,
+          worktree_name: name,
+          worktree_path: Path.join(project.clone_path, ".worktrees/#{name}"),
+          scratch_path: Path.join(System.tmp_dir!(), "rail_test_scratch_#{System.unique_integer([:positive])}")
+        },
+        project.id
+      )
+      |> Repo.insert!()
+
+    %{scope: scope, project: project, role: role, issue: issue, task: task}
   end
 
-  test "moves the task to design and spawns the design run", %{project: project, role: role, issue: issue} do
+  test "moves the task to design and spawns the design run", %{
+    role: %Role{id: role_id},
+    issue: issue,
+    task: %Task{id: task_id, scratch_path: scratch_dir} = task
+  } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-
-    %Role{id: role_id} = role
-    %Task{id: task_id, scratch_path: scratch_dir} = task = insert_task(project, issue)
 
     test_pid = self()
 
@@ -88,13 +108,8 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
     assert content =~ "title: Attachments follow their source document"
   end
 
-  test "returns role_not_found when the project has no design role", %{
-    project: project,
-    role: role,
-    issue: issue
-  } do
+  test "returns role_not_found when the project has no design role", %{role: role, task: task} do
     {:ok, _deleted} = Roles.delete_role(system_scope(), role)
-    task = insert_task(project, issue)
 
     assert {:error, :role_not_found} = Pipeline.start_design_task(task)
 
@@ -103,25 +118,5 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
 
   test "returns not_found for an unknown task" do
     assert {:error, :not_found} = Pipeline.start_design_task("tsk_000000000000000000000000")
-  end
-
-  defp insert_task(project, issue) do
-    name = "sdt-#{System.unique_integer([:positive])}"
-
-    %Task{}
-    |> Task.changeset(
-      %{
-        issue_id: issue.id,
-        title: issue.title,
-        description: issue.description,
-        stage: :product,
-        stage_state: :awaiting_approval,
-        worktree_name: name,
-        worktree_path: Path.join(project.clone_path, ".worktrees/#{name}"),
-        scratch_path: Path.join(System.tmp_dir!(), "rail_test_scratch_#{System.unique_integer([:positive])}")
-      },
-      project.id
-    )
-    |> Repo.insert!()
   end
 end

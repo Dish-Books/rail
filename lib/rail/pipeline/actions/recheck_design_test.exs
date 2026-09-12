@@ -13,7 +13,6 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
   alias Rail.Roles
   alias Rail.Runs
   alias Rail.Runs.Schemas.RunEvent
-  alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -360,14 +359,11 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     mock_design_uploads(2)
 
-    {:ok, _design} =
+    {:ok, design} =
       Artifacts.capture_design(system_scope(), task, scratch_dir, url_probe: fn _url -> true end)
 
     # The human picks dir-1, so the manifest must keep that choice.
-    {:ok, task} =
-      Pipeline.update_task(task, %{stage: :design, stage_state: :awaiting_approval})
-
-    {:ok, _picked} = Pipeline.pick_design_direction(task, "dir-1")
+    {:ok, _picked} = design |> Design.changeset(%{picked_key: "dir-1"}) |> Repo.update()
 
     {:ok, task} =
       Pipeline.update_task(task, %{stage: :design, stage_state: :failed})
@@ -428,14 +424,11 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     mock_design_uploads(2)
 
-    {:ok, _design} =
+    {:ok, design} =
       Artifacts.capture_design(system_scope(), task, scratch_dir, url_probe: fn _url -> true end)
 
     # The human picks dir-1, then the agent rewrites the manifest with a different pick.
-    {:ok, task} =
-      Pipeline.update_task(task, %{stage: :design, stage_state: :awaiting_approval})
-
-    {:ok, _picked} = Pipeline.pick_design_direction(task, "dir-1")
+    {:ok, _picked} = design |> Design.changeset(%{picked_key: "dir-1"}) |> Repo.update()
 
     {:ok, task} =
       Pipeline.update_task(task, %{stage: :design, stage_state: :failed})
@@ -628,7 +621,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     # A manifest written into the worktree instead is a design Rail never saw.
     {:ok, elsewhere_task} =
-      Pipeline.update_task(task, %{
+      Pipeline.update_task(scratch_task, %{
         scratch_path: Path.join("/tmp", "rail_design_empty_#{System.unique_integer([:positive])}")
       })
 

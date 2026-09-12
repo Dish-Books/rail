@@ -45,7 +45,13 @@ defmodule Rail.Pipeline.Utils.GateOutcome do
 
     gate_role_id = run.role_id
     reports = task.outstanding_reports || []
-    updated_reports = if gate_role_id in reports, do: reports, else: reports ++ [gate_role_id]
+
+    updated_reports =
+      if gate_role_id in reports do
+        reports
+      else
+        Enum.reverse([gate_role_id | Enum.reverse(reports)])
+      end
 
     case Pipeline.parse_stage_verdict(run).verdict do
       :passed -> passed(task, run, next_stage, updated_reports, head_sha)

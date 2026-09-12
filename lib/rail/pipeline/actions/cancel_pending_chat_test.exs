@@ -11,7 +11,6 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
   alias Rail.Runs
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
-  alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -100,9 +99,6 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
     %{project: project, role: role, task: task}
   end
 
-  test "returns not_found when task does not exist", %{role: role} do
-  end
-
   test "returns not_found when run does not exist", %{task: task} do
     assert {:error, :not_found} =
              Pipeline.cancel_pending_chat(task, "rol_nonexistent")
@@ -119,8 +115,6 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
         conversation_id: "sess-no-pending",
         pending_chat: nil
       })
-
-    user_scope = %Scope{system: false, user: %{id: "usr_1"}}
 
     assert {:ok, %Run{pending_chat: nil}, %Task{}} =
              Pipeline.cancel_pending_chat(task, role.id)

@@ -9,8 +9,6 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Scope
-  alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -140,14 +138,6 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
         }
       })
 
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_mark_pr_ready_8905",
-        login: "mark_pr_ready_user_8905",
-        email: "mark_pr_ready_user_8905@example.com",
-        github_token: "gho_ready_token"
-      })
-
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_mark_pr_ready_8906",
       "identifier" => "TSK-8906",
@@ -167,10 +157,10 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
         mergeability: :unknown
       })
 
-    mock_mark_pull_request_ready_success("testorg/markready", 123, user_token: "gho_ready_token")
+    mock_installation_token_success(installation_id: 8904)
+    mock_mark_pull_request_ready_success("testorg/markready", 123, user_token: "mock_installation_token")
+    mock_installation_token_success(installation_id: 8904)
     mock_pull_request_state_success("testorg/markready", 123, mergeable: true, draft: false)
-
-    scope = Scope.for_user(user)
 
     assert {:ok, %Task{pr_is_draft: false, error: nil, mergeability: :mergeable}} =
              Pipeline.mark_pr_ready(task)

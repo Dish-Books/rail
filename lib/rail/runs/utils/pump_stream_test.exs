@@ -9,8 +9,9 @@ defmodule Rail.Runs.Utils.PumpStreamTest do
     stream = Path.join(tmp_dir, "stream.ndjson")
     File.write!(stream, "first\nsecond\nhalf ")
 
-    assert {["first", "second"], offset, "half "} = pump_stream(stream, 0, "")
-    assert offset == File.stat!(stream).size
+    size = File.stat!(stream).size
+
+    assert {["first", "second"], ^size = offset, "half "} = pump_stream(stream, 0, "")
 
     # The writer finishes the line, and the held fragment leads the next read.
     File.write!(stream, "a line\n", [:append])

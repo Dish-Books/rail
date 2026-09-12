@@ -1,11 +1,11 @@
 defmodule Rail.Tools.Utils.MergedPathTest do
   use ExUnit.Case, async: true
 
-  alias Rail.Tools.Utils.MergedPath
+  import Rail.Tools.Utils.MergedPath
 
   test "merges and deduplicates in search order" do
     home = System.get_env("HOME") || "/Users/test"
-    segments = "/inherited/bin:/common/bin" |> MergedPath.merged_path() |> String.split(":")
+    segments = "/inherited/bin:/common/bin" |> merged_path() |> String.split(":")
 
     assert hd(segments) == "/inherited/bin"
     assert "/common/bin" in segments
@@ -19,6 +19,6 @@ defmodule Rail.Tools.Utils.MergedPathTest do
   end
 
   test "handles an empty system path" do
-    assert String.contains?(MergedPath.merged_path(""), "/usr/bin")
+    assert String.contains?(merged_path(""), "/usr/bin")
   end
 end

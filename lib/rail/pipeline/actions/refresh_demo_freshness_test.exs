@@ -12,7 +12,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -364,7 +363,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
 
     assert {:ok, %Task{stage: :ready_to_merge}} = Pipeline.refresh_demo_freshness(task_nil_worktree)
     assert {:ok, %Task{}} = Pipeline.refresh_demo_freshness(task_nil_worktree, [])
-    assert {:error, :not_found} = Pipeline.refresh_demo_freshness(:bad_id, [])
   end
 
   test "leaves demo fresh and task at ready_to_merge when fingerprint matches", %{task: task} do

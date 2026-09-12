@@ -6,8 +6,6 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
-  alias Rail.Scope
-  alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -150,15 +148,6 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
           "canceled" => "st_canceled"
         }
       })
-
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_start_rebase_8806",
-        login: "start_rebase_user_8806",
-        email: "start_rebase_user_8806@example.com"
-      })
-
-    scope = Scope.for_user(user)
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_start_rebase_8807",

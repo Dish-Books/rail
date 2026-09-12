@@ -1,4 +1,4 @@
-defmodule Rail.Tools.Actions.SpawnRun do
+defmodule Rail.Tools.Actions.SpawnOsProcess do
   @moduledoc false
 
   alias Rail.Tools

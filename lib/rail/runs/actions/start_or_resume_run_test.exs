@@ -1,6 +1,7 @@
 defmodule Rail.Runs.Actions.StartOrResumeRunTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Runs
   alias Rail.Runs.Schemas.Run
 
@@ -10,23 +11,29 @@ defmodule Rail.Runs.Actions.StartOrResumeRunTest do
     %{
       task: %{id: UXID.generate!(prefix: "tsk")},
       role: %{id: UXID.generate!(prefix: "rol")},
-      worktree: worktree
+      worktree: worktree,
+      fingerprint: Git.branch_fingerprint(worktree)
     }
   end
 
   test "creates the run on first start, stamped with the worktree fingerprint", %{
-    task: task,
-    role: role,
-    worktree: worktree
+    task: %{id: task_id} = task,
+    role: %{id: role_id} = role,
+    worktree: worktree,
+    fingerprint: %{head_sha: head_sha, dirty_digest: dirty_digest}
   } do
-    assert {:ok, run} = Runs.start_or_resume_run(task, role, worktree)
+    assert {:ok,
+            %Run{
+              status: :running,
+              attempts: 1,
+              task_id: ^task_id,
+              role_id: ^role_id,
+              started_at: %DateTime{},
+              stage_fingerprint_head_sha: ^head_sha,
+              stage_fingerprint_dirty_digest: ^dirty_digest
+            }} = Runs.start_or_resume_run(task, role, worktree)
 
-    assert %Run{status: :running, attempts: 1} = run
-    assert run.task_id == task.id
-    assert run.role_id == role.id
-    assert run.started_at
-    assert run.stage_fingerprint_head_sha == head_sha(worktree)
-    assert is_binary(run.stage_fingerprint_dirty_digest)
+    assert byte_size(dirty_digest) > 0
   end
 
   test "resumes the existing run, bumping attempts and restamping the fingerprint", %{
@@ -43,7 +50,7 @@ defmodule Rail.Runs.Actions.StartOrResumeRunTest do
 
     assert second.id == first.id
     assert second.attempts == 2
-    assert second.stage_fingerprint_head_sha == head_sha(worktree)
+    assert second.stage_fingerprint_head_sha == Git.branch_fingerprint(worktree).head_sha
     assert second.stage_fingerprint_head_sha != first.stage_fingerprint_head_sha
     assert Repo.aggregate(Run, :count) == 1
   end
@@ -74,9 +81,8 @@ defmodule Rail.Runs.Actions.StartOrResumeRunTest do
   test "leaves the fingerprint nil when git cannot answer", %{task: task, role: role} do
     non_repo = Path.join(System.tmp_dir!(), "sorrr_missing_#{System.unique_integer([:positive])}")
 
-    assert {:ok, run} = Runs.start_or_resume_run(task, role, non_repo)
-    assert run.stage_fingerprint_head_sha == nil
-    assert run.stage_fingerprint_dirty_digest == nil
+    assert {:ok, %Run{stage_fingerprint_head_sha: nil, stage_fingerprint_dirty_digest: nil}} =
+             Runs.start_or_resume_run(task, role, non_repo)
   end
 
   test "keeps runs of other roles on the same task separate", %{
@@ -91,10 +97,5 @@ defmodule Rail.Runs.Actions.StartOrResumeRunTest do
 
     assert first.id != other.id
     assert other.attempts == 1
-  end
-
-  defp head_sha(worktree) do
-    {out, 0} = System.cmd("git", ["rev-parse", "HEAD"], cd: worktree)
-    String.trim(out)
   end
 end

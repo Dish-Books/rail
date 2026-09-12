@@ -395,7 +395,10 @@ defmodule RailWeb.OverviewLive do
   end
 
   def handle_event("confirm_merge", %{"task_id" => task_id}, socket) do
-    Pipeline.merge_task(task_id)
+    case Pipeline.get_task(task_id) do
+      {:ok, task} -> Pipeline.merge_task(task)
+      _error -> :noop
+    end
 
     socket =
       socket
@@ -431,7 +434,10 @@ defmodule RailWeb.OverviewLive do
   end
 
   def handle_event("confirm_rebase", %{"task_id" => task_id}, socket) do
-    Pipeline.start_rebase(task_id)
+    case Pipeline.get_task(task_id) do
+      {:ok, task} -> Pipeline.start_rebase(task)
+      _error -> :noop
+    end
 
     socket =
       socket
@@ -574,9 +580,9 @@ defmodule RailWeb.OverviewLive do
   # Answers go back a round at a time: this records one and the task stays parked
   # until nothing is pending, so the agent hears the whole batch at once.
   defp answer_one(question_id, answer) do
-    case Pipeline.get_question(question_id) do
-      {:ok, question} -> Pipeline.answer_questions(question.task_id, %{question_id => answer})
-      _not_found -> :ok
+    with {:ok, question} <- Pipeline.get_question(question_id),
+         {:ok, task} <- Pipeline.get_task(question.task_id) do
+      Pipeline.answer_questions(task, %{question_id => answer})
     end
   end
 

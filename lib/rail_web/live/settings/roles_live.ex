@@ -6,7 +6,6 @@ defmodule RailWeb.Settings.RolesLive do
   alias Rail.Backends.Schemas.Backend
   alias Rail.Projects
   alias Rail.Roles
-  alias Rail.Roles.RoleInstructionProposal
   alias Rail.Roles.Schemas.Role
 
   @default_models %{
@@ -33,13 +32,6 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:modal_form, nil)
       |> assign(:modal_errors, %{})
       |> assign(:available_models, [])
-      |> assign(:improve_step, :setup)
-      |> assign(:improve_runs, [])
-      |> assign(:improve_model, nil)
-      |> assign(:improve_logs, [])
-      |> assign(:improve_proposal, nil)
-      |> assign(:improve_error, nil)
-      |> assign(:improve_task, nil)
 
     {:ok, socket}
   end
@@ -265,18 +257,6 @@ defmodule RailWeb.Settings.RolesLive do
 
               <div class="flex items-center gap-1">
                 <div :if={bound_role} class="flex items-center gap-1">
-                  <.button
-                    variant="accent"
-                    size="sm"
-                    class="h-7"
-                    id={"improve-role-button-#{bound_role.id}"}
-                    data-qa={"improve_role_button_#{bound_role.id}"}
-                    phx-click="open_improve_modal"
-                    phx-value-role_id={bound_role.id}
-                  >
-                    <.icon name="pi-magic-wand" class="h-3.5 w-3.5" /> Improve
-                  </.button>
-
                   <.button
                     size="sm"
                     class="h-7"
@@ -634,324 +614,6 @@ defmodule RailWeb.Settings.RolesLive do
             </form>
           </div>
         </div>
-
-        <!-- Improve Role Modal (3-Step Flow) -->
-        <div
-          :if={@active_modal == :improve_role}
-          class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
-          id="improve-role-modal"
-          data-qa="improve_role_modal"
-        >
-          <div class="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-4">
-            <!-- Modal Header -->
-            <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3 shrink-0">
-              <div class="flex items-center space-x-2">
-                <.icon name="pi-magic-wand" class="h-5 w-5 text-indigo-600" />
-                <h2
-                  class="text-lg font-semibold text-slate-900 dark:text-slate-100"
-                  id="improve-modal-header-title"
-                >
-                  {case @improve_step do
-                    :setup -> "Improve #{@modal_role.name} Instructions"
-                    :running -> "Improving #{@modal_role.name} Instructions..."
-                    :proposal -> "Proposed Instructions for #{@modal_role.name}"
-                  end}
-                </h2>
-              </div>
-              <.button
-                variant="ghost"
-                size="icon"
-                phx-click="cancel_improvement"
-                id="close-improve-modal-button"
-                aria-label="Close"
-              >
-                <.icon name="pi-x" class="h-4 w-4" />
-              </.button>
-            </div>
-
-            <!-- Error Banner if any -->
-            <div
-              :if={@improve_error}
-              class="p-3 bg-red-50 text-xs text-red-700 rounded-md shrink-0"
-              id="improve-error-banner"
-            >
-              {@improve_error}
-            </div>
-
-            <!-- STEP 1: SETUP -->
-            <div
-              :if={@improve_step == :setup}
-              class="space-y-4 overflow-y-auto flex-1"
-              id="improve-step-setup"
-            >
-              <!-- Empty Evidence State -->
-              <div
-                :if={Enum.empty?(@improve_runs)}
-                class="p-8 text-center space-y-3"
-                id="no-runs-evidence-state"
-              >
-                <.icon
-                  name="pi-clock-counter-clockwise"
-                  class="h-12 w-12 text-slate-500 dark:text-slate-400 mx-auto"
-                />
-                <h3
-                  class="text-base font-semibold text-slate-900 dark:text-slate-100"
-                  id="no-runs-title"
-                >
-                  No finished runs for this role yet
-                </h3>
-                <p
-                  class="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto"
-                  id="no-runs-message"
-                >
-                  Run some tasks with {@modal_role.name} to generate evidence for role improvements.
-                </p>
-              </div>
-
-              <!-- Populated Evidence State -->
-              <div
-                :if={not Enum.empty?(@improve_runs)}
-                class="space-y-4"
-                id="populated-runs-evidence-state"
-              >
-                <div
-                  class="p-3 bg-indigo-50 border border-indigo-100 rounded-lg flex items-center space-x-2"
-                  id="evidence-found-banner"
-                >
-                  <.icon name="pi-chart-line-up" class="h-5 w-5 text-indigo-600 shrink-0" />
-                  <span class="text-xs font-semibold text-indigo-900" id="evidence-found-text">
-                    Found {length(@improve_runs)} recent finished {if length(@improve_runs) == 1,
-                      do: "run",
-                      else: "runs"} to learn from.
-                  </span>
-                </div>
-
-                <!-- Model Selector -->
-                <div class="space-y-1">
-                  <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Improvement Model</label>
-                  <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                    Select the model to analyze past runs and propose refined instructions:
-                  </p>
-                  <form phx-change="select_improve_model" id="improve-model-form">
-                    <select
-                      name="improve_model"
-                      id="improve-model-select"
-                      class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
-                    >
-                      <option
-                        :for={model <- @available_models}
-                        value={model.id}
-                        selected={@improve_model == model.id}
-                      >
-                        {model.display_name}
-                      </option>
-                    </select>
-                  </form>
-                </div>
-
-                <!-- Evidence Runs List -->
-                <div class="space-y-2">
-                  <h4 class="text-xs font-semibold text-slate-900 dark:text-slate-100">
-                    Evidence to be analyzed:
-                  </h4>
-                  <ul
-                    class="divide-y divide-slate-200 dark:divide-slate-700 border border-slate-200 dark:border-slate-700 rounded-md overflow-hidden"
-                    id="evidence-runs-list"
-                  >
-                    <li
-                      :for={run <- @improve_runs}
-                      class="p-3 flex items-center space-x-3 text-xs"
-                      id={"evidence-run-#{run.task_id}"}
-                    >
-                      <.icon
-                        name={
-                          if run.status in [:finished, :completed],
-                            do: "pi-check-circle-fill",
-                            else: "pi-x-circle-fill"
-                        }
-                        class={[
-                          "h-4 w-4 shrink-0",
-                          if(run.status in [:finished, :completed],
-                            do: "text-green-600",
-                            else: "text-red-600"
-                          )
-                        ]}
-                      />
-                      <div class="min-w-0 flex-1">
-                        <p class="font-medium text-slate-900 dark:text-slate-100 truncate">
-                          {run.title}
-                        </p>
-                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                          Finished {format_run_time(run.completed_at)} • Status: {run.status} • Stage: {run.stage}
-                        </p>
-                      </div>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            <!-- STEP 2: RUNNING -->
-            <div
-              :if={@improve_step == :running}
-              class="space-y-4 overflow-y-auto flex-1"
-              id="improve-step-running"
-            >
-              <div class="flex items-center space-x-3 p-3 bg-indigo-50 rounded-lg">
-                <.icon name="pi-arrow-clockwise" class="h-5 w-5 text-indigo-600 animate-spin" />
-                <span class="text-sm font-medium text-indigo-900" id="running-analysis-message">
-                  Running analysis and drafting proposed instructions...
-                </span>
-              </div>
-
-              <div
-                class="p-3 bg-zinc-900 text-zinc-100 rounded-lg font-mono text-xs h-64 overflow-y-auto space-y-1"
-                id="improve-log-box"
-              >
-                <div
-                  :if={Enum.empty?(@improve_logs)}
-                  class="text-slate-500 dark:text-slate-400 italic"
-                >
-                  Waiting for CLI output...
-                </div>
-                <div :for={log <- @improve_logs} class="whitespace-pre-wrap">{log}</div>
-              </div>
-            </div>
-
-            <!-- STEP 3: PROPOSAL -->
-            <div
-              :if={@improve_step == :proposal && @improve_proposal}
-              class="space-y-4 overflow-y-auto flex-1"
-              id="improve-step-proposal"
-            >
-              <!-- Warnings -->
-              <% is_role_missing = is_nil(Enum.find(@roles, &(&1.id == @modal_role.id))) %>
-              <% current_role = Enum.find(@roles, &(&1.id == @modal_role.id)) %>
-              <% was_modified_on_disk =
-                !is_role_missing && current_role.system_prompt != @improve_proposal.current %>
-
-              <div
-                :if={is_role_missing}
-                class="p-3 bg-red-50 text-xs text-red-700 border border-red-200 rounded-md"
-                id="role-missing-warning"
-              >
-                Role "{@modal_role.name}" was removed on disk. Cannot approve changes.
-              </div>
-
-              <div
-                :if={was_modified_on_disk}
-                class="p-3 bg-amber-50 text-xs text-amber-800 border border-amber-200 rounded-md"
-                id="modified-on-disk-warning"
-              >
-                Role instructions were modified on disk during the run. The diff below is shown against current saved instructions.
-              </div>
-
-              <!-- Sources Chips -->
-              <div
-                :if={@improve_proposal.sources != []}
-                class="p-3 bg-slate-100 dark:bg-slate-700 rounded-md space-y-1.5"
-                id="proposal-sources-box"
-              >
-                <span class="text-xs font-semibold text-slate-900 dark:text-slate-100">
-                  Drawn from {length(@improve_proposal.sources)} past {if length(
-                                                                            @improve_proposal.sources
-                                                                          ) == 1,
-                                                                          do: "run",
-                                                                          else: "runs"}:
-                </span>
-                <div class="flex flex-wrap gap-1.5">
-                  <span
-                    :for={src <- @improve_proposal.sources}
-                    class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100"
-                  >
-                    {src.title}
-                  </span>
-                </div>
-              </div>
-
-              <!-- Token Usage -->
-              <div
-                :if={@improve_proposal.usage && map_size(@improve_proposal.usage) > 0}
-                class="text-xs text-slate-500 dark:text-slate-400 flex items-center space-x-1"
-                id="proposal-usage-chip"
-              >
-                <.icon name="pi-chart-donut" class="h-3.5 w-3.5" />
-                <span>
-                  Improvement run cost: {@improve_proposal.usage["input_tokens"] || 0} input, {@improve_proposal.usage[
-                    "output_tokens"
-                  ] || 0} output tokens
-                </span>
-              </div>
-
-              <!-- Rationale -->
-              <div
-                :if={@improve_proposal.rationale}
-                class="p-3 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-md"
-                id="proposal-rationale-box"
-              >
-                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                  Rationale
-                </h4>
-                <p
-                  class="text-xs text-slate-900 dark:text-slate-100 line-clamp-3"
-                  id="proposal-rationale-text"
-                >
-                  {@improve_proposal.rationale}
-                </p>
-              </div>
-
-              <!-- Diff Pane -->
-              <div class="space-y-1" id="instruction-diff-container">
-                <h4 class="text-xs font-semibold text-slate-900 dark:text-slate-100">
-                  Instruction Changes (Diff)
-                </h4>
-                <pre
-                  class="p-3 bg-zinc-900 text-zinc-100 rounded-md font-mono text-xs overflow-x-auto max-h-72"
-                  id="instruction-diff-content"
-                >{@improve_proposal.diff || "No changes between current and proposed instructions."}</pre>
-              </div>
-            </div>
-
-            <!-- Improve Modal Footer -->
-            <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-slate-700 shrink-0">
-              <.button
-                :if={@improve_step in [:setup, :proposal]}
-                phx-click="cancel_improvement"
-                id="improve-cancel-button"
-              >
-                {if @improve_step == :proposal, do: "Reject", else: "Cancel"}
-              </.button>
-
-              <.button
-                :if={@improve_step == :running}
-                variant="danger"
-                phx-click="cancel_improvement"
-                id="running-cancel-button"
-              >
-                Cancel
-              </.button>
-
-              <.button
-                :if={@improve_step == :setup && not Enum.empty?(@improve_runs)}
-                variant="primary"
-                phx-click="start_improvement"
-                id="start-improvement-button"
-              >
-                <.icon name="pi-magic-wand" class="h-4 w-4" /> Start
-              </.button>
-
-              <.button
-                :if={@improve_step == :proposal}
-                variant="success"
-                phx-click="approve_proposal"
-                id="approve-proposal-button"
-                disabled={is_nil(Enum.find(@roles, &(&1.id == @modal_role.id)))}
-              >
-                Approve
-              </.button>
-            </div>
-          </div>
-        </div>
       </div>
     </Layouts.app>
     """
@@ -1152,140 +814,13 @@ defmodule RailWeb.Settings.RolesLive do
     end
   end
 
-  def handle_event("open_improve_modal", %{"role_id" => role_id}, socket) do
-    scope = socket.assigns.current_scope
-    role = Enum.find(socket.assigns.roles, &(&1.id == role_id))
-
-    if role do
-      models = models_for(role.backend)
-      runs = Roles.recent_finished_runs(scope, role.id)
-
-      selected_model =
-        if Enum.any?(models, &(&1.id == role.model)), do: role.model, else: List.first(models) && List.first(models).id
-
-      socket =
-        socket
-        |> assign(:active_modal, :improve_role)
-        |> assign(:modal_role, role)
-        |> assign(:improve_step, :setup)
-        |> assign(:improve_runs, runs)
-        |> assign(:improve_model, selected_model || role.model)
-        |> assign(:available_models, models)
-        |> assign(:improve_logs, [])
-        |> assign(:improve_proposal, nil)
-        |> assign(:improve_error, nil)
-
-      {:noreply, socket}
-    else
-      {:noreply, socket}
-    end
-  end
-
-  def handle_event("select_improve_model", %{"improve_model" => model_id}, socket) do
-    {:noreply, assign(socket, :improve_model, model_id)}
-  end
-
-  def handle_event("start_improvement", _params, socket) do
-    scope = socket.assigns.current_scope
-    role = socket.assigns.modal_role
-    model = socket.assigns.improve_model || role.model
-
-    task =
-      Task.Supervisor.async_nolink(Rail.TaskSupervisor, fn ->
-        Roles.improve_role(scope, role, model)
-      end)
-
-    socket =
-      socket
-      |> assign(:improve_step, :running)
-      |> assign(:improve_task, task)
-      |> assign(:improve_logs, ["Starting analysis with model #{model}..."])
-
-    {:noreply, socket}
-  end
-
-  def handle_event("cancel_improvement", _params, socket) do
-    if socket.assigns.improve_task do
-      Task.shutdown(socket.assigns.improve_task, 1_000)
-    end
-
-    socket =
-      socket
-      |> assign(:active_modal, nil)
-      |> assign(:improve_task, nil)
-      |> assign(:improve_step, :setup)
-      |> assign(:improve_proposal, nil)
-
-    {:noreply, socket}
-  end
-
-  def handle_event("approve_proposal", _params, socket) do
-    scope = socket.assigns.current_scope
-    role_id = socket.assigns.modal_role.id
-    current_role = Enum.find(socket.assigns.roles, &(&1.id == role_id))
-    proposal = socket.assigns.improve_proposal
-
-    if current_role && proposal do
-      case Roles.apply_improved_instructions(scope, current_role, proposal.proposed) do
-        {:ok, _updated_role} ->
-          refreshed = Roles.list_roles(scope, socket.assigns.current_project_id)
-
-          socket =
-            socket
-            |> assign(:roles, refreshed)
-            |> assign(:active_modal, nil)
-            |> assign(:improve_proposal, nil)
-
-          {:noreply, socket}
-
-        {:error, _reason} ->
-          {:noreply, assign(socket, :improve_error, "Failed to apply improved instructions.")}
-      end
-    else
-      {:noreply, assign(socket, :improve_error, "Role no longer exists.")}
-    end
-  end
-
   def handle_event("close_modal", _params, socket) do
-    if socket.assigns.improve_task do
-      Task.shutdown(socket.assigns.improve_task, 1_000)
-    end
-
     socket =
       socket
       |> assign(:active_modal, nil)
       |> assign(:modal_role, nil)
       |> assign(:modal_form, nil)
       |> assign(:modal_errors, %{})
-      |> assign(:improve_task, nil)
-
-    {:noreply, socket}
-  end
-
-  def handle_info({ref, {:ok, %RoleInstructionProposal{} = proposal}}, socket) when is_reference(ref) do
-    Process.demonitor(ref, [:flush])
-
-    roles = Roles.list_roles(socket.assigns.current_scope, socket.assigns.current_project_id)
-
-    socket =
-      socket
-      |> assign(:roles, roles)
-      |> assign(:improve_step, :proposal)
-      |> assign(:improve_proposal, proposal)
-      |> assign(:improve_task, nil)
-
-    {:noreply, socket}
-  end
-
-  def handle_info({ref, {:error, reason}}, socket) when is_reference(ref) do
-    Process.demonitor(ref, [:flush])
-    error_msg = "Improvement failed: #{inspect(reason)}"
-
-    socket =
-      socket
-      |> assign(:improve_step, :setup)
-      |> assign(:improve_error, error_msg)
-      |> assign(:improve_task, nil)
 
     {:noreply, socket}
   end
@@ -1308,7 +843,7 @@ defmodule RailWeb.Settings.RolesLive do
     if current == "" or Enum.any?(available_models, &(&1.id == current)) do
       available_models
     else
-      available_models ++ [%{id: current, display_name: current}]
+      Enum.reverse([%{id: current, display_name: current} | Enum.reverse(available_models)])
     end
   end
 
@@ -1438,11 +973,5 @@ defmodule RailWeb.Settings.RolesLive do
 
   defp execute_role_save(scope, _project_id, _modal, existing_role, attrs) do
     Roles.update_role(scope, existing_role, attrs)
-  end
-
-  defp format_run_time(nil), do: "recently"
-
-  defp format_run_time(%DateTime{} = dt) do
-    Calendar.strftime(dt, "%Y-%m-%d %H:%M")
   end
 end

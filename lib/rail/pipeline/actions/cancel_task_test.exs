@@ -6,8 +6,6 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
-  alias Rail.Scope
-  alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -90,15 +88,6 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
           "canceled" => "st_canceled"
         }
       })
-
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_cancel_task_8103",
-        login: "cancel_task_user_8103",
-        email: "cancel_task_user_8103@example.com"
-      })
-
-    scope = Scope.for_user(user)
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_cancel_task_8104",
@@ -215,9 +204,6 @@ defmodule Rail.Pipeline.Actions.CancelTaskTest do
               stage_state: :failed,
               error: "Cancelled."
             }} = Pipeline.cancel_task(task)
-  end
-
-  test "returns error when task is not found" do
   end
 
   test "cancels with options and delegates properly", %{project: _project, task: _task} do

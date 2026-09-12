@@ -1090,11 +1090,6 @@ defmodule RailWeb.TaskDetailLive do
     end
   end
 
-  defp handle_action_click("comment", _params, socket) do
-    role_name = socket.assigns[:current_role_name]
-    {:noreply, assign(socket, :active_modal, %{type: :prompt_send_back, role_name: role_name})}
-  end
-
   defp handle_action_click("send_back_to_engineer", _params, socket) do
     {:noreply, assign(socket, :active_modal, %{type: :prompt_send_back_to_engineer})}
   end
@@ -1232,7 +1227,7 @@ defmodule RailWeb.TaskDetailLive do
     {run, RailWeb.Components.StageOutcome.format_role_id(role_id)}
   end
 
-  defp branch_name_for(%Task{worktree_name: "rail/" <> _ = name}), do: name
+  defp branch_name_for(%Task{worktree_name: "rail/" <> _rest = name}), do: name
   defp branch_name_for(%Task{worktree_name: name}), do: "rail/#{name}"
 
   defp issue_identifier_for(task) do

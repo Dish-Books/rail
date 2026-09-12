@@ -10,7 +10,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
-  alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -95,8 +94,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         stage_state: :running
       })
 
-    scope = Scope.for_system()
-
     # Filter by stage
     assert [%Task{id: ^prod_id}] = Pipeline.list_tasks(project.id, stage: :product)
 
@@ -120,8 +117,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     {:ok, issue_7105} = Issues.capture_issue(system_scope(), project, "Beta")
 
     {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7105, :product)
-
-    scope = Scope.for_system()
 
     assert [%Task{id: ^id2}, %Task{id: ^id1}] =
              Pipeline.list_tasks(project.id, order_by: [desc: :inserted_at])
@@ -179,9 +174,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7106, :product)
 
-    system_scope = Scope.for_system()
-    user_scope = Scope.for_user(%{admin: false})
-
     all_tasks_system = Pipeline.list_tasks(nil)
     all_ids_system = Enum.map(all_tasks_system, & &1.id)
     assert id1 in all_ids_system
@@ -198,8 +190,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, %Task{id: id1}} =
       Pipeline.update_task(task, %{})
-
-    scope = Scope.for_system()
 
     assert [%Task{id: ^id1, project: %Project{id: ^expected_project_id}}] =
              Pipeline.list_tasks(expected_project_id, preload: [:project])

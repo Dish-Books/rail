@@ -8,8 +8,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Roles
-  alias Rail.Scope
-  alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -164,15 +162,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     scratch_dir = Path.join(System.tmp_dir!(), "rail_cleanup_scratch_#{System.unique_integer([:positive])}")
     File.mkdir_p!(scratch_dir)
     File.write!(Path.join(scratch_dir, "scratch.txt"), "temporary content")
-
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_cleanup_task_8706",
-        login: "cleanup_task_user_8706",
-        email: "cleanup_task_user_8706@example.com"
-      })
-
-    scope = Scope.for_user(user)
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_cleanup_task_8707",

@@ -10,14 +10,23 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
     wt_path = Path.join(repo, ".worktrees/existing")
     File.mkdir_p!(wt_path)
 
-    assert {:ok, ^wt_path} = get_or_create(repo, wt_path, "feature-existing")
+    assert {:ok, ^wt_path} =
+             Git.get_or_create_worktree(
+               %Project{clone_path: repo, default_branch: "main"},
+               %Task{worktree_path: wt_path, worktree_name: "feature-existing"}
+             )
   end
 
   test "creates new worktree with new branch from the project default branch" do
     repo = create_temp_git_repo()
     wt_path = Path.join(repo, ".worktrees/feature-1")
 
-    assert {:ok, ^wt_path} = get_or_create(repo, wt_path, "feature-1")
+    assert {:ok, ^wt_path} =
+             Git.get_or_create_worktree(
+               %Project{clone_path: repo, default_branch: "main"},
+               %Task{worktree_path: wt_path, worktree_name: "feature-1"}
+             )
+
     assert File.dir?(wt_path)
     assert File.exists?(Path.join(wt_path, "tracked.txt"))
   end
@@ -27,7 +36,13 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
     git!(repo, ["branch", "pre-existing-branch"])
 
     wt_path = Path.join(repo, ".worktrees/feature-pre")
-    assert {:ok, ^wt_path} = get_or_create(repo, wt_path, "pre-existing-branch")
+
+    assert {:ok, ^wt_path} =
+             Git.get_or_create_worktree(
+               %Project{clone_path: repo, default_branch: "main"},
+               %Task{worktree_path: wt_path, worktree_name: "pre-existing-branch"}
+             )
+
     assert File.dir?(wt_path)
   end
 
@@ -36,7 +51,12 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
     wt_path = Path.join(repo, ".worktrees/feature-missing-base")
 
     # the project's default_branch is "main", which does not exist in this repo
-    assert {:error, reason} = get_or_create(repo, wt_path, "feature-missing-base")
+    assert {:error, reason} =
+             Git.get_or_create_worktree(
+               %Project{clone_path: repo, default_branch: "main"},
+               %Task{worktree_path: wt_path, worktree_name: "feature-missing-base"}
+             )
+
     assert String.contains?(reason, "Failed to create worktree")
     refute File.dir?(wt_path)
   end
@@ -45,7 +65,12 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
     repo = create_temp_git_repo(branch: "develop")
     wt_path = Path.join(repo, ".worktrees/feature-from-dev")
 
-    assert {:ok, ^wt_path} = get_or_create(repo, wt_path, "feature-from-dev", "develop")
+    assert {:ok, ^wt_path} =
+             Git.get_or_create_worktree(
+               %Project{clone_path: repo, default_branch: "develop"},
+               %Task{worktree_path: wt_path, worktree_name: "feature-from-dev"}
+             )
+
     assert File.dir?(wt_path)
   end
 
@@ -77,14 +102,13 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
     on_exit(fn -> File.rm_rf(fake_repo) end)
 
     wt_path = Path.join(fake_repo, ".worktrees/fail")
-    assert {:error, reason} = get_or_create(fake_repo, wt_path, "fail-branch")
-    assert String.contains?(reason, "Failed to create worktree")
-  end
 
-  defp get_or_create(repo, wt_path, branch, default_branch \\ "main") do
-    Git.get_or_create_worktree(
-      %Project{clone_path: repo, default_branch: default_branch},
-      %Task{worktree_path: wt_path, worktree_name: branch}
-    )
+    assert {:error, reason} =
+             Git.get_or_create_worktree(
+               %Project{clone_path: fake_repo, default_branch: "main"},
+               %Task{worktree_path: wt_path, worktree_name: "fail-branch"}
+             )
+
+    assert String.contains?(reason, "Failed to create worktree")
   end
 end

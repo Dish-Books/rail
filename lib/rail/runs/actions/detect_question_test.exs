@@ -1,11 +1,11 @@
 defmodule Rail.Runs.Actions.DetectQuestionTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Runs.Actions.DetectQuestion
+  alias Rail.Runs
   alias Rail.Runs.DetectedQuestion
 
   test "detects a question on its own line" do
-    question = DetectQuestion.detect_question("[QUESTION: Which database should we use?]")
+    question = Runs.detect_question("[QUESTION: Which database should we use?]")
 
     assert %DetectedQuestion{} = question
     assert question.prompt == "Which database should we use?"
@@ -18,7 +18,7 @@ defmodule Rail.Runs.Actions.DetectQuestionTest do
 
   test "detects question with options" do
     line = "[QUESTION: Scope to one repo?] [OPTIONS: yes, no]"
-    question = DetectQuestion.detect_question(line)
+    question = Runs.detect_question(line)
 
     assert %DetectedQuestion{} = question
     assert question.prompt == "Scope to one repo?"
@@ -27,14 +27,14 @@ defmodule Rail.Runs.Actions.DetectQuestionTest do
 
   test "options parsing trims and rejects empty options" do
     line = "[QUESTION: Which flavor?] [OPTIONS:  vanilla , , chocolate , strawberry ]"
-    question = DetectQuestion.detect_question(line)
+    question = Runs.detect_question(line)
 
     assert question.options == ["vanilla", "chocolate", "strawberry"]
   end
 
   test "detects question case-insensitively" do
     line = "[question: Should we rebase?] [options: yes, no]"
-    question = DetectQuestion.detect_question(line)
+    question = Runs.detect_question(line)
 
     assert %DetectedQuestion{} = question
     assert question.prompt == "Should we rebase?"
@@ -43,38 +43,36 @@ defmodule Rail.Runs.Actions.DetectQuestionTest do
 
   test "allows leading whitespace, blockquotes, and bullet markers" do
     assert %DetectedQuestion{prompt: "Bullet question"} =
-             DetectQuestion.detect_question("- [QUESTION: Bullet question]")
+             Runs.detect_question("- [QUESTION: Bullet question]")
 
     assert %DetectedQuestion{prompt: "Star bullet question"} =
-             DetectQuestion.detect_question("* [QUESTION: Star bullet question]")
+             Runs.detect_question("* [QUESTION: Star bullet question]")
 
     assert %DetectedQuestion{prompt: "Blockquote question"} =
-             DetectQuestion.detect_question("> [QUESTION: Blockquote question]")
+             Runs.detect_question("> [QUESTION: Blockquote question]")
 
     assert %DetectedQuestion{prompt: "Nested prefix question"} =
-             DetectQuestion.detect_question("  > * -  [QUESTION: Nested prefix question]")
+             Runs.detect_question("  > * -  [QUESTION: Nested prefix question]")
   end
 
   test "ignores question marker quoted mid-sentence in prose" do
-    assert is_nil(
-             DetectQuestion.detect_question("The user asked [QUESTION: what about this?] earlier in the discussion.")
-           )
+    assert is_nil(Runs.detect_question("The user asked [QUESTION: what about this?] earlier in the discussion."))
   end
 
   test "rejects placeholder prompts echoing role brief templates" do
-    assert is_nil(DetectQuestion.detect_question("[QUESTION: <question>]"))
-    assert is_nil(DetectQuestion.detect_question("[QUESTION: <describe your question here>]"))
-    assert is_nil(DetectQuestion.detect_question("[QUESTION: ...]"))
-    assert is_nil(DetectQuestion.detect_question("[QUESTION: …]"))
-    assert is_nil(DetectQuestion.detect_question("[QUESTION:   . . .   ]"))
-    assert is_nil(DetectQuestion.detect_question("[QUESTION: ]"))
-    assert is_nil(DetectQuestion.detect_question("[QUESTION:    ]"))
+    assert is_nil(Runs.detect_question("[QUESTION: <question>]"))
+    assert is_nil(Runs.detect_question("[QUESTION: <describe your question here>]"))
+    assert is_nil(Runs.detect_question("[QUESTION: ...]"))
+    assert is_nil(Runs.detect_question("[QUESTION: …]"))
+    assert is_nil(Runs.detect_question("[QUESTION:   . . .   ]"))
+    assert is_nil(Runs.detect_question("[QUESTION: ]"))
+    assert is_nil(Runs.detect_question("[QUESTION:    ]"))
   end
 
   test "handles nil and empty strings" do
-    assert is_nil(DetectQuestion.detect_question(nil))
-    assert is_nil(DetectQuestion.detect_question(""))
-    assert is_nil(DetectQuestion.detect_question("   "))
+    assert is_nil(Runs.detect_question(nil))
+    assert is_nil(Runs.detect_question(""))
+    assert is_nil(Runs.detect_question("   "))
   end
 
   test "finds question in multi-line text" do
@@ -87,7 +85,7 @@ defmodule Rail.Runs.Actions.DetectQuestionTest do
     Let me know how to proceed.
     """
 
-    question = DetectQuestion.detect_question(text)
+    question = Runs.detect_question(text)
     assert %DetectedQuestion{} = question
     assert question.prompt == "Should we use Postgres or SQLite?"
     assert question.options == ["Postgres", "SQLite"]
@@ -101,7 +99,7 @@ defmodule Rail.Runs.Actions.DetectQuestionTest do
       context_summary: "Custom context"
     }
 
-    question = DetectQuestion.detect_question("[QUESTION: What port?]", opts)
+    question = Runs.detect_question("[QUESTION: What port?]", opts)
 
     assert question.id == "q-custom123"
     assert question.task_id == "tsk_123"
@@ -115,7 +113,7 @@ defmodule Rail.Runs.Actions.DetectQuestionTest do
       role: %{id: "rol_engineer"}
     ]
 
-    question = DetectQuestion.detect_question("[QUESTION: Which OAuth provider?]", opts)
+    question = Runs.detect_question("[QUESTION: Which OAuth provider?]", opts)
 
     assert question.task_id == "tsk_abc"
     assert question.role_id == "rol_engineer"
@@ -124,7 +122,7 @@ defmodule Rail.Runs.Actions.DetectQuestionTest do
 
   test "extracts context_summary from task_title option" do
     opts = [task_title: "Fix bug in billing"]
-    question = DetectQuestion.detect_question("[QUESTION: Refund amount?]", opts)
+    question = Runs.detect_question("[QUESTION: Refund amount?]", opts)
 
     assert question.context_summary == "Asked during: Fix bug in billing"
   end
@@ -134,7 +132,7 @@ defmodule Rail.Runs.Actions.DetectQuestionTest do
     role = %{id: "rol_atom"}
 
     question =
-      DetectQuestion.detect_question("[QUESTION: Query?]", %{task: task, role: role})
+      Runs.detect_question("[QUESTION: Query?]", %{task: task, role: role})
 
     assert question.task_id == "tsk_atom"
     assert question.role_id == "rol_atom"
@@ -151,7 +149,7 @@ defmodule Rail.Runs.Actions.DetectQuestionTest do
     [QUESTION: which database?]
     """
 
-    questions = DetectQuestion.detect_questions(text, task_id: "tsk_1", role_id: "rol_1")
+    questions = Runs.detect_questions(text, task_id: "tsk_1", role_id: "rol_1")
 
     assert Enum.map(questions, & &1.prompt) == ["Which database?", "Ship behind a flag?"]
     assert Enum.map(questions, & &1.options) == [["PG", "MySQL"], []]
@@ -159,13 +157,13 @@ defmodule Rail.Runs.Actions.DetectQuestionTest do
   end
 
   test "detect_questions returns an empty list when there is nothing to ask" do
-    assert DetectQuestion.detect_questions("Just prose.") == []
-    assert DetectQuestion.detect_questions(nil) == []
+    assert Runs.detect_questions("Just prose.") == []
+    assert Runs.detect_questions(nil) == []
   end
 
   test "detect_question still returns only the first question" do
     text = "[QUESTION: First?]\n[QUESTION: Second?]"
 
-    assert %DetectedQuestion{prompt: "First?"} = DetectQuestion.detect_question(text)
+    assert %DetectedQuestion{prompt: "First?"} = Runs.detect_question(text)
   end
 end

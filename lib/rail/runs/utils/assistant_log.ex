@@ -11,7 +11,20 @@ defmodule Rail.Runs.Utils.AssistantLog do
 
   # Everything Rail, the tools or the human contributed carries one of these
   # markers; what the agent said carries none.
-  @markers ~w([tool] [tool error] [init] [result] [denied] [recovered] [rate limit] [rail] [human] [handoff] [stderr] [error])
+  @markers [
+    "[tool]",
+    "[tool error]",
+    "[init]",
+    "[result]",
+    "[denied]",
+    "[recovered]",
+    "[rate limit]",
+    "[rail]",
+    "[human]",
+    "[handoff]",
+    "[stderr]",
+    "[error]"
+  ]
 
   @doc """
   The agent's own words across a run's whole log, oldest first.

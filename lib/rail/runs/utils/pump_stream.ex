@@ -40,7 +40,7 @@ defmodule Rail.Runs.Utils.PumpStream do
 
     {lines, remaining_partial} =
       if final?(opts) and new_partial != "" do
-        {complete_lines ++ [new_partial], ""}
+        {Enum.reverse([new_partial | Enum.reverse(complete_lines)]), ""}
       else
         {complete_lines, new_partial}
       end

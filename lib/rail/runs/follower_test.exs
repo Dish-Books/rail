@@ -682,7 +682,6 @@ defmodule Rail.Runs.FollowerTest do
 
     reloaded_task = Repo.get!(PipelineTask, task.id)
     assert reloaded_task.stage_state == :blocked
-    assert reloaded_task.question_id == hd(pending_questions(task.id)).id
 
     assert Repo.get!(Run, run.id).status == :blocked_on_input
   end

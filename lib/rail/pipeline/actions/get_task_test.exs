@@ -49,7 +49,6 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
   end
 
   test "returns not found error when task does not exist" do
-    scope = Scope.for_system()
     assert {:error, :not_found} = Pipeline.get_task("tsk_000000000000000000000000")
   end
 
@@ -136,8 +135,6 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
   end
 
   test "returns nil for demo and design when task has no artifacts", %{task: %Task{id: task_id} = task} do
-    scope = Scope.for_system()
-
     assert {:ok, %Task{id: ^task_id, demo: nil, design: nil}} = Pipeline.get_task(task.id)
     assert {:ok, %Task{id: ^task_id, demo: nil, design: nil}} = Pipeline.get_task(task.id)
   end

@@ -1243,78 +1243,6 @@ defmodule RailWeb.TaskDetailLiveTest do
     refute has_element?(busy_view, "#confirm-cleanup-modal")
   end
 
-  test "prompt send back modal flow (empty ignored, valid submits)", %{conn: conn, project: project} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_task_detail_18",
-        login: "task_detail_user_18",
-        email: "task_detail_user_18@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-    _scope = Scope.for_user(user)
-
-    {:ok, %Project{id: _project_id}} =
-      Projects.create_project(system_scope(), %{
-        name: "Task Detail Project 13805",
-        github_repo: "org/task-detail-13805",
-        github_installation_id: 13_805,
-        linear_team_id: "team_task_detail_13805",
-        linear_team_key: "P13805",
-        default_branch: "main",
-        clone_path: "/tmp/repos/task-detail-13805",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_task_detail_13845",
-      "identifier" => "TSK-13845",
-      "title" => "Task 13845"
-    })
-
-    {:ok, issue_13845} = Issues.capture_issue(system_scope(), project, "Task 13845")
-
-    {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13845, :product)
-
-    {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(Repo.get!(Task, task_id), %{
-        stage: :product,
-        stage_state: :awaiting_approval
-      })
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
-
-    # The LiveView process issues the GitHub call, so lend it the stubs.
-
-    Req.Test.allow(Rail.GitHub, self(), view.pid)
-
-    Sandbox.allow(Repo, self(), view.pid)
-
-    # Open modal
-    view |> element("#action-send-back") |> render_click()
-    assert has_element?(view, "#prompt-send-back-modal")
-
-    # Submit empty comment -> modal remains open!
-    view |> form("#prompt-send-back-form", %{comment: "   "}) |> render_submit()
-    assert has_element?(view, "#prompt-send-back-modal")
-
-    # Cancel
-    view |> element("#cancel-send-back-button") |> render_click()
-    refute has_element?(view, "#prompt-send-back-modal")
-
-    # Re-open and submit valid comment
-    view |> element("#action-send-back") |> render_click()
-    view |> form("#prompt-send-back-form", %{comment: "Please revise the requirements"}) |> render_submit()
-    refute has_element?(view, "#prompt-send-back-modal")
-  end
-
   test "prompt send back to engineer modal flow (empty comment allowed)", %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -1533,48 +1461,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         }
       })
 
-    # 1. Approve & Approve skip design at product stage
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_task_detail_13850",
-      "identifier" => "TSK-13850",
-      "title" => "Task 13850"
-    })
-
-    {:ok, issue_13850} = Issues.capture_issue(system_scope(), project, "Task 13850")
-
-    {:ok, %Task{id: prod_task_id}} = Pipeline.create_task(issue_13850, :product)
-
-    {:ok, %Task{id: prod_task_id}} =
-      Pipeline.update_task(Repo.get!(Task, prod_task_id), %{
-        stage: :product,
-        stage_state: :awaiting_approval
-      })
-
-    assert {:ok, prod_view, _html} = live(authed_conn, ~p"/tasks/#{prod_task_id}")
-    assert has_element?(prod_view, "#action-approve", "Approve")
-    assert has_element?(prod_view, "#action-approve-skip-design", "Approve, skip design")
-    prod_view |> element("#action-approve") |> render_click()
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_task_detail_13851",
-      "identifier" => "TSK-13851",
-      "title" => "Task 13851"
-    })
-
-    {:ok, issue_13851} = Issues.capture_issue(system_scope(), project, "Task 13851")
-
-    {:ok, %Task{id: prod_skip_task_id}} = Pipeline.create_task(issue_13851, :product)
-
-    {:ok, %Task{id: prod_skip_task_id}} =
-      Pipeline.update_task(Repo.get!(Task, prod_skip_task_id), %{
-        stage: :product,
-        stage_state: :awaiting_approval
-      })
-
-    assert {:ok, prod_skip_view, _html} = live(authed_conn, ~p"/tasks/#{prod_skip_task_id}")
-    prod_skip_view |> element("#action-approve-skip-design") |> render_click()
-
-    # 2. Skip to ready to merge at qa stage
+    # 1. Skip to ready to merge at qa stage
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_task_detail_13852",
       "identifier" => "TSK-13852",
@@ -1595,7 +1482,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert has_element?(qa_view, "#action-skip", "Skip")
     qa_view |> element("#action-skip") |> render_click()
 
-    # 3. Retry on failed state
+    # 2. Retry on failed state
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_task_detail_13853",
       "identifier" => "TSK-13853",
@@ -1616,7 +1503,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert has_element?(retry_view, "#action-retry", "Retry")
     retry_view |> element("#action-retry") |> render_click()
 
-    # 4. Cancel on running task
+    # 3. Cancel on running task
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_task_detail_13854",
       "identifier" => "TSK-13854",
@@ -1637,7 +1524,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert has_element?(running_view, "#action-cancel", "Cancel")
     running_view |> element("#action-cancel") |> render_click()
 
-    # 5. Dispatch now on queued task
+    # 4. Dispatch now on queued task
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_task_detail_13855",
       "identifier" => "TSK-13855",
@@ -1658,29 +1545,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert {:ok, queued_view, _html} = live(authed_conn, ~p"/tasks/#{queued_task_id}")
     refute has_element?(queued_view, "#action-dispatch")
 
-    # 6. Unblock on blocked task without pending question
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_task_detail_13856",
-      "identifier" => "TSK-13856",
-      "title" => "Task 13856"
-    })
-
-    {:ok, issue_13856} = Issues.capture_issue(system_scope(), project, "Task 13856")
-
-    {:ok, %Task{id: blocked_task_id}} = Pipeline.create_task(issue_13856, :product)
-
-    {:ok, %Task{id: blocked_task_id}} =
-      Pipeline.update_task(Repo.get!(Task, blocked_task_id), %{
-        stage: :engineer,
-        stage_state: :blocked,
-        question_id: nil
-      })
-
-    assert {:ok, blocked_view, _html} = live(authed_conn, ~p"/tasks/#{blocked_task_id}")
-    assert has_element?(blocked_view, "#action-unblock", "Unblock")
-    blocked_view |> element("#action-unblock") |> render_click()
-
-    # 7. Mark ready on draft PR
+    # 5. Mark ready on draft PR
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_task_detail_13857",
       "identifier" => "TSK-13857",
@@ -1703,7 +1568,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert has_element?(draft_view, "#action-mark-ready", "Mark ready for review")
     draft_view |> element("#action-mark-ready") |> render_click()
 
-    # 8. Rerecord demo on demo stage
+    # 6. Rerecord demo on demo stage
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_task_detail_13858",
       "identifier" => "TSK-13858",
@@ -1724,7 +1589,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert has_element?(demo_view, "#action-rerecord-demo", "Re-record demo")
     demo_view |> element("#action-rerecord-demo") |> render_click()
 
-    # 9. Design direction pick and recheck
+    # 7. Design direction pick and recheck
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_task_detail_13859",
       "identifier" => "TSK-13859",
@@ -2044,11 +1909,6 @@ defmodule RailWeb.TaskDetailLiveTest do
         context_summary: "Found multiple adapters in repo"
       })
 
-    _updated =
-      task
-      |> Ecto.Changeset.change(%{question_id: question.id})
-      |> Repo.update!()
-
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
 
     # 1. Verify AnswerField card renders
@@ -2091,16 +1951,11 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage_state: :blocked
       })
 
-    {:ok, q_fallback} =
+    {:ok, _q_fallback} =
       Pipeline.register_question(asking_run.(task_answer_fb), %DetectedQuestion{
         prompt: "Which port?",
         options: ["5432", "5433"]
       })
-
-    _updated_fb =
-      task_answer_fb
-      |> Ecto.Changeset.change(%{question_id: q_fallback.id})
-      |> Repo.update!()
 
     assert {:ok, view_fb, _html} = live(authed_conn, ~p"/tasks/#{task_answer_fb.id}")
     assert has_element?(view_fb, "#answer-field-card")
@@ -2130,11 +1985,6 @@ defmodule RailWeb.TaskDetailLiveTest do
         options: ["Yes", "No"]
       })
 
-    _updated_2 =
-      task_dismiss_exp
-      |> Ecto.Changeset.change(%{question_id: q2.id})
-      |> Repo.update!()
-
     assert {:ok, view2, _html} = live(authed_conn, ~p"/tasks/#{task_dismiss_exp.id}")
     assert has_element?(view2, "#answer-field-card")
     render_hook(view2, "dismiss_question", %{"question_id" => q2.id})
@@ -2157,23 +2007,18 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage_state: :blocked
       })
 
-    {:ok, q3} =
+    {:ok, _q3} =
       Pipeline.register_question(asking_run.(task_dismiss_fb), %DetectedQuestion{
         prompt: "Run migrations?",
         options: ["Yes", "No"]
       })
-
-    _updated_3 =
-      task_dismiss_fb
-      |> Ecto.Changeset.change(%{question_id: q3.id})
-      |> Repo.update!()
 
     assert {:ok, view3, _html} = live(authed_conn, ~p"/tasks/#{task_dismiss_fb.id}")
     assert has_element?(view3, "#answer-field-card")
     render_hook(view3, "dismiss_question", %{})
     refute has_element?(view3, "#answer-field-card")
 
-    # 7. Blocked task with invalid question_id gracefully sets pending_question to nil
+    # 7. Blocked task with no questions leaves pending_question nil
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_task_detail_13867",
       "identifier" => "TSK-13867",
@@ -2187,8 +2032,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, bad_task} =
       Pipeline.update_task(bad_task, %{
         stage: :engineer,
-        stage_state: :blocked,
-        question_id: "qst_nonexistent_99"
+        stage_state: :blocked
       })
 
     assert {:ok, view_bad, _html} = live(authed_conn, ~p"/tasks/#{bad_task.id}")

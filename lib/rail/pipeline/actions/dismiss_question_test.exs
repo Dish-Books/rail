@@ -1,11 +1,12 @@
 defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.QuestionQueue
+
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Pipeline.Utils.QuestionQueue
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
@@ -87,13 +88,15 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     %{project: project, issue: issue, task: task, run: run, roles: roles}
   end
 
-  test "dismissing the only question resumes the run and says it was waved off", %{task: task, run: run} do
+  test "dismissing the only question resumes the run and says it was waved off", %{
+    task: task,
+    run: %Run{id: run_id} = run
+  } do
     {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
 
     assert Repo.get!(Task, task.id).stage_state == :blocked
 
     test_pid = self()
-    run_id = run.id
 
     expect(Runs, :start_os_process, fn %Run{id: ^run_id} = spawned, argv, _opts ->
       send(test_pid, {:spawned, argv})
@@ -102,7 +105,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
 
     assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(q)
 
-    assert QuestionQueue.pending_questions(task.id) == []
+    assert pending_questions(task.id) == []
     assert Repo.get!(Question, q.id).delivered_at
 
     assert_receive {:spawned, argv}
@@ -113,13 +116,13 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
     {:ok, second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Ship behind a flag?"})
 
-    assert Enum.map(QuestionQueue.pending_questions(task.id), & &1.id) == [first.id, second.id]
+    assert Enum.map(pending_questions(task.id), & &1.id) == [first.id, second.id]
 
     # No spawn is stubbed: resuming the run here would raise on the unexpected call.
     assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(first)
 
     assert Repo.get!(Task, task.id).stage_state == :blocked
-    assert Enum.map(QuestionQueue.pending_questions(task.id), & &1.id) == [second.id]
+    assert Enum.map(pending_questions(task.id), & &1.id) == [second.id]
     refute Repo.get!(Question, first.id).delivered_at
   end
 

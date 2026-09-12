@@ -138,7 +138,4 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionsTest do
     assert {:error, :no_answers} = Pipeline.answer_questions(task, %{"qst_nonexistent" => "Postgres"})
     assert Repo.get!(Question, question.id).status == :pending
   end
-
-  test "reports not_found for an unknown task" do
-  end
 end

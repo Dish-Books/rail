@@ -13,7 +13,8 @@ defmodule Rail.Runs.Actions.ListOsProcessesTest do
         started_at: DateTime.utc_now()
       })
 
-    running =
+    %OsProcess{id: running_id} =
+      running =
       %OsProcess{}
       |> OsProcess.changeset(%{
         run_id: run.id,
@@ -37,16 +38,15 @@ defmodule Rail.Runs.Actions.ListOsProcessesTest do
       })
       |> Repo.insert!()
 
-    %{run: run, running: running, finished: finished}
+    %{run: run, running: running, running_id: running_id, finished: finished}
   end
 
-  test "filters by run, task, node and status", %{run: run, running: running} do
+  test "filters by run, task, node and status", %{run: run, running_id: running_id} do
     assert length(Runs.list_os_processes(run_id: run.id)) == 2
     assert length(Runs.list_os_processes(task_id: run.task_id)) == 2
     assert length(Runs.list_os_processes(node: "node_under_test")) == 2
 
-    assert [%OsProcess{id: id}] = Runs.list_os_processes(run_id: run.id, status: :running)
-    assert id == running.id
+    assert [%OsProcess{id: ^running_id}] = Runs.list_os_processes(run_id: run.id, status: :running)
   end
 
   test "ignores unknown filters", %{run: run} do
