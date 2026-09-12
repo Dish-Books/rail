@@ -326,18 +326,15 @@ defmodule RailWeb.IssuesLive do
     {:noreply, socket}
   end
 
-  def handle_event("start_product_task", %{"issue_id" => issue_id}, socket) do
+  def handle_event("start_product_run", %{"issue_id" => issue_id}, socket) do
     scope = socket.assigns[:current_scope]
 
-    case Issues.get_issue(scope, issue_id) do
-      {:ok, issue} ->
-        Pipeline.start_product_task(issue)
-        socket = reload_data(socket)
-        {:noreply, socket}
-
-      _error ->
-        {:noreply, socket}
+    with {:ok, issue} <- Issues.get_issue(scope, issue_id),
+         {:ok, task} <- Pipeline.create_task(issue, :product) do
+      Pipeline.start_product_run(task)
     end
+
+    {:noreply, reload_data(socket)}
   end
 
   def handle_event("open_editor", %{"issue_id" => issue_id}, socket) do

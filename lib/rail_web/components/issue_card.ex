@@ -113,9 +113,9 @@ defmodule RailWeb.Components.IssueCard do
           <button
             :if={@task == nil and not Issue.finished_state?(@issue.state)}
             type="button"
-            id={"start-product-task-#{@issue.id}"}
-            data-qa={"start_product_task_#{@issue.id}"}
-            phx-click="start_product_task"
+            id={"start-product-run-#{@issue.id}"}
+            data-qa={"start_product_run_#{@issue.id}"}
+            phx-click="start_product_run"
             phx-value-issue_id={@issue.id}
             class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
           >

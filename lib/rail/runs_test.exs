@@ -178,7 +178,7 @@ defmodule Rail.RunsTest do
 
     task_id = task.id
 
-    {:ok, os_process} =
+    {:ok, %{os_process: os_process}} =
       Runs.start_os_process(run, :stage, ["5"], allow_fun: fn pid -> Sandbox.allow(Repo, self(), pid) end)
 
     assert Runs.get_os_process(os_process.id).id == os_process.id
@@ -295,7 +295,7 @@ defmodule Rail.RunsTest do
 
     task_id = task.id
 
-    {:ok, os_process} =
+    {:ok, %{os_process: os_process}} =
       Runs.start_os_process(run, :stage, ["30"], allow_fun: fn pid -> Sandbox.allow(Repo, self(), pid) end)
 
     follower_pid = Runs.get_follower_pid(os_process.id)

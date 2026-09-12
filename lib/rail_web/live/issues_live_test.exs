@@ -191,7 +191,7 @@ defmodule RailWeb.IssuesLiveTest do
              "Dedicated Worktree: .worktrees/feat-demo-101"
            )
 
-    assert has_element?(view, "#start-product-task-#{issue.id}", "Start")
+    assert has_element?(view, "#start-product-run-#{issue.id}", "Start")
     assert has_element?(view, "#archive-issue-#{issue.id}")
   end
 
@@ -401,7 +401,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#filter-priority-all", "All (2)")
 
     # Finished issue has no Bring local button and no task link
-    refute has_element?(view, "#start-product-task-#{done_issue.id}")
+    refute has_element?(view, "#start-product-run-#{done_issue.id}")
     refute has_element?(view, "#task-link-#{done_issue.id}")
 
     # Toggle show finished off
@@ -474,16 +474,16 @@ defmodule RailWeb.IssuesLiveTest do
     })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
-    assert has_element?(view, "#start-product-task-#{issue.id}")
+    assert has_element?(view, "#start-product-run-#{issue.id}")
 
-    view |> element("#start-product-task-#{issue.id}") |> render_click()
+    view |> element("#start-product-run-#{issue.id}") |> render_click()
 
     # Now task link is displayed instead of bring local
-    refute has_element?(view, "#start-product-task-#{issue.id}")
+    refute has_element?(view, "#start-product-run-#{issue.id}")
     assert has_element?(view, "#task-link-#{issue.id}")
 
     # Clicking start on a nonexistent issue does not crash
-    render_click(view, "start_product_task", %{"issue_id" => "iss_nonexistent"})
+    render_click(view, "start_product_run", %{"issue_id" => "iss_nonexistent"})
   end
 
   test "opens issue editor modal, updates attributes, and saves changes", %{conn: conn} do

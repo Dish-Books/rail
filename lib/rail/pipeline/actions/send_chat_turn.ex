@@ -391,10 +391,10 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
       [on_finished: on_finished_cb] ++ Keyword.take(opts, [:allow_fun])
 
     case Runs.start_os_process(updated_run, :chat, argv, spawner_opts) do
-      {:ok, os_process} ->
+      {:ok, %{os_process: os_process}} ->
         {:ok, %{task: updated_task, run: updated_run, os_process: os_process}}
 
-      {:error, reason} ->
+      {:error, {:spawn_failed, reason, _task}} ->
         updated_task
         |> Task.changeset(%{active_chat_role_id: nil})
         |> Repo.update!()

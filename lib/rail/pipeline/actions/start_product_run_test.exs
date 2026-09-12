@@ -1,4 +1,4 @@
-defmodule Rail.Pipeline.Actions.StartProductTaskTest do
+defmodule Rail.Pipeline.Actions.StartProductRunTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
@@ -61,14 +61,16 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
 
     {:ok, issue} = Issues.capture_issue(scope, project, "Attachments follow their source document")
 
-    %{scope: scope, project: project, role: role, issue: issue}
+    {:ok, task} = Pipeline.create_task(issue, :product)
+
+    %{scope: scope, project: project, role: role, issue: issue, task: task}
   end
 
-  test "starts the product run for an issue that already has a task", %{project: project, role: role, issue: issue} do
+  test "starts the product run for a task", %{role: role, issue: issue, task: task} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     %Role{id: role_id} = role
-    %Task{id: task_id} = task = insert_task(project, issue)
+    %Task{id: task_id} = task
 
     assert {:ok,
             %{
@@ -76,7 +78,7 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
               run: %Run{task_id: ^task_id, role_id: ^role_id, attempts: 1, status: :running},
               os_process: %OsProcess{task_id: ^task_id}
             }} =
-             Pipeline.start_product_task(issue)
+             Pipeline.start_product_run(task)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :dispatched}}
     assert byte_size(worktree_path) > 0
@@ -90,7 +92,7 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
     assert content =~ "priority: medium"
   end
 
-  test "creates the task from an assigned issue, owned by the assignee", %{issue: issue} do
+  test "leaves the owner on the issue the task links to", %{issue: issue, task: task} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_start_product_1",
@@ -106,53 +108,30 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
     LinearMock.mock_update_issue_success(%{"id" => issue.external_id})
 
     assert {:ok, %{task: %Task{issue_id: ^issue_id, stage: :product} = task}} =
-             Pipeline.start_product_task(issue)
+             Pipeline.start_product_run(task)
 
     # The owner lives on the issue; the task only links to it.
     assert %Issue{owner_user_id: ^user_id} = Repo.get!(Issue, task.issue_id)
   end
 
-  test "returns role_not_found when the project has no product role", %{
-    project: project,
-    role: role,
-    issue: issue
-  } do
+  test "returns role_not_found when the project has no product role", %{role: role, task: task} do
     {:ok, _deleted} = Roles.delete_role(system_scope(), role)
-    insert_task(project, issue)
 
-    assert {:error, :role_not_found} = Pipeline.start_product_task(issue)
+    assert {:error, :role_not_found} = Pipeline.start_product_run(task)
   end
 
-  test "marks the task failed when the worktree cannot be created", %{project: project, issue: issue} do
+  test "returns worktree_failed when the worktree cannot be created", %{project: project, task: task} do
     not_a_repo = Path.join("/tmp", "not_a_repo_#{System.unique_integer([:positive])}")
     File.mkdir_p!(not_a_repo)
     on_exit(fn -> File.rm_rf(not_a_repo) end)
 
-    {:ok, broken_project} = Projects.update_project(system_scope(), project, %{clone_path: not_a_repo})
-    %Task{id: task_id} = insert_task(project, issue)
+    {:ok, _broken_project} = Projects.update_project(system_scope(), project, %{clone_path: not_a_repo})
 
-    assert {:error, {:worktree_failed, _reason}} =
-             Pipeline.start_product_task(%{issue | project: broken_project})
+    %Task{id: task_id} = task
+
+    assert {:error, {:worktree_failed, _reason}} = Pipeline.start_product_run(task)
 
     assert %Task{stage_state: stage_state} = Repo.get!(Task, task_id)
     assert stage_state != :running
-  end
-
-  defp insert_task(project, issue) do
-    name = "spt-#{System.unique_integer([:positive])}"
-
-    %Task{}
-    |> Task.changeset(
-      %{
-        issue_id: issue.id,
-        stage: :product,
-        stage_state: :queued,
-        worktree_name: name,
-        worktree_path: Path.join(project.clone_path, ".worktrees/#{name}"),
-        scratch_path: Path.join(System.tmp_dir!(), "rail_test_scratch_#{System.unique_integer([:positive])}")
-      },
-      project.id
-    )
-    |> Repo.insert!()
   end
 end

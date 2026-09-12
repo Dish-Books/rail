@@ -17,7 +17,6 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.Schemas.Run
 
   @doc """
   Starts the design stage for `task_or_id`.
@@ -141,34 +140,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
         Pipeline.settle_design_run(os_process, outcome, opts)
       end)
 
-    case Runs.start_os_process(run, :stage, argv, spawner_opts) do
-      {:ok, os_process} -> finalize(task, run, os_process)
-      {:error, reason} -> fail(task, reason)
-    end
-  end
-
-  defp finalize(task, run, os_process) do
-    {:ok, run} =
-      run
-      |> Run.changeset(%{pending_answer: nil, attempt_log_lines: 0})
-      |> Repo.update()
-
-    {:ok, task} = task |> Task.changeset(%{stage_state: :running}) |> Repo.update()
-
-    Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :dispatched})
-
-    {:ok, %{task: task, run: run, os_process: os_process}}
-  end
-
-  defp fail(task, reason) do
-    {:ok, task} =
-      task
-      |> Task.changeset(%{stage_state: :failed, error: "Failed to spawn runner: #{inspect(reason)}"})
-      |> Repo.update()
-
-    Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :dispatch_failed})
-
-    {:error, {:spawn_failed, reason, task}}
+    Runs.start_os_process(run, :stage, argv, spawner_opts)
   end
 
   # The project and the issue are carried on the task from here on: every step below

@@ -5,6 +5,7 @@ defmodule Rail.Runs.Actions.StartOsProcess do
   import Rail.Runs.Utils.EnsureExecutable
 
   alias Rail.Backends.Schemas.Backend
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
@@ -15,8 +16,8 @@ defmodule Rail.Runs.Actions.StartOsProcess do
   alias Rail.Tools
 
   @doc """
-  Spawns a detached CLI runner for a run, records the `runs` row, and
-  starts its Follower.
+  Spawns a detached CLI runner for a run, records the `runs` row, starts its
+  Follower, and settles the dispatch either way.
 
   Everything the spawn needs is derived from the run: the executable from
   its role's backend, which is an absolute path, and the working directory and
@@ -25,6 +26,13 @@ defmodule Rail.Runs.Actions.StartOsProcess do
   the Follower invokes when the child exits, and `:allow_fun`, a 1-arity
   function called with the Follower pid so a test can grant it access to
   sandboxed resources.
+
+  Returns `{:ok, %{task: task, run: run, os_process: os_process}}`, or
+  `{:error, {:spawn_failed, reason, task}}`. A `:stage` spawn is the dispatch of
+  the task's stage, so it carries the task with it: on success the task moves to
+  `:running` with the run's pending answer cleared, on failure to `:failed` with
+  the reason recorded, and either way `pipeline_changed` is broadcast. Every
+  other kind rides alongside the stage and leaves the task alone.
   """
   def start_os_process(%Run{} = run, kind, argv, opts \\ []) do
     run = Repo.preload(run, [:task, role: :backend])
@@ -34,11 +42,47 @@ defmodule Rail.Runs.Actions.StartOsProcess do
     stream_path = prepare_stream_files(task, run)
     os_process = insert_os_process(run, kind, stream_path)
 
-    case ensure_executable(executable, os_process, run) do
-      :ok -> launch(os_process, run, executable, argv, stream_path, task, backend, opts)
-      {:error, reason} -> {:error, reason}
+    result =
+      case ensure_executable(executable, os_process, run) do
+        :ok -> launch(os_process, run, executable, argv, stream_path, task, backend, opts)
+        {:error, reason} -> {:error, reason}
+      end
+
+    case result do
+      {:ok, os_process} -> finalize(kind, task, run, os_process)
+      {:error, reason} -> fail(kind, task, reason)
     end
   end
+
+  defp finalize(:stage, task, run, os_process) do
+    {:ok, run} =
+      run
+      |> Run.changeset(%{pending_answer: nil, attempt_log_lines: 0})
+      |> Repo.update()
+
+    {:ok, task} = task |> Task.changeset(%{stage_state: :running}) |> Repo.update()
+
+    Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :dispatched})
+
+    {:ok, %{task: task, run: run, os_process: os_process}}
+  end
+
+  defp finalize(_kind, task, run, os_process) do
+    {:ok, %{task: task, run: run, os_process: os_process}}
+  end
+
+  defp fail(:stage, task, reason) do
+    {:ok, task} =
+      task
+      |> Task.changeset(%{stage_state: :failed, error: "Failed to spawn runner: #{inspect(reason)}"})
+      |> Repo.update()
+
+    Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :dispatch_failed})
+
+    {:error, {:spawn_failed, reason, task}}
+  end
+
+  defp fail(_kind, task, reason), do: {:error, {:spawn_failed, reason, task}}
 
   defp insert_os_process(run, kind, stream_path) do
     attrs = %{

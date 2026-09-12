@@ -17,7 +17,6 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.Schemas.Run
 
   @doc """
   Initiates a stage run for a given task:
@@ -104,10 +103,10 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
         work_dir: worktree_path
       )
 
-    spawn_and_finalize(task, run, argv, opts)
+    spawn_os_process(task, run, argv, opts)
   end
 
-  defp spawn_and_finalize(task, run, argv, opts) do
+  defp spawn_os_process(task, run, argv, opts) do
     settle = settle_action(task)
 
     on_finished_cb =
@@ -116,34 +115,7 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
     spawner_opts =
       [on_finished: on_finished_cb] ++ Keyword.take(opts, [:allow_fun])
 
-    case Runs.start_os_process(run, :stage, argv, spawner_opts) do
-      {:ok, os_process} ->
-        {:ok, updated_run} =
-          run
-          |> Run.changeset(%{pending_answer: nil, attempt_log_lines: 0})
-          |> Repo.update()
-
-        {:ok, updated_task} =
-          task
-          |> Task.changeset(%{stage_state: :running})
-          |> Repo.update()
-
-        Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :dispatched})
-
-        {:ok, %{task: updated_task, run: updated_run, os_process: os_process}}
-
-      {:error, reason} ->
-        error_text = "Failed to spawn runner: #{inspect(reason)}"
-
-        {:ok, updated_task} =
-          task
-          |> Task.changeset(%{stage_state: :failed, error: error_text})
-          |> Repo.update()
-
-        Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :dispatch_failed})
-
-        {:error, {:spawn_failed, reason, updated_task}}
-    end
+    Runs.start_os_process(run, :stage, argv, spawner_opts)
   end
 
   defp maybe_update_worktree_path(%Task{worktree_path: path} = task, path), do: task

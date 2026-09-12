@@ -1,10 +1,10 @@
-defmodule Rail.Pipeline.Actions.StartProductTask do
+defmodule Rail.Pipeline.Actions.StartProductRun do
   @moduledoc """
-  Starts the product stage for an issue, end to end.
+  Starts the product stage for a task, end to end.
 
-  Everything the product stage needs lives here: the task row, the worktree, the
-  scratch ticket file the agent reads and writes, the brief describing that file,
-  and the spawned run.
+  Everything the product stage needs lives here: the worktree, the scratch ticket
+  file the agent reads and writes, the brief describing that file, and the spawned
+  run.
   """
 
   alias Rail.Domain.TicketBody
@@ -17,21 +17,21 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.Schemas.Run
 
   @doc """
-  Starts the product stage for `issue`.
+  Starts the product stage for `task`.
 
-  Reuses the issue's existing task when there is one, otherwise creates one at the
-  `:product` stage. Returns `{:ok, %{task: task, run: run, os_process: os_process}}`.
+  Returns `{:ok, %{task: task, run: run, os_process: os_process}}`.
   """
-  def start_product_task(%Issue{project: %Project{} = project} = issue, opts \\ []) do
-    with {:ok, task} <- Pipeline.create_task(issue, :product),
-         {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :product),
+  def start_product_run(%Task{} = task, opts \\ []) do
+    %Task{project: %Project{} = project} = task = Repo.preload(task, [:project, :issue])
+
+    write_scratch(task)
+
+    with {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :product),
          {:ok, worktree_path} <- ensure_worktree(project, task),
-         _scratch = write_scratch(task, issue),
          {:ok, run} <- Runs.start_or_resume_run(task, role, worktree_path) do
-      spawn_os_process(task, issue, role, run, worktree_path, opts)
+      spawn_os_process(task, role, run, worktree_path, opts)
     end
   end
 
@@ -42,7 +42,7 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     end
   end
 
-  defp write_scratch(%Task{scratch_path: scratch_path}, %Issue{} = issue) do
+  defp write_scratch(%Task{issue: issue, scratch_path: scratch_path}) do
     tickets_dir = Path.join(scratch_path, "tickets")
     File.mkdir_p!(tickets_dir)
 
@@ -55,17 +55,15 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
       })
 
     tickets_dir |> Path.join("#{issue.identifier}.md") |> File.write!(content)
-
-    scratch_path
   end
 
-  defp spawn_os_process(task, issue, role, run, worktree_path, opts) do
+  defp spawn_os_process(task, role, run, worktree_path, opts) do
     prompt =
       Runs.build_prompt(
         task: task,
         backend: role.backend,
         role_instructions: role.system_prompt,
-        context_snippet: brief(issue, task.scratch_path),
+        context_snippet: brief(task),
         pending_answer: run.pending_answer,
         conversation_id: run.conversation_id
       )
@@ -85,14 +83,11 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
       [on_finished: fn os_process, outcome -> Pipeline.settle_product_run(os_process, outcome) end] ++
         Keyword.take(opts, [:allow_fun])
 
-    case Runs.start_os_process(run, :stage, args, spawner_opts) do
-      {:ok, os_process} -> finalize(task, run, os_process)
-      {:error, reason} -> fail(task, reason)
-    end
+    Runs.start_os_process(run, :stage, args, spawner_opts)
   end
 
-  defp brief(%Issue{identifier: identifier}, scratch_path) do
-    file = "#{scratch_path}/tickets/#{identifier}.md"
+  defp brief(%Task{scratch_path: scratch_path} = task) do
+    file = "#{scratch_path}/tickets/#{identifier(task)}.md"
 
     String.trim("""
     The ticket is the file #{file}. Rail publishes that file when your run completes cleanly.
@@ -116,27 +111,6 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     """)
   end
 
-  defp finalize(task, run, os_process) do
-    {:ok, run} =
-      run
-      |> Run.changeset(%{pending_answer: nil, attempt_log_lines: 0})
-      |> Repo.update()
-
-    {:ok, task} = task |> Task.changeset(%{stage_state: :running}) |> Repo.update()
-
-    Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :dispatched})
-
-    {:ok, %{task: task, run: run, os_process: os_process}}
-  end
-
-  defp fail(task, reason) do
-    {:ok, task} =
-      task
-      |> Task.changeset(%{stage_state: :failed, error: "Failed to spawn runner: #{inspect(reason)}"})
-      |> Repo.update()
-
-    Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :dispatch_failed})
-
-    {:error, {:spawn_failed, reason, task}}
-  end
+  defp identifier(%Task{issue: %Issue{identifier: identifier}}), do: identifier
+  defp identifier(%Task{id: id}), do: id
 end

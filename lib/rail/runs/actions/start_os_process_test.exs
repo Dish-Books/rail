@@ -89,7 +89,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
   end
 
   test "spawns child, records runs row, sets os_pid and running status", %{run: run} do
-    {:ok, os_process} =
+    {:ok, %{os_process: os_process}} =
       Runs.start_os_process(run, :stage, ["2"],
         allow_fun: fn pid ->
           Sandbox.allow(Repo, self(), pid)
@@ -112,7 +112,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
     run: run,
     scratch_path: scratch_path
   } do
-    {:ok, os_process} =
+    {:ok, %{os_process: os_process}} =
       Runs.start_os_process(run, :stage, ["2"],
         allow_fun: fn pid ->
           Sandbox.allow(Repo, self(), pid)
@@ -137,7 +137,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
 
     script = ~s(printf '{"cwd":"%s","stream":"%s"}\n' "$PWD" "$RAIL_STREAM")
 
-    {:ok, os_process} =
+    {:ok, %{os_process: os_process}} =
       Runs.start_os_process(run, :stage, ["-c", script],
         allow_fun: fn pid ->
           Sandbox.allow(Repo, self(), pid)
@@ -173,7 +173,9 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
 
     result = Runs.start_os_process(run, :stage, ["--help"])
 
-    assert {:error, {:missing_binary, ^missing_bin, %OsProcess{status: :finished}}} = result
+    assert {:error,
+            {:spawn_failed, {:missing_binary, ^missing_bin, %OsProcess{status: :finished}}, %Task{stage_state: :failed}}} =
+             result
 
     reloaded_run = Repo.get!(Run, run.id)
     assert reloaded_run.status == :finished
@@ -182,7 +184,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
   end
 
   test "always starts a Follower under FollowerSupervisor", %{run: run} do
-    {:ok, os_process} =
+    {:ok, %{os_process: os_process}} =
       Runs.start_os_process(run, :stage, ["2"],
         allow_fun: fn pid ->
           Sandbox.allow(Repo, self(), pid)
@@ -201,7 +203,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
   test "calls opts[:allow_fun] with the Follower pid", %{run: run} do
     test_pid = self()
 
-    {:ok, os_process} =
+    {:ok, %{os_process: os_process}} =
       Runs.start_os_process(run, :stage, ["2"],
         allow_fun: fn pid ->
           Sandbox.allow(Repo, test_pid, pid)
