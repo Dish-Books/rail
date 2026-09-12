@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Runs
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Users
@@ -67,20 +68,27 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
   end
 
   test "starts the product run for a task", %{role: role, issue: issue, task: task} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-
     %Role{id: role_id} = role
     %Task{id: task_id} = task
 
+    expect(Runs, :start_os_process, fn %Run{task_id: ^task_id, role_id: ^role_id, attempts: 1, status: :running} = run,
+                                       argv ->
+      assert ["-p", prompt, "--model", "claude-3-7-sonnet", "--effort", "high" | _flags] = argv
+      assert prompt =~ "tickets/#{issue.identifier}.md"
+      assert "--system-prompt" in argv
+
+      {:ok, %{task: task, run: run, os_process: %OsProcess{task_id: task_id}}}
+    end)
+
     assert {:ok,
             %{
-              task: %Task{id: ^task_id, stage_state: :running, worktree_path: worktree_path},
-              run: %Run{task_id: ^task_id, role_id: ^role_id, attempts: 1, status: :running},
+              task: %Task{id: ^task_id},
+              run: %Run{task_id: ^task_id, role_id: ^role_id},
               os_process: %OsProcess{task_id: ^task_id}
             }} =
              Pipeline.start_product_run(task)
 
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :dispatched}}
+    assert %Task{worktree_path: worktree_path} = Repo.get!(Task, task_id)
     assert byte_size(worktree_path) > 0
 
     content =
@@ -102,10 +110,12 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
 
     user_id = user.id
 
-    {:ok, %Issue{id: issue_id} = issue} =
+    {:ok, %Issue{id: issue_id}} =
       issue |> Issue.changeset(%{owner_user_id: user_id}, issue.project_id) |> Repo.update()
 
-    LinearMock.mock_update_issue_success(%{"id" => issue.external_id})
+    expect(Runs, :start_os_process, fn %Run{} = run, _argv ->
+      {:ok, %{task: task, run: run, os_process: %OsProcess{task_id: task.id}}}
+    end)
 
     assert {:ok, %{task: %Task{issue_id: ^issue_id, stage: :product} = task}} =
              Pipeline.start_product_run(task)

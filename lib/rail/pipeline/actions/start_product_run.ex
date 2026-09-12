@@ -22,7 +22,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
 
   Returns `{:ok, %{task: task, run: run, os_process: os_process}}`.
   """
-  def start_product_run(%Task{} = task, opts \\ []) do
+  def start_product_run(%Task{} = task) do
     %Task{project: %Project{} = project} = task = Repo.preload(task, [:project, :issue])
 
     write_scratch(task)
@@ -30,7 +30,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
     with {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :product),
          {:ok, worktree_path} <- ensure_worktree(project, task),
          {:ok, run} <- Runs.start_or_resume_run(task, role, worktree_path) do
-      spawn_os_process(task, role, run, worktree_path, opts)
+      spawn_os_process(task, role, run, worktree_path)
     end
   end
 
@@ -56,7 +56,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
     tickets_dir |> Path.join("#{issue.identifier}.md") |> File.write!(content)
   end
 
-  defp spawn_os_process(task, role, run, worktree_path, opts) do
+  defp spawn_os_process(task, role, run, worktree_path) do
     prompt =
       Runs.build_prompt(
         task: task,
@@ -78,7 +78,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
         work_dir: worktree_path
       )
 
-    Runs.start_os_process(run, args, Keyword.take(opts, [:allow_fun]))
+    Runs.start_os_process(run, args)
   end
 
   defp brief(%Task{scratch_path: scratch_path} = task) do

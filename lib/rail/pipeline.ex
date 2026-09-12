@@ -24,7 +24,7 @@ defmodule Rail.Pipeline do
   defdelegate parse_stage_verdict(run_or_id), to: Actions.ParseStageVerdict
 
   defdelegate approve_product_task(task, opts \\ []), to: Actions.ApproveProductTask
-  defdelegate start_product_run(task, opts \\ []), to: Actions.StartProductRun
+  defdelegate start_product_run(task), to: Actions.StartProductRun
   defdelegate start_design_task(task, opts \\ []), to: Actions.StartDesignTask
 
   defdelegate create_task(issue, stage), to: Actions.CreateTask
