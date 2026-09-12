@@ -255,9 +255,8 @@ defmodule RailWeb.Components.TaskActionsTest do
     refute html =~ ~s(id="action-chat" data-qa="action-chat" disabled)
   end
 
-  test "renders queued stage with Run now or Retry now" do
-    # Run now
-    html_run =
+  test "renders queued stage with no run control: dispatch is gone" do
+    html =
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :engineer,
@@ -266,21 +265,8 @@ defmodule RailWeb.Components.TaskActionsTest do
         }
       )
 
-    assert html_run =~ "Run now"
-    assert html_run =~ "action-dispatch"
-
-    # Retry now
-    html_retry =
-      render_component(&TaskActions.task_actions/1,
-        task: %Task{
-          stage: :engineer,
-          stage_state: :queued,
-          retry_after: DateTime.utc_now()
-        }
-      )
-
-    assert html_retry =~ "Retry now"
-    assert html_retry =~ "action-dispatch"
+    refute html =~ "action-dispatch"
+    assert html =~ "action-send-back"
   end
 
   test "renders Unblock when blocked and question_id is nil" do

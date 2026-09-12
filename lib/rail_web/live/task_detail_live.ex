@@ -1200,12 +1200,6 @@ defmodule RailWeb.TaskDetailLive do
     execute_action(socket, :cancel, fn -> Pipeline.cancel_task(scope, task) end)
   end
 
-  defp handle_action_click("dispatch", _params, socket) do
-    scope = socket.assigns.current_scope
-    task = socket.assigns.task
-    execute_action(socket, :dispatch, fn -> Pipeline.dispatch_now(scope, task) end)
-  end
-
   defp handle_action_click("unblock", _params, socket) do
     scope = socket.assigns.current_scope
     task = socket.assigns.task

@@ -1,13 +1,11 @@
 defmodule Rail.Pipeline.Actions.RetryStage do
   @moduledoc """
   Action to manually retry a failed or backoff-waiting stage run.
-  Resets auto-retries, clears retry backoff timers and errors, re-queues the stage,
-  and triggers a dispatcher queue pump.
+  Resets auto-retries, clears retry backoff and errors, and re-queues the stage.
   """
 
   import Ecto.Query
 
-  alias Rail.Pipeline.Dispatcher
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
@@ -18,11 +16,10 @@ defmodule Rail.Pipeline.Actions.RetryStage do
   @doc """
   Retries the current stage of a task:
   - Resolves role for the current stage (or engineer if rebasing).
-  - Cancels any active retry timer in Dispatcher.
   - Clears `retry_after` and `error`.
   - Sets `stage_state: :queued`.
   - Resets `auto_retries = 0` on the corresponding `Run`.
-  - Broadcasts `pipeline_changed` and pumps the Dispatcher.
+  - Broadcasts `pipeline_changed`.
   """
   def retry_stage(%Scope{} = scope, task_or_id, opts) when is_list(opts) do
     with :ok <- authorize_scope(scope),
@@ -58,10 +55,7 @@ defmodule Rail.Pipeline.Actions.RetryStage do
     end
   end
 
-  defp execute_retry(%Task{} = task, %Role{} = role, opts) do
-    dispatcher = Keyword.get(opts, :dispatcher, Dispatcher)
-    Dispatcher.cancel_retry_timer(dispatcher, task.id)
-
+  defp execute_retry(%Task{} = task, %Role{} = role, _opts) do
     reset_run_retries(task.id, role.id)
 
     attrs = %{
@@ -76,7 +70,6 @@ defmodule Rail.Pipeline.Actions.RetryStage do
       |> Repo.update()
 
     Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :stage_retried})
-    Dispatcher.pump(dispatcher)
 
     {:ok, updated_task}
   end

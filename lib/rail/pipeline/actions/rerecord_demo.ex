@@ -91,8 +91,6 @@ defmodule Rail.Pipeline.Actions.RerecordDemo do
           event: :demo_rerecord
         })
 
-        Rail.Pipeline.pump_dispatcher()
-
         {:ok, updated_task}
     end
   end

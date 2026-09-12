@@ -1693,8 +1693,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       })
 
     assert {:ok, queued_view, _html} = live(authed_conn, ~p"/tasks/#{queued_task_id}")
-    assert has_element?(queued_view, "#action-dispatch", "Retry now")
-    queued_view |> element("#action-dispatch") |> render_click()
+    refute has_element?(queued_view, "#action-dispatch")
 
     # 6. Unblock on blocked task without pending question
     LinearMock.mock_create_issue_success(%{

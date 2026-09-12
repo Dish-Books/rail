@@ -137,19 +137,7 @@ defmodule RailWeb.Components.TaskActions do
         }
 
       :queued ->
-        is_waiting = task.retry_after != nil
-        label = if is_waiting, do: "Retry now", else: "Run now"
-
         actions = [
-          %{
-            id: "action-dispatch",
-            label: label,
-            kind: :dispatch,
-            style: :filled,
-            icon: "pi-play-fill",
-            action: "dispatch",
-            params: %{}
-          },
           %{
             id: "action-send-back",
             label: "Send back with comments",

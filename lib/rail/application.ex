@@ -17,7 +17,6 @@ defmodule Rail.Application do
           Rail.Runs.Boot,
           {Task.Supervisor, name: Rail.TaskSupervisor},
           Rail.Backends.RefreshServer,
-          Rail.Pipeline.Dispatcher,
           Rail.Pipeline.TaskActionRunner,
           RailWeb.Endpoint
         ]

@@ -110,8 +110,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshness do
         event: :demo_stale_requeued
       })
 
-      Rail.Pipeline.pump_dispatcher()
-
       {:ok, updated_task}
     else
       Rail.Pipeline.broadcast_pipeline_changed(%{

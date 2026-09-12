@@ -12,7 +12,6 @@ defmodule Rail.Pipeline.Actions.ApproveProductTask do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.Dispatcher
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -55,7 +54,6 @@ defmodule Rail.Pipeline.Actions.ApproveProductTask do
           |> Repo.update()
 
         Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :stage_approved})
-        Dispatcher.pump()
 
         {:ok, %{task: task}}
     end

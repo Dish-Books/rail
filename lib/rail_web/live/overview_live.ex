@@ -599,7 +599,7 @@ defmodule RailWeb.OverviewLive do
   defp task_key(%{id: id}) when is_binary(id) and id != "", do: id
 
   defp check_dispatch_disabled do
-    System.get_env("RAIL_NO_DISPATCH") == "1" or Pipeline.dispatch_disabled?()
+    System.get_env("RAIL_NO_DISPATCH") == "1"
   end
 
   defp running_agents_label(1), do: "1 agent running"

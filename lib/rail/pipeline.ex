@@ -5,8 +5,6 @@ defmodule Rail.Pipeline do
   """
 
   alias Rail.Pipeline.Actions
-  alias Rail.Pipeline.Dispatcher
-  alias Rail.Pipeline.Queue
 
   defdelegate settle_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleRun
 
@@ -35,17 +33,6 @@ defmodule Rail.Pipeline do
   defdelegate get_plan(scope, task_or_id), to: Actions.GetPlan
   defdelegate get_plan(task_or_id), to: Actions.GetPlan
   defdelegate broadcast_pipeline_changed(meta \\ %{}), to: Actions.BroadcastPipelineChanged
-  defdelegate list_eligible_tasks(project_or_id, role), to: Queue, as: :eligible_tasks
-  defdelegate pump_dispatcher, to: Dispatcher, as: :pump
-  defdelegate dispatch_now(scope, task_or_id, opts), to: Actions.DispatchNow
-  defdelegate dispatch_now(scope_or_task, task_or_opts), to: Actions.DispatchNow
-  defdelegate dispatch_now(task_or_id), to: Actions.DispatchNow
-  defdelegate dispatch_disabled?, to: Dispatcher
-  defdelegate cancel_retry_timer(task_or_id), to: Dispatcher
-  defdelegate arm_retry_timer(task_or_id), to: Dispatcher
-  defdelegate retry_timers(), to: Dispatcher
-  defdelegate rearm_pending_retries(), to: Dispatcher
-  defdelegate start_stage_run(task, opts \\ []), to: Actions.StartStageRun
 
   defdelegate approve_stage(scope, task_or_id, opts), to: Actions.ApproveStage
   defdelegate approve_stage(scope_or_task, task_or_opts), to: Actions.ApproveStage

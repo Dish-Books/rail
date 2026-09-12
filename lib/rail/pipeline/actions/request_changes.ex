@@ -10,7 +10,6 @@ defmodule Rail.Pipeline.Actions.RequestChanges do
 
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Pipeline
-  alias Rail.Pipeline.Dispatcher
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
@@ -29,7 +28,7 @@ defmodule Rail.Pipeline.Actions.RequestChanges do
     delegates to `SendBackToEngineer`.
   - Sets `stage_state: :queued`, clears `error` and `retry_after`.
   - Appends comment to target run's `pending_answer` and resets `auto_retries = 0`.
-  - Broadcasts `pipeline_changed` and pumps the Dispatcher.
+  - Broadcasts `pipeline_changed`.
   """
   def request_changes(%Scope{} = scope, task_or_id, comment, opts) when is_list(opts) do
     with :ok <- authorize_scope(scope),
@@ -126,7 +125,6 @@ defmodule Rail.Pipeline.Actions.RequestChanges do
       |> Repo.update()
 
     Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :changes_requested})
-    Dispatcher.pump()
 
     {:ok, updated_task}
   end

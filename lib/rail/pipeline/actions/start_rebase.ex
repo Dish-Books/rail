@@ -5,7 +5,6 @@ defmodule Rail.Pipeline.Actions.StartRebase do
   to rebase the task branch against the project's default branch.
   """
 
-  alias Rail.Pipeline.Dispatcher
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Scope
@@ -48,7 +47,7 @@ defmodule Rail.Pipeline.Actions.StartRebase do
     end
   end
 
-  defp execute_rebase_start(%Task{} = task, opts) do
+  defp execute_rebase_start(%Task{} = task, _opts) do
     attrs = %{
       is_rebasing: true,
       stage_state_before_rebase: task.stage_state,
@@ -66,12 +65,6 @@ defmodule Rail.Pipeline.Actions.StartRebase do
       task_id: updated_task.id,
       event: :rebase_started
     })
-
-    dispatcher = Keyword.get(opts, :dispatcher, Dispatcher)
-
-    if GenServer.whereis(dispatcher) do
-      Dispatcher.pump(dispatcher)
-    end
 
     {:ok, updated_task}
   end

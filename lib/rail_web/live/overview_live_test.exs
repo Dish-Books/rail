@@ -6,7 +6,6 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.Dispatcher
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
@@ -548,7 +547,7 @@ defmodule RailWeb.OverviewLiveTest do
     refute render(view) =~ merged_title
   end
 
-  test "renders dispatch banner when RAIL_NO_DISPATCH=1 and when Dispatcher is disabled", %{conn: conn} do
+  test "renders dispatch banner when RAIL_NO_DISPATCH=1", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_overview_live_12",
@@ -565,17 +564,6 @@ defmodule RailWeb.OverviewLiveTest do
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
     assert has_element?(view, "#dispatch-disabled-banner")
     assert render(view) =~ "RAIL_NO_DISPATCH=1 is set"
-
-    System.delete_env("RAIL_NO_DISPATCH")
-
-    Dispatcher.set_dispatch_disabled(true)
-    on_exit(fn -> Dispatcher.set_dispatch_disabled(true) end)
-
-    assert {:ok, view2, _html} = live(authed_conn, ~p"/")
-    assert has_element?(view2, "#dispatch-disabled-banner")
-
-    # Enabling dispatch would mutate the globally registered Dispatcher, which every
-    # other test shares, so the enabled case is covered in Rail.Pipeline.DispatcherTest.
   end
 
   test "renders question card with options, handles answer clicks, text submission, and dismissal", %{

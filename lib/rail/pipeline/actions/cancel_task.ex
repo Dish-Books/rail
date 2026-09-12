@@ -1,13 +1,12 @@
 defmodule Rail.Pipeline.Actions.CancelTask do
   @moduledoc """
   Action to cancel an active or running task run.
-  Cancels retry timers, stops any running follower process, terminates active chat,
-  and updates the task status:
+  Stops any running follower process, terminates active chat, and updates the task
+  status:
   - When rebasing: returns the task to its pre-rebase stage with a rebase cancelled message.
   - When not rebasing: sets stage_state to `:failed` with `"Cancelled."` error.
   """
 
-  alias Rail.Pipeline.Dispatcher
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Runs
@@ -42,13 +41,7 @@ defmodule Rail.Pipeline.Actions.CancelTask do
   defp authorize_scope(%Scope{user: %{}}), do: :ok
   defp authorize_scope(_scope), do: {:error, :not_authorized}
 
-  defp do_cancel_task(%Task{} = task, opts) do
-    dispatcher = Keyword.get(opts, :dispatcher, Dispatcher)
-
-    if GenServer.whereis(dispatcher) do
-      Dispatcher.cancel_retry_timer(dispatcher, task.id)
-    end
-
+  defp do_cancel_task(%Task{} = task, _opts) do
     if is_binary(task.active_chat_role_id) and task.active_chat_role_id != "" do
       Rail.Pipeline.stop_chat_turn(task.id)
     end

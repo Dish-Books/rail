@@ -8,7 +8,6 @@ defmodule Rail.Pipeline.Actions.ApproveStage do
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline.Dispatcher
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
@@ -24,7 +23,7 @@ defmodule Rail.Pipeline.Actions.ApproveStage do
     prepares architect scratch context, and advances to `:architect`.
   - Sets `stage_state: :queued` (or `:awaiting_approval` if advancing to `:ready_to_merge`).
   - Clears `error` and `retry_after`.
-  - Broadcasts `pipeline_changed` and pumps the Dispatcher when queued.
+  - Broadcasts `pipeline_changed`.
   """
   def approve_stage(%Scope{} = scope, task_or_id, opts) when is_list(opts) do
     with :ok <- authorize_scope(scope),
@@ -179,10 +178,6 @@ defmodule Rail.Pipeline.Actions.ApproveStage do
       |> Repo.update()
 
     Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :stage_approved})
-
-    if stage_state == :queued do
-      Dispatcher.pump()
-    end
 
     {:ok, updated_task}
   end

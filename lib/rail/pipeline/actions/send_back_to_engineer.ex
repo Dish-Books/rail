@@ -8,7 +8,6 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
   import Ecto.Query
   import Rail.Pipeline.Utils.CarriedReports
 
-  alias Rail.Pipeline.Dispatcher
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
@@ -26,7 +25,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
   - Collects all gate reports listed in `outstanding_reports` and clears the list.
   - Populates the engineer role's `pending_answer` with human comment, instructions, and reports.
   - Sets `stage = :engineer`, `stage_state = :queued`, clears `error` and `retry_after`.
-  - Broadcasts `pipeline_changed` and pumps the Dispatcher.
+  - Broadcasts `pipeline_changed`.
   """
   def send_back_to_engineer(%Scope{} = scope, task_or_id, opts) do
     with :ok <- authorize_scope(scope),
@@ -106,7 +105,6 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
       |> Repo.update()
 
     Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :sent_back_to_engineer})
-    Dispatcher.pump()
 
     {:ok, updated_task}
   end
