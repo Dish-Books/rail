@@ -11,7 +11,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
   alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -117,7 +117,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
              Pipeline.request_changes(task, "Please rethink architecture")
   end
 
-  test "queues target stage and appends comment to role_run pending_answer", %{task: task, roles: roles} do
+  test "queues target stage and appends comment to run pending_answer", %{task: task, roles: roles} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     {:ok, role_arch} =
@@ -132,8 +132,8 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
         error: "Some error"
       })
 
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_arch.id,
         conversation_id: "sess_fixture",
@@ -148,7 +148,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :changes_requested}}
 
-    arch_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_arch.id)
+    arch_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_arch.id)
     assert arch_run.pending_answer == "Initial notes\n\nClarify database model"
     assert arch_run.auto_retries == 0
   end
@@ -167,7 +167,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
 
     assert {:error, :no_session} = Pipeline.request_changes(task, "Add test coverage")
 
-    assert Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_rev.id) == nil
+    assert Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_rev.id) == nil
   end
 
   test "returns no_session when the target role ran without recording a conversation", %{task: task, roles: roles} do
@@ -179,8 +179,8 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
         stage_state: :awaiting_approval
       })
 
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_rev.id,
         status: :finished,
@@ -203,7 +203,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
       })
 
     {:ok, _seeded_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_eng.id,
         conversation_id: "sess_eng",
@@ -214,7 +214,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
     assert {:ok, %Task{id: ^task_id, stage: :engineer, stage_state: :queued}} =
              Pipeline.request_changes(task, "Need bugfix before merge", stage: :ready_to_merge)
 
-    eng_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
+    eng_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
     assert eng_run.pending_answer =~ "What the human asked for:\n\nNeed bugfix before merge"
   end
 
@@ -232,7 +232,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
       })
 
     {:ok, _seeded_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_eng.id,
         conversation_id: "sess_eng",
@@ -243,7 +243,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
     assert {:ok, %Task{stage: :qa, stage_state: :queued}} =
              Pipeline.request_changes(task, "Resolve merge conflict cleanly")
 
-    eng_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
+    eng_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
     assert eng_run.pending_answer =~ "Resolve merge conflict cleanly"
   end
 
@@ -260,7 +260,7 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
       })
 
     {:ok, _seeded_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_eng.id,
         conversation_id: "sess_eng",
@@ -314,8 +314,8 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
     {:ok, _design} =
       Artifacts.capture_design(system_scope(), task, design_scratch_8551, url_probe: fn _url -> true end)
 
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role_des.id,
         conversation_id: "sess_fixture",
@@ -326,12 +326,12 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
     assert {:ok, %Task{stage: :design, stage_state: :queued}} =
              Pipeline.request_changes(task, "Please make headers bolder")
 
-    des_run = Repo.one(from r in RoleRun, where: r.task_id == ^task.id and r.role_id == ^role_des.id)
+    des_run = Repo.one(from r in Run, where: r.task_id == ^task.id and r.role_id == ^role_des.id)
     assert des_run.pending_answer =~ "The human requested revisions to the picked design:"
     assert des_run.pending_answer =~ "Please make headers bolder"
     assert des_run.pending_answer =~ "rewrite #{task.scratch_path}/design/manifest.json with an incremented `version`"
 
-    events = Repo.all(from e in RunEvent, where: e.role_run_id == ^des_run.id, order_by: [asc: e.seq])
+    events = Repo.all(from e in RunEvent, where: e.run_id == ^des_run.id, order_by: [asc: e.seq])
     assert Enum.any?(events, fn e -> e.line == "[human] Please make headers bolder" end)
   end
 
@@ -371,8 +371,8 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
     {:ok, _design} =
       Artifacts.capture_design(system_scope(), task, design_scratch_8552, url_probe: fn _url -> true end)
 
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role_des.id,
         conversation_id: "sess_fixture",
@@ -383,11 +383,11 @@ defmodule Rail.Pipeline.Actions.RequestChangesTest do
     assert {:ok, %Task{stage: :design, stage_state: :queued}} =
              Pipeline.request_changes(task, "None of these work, try a dark theme")
 
-    des_run = Repo.one(from r in RoleRun, where: r.task_id == ^task.id and r.role_id == ^role_des.id)
+    des_run = Repo.one(from r in Run, where: r.task_id == ^task.id and r.role_id == ^role_des.id)
     assert des_run.pending_answer == "None of these work, try a dark theme"
     refute des_run.pending_answer =~ "rewrite $RAIL_SCRATCH/design/manifest.json"
 
-    events = Repo.all(from e in RunEvent, where: e.role_run_id == ^des_run.id, order_by: [asc: e.seq])
+    events = Repo.all(from e in RunEvent, where: e.run_id == ^des_run.id, order_by: [asc: e.seq])
     assert Enum.any?(events, fn e -> e.line == "[human] None of these work, try a dark theme" end)
   end
 end

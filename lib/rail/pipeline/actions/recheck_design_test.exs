@@ -129,8 +129,8 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         scratch_path: scratch_dir
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: designer_role.id,
         conversation_id: "sess_fixture",
@@ -150,7 +150,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     design = Repo.one(from d in Design, where: d.task_id == ^task_id, order_by: [desc: d.version], limit: 1)
     assert design.canvas_url == "https://claude.ai/design/valid-canvas"
 
-    events = Repo.all(from e in RunEvent, where: e.role_run_id == ^role_run.id, order_by: [asc: e.seq])
+    events = Repo.all(from e in RunEvent, where: e.run_id == ^run.id, order_by: [asc: e.seq])
     assert Enum.any?(events, fn e -> e.line =~ "[rail] Design re-checked: manifest v1 accepted." end)
   end
 
@@ -266,8 +266,8 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         scratch_path: scratch_dir
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: designer_role.id,
         conversation_id: "sess_fixture",
@@ -282,7 +282,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     assert reloaded_task.stage_state == :failed
     assert reloaded_task.error =~ "absolute https URL"
 
-    events = Repo.all(from e in RunEvent, where: e.role_run_id == ^role_run.id, order_by: [asc: e.seq])
+    events = Repo.all(from e in RunEvent, where: e.run_id == ^run.id, order_by: [asc: e.seq])
 
     assert Enum.any?(events, fn e ->
              e.line =~ "[rail] Design re-check turned it down:" and e.line =~ "absolute https URL"
@@ -312,7 +312,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
   test "fails when manifest is missing pickedKey after a pick", %{task: task, roles: roles} do
     {:ok, _design_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task.id,
         role_id: roles[:design].id,
         conversation_id: "sess_design",
@@ -380,7 +380,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
   test "fails when manifest pickedKey does not match chosen direction", %{task: task, roles: roles} do
     {:ok, _design_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task.id,
         role_id: roles[:design].id,
         conversation_id: "sess_design",

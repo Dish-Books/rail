@@ -9,7 +9,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurn do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
 
   @doc """
@@ -42,19 +42,19 @@ defmodule Rail.Pipeline.Actions.StopChatTurn do
   end
 
   defp do_stop_chat_turn(%Task{active_chat_role_id: role_id} = task) do
-    Runs.stop_run(task.id)
+    Runs.stop_os_process(task.id)
 
-    case Repo.one(from r in RoleRun, where: r.task_id == ^task.id and r.role_id == ^role_id) do
-      %RoleRun{} = role_run ->
-        role_run
-        |> RoleRun.changeset(%{
+    case Repo.one(from r in Run, where: r.task_id == ^task.id and r.role_id == ^role_id) do
+      %Run{} = run ->
+        run
+        |> Run.changeset(%{
           pending_chat: nil,
           chat_fingerprint_head_sha: nil,
           chat_fingerprint_dirty_digest: nil
         })
         |> Repo.update!()
 
-        Runs.append_run_event(role_run.id, "[rail] Chat turn stopped by user.")
+        Runs.append_run_event(run.id, "[rail] Chat turn stopped by user.")
 
       nil ->
         :ok

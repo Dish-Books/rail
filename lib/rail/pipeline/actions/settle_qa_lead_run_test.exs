@@ -8,7 +8,7 @@ defmodule Rail.Pipeline.Actions.SettleQaLeadRunTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -95,8 +95,8 @@ defmodule Rail.Pipeline.Actions.SettleQaLeadRunTest do
         stage_state: :running
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_lead.id,
         conversation_id: "sess_fixture",
@@ -106,30 +106,30 @@ defmodule Rail.Pipeline.Actions.SettleQaLeadRunTest do
 
     output = "QA Lead evaluation successful.\n\nVERDICT: PASSED"
 
-    Runs.append_run_event(role_run, output)
+    Runs.append_run_event(run, output)
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa_lead/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_qa_lead/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok,
             %Task{
               id: ^task_id,
               stage: :demo,
               stage_state: :queued
-            }, %RoleRun{status: :finished}} =
-             Pipeline.settle_qa_lead_run(run)
+            }, %Run{status: :finished}} =
+             Pipeline.settle_qa_lead_run(os_process)
   end
 
   test "settles clean exit 0 for qa_lead stage with passed verdict advancing to ready_to_merge if no demo role", %{
@@ -149,8 +149,8 @@ defmodule Rail.Pipeline.Actions.SettleQaLeadRunTest do
         stage_state: :running
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_lead.id,
         conversation_id: "sess_fixture",
@@ -160,29 +160,29 @@ defmodule Rail.Pipeline.Actions.SettleQaLeadRunTest do
 
     output = "QA Lead evaluation successful.\n\nVERDICT: APPROVED"
 
-    Runs.append_run_event(role_run, output)
+    Runs.append_run_event(run, output)
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa_lead/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_qa_lead/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok,
             %Task{
               id: ^task_id,
               stage: :ready_to_merge,
               stage_state: :awaiting_approval
-            }, %RoleRun{status: :finished}} =
-             Pipeline.settle_qa_lead_run(run)
+            }, %Run{status: :finished}} =
+             Pipeline.settle_qa_lead_run(os_process)
   end
 end

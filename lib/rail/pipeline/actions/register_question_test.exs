@@ -14,7 +14,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
   alias Rail.Roles
   alias Rail.Runs
   alias Rail.Runs.DetectedQuestion
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -78,7 +78,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "registers a detected question struct and blocks task and role run", %{task: task, roles: roles} do
+  test "registers a detected question struct and blocks task and run", %{task: task, roles: roles} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     role = roles[:engineer]
@@ -91,8 +91,8 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     task_title = Repo.get!(Issue, task.issue_id).title
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role.id,
         status: :running,
@@ -113,10 +113,10 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
               prompt: "Use Postgres or SQLite?",
               options: ["Postgres", "SQLite"],
               status: :pending
-            }} = Pipeline.register_question(task_id, role_run.id, detector)
+            }} = Pipeline.register_question(task_id, run.id, detector)
 
     assert %Task{stage_state: :blocked, question_id: ^q_id} = Repo.get!(Task, task_id)
-    assert %RoleRun{status: :blocked_on_input} = Repo.get!(RoleRun, role_run.id)
+    assert %Run{status: :blocked_on_input} = Repo.get!(Run, run.id)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :question_registered}}
   end
@@ -130,8 +130,8 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
         stage_state: :running
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :running,
@@ -141,10 +141,10 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     raw_text = "[QUESTION: Which cache backend?] [OPTIONS: Redis, ETS]"
 
     assert {:ok, %Question{prompt: "Which cache backend?", options: ["Redis", "ETS"]}} =
-             Pipeline.register_question(task, role_run, raw_text)
+             Pipeline.register_question(task, run, raw_text)
   end
 
-  test "registers question using map attributes and resolves role when role_run is nil", %{task: task, roles: roles} do
+  test "registers question using map attributes and resolves role when run is nil", %{task: task, roles: roles} do
     _role = roles[:engineer]
 
     {:ok, task} =
@@ -166,8 +166,8 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     assert reloaded.stage_state == :blocked
   end
 
-  test "duplicate suppression: drops question if role_run has pending_answer", %{task: task, roles: roles} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "run:test_role_run")
+  test "duplicate suppression: drops question if run has pending_answer", %{task: task, roles: roles} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:test_run")
 
     role = roles[:engineer]
 
@@ -177,8 +177,8 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
         stage_state: :running
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :running,
@@ -188,7 +188,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     detector = %DetectedQuestion{prompt: "Should I proceed anyway?", options: []}
 
-    assert {:ok, :dropped} = Pipeline.register_question(task.id, role_run.id, detector)
+    assert {:ok, :dropped} = Pipeline.register_question(task.id, run.id, detector)
 
     # Task is NOT blocked
     reloaded_task = Repo.get!(Task, task.id)
@@ -196,7 +196,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     assert is_nil(reloaded_task.question_id)
 
     # Run event recorded
-    events = Repo.all(from e in RunEvent, where: e.role_run_id == ^role_run.id)
+    events = Repo.all(from e in RunEvent, where: e.run_id == ^run.id)
     assert length(events) == 1
     assert hd(events).line =~ "Question asked before the human reply reached this role"
   end
@@ -213,8 +213,8 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
         stage_state: :running
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :running,
@@ -230,7 +230,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     # Incoming question has different casing and extra spaces
     detector = %DetectedQuestion{prompt: "  should we use postgresql?  ", options: []}
 
-    assert {:ok, %Question{id: ^existing_id}} = Pipeline.register_question(task, role_run, detector)
+    assert {:ok, %Question{id: ^existing_id}} = Pipeline.register_question(task, run, detector)
 
     assert %Task{stage_state: :blocked, question_id: ^existing_id} = Repo.get!(Task, task.id)
   end
@@ -252,8 +252,8 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
         question_id: q.id
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :blocked_on_input,
@@ -262,7 +262,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     detector = %DetectedQuestion{prompt: "Second question in same run?", options: []}
 
-    assert {:ok, %Question{} = second} = Pipeline.register_question(task, role_run, detector)
+    assert {:ok, %Question{} = second} = Pipeline.register_question(task, run, detector)
 
     # The second question queues behind the first: the human keeps answering the one
     # already in front, and the stage stays parked.
@@ -272,8 +272,8 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
   end
 
   test "registers a batch of questions in order and parks the task on the first", %{task: task, roles: roles} do
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: roles[:product].id,
         status: :running,
@@ -285,7 +285,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
         "[QUESTION: Which database?] [OPTIONS: PG, MySQL]\n[QUESTION: Ship behind a flag?]\n[QUESTION: Which database?]"
       )
 
-    assert {:ok, results} = Pipeline.register_questions(task, role_run, detected)
+    assert {:ok, results} = Pipeline.register_questions(task, run, detected)
     assert length(results) == 2
 
     pending = pending_questions(task.id)
@@ -294,7 +294,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     task = Repo.get!(Task, task.id)
     assert task.stage_state == :blocked
     assert task.question_id == hd(pending).id
-    assert Repo.get!(RoleRun, role_run.id).status == :blocked_on_input
+    assert Repo.get!(Run, run.id).status == :blocked_on_input
   end
 
   test "error cases: not found, invalid prompt, no question detected", %{project: project, task: task} do

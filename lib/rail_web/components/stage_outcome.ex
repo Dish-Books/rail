@@ -1,6 +1,6 @@
 defmodule RailWeb.Components.StageOutcome do
   @moduledoc """
-  Renders the failure details of a role run for the current stage.
+  Renders the failure details of a run for the current stage.
 
   What a run said is the conversation view's job — it renders the whole log.
   Per spec 05 §7, this does not parse or invent verdict badges.
@@ -8,13 +8,13 @@ defmodule RailWeb.Components.StageOutcome do
   use RailWeb, :html
 
   attr :task, :any, required: true
-  attr :role_run, :any, default: nil
+  attr :run, :any, default: nil
   attr :role_name, :any, default: nil
   attr :class, :string, default: nil
 
   def stage_outcome(assigns) do
     task = assigns.task
-    run = assigns.role_run
+    run = assigns.run
 
     error = if run, do: String.trim(get_field(run, :error) || ""), else: ""
 

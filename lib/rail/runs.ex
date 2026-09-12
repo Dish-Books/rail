@@ -14,12 +14,12 @@ defmodule Rail.Runs do
   alias Rail.Runs.Boot
   alias Rail.Runs.ClaudeEvents
   alias Rail.Runs.Follower
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
   alias Rail.Runs.ToolSummarizer
 
-  defdelegate append_pending_answer(role_run, answer, opts \\ []), to: Actions.AppendPendingAnswer
+  defdelegate append_pending_answer(run, answer, opts \\ []), to: Actions.AppendPendingAnswer
   defdelegate build_args(opts), to: Actions.BuildArgs
   # Process lifecycle and execution
   defdelegate build_prompt(opts), to: Actions.BuildPrompt
@@ -65,13 +65,13 @@ defmodule Rail.Runs do
   @doc """
   Spawns a detached CLI runner, records the `runs` row, and starts its Follower.
   """
-  defdelegate start_run(role_run, kind, argv, opts \\ []), to: Actions.StartRun
+  defdelegate start_os_process(run, kind, argv, opts \\ []), to: Actions.StartOsProcess
 
   @doc """
-  Terminates an active agent execution by run, role_run, or task ID.
+  Terminates an active agent execution by os process, run, or task ID.
   """
-  def stop_run(run_or_role_run_or_task_id, opts \\ []) do
-    Follower.stop_run(run_or_role_run_or_task_id, opts)
+  def stop_os_process(os_process_or_run_or_task_id, opts \\ []) do
+    Follower.stop_os_process(os_process_or_run_or_task_id, opts)
   end
 
   @doc """
@@ -79,7 +79,7 @@ defmodule Rail.Runs do
   """
   def running?(task_id) when is_binary(task_id) do
     Repo.exists?(
-      from r in Run,
+      from r in OsProcess,
         where: r.task_id == ^task_id and r.status in [:starting, :running]
     )
   end
@@ -92,45 +92,45 @@ defmodule Rail.Runs do
   @doc """
   Reconciles and adopts in-flight runs on this node.
   """
-  def adopt_live_runs(opts \\ []) do
-    Boot.adopt_live_runs(opts)
+  def adopt_live_os_processes(opts \\ []) do
+    Boot.adopt_live_os_processes(opts)
   end
 
   @doc """
   Callback invoked when a run completes execution.
   """
-  def on_run_finished(run, outcome) do
-    Phoenix.PubSub.broadcast(Rail.PubSub, "runs", {:run_finished, run, outcome})
+  def on_os_process_finished(os_process, outcome) do
+    Phoenix.PubSub.broadcast(Rail.PubSub, "os_processes", {:os_process_finished, os_process, outcome})
     {:ok, outcome}
   end
 
   @doc """
-  Marks the role run for a task/role pair as running, creating it on first use.
+  Marks the run for a task/role pair as running, creating it on first use.
   """
-  defdelegate start_or_resume_role_run(task, role, worktree_path), to: Actions.StartOrResumeRoleRun
+  defdelegate start_or_resume_run(task, role, worktree_path), to: Actions.StartOrResumeRun
 
   @doc """
-  Creates a new role run record.
+  Creates a new run record.
   """
-  def create_role_run(attrs) do
-    %RoleRun{}
-    |> RoleRun.changeset(attrs)
+  def create_run(attrs) do
+    %Run{}
+    |> Run.changeset(attrs)
     |> Repo.insert()
   end
 
   @doc """
-  Gets a role run by ID.
+  Gets a run by ID.
   """
-  def get_role_run(id), do: Repo.get(RoleRun, id)
+  def get_run(id), do: Repo.get(Run, id)
 
   @doc """
-  Gets the latest role run for a task, optionally filtering by role_id.
+  Gets the latest run for a task, optionally filtering by role_id.
   """
-  def get_latest_role_run_for_task(task_id, role_id \\ nil)
+  def get_latest_run_for_task(task_id, role_id \\ nil)
 
-  def get_latest_role_run_for_task(task_id, role_id) when is_binary(task_id) do
+  def get_latest_run_for_task(task_id, role_id) when is_binary(task_id) do
     query =
-      from(r in RoleRun,
+      from(r in Run,
         where: r.task_id == ^task_id,
         order_by: [desc: r.inserted_at, desc: r.id],
         limit: 1
@@ -150,31 +150,12 @@ defmodule Rail.Runs do
       end
 
     case Repo.one(query) do
-      %RoleRun{} = run -> {:ok, run}
+      %Run{} = os_process -> {:ok, os_process}
       nil -> {:error, :not_found}
     end
   end
 
-  def get_latest_role_run_for_task(_task_id, _role_id), do: {:error, :not_found}
-
-  @doc """
-  Gets a role run by ID, raising if not found.
-  """
-  def get_role_run!(id), do: Repo.get!(RoleRun, id)
-
-  @doc """
-  Updates a role run record.
-  """
-  def update_role_run(%RoleRun{} = role_run, attrs) do
-    role_run
-    |> RoleRun.changeset(attrs)
-    |> Repo.update()
-  end
-
-  @doc """
-  Gets a run by ID.
-  """
-  def get_run(id), do: Repo.get(Run, id)
+  def get_latest_run_for_task(_task_id, _role_id), do: {:error, :not_found}
 
   @doc """
   Gets a run by ID, raising if not found.
@@ -182,14 +163,33 @@ defmodule Rail.Runs do
   def get_run!(id), do: Repo.get!(Run, id)
 
   @doc """
+  Updates a run record.
+  """
+  def update_run(%Run{} = run, attrs) do
+    run
+    |> Run.changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
+  Gets a run by ID.
+  """
+  def get_os_process(id), do: Repo.get(OsProcess, id)
+
+  @doc """
+  Gets a run by ID, raising if not found.
+  """
+  def get_os_process!(id), do: Repo.get!(OsProcess, id)
+
+  @doc """
   Lists runs matching criteria.
   """
-  def list_runs(opts \\ []) do
-    query = from(r in Run, order_by: [desc: r.inserted_at])
+  def list_os_processes(opts \\ []) do
+    query = from(r in OsProcess, order_by: [desc: r.inserted_at])
 
     query =
       Enum.reduce(opts, query, fn
-        {:role_run_id, role_run_id}, q -> where(q, [r], r.role_run_id == ^role_run_id)
+        {:run_id, run_id}, q -> where(q, [r], r.run_id == ^run_id)
         {:task_id, task_id}, q -> where(q, [r], r.task_id == ^task_id)
         {:node, node}, q -> where(q, [r], r.node == ^node)
         {:status, status}, q -> where(q, [r], r.status == ^status)
@@ -202,19 +202,19 @@ defmodule Rail.Runs do
   @doc """
   Lists all active runs (:starting or :running).
   """
-  def list_active_runs(opts \\ []) do
-    list_runs([{:status, :running} | opts])
+  def list_active_os_processes(opts \\ []) do
+    list_os_processes([{:status, :running} | opts])
   end
 
   @doc """
-  Lists all run events for a role run ordered by sequence.
+  Lists all run events for a run ordered by sequence.
   """
-  def list_run_events(role_run_id, opts \\ []) do
+  def list_run_events(run_id, opts \\ []) do
     limit = Keyword.get(opts, :limit)
 
     query =
       from(e in RunEvent,
-        where: e.role_run_id == ^role_run_id,
+        where: e.run_id == ^run_id,
         order_by: [asc: e.seq]
       )
 
@@ -223,27 +223,27 @@ defmodule Rail.Runs do
   end
 
   @doc """
-  Appends an individual log or transcript line to the run_events table for a role run,
+  Appends an individual log or transcript line to the run_events table for a run,
   maintaining sequential ordering and broadcasting to PubSub subscribers.
   """
-  def append_run_event(role_run_or_id, line) do
-    role_run_id =
-      case role_run_or_id do
-        %RoleRun{id: id} -> id
+  def append_run_event(run_or_id, line) do
+    run_id =
+      case run_or_id do
+        %Run{id: id} -> id
         id when is_binary(id) -> id
       end
 
     max_seq =
       Repo.one(
         from e in RunEvent,
-          where: e.role_run_id == ^role_run_id,
+          where: e.run_id == ^run_id,
           select: max(e.seq)
       ) || 0
 
     now = DateTime.utc_now()
 
     event_attrs = %{
-      role_run_id: role_run_id,
+      run_id: run_id,
       seq: max_seq + 1,
       line: line,
       inserted_at: now,
@@ -257,8 +257,8 @@ defmodule Rail.Runs do
 
     Phoenix.PubSub.broadcast(
       Rail.PubSub,
-      "run:#{role_run_id}",
-      {:run_events, role_run_id, [event]}
+      "run:#{run_id}",
+      {:run_events, run_id, [event]}
     )
 
     event
@@ -267,8 +267,8 @@ defmodule Rail.Runs do
   @doc """
   Looks up the Follower GenServer PID for a given run ID if running.
   """
-  def get_follower_pid(run_id) do
-    case Registry.lookup(Rail.Runs.FollowerRegistry, run_id) do
+  def get_follower_pid(os_process_id) do
+    case Registry.lookup(Rail.Runs.FollowerRegistry, os_process_id) do
       [{pid, _value}] -> pid
       _other -> nil
     end

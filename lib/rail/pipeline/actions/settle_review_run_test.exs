@@ -9,7 +9,7 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -96,8 +96,8 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
         worktree_path: git_repo
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_rev.id,
         conversation_id: "sess_fixture",
@@ -107,22 +107,22 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
 
     output = "Code looks great!\n\nVERDICT: APPROVED"
 
-    Runs.append_run_event(role_run, output)
+    Runs.append_run_event(run, output)
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_review/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_review/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok,
             %Task{
@@ -131,12 +131,12 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
               stage_state: :queued,
               outstanding_reports: [^role_rev_id]
             },
-            %RoleRun{
+            %Run{
               status: :finished,
               exit_code: 0,
               stage_fingerprint_head_sha: head_sha,
               stage_fingerprint_dirty_digest: dirty_digest
-            }} = Pipeline.settle_review_run(run)
+            }} = Pipeline.settle_review_run(os_process)
 
     assert is_binary(head_sha) and head_sha != ""
     assert is_binary(dirty_digest) and dirty_digest != ""
@@ -171,8 +171,8 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
         outstanding_reports: [role_prior.id]
       })
 
-    {:ok, prior_role_run} =
-      Runs.create_role_run(%{
+    {:ok, prior_run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_prior.id,
         conversation_id: "sess_fixture",
@@ -180,10 +180,10 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(prior_role_run, "Prior QA note: button is off-center.")
+    Runs.append_run_event(prior_run, "Prior QA note: button is off-center.")
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_rev.id,
         conversation_id: "sess_fixture",
@@ -192,7 +192,7 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
       })
 
     {:ok, _eng_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_eng.id,
         conversation_id: "sess_eng",
@@ -202,22 +202,22 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
 
     output = "Please fix test coverage.\n\nVERDICT: CHANGES REQUESTED"
 
-    Runs.append_run_event(role_run, output)
+    Runs.append_run_event(run, output)
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_review/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_review/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok,
             %Task{
@@ -227,10 +227,10 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
               rework_cycles: 1,
               rework_cycles_by_gate: %{^role_rev_id => 1},
               outstanding_reports: []
-            }, %RoleRun{status: :finished}} =
-             Pipeline.settle_review_run(run)
+            }, %Run{status: :finished}} =
+             Pipeline.settle_review_run(os_process)
 
-    engineer_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
+    engineer_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
     assert engineer_run.pending_answer =~ "Findings from Reviewer on the change you just pushed (rework 1 of 5)"
     assert engineer_run.pending_answer =~ "Please fix test coverage."
     assert engineer_run.pending_answer =~ "Also outstanding: what the other gates last reported"
@@ -255,8 +255,8 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
         rework_cycles_by_gate: %{role_rev.id => 3}
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_rev.id,
         conversation_id: "sess_fixture",
@@ -266,22 +266,22 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
 
     output = "Still not fixed.\n\nVERDICT: FAIL"
 
-    Runs.append_run_event(role_run, output)
+    Runs.append_run_event(run, output)
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_review/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_review/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok,
             %Task{
@@ -290,8 +290,8 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
               stage_state: :awaiting_approval,
               rework_cycles: 3,
               error: err
-            }, %RoleRun{status: :finished}} =
-             Pipeline.settle_review_run(run)
+            }, %Run{status: :finished}} =
+             Pipeline.settle_review_run(os_process)
 
     assert err =~ "Reviewer is still requesting changes after 3 rework cycles."
     assert err =~ "Send back to Engineer to have them addressed, or Skip"
@@ -309,8 +309,8 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
         stage_state: :running
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_rev.id,
         conversation_id: "sess_fixture",
@@ -320,22 +320,22 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
 
     output = "Here are some notes but no verdict keyword."
 
-    Runs.append_run_event(role_run, output)
+    Runs.append_run_event(run, output)
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_review/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_review/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok,
             %Task{
@@ -343,8 +343,8 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
               stage_state: :awaiting_approval,
               error: err,
               outstanding_reports: [^role_rev_id]
-            }, %RoleRun{status: :finished}} =
-             Pipeline.settle_review_run(run)
+            }, %Run{status: :finished}} =
+             Pipeline.settle_review_run(os_process)
 
     assert err =~ "Reviewer ended without a clear verdict. Read its report, then Send back to Engineer or Skip"
   end
@@ -373,8 +373,8 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
         worktree_path: git_repo
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_rev.id,
         conversation_id: "sess_fixture",
@@ -383,7 +383,7 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
       })
 
     {:ok, _qa_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_qa.id,
         conversation_id: "sess_qa",
@@ -393,27 +393,27 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
 
     output = "Rework resolved nicely.\n\nVERDICT: APPROVED"
 
-    Runs.append_run_event(role_run, output)
+    Runs.append_run_event(run, output)
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_review/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_review/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-    assert {:ok, %Task{stage: :qa, stage_state: :queued}, %RoleRun{stage_fingerprint_head_sha: head_sha}} =
-             Pipeline.settle_review_run(run)
+    assert {:ok, %Task{stage: :qa, stage_state: :queued}, %Run{stage_fingerprint_head_sha: head_sha}} =
+             Pipeline.settle_review_run(os_process)
 
-    qa_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_qa.id)
+    qa_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_qa.id)
     assert qa_run.pending_answer =~ "The change has been reworked and the reviewer has signed off on it again."
     assert qa_run.pending_answer =~ "The reworked change is commit #{head_sha}."
   end
@@ -435,8 +435,8 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
         worktree_path: git_repo
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_rev.id,
         conversation_id: "sess_fixture",
@@ -446,27 +446,27 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
 
     output = "Rework resolved nicely.\n\nVERDICT: APPROVED"
 
-    Runs.append_run_event(role_run, output)
+    Runs.append_run_event(run, output)
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_review/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_review/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-    assert {:ok, %Task{stage: :qa, stage_state: :queued}, %RoleRun{}} =
-             Pipeline.settle_review_run(run)
+    assert {:ok, %Task{stage: :qa, stage_state: :queued}, %Run{}} =
+             Pipeline.settle_review_run(os_process)
 
-    assert Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_qa.id) == nil
+    assert Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_qa.id) == nil
   end
 
   test "settles gate with changes_requested appending to existing engineer pending_answer or missing engineer role", %{
@@ -491,8 +491,8 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
         rework_budget_base: 0
       })
 
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_eng.id,
         conversation_id: "sess_fixture",
@@ -501,8 +501,8 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
         pending_answer: "Old engineer notes"
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_rev.id,
         conversation_id: "sess_fixture",
@@ -512,27 +512,27 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
 
     output = "Please fix tests.\n\nVERDICT: CHANGES REQUESTED"
 
-    Runs.append_run_event(role_run, output)
+    Runs.append_run_event(run, output)
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_review/#{role_run.id}-#{System.unique_integer([:positive])}.ndjson",
+        stream_path: "/tmp/settle_review/#{run.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _st, _srr} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _st, _srr} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-    assert {:ok, %Task{stage: :engineer, stage_state: :queued}, %RoleRun{status: :finished}} =
-             Pipeline.settle_review_run(run)
+    assert {:ok, %Task{stage: :engineer, stage_state: :queued}, %Run{status: :finished}} =
+             Pipeline.settle_review_run(os_process)
 
-    eng_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
+    eng_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
     assert eng_run.pending_answer =~ "Old engineer notes\n\nFindings from Reviewer"
 
     # Part B: Project without engineer role
@@ -579,8 +579,8 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
         rework_budget_base: 0
       })
 
-    {:ok, role_run2} =
-      Runs.create_role_run(%{
+    {:ok, run2} =
+      Runs.create_run(%{
         task_id: task_id2,
         role_id: role_rev2.id,
         conversation_id: "sess_fixture",
@@ -588,15 +588,15 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run2, output)
+    Runs.append_run_event(run2, output)
 
     run_2 =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run2.id,
-        task_id: role_run2.task_id,
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run2.id,
+        task_id: run2.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_review/#{role_run2.id}-#{System.unique_integer([:positive])}.ndjson",
+        stream_path: "/tmp/settle_review/#{run2.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
@@ -605,11 +605,11 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
 
     {:ok, _st, _srr} = Pipeline.settle_run(run_2, %{exit_code: 0})
 
-    assert {:ok, %Task{stage: :engineer, stage_state: :queued}, %RoleRun{status: :finished}} =
+    assert {:ok, %Task{stage: :engineer, stage_state: :queued}, %Run{status: :finished}} =
              Pipeline.settle_review_run(run_2)
   end
 
-  test "resolve_fingerprint falls back to role_run fingerprint when worktree_path is not a git repo", %{
+  test "resolve_fingerprint falls back to run fingerprint when worktree_path is not a git repo", %{
     task: task,
     roles: roles
   } do
@@ -630,8 +630,8 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
         worktree_path: "/tmp/nonexistent_git_dir_#{System.unique_integer([:positive])}"
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_rev.id,
         conversation_id: "sess_fixture",
@@ -643,25 +643,25 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
 
     output = "Approved.\n\nVERDICT: APPROVED"
 
-    Runs.append_run_event(role_run, output)
+    Runs.append_run_event(run, output)
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_review/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_review/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{stage: :qa},
-            %RoleRun{stage_fingerprint_head_sha: "fallback_sha", stage_fingerprint_dirty_digest: "fallback_digest"}} =
-             Pipeline.settle_review_run(run)
+            %Run{stage_fingerprint_head_sha: "fallback_sha", stage_fingerprint_dirty_digest: "fallback_digest"}} =
+             Pipeline.settle_review_run(os_process)
   end
 end

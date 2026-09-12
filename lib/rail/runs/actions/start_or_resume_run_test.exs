@@ -1,11 +1,11 @@
-defmodule Rail.Runs.Actions.StartOrResumeRoleRunTest do
+defmodule Rail.Runs.Actions.StartOrResumeRunTest do
   use Rail.DataCase, async: true
 
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
 
   setup do
-    worktree = create_temp_git_repo(prefix: "start_or_resume_role_run")
+    worktree = create_temp_git_repo(prefix: "start_or_resume_run")
 
     %{
       task: %{id: UXID.generate!(prefix: "tsk")},
@@ -14,38 +14,38 @@ defmodule Rail.Runs.Actions.StartOrResumeRoleRunTest do
     }
   end
 
-  test "creates the role run on first start, stamped with the worktree fingerprint", %{
+  test "creates the run on first start, stamped with the worktree fingerprint", %{
     task: task,
     role: role,
     worktree: worktree
   } do
-    assert {:ok, role_run} = Runs.start_or_resume_role_run(task, role, worktree)
+    assert {:ok, run} = Runs.start_or_resume_run(task, role, worktree)
 
-    assert %RoleRun{status: :running, attempts: 1} = role_run
-    assert role_run.task_id == task.id
-    assert role_run.role_id == role.id
-    assert role_run.started_at
-    assert role_run.stage_fingerprint_head_sha == head_sha(worktree)
-    assert is_binary(role_run.stage_fingerprint_dirty_digest)
+    assert %Run{status: :running, attempts: 1} = run
+    assert run.task_id == task.id
+    assert run.role_id == role.id
+    assert run.started_at
+    assert run.stage_fingerprint_head_sha == head_sha(worktree)
+    assert is_binary(run.stage_fingerprint_dirty_digest)
   end
 
-  test "resumes the existing role run, bumping attempts and restamping the fingerprint", %{
+  test "resumes the existing run, bumping attempts and restamping the fingerprint", %{
     task: task,
     role: role,
     worktree: worktree
   } do
-    {:ok, first} = Runs.start_or_resume_role_run(task, role, worktree)
+    {:ok, first} = Runs.start_or_resume_run(task, role, worktree)
 
     File.write!(Path.join(worktree, "tracked.txt"), "changed\n")
     git!(worktree, ["commit", "-am", "second"])
 
-    {:ok, second} = Runs.start_or_resume_role_run(task, role, worktree)
+    {:ok, second} = Runs.start_or_resume_run(task, role, worktree)
 
     assert second.id == first.id
     assert second.attempts == 2
     assert second.stage_fingerprint_head_sha == head_sha(worktree)
     assert second.stage_fingerprint_head_sha != first.stage_fingerprint_head_sha
-    assert Repo.aggregate(RoleRun, :count) == 1
+    assert Repo.aggregate(Run, :count) == 1
   end
 
   test "leaves .rail/ changes out of the dirty digest", %{
@@ -53,19 +53,19 @@ defmodule Rail.Runs.Actions.StartOrResumeRoleRunTest do
     role: role,
     worktree: worktree
   } do
-    {:ok, before} = Runs.start_or_resume_role_run(task, role, worktree)
+    {:ok, before} = Runs.start_or_resume_run(task, role, worktree)
 
     File.mkdir_p!(Path.join(worktree, ".rail"))
     File.write!(Path.join([worktree, ".rail", "notes.md"]), "scratch\n")
 
-    {:ok, after_rail_write} = Runs.start_or_resume_role_run(task, role, worktree)
+    {:ok, after_rail_write} = Runs.start_or_resume_run(task, role, worktree)
 
     assert after_rail_write.stage_fingerprint_dirty_digest ==
              before.stage_fingerprint_dirty_digest
 
     File.write!(Path.join(worktree, "tracked.txt"), "edited\n")
 
-    {:ok, after_code_write} = Runs.start_or_resume_role_run(task, role, worktree)
+    {:ok, after_code_write} = Runs.start_or_resume_run(task, role, worktree)
 
     refute after_code_write.stage_fingerprint_dirty_digest ==
              before.stage_fingerprint_dirty_digest
@@ -74,20 +74,20 @@ defmodule Rail.Runs.Actions.StartOrResumeRoleRunTest do
   test "leaves the fingerprint nil when git cannot answer", %{task: task, role: role} do
     non_repo = Path.join(System.tmp_dir!(), "sorrr_missing_#{System.unique_integer([:positive])}")
 
-    assert {:ok, role_run} = Runs.start_or_resume_role_run(task, role, non_repo)
-    assert role_run.stage_fingerprint_head_sha == nil
-    assert role_run.stage_fingerprint_dirty_digest == nil
+    assert {:ok, run} = Runs.start_or_resume_run(task, role, non_repo)
+    assert run.stage_fingerprint_head_sha == nil
+    assert run.stage_fingerprint_dirty_digest == nil
   end
 
-  test "keeps role runs of other roles on the same task separate", %{
+  test "keeps runs of other roles on the same task separate", %{
     task: task,
     role: role,
     worktree: worktree
   } do
     other_role = %{id: UXID.generate!(prefix: "rol")}
 
-    {:ok, first} = Runs.start_or_resume_role_run(task, role, worktree)
-    {:ok, other} = Runs.start_or_resume_role_run(task, other_role, worktree)
+    {:ok, first} = Runs.start_or_resume_run(task, role, worktree)
+    {:ok, other} = Runs.start_or_resume_run(task, other_role, worktree)
 
     assert first.id != other.id
     assert other.attempts == 1

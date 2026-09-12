@@ -17,7 +17,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Users
   alias Rail.Users.Schemas.User
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -240,7 +240,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
            } = preloaded
   end
 
-  test "preloads has_many questions, plans, role_runs, and designs", %{task: task, roles: roles} do
+  test "preloads has_many questions, plans, runs, and designs", %{task: task, roles: roles} do
     %Task{id: task_id} = task = task
 
     {:ok, _question} =
@@ -257,8 +257,8 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
     {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
 
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
         status: :finished,
@@ -289,12 +289,12 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     {:ok, _design} =
       Artifacts.capture_design(system_scope(), task, design_scratch_13102, url_probe: fn _url -> true end)
 
-    preloaded = Repo.preload(task, [:questions, :plans, :role_runs, :designs])
+    preloaded = Repo.preload(task, [:questions, :plans, :runs, :designs])
 
     assert %Task{
              questions: [%Question{task_id: ^task_id}],
              plans: [%Plan{task_id: ^task_id}],
-             role_runs: [%RoleRun{task_id: ^task_id}],
+             runs: [%Run{task_id: ^task_id}],
              designs: [%Design{task_id: ^task_id}]
            } = preloaded
   end
@@ -318,7 +318,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       assert Task.uses_design?(%Task{stage: :design})
     end
 
-    test "returns true when role_runs list includes designer run" do
+    test "returns true when runs list includes designer run" do
       task = %Task{id: "tsk_1", project_id: "prj_1", stage: :architect}
 
       assert Task.uses_design?(task, [%{role_id: "designer", task_id: "tsk_1"}])
@@ -326,7 +326,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       refute Task.uses_design?(task, [%{role_id: "engineer", task_id: "tsk_1"}])
     end
 
-    test "checks database role_runs when task has advanced past design", %{project: project, task: task, roles: roles} do
+    test "checks database runs when task has advanced past design", %{project: project, task: task, roles: roles} do
       designer = roles[:design]
 
       {:ok, task_with_run} =
@@ -350,7 +350,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
         })
 
       {:ok, _run} =
-        Runs.create_role_run(%{
+        Runs.create_run(%{
           task_id: task_with_run.id,
           role_id: designer.id,
           status: :finished,
@@ -360,10 +360,10 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       assert Task.uses_design?(task_with_run)
       refute Task.uses_design?(task_without_run)
 
-      # role_runs with role_id matching DB designer role
+      # runs with role_id matching DB designer role
       assert Task.uses_design?(task_with_run, [%{role_id: designer.id, task_id: task_with_run.id}])
 
-      # role run without designer role
+      # run without designer role
       refute Task.uses_design?(task_with_run, [%{task_id: task_with_run.id, role_id: nil}])
 
       # project with no designer role in database

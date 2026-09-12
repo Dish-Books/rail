@@ -94,28 +94,28 @@ defmodule Rail.RunsTest do
     assert %AgyEvents{conversation_id: "conv-2"} = agy_result
   end
 
-  test "create_role_run/1, get_role_run/1, get_role_run!/1, update_role_run/2" do
+  test "create_run/1, get_run/1, get_run!/1, update_run/2" do
     task_id = UXID.generate!(prefix: "tsk")
     role_id = UXID.generate!(prefix: "rol")
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_id,
         status: :starting,
         started_at: DateTime.utc_now()
       })
 
-    assert role_run.id =~ "rr_"
-    assert Runs.get_role_run(role_run.id).id == role_run.id
-    assert Runs.get_role_run!(role_run.id).id == role_run.id
-    assert is_nil(Runs.get_role_run("rr_nonexistent"))
+    assert run.id =~ "run_"
+    assert Runs.get_run(run.id).id == run.id
+    assert Runs.get_run!(run.id).id == run.id
+    assert is_nil(Runs.get_run("rr_nonexistent"))
 
-    {:ok, updated} = Runs.update_role_run(role_run, %{status: :running})
+    {:ok, updated} = Runs.update_run(run, %{status: :running})
     assert updated.status == :running
   end
 
-  test "get_run/1, get_run!/1, list_runs/1, list_active_runs/1" do
+  test "get_os_process/1, get_os_process!/1, list_os_processes/1, list_active_os_processes/1" do
     scope = system_scope()
     unique = System.unique_integer([:positive])
     tmp_dir = Path.join(System.tmp_dir!(), "runs_test_#{unique}")
@@ -168,8 +168,8 @@ defmodule Rail.RunsTest do
       )
       |> Repo.insert()
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :running,
@@ -178,61 +178,61 @@ defmodule Rail.RunsTest do
 
     task_id = task.id
 
-    {:ok, run} =
-      Runs.start_run(role_run, :stage, ["5"], allow_fun: fn pid -> Sandbox.allow(Repo, self(), pid) end)
+    {:ok, os_process} =
+      Runs.start_os_process(run, :stage, ["5"], allow_fun: fn pid -> Sandbox.allow(Repo, self(), pid) end)
 
-    assert Runs.get_run(run.id).id == run.id
-    assert Runs.get_run!(run.id).id == run.id
-    assert is_nil(Runs.get_run("run_nonexistent"))
+    assert Runs.get_os_process(os_process.id).id == os_process.id
+    assert Runs.get_os_process!(os_process.id).id == os_process.id
+    assert is_nil(Runs.get_os_process("run_nonexistent"))
 
-    all_runs = Runs.list_runs(task_id: task_id)
+    all_runs = Runs.list_os_processes(task_id: task_id)
     assert length(all_runs) == 1
-    assert hd(all_runs).id == run.id
+    assert hd(all_runs).id == os_process.id
 
-    node_runs = Runs.list_runs(node: run.node, status: :running, ignore_unknown: true)
+    node_runs = Runs.list_os_processes(node: os_process.node, status: :running, ignore_unknown: true)
     assert length(node_runs) == 1
 
-    active_runs = Runs.list_active_runs(role_run_id: role_run.id)
+    active_runs = Runs.list_active_os_processes(run_id: run.id)
     assert length(active_runs) == 1
 
-    Runs.stop_run(run.id, grace_period: 50)
+    Runs.stop_os_process(os_process.id, grace_period: 50)
   end
 
   test "list_run_events/2 returns events ordered by seq with optional limit" do
     role_id = UXID.generate!(prefix: "rol")
     task_id = UXID.generate!(prefix: "tsk")
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_id,
         status: :running,
         started_at: DateTime.utc_now()
       })
 
-    Repo.insert!(%RunEvent{role_run_id: role_run.id, seq: 1, line: "line 1"})
-    Repo.insert!(%RunEvent{role_run_id: role_run.id, seq: 2, line: "line 2"})
-    Repo.insert!(%RunEvent{role_run_id: role_run.id, seq: 3, line: "line 3"})
+    Repo.insert!(%RunEvent{run_id: run.id, seq: 1, line: "line 1"})
+    Repo.insert!(%RunEvent{run_id: run.id, seq: 2, line: "line 2"})
+    Repo.insert!(%RunEvent{run_id: run.id, seq: 3, line: "line 3"})
 
-    events = Runs.list_run_events(role_run.id)
+    events = Runs.list_run_events(run.id)
     assert length(events) == 3
     assert Enum.map(events, & &1.seq) == [1, 2, 3]
 
-    limited = Runs.list_run_events(role_run.id, limit: 2)
+    limited = Runs.list_run_events(run.id, limit: 2)
     assert length(limited) == 2
   end
 
-  test "on_run_finished/2 broadcasts on PubSub" do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "runs")
+  test "on_os_process_finished/2 broadcasts on PubSub" do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "os_processes")
 
-    run = %Rail.Runs.Schemas.Run{id: "run_test"}
+    os_process = %Rail.Runs.Schemas.OsProcess{id: "run_test"}
     outcome = %{exit_code: 0}
 
-    assert {:ok, ^outcome} = Runs.on_run_finished(run, outcome)
-    assert_receive {:run_finished, ^run, ^outcome}, 500
+    assert {:ok, ^outcome} = Runs.on_os_process_finished(os_process, outcome)
+    assert_receive {:os_process_finished, ^os_process, ^outcome}, 500
   end
 
-  test "start_run/4 and stop_run/2 through Runs context" do
+  test "start_os_process/4 and stop_os_process/2 through Runs context" do
     scope = system_scope()
     unique = System.unique_integer([:positive])
     tmp_dir = Path.join(System.tmp_dir!(), "runs_test_#{unique}")
@@ -285,8 +285,8 @@ defmodule Rail.RunsTest do
       )
       |> Repo.insert()
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :running,
@@ -295,31 +295,31 @@ defmodule Rail.RunsTest do
 
     task_id = task.id
 
-    {:ok, run} =
-      Runs.start_run(role_run, :stage, ["30"], allow_fun: fn pid -> Sandbox.allow(Repo, self(), pid) end)
+    {:ok, os_process} =
+      Runs.start_os_process(run, :stage, ["30"], allow_fun: fn pid -> Sandbox.allow(Repo, self(), pid) end)
 
-    follower_pid = Runs.get_follower_pid(run.id)
+    follower_pid = Runs.get_follower_pid(os_process.id)
     assert is_pid(follower_pid)
     assert Process.alive?(follower_pid)
     assert Runs.is_running?(task_id)
     refute Runs.is_running?("tsk_nonexistent")
     refute Runs.is_running?(123)
 
-    {:ok, stopped} = Runs.stop_run(task_id, grace_period: 50)
+    {:ok, stopped} = Runs.stop_os_process(task_id, grace_period: 50)
     assert stopped.status == :finished
     refute Runs.is_running?(task_id)
   end
 
-  test "adopt_live_runs/1 delegates to Boot" do
-    assert Runs.adopt_live_runs(node: "empty_node") == []
+  test "adopt_live_os_processes/1 delegates to Boot" do
+    assert Runs.adopt_live_os_processes(node: "empty_node") == []
   end
 
-  test "append_run_event/2 accepts %RoleRun{} struct and persists sequentially" do
+  test "append_run_event/2 accepts %Run{} struct and persists sequentially" do
     task_id = UXID.generate!(prefix: "tsk")
     role_id = UXID.generate!(prefix: "rol")
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_id,
         status: :running,
@@ -327,32 +327,32 @@ defmodule Rail.RunsTest do
       })
 
     assert %RunEvent{line: "Line from struct", seq: 1} =
-             Runs.append_run_event(role_run, "Line from struct")
+             Runs.append_run_event(run, "Line from struct")
 
     assert Runs.chat_prompt("Hi") =~ "Human message:\nHi"
   end
 
-  test "get_latest_role_run_for_task/2 returns latest run" do
+  test "get_latest_run_for_task/2 returns latest run" do
     task_id = UXID.generate!(prefix: "tsk")
 
-    assert {:error, :not_found} = Runs.get_latest_role_run_for_task(task_id)
-    assert {:error, :not_found} = Runs.get_latest_role_run_for_task(nil)
+    assert {:error, :not_found} = Runs.get_latest_run_for_task(task_id)
+    assert {:error, :not_found} = Runs.get_latest_run_for_task(nil)
 
     role_id_1 = UXID.generate!(prefix: "rol")
     role_id_2 = UXID.generate!(prefix: "rol")
     now = DateTime.utc_now()
 
     {:ok, %{id: expected_1_id}} =
-      Runs.create_role_run(%{task_id: task_id, role_id: role_id_1, status: :finished, started_at: now})
+      Runs.create_run(%{task_id: task_id, role_id: role_id_1, status: :finished, started_at: now})
 
     {:ok, %{id: expected_any_id}} =
-      Runs.create_role_run(%{task_id: task_id, role_id: role_id_2, status: :finished, started_at: now})
+      Runs.create_run(%{task_id: task_id, role_id: role_id_2, status: :finished, started_at: now})
 
-    assert {:ok, %{id: ^expected_any_id}} = Runs.get_latest_role_run_for_task(task_id)
-    assert {:ok, %{id: ^expected_1_id}} = Runs.get_latest_role_run_for_task(task_id, role_id_1)
+    assert {:ok, %{id: ^expected_any_id}} = Runs.get_latest_run_for_task(task_id)
+    assert {:ok, %{id: ^expected_1_id}} = Runs.get_latest_run_for_task(task_id, role_id_1)
 
     other_role_id = UXID.generate!(prefix: "rol")
-    assert {:error, :not_found} = Runs.get_latest_role_run_for_task(task_id, other_role_id)
-    assert {:error, :not_found} = Runs.get_latest_role_run_for_task(task_id, :reviewer)
+    assert {:error, :not_found} = Runs.get_latest_run_for_task(task_id, other_role_id)
+    assert {:error, :not_found} = Runs.get_latest_run_for_task(task_id, :reviewer)
   end
 end

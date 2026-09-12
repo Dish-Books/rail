@@ -87,7 +87,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
       assert {:ok,
               %QaReport{
                 task_id: "tsk_qa_cap_1",
-                role_run_id: "rr_abc",
+                run_id: "rr_abc",
                 commit: "abc1234",
                 rows: [
                   %QaRow{
@@ -103,7 +103,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
                Artifacts.capture_qa_report(scope, "tsk_qa_cap_1", dir,
                  issue: issue,
                  project: project,
-                 role_run_id: "rr_abc"
+                 run_id: "rr_abc"
                )
     end
 

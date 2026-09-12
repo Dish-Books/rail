@@ -6,21 +6,21 @@ defmodule Rail.Pipeline.Actions.ParseStageVerdictTest do
   alias Rail.Runs
 
   setup do
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: UXID.generate!(prefix: "rol"),
         status: :finished,
         started_at: DateTime.utc_now()
       })
 
-    %{role_run: role_run}
+    %{run: run}
   end
 
-  test "reads the verdict line the stage brief asks for", %{role_run: role_run} do
-    Runs.append_run_event(role_run, "findings...\n\nVERDICT: APPROVED")
+  test "reads the verdict line the stage brief asks for", %{run: run} do
+    Runs.append_run_event(run, "findings...\n\nVERDICT: APPROVED")
 
-    assert %StageVerdict{verdict: :passed, status: :passed} = Pipeline.parse_stage_verdict(role_run)
+    assert %StageVerdict{verdict: :passed, status: :passed} = Pipeline.parse_stage_verdict(run)
   end
 
   for {line, expected} <- [
@@ -33,15 +33,15 @@ defmodule Rail.Pipeline.Actions.ParseStageVerdictTest do
         {"- **APPROVED**", :passed},
         {"> VERDICT: FAILED", :changes_requested}
       ] do
-    test "reads #{inspect(line)} as #{expected}", %{role_run: role_run} do
-      Runs.append_run_event(role_run, unquote(line))
+    test "reads #{inspect(line)} as #{expected}", %{run: run} do
+      Runs.append_run_event(run, unquote(line))
 
-      assert %StageVerdict{verdict: unquote(expected)} = Pipeline.parse_stage_verdict(role_run)
+      assert %StageVerdict{verdict: unquote(expected)} = Pipeline.parse_stage_verdict(run)
     end
   end
 
-  test "takes the last verdict, since the words appear in the findings", %{role_run: role_run} do
-    Runs.append_run_event(role_run, """
+  test "takes the last verdict, since the words appear in the findings", %{run: run} do
+    Runs.append_run_event(run, """
     [high] correctness lib/a.dart:12
     The check passed on the happy path only.
     I would have APPROVED this without the leak.
@@ -49,11 +49,11 @@ defmodule Rail.Pipeline.Actions.ParseStageVerdictTest do
     VERDICT: CHANGES REQUESTED
     """)
 
-    assert %StageVerdict{verdict: :changes_requested} = Pipeline.parse_stage_verdict(role_run)
+    assert %StageVerdict{verdict: :changes_requested} = Pipeline.parse_stage_verdict(run)
   end
 
-  test "ignores the pass/fail cells in a QA table", %{role_run: role_run} do
-    Runs.append_run_event(role_run, """
+  test "ignores the pass/fail cells in a QA table", %{run: run} do
+    Runs.append_run_event(run, """
     | check | result | severity | evidence |
     | --- | --- | --- | --- |
     | task persists a restart | pass | - | tasks/task-1.json |
@@ -62,68 +62,68 @@ defmodule Rail.Pipeline.Actions.ParseStageVerdictTest do
     VERDICT: FAIL
     """)
 
-    assert %StageVerdict{verdict: :changes_requested} = Pipeline.parse_stage_verdict(role_run)
+    assert %StageVerdict{verdict: :changes_requested} = Pipeline.parse_stage_verdict(run)
   end
 
-  test "a sentence about the review is not a verdict line", %{role_run: role_run} do
-    Runs.append_run_event(role_run, "APPROVED with three nits I have not listed")
-    Runs.append_run_event(role_run, "This would have passed if the timer were disposed")
+  test "a sentence about the review is not a verdict line", %{run: run} do
+    Runs.append_run_event(run, "APPROVED with three nits I have not listed")
+    Runs.append_run_event(run, "This would have passed if the timer were disposed")
 
-    assert %StageVerdict{verdict: :unclear} = Pipeline.parse_stage_verdict(role_run)
+    assert %StageVerdict{verdict: :unclear} = Pipeline.parse_stage_verdict(run)
   end
 
-  test "a run that states none is unclear rather than a guess", %{role_run: role_run} do
-    assert %StageVerdict{verdict: :unclear} = Pipeline.parse_stage_verdict(role_run)
+  test "a run that states none is unclear rather than a guess", %{run: run} do
+    assert %StageVerdict{verdict: :unclear} = Pipeline.parse_stage_verdict(run)
 
-    Runs.append_run_event(role_run, "I could not read the diff; the worktree was gone.")
+    Runs.append_run_event(run, "I could not read the diff; the worktree was gone.")
 
-    assert %StageVerdict{verdict: :unclear} = Pipeline.parse_stage_verdict(role_run)
+    assert %StageVerdict{verdict: :unclear} = Pipeline.parse_stage_verdict(run)
   end
 
-  test "an explained verdict captures its explanation", %{role_run: role_run} do
-    Runs.append_run_event(role_run, "VERDICT: APPROVED - the nits can follow up")
+  test "an explained verdict captures its explanation", %{run: run} do
+    Runs.append_run_event(run, "VERDICT: APPROVED - the nits can follow up")
 
     assert %StageVerdict{verdict: :passed, explanation: "the nits can follow up"} =
-             Pipeline.parse_stage_verdict(role_run)
+             Pipeline.parse_stage_verdict(run)
   end
 
-  test "an unexplained verdict has no explanation", %{role_run: role_run} do
-    Runs.append_run_event(role_run, "APPROVED.")
+  test "an unexplained verdict has no explanation", %{run: run} do
+    Runs.append_run_event(run, "APPROVED.")
 
-    assert %StageVerdict{verdict: :passed, explanation: nil} = Pipeline.parse_stage_verdict(role_run)
+    assert %StageVerdict{verdict: :passed, explanation: nil} = Pipeline.parse_stage_verdict(run)
   end
 
-  test "chat after a verdict does not change it", %{role_run: role_run} do
-    Runs.append_run_event(role_run, "Looks good to me.\n\nVERDICT: APPROVED")
-    Runs.append_run_event(role_run, "[human] are you sure about the timer?")
-    Runs.append_run_event(role_run, "Yes - the widget disposes it, so that one passed for me.")
+  test "chat after a verdict does not change it", %{run: run} do
+    Runs.append_run_event(run, "Looks good to me.\n\nVERDICT: APPROVED")
+    Runs.append_run_event(run, "[human] are you sure about the timer?")
+    Runs.append_run_event(run, "Yes - the widget disposes it, so that one passed for me.")
 
-    assert %StageVerdict{verdict: :passed} = Pipeline.parse_stage_verdict(role_run)
+    assert %StageVerdict{verdict: :passed} = Pipeline.parse_stage_verdict(run)
   end
 
-  test "a second verdict supersedes the first", %{role_run: role_run} do
-    Runs.append_run_event(role_run, "Looks good to me.\n\nVERDICT: APPROVED")
-    Runs.append_run_event(role_run, "[human] take another look at the leak")
-    Runs.append_run_event(role_run, "You are right, it leaks.\n\nVERDICT: CHANGES REQUESTED")
+  test "a second verdict supersedes the first", %{run: run} do
+    Runs.append_run_event(run, "Looks good to me.\n\nVERDICT: APPROVED")
+    Runs.append_run_event(run, "[human] take another look at the leak")
+    Runs.append_run_event(run, "You are right, it leaks.\n\nVERDICT: CHANGES REQUESTED")
 
-    assert %StageVerdict{verdict: :changes_requested} = Pipeline.parse_stage_verdict(role_run)
+    assert %StageVerdict{verdict: :changes_requested} = Pipeline.parse_stage_verdict(run)
   end
 
-  test "reads the verdict out of the raw CLI stream, not just plain lines", %{role_run: role_run} do
+  test "reads the verdict out of the raw CLI stream, not just plain lines", %{run: run} do
     Runs.append_run_event(
-      role_run,
+      run,
       Jason.encode!(%{
         "type" => "assistant",
         "message" => %{"content" => [%{"type" => "text", "text" => "Reviewed.\n\nVERDICT: PASSED"}]}
       })
     )
 
-    assert %StageVerdict{verdict: :passed} = Pipeline.parse_stage_verdict(role_run)
+    assert %StageVerdict{verdict: :passed} = Pipeline.parse_stage_verdict(run)
   end
 
-  test "tool summaries cannot supply a verdict", %{role_run: role_run} do
+  test "tool summaries cannot supply a verdict", %{run: run} do
     Runs.append_run_event(
-      role_run,
+      run,
       Jason.encode!(%{
         "type" => "assistant",
         "message" => %{
@@ -132,10 +132,10 @@ defmodule Rail.Pipeline.Actions.ParseStageVerdictTest do
       })
     )
 
-    assert %StageVerdict{verdict: :unclear} = Pipeline.parse_stage_verdict(role_run)
+    assert %StageVerdict{verdict: :unclear} = Pipeline.parse_stage_verdict(run)
   end
 
-  test "returns unclear for an unknown role run" do
+  test "returns unclear for an unknown run" do
     assert %StageVerdict{verdict: :unclear} = Pipeline.parse_stage_verdict("rr_000000000000000000000000")
   end
 end

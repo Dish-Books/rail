@@ -11,7 +11,7 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -76,9 +76,9 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
     task
   end
 
-  defp role_run(task, role, attrs \\ %{}) do
-    {:ok, role_run} =
-      Runs.create_role_run(
+  defp run(task, role, attrs \\ %{}) do
+    {:ok, run} =
+      Runs.create_run(
         Map.merge(
           %{
             task_id: task.id,
@@ -91,62 +91,62 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
         )
       )
 
-    role_run
+    run
   end
 
-  defp run(role_run, status \\ :running) do
-    {:ok, run} =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+  defp os_process(run, status \\ :running) do
+    {:ok, os_process} =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_product_run/#{role_run.id}.jsonl",
+        stream_path: "/tmp/settle_product_run/#{run.id}.jsonl",
         node: to_string(Node.self()),
         status: status,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert()
 
-    run
+    os_process
   end
 
-  test "returns invalid_state when the run's role run no longer exists", %{task: task, role: role} do
-    role_run = role_run(running_task(task), role)
-    run = run(role_run)
+  test "returns invalid_state when the run's os process no longer exists", %{task: task, role: role} do
+    run = run(running_task(task), role)
+    os_process = os_process(run)
 
-    Repo.delete!(role_run)
+    Repo.delete!(run)
 
-    assert {:error, :invalid_state} = Pipeline.settle_product_run(run)
+    assert {:error, :invalid_state} = Pipeline.settle_product_run(os_process)
   end
 
   test "parks a clean exit at awaiting_approval and broadcasts", %{task: task, role: role} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     %Task{id: task_id} = task = running_task(task)
-    run = task |> role_run(role, %{auto_retries: 2}) |> run()
+    os_process = task |> run(role, %{auto_retries: 2}) |> os_process()
 
-    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{id: ^task_id, stage: :product, stage_state: :awaiting_approval, error: nil, retry_after: nil},
-            %RoleRun{status: :finished, exit_code: 0, auto_retries: 0}} =
-             Pipeline.settle_product_run(run)
+            %Run{status: :finished, exit_code: 0, auto_retries: 0}} =
+             Pipeline.settle_product_run(os_process)
 
-    assert %Run{status: :finished} = Repo.get!(Run, run.id)
+    assert %OsProcess{status: :finished} = Repo.get!(OsProcess, os_process.id)
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}
   end
 
   test "force-preloads the task, so a stale run handle still settles current state", %{task: task, role: role} do
-    role_run = role_run(task, role)
-    run = run(role_run)
+    run = run(task, role)
+    os_process = os_process(run)
 
     # The run was handed out before the task started; the settle must see :running, not the stale copy.
     running_task(task)
 
-    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-    assert {:ok, %Task{stage_state: :awaiting_approval}, %RoleRun{}} =
-             Pipeline.settle_product_run(run)
+    assert {:ok, %Task{stage_state: :awaiting_approval}, %Run{}} =
+             Pipeline.settle_product_run(os_process)
   end
 
   test "writes nothing to Linear: the ticket stays in scratch until approval", %{
@@ -164,11 +164,11 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
     |> Path.join()
     |> File.write!("---\ntitle: Rewritten by the product run\n---\n\nA body the human has not approved.\n")
 
-    run = task |> running_task() |> role_run(role) |> run()
+    os_process = task |> running_task() |> run(role) |> os_process()
 
     # No Linear mock is set up: a push would raise on the unexpected request.
-    assert {:ok, %Task{stage_state: :awaiting_approval}, %RoleRun{}} =
-             Pipeline.settle_product_run(run)
+    assert {:ok, %Task{stage_state: :awaiting_approval}, %Run{}} =
+             Pipeline.settle_product_run(os_process)
 
     assert %Issue{title: ^title_before} = Repo.get!(Issue, issue.id)
   end
@@ -183,73 +183,72 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
         question_id: expected_q_id
       })
 
-    run = task |> role_run(role, %{status: :blocked_on_input}) |> run()
+    os_process = task |> run(role, %{status: :blocked_on_input}) |> os_process()
 
-    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-    assert {:ok, %Task{stage_state: :blocked, question_id: ^expected_q_id},
-            %RoleRun{status: :blocked_on_input, exit_code: 0}} =
-             Pipeline.settle_product_run(run)
+    assert {:ok, %Task{stage_state: :blocked, question_id: ^expected_q_id}, %Run{status: :blocked_on_input, exit_code: 0}} =
+             Pipeline.settle_product_run(os_process)
   end
 
   test "retries a transient failure with backoff while retries remain", %{task: task, role: role} do
     %Task{id: task_id} = task = running_task(task)
-    run = task |> role_run(role, %{auto_retries: 0}) |> run()
+    os_process = task |> run(role, %{auto_retries: 0}) |> os_process()
 
     transient_err = "rate limit exceeded: 429 too many requests"
 
-    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run, %{exit_code: 1, error: transient_err})
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(os_process, %{exit_code: 1, error: transient_err})
 
     assert {:ok, %Task{id: ^task_id, stage_state: :queued, retry_after: %DateTime{}, error: ^transient_err},
-            %RoleRun{status: :finished, auto_retries: 1, exit_code: 1}} =
-             Pipeline.settle_product_run(run)
+            %Run{status: :finished, auto_retries: 1, exit_code: 1}} =
+             Pipeline.settle_product_run(os_process)
   end
 
   test "fails a transient failure once auto retries are exhausted", %{task: task, role: role} do
-    run = task |> running_task() |> role_run(role, %{auto_retries: 2}) |> run()
+    os_process = task |> running_task() |> run(role, %{auto_retries: 2}) |> os_process()
 
     transient_err = "rate limit exceeded: 429 too many requests"
 
-    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run, %{exit_code: 1, error: transient_err})
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(os_process, %{exit_code: 1, error: transient_err})
 
     assert {:ok, %Task{stage_state: :failed, retry_after: nil, error: ^transient_err},
-            %RoleRun{status: :finished, auto_retries: 2, exit_code: 1}} =
-             Pipeline.settle_product_run(run)
+            %Run{status: :finished, auto_retries: 2, exit_code: 1}} =
+             Pipeline.settle_product_run(os_process)
   end
 
   test "fails a permanent failure immediately", %{task: task, role: role} do
-    run = task |> running_task() |> role_run(role) |> run()
+    os_process = task |> running_task() |> run(role) |> os_process()
 
-    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run, %{exit_code: 2})
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(os_process, %{exit_code: 2})
 
     assert {:ok, %Task{stage_state: :failed, retry_after: nil, error: "Exited with code 2"},
-            %RoleRun{status: :finished, exit_code: 2}} =
-             Pipeline.settle_product_run(run)
+            %Run{status: :finished, exit_code: 2}} =
+             Pipeline.settle_product_run(os_process)
   end
 
   test "records usage from the outcome", %{task: task, role: role} do
-    run = task |> running_task() |> role_run(role) |> run()
+    os_process = task |> running_task() |> run(role) |> os_process()
     usage = %TaskUsage{input_tokens: 11, output_tokens: 22}
 
-    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run, %{exit_code: 0, usage: usage})
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(os_process, %{exit_code: 0, usage: usage})
 
-    assert {:ok, %Task{stage_state: :awaiting_approval}, %RoleRun{status: :finished, exit_code: 0}} =
-             Pipeline.settle_product_run(run)
+    assert {:ok, %Task{stage_state: :awaiting_approval}, %Run{status: :finished, exit_code: 0}} =
+             Pipeline.settle_product_run(os_process)
 
-    assert %RoleRun{usage: %TaskUsage{input_tokens: 11, output_tokens: 22}} =
-             Repo.get!(RoleRun, run.role_run_id)
+    assert %Run{usage: %TaskUsage{input_tokens: 11, output_tokens: 22}} =
+             Repo.get!(Run, os_process.run_id)
   end
 
-  test "falls back to the role run's own exit code and error", %{task: task, role: role} do
-    run =
+  test "falls back to the run's own exit code and error", %{task: task, role: role} do
+    os_process =
       task
       |> running_task()
-      |> role_run(role, %{exit_code: 1, error: "permanent boom"})
-      |> run(:finished)
+      |> run(role, %{exit_code: 1, error: "permanent boom"})
+      |> os_process(:finished)
 
-    {:ok, _settled, _settled_rr} = Pipeline.settle_run(run)
+    {:ok, _settled, _settled_rr} = Pipeline.settle_run(os_process)
 
-    assert {:ok, %Task{stage_state: :failed, error: "permanent boom"}, %RoleRun{status: :finished, exit_code: 1}} =
-             Pipeline.settle_product_run(run)
+    assert {:ok, %Task{stage_state: :failed, error: "permanent boom"}, %Run{status: :finished, exit_code: 1}} =
+             Pipeline.settle_product_run(os_process)
   end
 end

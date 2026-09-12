@@ -17,14 +17,14 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
 
   @doc """
   Starts the design stage for `task_or_id`.
 
   Moves the task to the `:design` stage, reusing the worktree it already has, and
   spawns the design role against the approved ticket. Returns
-  `{:ok, %{task: task, role_run: role_run, run: run}}`.
+  `{:ok, %{task: task, run: run, os_process: os_process}}`.
   """
   def start_design_task(task_or_id, opts \\ []) when is_list(opts) do
     with %Task{project: %Project{} = project} = task <- resolve_task(task_or_id),
@@ -32,8 +32,8 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
          {:ok, worktree_path} <- ensure_worktree(project, task),
          {:ok, task} <- claim_stage(task, worktree_path),
          _scratch = write_scratch(task),
-         {:ok, role_run} <- Runs.start_or_resume_role_run(task, role, worktree_path) do
-      spawn_run(task, role, role_run, worktree_path, opts)
+         {:ok, run} <- Runs.start_or_resume_run(task, role, worktree_path) do
+      spawn_os_process(task, role, run, worktree_path, opts)
     else
       nil -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
@@ -112,15 +112,15 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
     """)
   end
 
-  defp spawn_run(task, role, role_run, worktree_path, opts) do
+  defp spawn_os_process(task, role, run, worktree_path, opts) do
     prompt =
       Runs.build_prompt(
         task: task,
         backend: role.backend,
         role_instructions: role.system_prompt,
         context_snippet: brief(task),
-        pending_answer: role_run.pending_answer,
-        conversation_id: role_run.conversation_id
+        pending_answer: run.pending_answer,
+        conversation_id: run.conversation_id
       )
 
     argv =
@@ -130,34 +130,34 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
         system_prompt: role.system_prompt,
-        conversation_id: role_run.conversation_id,
+        conversation_id: run.conversation_id,
         work_dir: worktree_path
       )
 
     spawner_opts =
       opts
       |> Keyword.take([:allow_fun, :on_finished])
-      |> Keyword.put_new(:on_finished, fn run, outcome ->
-        Pipeline.settle_design_run(run, outcome, opts)
+      |> Keyword.put_new(:on_finished, fn os_process, outcome ->
+        Pipeline.settle_design_run(os_process, outcome, opts)
       end)
 
-    case Runs.start_run(role_run, :stage, argv, spawner_opts) do
-      {:ok, run} -> finalize(task, role_run, run)
+    case Runs.start_os_process(run, :stage, argv, spawner_opts) do
+      {:ok, os_process} -> finalize(task, run, os_process)
       {:error, reason} -> fail(task, reason)
     end
   end
 
-  defp finalize(task, role_run, run) do
-    {:ok, role_run} =
-      role_run
-      |> RoleRun.changeset(%{pending_answer: nil, attempt_log_lines: 0})
+  defp finalize(task, run, os_process) do
+    {:ok, run} =
+      run
+      |> Run.changeset(%{pending_answer: nil, attempt_log_lines: 0})
       |> Repo.update()
 
     {:ok, task} = task |> Task.changeset(%{stage_state: :running}) |> Repo.update()
 
     Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :dispatched})
 
-    {:ok, %{task: task, role_run: role_run, run: run}}
+    {:ok, %{task: task, run: run, os_process: os_process}}
   end
 
   defp fail(task, reason) do

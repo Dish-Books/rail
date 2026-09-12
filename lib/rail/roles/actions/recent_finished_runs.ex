@@ -7,9 +7,9 @@ defmodule Rail.Roles.Actions.RecentFinishedRuns do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles.Actions.GetRole
-  alias Rail.Roles.RoleRunRecord
+  alias Rail.Roles.RunRecord
   alias Rail.Roles.Schemas.Role
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
 
   @default_limit 5
   @default_max_chars 4000
@@ -30,19 +30,19 @@ defmodule Rail.Roles.Actions.RecentFinishedRuns do
     statuses =
       opts
       |> Keyword.get(:statuses, @default_statuses)
-      |> Enum.filter(&(&1 in RoleRun.statuses()))
+      |> Enum.filter(&(&1 in Run.statuses()))
 
     query =
-      from(rr in RoleRun,
+      from(rr in Run,
         where: rr.role_id == ^role_id and rr.status in ^statuses,
         order_by: [desc: fragment("COALESCE(?, ?)", rr.completed_at, rr.started_at)],
         preload: [:run_events]
       )
 
-    role_runs = Repo.all(query)
+    runs = Repo.all(query)
     role = Keyword.get(opts, :role) || fetch_role(role_id)
 
-    collect_records(role_runs, [], limit, role, max_chars, head_chars, tail_chars, opts)
+    collect_records(runs, [], limit, role, max_chars, head_chars, tail_chars, opts)
   end
 
   defp fetch_role(role_id) do
@@ -101,7 +101,7 @@ defmodule Rail.Roles.Actions.RecentFinishedRuns do
     stage = resolve_stage(role, opts)
     duration = calculate_duration(rr.started_at, rr.completed_at)
 
-    %RoleRunRecord{
+    %RunRecord{
       task_id: rr.task_id,
       title: title,
       stage: stage,

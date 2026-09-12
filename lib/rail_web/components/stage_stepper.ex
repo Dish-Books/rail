@@ -23,13 +23,13 @@ defmodule RailWeb.Components.StageStepper do
   ]
 
   attr :task, :any, required: true
-  attr :role_runs, :any, default: []
+  attr :runs, :any, default: []
   attr :class, :string, default: nil
 
   def stage_stepper(assigns) do
     task = assigns.task
-    role_runs = assigns.role_runs
-    stages = stages_for_task(task, role_runs)
+    runs = assigns.runs
+    stages = stages_for_task(task, runs)
     current_stage = stage_atom(task)
 
     assigns =
@@ -76,8 +76,8 @@ defmodule RailWeb.Components.StageStepper do
     """
   end
 
-  defp stages_for_task(task, role_runs) do
-    uses_design = Formatters.uses_design?(task, role_runs: role_runs)
+  defp stages_for_task(task, runs) do
+    uses_design = Formatters.uses_design?(task, runs: runs)
 
     if uses_design do
       @canonical_stages

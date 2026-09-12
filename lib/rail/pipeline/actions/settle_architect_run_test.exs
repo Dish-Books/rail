@@ -11,7 +11,7 @@ defmodule Rail.Pipeline.Actions.SettleArchitectRunTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -98,8 +98,8 @@ defmodule Rail.Pipeline.Actions.SettleArchitectRunTest do
 
     {:ok, _plan} = Pipeline.get_plan(system_scope(), task_id)
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
         conversation_id: "sess_fixture",
@@ -107,24 +107,24 @@ defmodule Rail.Pipeline.Actions.SettleArchitectRunTest do
         started_at: DateTime.utc_now()
       })
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_architect/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_architect/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{id: ^task_id, stage_state: :awaiting_approval, retry_after: nil, error: nil},
-            %RoleRun{status: :finished, exit_code: 0}} =
-             Pipeline.settle_architect_run(run)
+            %Run{status: :finished, exit_code: 0}} =
+             Pipeline.settle_architect_run(os_process)
   end
 
   test "settles clean exit 0 for architect stage failing when plan file was not written", %{task: task, roles: roles} do
@@ -134,8 +134,8 @@ defmodule Rail.Pipeline.Actions.SettleArchitectRunTest do
         stage_state: :running
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
         conversation_id: "sess_fixture",
@@ -143,23 +143,23 @@ defmodule Rail.Pipeline.Actions.SettleArchitectRunTest do
         started_at: DateTime.utc_now()
       })
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_architect/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_architect/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-    assert {:ok, %Task{id: ^task_id, stage_state: :failed, error: error_msg}, %RoleRun{status: :finished, exit_code: 0}} =
-             Pipeline.settle_architect_run(run)
+    assert {:ok, %Task{id: ^task_id, stage_state: :failed, error: error_msg}, %Run{status: :finished, exit_code: 0}} =
+             Pipeline.settle_architect_run(os_process)
 
     assert error_msg =~ "without writing a plan"
   end
@@ -177,8 +177,8 @@ defmodule Rail.Pipeline.Actions.SettleArchitectRunTest do
         scratch_path: scratch_dir
       })
 
-    {:ok, %RoleRun{id: role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: run_id}} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
         conversation_id: "sess_fixture",
@@ -186,14 +186,14 @@ defmodule Rail.Pipeline.Actions.SettleArchitectRunTest do
         started_at: DateTime.utc_now()
       })
 
-    %Run{id: run_id} =
-      run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run_id,
+    %OsProcess{id: os_process_id} =
+      os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run_id,
         task_id: task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_architect/#{role_run_id}.ndjson",
+        stream_path: "/tmp/settle_architect/#{run_id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
@@ -206,15 +206,15 @@ defmodule Rail.Pipeline.Actions.SettleArchitectRunTest do
     outcome = %{
       "exit_code" => 0,
       "usage" => %{"input_tokens" => 500, "output_tokens" => 150},
-      :run => run
+      :os_process => os_process
     }
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, outcome)
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, outcome)
 
-    assert {:ok, %Task{id: ^task_id, stage_state: :awaiting_approval}, %RoleRun{id: ^role_run_id, status: :finished}} =
-             Pipeline.settle_architect_run(run)
+    assert {:ok, %Task{id: ^task_id, stage_state: :awaiting_approval}, %Run{id: ^run_id, status: :finished}} =
+             Pipeline.settle_architect_run(os_process)
 
-    assert %Run{id: ^run_id, status: :finished} = Repo.get!(Run, run_id)
+    assert %OsProcess{id: ^os_process_id, status: :finished} = Repo.get!(OsProcess, os_process_id)
     assert %Plan{content: plan_content} = Repo.one(from p in Plan, where: p.task_id == ^task_id)
     assert plan_content =~ "Captured Architecture Plan"
   end

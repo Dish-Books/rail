@@ -177,15 +177,15 @@ defmodule Rail.Pipeline.Utils.PrepareScratchTest do
         outstanding_reports: [role.id]
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role.id,
         status: :finished,
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "Needs better tests")
+    Runs.append_run_event(run, "Needs better tests")
 
     scratch_dir = create_temp_git_repo()
 

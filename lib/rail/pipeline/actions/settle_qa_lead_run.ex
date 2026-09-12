@@ -11,20 +11,20 @@ defmodule Rail.Pipeline.Actions.SettleQaLeadRun do
 
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Runs.Schemas.OsProcess
 
   @doc "Settles the finished QA lead `run` against `outcome`."
-  def settle_qa_lead_run(%Run{} = run, _outcome \\ %{}, opts \\ []) do
-    advance_stage(run, opts, &to_demo_or_merge/3)
+  def settle_qa_lead_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
+    advance_stage(os_process, opts, &to_demo_or_merge/3)
   end
 
-  defp to_demo_or_merge(%Task{} = task, role_run, _opts) do
+  defp to_demo_or_merge(%Task{} = task, run, _opts) do
     next_stage =
       case Roles.get_role(project_id: task.project_id, stage: :demo) do
         {:ok, _role} -> :demo
         _no_demo -> :ready_to_merge
       end
 
-    gate_outcome(task, role_run, next_stage)
+    gate_outcome(task, run, next_stage)
   end
 end

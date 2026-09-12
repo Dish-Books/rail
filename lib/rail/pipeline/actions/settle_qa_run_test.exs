@@ -13,7 +13,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -115,8 +115,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         scratch_path: qa_scratch
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_qa.id,
         conversation_id: "sess_fixture",
@@ -126,22 +126,22 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
 
     output = "Test checklist passed.\n\nVERDICT: PASS"
 
-    Runs.append_run_event(role_run, output)
+    Runs.append_run_event(run, output)
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok,
             %Task{
@@ -149,8 +149,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
               stage: :qa_lead,
               stage_state: :queued,
               outstanding_reports: [^role_qa_id]
-            }, %RoleRun{status: :finished}} =
-             Pipeline.settle_qa_run(run)
+            }, %Run{status: :finished}} =
+             Pipeline.settle_qa_run(os_process)
   end
 
   test "settles clean exit 0 for qa stage with valid manifest capturing report and advancing to qa_lead", %{
@@ -236,8 +236,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         stage_state: :running
       })
 
-    {:ok, %RoleRun{id: role_run_id} = role_run} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: run_id} = run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role_qa.id,
         conversation_id: "sess_fixture",
@@ -250,24 +250,24 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
 
     output = "QA checklist completed.\n\nVERDICT: PASS"
 
-    Runs.append_run_event(role_run, output)
+    Runs.append_run_event(run, output)
 
     {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok,
             %Task{
@@ -275,12 +275,12 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
               stage: :qa_lead,
               stage_state: :queued,
               outstanding_reports: [^role_qa_id]
-            }, %RoleRun{status: :finished, exit_code: 0}} =
-             Pipeline.settle_qa_run(run)
+            }, %Run{status: :finished, exit_code: 0}} =
+             Pipeline.settle_qa_run(os_process)
 
     assert %QaReport{
              task_id: ^task_id,
-             role_run_id: ^role_run_id,
+             run_id: ^run_id,
              commit: "abc1234",
              rows: [
                %{
@@ -314,8 +314,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         stage_state: :running
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role_qa.id,
         conversation_id: "sess_fixture",
@@ -323,24 +323,24 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "VERDICT: PASS")
+    Runs.append_run_event(run, "VERDICT: PASS")
 
     {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok,
             %Task{
@@ -348,8 +348,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
               stage: :qa,
               stage_state: :failed,
               error: err_msg
-            }, %RoleRun{status: :finished}} =
-             Pipeline.settle_qa_run(run)
+            }, %Run{status: :finished}} =
+             Pipeline.settle_qa_run(os_process)
 
     assert err_msg =~ "Failed to parse QA manifest"
   end
@@ -371,8 +371,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         stage_state: :running
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role_qa.id,
         conversation_id: "sess_fixture",
@@ -380,24 +380,24 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "VERDICT: PASS")
+    Runs.append_run_event(run, "VERDICT: PASS")
 
     {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok,
             %Task{
@@ -405,8 +405,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
               stage: :qa,
               stage_state: :failed,
               error: err_msg
-            }, %RoleRun{status: :finished}} =
-             Pipeline.settle_qa_run(run)
+            }, %Run{status: :finished}} =
+             Pipeline.settle_qa_run(os_process)
 
     assert err_msg =~ "QA left no manifest"
   end
@@ -434,8 +434,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{stage: :qa, stage_state: :running})
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: roles[:qa].id,
         conversation_id: "sess_fixture",
@@ -443,27 +443,27 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "VERDICT: PASS")
+    Runs.append_run_event(run, "VERDICT: PASS")
 
     {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-    assert {:ok, %Task{stage: :qa_lead}, %RoleRun{}} =
-             Pipeline.settle_qa_run(run)
+    assert {:ok, %Task{stage: :qa_lead}, %Run{}} =
+             Pipeline.settle_qa_run(os_process)
 
     assert %QaReport{commit: "scratch_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task.id)
   end
@@ -521,8 +521,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         rework_cycles_by_gate: %{}
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role_qa.id,
         conversation_id: "sess_fixture",
@@ -531,7 +531,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       })
 
     {:ok, _prior_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_eng.id,
         conversation_id: "sess_eng",
@@ -541,24 +541,24 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
 
     output = "Button is broken.\n\nVERDICT: FAIL"
 
-    Runs.append_run_event(role_run, output)
+    Runs.append_run_event(run, output)
 
     {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok,
             %Task{
@@ -566,12 +566,12 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
               stage: :engineer,
               stage_state: :queued,
               rework_cycles: 1
-            }, %RoleRun{status: :finished}} =
-             Pipeline.settle_qa_run(run)
+            }, %Run{status: :finished}} =
+             Pipeline.settle_qa_run(os_process)
 
     assert %QaReport{commit: "fail_qa_commit"} = Repo.one(from q in QaReport, where: q.task_id == ^task_id)
 
-    eng_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
+    eng_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
     assert eng_run.pending_answer =~ "Button is broken."
   end
 
@@ -626,8 +626,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         stage_state: :running
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role_qa.id,
         conversation_id: "sess_fixture",
@@ -639,24 +639,24 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       Plug.Conn.send_resp(conn, 500, "Upload error")
     end)
 
-    Runs.append_run_event(role_run, "VERDICT: PASS")
+    Runs.append_run_event(run, "VERDICT: PASS")
 
     {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok,
             %Task{
@@ -664,8 +664,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
               stage: :qa,
               stage_state: :failed,
               error: err_msg
-            }, %RoleRun{status: :finished}} =
-             Pipeline.settle_qa_run(run)
+            }, %Run{status: :finished}} =
+             Pipeline.settle_qa_run(os_process)
 
     assert err_msg =~ "linear_api_error"
   end
@@ -714,8 +714,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         stage_state: :running
       })
 
-    {:ok, role_run_qa} =
-      Runs.create_role_run(%{
+    {:ok, run_qa} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role_qa.id,
         conversation_id: "sess_fixture",
@@ -724,27 +724,27 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       })
 
     # Step 1: Settle QA run
-    Runs.append_run_event(role_run_qa, "VERDICT: PASS")
+    Runs.append_run_event(run_qa, "VERDICT: PASS")
 
     {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: qa_scratch_dir})
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run_qa.id,
-        task_id: role_run_qa.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run_qa.id,
+        task_id: run_qa.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa/#{role_run_qa.id}-#{System.unique_integer([:positive])}.ndjson",
+        stream_path: "/tmp/settle_qa/#{run_qa.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _st, _srr} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _st, _srr} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{stage: :qa_lead, stage_state: :queued} = task_lead_queued, _rr} =
-             Pipeline.settle_qa_run(run)
+             Pipeline.settle_qa_run(os_process)
 
     # Step 2: Scratch prepare for QA Lead
     lead_scratch_dir = create_temp_git_repo()
@@ -755,8 +755,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
     assert File.read!(Path.join([lead_scratch_dir, "qa", "proof.txt"])) == "FLOW PROOF TEXT"
 
     # Step 3: Settle QA Lead run
-    {:ok, role_run_lead} =
-      Runs.create_role_run(%{
+    {:ok, run_lead} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role_lead.id,
         conversation_id: "sess_fixture",
@@ -764,17 +764,17 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run_lead, "VERDICT: PASS")
+    Runs.append_run_event(run_lead, "VERDICT: PASS")
 
     {:ok, _persisted} = Pipeline.update_task(system_scope(), task_lead_queued.id, %{scratch_path: lead_scratch_dir})
 
     run_2 =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run_lead.id,
-        task_id: role_run_lead.task_id,
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run_lead.id,
+        task_id: run_lead.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa/#{role_run_lead.id}-#{System.unique_integer([:positive])}.ndjson",
+        stream_path: "/tmp/settle_qa/#{run_lead.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
@@ -822,8 +822,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         rework_cycles_by_gate: %{"other_gate" => 2, role_qa.id => 1}
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_qa.id,
         conversation_id: "sess_fixture",
@@ -833,22 +833,22 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
 
     output = "QA failure.\n\nVERDICT: FAILED"
 
-    Runs.append_run_event(role_run, output)
+    Runs.append_run_event(run, output)
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_qa/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok,
             %Task{
@@ -856,8 +856,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
               stage_state: :awaiting_approval,
               rework_cycles: 5,
               error: err
-            }, %RoleRun{status: :finished}} =
-             Pipeline.settle_qa_run(run)
+            }, %Run{status: :finished}} =
+             Pipeline.settle_qa_run(os_process)
 
     assert err =~ "QA Tester is still requesting changes after 1 rework cycle."
   end
@@ -902,8 +902,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         scratch_path: git_repo
       })
 
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_lead.id,
         conversation_id: "sess_fixture",
@@ -912,8 +912,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         pending_answer: "Prior lead notes"
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_qa.id,
         conversation_id: "sess_fixture",
@@ -923,27 +923,27 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
 
     output = "QA passed cleanly.\n\nVERDICT: PASS"
 
-    Runs.append_run_event(role_run, output)
+    Runs.append_run_event(run, output)
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa/#{role_run.id}-#{System.unique_integer([:positive])}.ndjson",
+        stream_path: "/tmp/settle_qa/#{run.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _st, _srr} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _st, _srr} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-    assert {:ok, %Task{stage: :qa_lead, stage_state: :queued}, %RoleRun{stage_fingerprint_head_sha: head_sha}} =
-             Pipeline.settle_qa_run(run)
+    assert {:ok, %Task{stage: :qa_lead, stage_state: :queued}, %Run{stage_fingerprint_head_sha: head_sha}} =
+             Pipeline.settle_qa_run(os_process)
 
-    lead_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_lead.id)
+    lead_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_lead.id)
 
     assert lead_run.pending_answer =~
              "Prior lead notes\n\nThe change has been reworked and QA has signed off on it again."
@@ -976,8 +976,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         worktree_path: git_repo
       })
 
-    {:ok, role_run2} =
-      Runs.create_role_run(%{
+    {:ok, run2} =
+      Runs.create_run(%{
         task_id: task_id2,
         role_id: role_lead.id,
         conversation_id: "sess_fixture",
@@ -986,7 +986,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
       })
 
     {:ok, _demo_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task_id2,
         role_id: role_demo.id,
         conversation_id: "sess_demo",
@@ -996,15 +996,15 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
 
     output2 = "QA Lead pass.\n\nVERDICT: PASS"
 
-    Runs.append_run_event(role_run2, output2)
+    Runs.append_run_event(run2, output2)
 
     run_4 =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run2.id,
-        task_id: role_run2.task_id,
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run2.id,
+        task_id: run2.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa/#{role_run2.id}-#{System.unique_integer([:positive])}.ndjson",
+        stream_path: "/tmp/settle_qa/#{run2.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
@@ -1013,10 +1013,10 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
 
     {:ok, _st, _srr} = Pipeline.settle_run(run_4, %{exit_code: 0})
 
-    assert {:ok, %Task{stage: :demo, stage_state: :queued}, %RoleRun{stage_fingerprint_head_sha: head_sha2}} =
+    assert {:ok, %Task{stage: :demo, stage_state: :queued}, %Run{stage_fingerprint_head_sha: head_sha2}} =
              Pipeline.settle_qa_lead_run(run_4)
 
-    demo_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id2 and r.role_id == ^role_demo.id)
+    demo_run = Repo.one(from r in Run, where: r.task_id == ^task_id2 and r.role_id == ^role_demo.id)
     assert demo_run.pending_answer =~ "The change has been reworked and the previous gate has signed off on it again."
     assert demo_run.pending_answer =~ "The reworked change is commit #{head_sha2}."
 
@@ -1064,8 +1064,8 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         worktree_path: git_repo
       })
 
-    {:ok, role_run3} =
-      Runs.create_role_run(%{
+    {:ok, run3} =
+      Runs.create_run(%{
         task_id: task_id3,
         role_id: role_rev3.id,
         conversation_id: "sess_fixture",
@@ -1073,15 +1073,15 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run3, "VERDICT: APPROVED")
+    Runs.append_run_event(run3, "VERDICT: APPROVED")
 
     run_4 =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run3.id,
-        task_id: role_run3.task_id,
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run3.id,
+        task_id: run3.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa/#{role_run3.id}-#{System.unique_integer([:positive])}.ndjson",
+        stream_path: "/tmp/settle_qa/#{run3.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
@@ -1090,14 +1090,14 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
 
     {:ok, _st, _srr} = Pipeline.settle_run(run_4, %{exit_code: 0})
 
-    assert {:ok, %Task{stage: :qa, stage_state: :queued}, %RoleRun{status: :finished}} =
+    assert {:ok, %Task{stage: :qa, stage_state: :queued}, %Run{status: :finished}} =
              Pipeline.settle_review_run(run_4)
 
     # Part D: Gate unclear with unknown role ID falls back to to_string(role_id)
     unknown_role_id = "rol_unknown_gate"
 
-    {:ok, role_run_unknown} =
-      Runs.create_role_run(%{
+    {:ok, run_unknown} =
+      Runs.create_run(%{
         task_id: task_id3,
         role_id: unknown_role_id,
         conversation_id: "sess_fixture",
@@ -1105,15 +1105,15 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run_unknown, "unclear")
+    Runs.append_run_event(run_unknown, "unclear")
 
     run_4 =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run_unknown.id,
-        task_id: role_run_unknown.task_id,
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run_unknown.id,
+        task_id: run_unknown.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_qa/#{role_run_unknown.id}-#{System.unique_integer([:positive])}.ndjson",
+        stream_path: "/tmp/settle_qa/#{run_unknown.id}-#{System.unique_integer([:positive])}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
@@ -1122,7 +1122,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
 
     {:ok, _st, _srr} = Pipeline.settle_run(run_4, %{exit_code: 0})
 
-    assert {:ok, %Task{stage_state: :awaiting_approval, error: err}, %RoleRun{status: :finished}} =
+    assert {:ok, %Task{stage_state: :awaiting_approval, error: err}, %Run{status: :finished}} =
              Pipeline.settle_review_run(run_4)
 
     assert err =~ "rol_unknown_gate ended without a clear verdict."

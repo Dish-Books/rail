@@ -27,7 +27,7 @@ defmodule RailWeb.TaskDetailLive do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.TaskActionRunner
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias RailWeb.Components.DemoPlayerState
 
   def mount(_params, _session, socket) do
@@ -40,7 +40,7 @@ defmodule RailWeb.TaskDetailLive do
       |> assign(:active_tab, :overview)
       |> assign(:current_run, nil)
       |> assign(:current_role_name, nil)
-      |> assign(:role_runs, [])
+      |> assign(:runs, [])
       |> assign(:running_action, nil)
       |> assign(:active_modal, nil)
       |> assign(:design, nil)
@@ -98,7 +98,7 @@ defmodule RailWeb.TaskDetailLive do
             |> assign(:page_title, "Task")
             |> assign(:current_run, nil)
             |> assign(:current_role_name, nil)
-            |> assign(:role_runs, [])
+            |> assign(:runs, [])
             |> assign(:running_action, nil)
             |> assign(:active_modal, nil)
             |> assign(:design, nil)
@@ -271,7 +271,7 @@ defmodule RailWeb.TaskDetailLive do
             class={[@active_tab != :overview && "hidden", "space-y-6"]}
           >
             <!-- Stage Stepper -->
-            <.stage_stepper task={@task} role_runs={@role_runs} />
+            <.stage_stepper task={@task} runs={@runs} />
 
             <!-- Metadata Wrap -->
             <div
@@ -395,7 +395,7 @@ defmodule RailWeb.TaskDetailLive do
             <!-- Stage Outcome Component -->
             <.stage_outcome
               task={@task}
-              role_run={@current_run}
+              run={@current_run}
               role_name={@current_role_name}
             />
 
@@ -1033,8 +1033,8 @@ defmodule RailWeb.TaskDetailLive do
     end
   end
 
-  def handle_info({:run_events, role_run_id, events}, socket) do
-    if socket.assigns[:selected_run] && socket.assigns.selected_run.id == role_run_id do
+  def handle_info({:run_events, run_id, events}, socket) do
+    if socket.assigns[:selected_run] && socket.assigns.selected_run.id == run_id do
       new_lines = Enum.map(events, & &1.line)
       all_lines = socket.assigns.log_lines ++ new_lines
       transcript = ChatTranscript.parse(all_lines)
@@ -1051,7 +1051,7 @@ defmodule RailWeb.TaskDetailLive do
   end
 
   # Private Helpers
-  def handle_info({:run_finished, _run, _outcome}, socket) do
+  def handle_info({:os_process_finished, _run, _outcome}, socket) do
     {:noreply, refresh_task(socket)}
   end
 
@@ -1333,7 +1333,7 @@ defmodule RailWeb.TaskDetailLive do
   end
 
   defp resolve_current_run(%Task{} = task) do
-    run = if is_list(task.role_runs) and task.role_runs != [], do: List.last(task.role_runs)
+    run = if is_list(task.runs) and task.runs != [], do: List.last(task.runs)
 
     role_id =
       cond do
@@ -1402,7 +1402,7 @@ defmodule RailWeb.TaskDetailLive do
     roles = if task.project_id, do: Rail.Roles.list_roles(scope, task.project_id), else: []
     roles_map = Map.new(roles, fn r -> {r.id, r} end)
 
-    ordered_runs = sort_role_runs(task.role_runs || [])
+    ordered_runs = sort_runs(task.runs || [])
     selected_role_id = resolve_selected_role_id(ordered_runs, socket.assigns[:selected_role_id])
     selected_run = find_selected_run(ordered_runs, selected_role_id)
     selected_role = if selected_role_id, do: resolve_role(selected_role_id, roles_map)
@@ -1421,7 +1421,7 @@ defmodule RailWeb.TaskDetailLive do
     |> assign(:current_project_id, task.project_id)
     |> assign(:current_run, current_run)
     |> assign(:current_role_name, role_name)
-    |> assign(:role_runs, task.role_runs || [])
+    |> assign(:runs, task.runs || [])
     |> assign(:running_action, running_action)
     |> assign(:design, design)
     |> assign(:demo, demo)
@@ -1498,16 +1498,16 @@ defmodule RailWeb.TaskDetailLive do
          Runs.running?(task.id))
   end
 
-  defp load_run_transcript(%RoleRun{id: role_run_id}) do
-    lines = role_run_id |> Runs.list_run_events() |> Enum.map(& &1.line)
+  defp load_run_transcript(%Run{id: run_id}) do
+    lines = run_id |> Runs.list_run_events() |> Enum.map(& &1.line)
 
     {lines, ChatTranscript.parse(lines)}
   end
 
   defp load_run_transcript(_other), do: {[], ChatTranscript.parse([])}
 
-  defp sort_role_runs(role_runs) do
-    Enum.sort_by(role_runs, fn r ->
+  defp sort_runs(runs) do
+    Enum.sort_by(runs, fn r ->
       {r.started_at || ~U[1970-01-01 00:00:00Z], r.inserted_at || ~U[1970-01-01 00:00:00Z], r.id || ""}
     end)
   end

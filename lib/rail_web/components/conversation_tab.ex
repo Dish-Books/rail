@@ -12,7 +12,7 @@ defmodule RailWeb.Components.ConversationTab do
   alias Rail.Domain.Formatters
   alias Rail.Domain.HandoffLine
   alias Rail.Domain.TaskUsage
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
 
   attr :task, :any, required: true
   attr :ordered_runs, :list, default: []
@@ -422,7 +422,7 @@ defmodule RailWeb.Components.ConversationTab do
 
     is_thinking = task.active_chat_role_id != nil and task.active_chat_role_id == role_id
     is_queued = run != nil and is_binary(run.pending_chat) and run.pending_chat != ""
-    is_unavailable = run == nil or not RoleRun.can_chat?(run)
+    is_unavailable = run == nil or not Run.can_chat?(run)
 
     hint_text =
       cond do
@@ -729,12 +729,12 @@ defmodule RailWeb.Components.ConversationTab do
   defp format_started_at(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
   defp format_started_at(_other), do: nil
 
-  defp format_elapsed_run(%RoleRun{started_at: %DateTime{} = dt, completed_at: %DateTime{} = completed}) do
+  defp format_elapsed_run(%Run{started_at: %DateTime{} = dt, completed_at: %DateTime{} = completed}) do
     secs = max(0, DateTime.diff(completed, dt, :second))
     Formatters.format_duration(secs)
   end
 
-  defp format_elapsed_run(%RoleRun{started_at: %DateTime{} = dt}) do
+  defp format_elapsed_run(%Run{started_at: %DateTime{} = dt}) do
     secs = max(0, DateTime.diff(DateTime.utc_now(), dt, :second))
     Formatters.format_duration(secs)
   end

@@ -14,7 +14,7 @@ defmodule Rail.Runs.Boot do
   alias Rail.Runs
   alias Rail.Runs.Follower
   alias Rail.Runs.FollowerSupervisor
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Tools
 
@@ -24,15 +24,15 @@ defmodule Rail.Runs.Boot do
   Starts the Boot reconciliation task in the supervision tree.
   """
   def start_link(opts \\ []) do
-    Task.start_link(__MODULE__, :run, [opts])
+    Task.start_link(__MODULE__, :reconcile, [opts])
   end
 
   @doc """
   Runs adoption if runs tables exist and adoption is enabled.
   """
-  def run(opts \\ []) do
+  def reconcile(opts \\ []) do
     if Application.get_env(:rail, :adopt_on_boot, true) and tables_exist?() do
-      adopt_live_runs(opts)
+      adopt_live_os_processes(opts)
     else
       :ok
     end
@@ -47,53 +47,53 @@ defmodule Rail.Runs.Boot do
   @doc """
   Adopts all in-flight runs on the current node.
   """
-  def adopt_live_runs(opts \\ []) do
+  def adopt_live_os_processes(opts \\ []) do
     current_node = Keyword.get(opts, :node) || to_string(Node.self())
     timeout_seconds = Keyword.get(opts, :timeout_seconds, @default_starting_timeout_seconds)
     now = Keyword.get(opts, :now) || DateTime.utc_now()
 
-    runs =
+    os_processes =
       Repo.all(
-        from r in Run,
+        from r in OsProcess,
           where: r.node == ^current_node and r.status in [:starting, :running],
-          preload: [:role_run],
+          preload: [:run],
           order_by: [asc: r.started_at]
       )
 
-    Enum.map(runs, fn run ->
-      adopt_single_run(run, now, timeout_seconds, opts)
+    Enum.map(os_processes, fn os_process ->
+      adopt_single_os_process(os_process, now, timeout_seconds, opts)
     end)
   end
 
-  defp adopt_single_run(run, now, timeout_seconds, opts) do
+  defp adopt_single_os_process(os_process, now, timeout_seconds, opts) do
     cond do
-      run.status == :starting and is_nil(run.os_pid) ->
-        handle_starting_run(run, now, timeout_seconds)
+      os_process.status == :starting and is_nil(os_process.os_pid) ->
+        handle_starting_os_process(os_process, now, timeout_seconds)
 
-      is_integer(run.os_pid) and run.os_pid > 0 and Tools.os_process_alive?(run.os_pid) ->
-        handle_live_run(run, opts)
+      is_integer(os_process.os_pid) and os_process.os_pid > 0 and Tools.os_process_alive?(os_process.os_pid) ->
+        handle_live_os_process(os_process, opts)
 
       true ->
-        handle_dead_run(run, now, opts)
+        handle_dead_os_process(os_process, now, opts)
     end
   end
 
-  defp handle_starting_run(run, now, timeout_seconds) do
-    started_at = run.started_at || run.inserted_at
+  defp handle_starting_os_process(os_process, now, timeout_seconds) do
+    started_at = os_process.started_at || os_process.inserted_at
     diff = DateTime.diff(now, started_at, :second)
 
     if diff > timeout_seconds do
-      {:ok, updated_run} =
-        run
-        |> Run.changeset(%{status: :finished})
+      {:ok, updated_os_process} =
+        os_process
+        |> OsProcess.changeset(%{status: :finished})
         |> Repo.update()
 
-      if run.role_run do
+      if os_process.run do
         error_msg = "Spawn timed out: process never acquired a PID after #{diff}s"
 
-        {:ok, _updated_role_run} =
-          run.role_run
-          |> RoleRun.changeset(%{
+        {:ok, _updated_run} =
+          os_process.run
+          |> Run.changeset(%{
             status: :finished,
             completed_at: now,
             exit_code: -1,
@@ -102,23 +102,23 @@ defmodule Rail.Runs.Boot do
           |> Repo.update()
       end
 
-      {:failed_starting, updated_run}
+      {:failed_starting, updated_os_process}
     else
-      {:still_starting, run}
+      {:still_starting, os_process}
     end
   end
 
-  defp handle_live_run(run, opts) do
-    case Registry.lookup(Rail.Runs.FollowerRegistry, run.id) do
+  defp handle_live_os_process(os_process, opts) do
+    case Registry.lookup(Rail.Runs.FollowerRegistry, os_process.id) do
       [{pid, _val}] ->
-        {:already_following, run, pid}
+        {:already_following, os_process, pid}
 
       [] ->
         max_seq =
-          if run.role_run do
+          if os_process.run do
             Repo.one(
               from e in Rail.Runs.Schemas.RunEvent,
-                where: e.role_run_id == ^run.role_run.id,
+                where: e.run_id == ^os_process.run.id,
                 select: max(e.seq)
             ) || 0
           else
@@ -126,24 +126,24 @@ defmodule Rail.Runs.Boot do
           end
 
         follower_opts = [
-          run: run,
-          role_run: run.role_run,
-          stream_path: run.stream_path,
-          os_pid: run.os_pid,
+          os_process: os_process,
+          run: os_process.run,
+          stream_path: os_process.stream_path,
+          os_pid: os_process.os_pid,
           next_seq: max_seq + 1,
-          skip_log_lines: (run.role_run && run.role_run.attempt_log_lines) || 0,
-          backend: backend_for(run.role_run),
+          skip_log_lines: (os_process.run && os_process.run.attempt_log_lines) || 0,
+          backend: backend_for(os_process.run),
           on_finished: Keyword.get(opts, :on_finished)
         ]
 
         case FollowerSupervisor.start_follower(follower_opts) do
           {:ok, follower_pid} ->
             allow_sandbox(follower_pid)
-            {:adopted_live, run, follower_pid}
+            {:adopted_live, os_process, follower_pid}
 
           # coveralls-ignore-start (follower supervisor start failure)
           {:error, reason} ->
-            {:error, run, reason}
+            {:error, os_process, reason}
             # coveralls-ignore-stop
         end
     end
@@ -151,14 +151,14 @@ defmodule Rail.Runs.Boot do
 
   # A stream is parsed by the backend that wrote it, so adoption reads the backend off
   # the role that produced the run rather than guessing.
-  defp backend_for(%RoleRun{} = role_run) do
-    case Repo.preload(role_run, role: :backend) do
-      %RoleRun{role: %{backend: %Backend{} = backend}} -> backend
+  defp backend_for(%Run{} = run) do
+    case Repo.preload(run, role: :backend) do
+      %Run{role: %{backend: %Backend{} = backend}} -> backend
       _unconfigured -> %Backend{name: :claude}
     end
   end
 
-  defp backend_for(_role_run), do: %Backend{name: :claude}
+  defp backend_for(_run), do: %Backend{name: :claude}
 
   # coveralls-ignore-start (test sandbox fallback)
   defp allow_sandbox(pid) do
@@ -169,20 +169,18 @@ defmodule Rail.Runs.Boot do
     _error -> :ok
   end
 
-  # coveralls-ignore-stop
-
-  defp handle_dead_run(run, now, opts) do
-    role_run = run.role_run || Repo.get(RoleRun, run.role_run_id)
-    backend = backend_for(role_run)
+  defp handle_dead_os_process(os_process, now, opts) do
+    run = os_process.run || Repo.get(Run, os_process.run_id)
+    backend = backend_for(run)
 
     event_state =
       Runs.new_event_state(backend,
-        task_id: run.task_id,
-        role_id: (role_run && role_run.role_id) || "",
-        conversation_id: role_run && role_run.conversation_id
+        task_id: os_process.task_id,
+        role_id: (run && run.role_id) || "",
+        conversation_id: run && run.conversation_id
       )
 
-    {lines, err_lines} = read_entire_stream_and_err(run.stream_path)
+    {lines, err_lines} = read_entire_stream_and_err(os_process.stream_path)
 
     updated_event_state =
       Enum.reduce(lines, event_state, fn line, acc ->
@@ -200,7 +198,7 @@ defmodule Rail.Runs.Boot do
         updated_event_state.result_error,
         raw_stderr,
         updated_event_state.saw_result,
-        run.os_pid
+        os_process.os_pid
       )
 
     exit_code =
@@ -210,60 +208,61 @@ defmodule Rail.Runs.Boot do
         raw_stderr
       )
 
-    {:ok, updated_run} =
-      run
-      |> Run.changeset(%{status: :adopted_dead})
+    {:ok, updated_os_process} =
+      os_process
+      |> OsProcess.changeset(%{status: :adopted_dead})
       |> Repo.update()
 
-    if role_run do
-      role_run_attrs = %{
+    if run do
+      run_attrs = %{
         status: :finished,
         completed_at: now,
         exit_code: exit_code,
         error: error,
         usage: updated_event_state.usage,
-        conversation_id: updated_event_state.conversation_id || role_run.conversation_id
+        conversation_id: updated_event_state.conversation_id || run.conversation_id
       }
 
-      {:ok, updated_role_run} =
-        role_run
-        |> RoleRun.changeset(role_run_attrs)
+      {:ok, updated_run} =
+        run
+        |> Run.changeset(run_attrs)
         |> Repo.update()
 
       outcome = %{
         exit_code: exit_code,
         error: error,
         usage: updated_event_state.usage,
-        conversation_id: updated_event_state.conversation_id || role_run.conversation_id,
+        conversation_id: updated_event_state.conversation_id || run.conversation_id,
         detected_questions: updated_event_state.detected_questions,
-        run: updated_run,
-        role_run: updated_role_run
+        os_process: updated_os_process,
+        run: updated_run
       }
 
       # Questions register before the run settles, so whoever handles `on_finished`
       # already sees the task parked on them.
-      if role_run.task_id && updated_event_state.detected_questions != [] && updated_run.kind != :chat do
+      if run.task_id && updated_event_state.detected_questions != [] && updated_os_process.kind != :chat do
         Pipeline.register_questions(
-          role_run.task_id,
-          role_run.id,
+          run.task_id,
+          run.id,
           updated_event_state.detected_questions
         )
       end
 
       # Every stage run settles the same way before anything stage-specific is told
       # about it; `on_finished` is only asked where a clean run goes next.
-      if updated_run.kind != :chat, do: Pipeline.settle_run(updated_run, outcome)
+      if updated_os_process.kind != :chat, do: Pipeline.settle_run(updated_os_process, outcome)
 
+      # coveralls-ignore-stop
       if is_function(Keyword.get(opts, :on_finished), 2) do
-        opts[:on_finished].(updated_run, outcome)
+        opts[:on_finished].(updated_os_process, outcome)
       else
-        Runs.on_run_finished(updated_run, outcome)
+        Runs.on_os_process_finished(updated_os_process, outcome)
       end
 
-      Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{role_run.id}", {:run_finished, updated_run, outcome})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:os_process_finished, updated_os_process, outcome})
     end
 
-    {:adopted_dead, updated_run}
+    {:adopted_dead, updated_os_process}
   end
 
   defp compute_dead_error(result_error, raw_stderr, saw_result, os_pid) do
@@ -318,7 +317,7 @@ defmodule Rail.Runs.Boot do
 
   defp tables_exist? do
     SQL.table_exists?(Repo, "runs") and
-      SQL.table_exists?(Repo, "role_runs")
+      SQL.table_exists?(Repo, "runs")
 
     # coveralls-ignore-start (defensive rescue if db connection fails during boot)
   rescue

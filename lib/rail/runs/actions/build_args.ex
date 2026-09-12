@@ -12,7 +12,7 @@ defmodule Rail.Runs.Actions.BuildArgs do
   Enforces exact flag order, read-only mode permissions, and resume flags per spec 03 §2.
 
   Options:
-  - `:backend`: the `%Backend{}` the role runs on
+  - `:backend`: the `%Backend{}` the runs on
   - `:prompt`: string prompt
   - `:model`: model name string
   - `:reasoning_effort` or `:effort`: `"high" | "medium" | "low"` (default `"high"`)

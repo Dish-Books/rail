@@ -53,12 +53,12 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
 
     with {:ok, qa_data} <- QaValidator.validate(qa_dir, opts),
          {:ok, rows_with_assets} <- upload_qa_assets(scope, qa_data.rows, opts) do
-      role_run_id = Keyword.get(opts, :role_run_id)
+      run_id = Keyword.get(opts, :run_id)
       commit = Keyword.get(opts, :commit) || qa_data[:commit]
 
       qa_attrs = %{
         task_id: task_id,
-        role_run_id: role_run_id,
+        run_id: run_id,
         commit: commit,
         session: qa_data[:session] || %{},
         rows: rows_with_assets

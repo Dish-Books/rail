@@ -8,7 +8,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Runs.Schemas.OsProcess
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -100,8 +100,8 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         question_id: q.id
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role.id,
         status: :blocked_on_input,
@@ -109,8 +109,8 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
       })
 
     _run =
-      Repo.insert!(%Run{
-        role_run_id: role_run.id,
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
         task_id: task_id,
         kind: :stage,
         status: :running,
@@ -170,8 +170,8 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         question_id: q.id
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :blocked_on_input,
@@ -180,8 +180,8 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
       })
 
     _run =
-      Repo.insert!(%Run{
-        role_run_id: role_run.id,
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
         task_id: task.id,
         kind: :stage,
         status: :finished,
@@ -235,8 +235,8 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         question_id: q.id
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :blocked_on_input,
@@ -245,8 +245,8 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
       })
 
     _run =
-      Repo.insert!(%Run{
-        role_run_id: role_run.id,
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
         task_id: task.id,
         kind: :stage,
         status: :finished,

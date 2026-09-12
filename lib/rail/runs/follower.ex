@@ -10,7 +10,7 @@ defmodule Rail.Runs.Follower do
   alias Rail.Repo
   alias Rail.Runs
   alias Rail.Runs.FollowerRegistry
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
   alias Rail.Tools
@@ -19,8 +19,8 @@ defmodule Rail.Runs.Follower do
   @default_batch_interval 250
 
   defstruct [
+    :os_process_id,
     :run_id,
-    :role_run_id,
     :task_id,
     :stream_path,
     :err_path,
@@ -43,7 +43,7 @@ defmodule Rail.Runs.Follower do
   Starts a new Follower GenServer.
   """
   def start_link(opts) when is_list(opts) do
-    run = Keyword.fetch!(opts, :run)
+    os_process = Keyword.fetch!(opts, :os_process)
 
     name =
       case opts[:name] do
@@ -51,7 +51,7 @@ defmodule Rail.Runs.Follower do
           custom_name
 
         _fallback ->
-          {:via, Registry, {FollowerRegistry, run.id}}
+          {:via, Registry, {FollowerRegistry, os_process.id}}
       end
 
     GenServer.start_link(__MODULE__, opts, name: name)
@@ -60,24 +60,24 @@ defmodule Rail.Runs.Follower do
   @doc """
   Stops a running process and its follower.
   """
-  def stop_run(run_or_id, opts \\ [])
+  def stop_os_process(run_or_id, opts \\ [])
 
-  def stop_run(%Run{} = run, opts) do
-    do_stop_run(run, opts)
+  def stop_os_process(%OsProcess{} = os_process, opts) do
+    do_stop_os_process(os_process, opts)
   end
 
-  def stop_run(id, opts) when is_binary(id) do
-    run =
-      Repo.get(Run, id) ||
+  def stop_os_process(id, opts) when is_binary(id) do
+    os_process =
+      Repo.get(OsProcess, id) ||
         Repo.one(
-          from r in Run,
-            where: (r.role_run_id == ^id or r.task_id == ^id) and r.status in [:starting, :running],
+          from r in OsProcess,
+            where: (r.run_id == ^id or r.task_id == ^id) and r.status in [:starting, :running],
             order_by: [desc: r.inserted_at],
             limit: 1
         )
 
-    if run do
-      do_stop_run(run, opts)
+    if os_process do
+      do_stop_os_process(os_process, opts)
     else
       {:error, :not_found}
     end
@@ -139,9 +139,9 @@ defmodule Rail.Runs.Follower do
 
   @impl true
   def init(opts) do
-    run = Keyword.fetch!(opts, :run)
-    role_run = Keyword.get(opts, :role_run) || Repo.get!(RoleRun, run.role_run_id)
-    stream_path = Keyword.get(opts, :stream_path) || run.stream_path
+    os_process = Keyword.fetch!(opts, :os_process)
+    run = Keyword.get(opts, :run) || Repo.get!(Run, os_process.run_id)
+    stream_path = Keyword.get(opts, :stream_path) || os_process.stream_path
     backend = Keyword.fetch!(opts, :backend)
     tail_interval_ms = Keyword.get(opts, :tail_interval_ms, @default_tail_interval)
     batch_interval_ms = Keyword.get(opts, :batch_interval_ms, @default_batch_interval)
@@ -150,20 +150,20 @@ defmodule Rail.Runs.Follower do
 
     event_state =
       Runs.new_event_state(backend,
-        task_id: run.task_id,
-        role_id: role_run.role_id,
-        conversation_id: role_run.conversation_id
+        task_id: os_process.task_id,
+        role_id: run.role_id,
+        conversation_id: run.conversation_id
       )
 
     next_seq = Keyword.get(opts, :next_seq, 1)
 
     state = %__MODULE__{
+      os_process_id: os_process.id,
       run_id: run.id,
-      role_run_id: role_run.id,
-      task_id: run.task_id,
+      task_id: os_process.task_id,
       stream_path: stream_path,
       err_path: "#{stream_path}.err",
-      os_pid: Keyword.get(opts, :os_pid) || run.os_pid,
+      os_pid: Keyword.get(opts, :os_pid) || os_process.os_pid,
       port: Keyword.get(opts, :port),
       backend: backend,
       event_state: event_state,
@@ -182,14 +182,14 @@ defmodule Rail.Runs.Follower do
   end
 
   @impl true
-  def handle_call({:stop_run, opts}, _from, state) do
+  def handle_call({:stop_os_process, opts}, _from, state) do
     if is_integer(state.os_pid) and state.os_pid > 0 do
       Tools.terminate_os_process(state.os_pid, opts)
     end
 
     state = %{state | exit_code: -1}
-    {updated_run, final_state} = do_child_exit(state)
-    {:stop, :normal, {:ok, updated_run}, final_state}
+    {updated_os_process, final_state} = do_child_exit(state)
+    {:stop, :normal, {:ok, updated_os_process}, final_state}
   end
 
   @impl true
@@ -279,14 +279,14 @@ defmodule Rail.Runs.Follower do
     if state.pending_events == [] do
       state
     else
-      flush_pending_events(state.pending_events, state.role_run_id)
+      flush_pending_events(state.pending_events, state.run_id)
       %{state | pending_events: []}
     end
   end
 
-  defp flush_pending_events([], _role_run_id), do: []
+  defp flush_pending_events([], _run_id), do: []
 
-  defp flush_pending_events(pending_events, role_run_id) do
+  defp flush_pending_events(pending_events, run_id) do
     now = DateTime.utc_now()
 
     entries =
@@ -295,7 +295,7 @@ defmodule Rail.Runs.Follower do
       |> Enum.map(fn {seq, line} ->
         %{
           id: UXID.generate!(),
-          role_run_id: role_run_id,
+          run_id: run_id,
           seq: seq,
           line: line,
           inserted_at: now,
@@ -304,38 +304,38 @@ defmodule Rail.Runs.Follower do
       end)
 
     Repo.insert_all(RunEvent, entries)
-    Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{role_run_id}", {:run_events, role_run_id, entries})
+    Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run_id}", {:run_events, run_id, entries})
     entries
   end
 
-  defp do_stop_run(run, opts) do
-    case Registry.lookup(FollowerRegistry, run.id) do
+  defp do_stop_os_process(os_process, opts) do
+    case Registry.lookup(FollowerRegistry, os_process.id) do
       [{pid, _registry_val}] ->
         try do
-          GenServer.call(pid, {:stop_run, opts}, 10_000)
-          # coveralls-ignore-start (fallback if follower crashes during stop_run)
+          GenServer.call(pid, {:stop_os_process, opts}, 10_000)
+          # coveralls-ignore-start (fallback if follower crashes during stop_os_process)
         catch
           :exit, _reason ->
-            fallback_stop_run(run, opts)
+            fallback_stop_os_process(os_process, opts)
             # coveralls-ignore-stop
         end
 
       [] ->
-        fallback_stop_run(run, opts)
+        fallback_stop_os_process(os_process, opts)
     end
   end
 
-  defp fallback_stop_run(run, opts) do
-    if is_integer(run.os_pid) and run.os_pid > 0 do
-      Tools.terminate_os_process(run.os_pid, opts)
+  defp fallback_stop_os_process(os_process, opts) do
+    if is_integer(os_process.os_pid) and os_process.os_pid > 0 do
+      Tools.terminate_os_process(os_process.os_pid, opts)
     end
 
-    {:ok, updated_run} =
-      run
-      |> Run.changeset(%{status: :finished})
+    {:ok, updated_os_process} =
+      os_process
+      |> OsProcess.changeset(%{status: :finished})
       |> Repo.update()
 
-    {:ok, updated_run}
+    {:ok, updated_os_process}
   end
 
   defp read_available_stream(stream_path, file_offset, partial_line, opts) do
@@ -361,6 +361,7 @@ defmodule Rail.Runs.Follower do
         {[], file_offset, partial_line}
 
         # coveralls-ignore-stop
+        # coveralls-ignore-stop
     end
   end
 
@@ -384,8 +385,6 @@ defmodule Rail.Runs.Follower do
     {[], file_offset, partial_line}
   end
 
-  # coveralls-ignore-stop
-
   defp finalize_partial_line(partial_line, file_offset, opts) do
     if Keyword.get(opts, :final, false) and partial_line != "" do
       {[decode_utf8_lenient(partial_line)], file_offset, ""}
@@ -404,7 +403,7 @@ defmodule Rail.Runs.Follower do
       process_incoming_lines(final_lines, %{state | file_offset: final_offset})
 
     err_lines = drain_err_file(state.err_path)
-    flush_pending_events(pending_events, state.role_run_id)
+    flush_pending_events(pending_events, state.run_id)
 
     raw_stderr =
       err_lines
@@ -423,37 +422,37 @@ defmodule Rail.Runs.Follower do
         raw_stderr
       )
 
-    case Repo.get(Run, state.run_id) do
-      %Run{} = run ->
-        if state.task_id && event_state.detected_questions != [] && run.kind != :chat do
+    case Repo.get(OsProcess, state.os_process_id) do
+      %OsProcess{} = os_process ->
+        if state.task_id && event_state.detected_questions != [] && os_process.kind != :chat do
           Pipeline.register_questions(
             state.task_id,
-            state.role_run_id,
+            state.run_id,
             event_state.detected_questions
           )
         end
 
-        {:ok, updated_run} =
-          run
-          |> Run.changeset(%{status: :finished})
+        {:ok, updated_os_process} =
+          os_process
+          |> OsProcess.changeset(%{status: :finished})
           |> Repo.update()
 
-        updated_role_run = update_role_run(state.role_run_id, exit_code, error, event_state, run.kind)
-        outcome = build_outcome(exit_code, error, event_state, updated_run, updated_role_run)
+        updated_run = update_run(state.run_id, exit_code, error, event_state, os_process.kind)
+        outcome = build_outcome(exit_code, error, event_state, updated_os_process, updated_run)
 
         # Every stage run settles the same way before anything stage-specific is
         # told about it; `on_finished` is only asked where a clean run goes next.
-        if run.kind != :chat, do: Pipeline.settle_run(updated_run, outcome)
+        if os_process.kind != :chat, do: Pipeline.settle_run(updated_os_process, outcome)
 
-        notify_run_finished(state.on_finished, updated_run, outcome)
+        notify_os_process_finished(state.on_finished, updated_os_process, outcome)
 
         Phoenix.PubSub.broadcast(
           Rail.PubSub,
-          "run:#{state.role_run_id}",
-          {:run_finished, updated_run, outcome}
+          "run:#{state.run_id}",
+          {:os_process_finished, updated_os_process, outcome}
         )
 
-        {updated_run, %{state | file_offset: final_offset, pending_events: [], event_state: event_state}}
+        {updated_os_process, %{state | file_offset: final_offset, pending_events: [], event_state: event_state}}
 
       nil ->
         {nil, %{state | file_offset: final_offset, pending_events: [], event_state: event_state}}
@@ -474,8 +473,6 @@ defmodule Rail.Runs.Follower do
     end
   end
 
-  # coveralls-ignore-stop
-
   defp compute_error(result_error, raw_stderr, exit_code) do
     cond do
       is_binary(result_error) and result_error != "" and raw_stderr != "" ->
@@ -495,6 +492,8 @@ defmodule Rail.Runs.Follower do
     end
   end
 
+  # coveralls-ignore-stop
+
   defp compute_exit_code(exit_code, error, saw_result, result_error, raw_stderr) do
     cond do
       is_integer(exit_code) and is_nil(error) ->
@@ -511,21 +510,21 @@ defmodule Rail.Runs.Follower do
     end
   end
 
-  defp update_role_run(role_run_id, exit_code, error, event_state, kind) do
-    case Repo.get(RoleRun, role_run_id) do
-      %RoleRun{} = role_run ->
-        role_run_attrs =
+  defp update_run(run_id, exit_code, error, event_state, kind) do
+    case Repo.get(Run, run_id) do
+      %Run{} = run ->
+        run_attrs =
           if kind == :chat do
-            conv_id = event_state.conversation_id || role_run.conversation_id
+            conv_id = event_state.conversation_id || run.conversation_id
 
-            if conv_id == role_run.conversation_id do
+            if conv_id == run.conversation_id do
               %{}
             else
               %{conversation_id: conv_id}
             end
           else
             new_status =
-              if role_run.status == :blocked_on_input do
+              if run.status == :blocked_on_input do
                 :blocked_on_input
               else
                 :finished
@@ -536,17 +535,17 @@ defmodule Rail.Runs.Follower do
               completed_at: DateTime.utc_now(),
               exit_code: exit_code,
               error: error,
-              conversation_id: event_state.conversation_id || role_run.conversation_id,
+              conversation_id: event_state.conversation_id || run.conversation_id,
               usage: event_state.usage
             }
           end
 
-        {:ok, updated_role_run} =
-          role_run
-          |> RoleRun.changeset(role_run_attrs)
+        {:ok, updated_run} =
+          run
+          |> Run.changeset(run_attrs)
           |> Repo.update()
 
-        updated_role_run
+        updated_run
 
       # coveralls-ignore-start (unreachable due to foreign key cascade delete)
       nil ->
@@ -555,23 +554,23 @@ defmodule Rail.Runs.Follower do
     end
   end
 
-  defp build_outcome(exit_code, error, event_state, updated_run, updated_role_run) do
+  defp build_outcome(exit_code, error, event_state, updated_os_process, updated_run) do
     %{
       exit_code: exit_code,
       error: error,
       usage: event_state.usage,
-      conversation_id: event_state.conversation_id || (updated_role_run && updated_role_run.conversation_id),
+      conversation_id: event_state.conversation_id || (updated_run && updated_run.conversation_id),
       detected_questions: event_state.detected_questions,
-      run: updated_run,
-      role_run: updated_role_run
+      os_process: updated_os_process,
+      run: updated_run
     }
   end
 
-  defp notify_run_finished(on_finished, updated_run, outcome) do
+  defp notify_os_process_finished(on_finished, updated_os_process, outcome) do
     if is_function(on_finished, 2) do
-      on_finished.(updated_run, outcome)
+      on_finished.(updated_os_process, outcome)
     else
-      Runs.on_run_finished(updated_run, outcome)
+      Runs.on_os_process_finished(updated_os_process, outcome)
     end
   end
 
@@ -582,7 +581,7 @@ defmodule Rail.Runs.Follower do
 
     case Enum.reject(current, &MapSet.member?(seen, &1.prompt)) do
       [] -> :ok
-      new_questions -> Pipeline.register_questions(task_id, state.role_run_id, new_questions)
+      new_questions -> Pipeline.register_questions(task_id, state.run_id, new_questions)
     end
   end
 

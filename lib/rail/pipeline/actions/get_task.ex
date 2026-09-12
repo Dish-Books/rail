@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Actions.GetTask do
   end
 
   defp do_get_task(id) do
-    query = from(t in Task, where: t.id == ^id, preload: [:project, :issue, :plans, :role_runs, :designs, :demos])
+    query = from(t in Task, where: t.id == ^id, preload: [:project, :issue, :plans, :runs, :designs, :demos])
 
     case Repo.one(query) do
       %Task{} = task -> {:ok, attach_latest_artifacts(task)}
@@ -45,7 +45,7 @@ defmodule Rail.Pipeline.Actions.GetTask do
   end
 
   defp do_get_task!(id) do
-    query = from(t in Task, where: t.id == ^id, preload: [:project, :issue, :plans, :role_runs, :designs, :demos])
+    query = from(t in Task, where: t.id == ^id, preload: [:project, :issue, :plans, :runs, :designs, :demos])
     query |> Repo.one!() |> attach_latest_artifacts()
   end
 

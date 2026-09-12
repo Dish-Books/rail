@@ -17,14 +17,14 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
 
   @doc """
   Initiates a stage run for a given task:
   - Resolves stage role (or engineer role for rebasing).
   - Ensures worktree directory exists.
   - Prepares the task's scratch directory.
-  - Records branch fingerprints and increments role run attempt.
+  - Records branch fingerprints and increments run attempt.
   - Generates stage brief and CLI argv/prompt.
   - Spawns runner process and attaches follower.
   - Transitions task to `:running` and broadcasts `pipeline_changed`.
@@ -75,7 +75,7 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
 
     {:ok, _scratch} = prepare_scratch(task)
 
-    {:ok, role_run} = Runs.start_or_resume_role_run(task, role, worktree_path)
+    {:ok, run} = Runs.start_or_resume_run(task, role, worktree_path)
 
     identifier = issue_identifier(task)
     brief = build_brief(task, worktree_path, base_branch, identifier, role, stage)
@@ -88,8 +88,8 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
         role_instructions: role.system_prompt,
         context_snippet: brief,
         plan: plan_content,
-        pending_answer: role_run.pending_answer,
-        conversation_id: role_run.conversation_id
+        pending_answer: run.pending_answer,
+        conversation_id: run.conversation_id
       )
 
     argv =
@@ -100,27 +100,27 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
         reasoning_effort: role.reasoning_effort || "high",
         read_only: role.stage == :review,
         system_prompt: role.system_prompt,
-        conversation_id: role_run.conversation_id,
+        conversation_id: run.conversation_id,
         work_dir: worktree_path
       )
 
-    spawn_and_finalize(task, role_run, argv, opts)
+    spawn_and_finalize(task, run, argv, opts)
   end
 
-  defp spawn_and_finalize(task, role_run, argv, opts) do
+  defp spawn_and_finalize(task, run, argv, opts) do
     settle = settle_action(task)
 
     on_finished_cb =
-      Keyword.get(opts, :on_finished) || fn run, outcome -> settle.(run, outcome, opts) end
+      Keyword.get(opts, :on_finished) || fn os_process, outcome -> settle.(os_process, outcome, opts) end
 
     spawner_opts =
       [on_finished: on_finished_cb] ++ Keyword.take(opts, [:allow_fun])
 
-    case Runs.start_run(role_run, :stage, argv, spawner_opts) do
-      {:ok, run} ->
-        {:ok, updated_role_run} =
-          role_run
-          |> RoleRun.changeset(%{pending_answer: nil, attempt_log_lines: 0})
+    case Runs.start_os_process(run, :stage, argv, spawner_opts) do
+      {:ok, os_process} ->
+        {:ok, updated_run} =
+          run
+          |> Run.changeset(%{pending_answer: nil, attempt_log_lines: 0})
           |> Repo.update()
 
         {:ok, updated_task} =
@@ -130,7 +130,7 @@ defmodule Rail.Pipeline.Actions.StartStageRun do
 
         Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :dispatched})
 
-        {:ok, %{task: updated_task, role_run: updated_role_run, run: run}}
+        {:ok, %{task: updated_task, run: updated_run, os_process: os_process}}
 
       {:error, reason} ->
         error_text = "Failed to spawn runner: #{inspect(reason)}"

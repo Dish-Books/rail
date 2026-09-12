@@ -126,7 +126,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
 
   test "returns error when dismissing an answered question", %{task: task, roles: roles} do
     {:ok, _product_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task.id,
         role_id: roles[:product].id,
         conversation_id: "sess_product",

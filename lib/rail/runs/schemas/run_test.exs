@@ -1,33 +1,39 @@
 defmodule Rail.Runs.Schemas.RunTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Domain.TaskUsage
   alias Rail.Runs.Schemas.Run
 
   test "changeset/2 with valid attributes" do
-    role_run_id = UXID.generate!(prefix: "rr")
     task_id = UXID.generate!(prefix: "tsk")
+    role_id = UXID.generate!(prefix: "rol")
     now = DateTime.utc_now()
 
     attrs = %{
-      role_run_id: role_run_id,
       task_id: task_id,
-      kind: :stage,
-      os_pid: 12_345,
-      stream_path: "/tmp/rail/streams/test.ndjson",
-      node: "nonode@nohost",
+      role_id: role_id,
       status: :running,
-      started_at: now
+      started_at: now,
+      conversation_id: "conv-123",
+      exit_code: 0,
+      error: nil,
+      usage: %{input_tokens: 100, output_tokens: 50},
+      chat_usage: %{input_tokens: 20, output_tokens: 10}
     }
 
     changeset = Run.changeset(%Run{}, attrs)
     assert changeset.valid?
 
-    assert get_change(changeset, :role_run_id) == role_run_id
     assert get_change(changeset, :task_id) == task_id
-    assert get_change(changeset, :kind) == :stage
-    assert get_change(changeset, :os_pid) == 12_345
+    assert get_change(changeset, :role_id) == role_id
     assert get_change(changeset, :status) == :running
+    assert get_change(changeset, :conversation_id) == "conv-123"
+
+    usage_changeset = get_change(changeset, :usage)
+    assert %TaskUsage{input_tokens: 100, output_tokens: 50} = apply_changes(usage_changeset)
+
+    chat_usage_changeset = get_change(changeset, :chat_usage)
+    assert %TaskUsage{input_tokens: 20, output_tokens: 10} = apply_changes(chat_usage_changeset)
   end
 
   test "changeset/2 validates required fields" do
@@ -35,73 +41,70 @@ defmodule Rail.Runs.Schemas.RunTest do
     refute changeset.valid?
 
     errors = errors_on(changeset)
-    assert "can't be blank" in errors.role_run_id
     assert "can't be blank" in errors.task_id
-    assert "can't be blank" in errors.kind
-    assert "can't be blank" in errors.stream_path
-    assert "can't be blank" in errors.node
+    assert "can't be blank" in errors.role_id
     assert "can't be blank" in errors.status
     assert "can't be blank" in errors.started_at
   end
 
-  test "changeset/2 validates enum fields" do
-    changeset =
-      Run.changeset(%Run{}, %{
-        role_run_id: UXID.generate!(prefix: "rr"),
-        task_id: UXID.generate!(prefix: "tsk"),
-        kind: "invalid_kind",
-        stream_path: "/tmp/rail/streams/test.ndjson",
-        node: "node@host",
-        status: "invalid_status",
-        started_at: DateTime.utc_now()
-      })
-
+  test "changeset/2 validates status enum" do
+    changeset = Run.changeset(%Run{}, %{status: "invalid_status"})
     refute changeset.valid?
-    errors = errors_on(changeset)
-    assert "is invalid" in errors.kind
-    assert "is invalid" in errors.status
+    assert "is invalid" in errors_on(changeset).status
   end
 
-  test "kinds/0 and statuses/0 return expected lists" do
-    assert :stage in Run.kinds()
-    assert :chat in Run.kinds()
-    assert :rebase in Run.kinds()
-
-    assert :starting in Run.statuses()
-    assert :running in Run.statuses()
-    assert :finished in Run.statuses()
-    assert :adopted_dead in Run.statuses()
-    assert :blocked_on_input in Run.statuses()
+  test "statuses/0 returns all allowed statuses" do
+    statuses = Run.statuses()
+    assert :starting in statuses
+    assert :running in statuses
+    assert :finished in statuses
+    assert :adopted_dead in statuses
+    assert :blocked_on_input in statuses
   end
 
-  test "insert and retrieve run" do
-    role_run =
-      %RoleRun{}
-      |> RoleRun.changeset(%{
-        task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-      |> Repo.insert!()
+  test "insert and retrieve run with embeds" do
+    task_id = UXID.generate!(prefix: "tsk")
+    role_id = UXID.generate!(prefix: "rol")
+    now = DateTime.utc_now()
 
     {:ok, run} =
       %Run{}
       |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
-        kind: :stage,
-        os_pid: 12_345,
-        stream_path: "/tmp/rail/streams/#{role_run.id}.ndjson",
-        node: "node@host",
+        task_id: task_id,
+        role_id: role_id,
         status: :starting,
-        started_at: DateTime.utc_now()
+        started_at: now,
+        usage: %{input_tokens: 120, output_tokens: 40}
       })
       |> Repo.insert()
 
     assert String.starts_with?(run.id, "run_")
-    assert run.role_run_id == role_run.id
-    assert run.os_pid == 12_345
-    assert run.status == :starting
+    assert run.usage.input_tokens == 120
+    assert run.usage.output_tokens == 40
+  end
+
+  test "has_started?/1 and can_chat?/1 logic" do
+    unstarted = %Run{started_at: nil, attempts: 0, conversation_id: nil}
+    refute Run.has_started?(unstarted)
+    refute Run.can_chat?(unstarted)
+
+    started_no_conv = %Run{started_at: DateTime.utc_now(), attempts: 1, conversation_id: nil}
+    assert Run.has_started?(started_no_conv)
+    refute Run.can_chat?(started_no_conv)
+
+    started_empty_conv = %Run{started_at: DateTime.utc_now(), attempts: 1, conversation_id: "  "}
+    assert Run.has_started?(started_empty_conv)
+    refute Run.can_chat?(started_empty_conv)
+
+    started_with_conv = %Run{started_at: DateTime.utc_now(), attempts: 1, conversation_id: "sess-123"}
+    assert Run.has_started?(started_with_conv)
+    assert Run.can_chat?(started_with_conv)
+
+    attempt_only_with_conv = %Run{started_at: nil, attempts: 2, conversation_id: "sess-456"}
+    assert Run.has_started?(attempt_only_with_conv)
+    assert Run.can_chat?(attempt_only_with_conv)
+
+    refute Run.has_started?(nil)
+    refute Run.can_chat?(nil)
   end
 end

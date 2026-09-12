@@ -87,7 +87,7 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
       })
 
     {:ok, rev_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_rev.id,
         status: :finished,
@@ -97,7 +97,7 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
     Runs.append_run_event(rev_run, "Reviewer finding: unused variable.")
 
     {:ok, qa_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_qa.id,
         status: :finished,
@@ -125,18 +125,18 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(system_scope(), task.id, %{outstanding_reports: [role.id]})
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role.id,
         status: :finished,
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "[tool] bash mix test")
-    Runs.append_run_event(role_run, "[human] take another look")
-    Runs.append_run_event(role_run, "[rail] That turn was not delivered")
-    Runs.append_run_event(role_run, "[result] exit 0")
+    Runs.append_run_event(run, "[tool] bash mix test")
+    Runs.append_run_event(run, "[human] take another look")
+    Runs.append_run_event(run, "[rail] That turn was not delivered")
+    Runs.append_run_event(run, "[result] exit 0")
 
     assert carried_reports(task) == ""
   end
@@ -148,7 +148,7 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
       Pipeline.update_task(system_scope(), task.id, %{outstanding_reports: [role.id]})
 
     {:ok, first_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role.id,
         status: :finished,
@@ -158,7 +158,7 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
     Runs.append_run_event(first_run, "Stale finding from the first pass.")
 
     {:ok, latest_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role.id,
         status: :finished,
@@ -180,15 +180,15 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
         outstanding_reports: [non_existent_role_id]
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: non_existent_role_id,
         status: :finished,
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "Finding from unknown role")
+    Runs.append_run_event(run, "Finding from unknown role")
 
     assert carried_reports(task) =~ "### #{non_existent_role_id}\n\nFinding from unknown role"
   end

@@ -1,6 +1,6 @@
 defmodule Rail.Pipeline.Actions.ParseStageVerdict do
   @moduledoc """
-  Reads a gate role run's verdict out of its own log.
+  Reads a gate run's verdict out of its own log.
   """
 
   import Rail.Runs.Utils.AssistantLog
@@ -29,9 +29,9 @@ defmodule Rail.Pipeline.Actions.ParseStageVerdict do
   check passed", "APPROVED once the leak is fixed"), which is the other reason
   the last line is the one that counts. Table rows are skipped.
   """
-  def parse_stage_verdict(role_run_or_id) do
+  def parse_stage_verdict(run_or_id) do
     {verdict, explanation} =
-      role_run_or_id
+      run_or_id
       |> assistant_log()
       |> String.replace("\r\n", "\n")
       |> String.split("\n")

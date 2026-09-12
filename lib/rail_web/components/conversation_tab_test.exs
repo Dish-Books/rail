@@ -7,7 +7,7 @@ defmodule RailWeb.Components.ConversationTabTest do
   alias Rail.Domain.TaskUsage
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias RailWeb.Components.ConversationTab
   alias RailWeb.CoreComponents
 
@@ -30,7 +30,7 @@ defmodule RailWeb.Components.ConversationTabTest do
   test "renders role selector chips and metadata row for selected run" do
     task = %Task{id: "tsk_123", stage: :engineer}
 
-    run1 = %RoleRun{
+    run1 = %Run{
       id: "rr_1",
       role_id: "architect",
       status: :completed,
@@ -41,7 +41,7 @@ defmodule RailWeb.Components.ConversationTabTest do
       usage: %TaskUsage{input_tokens: 1000, output_tokens: 500}
     }
 
-    run2 = %RoleRun{
+    run2 = %Run{
       id: "rr_2",
       role_id: "engineer",
       status: :running,
@@ -86,7 +86,7 @@ defmodule RailWeb.Components.ConversationTabTest do
 
   test "renders toggle button as Show chat when raw log is active" do
     task = %Task{id: "tsk_123", stage: :engineer}
-    run = %RoleRun{id: "rr_1", role_id: "engineer", status: :running, started_at: ~U[2026-09-09 10:00:00Z]}
+    run = %Run{id: "rr_1", role_id: "engineer", status: :running, started_at: ~U[2026-09-09 10:00:00Z]}
     role = %Role{id: "engineer", name: "Engineer", icon_name: "pi-code"}
 
     html =
@@ -108,7 +108,7 @@ defmodule RailWeb.Components.ConversationTabTest do
   test "renders ChatPane messages by kind: human, role, activity, handoff, and rail events" do
     task = %Task{id: "tsk_456", stage: :engineer}
 
-    run = %RoleRun{
+    run = %Run{
       id: "rr_eng",
       role_id: "engineer",
       status: :running,
@@ -116,7 +116,7 @@ defmodule RailWeb.Components.ConversationTabTest do
       conversation_id: "conv_live"
     }
 
-    arch_run = %RoleRun{
+    arch_run = %Run{
       id: "rr_arch",
       role_id: "architect",
       status: :completed,
@@ -206,7 +206,7 @@ defmodule RailWeb.Components.ConversationTabTest do
   test "renders ChatPane empty state when a run has no messages" do
     task = %Task{id: "tsk_empty", stage: :engineer}
     role = %Role{id: "engineer", name: "Engineer", icon_name: "pi-code"}
-    run = %RoleRun{id: "rr_empty", role_id: "engineer", status: :running}
+    run = %Run{id: "rr_empty", role_id: "engineer", status: :running}
 
     html =
       render_component(&ConversationTab.conversation_tab/1,
@@ -229,7 +229,7 @@ defmodule RailWeb.Components.ConversationTabTest do
     # 1. Thinking banner
     task_thinking = %Task{id: "tsk_think", active_chat_role_id: "engineer"}
 
-    run_live = %RoleRun{
+    run_live = %Run{
       id: "rr_live",
       role_id: "engineer",
       status: :running,
@@ -256,7 +256,7 @@ defmodule RailWeb.Components.ConversationTabTest do
     # 2. Queued banner
     task_idle = %Task{id: "tsk_queued", active_chat_role_id: nil}
 
-    run_queued = %RoleRun{
+    run_queued = %Run{
       id: "rr_queued",
       role_id: "engineer",
       status: :completed,
@@ -280,7 +280,7 @@ defmodule RailWeb.Components.ConversationTabTest do
     assert html_queued =~ ~s(data-qa="cancel-pending-chat")
 
     # 3. Unavailable banner (no conversation ID)
-    run_unstarted = %RoleRun{
+    run_unstarted = %Run{
       id: "rr_new",
       role_id: "engineer",
       status: :running,
@@ -322,8 +322,8 @@ defmodule RailWeb.Components.ConversationTabTest do
   end
 
   test "renders Raw Log view with color classes and handoff button" do
-    run = %RoleRun{id: "rr_log", role_id: "engineer", status: :completed}
-    arch_run = %RoleRun{id: "rr_arch", role_id: "architect", status: :completed}
+    run = %Run{id: "rr_log", role_id: "engineer", status: :completed}
+    arch_run = %Run{id: "rr_arch", role_id: "architect", status: :completed}
     roles_map = %{"architect" => %Role{id: "architect", name: "Architect", icon_name: "pi-compass-tool"}}
 
     lines = [
@@ -367,7 +367,7 @@ defmodule RailWeb.Components.ConversationTabTest do
       output_tokens: 120
     }
 
-    run = %RoleRun{
+    run = %Run{
       id: "rr_chat",
       role_id: :engineer,
       status: :completed,
@@ -406,8 +406,8 @@ defmodule RailWeb.Components.ConversationTabTest do
     html_fallbacks =
       render_component(&ConversationTab.conversation_tab/1,
         task: task,
-        ordered_runs: [run, %RoleRun{id: "rr_unknown", role_id: "unknown_custom_role", status: :pending}],
-        selected_run: %RoleRun{id: "rr_unknown", role_id: 12_345, status: :pending},
+        ordered_runs: [run, %Run{id: "rr_unknown", role_id: "unknown_custom_role", status: :pending}],
+        selected_run: %Run{id: "rr_unknown", role_id: 12_345, status: :pending},
         selected_role_id: "unknown_custom_role",
         selected_role: nil,
         roles_map: %{},
@@ -421,7 +421,7 @@ defmodule RailWeb.Components.ConversationTabTest do
   end
 
   test "renders raw log colors for stderr and denied lines" do
-    run = %RoleRun{id: "rr_stderr", role_id: "engineer", status: :failed}
+    run = %Run{id: "rr_stderr", role_id: "engineer", status: :failed}
 
     lines = [
       "[stderr] execution crashed",

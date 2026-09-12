@@ -15,7 +15,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStage do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Scope
 
@@ -43,17 +43,17 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStage do
   defp do_release_blocked_stage(%Task{} = task) do
     is_live = Runs.is_running?(task.id)
 
-    latest_run =
+    latest_os_process =
       Repo.one(
-        from r in Run,
+        from r in OsProcess,
           where: r.task_id == ^task.id,
           order_by: [desc: r.inserted_at],
           limit: 1
       )
 
-    latest_role_run =
+    latest_run =
       Repo.one(
-        from rr in RoleRun,
+        from rr in Run,
           where: rr.task_id == ^task.id,
           order_by: [desc: rr.inserted_at],
           limit: 1
@@ -63,8 +63,8 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStage do
       is_live ->
         release_to_running(task)
 
-      has_finished_run?(latest_run, latest_role_run) ->
-        release_finished_run(task, latest_run, latest_role_run)
+      has_finished_run?(latest_os_process, latest_run) ->
+        release_finished_run(task, latest_os_process, latest_run)
 
       true ->
         release_to_awaiting_approval(task)
@@ -81,18 +81,18 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStage do
     {:ok, updated_task}
   end
 
-  # Settling goes through the run, so a role run with no run row left to settle
+  # Settling goes through the run, so a run with no run row left to settle
   # falls through to the awaiting-approval branch instead.
-  defp has_finished_run?(%Run{} = latest_run, latest_role_run) do
-    latest_run.status == :finished || (latest_role_run && latest_role_run.exit_code != nil)
+  defp has_finished_run?(%OsProcess{} = latest_os_process, latest_run) do
+    latest_os_process.status == :finished || (latest_run && latest_run.exit_code != nil)
   end
 
-  defp has_finished_run?(_no_run, _latest_role_run), do: false
+  defp has_finished_run?(_no_run, _latest_run), do: false
 
-  defp release_finished_run(%Task{} = task, %Run{} = latest_run, latest_role_run) do
+  defp release_finished_run(%Task{} = task, %OsProcess{} = latest_os_process, latest_run) do
     exit_code =
-      if latest_role_run && is_integer(latest_role_run.exit_code) do
-        latest_role_run.exit_code
+      if latest_run && is_integer(latest_run.exit_code) do
+        latest_run.exit_code
       else
         0
       end
@@ -105,8 +105,8 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStage do
 
       settle = settle_action(cleared_task)
 
-      with {:ok, _settled_task, _role_run} <- Pipeline.settle_run(latest_run, %{exit_code: 0}),
-           {:ok, advanced_task, _role_run} <- settle.(latest_run, %{}, []) do
+      with {:ok, _settled_task, _run} <- Pipeline.settle_run(latest_os_process, %{exit_code: 0}),
+           {:ok, advanced_task, _run} <- settle.(latest_os_process, %{}, []) do
         {:ok, advanced_task}
       end
     else

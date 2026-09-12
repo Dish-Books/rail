@@ -12,7 +12,7 @@ defmodule Rail.Pipeline.Actions.PickDesignDirectionTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -116,8 +116,8 @@ defmodule Rail.Pipeline.Actions.PickDesignDirectionTest do
     {:ok, _design} =
       Artifacts.capture_design(system_scope(), task, design_scratch_9801, url_probe: fn _url -> true end)
 
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: designer_role.id,
         conversation_id: "sess_fixture",
@@ -133,7 +133,7 @@ defmodule Rail.Pipeline.Actions.PickDesignDirectionTest do
     updated_design = Repo.one(from d in Design, where: d.task_id == ^task.id, order_by: [desc: d.version], limit: 1)
     assert updated_design.picked_key == "dir-2"
 
-    run = Repo.one(from r in RoleRun, where: r.task_id == ^task.id and r.role_id == ^designer_role.id)
+    run = Repo.one(from r in Run, where: r.task_id == ^task.id and r.role_id == ^designer_role.id)
     assert run.pending_answer =~ ~s(The human picked direction "Bold Dark")
     assert run.pending_answer =~ ~s(key: "dir-2")
   end
@@ -228,7 +228,7 @@ defmodule Rail.Pipeline.Actions.PickDesignDirectionTest do
       })
 
     {:ok, _design_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task_id,
         role_id: designer_role.id,
         conversation_id: "sess_design",

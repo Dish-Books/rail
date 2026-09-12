@@ -4,55 +4,55 @@ defmodule Rail.Runs.Utils.EnsureExecutableTest do
   import Rail.Runs.Utils.EnsureExecutable
 
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
 
   setup do
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: UXID.generate!(prefix: "rol"),
         status: :starting,
         started_at: DateTime.utc_now()
       })
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/ensure_executable/#{role_run.id}.ndjson",
+        stream_path: "/tmp/ensure_executable/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :starting,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    %{role_run: role_run, run: run}
+    %{run: run, os_process: os_process}
   end
 
-  test "returns :ok for a real file", %{role_run: role_run, run: run} do
-    assert :ok = ensure_executable("/bin/sh", run, role_run)
+  test "returns :ok for a real file", %{run: run, os_process: os_process} do
+    assert :ok = ensure_executable("/bin/sh", os_process, run)
   end
 
-  test "treats a directory as missing", %{role_run: role_run, run: run} do
-    assert {:error, {:missing_binary, "/tmp", _run}} = ensure_executable("/tmp", run, role_run)
+  test "treats a directory as missing", %{run: run, os_process: os_process} do
+    assert {:error, {:missing_binary, "/tmp", _run}} = ensure_executable("/tmp", os_process, run)
   end
 
-  test "settles the run and role run when the binary is missing", %{
-    role_run: role_run,
-    run: run
+  test "settles the run and its os process when the binary is missing", %{
+    run: run,
+    os_process: os_process
   } do
     missing = "/path/to/nonexistent/cli_binary_xyz"
 
-    assert {:error, {:missing_binary, ^missing, %Run{status: :finished}}} =
-             ensure_executable(missing, run, role_run)
+    assert {:error, {:missing_binary, ^missing, %OsProcess{status: :finished}}} =
+             ensure_executable(missing, os_process, run)
 
-    assert %Run{status: :finished} = Repo.get!(Run, run.id)
+    assert %OsProcess{status: :finished} = Repo.get!(OsProcess, os_process.id)
 
-    assert %RoleRun{status: :finished, exit_code: -1, error: error} =
-             Repo.get!(RoleRun, role_run.id)
+    assert %Run{status: :finished, exit_code: -1, error: error} =
+             Repo.get!(Run, run.id)
 
     assert error =~ "No such CLI binary"
   end

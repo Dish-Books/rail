@@ -1,6 +1,6 @@
-defmodule Rail.Roles.RoleRunRecord do
+defmodule Rail.Roles.RunRecord do
   @moduledoc """
-  Historical execution record and transcript digest for a role run.
+  Historical execution record and transcript digest for a run.
   """
 
   @enforce_keys [:task_id, :title, :stage, :status, :transcript_text]

@@ -9,7 +9,7 @@ defmodule Rail.Artifacts.Schemas.QaReport do
   @primary_key {:id, UXID, autogenerate: true, prefix: "qar"}
   schema "qa_reports" do
     field :task_id, UXID
-    field :role_run_id, UXID
+    field :run_id, UXID
     field :commit, :string
     field :session, :map, default: %{}
 
@@ -18,7 +18,7 @@ defmodule Rail.Artifacts.Schemas.QaReport do
     timestamps()
   end
 
-  @cast_fields [:task_id, :role_run_id, :commit, :session]
+  @cast_fields [:task_id, :run_id, :commit, :session]
   @required_fields [:task_id]
 
   @doc "Builds a changeset for a QA report."

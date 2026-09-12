@@ -4,7 +4,7 @@ defmodule Rail.Runs.FollowerSupervisorTest do
   alias Rail.Backends.Schemas.Backend
   alias Rail.Runs
   alias Rail.Runs.FollowerSupervisor
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Tools
 
@@ -12,9 +12,9 @@ defmodule Rail.Runs.FollowerSupervisorTest do
     tmp_dir = Path.join(System.tmp_dir!(), "supervisor_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp_dir)
 
-    role_run =
-      %RoleRun{}
-      |> RoleRun.changeset(%{
+    run =
+      %Run{}
+      |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: UXID.generate!(prefix: "rol"),
         status: :running,
@@ -26,11 +26,11 @@ defmodule Rail.Runs.FollowerSupervisorTest do
     File.write!(stream_path, "")
     File.write!("#{stream_path}.err", "")
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
@@ -43,13 +43,13 @@ defmodule Rail.Runs.FollowerSupervisorTest do
       File.rm_rf(tmp_dir)
     end)
 
-    %{backend: %Backend{name: :claude}, role_run: role_run, run: run, stream_path: stream_path}
+    %{backend: %Backend{name: :claude}, run: run, os_process: os_process, stream_path: stream_path}
   end
 
   test "starts and stops follower children under supervision", %{
     backend: backend,
-    role_run: role_run,
     run: run,
+    os_process: os_process,
     stream_path: stream_path
   } do
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
@@ -57,9 +57,9 @@ defmodule Rail.Runs.FollowerSupervisorTest do
 
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(
-        run: run,
+        os_process: os_process,
         backend: backend,
-        role_run: role_run,
+        run: run,
         stream_path: stream_path,
         os_pid: pid
       )
@@ -68,13 +68,13 @@ defmodule Rail.Runs.FollowerSupervisorTest do
     assert Process.alive?(follower_pid)
 
     # Lookup in registry
-    assert Runs.get_follower_pid(run.id) == follower_pid
+    assert Runs.get_follower_pid(os_process.id) == follower_pid
 
     # Stop child via supervisor
     assert FollowerSupervisor.stop_follower(follower_pid) == :ok
     refute Process.alive?(follower_pid)
     Process.sleep(10)
-    assert Runs.get_follower_pid(run.id) == nil
+    assert Runs.get_follower_pid(os_process.id) == nil
 
     Tools.terminate_os_process(pid, grace_period: 50)
   end

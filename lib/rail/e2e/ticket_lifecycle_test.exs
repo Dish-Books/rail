@@ -14,7 +14,7 @@ defmodule Rail.E2E.TicketLifecycleTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs.FollowerSupervisor
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
   alias RailTest.Mocks.GitHub, as: GitHubMock
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -176,19 +176,19 @@ defmodule Rail.E2E.TicketLifecycleTest do
              )
 
     assert {:ok,
-            %RoleRun{
-              id: prod_role_run_id,
+            %Run{
+              id: prod_run_id,
               status: :finished,
               exit_code: 0,
               usage: %Rail.Domain.TaskUsage{input_tokens: in_tok}
-            }} = Rail.Runs.get_latest_role_run_for_task(task_id)
+            }} = Rail.Runs.get_latest_run_for_task(task_id)
 
     assert in_tok > 0
     assert File.exists?(Path.join([scratch_dir, "tickets", "ISS-101.md"]))
 
     assert Repo.exists?(
              from(e in RunEvent,
-               where: e.role_run_id == ^prod_role_run_id
+               where: e.run_id == ^prod_run_id
              )
            )
 
@@ -221,8 +221,8 @@ defmodule Rail.E2E.TicketLifecycleTest do
     task = Repo.get!(Task, task_id)
     assert %Task{stage: :architect, stage_state: :awaiting_approval} = task
 
-    assert {:ok, %RoleRun{status: :finished, exit_code: 0}} =
-             Rail.Runs.get_latest_role_run_for_task(task_id)
+    assert {:ok, %Run{status: :finished, exit_code: 0}} =
+             Rail.Runs.get_latest_run_for_task(task_id)
 
     assert %Plan{content: "## Implementation plan" <> _rest} = Repo.get_by(Plan, task_id: task_id)
 
@@ -256,8 +256,8 @@ defmodule Rail.E2E.TicketLifecycleTest do
 
     assert %Task{stage: :review, stage_state: :queued, worktree_path: eng_wt_path} = task = Repo.get!(Task, task_id)
 
-    assert {:ok, %RoleRun{status: :finished, exit_code: 0}} =
-             Rail.Runs.get_latest_role_run_for_task(task_id)
+    assert {:ok, %Run{status: :finished, exit_code: 0}} =
+             Rail.Runs.get_latest_run_for_task(task_id)
 
     assert File.exists?(Path.join(eng_wt_path, "feature_work.txt"))
 
@@ -282,8 +282,8 @@ defmodule Rail.E2E.TicketLifecycleTest do
     task = Repo.get!(Task, task_id)
     assert %Task{stage: :qa, stage_state: :queued} = task
 
-    assert {:ok, %RoleRun{status: :finished, exit_code: 0} = rev_run} =
-             Rail.Runs.get_latest_role_run_for_task(task_id)
+    assert {:ok, %Run{status: :finished, exit_code: 0} = rev_run} =
+             Rail.Runs.get_latest_run_for_task(task_id)
 
     assert %StageVerdict{verdict: :passed} = Rail.Pipeline.parse_stage_verdict(rev_run)
 
@@ -310,8 +310,8 @@ defmodule Rail.E2E.TicketLifecycleTest do
     task = Repo.get!(Task, task_id)
     assert %Task{stage: :qa_lead, stage_state: :queued} = task
 
-    assert {:ok, %RoleRun{status: :finished, exit_code: 0} = qa_run} =
-             Rail.Runs.get_latest_role_run_for_task(task_id)
+    assert {:ok, %Run{status: :finished, exit_code: 0} = qa_run} =
+             Rail.Runs.get_latest_run_for_task(task_id)
 
     assert %StageVerdict{verdict: :passed} = Rail.Pipeline.parse_stage_verdict(qa_run)
     assert %QaReport{rows: [_row]} = Repo.get_by(QaReport, task_id: task_id)
@@ -334,8 +334,8 @@ defmodule Rail.E2E.TicketLifecycleTest do
     task = Repo.get!(Task, task_id)
     assert %Task{stage: :demo, stage_state: :queued} = task
 
-    assert {:ok, %RoleRun{status: :finished, exit_code: 0} = lead_run} =
-             Rail.Runs.get_latest_role_run_for_task(task_id)
+    assert {:ok, %Run{status: :finished, exit_code: 0} = lead_run} =
+             Rail.Runs.get_latest_run_for_task(task_id)
 
     assert %StageVerdict{verdict: :passed} = Rail.Pipeline.parse_stage_verdict(lead_run)
 
@@ -368,8 +368,8 @@ defmodule Rail.E2E.TicketLifecycleTest do
     assert %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, worktree_path: worktree_path_before_merge} =
              task = Repo.get!(Task, task_id)
 
-    assert {:ok, %RoleRun{status: :finished, exit_code: 0}} =
-             Rail.Runs.get_latest_role_run_for_task(task_id)
+    assert {:ok, %Run{status: :finished, exit_code: 0}} =
+             Rail.Runs.get_latest_run_for_task(task_id)
 
     assert %Demo{outcome: "recorded", segments: [_seg1, _seg2]} = Repo.get_by(Demo, task_id: task_id)
 
@@ -504,6 +504,6 @@ defmodule Rail.E2E.TicketLifecycleTest do
                end
              )
 
-    assert {:ok, %RoleRun{status: :finished, exit_code: 0}} = Rail.Runs.get_latest_role_run_for_task(task_id)
+    assert {:ok, %Run{status: :finished, exit_code: 0}} = Rail.Runs.get_latest_run_for_task(task_id)
   end
 end

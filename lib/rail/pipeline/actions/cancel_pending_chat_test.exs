@@ -9,7 +9,7 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
   alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -113,14 +113,14 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
              Pipeline.cancel_pending_chat(12_345, role.id)
   end
 
-  test "returns not_found when role run does not exist", %{task: task} do
+  test "returns not_found when run does not exist", %{task: task} do
     assert {:error, :not_found} =
              Pipeline.cancel_pending_chat(task.id, "rol_nonexistent")
   end
 
-  test "returns ok unchanged when role run has no pending_chat", %{task: task, role: role} do
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+  test "returns ok unchanged when run has no pending_chat", %{task: task, role: role} do
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :finished,
@@ -132,10 +132,10 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
 
     user_scope = %Scope{system: false, user: %{id: "usr_1"}}
 
-    assert {:ok, %RoleRun{pending_chat: nil}, %Task{}} =
+    assert {:ok, %Run{pending_chat: nil}, %Task{}} =
              Pipeline.cancel_pending_chat(user_scope, task, role.id)
 
-    assert Repo.get!(RoleRun, role_run.id).pending_chat == nil
+    assert Repo.get!(Run, run.id).pending_chat == nil
   end
 
   test "clears pending_chat, logs event, and broadcasts pipeline_changed", %{
@@ -144,8 +144,8 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_id,
         status: :finished,
@@ -155,14 +155,14 @@ defmodule Rail.Pipeline.Actions.CancelPendingChatTest do
         pending_chat: "Queued question to be cancelled"
       })
 
-    assert {:ok, %RoleRun{pending_chat: nil}, %Task{}} =
+    assert {:ok, %Run{pending_chat: nil}, %Task{}} =
              Pipeline.cancel_pending_chat(task.id, role_id)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :pending_chat_cancelled}}
 
-    assert Repo.get!(RoleRun, role_run.id).pending_chat == nil
+    assert Repo.get!(Run, run.id).pending_chat == nil
 
-    events = Runs.list_run_events(role_run.id)
+    events = Runs.list_run_events(run.id)
 
     assert Enum.any?(events, fn %RunEvent{line: line} ->
              line == "[rail] Queued message cancelled by user."

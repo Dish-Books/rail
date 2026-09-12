@@ -9,7 +9,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
   alias Rail.Scope
@@ -126,8 +126,8 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
-    {:ok, %RoleRun{id: role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: run_id}} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_id,
         status: :finished,
@@ -141,12 +141,12 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
 
     {:ok, task} = task |> Task.changeset(%{active_chat_role_id: role_id}) |> Repo.update()
 
-    %Run{}
-    |> Run.changeset(%{
-      role_run_id: role_run_id,
+    %OsProcess{}
+    |> OsProcess.changeset(%{
+      run_id: run_id,
       task_id: task_id,
       kind: :chat,
-      stream_path: "/tmp/stop_chat_turn/#{role_run_id}.ndjson",
+      stream_path: "/tmp/stop_chat_turn/#{run_id}.ndjson",
       node: to_string(Node.self()),
       status: :running,
       started_at: DateTime.utc_now()
@@ -160,12 +160,12 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
     refreshed_task = Repo.get!(Task, task_id)
     assert refreshed_task.active_chat_role_id == nil
 
-    refreshed_role_run = Repo.get!(RoleRun, role_run_id)
-    assert refreshed_role_run.pending_chat == nil
-    assert refreshed_role_run.chat_fingerprint_head_sha == nil
-    assert refreshed_role_run.chat_fingerprint_dirty_digest == nil
+    refreshed_run = Repo.get!(Run, run_id)
+    assert refreshed_run.pending_chat == nil
+    assert refreshed_run.chat_fingerprint_head_sha == nil
+    assert refreshed_run.chat_fingerprint_dirty_digest == nil
 
-    events = Runs.list_run_events(role_run_id)
+    events = Runs.list_run_events(run_id)
 
     assert Enum.any?(events, fn %RunEvent{line: line} ->
              line == "[rail] Chat turn stopped by user."
@@ -178,8 +178,8 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
   } do
     Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
-    {:ok, %RoleRun{id: role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: run_id}} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_id,
         status: :finished,
@@ -189,25 +189,25 @@ defmodule Rail.Pipeline.Actions.StopChatTurnTest do
         pending_chat: "Queued question to cancel"
       })
 
-    assert {:ok, %RoleRun{pending_chat: nil}, %Task{}} =
+    assert {:ok, %Run{pending_chat: nil}, %Task{}} =
              Pipeline.cancel_pending_chat(task.id, role_id)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :pending_chat_cancelled}}
 
-    refreshed_role_run = Repo.get!(RoleRun, role_run_id)
-    assert refreshed_role_run.pending_chat == nil
+    refreshed_run = Repo.get!(Run, run_id)
+    assert refreshed_run.pending_chat == nil
 
-    events = Runs.list_run_events(role_run_id)
+    events = Runs.list_run_events(run_id)
 
     assert Enum.any?(events, fn %RunEvent{line: line} ->
              line == "[rail] Queued message cancelled by user."
            end)
 
-    assert {:ok, %RoleRun{pending_chat: nil}, %Task{}} =
+    assert {:ok, %Run{pending_chat: nil}, %Task{}} =
              Pipeline.cancel_pending_chat(task.id, role_id)
   end
 
-  test "stop_chat_turn with user scope, struct target, invalid target, and missing RoleRun", %{
+  test "stop_chat_turn with user scope, struct target, invalid target, and missing Run", %{
     task: task,
     role: role
   } do

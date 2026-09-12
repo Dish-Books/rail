@@ -14,7 +14,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
 
   @stages_before_engineer [:product, :design, :architect]
@@ -78,12 +78,12 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
 
   defp execute_send_back(%Task{} = task, %Role{} = engineer_role, opts) do
     case resumable_engineer_run(task.id, engineer_role.id) do
-      %RoleRun{} = engineer_run -> apply_send_back(task, engineer_run, opts)
+      %Run{} = engineer_run -> apply_send_back(task, engineer_run, opts)
       nil -> {:error, :no_session}
     end
   end
 
-  defp apply_send_back(%Task{} = task, %RoleRun{} = engineer_run, opts) do
+  defp apply_send_back(%Task{} = task, %Run{} = engineer_run, opts) do
     note = extract_note(opts)
     carried = carried_reports(task)
     message = build_engineer_message(note, carried)
@@ -139,8 +139,8 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
   end
 
   defp resumable_engineer_run(task_id, role_id) do
-    case Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_id) do
-      %RoleRun{} = role_run -> if RoleRun.resumable?(role_run), do: role_run
+    case Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_id) do
+      %Run{} = run -> if Run.resumable?(run), do: run
       nil -> nil
     end
   end

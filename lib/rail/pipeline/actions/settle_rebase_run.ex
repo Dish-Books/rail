@@ -11,15 +11,15 @@ defmodule Rail.Pipeline.Actions.SettleRebaseRun do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
 
   @doc "Settles the finished rebase `run` against `outcome`."
-  def settle_rebase_run(%Run{} = run, _outcome \\ %{}, opts \\ []) do
+  def settle_rebase_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
     # A rebase changes whether the branch merges, so the answer Rail is holding
     # for that is stale the moment one lands.
-    with {:ok, task, %RoleRun{exit_code: 0} = role_run} <- advance_stage(run, opts, &restore_stage_state/3) do
-      {:ok, refresh_mergeability(task, opts), role_run}
+    with {:ok, task, %Run{exit_code: 0} = run} <- advance_stage(os_process, opts, &restore_stage_state/3) do
+      {:ok, refresh_mergeability(task, opts), run}
     end
   end
 
@@ -30,8 +30,8 @@ defmodule Rail.Pipeline.Actions.SettleRebaseRun do
     end
   end
 
-  defp restore_stage_state(%Task{} = task, role_run, _opts) do
-    {:ok, role_run} = role_run |> RoleRun.changeset(%{auto_retries: 0}) |> Repo.update()
+  defp restore_stage_state(%Task{} = task, run, _opts) do
+    {:ok, run} = run |> Run.changeset(%{auto_retries: 0}) |> Repo.update()
 
     attrs = %{
       is_rebasing: false,
@@ -41,6 +41,6 @@ defmodule Rail.Pipeline.Actions.SettleRebaseRun do
       error: nil
     }
 
-    {attrs, role_run}
+    {attrs, run}
   end
 end

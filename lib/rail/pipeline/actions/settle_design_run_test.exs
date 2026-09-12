@@ -11,7 +11,7 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -78,15 +78,15 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
     %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "maybe_finish_run updates run when passed as top-level run struct", %{task: task, roles: roles} do
+  test "maybe_finish_os_process updates run when passed as top-level run struct", %{task: task, roles: roles} do
     {:ok, %Task{id: task_id} = _task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :design,
         stage_state: :running
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
         conversation_id: "sess_fixture",
@@ -94,24 +94,24 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
         started_at: DateTime.utc_now()
       })
 
-    %Run{id: run_id} =
-      run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
+    %OsProcess{id: os_process_id} =
+      os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
         task_id: task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_design/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_design/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run)
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process)
 
-    assert {:ok, _task, _role_run} = Pipeline.settle_design_run(run)
-    assert %Run{id: ^run_id, status: :finished} = Repo.get!(Run, run_id)
+    assert {:ok, _task, _run} = Pipeline.settle_design_run(os_process)
+    assert %OsProcess{id: ^os_process_id, status: :finished} = Repo.get!(OsProcess, os_process_id)
   end
 
   describe "settle_run at design stage" do
@@ -122,8 +122,8 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
           stage_state: :running
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -131,23 +131,23 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
           started_at: DateTime.utc_now()
         })
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_design/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage: :design, stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
-               Pipeline.settle_design_run(run)
+      assert {:ok, %Task{stage: :design, stage_state: :failed, error: err}, %Run{status: :finished}} =
+               Pipeline.settle_design_run(os_process)
 
       assert err =~ "No design manifest found at"
     end
@@ -200,8 +200,8 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
           scratch_path: worktree_dir
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -211,23 +211,23 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
 
       mock_design_uploads(2)
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_design/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage: :design, stage_state: :awaiting_approval, error: nil}, %RoleRun{status: :finished}} =
-               Pipeline.settle_design_run(run, %{}, url_probe: fn _uri -> true end)
+      assert {:ok, %Task{stage: :design, stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
+               Pipeline.settle_design_run(os_process, %{}, url_probe: fn _uri -> true end)
 
       designs = Repo.all(from d in Rail.Artifacts.Schemas.Design, where: d.task_id == ^task.id)
       assert length(designs) == 1
@@ -298,8 +298,8 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
 
       File.write!(manifest_path, final_manifest)
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -307,23 +307,23 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
           started_at: DateTime.utc_now()
         })
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_design/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
-               Pipeline.settle_design_run(run, %{}, url_probe: fn _uri -> true end)
+      assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
+               Pipeline.settle_design_run(os_process, %{}, url_probe: fn _uri -> true end)
 
       assert err =~ "Manifest missing picked direction: dir-1"
     end
@@ -396,8 +396,8 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
 
       File.write!(manifest_path, final_manifest)
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -405,23 +405,23 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
           started_at: DateTime.utc_now()
         })
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_design/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
-               Pipeline.settle_design_run(run, %{}, url_probe: fn _uri -> true end)
+      assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
+               Pipeline.settle_design_run(os_process, %{}, url_probe: fn _uri -> true end)
 
       assert err =~ "Manifest version must be incremented after a pick or revision."
     end
@@ -494,8 +494,8 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
 
       File.write!(manifest_path, final_manifest)
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -503,23 +503,23 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
           started_at: DateTime.utc_now()
         })
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_design/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
-               Pipeline.settle_design_run(run, %{}, url_probe: fn _uri -> true end)
+      assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
+               Pipeline.settle_design_run(os_process, %{}, url_probe: fn _uri -> true end)
 
       assert err =~ "Design manifest is missing pickedKey (expected \"dir-1\")."
     end
@@ -592,8 +592,8 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
 
       File.write!(manifest_path, final_manifest)
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -601,23 +601,23 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
           started_at: DateTime.utc_now()
         })
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_design/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
-               Pipeline.settle_design_run(run, %{}, url_probe: fn _uri -> true end)
+      assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
+               Pipeline.settle_design_run(os_process, %{}, url_probe: fn _uri -> true end)
 
       assert err =~ "Design manifest pickedKey (dir-2) does not match chosen direction (dir-1)."
     end
@@ -689,8 +689,8 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
 
       File.write!(manifest_path, final_manifest)
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -702,23 +702,23 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
 
       {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: worktree_dir})
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_design/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %RoleRun{status: :finished}} =
-               Pipeline.settle_design_run(run, %{}, url_probe: fn _uri -> true end)
+      assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
+               Pipeline.settle_design_run(os_process, %{}, url_probe: fn _uri -> true end)
     end
 
     test "supports settling with scratch_dir and valid transition", %{task: task, roles: roles} do
@@ -788,8 +788,8 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
 
       File.write!(manifest_path, final_manifest)
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -801,23 +801,23 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
 
       {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: worktree_dir})
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_design/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %RoleRun{status: :finished}} =
-               Pipeline.settle_design_run(run, %{}, url_probe: fn _uri -> true end)
+      assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
+               Pipeline.settle_design_run(os_process, %{}, url_probe: fn _uri -> true end)
     end
   end
 end

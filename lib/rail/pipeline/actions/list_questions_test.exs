@@ -71,7 +71,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
 
   test "lists questions by project and filters by status", %{project: project, task: task, roles: roles} do
     {:ok, _product_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task.id,
         role_id: roles[:product].id,
         conversation_id: "sess_product",
@@ -141,7 +141,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
 
   test "list_pending_questions convenience functions", %{project: project, task: task, roles: roles} do
     {:ok, _product_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task.id,
         role_id: roles[:product].id,
         conversation_id: "sess_product",

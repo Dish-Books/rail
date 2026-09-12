@@ -14,7 +14,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -98,7 +98,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     }
   end
 
-  test "returns not_found when task or role run does not exist" do
+  test "returns not_found when task or run does not exist" do
     assert {:error, :not_found} =
              Pipeline.settle_chat_turn("tsk_000000000000000000000000", "rr_000000000000000000000000")
   end
@@ -111,8 +111,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
     initial_usage = %TaskUsage{input_tokens: 50, output_tokens: 25, total_cost: Decimal.new("0.01")}
 
-    {:ok, %RoleRun{id: role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: run_id}} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -127,13 +127,13 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
     {:ok, task} = task |> Task.changeset(%{active_chat_role_id: rev_role_id}) |> Repo.update()
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run_id,
         task_id: task_id,
         kind: :chat,
-        stream_path: "/tmp/settle_chat_turn/#{role_run_id}.ndjson",
+        stream_path: "/tmp/settle_chat_turn/#{run_id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
@@ -146,16 +146,16 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       exit_code: 0,
       error: nil,
       usage: turn_usage,
-      run: run
+      os_process: os_process
     }
 
-    assert {:ok, %Task{active_chat_role_id: nil}, %RoleRun{pending_chat: nil, chat_usage: %TaskUsage{}}} =
-             Pipeline.settle_chat_turn(task.id, role_run_id, outcome)
+    assert {:ok, %Task{active_chat_role_id: nil}, %Run{pending_chat: nil, chat_usage: %TaskUsage{}}} =
+             Pipeline.settle_chat_turn(task.id, run_id, outcome)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :chat_settled}}
 
     refreshed_task = Repo.get!(Task, task_id)
-    refreshed_role_run = Repo.get!(RoleRun, role_run_id)
+    refreshed_run = Repo.get!(Run, run_id)
 
     assert %Task{
              stage: :review,
@@ -164,24 +164,24 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
              error: nil
            } = refreshed_task
 
-    assert %RoleRun{
+    assert %Run{
              status: :finished,
              pending_chat: nil,
              chat_fingerprint_head_sha: nil,
              chat_fingerprint_dirty_digest: nil,
              chat_usage: %TaskUsage{input_tokens: 150, output_tokens: 75}
-           } = refreshed_role_run
+           } = refreshed_run
 
-    refreshed_run = Repo.get!(Run, run.id)
-    assert refreshed_run.status == :finished
+    refreshed_os_process = Repo.get!(OsProcess, os_process.id)
+    assert refreshed_os_process.status == :finished
   end
 
   test "review chat returning a VERDICT line does not advance the stage", %{
     task: %Task{id: task_id} = task,
     rev_role: %Role{id: rev_role_id}
   } do
-    {:ok, %RoleRun{id: role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: run_id}} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -190,7 +190,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         conversation_id: "sess-verdict"
       })
 
-    Runs.append_run_event(role_run_id, "Reviewed.\n\nVERDICT: APPROVED")
+    Runs.append_run_event(run_id, "Reviewed.\n\nVERDICT: APPROVED")
 
     {:ok, task} = task |> Task.changeset(%{active_chat_role_id: rev_role_id}) |> Repo.update()
 
@@ -200,10 +200,10 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       usage: %TaskUsage{input_tokens: 20, output_tokens: 10}
     }
 
-    assert {:ok, %Task{stage: :review, stage_state: :awaiting_approval}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task, role_run_id, outcome)
+    assert {:ok, %Task{stage: :review, stage_state: :awaiting_approval}, %Run{}} =
+             Pipeline.settle_chat_turn(task, run_id, outcome)
 
-    Runs.append_run_event(role_run_id, "I still have concerns.\n\nVERDICT: CHANGES REQUESTED")
+    Runs.append_run_event(run_id, "I still have concerns.\n\nVERDICT: CHANGES REQUESTED")
 
     refreshed_task = Repo.get!(Task, task_id)
 
@@ -215,8 +215,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     task: %Task{id: task_id} = task,
     rev_role: %Role{id: rev_role_id}
   } do
-    {:ok, %RoleRun{id: role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: run_id}} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -233,8 +233,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       usage: %TaskUsage{input_tokens: 30, output_tokens: 15}
     }
 
-    assert {:ok, %Task{stage_state: :awaiting_approval, question_id: nil}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task, role_run_id, outcome)
+    assert {:ok, %Task{stage_state: :awaiting_approval, question_id: nil}, %Run{}} =
+             Pipeline.settle_chat_turn(task, run_id, outcome)
 
     questions = Repo.all(from q in Question, where: q.task_id == ^task_id)
     assert questions == []
@@ -247,8 +247,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   } do
     before_fp = Rail.Git.branch_fingerprint(repo_dir)
 
-    {:ok, %RoleRun{id: role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: run_id}} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: eng_role_id,
         status: :finished,
@@ -277,14 +277,14 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       usage: %TaskUsage{input_tokens: 100, output_tokens: 50}
     }
 
-    assert {:ok, %Task{stage: :engineer, stage_state: :awaiting_approval}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task, role_run_id, outcome)
+    assert {:ok, %Task{stage: :engineer, stage_state: :awaiting_approval}, %Run{}} =
+             Pipeline.settle_chat_turn(task, run_id, outcome)
 
     refreshed_task = Repo.get!(Task, task_id)
     assert refreshed_task.stage == :engineer
     assert refreshed_task.stage_state == :awaiting_approval
 
-    events = Runs.list_run_events(role_run_id)
+    events = Runs.list_run_events(run_id)
 
     assert Enum.any?(events, fn %RunEvent{line: line} ->
              line == "[rail] Branch modified during chat; reset pipeline to Engineer."
@@ -299,8 +299,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   } do
     before_fp = Rail.Git.branch_fingerprint(repo_dir)
 
-    {:ok, %RoleRun{id: eng_role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: eng_run_id}} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: eng_role_id,
         status: :finished,
@@ -311,8 +311,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         chat_fingerprint_dirty_digest: before_fp.dirty_digest
       })
 
-    {:ok, %RoleRun{id: rev_role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: rev_run_id}} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -341,21 +341,21 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       usage: %TaskUsage{input_tokens: 120, output_tokens: 60}
     }
 
-    assert {:ok, %Task{stage: :review, stage_state: :queued}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task, eng_role_run_id, outcome)
+    assert {:ok, %Task{stage: :review, stage_state: :queued}, %Run{}} =
+             Pipeline.settle_chat_turn(task, eng_run_id, outcome)
 
     refreshed_task = Repo.get!(Task, task_id)
     assert refreshed_task.stage == :review
     assert refreshed_task.stage_state == :queued
     assert refreshed_task.outstanding_reports == []
 
-    eng_events = Runs.list_run_events(eng_role_run_id)
+    eng_events = Runs.list_run_events(eng_run_id)
 
     assert Enum.any?(eng_events, fn %RunEvent{line: line} ->
              line == "[rail] Branch modified during chat; queued for review."
            end)
 
-    refreshed_rev = Repo.get!(RoleRun, rev_role_run_id)
+    refreshed_rev = Repo.get!(Run, rev_run_id)
     assert refreshed_rev.pending_answer =~ "Previous review notes"
     assert refreshed_rev.pending_answer =~ "The reworked change is commit"
     assert refreshed_rev.pending_answer =~ "Every check you report on this pass must have been run against it"
@@ -368,8 +368,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   } do
     before_fp = Rail.Git.branch_fingerprint(repo_dir)
 
-    {:ok, %RoleRun{id: role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: run_id}} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -397,14 +397,14 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       usage: %TaskUsage{input_tokens: 40, output_tokens: 20}
     }
 
-    assert {:ok, %Task{stage: :review, stage_state: :awaiting_approval}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task, role_run_id, outcome)
+    assert {:ok, %Task{stage: :review, stage_state: :awaiting_approval}, %Run{}} =
+             Pipeline.settle_chat_turn(task, run_id, outcome)
 
     refreshed_task = Repo.get!(Task, task_id)
     assert refreshed_task.stage == :review
     assert refreshed_task.stage_state == :awaiting_approval
 
-    events = Runs.list_run_events(role_run_id)
+    events = Runs.list_run_events(run_id)
 
     assert Enum.any?(events, fn %RunEvent{line: line} ->
              line == "[rail] Changes were made to the branch, but only Engineer changes reset the pipeline."
@@ -415,8 +415,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     task: %Task{id: task_id} = task,
     rev_role: %Role{id: rev_role_id}
   } do
-    {:ok, %RoleRun{id: role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: run_id}} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -432,8 +432,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       error: "Command failed: exit 1"
     }
 
-    assert {:ok, %Task{stage: :review, stage_state: :awaiting_approval}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task, role_run_id, outcome)
+    assert {:ok, %Task{stage: :review, stage_state: :awaiting_approval}, %Run{}} =
+             Pipeline.settle_chat_turn(task, run_id, outcome)
 
     refreshed_task = Repo.get!(Task, task_id)
     assert refreshed_task.stage == :review
@@ -441,7 +441,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     assert refreshed_task.active_chat_role_id == nil
     assert refreshed_task.error == nil
 
-    events = Runs.list_run_events(role_run_id)
+    events = Runs.list_run_events(run_id)
 
     assert Enum.any?(events, fn %RunEvent{line: line} ->
              line =~ "[rail] That turn was not delivered: Command failed: exit 1"
@@ -459,8 +459,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         executable_path: create_chat_stub_cli(conversation_id: "sess-rev-queued")
       })
 
-    {:ok, %RoleRun{id: eng_role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: eng_run_id}} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: eng_role_id,
         status: :finished,
@@ -469,8 +469,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         conversation_id: "sess-eng-current"
       })
 
-    {:ok, %RoleRun{id: rev_role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: rev_run_id}} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -488,13 +488,13 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       usage: %TaskUsage{input_tokens: 10, output_tokens: 10}
     }
 
-    assert {:ok, %Task{}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task, eng_role_run_id, outcome, async: false)
+    assert {:ok, %Task{}, %Run{}} =
+             Pipeline.settle_chat_turn(task, eng_run_id, outcome, async: false)
 
     refreshed_task = Repo.get!(Task, task_id)
     assert refreshed_task.active_chat_role_id == rev_role_id
 
-    rev_runs = Runs.list_runs(role_run_id: rev_role_run_id)
+    rev_runs = Runs.list_os_processes(run_id: rev_run_id)
     assert length(rev_runs) == 1
     assert hd(rev_runs).kind == :chat
   end
@@ -510,8 +510,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         executable_path: create_chat_stub_cli(conversation_id: "sess-rev-stage-finish")
       })
 
-    {:ok, %RoleRun{id: eng_role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: eng_run_id}} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: eng_role_id,
         status: :running,
@@ -520,8 +520,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         conversation_id: "sess-eng-stage"
       })
 
-    {:ok, %RoleRun{id: rev_role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: rev_run_id}} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: rev_role_id,
         status: :finished,
@@ -537,12 +537,12 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       |> Repo.update()
 
     stage_run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: eng_role_run_id,
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: eng_run_id,
         task_id: task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_chat_turn/#{eng_role_run_id}.ndjson",
+        stream_path: "/tmp/settle_chat_turn/#{eng_run_id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
@@ -553,28 +553,28 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       exit_code: 0,
       error: nil,
       usage: %TaskUsage{input_tokens: 500, output_tokens: 200},
-      run: stage_run
+      os_process: stage_run
     }
 
     {:ok, _settled, _settled_rr} = Pipeline.settle_run(stage_run, outcome, async: false)
 
-    assert {:ok, %Task{stage: :review, stage_state: :queued}, %RoleRun{}} =
+    assert {:ok, %Task{stage: :review, stage_state: :queued}, %Run{}} =
              Pipeline.settle_engineer_run(stage_run, %{}, async: false)
 
     refreshed_task = Repo.get!(Task, task_id)
     assert refreshed_task.active_chat_role_id == rev_role_id
 
-    rev_runs = Runs.list_runs(role_run_id: rev_role_run_id)
+    rev_runs = Runs.list_os_processes(run_id: rev_run_id)
     assert length(rev_runs) == 1
     assert hd(rev_runs).kind == :chat
   end
 
-  test "settle_chat_turn when branch modified and no review role run exists creates new review role run", %{
+  test "settle_chat_turn when branch modified and no review run exists creates new review run", %{
     task: task,
     eng_role: eng_role
   } do
-    {:ok, %RoleRun{id: eng_role_run_id}} =
-      Runs.create_role_run(%{
+    {:ok, %Run{id: eng_run_id}} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: eng_role.id,
         status: :finished,
@@ -593,8 +593,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     # Modify file in worktree
     File.write!(Path.join(task.worktree_path, "rework_new.txt"), "rework change\n")
 
-    assert {:ok, %Task{stage: :review, stage_state: :queued}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task, eng_role_run_id, %{exit_code: 0})
+    assert {:ok, %Task{stage: :review, stage_state: :queued}, %Run{}} =
+             Pipeline.settle_chat_turn(task, eng_run_id, %{exit_code: 0})
   end
 
   test "settle_chat_turn when branch modified and project has no review role", %{
@@ -648,8 +648,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         stage: :engineer
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_no_rev.id,
         role_id: eng_role_no_rev.id,
         status: :finished,
@@ -660,71 +660,71 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
     File.write!(Path.join(task_no_rev.worktree_path, "no_rev.txt"), "data\n")
 
-    assert {:ok, %Task{}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task_no_rev, role_run, %{exit_code: 0})
+    assert {:ok, %Task{}, %Run{}} =
+             Pipeline.settle_chat_turn(task_no_rev, run, %{exit_code: 0})
   end
 
   test "settle_chat_turn resolves string-keyed maps, raw maps, and finishes in-flight run", %{
     task: task,
     eng_role: eng_role
   } do
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: eng_role.id,
         status: :finished,
         started_at: DateTime.utc_now(),
         exit_code: 42,
-        error: "role run error"
+        error: "run error"
       })
 
     in_flight_run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
         task_id: task.id,
         kind: :chat,
-        stream_path: "/tmp/settle_chat_turn/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_chat_turn/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    # Finishing in_flight_run when passed as %Run{}
-    assert {:ok, %Task{}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task.id, role_run.id, in_flight_run)
+    # Finishing in_flight_run when passed as %OsProcess{}
+    assert {:ok, %Task{}, %Run{}} =
+             Pipeline.settle_chat_turn(task.id, run.id, in_flight_run)
 
-    assert Repo.get!(Run, in_flight_run.id).status == :finished
+    assert Repo.get!(OsProcess, in_flight_run.id).status == :finished
 
     # String-keyed exit_code, error, usage map
-    assert {:ok, %Task{}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task.id, role_run.id, %{
+    assert {:ok, %Task{}, %Run{}} =
+             Pipeline.settle_chat_turn(task.id, run.id, %{
                "exit_code" => 0,
                "error" => "ignored error",
                "usage" => %{"input_tokens" => 20, "output_tokens" => 10}
              })
 
     # Map usage under :usage
-    assert {:ok, %Task{}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task.id, role_run.id, %{
+    assert {:ok, %Task{}, %Run{}} =
+             Pipeline.settle_chat_turn(task.id, run.id, %{
                exit_code: 0,
                usage: %{input_tokens: 15, output_tokens: 5}
              })
 
     # %TaskUsage{} under "usage"
-    assert {:ok, %Task{}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task.id, role_run.id, %{
+    assert {:ok, %Task{}, %Run{}} =
+             Pipeline.settle_chat_turn(task.id, run.id, %{
                "usage" => %TaskUsage{input_tokens: 10, output_tokens: 5}
              })
 
-    # Fallback to role_run exit code and error
-    assert {:ok, %Task{}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task, role_run)
+    # Fallback to run exit code and error
+    assert {:ok, %Task{}, %Run{}} =
+             Pipeline.settle_chat_turn(task, run)
 
-    # Fallback exit code 0 when neither outcome nor role_run has integer exit code
-    {:ok, role_run_nil_code} =
-      Runs.create_role_run(%{
+    # Fallback exit code 0 when neither outcome nor run has integer exit code
+    {:ok, run_nil_code} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: eng_role.id,
         status: :finished,
@@ -732,11 +732,11 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         exit_code: nil
       })
 
-    assert {:ok, %Task{}, %RoleRun{}} =
-             Pipeline.settle_chat_turn(task, role_run_nil_code, %{exit_code: nil})
+    assert {:ok, %Task{}, %Run{}} =
+             Pipeline.settle_chat_turn(task, run_nil_code, %{exit_code: nil})
 
     # Invalid targets return :not_found
-    assert {:error, :not_found} = Pipeline.settle_chat_turn(12_345, role_run)
+    assert {:error, :not_found} = Pipeline.settle_chat_turn(12_345, run)
     assert {:error, :not_found} = Pipeline.settle_chat_turn(task, 12_345)
   end
 
@@ -809,8 +809,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
           scratch_path: worktree_dir
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: designer_role.id,
           status: :finished,
@@ -819,10 +819,10 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
 
       mock_design_uploads(2)
 
-      assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %RoleRun{}} =
+      assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %Run{}} =
                Pipeline.settle_chat_turn(
                  task,
-                 role_run,
+                 run,
                  %{exit_code: 0},
                  before_design_stamp: "stale-stamp-123",
                  url_probe: fn _uri -> true end
@@ -895,8 +895,8 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
           scratch_path: worktree_dir
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: designer_role.id,
           status: :finished,
@@ -904,10 +904,10 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
         })
 
       # Manifest was modified during chat from older stamp, but is invalid
-      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{}} =
+      assert {:ok, %Task{stage_state: :failed, error: err}, %Run{}} =
                Pipeline.settle_chat_turn(
                  task,
-                 role_run,
+                 run,
                  %{exit_code: 0},
                  before_design_stamp: "old_stamp:100"
                )
@@ -916,7 +916,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       designs = Repo.all(from d in Design, where: d.task_id == ^task.id)
       assert Enum.empty?(designs)
 
-      events = Repo.all(from e in RunEvent, where: e.role_run_id == ^role_run.id, order_by: [asc: e.seq])
+      events = Repo.all(from e in RunEvent, where: e.run_id == ^run.id, order_by: [asc: e.seq])
       assert Enum.any?(events, fn e -> e.line =~ "[rail] Design manifest changed during chat, but was turned down" end)
     end
   end

@@ -2,7 +2,7 @@ defmodule Rail.Runs.Utils.EnsureExecutable do
   @moduledoc false
 
   alias Rail.Repo
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
 
   @doc """
@@ -10,27 +10,27 @@ defmodule Rail.Runs.Utils.EnsureExecutable do
 
   The path comes from the backend row and is absolute, so there is nothing to
   resolve — it either exists or the run is over. When it is missing, the run and
-  its role run are settled as failed and `{:error, {:missing_binary, path, run}}`
+  its run are settled as failed and `{:error, {:missing_binary, path, run}}`
   is returned for the caller to pass on.
   """
-  def ensure_executable(executable, %Run{} = run, %RoleRun{} = role_run) do
+  def ensure_executable(executable, %OsProcess{} = os_process, %Run{} = run) do
     if File.exists?(executable) and not File.dir?(executable) do
       :ok
     else
-      settle_missing_binary(executable, run, role_run)
+      settle_missing_binary(executable, os_process, run)
     end
   end
 
-  defp settle_missing_binary(executable, run, role_run) do
+  defp settle_missing_binary(executable, os_process, run) do
     error_msg = "No such CLI binary: #{executable}"
 
     updated_run =
-      run
-      |> Run.changeset(%{status: :finished})
+      os_process
+      |> OsProcess.changeset(%{status: :finished})
       |> Repo.update!()
 
-    role_run
-    |> RoleRun.changeset(%{
+    run
+    |> Run.changeset(%{
       status: :finished,
       completed_at: DateTime.utc_now(),
       exit_code: -1,

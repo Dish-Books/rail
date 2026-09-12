@@ -13,7 +13,7 @@ defmodule Rail.Pipeline.Schemas.Task do
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
 
   # The linear pipeline, then stages a task can be parked in off that path.
   # `:debugger` has no position in the sequence: nothing advances into or out of
@@ -78,7 +78,7 @@ defmodule Rail.Pipeline.Schemas.Task do
 
     has_many :questions, Question
     has_many :plans, Plan
-    has_many :role_runs, RoleRun
+    has_many :runs, Run
     has_many :designs, Design
     has_many :demos, Demo
 
@@ -299,14 +299,13 @@ defmodule Rail.Pipeline.Schemas.Task do
   true while the task has not yet advanced past Design (i.e. stage in [:product, :design]),
   or if a Designer run exists in its history.
   """
-  def uses_design?(task, role_runs \\ [])
+  def uses_design?(task, runs \\ [])
 
-  def uses_design?(%__MODULE__{stage: stage}, _role_runs) when stage in [:product, :design], do: true
+  def uses_design?(%__MODULE__{stage: stage}, _runs) when stage in [:product, :design], do: true
 
-  def uses_design?(%__MODULE__{id: task_id, project_id: project_id}, role_runs)
-      when is_list(role_runs) and role_runs != [] do
-    Enum.any?(role_runs, fn r ->
-      (r.task_id == task_id or is_nil(r.task_id)) and designer_role_run?(r, project_id)
+  def uses_design?(%__MODULE__{id: task_id, project_id: project_id}, runs) when is_list(runs) and runs != [] do
+    Enum.any?(runs, fn r ->
+      (r.task_id == task_id or is_nil(r.task_id)) and designer_run?(r, project_id)
     end)
   end
 
@@ -314,7 +313,7 @@ defmodule Rail.Pipeline.Schemas.Task do
       when is_binary(task_id) and is_binary(project_id) do
     case Rail.Roles.get_role(project_id: project_id, stage: :design) do
       {:ok, %{id: designer_role_id}} ->
-        Repo.exists?(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^designer_role_id)
+        Repo.exists?(from r in Run, where: r.task_id == ^task_id and r.role_id == ^designer_role_id)
 
       _no_role ->
         false
@@ -324,17 +323,17 @@ defmodule Rail.Pipeline.Schemas.Task do
   def uses_design?(%__MODULE__{}, _opts), do: false
   def uses_design?(_other, _opts), do: false
 
-  defp designer_role_run?(%{role_id: "designer"}, _project_id), do: true
-  defp designer_role_run?(%{role: %{stage: :design}}, _project_id), do: true
+  defp designer_run?(%{role_id: "designer"}, _project_id), do: true
+  defp designer_run?(%{role: %{stage: :design}}, _project_id), do: true
 
-  defp designer_role_run?(%{role_id: role_id}, project_id) when is_binary(role_id) and is_binary(project_id) do
+  defp designer_run?(%{role_id: role_id}, project_id) when is_binary(role_id) and is_binary(project_id) do
     case Rail.Roles.get_role(project_id: project_id, stage: :design) do
       {:ok, %{id: ^role_id}} -> true
       _other -> false
     end
   end
 
-  defp designer_role_run?(_other, _project_id), do: false
+  defp designer_run?(_other, _project_id), do: false
 
   defp maybe_put_project_id(changeset, nil), do: changeset
   defp maybe_put_project_id(changeset, project_id), do: put_change(changeset, :project_id, project_id)

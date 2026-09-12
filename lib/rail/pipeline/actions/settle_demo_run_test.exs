@@ -14,7 +14,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -89,8 +89,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           stage_state: :running
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -98,23 +98,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           started_at: DateTime.utc_now()
         })
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage: :demo, stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
-               Pipeline.settle_demo_run(run)
+      assert {:ok, %Task{stage: :demo, stage_state: :failed, error: err}, %Run{status: :finished}} =
+               Pipeline.settle_demo_run(os_process)
 
       assert err =~ "Demo manifest not found at"
     end
@@ -151,8 +151,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           scratch_path: worktree
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -164,23 +164,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
 
       expected_err = "The worktree moved during the demo run."
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage_state: :failed, error: ^expected_err}, %RoleRun{status: :finished}} =
-               Pipeline.settle_demo_run(run)
+      assert {:ok, %Task{stage_state: :failed, error: ^expected_err}, %Run{status: :finished}} =
+               Pipeline.settle_demo_run(os_process)
     end
 
     test "demo run settlement fails when worktree code outside .rail/ was modified during recording", %{
@@ -220,8 +220,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           scratch_path: worktree
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -233,23 +233,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
 
       expected_err = "Worktree code outside .rail/ was modified during recording."
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage_state: :failed, error: ^expected_err}, %RoleRun{status: :finished}} =
-               Pipeline.settle_demo_run(run)
+      assert {:ok, %Task{stage_state: :failed, error: ^expected_err}, %Run{status: :finished}} =
+               Pipeline.settle_demo_run(os_process)
     end
 
     test "demo run settlement succeeds with the recording written to scratch", %{task: task, roles: roles} do
@@ -297,8 +297,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           scratch_path: scratch
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -308,24 +308,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           stage_fingerprint_dirty_digest: original_digest
         })
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil},
-              %RoleRun{status: :finished}} =
-               Pipeline.settle_demo_run(run)
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
+               Pipeline.settle_demo_run(os_process)
 
       assert %Demo{version: 1, outcome: "recorded", stale: false} =
                Repo.one(from d in Demo, where: d.task_id == ^task.id)
@@ -387,8 +386,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
 
       File.write!(demo_manifest_path, final_demo_manifest)
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -398,24 +397,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
 
       mock_demo_uploads(1)
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil},
-              %RoleRun{status: :finished}} =
-               Pipeline.settle_demo_run(run)
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
+               Pipeline.settle_demo_run(os_process)
 
       demos = Repo.all(from d in Demo, where: d.task_id == ^task.id, order_by: [asc: d.version])
       assert length(demos) == 2
@@ -451,8 +449,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           scratch_path: worktree_dir
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -460,24 +458,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           started_at: DateTime.utc_now()
         })
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil},
-              %RoleRun{status: :finished}} =
-               Pipeline.settle_demo_run(run)
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
+               Pipeline.settle_demo_run(os_process)
 
       assert %Demo{version: 1, outcome: "declined", note: "Not suitable for demo recording"} =
                Repo.one(from d in Demo, where: d.task_id == ^task.id)
@@ -509,8 +506,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           scratch_path: worktree_dir
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -518,23 +515,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           started_at: DateTime.utc_now()
         })
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage: :demo, stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
-               Pipeline.settle_demo_run(run)
+      assert {:ok, %Task{stage: :demo, stage_state: :failed, error: err}, %Run{status: :finished}} =
+               Pipeline.settle_demo_run(os_process)
 
       assert err =~ "UI timed out during demo recording"
 
@@ -549,8 +546,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           stage_state: :running
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -559,23 +556,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           auto_retries: 0
         })
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 1, error: "Demo process crashed"})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 1, error: "Demo process crashed"})
 
-      assert {:ok, %Task{stage: :demo, stage_state: :failed, error: "Demo process crashed"}, %RoleRun{status: :finished}} =
-               Pipeline.settle_demo_run(run)
+      assert {:ok, %Task{stage: :demo, stage_state: :failed, error: "Demo process crashed"}, %Run{status: :finished}} =
+               Pipeline.settle_demo_run(os_process)
     end
 
     test "supports settling demo with scratch_path and scratch_dir options", %{project: project, task: task, roles: roles} do
@@ -642,8 +639,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           worktree_path: "/tmp/rail-removed-worktree"
         })
 
-      {:ok, role_run1} =
-        Runs.create_role_run(%{
+      {:ok, run1} =
+        Runs.create_run(%{
           task_id: task1.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -655,23 +652,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
 
       {:ok, _persisted} = Pipeline.update_task(system_scope(), task1.id, %{scratch_path: scratch_1})
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run1.id,
-          task_id: role_run1.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run1.id,
+          task_id: run1.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run1.id}-#{System.unique_integer([:positive])}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run1.id}-#{System.unique_integer([:positive])}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _st, _srr} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _st, _srr} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
-               Pipeline.settle_demo_run(run)
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %Run{status: :finished}} =
+               Pipeline.settle_demo_run(os_process)
 
       LinearMock.mock_create_issue_success(%{
         "id" => "lin_task_settle_run_14511",
@@ -692,8 +689,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           worktree_path: "/tmp/rail-removed-worktree"
         })
 
-      {:ok, role_run2} =
-        Runs.create_role_run(%{
+      {:ok, run2} =
+        Runs.create_run(%{
           task_id: task2.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -706,12 +703,12 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _persisted} = Pipeline.update_task(system_scope(), task2.id, %{scratch_path: scratch_2})
 
       run_2 =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run2.id,
-          task_id: role_run2.task_id,
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run2.id,
+          task_id: run2.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run2.id}-#{System.unique_integer([:positive])}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run2.id}-#{System.unique_integer([:positive])}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
@@ -720,7 +717,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
 
       {:ok, _st, _srr} = Pipeline.settle_run(run_2, %{exit_code: 0})
 
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %Run{status: :finished}} =
                Pipeline.settle_demo_run(run_2)
     end
 
@@ -741,8 +738,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           worktree_path: "/tmp/rail-removed-worktree"
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -752,23 +749,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
 
       {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
-               Pipeline.settle_demo_run(run)
+      assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
+               Pipeline.settle_demo_run(os_process)
 
       assert err =~ "segments"
     end
@@ -813,8 +810,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           worktree_path: "/tmp/rail-removed-worktree"
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -824,23 +821,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
 
       {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage_state: :failed, error: err}, %RoleRun{status: :finished}} =
-               Pipeline.settle_demo_run(run)
+      assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
+               Pipeline.settle_demo_run(os_process)
 
       assert byte_size(err) > 0
     end
@@ -894,8 +891,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           worktree_path: "/tmp/nonexistent_wt_#{System.unique_integer([:positive])}"
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -911,23 +908,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
 
       {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
-               Pipeline.settle_demo_run(run)
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %Run{status: :finished}} =
+               Pipeline.settle_demo_run(os_process)
     end
 
     test "handles non-git worktree directory gracefully during demo settlement", %{task: task, roles: roles} do
@@ -971,8 +968,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           scratch_path: scratch_dir
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -984,23 +981,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
 
       mock_demo_uploads(1)
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
-               Pipeline.settle_demo_run(run)
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %Run{status: :finished}} =
+               Pipeline.settle_demo_run(os_process)
     end
 
     test "resolves demo target from scratch_dir when task has no worktree_path", %{task: task, roles: roles} do
@@ -1019,8 +1016,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           worktree_path: "/tmp/rail-removed-worktree"
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -1052,23 +1049,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
 
       mock_demo_uploads(1)
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %RoleRun{status: :finished}} =
-               Pipeline.settle_demo_run(run)
+      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %Run{status: :finished}} =
+               Pipeline.settle_demo_run(os_process)
     end
 
     test "supports explicit criteria in opts when settling demo", %{task: task, roles: roles} do
@@ -1112,8 +1109,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
           scratch_path: worktree_dir
         })
 
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
@@ -1123,23 +1120,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
 
       mock_demo_uploads(1)
 
-      run =
-        %Run{}
-        |> Run.changeset(%{
-          role_run_id: role_run.id,
-          task_id: role_run.task_id,
+      os_process =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: run.task_id,
           kind: :stage,
-          stream_path: "/tmp/settle_demo/#{role_run.id}.ndjson",
+          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
           node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
         |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-      assert {:ok, %Task{stage: :ready_to_merge}, %RoleRun{status: :finished}} =
-               Pipeline.settle_demo_run(run, %{}, criteria: ["Explicit criterion"])
+      assert {:ok, %Task{stage: :ready_to_merge}, %Run{status: :finished}} =
+               Pipeline.settle_demo_run(os_process, %{}, criteria: ["Explicit criterion"])
     end
   end
 end

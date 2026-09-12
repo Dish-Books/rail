@@ -1,7 +1,7 @@
 defmodule Rail.Roles.Actions.BuildMetaPrompt do
   @moduledoc false
 
-  alias Rail.Roles.RoleRunRecord
+  alias Rail.Roles.RunRecord
   alias Rail.Roles.Schemas.Role
 
   def build_meta_prompt(%Role{} = role, sources) when is_list(sources) do
@@ -15,7 +15,7 @@ defmodule Rail.Roles.Actions.BuildMetaPrompt do
     runs_digest =
       sources
       |> Enum.with_index(1)
-      |> Enum.map_join("\n\n", fn {%RoleRunRecord{} = source, idx} ->
+      |> Enum.map_join("\n\n", fn {%RunRecord{} = source, idx} ->
         exit_code_line = if source.exit_code, do: "- Exit Code: #{source.exit_code}\n", else: ""
         duration_line = if source.duration, do: "- Duration: #{source.duration}s\n", else: ""
         error_line = if source.error && String.trim(source.error) != "", do: "- Error: #{source.error}\n", else: ""

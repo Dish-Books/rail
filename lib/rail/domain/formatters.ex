@@ -626,9 +626,7 @@ defmodule Rail.Domain.Formatters do
 
   defp has_designer_run?(task, opts) do
     runs =
-      Keyword.get(opts, :role_runs) ||
-        Keyword.get(opts, :runs) ||
-        get_field(task, :role_runs) ||
+      Keyword.get(opts, :runs) ||
         get_field(task, :runs) ||
         []
 

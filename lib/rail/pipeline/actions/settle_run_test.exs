@@ -10,7 +10,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -87,8 +87,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         stage_state: :running
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
         conversation_id: "sess_fixture",
@@ -96,24 +96,24 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         started_at: DateTime.utc_now()
       })
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_run/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_run/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{id: ^task_id, stage: :product, stage_state: :awaiting_approval},
-            %RoleRun{status: :finished, exit_code: 0, auto_retries: 0}} =
-             Pipeline.settle_product_run(run)
+            %Run{status: :finished, exit_code: 0, auto_retries: 0}} =
+             Pipeline.settle_product_run(os_process)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}
   end
@@ -134,8 +134,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         stage_state: :running
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: roles[:product].id,
         conversation_id: "sess_fixture",
@@ -146,23 +146,23 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     # No Linear mock is set up: a push would raise on the unexpected request.
     {:ok, _persisted} = Pipeline.update_task(system_scope(), task.id, %{scratch_path: scratch_dir})
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_run/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_run/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    {:ok, _settled_task, _settled_role_run} = Pipeline.settle_run(run, %{exit_code: 0})
+    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-    assert {:ok, %Task{}, %RoleRun{}} =
-             Pipeline.settle_product_run(run)
+    assert {:ok, %Task{}, %Run{}} =
+             Pipeline.settle_product_run(os_process)
 
     assert %Issue{title: ^title_before} = Repo.get!(Issue, issue.id)
   end
@@ -171,8 +171,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), task.id, %{stage: :engineer, stage_state: :running})
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
         conversation_id: "sess_fixture",
@@ -182,13 +182,13 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         error: "permanent boom"
       })
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_run/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_run/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
@@ -196,18 +196,18 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       |> Repo.insert!()
 
     assert {:ok, %Task{id: ^task_id, stage_state: :failed, error: "permanent boom"},
-            %RoleRun{status: :finished, exit_code: 1}} = Pipeline.settle_run(run)
+            %Run{status: :finished, exit_code: 1}} = Pipeline.settle_run(os_process)
   end
 
-  test "resolves fallback exit code, string error, and prior role_run error", %{task: task, roles: roles} do
+  test "resolves fallback exit code, string error, and prior run error", %{task: task, roles: roles} do
     {:ok, %Task{id: task_id} = _task} =
       Pipeline.update_task(system_scope(), task.id, %{
         stage: :design,
         stage_state: :running
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
         conversation_id: "sess_fixture",
@@ -217,26 +217,26 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         error: nil
       })
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_run/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_run/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    assert {:ok, _t1, %RoleRun{exit_code: 0}} = Pipeline.settle_run(run, %{})
+    assert {:ok, _t1, %Run{exit_code: 0}} = Pipeline.settle_run(os_process, %{})
 
-    assert {:ok, _t2, %RoleRun{error: "string err"}} =
-             Pipeline.settle_run(run, %{"error" => "string err", "exit_code" => 1})
+    assert {:ok, _t2, %Run{error: "string err"}} =
+             Pipeline.settle_run(os_process, %{"error" => "string err", "exit_code" => 1})
 
-    {:ok, role_run_err} =
-      Runs.create_role_run(%{
+    {:ok, run_err} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
         conversation_id: "sess_fixture",
@@ -247,19 +247,19 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
       })
 
     err_run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run_err.id,
-        task_id: role_run_err.task_id,
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run_err.id,
+        task_id: run_err.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_run/#{role_run_err.id}.ndjson",
+        stream_path: "/tmp/settle_run/#{run_err.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    assert {:ok, _t3, %RoleRun{error: "prior err"}} =
+    assert {:ok, _t3, %Run{error: "prior err"}} =
              Pipeline.settle_run(err_run, %{"exit_code" => 1})
   end
 
@@ -270,8 +270,8 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         stage_state: :running
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: roles[:engineer].id,
         conversation_id: "sess_fixture",
@@ -279,13 +279,13 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
         started_at: DateTime.utc_now()
       })
 
-    run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
-        stream_path: "/tmp/settle_run/#{role_run.id}.ndjson",
+        stream_path: "/tmp/settle_run/#{run.id}.ndjson",
         node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
@@ -294,13 +294,13 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     usage_struct = %TaskUsage{input_tokens: 42, output_tokens: 10}
 
-    assert {:ok, _t2, %RoleRun{usage: %TaskUsage{input_tokens: 42}}} =
-             Pipeline.settle_run(run, %{usage: usage_struct})
+    assert {:ok, _t2, %Run{usage: %TaskUsage{input_tokens: 42}}} =
+             Pipeline.settle_run(os_process, %{usage: usage_struct})
 
-    assert {:ok, _t3, %RoleRun{usage: %TaskUsage{input_tokens: 55}}} =
-             Pipeline.settle_run(run, %{usage: %{"input_tokens" => 55}})
+    assert {:ok, _t3, %Run{usage: %TaskUsage{input_tokens: 55}}} =
+             Pipeline.settle_run(os_process, %{usage: %{"input_tokens" => 55}})
 
-    assert {:ok, _t4, %RoleRun{usage: %TaskUsage{input_tokens: 42}}} =
-             Pipeline.settle_run(run, %{"usage" => usage_struct})
+    assert {:ok, _t4, %Run{usage: %TaskUsage{input_tokens: 42}}} =
+             Pipeline.settle_run(os_process, %{"usage" => usage_struct})
   end
 end

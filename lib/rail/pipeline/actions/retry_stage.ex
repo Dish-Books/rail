@@ -12,7 +12,7 @@ defmodule Rail.Pipeline.Actions.RetryStage do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
 
   @doc """
@@ -21,7 +21,7 @@ defmodule Rail.Pipeline.Actions.RetryStage do
   - Cancels any active retry timer in Dispatcher.
   - Clears `retry_after` and `error`.
   - Sets `stage_state: :queued`.
-  - Resets `auto_retries = 0` on the corresponding `RoleRun`.
+  - Resets `auto_retries = 0` on the corresponding `Run`.
   - Broadcasts `pipeline_changed` and pumps the Dispatcher.
   """
   def retry_stage(%Scope{} = scope, task_or_id, opts) when is_list(opts) do
@@ -62,7 +62,7 @@ defmodule Rail.Pipeline.Actions.RetryStage do
     dispatcher = Keyword.get(opts, :dispatcher, Dispatcher)
     Dispatcher.cancel_retry_timer(dispatcher, task.id)
 
-    reset_role_run_retries(task.id, role.id)
+    reset_run_retries(task.id, role.id)
 
     attrs = %{
       stage_state: :queued,
@@ -81,11 +81,11 @@ defmodule Rail.Pipeline.Actions.RetryStage do
     {:ok, updated_task}
   end
 
-  defp reset_role_run_retries(task_id, role_id) do
-    case Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_id) do
-      %RoleRun{} = existing ->
+  defp reset_run_retries(task_id, role_id) do
+    case Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_id) do
+      %Run{} = existing ->
         existing
-        |> RoleRun.changeset(%{auto_retries: 0})
+        |> Run.changeset(%{auto_retries: 0})
         |> Repo.update!()
 
       nil ->

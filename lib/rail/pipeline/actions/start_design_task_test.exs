@@ -10,7 +10,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs.FollowerSupervisor
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -70,8 +70,8 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
     assert {:ok,
             %{
               task: %Task{id: ^task_id, stage: :design, stage_state: :running, worktree_path: worktree_path},
-              role_run: %RoleRun{task_id: ^task_id, role_id: ^role_id, attempts: 1, status: :running},
-              run: %Run{task_id: ^task_id}
+              run: %Run{task_id: ^task_id, role_id: ^role_id, attempts: 1, status: :running},
+              os_process: %OsProcess{task_id: ^task_id}
             }} =
              Pipeline.start_design_task(task,
                allow_fun: fn pid ->

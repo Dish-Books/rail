@@ -1,23 +1,23 @@
-defmodule Rail.Runs.Actions.StartOrResumeRoleRun do
+defmodule Rail.Runs.Actions.StartOrResumeRun do
   @moduledoc false
 
   import Ecto.Query
 
   alias Rail.Git
   alias Rail.Repo
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
 
   @doc """
-  Marks the role run for a task/role pair as running, creating it on first use.
+  Marks the run for a task/role pair as running, creating it on first use.
 
-  A resumed role run keeps its history and bumps `attempts`; a new one starts at
+  A resumed run keeps its history and bumps `attempts`; a new one starts at
   1. The worktree is fingerprinted here and stamped on the row, so later gates
   can tell whether the tree moved underneath them.
 
-  The row comes back with its task and its role's backend loaded: the role run is
+  The row comes back with its task and its role's backend loaded: the run is
   the handle the spawn path works from, and it has to be enough on its own.
   """
-  def start_or_resume_role_run(task, role, worktree_path) do
+  def start_or_resume_run(task, role, worktree_path) do
     {head_sha, dirty_digest} = fingerprint(worktree_path)
 
     attrs = %{
@@ -27,23 +27,23 @@ defmodule Rail.Runs.Actions.StartOrResumeRoleRun do
       stage_fingerprint_dirty_digest: dirty_digest
     }
 
-    case Repo.one(from r in RoleRun, where: r.task_id == ^task.id and r.role_id == ^role.id) do
-      %RoleRun{} = existing ->
+    case Repo.one(from r in Run, where: r.task_id == ^task.id and r.role_id == ^role.id) do
+      %Run{} = existing ->
         existing
-        |> RoleRun.changeset(Map.put(attrs, :attempts, (existing.attempts || 0) + 1))
+        |> Run.changeset(Map.put(attrs, :attempts, (existing.attempts || 0) + 1))
         |> Repo.update()
         |> with_associations()
 
       nil ->
-        %RoleRun{}
-        |> RoleRun.changeset(Map.merge(attrs, %{task_id: task.id, role_id: role.id, attempts: 1}))
+        %Run{}
+        |> Run.changeset(Map.merge(attrs, %{task_id: task.id, role_id: role.id, attempts: 1}))
         |> Repo.insert()
         |> with_associations()
     end
   end
 
-  defp with_associations({:ok, %RoleRun{} = role_run}) do
-    {:ok, Repo.preload(role_run, [:task, role: :backend])}
+  defp with_associations({:ok, %Run{} = run}) do
+    {:ok, Repo.preload(run, [:task, role: :backend])}
   end
 
   defp with_associations(other), do: other

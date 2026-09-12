@@ -15,7 +15,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
 
   @doc """
@@ -27,12 +27,12 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
   - If valid:
     - Captures the design artifact.
     - Sets `stage_state: :awaiting_approval, error: nil`.
-    - Logs success event on the designer's role run.
+    - Logs success event on the designer's run.
     - Broadcasts `pipeline_changed`.
     - Returns `{:ok, updated_task}`.
   - If invalid:
     - Sets `stage_state: :failed, error: reason`.
-    - Logs turn-down event on the designer's role run.
+    - Logs turn-down event on the designer's run.
     - Broadcasts `pipeline_changed`.
     - Returns `{:error, reason}`.
   """
@@ -156,14 +156,14 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
 
   defp log_designer_event(task, line) do
     with {:ok, %Role{} = designer_role} <- Roles.get_role(project_id: task.project_id, stage: :design),
-         %RoleRun{} = role_run <-
+         %Run{} = run <-
            Repo.one(
-             from r in RoleRun,
+             from r in Run,
                where: r.task_id == ^task.id and r.role_id == ^designer_role.id,
                order_by: [desc: r.inserted_at],
                limit: 1
            ) do
-      Runs.append_run_event(role_run.id, line)
+      Runs.append_run_event(run.id, line)
     else
       _other -> :ok
     end

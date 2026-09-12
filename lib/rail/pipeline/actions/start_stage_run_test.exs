@@ -14,7 +14,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
   alias Rail.Runs.FollowerSupervisor
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -135,7 +135,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
     assert error_msg =~ "Failed to create worktree"
   end
 
-  test "successfully starts stage run, initializes RoleRun, updates task, and broadcasts", %{
+  test "successfully starts stage run, initializes Run, updates task, and broadcasts", %{
     backend: backend,
     task: task,
     roles: roles
@@ -157,14 +157,14 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
     assert {:ok,
             %{
               task: %Task{stage_state: :running, worktree_path: wt_path},
-              role_run: %RoleRun{
+              run: %Run{
                 role_id: ^role_id,
                 task_id: ^task_id,
                 attempts: 1,
                 status: :running,
                 stage_fingerprint_head_sha: head_sha
               },
-              run: %Run{task_id: ^task_id, role_run_id: role_run_id}
+              os_process: %OsProcess{task_id: ^task_id, run_id: run_id}
             }} =
              Pipeline.start_stage_run(task,
                allow_fun: fn pid ->
@@ -176,11 +176,11 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :dispatched}}
     assert byte_size(wt_path) > 0
     assert byte_size(head_sha) > 0
-    assert byte_size(role_run_id) > 0
+    assert byte_size(run_id) > 0
     assert File.dir?(wt_path)
   end
 
-  test "starts stage run by task ID, increments existing RoleRun attempts, and retains worktree", %{
+  test "starts stage run by task ID, increments existing Run attempts, and retains worktree", %{
     backend: backend,
     project: project,
     task: task,
@@ -204,8 +204,8 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
         worktree_path: wt_path
       })
 
-    {:ok, _existing_role_run} =
-      Runs.create_role_run(%{
+    {:ok, _existing_run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :finished,
@@ -218,7 +218,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
     assert {:ok,
             %{
               task: %Task{worktree_path: ^wt_path},
-              role_run: %RoleRun{
+              run: %Run{
                 attempts: 3,
                 pending_answer: nil,
                 attempt_log_lines: 0
@@ -243,7 +243,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
         worktree_name: "rebase-wt-#{System.unique_integer([:positive])}"
       })
 
-    assert {:ok, %{role_run: %RoleRun{role_id: ^engineer_role_id}}} =
+    assert {:ok, %{run: %Run{role_id: ^engineer_role_id}}} =
              Pipeline.start_stage_run(task,
                allow_fun: fn pid ->
                  Sandbox.allow(Repo, self(), pid)
@@ -330,12 +330,12 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
 
     test_pid = self()
 
-    custom_cb = fn run, outcome ->
-      send(test_pid, {:custom_cb_invoked, run, outcome})
-      Pipeline.settle_product_run(run, outcome)
+    custom_cb = fn os_process, outcome ->
+      send(test_pid, {:custom_cb_invoked, os_process, outcome})
+      Pipeline.settle_product_run(os_process, outcome)
     end
 
-    assert {:ok, %{role_run: %RoleRun{id: role_run_id}, run: run}} =
+    assert {:ok, %{run: %Run{id: run_id}, os_process: os_process}} =
              Pipeline.start_stage_run(task,
                on_finished: custom_cb,
                allow_fun: fn pid ->
@@ -344,9 +344,9 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
                end
              )
 
-    assert byte_size(role_run_id) > 0
-    assert {:ok, %Task{id: ^task_id}, _rr} = custom_cb.(run, %{exit_code: 0})
-    assert_receive {:custom_cb_invoked, ^run, %{exit_code: 0}}
+    assert byte_size(run_id) > 0
+    assert {:ok, %Task{id: ^task_id}, _rr} = custom_cb.(os_process, %{exit_code: 0})
+    assert_receive {:custom_cb_invoked, ^os_process, %{exit_code: 0}}
   end
 
   test "returns not_found when task identifier is invalid type" do
@@ -369,7 +369,7 @@ defmodule Rail.Pipeline.Actions.StartStageRunTest do
         worktree_path: non_git_dir
       })
 
-    assert {:ok, %{role_run: %RoleRun{stage_fingerprint_head_sha: nil}}} =
+    assert {:ok, %{run: %Run{stage_fingerprint_head_sha: nil}}} =
              Pipeline.start_stage_run(task,
                allow_fun: fn pid ->
                  Sandbox.allow(Repo, self(), pid)

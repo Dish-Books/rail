@@ -16,7 +16,7 @@ defmodule Rail.Pipeline.Actions.RequestChanges do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
 
   @stages_before_engineer [:product, :design, :architect]
@@ -28,7 +28,7 @@ defmodule Rail.Pipeline.Actions.RequestChanges do
   - If target stage owns no role (`ready_to_merge`) and stage is at/after engineer,
     delegates to `SendBackToEngineer`.
   - Sets `stage_state: :queued`, clears `error` and `retry_after`.
-  - Appends comment to target role run's `pending_answer` and resets `auto_retries = 0`.
+  - Appends comment to target run's `pending_answer` and resets `auto_retries = 0`.
   - Broadcasts `pipeline_changed` and pumps the Dispatcher.
   """
   def request_changes(%Scope{} = scope, task_or_id, comment, opts) when is_list(opts) do
@@ -83,9 +83,9 @@ defmodule Rail.Pipeline.Actions.RequestChanges do
     stage_for_role = if task.is_rebasing, do: :engineer, else: target_stage
 
     with {:ok, %Role{} = target_role} <- Roles.get_role(project_id: task.project_id, stage: stage_for_role),
-         %RoleRun{} = role_run <- resumable_role_run(task.id, target_role.id) do
+         %Run{} = run <- resumable_run(task.id, target_role.id) do
       formatted_comment = format_comment_for_stage(task, target_stage, comment, opts)
-      update_task_and_role_run(task, target_stage, role_run, formatted_comment, comment)
+      update_task_and_run(task, target_stage, run, formatted_comment, comment)
     else
       nil -> {:error, :no_session}
       {:error, reason} -> {:error, reason}
@@ -108,8 +108,8 @@ defmodule Rail.Pipeline.Actions.RequestChanges do
 
   defp format_comment_for_stage(_task, _stage, comment, _opts), do: comment
 
-  defp update_task_and_role_run(%Task{} = task, target_stage, %RoleRun{} = role_run, comment, raw_comment) do
-    append_pending_answer(role_run, comment, raw_comment)
+  defp update_task_and_run(%Task{} = task, target_stage, %Run{} = run, comment, raw_comment) do
+    append_pending_answer(run, comment, raw_comment)
 
     new_stage = if task.is_rebasing, do: task.stage, else: target_stage
 
@@ -131,15 +131,15 @@ defmodule Rail.Pipeline.Actions.RequestChanges do
     {:ok, updated_task}
   end
 
-  defp append_pending_answer(%RoleRun{} = role_run, comment, raw_comment) do
-    role_run = Runs.append_pending_answer(role_run, comment, auto_retries: 0)
-    Runs.append_run_event(role_run.id, "[human] #{raw_comment}")
-    role_run
+  defp append_pending_answer(%Run{} = run, comment, raw_comment) do
+    run = Runs.append_pending_answer(run, comment, auto_retries: 0)
+    Runs.append_run_event(run.id, "[human] #{raw_comment}")
+    run
   end
 
-  defp resumable_role_run(task_id, role_id) do
-    case Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_id) do
-      %RoleRun{} = role_run -> if RoleRun.resumable?(role_run), do: role_run
+  defp resumable_run(task_id, role_id) do
+    case Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_id) do
+      %Run{} = run -> if Run.resumable?(run), do: run
       nil -> nil
     end
   end

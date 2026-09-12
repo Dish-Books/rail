@@ -505,8 +505,8 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.uses_design?(%{stage: :architect}, has_designer_run: true)
       assert Formatters.uses_design?(%{stage: :engineer, runs: %{"designer" => %{}}})
       assert Formatters.uses_design?(%{stage: :engineer, runs: %{designer: %{}}})
-      assert Formatters.uses_design?(%{stage: :engineer, role_runs: [%{role_id: "designer"}]})
-      assert Formatters.uses_design?(%{stage: :engineer, role_runs: [%{role: %{stage: :design}}]})
+      assert Formatters.uses_design?(%{stage: :engineer, runs: [%{role_id: "designer"}]})
+      assert Formatters.uses_design?(%{stage: :engineer, runs: [%{role: %{stage: :design}}]})
     end
   end
 
@@ -549,7 +549,7 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.stage_state_color_class(t_base) == "text-blue-600 dark:text-blue-500"
 
       # uses_design? with atom keys in map
-      assert Formatters.uses_design?(%{stage: :engineer}, role_runs: %{design: true})
+      assert Formatters.uses_design?(%{stage: :engineer}, runs: %{design: true})
     end
   end
 

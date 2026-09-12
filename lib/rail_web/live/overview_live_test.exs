@@ -641,8 +641,8 @@ defmodule RailWeb.OverviewLiveTest do
         stage_state: :blocked
       })
 
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_id,
         status: :blocked_on_input,
@@ -765,8 +765,8 @@ defmodule RailWeb.OverviewLiveTest do
         stage_state: :blocked
       })
 
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_id,
         status: :blocked_on_input,

@@ -3,7 +3,7 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
 
   alias Rail.Projects
   alias Rail.Roles
-  alias Rail.Roles.RoleRunRecord
+  alias Rail.Roles.RunRecord
   alias Rail.Runs
   alias Rail.Scope
 
@@ -42,7 +42,7 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
     now = DateTime.utc_now()
 
     {:ok, run1} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_01",
         status: :finished,
@@ -54,7 +54,7 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
     Runs.append_run_event(run1, "Transcript output for run 1")
 
     {:ok, run2} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_02",
         status: :finished,
@@ -74,7 +74,7 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
     records = Roles.recent_finished_runs(scope, role.id, tasks: tasks)
 
     assert [
-             %RoleRunRecord{
+             %RunRecord{
                task_id: "tsk_02",
                title: "Fix bug B",
                stage: "Engineer",
@@ -84,7 +84,7 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
                error: "Compilation failed",
                transcript_text: "Transcript output for run 2"
              },
-             %RoleRunRecord{
+             %RunRecord{
                task_id: "tsk_01",
                title: "Implement feature A",
                stage: "Engineer",
@@ -102,7 +102,7 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
     scope = Scope.for_system()
 
     {:ok, rr} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_events",
         status: :finished,
@@ -112,26 +112,26 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
     _run_event = Runs.append_run_event(rr.id, "Line one from events")
     _run_event = Runs.append_run_event(rr.id, "Line two from events")
 
-    assert [%RoleRunRecord{transcript_text: "Line one from events\nLine two from events"}] =
+    assert [%RunRecord{transcript_text: "Line one from events\nLine two from events"}] =
              Roles.recent_finished_runs(scope, role.id)
   end
 
   test "supports custom transcript_reader callback", %{role: role} do
     scope = Scope.for_system()
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_custom",
         status: :finished,
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "Ignored output")
+    Runs.append_run_event(run, "Ignored output")
 
     custom_reader = fn rr -> "Custom transcript for #{rr.task_id}" end
 
-    assert [%RoleRunRecord{transcript_text: "Custom transcript for tsk_custom"}] =
+    assert [%RunRecord{transcript_text: "Custom transcript for tsk_custom"}] =
              Roles.recent_finished_runs(scope, role.id, transcript_reader: custom_reader)
   end
 
@@ -139,8 +139,8 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
     scope = Scope.for_system()
 
     # blank output and no events
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_blank",
         status: :finished,
@@ -148,15 +148,15 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
       })
 
     # running run
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_live",
         status: :running,
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "Text")
+    Runs.append_run_event(run, "Text")
 
     assert Roles.recent_finished_runs(scope, role.id) == []
   end
@@ -166,15 +166,15 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
 
     long_text = String.duplicate("A", 100) <> String.duplicate("B", 800) <> String.duplicate("C", 100)
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_trunc",
         status: :finished,
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, long_text)
+    Runs.append_run_event(run, long_text)
 
     [record] = Roles.recent_finished_runs(scope, role.id, max_chars: 250, head_chars: 50, tail_chars: 50)
     assert record.transcript_text =~ "[... 900 characters truncated ...]"
@@ -183,25 +183,25 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
   test "resolves title from tasks map and falls back when missing", %{role: role} do
     scope = Scope.for_system()
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_mapped",
         status: :finished,
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "Out")
+    Runs.append_run_event(run, "Out")
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_unmapped",
         status: :finished,
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "Out")
+    Runs.append_run_event(run, "Out")
 
     tasks_map = %{"tsk_mapped" => %{title: "Mapped Title"}}
 
@@ -214,15 +214,15 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
     scope = Scope.for_system()
 
     for i <- 1..6 do
-      {:ok, role_run} =
-        Runs.create_role_run(%{
+      {:ok, run} =
+        Runs.create_run(%{
           role_id: role.id,
           task_id: "tsk_#{i}",
           status: :finished,
           started_at: DateTime.utc_now()
         })
 
-      Runs.append_run_event(role_run, "Output #{i}")
+      Runs.append_run_event(run, "Output #{i}")
     end
 
     records = Roles.recent_finished_runs(scope, role.id, limit: 3)
@@ -230,15 +230,15 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
   end
 
   test "returns not authorized for unauthenticated scope", %{role: role} do
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_unauthorized",
         status: :finished,
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "Out")
+    Runs.append_run_event(run, "Out")
 
     assert {:error, :not_authorized} = Roles.recent_finished_runs(nil, role.id)
   end
@@ -246,25 +246,25 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
   test "resolves title from list of string maps and handles unmatched task", %{role: role} do
     scope = Scope.for_system()
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_str_key",
         status: :finished,
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "Out")
+    Runs.append_run_event(run, "Out")
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_unmatched_list",
         status: :finished,
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "Out")
+    Runs.append_run_event(run, "Out")
 
     tasks = [
       %{"id" => "tsk_str_key", "title" => "String Key Title"},
@@ -279,25 +279,25 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
   test "resolves title from map with string title or direct binary title", %{role: role} do
     scope = Scope.for_system()
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_nested_map",
         status: :finished,
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "Out")
+    Runs.append_run_event(run, "Out")
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_binary_map",
         status: :finished,
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "Out")
+    Runs.append_run_event(run, "Out")
 
     tasks = %{
       "tsk_nested_map" => %{"title" => "Nested Map Title"},
@@ -312,40 +312,40 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
   test "supports explicit stage opt and falls back to Unknown when role is missing", %{role: role} do
     scope = Scope.for_system()
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_explicit_stage",
         status: :finished,
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "Out")
+    Runs.append_run_event(run, "Out")
 
-    assert [%RoleRunRecord{stage: "Custom Stage"}] =
+    assert [%RunRecord{stage: "Custom Stage"}] =
              Roles.recent_finished_runs(scope, role.id, stage: "Custom Stage")
 
     fake_role_id = "rol_000000000000000000000000"
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         role_id: fake_role_id,
         task_id: "tsk_no_role",
         status: :finished,
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "Out")
+    Runs.append_run_event(run, "Out")
 
-    assert [%RoleRunRecord{stage: "Unknown"}] =
+    assert [%RunRecord{stage: "Unknown"}] =
              Roles.recent_finished_runs(scope, fake_role_id)
   end
 
-  test "returns nil duration when role run has missing timestamp", %{role: role} do
+  test "returns nil duration when run has missing timestamp", %{role: role} do
     scope = Scope.for_system()
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         role_id: role.id,
         task_id: "tsk_no_completed_at",
         status: :finished,
@@ -353,9 +353,9 @@ defmodule Rail.Roles.Actions.RecentFinishedRunsTest do
         started_at: DateTime.utc_now()
       })
 
-    Runs.append_run_event(role_run, "Out")
+    Runs.append_run_event(run, "Out")
 
-    assert [%RoleRunRecord{duration: nil}] =
+    assert [%RunRecord{duration: nil}] =
              Roles.recent_finished_runs(scope, role.id)
   end
 end

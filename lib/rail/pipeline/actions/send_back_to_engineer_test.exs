@@ -8,7 +8,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -191,7 +191,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
       })
 
     {:ok, rev_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_rev.id,
         conversation_id: "sess_fixture",
@@ -202,7 +202,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
     Runs.append_run_event(rev_run, "Reviewer finding: memory leak in loop.")
 
     {:ok, _eng_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_eng.id,
         conversation_id: "sess_eng",
@@ -226,7 +226,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :sent_back_to_engineer}}
 
-    eng_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
+    eng_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
     assert eng_run.pending_answer =~ "Sent back to you by the human"
     assert eng_run.pending_answer =~ "What the human asked for:\n\nPlease address memory leak."
     assert eng_run.pending_answer =~ "### Lead Reviewer\n\nReviewer finding: memory leak in loop."
@@ -245,7 +245,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
       })
 
     {:ok, _eng_run} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_eng.id,
         conversation_id: "sess_eng",
@@ -256,7 +256,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
     assert {:ok, %Task{stage: :engineer, stage_state: :queued}} =
              Pipeline.send_back_to_engineer(task, "Direct string comment")
 
-    eng_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
+    eng_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
     assert eng_run.pending_answer =~ "What the human asked for:\n\nDirect string comment"
   end
 
@@ -277,8 +277,8 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
         stage_state: :awaiting_approval
       })
 
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_eng.id,
         conversation_id: "sess_fixture",
@@ -296,7 +296,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
     assert {:ok, %Task{stage: :engineer, stage_state: :queued}} =
              Pipeline.send_back_to_engineer(task, :non_list_opts)
 
-    eng_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
+    eng_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
     assert eng_run.pending_answer =~ "Initial engineer instruction\n\nSent back to you by the human"
 
     assert {:error, :not_found} = Pipeline.send_back_to_engineer(user_scope, :invalid_task)
@@ -313,6 +313,6 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
 
     assert {:error, :no_session} = Pipeline.send_back_to_engineer(task, "Please fix")
 
-    assert Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id) == nil
+    assert Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id) == nil
   end
 end

@@ -56,7 +56,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestion do
 
   defp do_answer_question(scope, %Question{} = question, %Task{} = task, answer_text) do
     if !task.is_rebasing and Runs.is_running?(task.id) do
-      Runs.stop_run(task.id)
+      Runs.stop_os_process(task.id)
     end
 
     now = DateTime.utc_now()

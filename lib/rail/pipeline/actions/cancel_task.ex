@@ -53,7 +53,7 @@ defmodule Rail.Pipeline.Actions.CancelTask do
       Rail.Pipeline.stop_chat_turn(task.id)
     end
 
-    Runs.stop_run(task.id)
+    Runs.stop_os_process(task.id)
 
     attrs =
       if task.is_rebasing do

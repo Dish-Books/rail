@@ -10,17 +10,17 @@ defmodule Rail.Pipeline.Actions.SettleProductRun do
   import Rail.Pipeline.Utils.AdvanceStage
 
   alias Rail.Repo
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
 
   @doc "Settles the finished product `run` against `outcome`."
-  def settle_product_run(%Run{} = run, _outcome \\ %{}, opts \\ []) do
-    advance_stage(run, opts, &awaiting_approval/3)
+  def settle_product_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
+    advance_stage(os_process, opts, &awaiting_approval/3)
   end
 
-  defp awaiting_approval(_task, role_run, _opts) do
-    {:ok, role_run} = role_run |> RoleRun.changeset(%{auto_retries: 0}) |> Repo.update()
+  defp awaiting_approval(_task, run, _opts) do
+    {:ok, run} = run |> Run.changeset(%{auto_retries: 0}) |> Repo.update()
 
-    {%{stage_state: :awaiting_approval, retry_after: nil, error: nil}, role_run}
+    {%{stage_state: :awaiting_approval, retry_after: nil, error: nil}, run}
   end
 end

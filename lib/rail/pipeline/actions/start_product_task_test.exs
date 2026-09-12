@@ -9,7 +9,7 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -73,8 +73,8 @@ defmodule Rail.Pipeline.Actions.StartProductTaskTest do
     assert {:ok,
             %{
               task: %Task{id: ^task_id, stage_state: :running, worktree_path: worktree_path},
-              role_run: %RoleRun{task_id: ^task_id, role_id: ^role_id, attempts: 1, status: :running},
-              run: %Run{task_id: ^task_id}
+              run: %Run{task_id: ^task_id, role_id: ^role_id, attempts: 1, status: :running},
+              os_process: %OsProcess{task_id: ^task_id}
             }} =
              Pipeline.start_product_task(issue)
 

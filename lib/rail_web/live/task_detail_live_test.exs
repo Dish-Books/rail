@@ -501,7 +501,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert has_element?(view, "#task-error-card", "Elixir compilation error")
   end
 
-  test "renders the stage failure when a role run failed", %{
+  test "renders the stage failure when a run failed", %{
     backend: backend,
     conn: conn,
     project: project
@@ -550,7 +550,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     {:ok, task} = Pipeline.create_task(issue_13833, :product)
 
     Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id),
-      set: [description: "Task with role run"]
+      set: [description: "Task with run"]
     )
 
     {:ok, task} =
@@ -561,8 +561,8 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     now = DateTime.utc_now()
 
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :finished,
@@ -2336,7 +2336,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     now = DateTime.utc_now()
 
     {:ok, run_arch} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role_arch.id,
         status: :finished,
@@ -2350,7 +2350,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     Runs.append_run_event(run_arch, "Architecture design complete.")
 
     {:ok, run_eng} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role_eng.id,
         status: :running,
@@ -2364,7 +2364,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     Runs.append_run_event(run_eng, "Writing the code now.")
 
     {:ok, run_custom} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task.id,
         role_id: "custom_tester",
         status: :finished,
@@ -2421,8 +2421,8 @@ defmodule RailWeb.TaskDetailLiveTest do
     # PubSub live event streaming ignored for different run_id
     send(view.pid, {:run_events, "rr_other_run", [%{line: "other line"}]})
 
-    # PubSub {:run_finished, run_id, outcome}
-    send(view.pid, {:run_finished, run_eng.id, :completed})
+    # PubSub {:os_process_finished, run_id, outcome}
+    send(view.pid, {:os_process_finished, run_eng.id, :completed})
     assert has_element?(view, "[data-qa='chat-pane']")
   end
 
@@ -2487,7 +2487,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       })
 
     {:ok, run_eng_chat} =
-      Runs.create_role_run(%{
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role_eng.id,
         status: :running,

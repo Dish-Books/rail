@@ -4,7 +4,7 @@ defmodule Rail.Runs.BootTest do
   alias Rail.Runs
   alias Rail.Runs.Boot
   alias Rail.Runs.FollowerSupervisor
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Tools
 
@@ -20,9 +20,9 @@ defmodule Rail.Runs.BootTest do
   end
 
   test "adopts live child process, starts Follower and replays stream", %{tmp_dir: tmp_dir} do
-    role_run =
-      %RoleRun{}
-      |> RoleRun.changeset(%{
+    run =
+      %Run{}
+      |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: UXID.generate!(prefix: "rol"),
         status: :running,
@@ -39,11 +39,11 @@ defmodule Rail.Runs.BootTest do
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
 
-    %Run{id: run_id} =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    %OsProcess{id: os_process_id} =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
@@ -53,13 +53,13 @@ defmodule Rail.Runs.BootTest do
       })
       |> Repo.insert!()
 
-    results = Boot.adopt_live_runs(node: to_string(Node.self()))
-    assert [{:adopted_live, %Run{id: ^run_id}, follower_pid}] = results
+    results = Boot.adopt_live_os_processes(node: to_string(Node.self()))
+    assert [{:adopted_live, %OsProcess{id: ^os_process_id}, follower_pid}] = results
     assert is_pid(follower_pid)
     assert Process.alive?(follower_pid)
 
     # Calling adopt again sees it is already followed
-    repeat = Boot.adopt_live_runs(node: to_string(Node.self()))
+    repeat = Boot.adopt_live_os_processes(node: to_string(Node.self()))
     assert [{:already_following, _run, ^follower_pid}] = repeat
 
     FollowerSupervisor.stop_follower(follower_pid)
@@ -67,9 +67,9 @@ defmodule Rail.Runs.BootTest do
   end
 
   test "settles dead child process as finished while unwatched", %{tmp_dir: tmp_dir} do
-    role_run =
-      %RoleRun{}
-      |> RoleRun.changeset(%{
+    run =
+      %Run{}
+      |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: UXID.generate!(prefix: "rol"),
         status: :running,
@@ -88,10 +88,10 @@ defmodule Rail.Runs.BootTest do
     dead_pid = 999_998
 
     _run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
@@ -101,23 +101,23 @@ defmodule Rail.Runs.BootTest do
       })
       |> Repo.insert!()
 
-    results = Boot.adopt_live_runs(node: to_string(Node.self()))
-    assert [{:adopted_dead, %Run{status: :adopted_dead}}] = results
+    results = Boot.adopt_live_os_processes(node: to_string(Node.self()))
+    assert [{:adopted_dead, %OsProcess{status: :adopted_dead}}] = results
 
-    # Role run should be settled
-    settled_role_run = Runs.get_role_run!(role_run.id)
-    assert settled_role_run.status == :finished
-    assert settled_role_run.exit_code == 0
-    assert settled_role_run.conversation_id == "sess-dead-1"
-    assert settled_role_run.usage.input_tokens == 150
+    # Run should be settled
+    settled_run = Runs.get_run!(run.id)
+    assert settled_run.status == :finished
+    assert settled_run.exit_code == 0
+    assert settled_run.conversation_id == "sess-dead-1"
+    assert settled_run.usage.input_tokens == 150
   end
 
   test "settles dead child process with no result as failure with transient pattern", %{
     tmp_dir: tmp_dir
   } do
-    role_run =
-      %RoleRun{}
-      |> RoleRun.changeset(%{
+    run =
+      %Run{}
+      |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: UXID.generate!(prefix: "rol"),
         status: :running,
@@ -130,10 +130,10 @@ defmodule Rail.Runs.BootTest do
     File.write!("#{stream_path}.err", "")
 
     _run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
@@ -143,21 +143,21 @@ defmodule Rail.Runs.BootTest do
       })
       |> Repo.insert!()
 
-    results = Boot.adopt_live_runs(node: to_string(Node.self()))
-    assert [{:adopted_dead, %Run{status: :adopted_dead}}] = results
+    results = Boot.adopt_live_os_processes(node: to_string(Node.self()))
+    assert [{:adopted_dead, %OsProcess{status: :adopted_dead}}] = results
 
-    settled_role_run = Runs.get_role_run!(role_run.id)
-    assert settled_role_run.status == :finished
-    assert settled_role_run.exit_code == -1
-    assert settled_role_run.error =~ "without reporting a result"
+    settled_run = Runs.get_run!(run.id)
+    assert settled_run.status == :finished
+    assert settled_run.exit_code == -1
+    assert settled_run.error =~ "without reporting a result"
     # Verify failure pattern is recognized as transient by RunFailure
-    assert Runs.transient?(settled_role_run.error)
+    assert Runs.transient?(settled_run.error)
   end
 
   test "starting run without PID times out and fails after 60s", %{tmp_dir: tmp_dir} do
-    role_run =
-      %RoleRun{}
-      |> RoleRun.changeset(%{
+    run =
+      %Run{}
+      |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: UXID.generate!(prefix: "rol"),
         status: :starting,
@@ -170,10 +170,10 @@ defmodule Rail.Runs.BootTest do
     File.write!("#{stream_path}.err", "")
 
     _run =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
@@ -183,18 +183,18 @@ defmodule Rail.Runs.BootTest do
       })
       |> Repo.insert!()
 
-    results = Boot.adopt_live_runs(node: to_string(Node.self()), timeout_seconds: 60)
-    assert [{:failed_starting, %Run{status: :finished}}] = results
+    results = Boot.adopt_live_os_processes(node: to_string(Node.self()), timeout_seconds: 60)
+    assert [{:failed_starting, %OsProcess{status: :finished}}] = results
 
-    settled_role_run = Runs.get_role_run!(role_run.id)
-    assert settled_role_run.status == :finished
-    assert settled_role_run.error =~ "Spawn timed out"
+    settled_run = Runs.get_run!(run.id)
+    assert settled_run.status == :finished
+    assert settled_run.error =~ "Spawn timed out"
   end
 
   test "starting run within timeout is left alone", %{tmp_dir: tmp_dir} do
-    role_run =
-      %RoleRun{}
-      |> RoleRun.changeset(%{
+    run =
+      %Run{}
+      |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: UXID.generate!(prefix: "rol"),
         status: :starting,
@@ -206,11 +206,11 @@ defmodule Rail.Runs.BootTest do
     File.write!(stream_path, "")
     File.write!("#{stream_path}.err", "")
 
-    %Run{id: run_id} =
-      %Run{}
-      |> Run.changeset(%{
-        role_run_id: role_run.id,
-        task_id: role_run.task_id,
+    %OsProcess{id: os_process_id} =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
         kind: :stage,
         stream_path: stream_path,
         node: to_string(Node.self()),
@@ -220,14 +220,14 @@ defmodule Rail.Runs.BootTest do
       })
       |> Repo.insert!()
 
-    results = Boot.adopt_live_runs(node: to_string(Node.self()), timeout_seconds: 60)
-    assert [{:still_starting, %Run{id: ^run_id}}] = results
+    results = Boot.adopt_live_os_processes(node: to_string(Node.self()), timeout_seconds: 60)
+    assert [{:still_starting, %OsProcess{id: ^os_process_id}}] = results
   end
 
   test "ignores runs from different node or already finished", %{tmp_dir: tmp_dir} do
-    role_run =
-      %RoleRun{}
-      |> RoleRun.changeset(%{
+    run =
+      %Run{}
+      |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: UXID.generate!(prefix: "rol"),
         status: :running,
@@ -240,9 +240,9 @@ defmodule Rail.Runs.BootTest do
     File.write!("#{stream_path}.err", "")
 
     # Foreign node run
-    Repo.insert!(%Run{
-      role_run_id: role_run.id,
-      task_id: role_run.task_id,
+    Repo.insert!(%OsProcess{
+      run_id: run.id,
+      task_id: run.task_id,
       kind: :stage,
       stream_path: stream_path,
       node: "other_node@remote_host",
@@ -252,9 +252,9 @@ defmodule Rail.Runs.BootTest do
     })
 
     # Already finished run
-    Repo.insert!(%Run{
-      role_run_id: role_run.id,
-      task_id: role_run.task_id,
+    Repo.insert!(%OsProcess{
+      run_id: run.id,
+      task_id: run.task_id,
       kind: :stage,
       stream_path: stream_path,
       node: to_string(Node.self()),
@@ -263,7 +263,7 @@ defmodule Rail.Runs.BootTest do
       started_at: DateTime.utc_now()
     })
 
-    results = Boot.adopt_live_runs(node: to_string(Node.self()))
+    results = Boot.adopt_live_os_processes(node: to_string(Node.self()))
     assert results == []
   end
 
@@ -279,16 +279,16 @@ defmodule Rail.Runs.BootTest do
     Application.put_env(:rail, :adopt_on_boot, true)
     on_exit(fn -> Application.put_env(:rail, :adopt_on_boot, false) end)
 
-    assert Boot.run(node: "nonexistent_node") == []
+    assert Boot.reconcile(node: "nonexistent_node") == []
   end
 
   test "settles dead run with various error and stderr combinations", %{tmp_dir: tmp_dir} do
     test_pid = self()
 
     # Case 1: both result_error and stderr
-    role_run1 =
-      %RoleRun{}
-      |> RoleRun.changeset(%{
+    run1 =
+      %Run{}
+      |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: UXID.generate!(prefix: "rol"),
         status: :running,
@@ -300,9 +300,9 @@ defmodule Rail.Runs.BootTest do
     File.write!(stream1, ~s({"type":"result","subtype":"error","is_error":true}\n))
     File.write!("#{stream1}.err", "stderr log output\n\n")
 
-    Repo.insert!(%Run{
-      role_run_id: role_run1.id,
-      task_id: role_run1.task_id,
+    Repo.insert!(%OsProcess{
+      run_id: run1.id,
+      task_id: run1.task_id,
       kind: :stage,
       stream_path: stream1,
       node: to_string(Node.self()),
@@ -311,10 +311,10 @@ defmodule Rail.Runs.BootTest do
       started_at: DateTime.utc_now()
     })
 
-    Boot.adopt_live_runs(
+    Boot.adopt_live_os_processes(
       node: to_string(Node.self()),
-      on_finished: fn run, outcome ->
-        send(test_pid, {:custom_boot_finished, run, outcome})
+      on_finished: fn os_process, outcome ->
+        send(test_pid, {:custom_boot_finished, os_process, outcome})
       end
     )
 
@@ -323,9 +323,9 @@ defmodule Rail.Runs.BootTest do
     assert outcome1.error =~ "stderr log output"
 
     # Case 2: result_error only (no stderr)
-    role_run2 =
-      %RoleRun{}
-      |> RoleRun.changeset(%{
+    run2 =
+      %Run{}
+      |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: UXID.generate!(prefix: "rol"),
         status: :running,
@@ -337,9 +337,9 @@ defmodule Rail.Runs.BootTest do
     File.write!(stream2, ~s({"type":"result","subtype":"error_max_turns","is_error":true}\n))
     File.write!("#{stream2}.err", "")
 
-    Repo.insert!(%Run{
-      role_run_id: role_run2.id,
-      task_id: role_run2.task_id,
+    Repo.insert!(%OsProcess{
+      run_id: run2.id,
+      task_id: run2.task_id,
       kind: :stage,
       stream_path: stream2,
       node: to_string(Node.self()),
@@ -348,14 +348,14 @@ defmodule Rail.Runs.BootTest do
       started_at: DateTime.utc_now()
     })
 
-    Boot.adopt_live_runs(node: to_string(Node.self()))
-    r2 = Runs.get_role_run!(role_run2.id)
+    Boot.adopt_live_os_processes(node: to_string(Node.self()))
+    r2 = Runs.get_run!(run2.id)
     assert r2.error == "claude reported error_max_turns"
 
     # Case 3: stderr only, saw_result was true
-    role_run3 =
-      %RoleRun{}
-      |> RoleRun.changeset(%{
+    run3 =
+      %Run{}
+      |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: UXID.generate!(prefix: "rol"),
         status: :running,
@@ -367,9 +367,9 @@ defmodule Rail.Runs.BootTest do
     File.write!(stream3, ~s({"type":"result","subtype":"success"}\n))
     File.write!("#{stream3}.err", "only stderr output\n")
 
-    Repo.insert!(%Run{
-      role_run_id: role_run3.id,
-      task_id: role_run3.task_id,
+    Repo.insert!(%OsProcess{
+      run_id: run3.id,
+      task_id: run3.task_id,
       kind: :stage,
       stream_path: stream3,
       node: to_string(Node.self()),
@@ -378,14 +378,14 @@ defmodule Rail.Runs.BootTest do
       started_at: DateTime.utc_now()
     })
 
-    Boot.adopt_live_runs(node: to_string(Node.self()))
-    r3 = Runs.get_role_run!(role_run3.id)
+    Boot.adopt_live_os_processes(node: to_string(Node.self()))
+    r3 = Runs.get_run!(run3.id)
     assert r3.error == "only stderr output"
 
     # Case 4: stream path does not exist
-    role_run4 =
-      %RoleRun{}
-      |> RoleRun.changeset(%{
+    run4 =
+      %Run{}
+      |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: UXID.generate!(prefix: "rol"),
         status: :running,
@@ -393,10 +393,10 @@ defmodule Rail.Runs.BootTest do
       })
       |> Repo.insert!()
 
-    %Run{id: run4_id} =
-      Repo.insert!(%Run{
-        role_run_id: role_run4.id,
-        task_id: role_run4.task_id,
+    %OsProcess{id: run4_id} =
+      Repo.insert!(%OsProcess{
+        run_id: run4.id,
+        task_id: run4.task_id,
         kind: :stage,
         stream_path: Path.join(tmp_dir, "nonexistent.ndjson"),
         node: to_string(Node.self()),
@@ -405,6 +405,6 @@ defmodule Rail.Runs.BootTest do
         started_at: DateTime.utc_now()
       })
 
-    assert [{:adopted_dead, %Run{id: ^run4_id}}] = Boot.adopt_live_runs(node: to_string(Node.self()))
+    assert [{:adopted_dead, %OsProcess{id: ^run4_id}}] = Boot.adopt_live_os_processes(node: to_string(Node.self()))
   end
 end

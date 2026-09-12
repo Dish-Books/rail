@@ -15,16 +15,16 @@ defmodule Rail.Pipeline.Actions.SettleDesignRun do
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Scope
 
   @doc "Settles the finished design `run` against `outcome`."
-  def settle_design_run(%Run{} = run, _outcome \\ %{}, opts \\ []) do
-    advance_stage(run, opts, &capture_design/3)
+  def settle_design_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
+    advance_stage(os_process, opts, &capture_design/3)
   end
 
-  defp capture_design(%Task{scratch_path: scratch_dir} = task, role_run, opts) do
+  defp capture_design(%Task{scratch_path: scratch_dir} = task, run, opts) do
     scope = Scope.for_system()
     read_opts = Keyword.take(opts, [:url_probe, :req_options])
     capture_opts = Keyword.take(opts, [:project, :issue, :owner_user, :url_probe, :req_options])
@@ -32,14 +32,14 @@ defmodule Rail.Pipeline.Actions.SettleDesignRun do
     with {:ok, manifest} <- Artifacts.read_design(scope, scratch_dir, read_opts),
          :ok <- validate_transition(manifest, previous_design(task)),
          {:ok, _design} <- Artifacts.capture_design(scope, task, scratch_dir, capture_opts) do
-      {:ok, role_run} = role_run |> RoleRun.changeset(%{auto_retries: 0}) |> Repo.update()
+      {:ok, run} = run |> Run.changeset(%{auto_retries: 0}) |> Repo.update()
 
-      {%{stage_state: :awaiting_approval, retry_after: nil, error: nil}, role_run}
+      {%{stage_state: :awaiting_approval, retry_after: nil, error: nil}, run}
     else
       {:error, reason} ->
         error = if is_binary(reason), do: reason, else: inspect(reason)
 
-        {%{stage_state: :failed, error: error, retry_after: nil}, role_run}
+        {%{stage_state: :failed, error: error, retry_after: nil}, run}
     end
   end
 

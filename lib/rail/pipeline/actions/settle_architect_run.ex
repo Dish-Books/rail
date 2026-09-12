@@ -14,21 +14,21 @@ defmodule Rail.Pipeline.Actions.SettleArchitectRun do
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
 
   @doc "Settles the finished architect `run` against `outcome`."
-  def settle_architect_run(%Run{} = run, _outcome \\ %{}, opts \\ []) do
-    advance_stage(run, opts, &capture_plan/3)
+  def settle_architect_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
+    advance_stage(os_process, opts, &capture_plan/3)
   end
 
-  defp capture_plan(%Task{} = task, role_run, _opts) do
+  defp capture_plan(%Task{} = task, run, _opts) do
     {:ok, task} = capture_scratch(:architect, task)
 
     if Repo.exists?(from p in Plan, where: p.task_id == ^task.id) do
-      {:ok, role_run} = role_run |> RoleRun.changeset(%{auto_retries: 0}) |> Repo.update()
+      {:ok, run} = run |> Run.changeset(%{auto_retries: 0}) |> Repo.update()
 
-      {%{stage_state: :awaiting_approval, retry_after: nil, error: nil}, role_run}
+      {%{stage_state: :awaiting_approval, retry_after: nil, error: nil}, run}
     else
       attrs = %{
         stage_state: :failed,
@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Actions.SettleArchitectRun do
         retry_after: nil
       }
 
-      {attrs, role_run}
+      {attrs, run}
     end
   end
 end

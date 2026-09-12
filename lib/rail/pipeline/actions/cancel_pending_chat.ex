@@ -1,6 +1,6 @@
 defmodule Rail.Pipeline.Actions.CancelPendingChat do
   @moduledoc """
-  Cancels an undelivered queued chat turn held on a role run.
+  Cancels an undelivered queued chat turn held on a run.
   """
 
   import Ecto.Query
@@ -8,7 +8,7 @@ defmodule Rail.Pipeline.Actions.CancelPendingChat do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
 
   @doc """
@@ -17,8 +17,8 @@ defmodule Rail.Pipeline.Actions.CancelPendingChat do
   def cancel_pending_chat(%Scope{} = scope, task_or_id, role_id) do
     with :ok <- authorize_scope(scope),
          %Task{} = task <- resolve_task(task_or_id),
-         %RoleRun{} = role_run <- resolve_role_run(task.id, role_id) do
-      do_cancel_pending_chat(task, role_run)
+         %Run{} = run <- resolve_run(task.id, role_id) do
+      do_cancel_pending_chat(task, run)
     else
       {:error, reason} -> {:error, reason}
       nil -> {:error, :not_found}
@@ -37,24 +37,24 @@ defmodule Rail.Pipeline.Actions.CancelPendingChat do
   defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)
   defp resolve_task(_other), do: nil
 
-  defp resolve_role_run(task_id, role_id) do
-    Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_id)
+  defp resolve_run(task_id, role_id) do
+    Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_id)
   end
 
-  defp do_cancel_pending_chat(task, %RoleRun{pending_chat: nil} = role_run) do
-    {:ok, role_run, task}
+  defp do_cancel_pending_chat(task, %Run{pending_chat: nil} = run) do
+    {:ok, run, task}
   end
 
-  defp do_cancel_pending_chat(task, %RoleRun{} = role_run) do
-    Runs.append_run_event(role_run.id, "[rail] Queued message cancelled by user.")
+  defp do_cancel_pending_chat(task, %Run{} = run) do
+    Runs.append_run_event(run.id, "[rail] Queued message cancelled by user.")
 
-    {:ok, updated_role_run} =
-      role_run
-      |> RoleRun.changeset(%{pending_chat: nil})
+    {:ok, updated_run} =
+      run
+      |> Run.changeset(%{pending_chat: nil})
       |> Repo.update()
 
     Rail.Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :pending_chat_cancelled})
 
-    {:ok, updated_role_run, task}
+    {:ok, updated_run, task}
   end
 end

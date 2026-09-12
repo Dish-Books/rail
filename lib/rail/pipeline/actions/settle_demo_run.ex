@@ -16,44 +16,44 @@ defmodule Rail.Pipeline.Actions.SettleDemoRun do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Scope
   alias Rail.Users.Schemas.User
 
   @doc "Settles the finished demo `run` against `outcome`."
-  def settle_demo_run(%Run{} = run, _outcome \\ %{}, opts \\ []) do
-    advance_stage(run, opts, &capture_demo/3)
+  def settle_demo_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
+    advance_stage(os_process, opts, &capture_demo/3)
   end
 
-  defp capture_demo(%Task{scratch_path: scratch_dir} = task, role_run, opts) do
+  defp capture_demo(%Task{scratch_path: scratch_dir} = task, run, opts) do
     scope = Scope.for_system()
     criteria = resolve_criteria(task, opts)
     read_opts = opts |> Keyword.take([:req_options]) |> Keyword.put(:criteria, criteria)
 
     with {:ok, manifest} <- Artifacts.read_demo(scope, scratch_dir, read_opts),
-         :ok <- validate_worktree_stability(task, role_run) do
-      capture_opts = build_capture_opts(task, role_run, opts, criteria)
+         :ok <- validate_worktree_stability(task, run) do
+      capture_opts = build_capture_opts(task, run, opts, criteria)
 
       case manifest.outcome do
         outcome when outcome in ["recorded", "declined"] ->
-          advance_captured(scope, task, role_run, scratch_dir, capture_opts)
+          advance_captured(scope, task, run, scratch_dir, capture_opts)
 
         "failed" ->
-          advance_failed(scope, task, role_run, scratch_dir, manifest, capture_opts)
+          advance_failed(scope, task, run, scratch_dir, manifest, capture_opts)
       end
     else
       {:error, reason} ->
         error = if is_binary(reason), do: reason, else: inspect(reason)
 
-        {%{stage_state: :failed, error: error, retry_after: nil}, role_run}
+        {%{stage_state: :failed, error: error, retry_after: nil}, run}
     end
   end
 
-  defp advance_captured(scope, task, role_run, scratch_dir, capture_opts) do
+  defp advance_captured(scope, task, run, scratch_dir, capture_opts) do
     case Artifacts.capture_demo(scope, task, scratch_dir, capture_opts) do
       {:ok, _demo} ->
-        {:ok, role_run} = role_run |> RoleRun.changeset(%{auto_retries: 0}) |> Repo.update()
+        {:ok, run} = run |> Run.changeset(%{auto_retries: 0}) |> Repo.update()
 
         attrs = %{
           stage: :ready_to_merge,
@@ -62,19 +62,19 @@ defmodule Rail.Pipeline.Actions.SettleDemoRun do
           error: nil
         }
 
-        {attrs, role_run}
+        {attrs, run}
 
       {:error, reason} ->
         error = if is_binary(reason), do: reason, else: inspect(reason)
 
-        {%{stage_state: :failed, error: error, retry_after: nil}, role_run}
+        {%{stage_state: :failed, error: error, retry_after: nil}, run}
     end
   end
 
-  defp advance_failed(scope, task, role_run, scratch_dir, manifest, capture_opts) do
+  defp advance_failed(scope, task, run, scratch_dir, manifest, capture_opts) do
     _capture_result = Artifacts.capture_demo(scope, task, scratch_dir, capture_opts)
 
-    {:ok, role_run} = role_run |> RoleRun.changeset(%{auto_retries: 0}) |> Repo.update()
+    {:ok, run} = run |> Run.changeset(%{auto_retries: 0}) |> Repo.update()
 
     attrs = %{
       stage: :demo,
@@ -83,7 +83,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRun do
       retry_after: nil
     }
 
-    {attrs, role_run}
+    {attrs, run}
   end
 
   defp resolve_criteria(%Task{} = task, opts) do
@@ -99,8 +99,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRun do
     end
   end
 
-  defp build_capture_opts(task, role_run, opts, criteria) do
-    {head_sha, dirty_digest} = fingerprint(task, role_run)
+  defp build_capture_opts(task, run, opts, criteria) do
+    {head_sha, dirty_digest} = fingerprint(task, run)
     issue = Keyword.get(opts, :issue) || (task.issue_id && Repo.get(Issue, task.issue_id))
     owner_user = Keyword.get(opts, :owner_user) || (issue && issue.owner_user_id && Repo.get(User, issue.owner_user_id))
 
@@ -114,23 +114,23 @@ defmodule Rail.Pipeline.Actions.SettleDemoRun do
     |> Keyword.put(:owner_user, owner_user)
   end
 
-  defp validate_worktree_stability(%Task{worktree_path: path}, role_run) when is_binary(path) and path != "" do
+  defp validate_worktree_stability(%Task{worktree_path: path}, run) when is_binary(path) and path != "" do
     if File.dir?(path) and
-         (role_run.stage_fingerprint_head_sha != nil or role_run.stage_fingerprint_dirty_digest != nil) do
-      compare_fingerprint(Git.branch_fingerprint(path), role_run)
+         (run.stage_fingerprint_head_sha != nil or run.stage_fingerprint_dirty_digest != nil) do
+      compare_fingerprint(Git.branch_fingerprint(path), run)
     else
       :ok
     end
   end
 
-  defp validate_worktree_stability(_task, _role_run), do: :ok
+  defp validate_worktree_stability(_task, _run), do: :ok
 
-  defp compare_fingerprint(%{head_sha: current_sha, dirty_digest: current_digest}, role_run) do
+  defp compare_fingerprint(%{head_sha: current_sha, dirty_digest: current_digest}, run) do
     cond do
-      role_run.stage_fingerprint_head_sha != nil and current_sha != role_run.stage_fingerprint_head_sha ->
+      run.stage_fingerprint_head_sha != nil and current_sha != run.stage_fingerprint_head_sha ->
         {:error, "The worktree moved during the demo run."}
 
-      role_run.stage_fingerprint_dirty_digest != nil and current_digest != role_run.stage_fingerprint_dirty_digest ->
+      run.stage_fingerprint_dirty_digest != nil and current_digest != run.stage_fingerprint_dirty_digest ->
         {:error, "Worktree code outside .rail/ was modified during recording."}
 
       true ->
@@ -138,21 +138,21 @@ defmodule Rail.Pipeline.Actions.SettleDemoRun do
     end
   end
 
-  defp compare_fingerprint(_no_fingerprint, _role_run), do: :ok
+  defp compare_fingerprint(_no_fingerprint, _run), do: :ok
 
-  defp fingerprint(%Task{worktree_path: path}, role_run) when is_binary(path) and path != "" do
+  defp fingerprint(%Task{worktree_path: path}, run) when is_binary(path) and path != "" do
     if File.dir?(path) do
       case Git.branch_fingerprint(path) do
         %{head_sha: sha, dirty_digest: digest} -> {sha, digest}
-        _none -> {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
+        _none -> {run.stage_fingerprint_head_sha, run.stage_fingerprint_dirty_digest}
       end
     else
-      {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
+      {run.stage_fingerprint_head_sha, run.stage_fingerprint_dirty_digest}
     end
   end
 
-  defp fingerprint(_task, role_run) do
-    {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
+  defp fingerprint(_task, run) do
+    {run.stage_fingerprint_head_sha, run.stage_fingerprint_dirty_digest}
   end
 
   # The ticket body lives on the issue; the task only links to it.

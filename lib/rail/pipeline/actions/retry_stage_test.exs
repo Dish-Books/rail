@@ -8,7 +8,7 @@ defmodule Rail.Pipeline.Actions.RetryStageTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -118,8 +118,8 @@ defmodule Rail.Pipeline.Actions.RetryStageTest do
         error: "Transient socket hang up"
       })
 
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_eng.id,
         status: :finished,
@@ -137,7 +137,7 @@ defmodule Rail.Pipeline.Actions.RetryStageTest do
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :stage_retried}}
 
-    eng_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
+    eng_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
     assert eng_run.auto_retries == 0
   end
 
@@ -155,8 +155,8 @@ defmodule Rail.Pipeline.Actions.RetryStageTest do
         error: "Merge conflict"
       })
 
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role_eng.id,
         status: :finished,
@@ -167,11 +167,11 @@ defmodule Rail.Pipeline.Actions.RetryStageTest do
     assert {:ok, %Task{id: ^task_id, stage_state: :queued, error: nil}} =
              Pipeline.retry_stage(task)
 
-    eng_run = Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
+    eng_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
     assert eng_run.auto_retries == 0
   end
 
-  test "handles retry when role_run row does not exist yet", %{task: task, roles: roles} do
+  test "handles retry when run row does not exist yet", %{task: task, roles: roles} do
     _role = roles[:product]
 
     {:ok, task} =

@@ -10,7 +10,7 @@ defmodule Rail.Pipeline.Utils.CarriedReports do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
 
   @doc """
   The carried gate reports block for the engineer, or `""` when there is nothing
@@ -45,7 +45,7 @@ defmodule Rail.Pipeline.Utils.CarriedReports do
 
   defp section_for(%Task{} = task, role_id) do
     findings =
-      from(r in RoleRun,
+      from(r in Run,
         where: r.task_id == ^task.id and r.role_id == ^role_id,
         order_by: [desc: r.inserted_at],
         limit: 1,

@@ -7,7 +7,7 @@ defmodule Rail.Artifacts.Schemas.QaReportTest do
     test "valid changeset succeeds" do
       attrs = %{
         task_id: "tsk_qa_1",
-        role_run_id: "rr_123",
+        run_id: "rr_123",
         commit: "abc1234",
         session: %{"port" => 4000, "url" => "http://localhost:4000"},
         rows: [

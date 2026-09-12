@@ -1,4 +1,4 @@
-defmodule Rail.Runs.Actions.StartRunTest do
+defmodule Rail.Runs.Actions.StartOsProcessTest do
   use Rail.DataCase, async: true
 
   alias Ecto.Adapters.SQL.Sandbox
@@ -9,7 +9,7 @@ defmodule Rail.Runs.Actions.StartRunTest do
   alias Rail.Roles
   alias Rail.Runs
   alias Rail.Runs.FollowerSupervisor
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Tools
 
@@ -45,7 +45,7 @@ defmodule Rail.Runs.Actions.StartRunTest do
       })
 
     # The executable is whatever the role's backend points at, so a test that
-    # wants to spawn something else repoints this row before calling start_run.
+    # wants to spawn something else repoints this row before calling start_os_process.
     {:ok, backend} = Backends.create_backend(scope, %{name: :claude, executable_path: "/bin/sleep"})
 
     {:ok, role} =
@@ -71,8 +71,8 @@ defmodule Rail.Runs.Actions.StartRunTest do
       )
       |> Repo.insert()
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :starting,
@@ -81,55 +81,55 @@ defmodule Rail.Runs.Actions.StartRunTest do
 
     %{
       backend: backend,
-      role_run: role_run,
+      run: run,
       scratch_path: scratch_path,
       scope: scope,
       worktree_path: worktree_path
     }
   end
 
-  test "spawns child, records runs row, sets os_pid and running status", %{role_run: role_run} do
-    {:ok, run} =
-      Runs.start_run(role_run, :stage, ["2"],
+  test "spawns child, records runs row, sets os_pid and running status", %{run: run} do
+    {:ok, os_process} =
+      Runs.start_os_process(run, :stage, ["2"],
         allow_fun: fn pid ->
           Sandbox.allow(Repo, self(), pid)
           on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
         end
       )
 
-    assert %Run{} = run
-    assert run.role_run_id == role_run.id
-    assert run.task_id == role_run.task_id
-    assert run.status == :running
-    assert is_integer(run.os_pid)
-    assert run.os_pid > 0
-    assert Tools.os_process_alive?(run.os_pid)
+    assert %OsProcess{} = os_process
+    assert os_process.run_id == run.id
+    assert os_process.task_id == run.task_id
+    assert os_process.status == :running
+    assert is_integer(os_process.os_pid)
+    assert os_process.os_pid > 0
+    assert Tools.os_process_alive?(os_process.os_pid)
 
-    Tools.terminate_os_process(run.os_pid, grace_period: 100)
+    Tools.terminate_os_process(os_process.os_pid, grace_period: 100)
   end
 
-  test "writes the stream under the task's scratch directory, one file per role run", %{
-    role_run: role_run,
+  test "writes the stream under the task's scratch directory, one file per run", %{
+    run: run,
     scratch_path: scratch_path
   } do
-    {:ok, run} =
-      Runs.start_run(role_run, :stage, ["2"],
+    {:ok, os_process} =
+      Runs.start_os_process(run, :stage, ["2"],
         allow_fun: fn pid ->
           Sandbox.allow(Repo, self(), pid)
           on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
         end
       )
 
-    assert run.stream_path == Path.join([scratch_path, "streams", "#{role_run.id}.ndjson"])
-    assert File.exists?(run.stream_path)
-    assert File.exists?("#{run.stream_path}.err")
+    assert os_process.stream_path == Path.join([scratch_path, "streams", "#{run.id}.ndjson"])
+    assert File.exists?(os_process.stream_path)
+    assert File.exists?("#{os_process.stream_path}.err")
 
-    Tools.terminate_os_process(run.os_pid, grace_period: 100)
+    Tools.terminate_os_process(os_process.os_pid, grace_period: 100)
   end
 
   test "runs the child in the task's worktree and points it at the stream files", %{
     backend: backend,
-    role_run: role_run,
+    run: run,
     scope: scope,
     worktree_path: worktree_path
   } do
@@ -137,8 +137,8 @@ defmodule Rail.Runs.Actions.StartRunTest do
 
     script = ~s(printf '{"cwd":"%s","stream":"%s"}\n' "$PWD" "$RAIL_STREAM")
 
-    {:ok, run} =
-      Runs.start_run(role_run, :stage, ["-c", script],
+    {:ok, os_process} =
+      Runs.start_os_process(run, :stage, ["-c", script],
         allow_fun: fn pid ->
           Sandbox.allow(Repo, self(), pid)
           on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
@@ -147,9 +147,9 @@ defmodule Rail.Runs.Actions.StartRunTest do
 
     content =
       Enum.reduce_while(1..200, "", fn _i, _acc ->
-        content = if File.exists?(run.stream_path), do: File.read!(run.stream_path), else: ""
+        content = if File.exists?(os_process.stream_path), do: File.read!(os_process.stream_path), else: ""
 
-        if content =~ run.stream_path do
+        if content =~ os_process.stream_path do
           {:halt, content}
         else
           Process.sleep(10)
@@ -157,52 +157,52 @@ defmodule Rail.Runs.Actions.StartRunTest do
         end
       end)
 
-    assert content =~ run.stream_path
+    assert content =~ os_process.stream_path
     assert content =~ Path.basename(worktree_path)
 
-    Tools.terminate_os_process(run.os_pid, grace_period: 50)
+    Tools.terminate_os_process(os_process.os_pid, grace_period: 50)
   end
 
   test "with a missing backend binary reports error and settles the run", %{
     backend: backend,
-    role_run: role_run,
+    run: run,
     scope: scope
   } do
     missing_bin = "/path/to/nonexistent/cli_binary_xyz"
     {:ok, _backend} = Backends.update_backend(scope, backend, %{executable_path: missing_bin})
 
-    result = Runs.start_run(role_run, :stage, ["--help"])
+    result = Runs.start_os_process(run, :stage, ["--help"])
 
-    assert {:error, {:missing_binary, ^missing_bin, %Run{status: :finished}}} = result
+    assert {:error, {:missing_binary, ^missing_bin, %OsProcess{status: :finished}}} = result
 
-    reloaded_role_run = Repo.get!(RoleRun, role_run.id)
-    assert reloaded_role_run.status == :finished
-    assert reloaded_role_run.exit_code == -1
-    assert reloaded_role_run.error =~ "No such CLI binary"
+    reloaded_run = Repo.get!(Run, run.id)
+    assert reloaded_run.status == :finished
+    assert reloaded_run.exit_code == -1
+    assert reloaded_run.error =~ "No such CLI binary"
   end
 
-  test "always starts a Follower under FollowerSupervisor", %{role_run: role_run} do
-    {:ok, run} =
-      Runs.start_run(role_run, :stage, ["2"],
+  test "always starts a Follower under FollowerSupervisor", %{run: run} do
+    {:ok, os_process} =
+      Runs.start_os_process(run, :stage, ["2"],
         allow_fun: fn pid ->
           Sandbox.allow(Repo, self(), pid)
           on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
         end
       )
 
-    assert run.status == :running
-    follower_pid = Runs.get_follower_pid(run.id)
+    assert os_process.status == :running
+    follower_pid = Runs.get_follower_pid(os_process.id)
     assert is_pid(follower_pid)
     assert Process.alive?(follower_pid)
 
-    Tools.terminate_os_process(run.os_pid, grace_period: 100)
+    Tools.terminate_os_process(os_process.os_pid, grace_period: 100)
   end
 
-  test "calls opts[:allow_fun] with the Follower pid", %{role_run: role_run} do
+  test "calls opts[:allow_fun] with the Follower pid", %{run: run} do
     test_pid = self()
 
-    {:ok, run} =
-      Runs.start_run(role_run, :stage, ["2"],
+    {:ok, os_process} =
+      Runs.start_os_process(run, :stage, ["2"],
         allow_fun: fn pid ->
           Sandbox.allow(Repo, test_pid, pid)
           on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
@@ -211,8 +211,8 @@ defmodule Rail.Runs.Actions.StartRunTest do
       )
 
     assert_receive {:allowed, follower_pid}
-    assert follower_pid == Runs.get_follower_pid(run.id)
+    assert follower_pid == Runs.get_follower_pid(os_process.id)
 
-    Tools.terminate_os_process(run.os_pid, grace_period: 100)
+    Tools.terminate_os_process(os_process.os_pid, grace_period: 100)
   end
 end

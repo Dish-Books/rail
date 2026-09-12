@@ -11,7 +11,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -89,8 +89,8 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
         stage_state: :blocked
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role.id,
         conversation_id: "sess_fixture",
@@ -116,12 +116,12 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     assert %Task{stage_state: :queued, question_id: nil, error: nil} = Repo.get!(Task, task_id)
 
     expected_pending = "You asked: Use Postgres or MySQL?\nThe answer is: Use Postgres"
-    assert %RoleRun{auto_retries: 0, pending_answer: ^expected_pending} = Repo.get!(RoleRun, role_run.id)
+    assert %Run{auto_retries: 0, pending_answer: ^expected_pending} = Repo.get!(Run, run.id)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :changes_requested}}
   end
 
-  test "appends with newline separator if role_run already had pending_answer", %{task: task, roles: roles} do
+  test "appends with newline separator if run already had pending_answer", %{task: task, roles: roles} do
     role = roles[:engineer]
 
     {:ok, task} =
@@ -130,8 +130,8 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
         stage_state: :blocked
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         conversation_id: "sess_fixture",
@@ -145,12 +145,12 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
         role_id: role.id
       })
 
-    {:ok, _role_run} = Runs.update_role_run(role_run, %{pending_answer: "Initial instructions"})
+    {:ok, _run} = Runs.update_run(run, %{pending_answer: "Initial instructions"})
 
     assert {:ok, %Question{status: :answered}} = Pipeline.answer_question(q.id, "4000")
 
     expected_pending = "Initial instructions\n\nYou asked: Port number?\nThe answer is: 4000"
-    assert %RoleRun{pending_answer: ^expected_pending} = Repo.get!(RoleRun, role_run.id)
+    assert %Run{pending_answer: ^expected_pending} = Repo.get!(Run, run.id)
   end
 
   test "stops live running process if task is running and not rebasing", %{task: task, roles: roles} do
@@ -163,8 +163,8 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
         is_rebasing: false
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         conversation_id: "sess_fixture",
@@ -181,9 +181,9 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     {:ok, task} = task |> Task.changeset(%{question_id: q.id}) |> Repo.update()
 
     # Create a live running Run row
-    run =
-      Repo.insert!(%Run{
-        role_run_id: role_run.id,
+    os_process =
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
         task_id: task.id,
         kind: :stage,
         status: :running,
@@ -196,7 +196,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
 
     assert {:ok, %Question{status: :answered}} = Pipeline.answer_question(q.id, "Yes, run all tests")
 
-    reloaded_run = Repo.get!(Run, run.id)
+    reloaded_run = Repo.get!(OsProcess, os_process.id)
     assert reloaded_run.status == :finished
     refute Runs.is_running?(task.id)
   end
@@ -211,8 +211,8 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
         is_rebasing: true
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         conversation_id: "sess_fixture",
@@ -228,9 +228,9 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
 
     {:ok, task} = task |> Task.changeset(%{question_id: q.id}) |> Repo.update()
 
-    run =
-      Repo.insert!(%Run{
-        role_run_id: role_run.id,
+    os_process =
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
         task_id: task.id,
         kind: :stage,
         status: :running,
@@ -244,7 +244,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     assert {:ok, %Question{status: :answered}} = Pipeline.answer_question(q.id, "Yes")
 
     # Run was not terminated because task is rebasing
-    reloaded_run = Repo.get!(Run, run.id)
+    reloaded_run = Repo.get!(OsProcess, os_process.id)
     assert reloaded_run.status == :running
   end
 
@@ -257,8 +257,8 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
         stage_state: :blocked
       })
 
-    {:ok, _role_run} =
-      Runs.create_role_run(%{
+    {:ok, _run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         conversation_id: "sess_fixture",
@@ -343,8 +343,8 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), task.id, %{stage: :engineer, stage_state: :running})
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role.id,
         conversation_id: "sess_fixture",
@@ -355,7 +355,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     detected =
       Runs.detect_questions("[QUESTION: Use Postgres or MySQL?]\n[QUESTION: Ship behind a flag?]")
 
-    {:ok, _results} = Pipeline.register_questions(task_id, role_run, detected)
+    {:ok, _results} = Pipeline.register_questions(task_id, run, detected)
     [first, second] = pending_questions(task_id)
 
     # Answering the first hands the human the second and keeps the stage parked.
@@ -363,14 +363,14 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
 
     assert %Task{stage_state: :blocked, question_id: second_id} = Repo.get!(Task, task_id)
     assert second_id == second.id
-    assert %RoleRun{pending_answer: nil} = Repo.get!(RoleRun, role_run.id)
+    assert %Run{pending_answer: nil} = Repo.get!(Run, run.id)
 
     # The last answer drains the queue: now the stage re-queues with both answers.
     assert {:ok, %Question{status: :answered}} = Pipeline.answer_question(second.id, "Yes, flagged")
 
     assert %Task{stage_state: :queued, question_id: nil} = Repo.get!(Task, task_id)
 
-    %RoleRun{pending_answer: pending_answer} = Repo.get!(RoleRun, role_run.id)
+    %Run{pending_answer: pending_answer} = Repo.get!(Run, run.id)
     assert pending_answer =~ "You asked 2 questions"
     assert pending_answer =~ "1. You asked: Use Postgres or MySQL?"
     assert pending_answer =~ "The answer is: Postgres"

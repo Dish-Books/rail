@@ -10,7 +10,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs.FollowerSupervisor
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Runs.Schemas.OsProcess
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -86,7 +86,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
 
     task_id = task.id
 
-    assert {:ok, %{task: %Task{id: ^task_id, stage: :design, stage_state: :running}, run: %Run{}}} =
+    assert {:ok, %{task: %Task{id: ^task_id, stage: :design, stage_state: :running}, os_process: %OsProcess{}}} =
              Pipeline.approve_product_task(task,
                allow_fun: fn pid ->
                  Sandbox.allow(Repo, self(), pid)

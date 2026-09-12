@@ -17,21 +17,21 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
 
   @doc """
   Starts the product stage for `issue`.
 
   Reuses the issue's existing task when there is one, otherwise creates one at the
-  `:product` stage. Returns `{:ok, %{task: task, role_run: role_run, run: run}}`.
+  `:product` stage. Returns `{:ok, %{task: task, run: run, os_process: os_process}}`.
   """
   def start_product_task(%Issue{project: %Project{} = project} = issue, opts \\ []) do
     with {:ok, task} <- Pipeline.create_task(issue, :product),
          {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :product),
          {:ok, worktree_path} <- ensure_worktree(project, task),
          _scratch = write_scratch(task, issue),
-         {:ok, role_run} <- Runs.start_or_resume_role_run(task, role, worktree_path) do
-      spawn_run(task, issue, role, role_run, worktree_path, opts)
+         {:ok, run} <- Runs.start_or_resume_run(task, role, worktree_path) do
+      spawn_os_process(task, issue, role, run, worktree_path, opts)
     end
   end
 
@@ -59,15 +59,15 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     scratch_path
   end
 
-  defp spawn_run(task, issue, role, role_run, worktree_path, opts) do
+  defp spawn_os_process(task, issue, role, run, worktree_path, opts) do
     prompt =
       Runs.build_prompt(
         task: task,
         backend: role.backend,
         role_instructions: role.system_prompt,
         context_snippet: brief(issue, task.scratch_path),
-        pending_answer: role_run.pending_answer,
-        conversation_id: role_run.conversation_id
+        pending_answer: run.pending_answer,
+        conversation_id: run.conversation_id
       )
 
     args =
@@ -77,16 +77,16 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
         system_prompt: role.system_prompt,
-        conversation_id: role_run.conversation_id,
+        conversation_id: run.conversation_id,
         work_dir: worktree_path
       )
 
     spawner_opts =
-      [on_finished: fn run, outcome -> Pipeline.settle_product_run(run, outcome) end] ++
+      [on_finished: fn os_process, outcome -> Pipeline.settle_product_run(os_process, outcome) end] ++
         Keyword.take(opts, [:allow_fun])
 
-    case Runs.start_run(role_run, :stage, args, spawner_opts) do
-      {:ok, run} -> finalize(task, role_run, run)
+    case Runs.start_os_process(run, :stage, args, spawner_opts) do
+      {:ok, os_process} -> finalize(task, run, os_process)
       {:error, reason} -> fail(task, reason)
     end
   end
@@ -116,17 +116,17 @@ defmodule Rail.Pipeline.Actions.StartProductTask do
     """)
   end
 
-  defp finalize(task, role_run, run) do
-    {:ok, role_run} =
-      role_run
-      |> RoleRun.changeset(%{pending_answer: nil, attempt_log_lines: 0})
+  defp finalize(task, run, os_process) do
+    {:ok, run} =
+      run
+      |> Run.changeset(%{pending_answer: nil, attempt_log_lines: 0})
       |> Repo.update()
 
     {:ok, task} = task |> Task.changeset(%{stage_state: :running}) |> Repo.update()
 
     Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :dispatched})
 
-    {:ok, %{task: task, role_run: role_run, run: run}}
+    {:ok, %{task: task, run: run, os_process: os_process}}
   end
 
   defp fail(task, reason) do

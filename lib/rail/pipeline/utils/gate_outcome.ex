@@ -18,43 +18,43 @@ defmodule Rail.Pipeline.Utils.GateOutcome do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.Schemas.RoleRun
+  alias Rail.Runs.Schemas.Run
 
   @max_rework_cycles 5
   @max_rework_cycles_per_gate 3
 
   @doc """
-  Stamps the gate's fingerprint on `role_run`, reads its verdict, and returns
-  `{task_attrs, role_run}`.
+  Stamps the gate's fingerprint on `run`, reads its verdict, and returns
+  `{task_attrs, run}`.
 
   A pass moves the task to `next_stage`. Changes requested send the change back
   to the engineer with the findings, until the rework budget runs out and a human
   has to decide. No verdict at all is the same dead end: nothing here guesses one.
   """
-  def gate_outcome(%Task{} = task, %RoleRun{} = role_run, next_stage) when is_atom(next_stage) do
-    {head_sha, dirty_digest} = resolve_fingerprint(task, role_run)
+  def gate_outcome(%Task{} = task, %Run{} = run, next_stage) when is_atom(next_stage) do
+    {head_sha, dirty_digest} = resolve_fingerprint(task, run)
 
-    {:ok, role_run} =
-      role_run
-      |> RoleRun.changeset(%{
+    {:ok, run} =
+      run
+      |> Run.changeset(%{
         auto_retries: 0,
         stage_fingerprint_head_sha: head_sha,
         stage_fingerprint_dirty_digest: dirty_digest
       })
       |> Repo.update()
 
-    gate_role_id = role_run.role_id
+    gate_role_id = run.role_id
     reports = task.outstanding_reports || []
     updated_reports = if gate_role_id in reports, do: reports, else: reports ++ [gate_role_id]
 
-    case Pipeline.parse_stage_verdict(role_run).verdict do
-      :passed -> passed(task, role_run, next_stage, updated_reports, head_sha)
-      :changes_requested -> changes_requested(task, role_run, gate_role_id, updated_reports)
-      :unclear -> unclear(role_run, gate_role_id, updated_reports)
+    case Pipeline.parse_stage_verdict(run).verdict do
+      :passed -> passed(task, run, next_stage, updated_reports, head_sha)
+      :changes_requested -> changes_requested(task, run, gate_role_id, updated_reports)
+      :unclear -> unclear(run, gate_role_id, updated_reports)
     end
   end
 
-  defp passed(task, role_run, next_stage, updated_reports, head_sha) do
+  defp passed(task, run, next_stage, updated_reports, head_sha) do
     next_stage_state = if next_stage == :ready_to_merge, do: :awaiting_approval, else: :queued
 
     if (task.rework_cycles || 0) > 0 and next_stage != :ready_to_merge and head_sha != nil do
@@ -69,23 +69,23 @@ defmodule Rail.Pipeline.Utils.GateOutcome do
       error: nil
     }
 
-    {attrs, role_run}
+    {attrs, run}
   end
 
-  defp changes_requested(task, role_run, gate_role_id, updated_reports) do
+  defp changes_requested(task, run, gate_role_id, updated_reports) do
     rework_base = task.rework_budget_base || 0
     total_rework = (task.rework_cycles || 0) - rework_base
     cycles_by_gate = task.rework_cycles_by_gate || %{}
     per_gate = Map.get(cycles_by_gate, gate_role_id, 0)
 
     if total_rework >= @max_rework_cycles or per_gate >= @max_rework_cycles_per_gate do
-      exhausted(role_run, gate_role_id, per_gate, updated_reports)
+      exhausted(run, gate_role_id, per_gate, updated_reports)
     else
-      send_back_to_engineer(task, role_run, gate_role_id, cycles_by_gate, per_gate)
+      send_back_to_engineer(task, run, gate_role_id, cycles_by_gate, per_gate)
     end
   end
 
-  defp exhausted(role_run, gate_role_id, per_gate, updated_reports) do
+  defp exhausted(run, gate_role_id, per_gate, updated_reports) do
     cycle_word = if per_gate == 1, do: "cycle", else: "cycles"
 
     error_msg =
@@ -100,12 +100,12 @@ defmodule Rail.Pipeline.Utils.GateOutcome do
       error: error_msg
     }
 
-    {attrs, role_run}
+    {attrs, run}
   end
 
-  defp send_back_to_engineer(task, role_run, gate_role_id, cycles_by_gate, per_gate) do
+  defp send_back_to_engineer(task, run, gate_role_id, cycles_by_gate, per_gate) do
     new_total_rework = (task.rework_cycles || 0) + 1
-    findings = String.trim(assistant_log(role_run))
+    findings = String.trim(assistant_log(run))
 
     note =
       "Findings from #{resolve_role_name(gate_role_id)} on the change you just pushed " <>
@@ -131,10 +131,10 @@ defmodule Rail.Pipeline.Utils.GateOutcome do
       error: nil
     }
 
-    {attrs, role_run}
+    {attrs, run}
   end
 
-  defp unclear(role_run, gate_role_id, updated_reports) do
+  defp unclear(run, gate_role_id, updated_reports) do
     error_msg =
       "#{resolve_role_name(gate_role_id)} ended without a clear verdict. " <>
         "Read its report, then Send back to Engineer or Skip to the merge."
@@ -146,7 +146,7 @@ defmodule Rail.Pipeline.Utils.GateOutcome do
       error: error_msg
     }
 
-    {attrs, role_run}
+    {attrs, run}
   end
 
   defp append_evidence_line_to_next_stage(task, next_stage, head_sha) do
@@ -174,24 +174,24 @@ defmodule Rail.Pipeline.Utils.GateOutcome do
   end
 
   defp append_pending_answer(task_id, role_id, note, opts) do
-    case Repo.one(from r in RoleRun, where: r.task_id == ^task_id and r.role_id == ^role_id) do
-      %RoleRun{} = role_run ->
-        if RoleRun.resumable?(role_run), do: Runs.append_pending_answer(role_run, note, opts), else: :ok
+    case Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_id) do
+      %Run{} = run ->
+        if Run.resumable?(run), do: Runs.append_pending_answer(run, note, opts), else: :ok
 
       nil ->
         :ok
     end
   end
 
-  defp resolve_fingerprint(%Task{worktree_path: path}, role_run) when is_binary(path) do
+  defp resolve_fingerprint(%Task{worktree_path: path}, run) when is_binary(path) do
     case Git.branch_fingerprint(path) do
       %{head_sha: sha, dirty_digest: digest} -> {sha, digest}
-      _other -> {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
+      _other -> {run.stage_fingerprint_head_sha, run.stage_fingerprint_dirty_digest}
     end
   end
 
-  defp resolve_fingerprint(_task, role_run) do
-    {role_run.stage_fingerprint_head_sha, role_run.stage_fingerprint_dirty_digest}
+  defp resolve_fingerprint(_task, run) do
+    {run.stage_fingerprint_head_sha, run.stage_fingerprint_dirty_digest}
   end
 
   defp resolve_role_name(role_id) do

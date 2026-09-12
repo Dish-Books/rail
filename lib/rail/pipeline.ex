@@ -10,19 +10,19 @@ defmodule Rail.Pipeline do
 
   defdelegate start_product_task(issue, opts \\ []), to: Actions.StartProductTask
 
-  defdelegate settle_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleRun
+  defdelegate settle_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleRun
 
-  defdelegate settle_product_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleProductRun
-  defdelegate settle_design_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleDesignRun
-  defdelegate settle_architect_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleArchitectRun
-  defdelegate settle_engineer_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleEngineerRun
-  defdelegate settle_review_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleReviewRun
-  defdelegate settle_qa_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleQaRun
-  defdelegate settle_qa_lead_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleQaLeadRun
-  defdelegate settle_demo_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleDemoRun
-  defdelegate settle_rebase_run(run, outcome \\ %{}, opts \\ []), to: Actions.SettleRebaseRun
+  defdelegate settle_product_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleProductRun
+  defdelegate settle_design_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleDesignRun
+  defdelegate settle_architect_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleArchitectRun
+  defdelegate settle_engineer_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleEngineerRun
+  defdelegate settle_review_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleReviewRun
+  defdelegate settle_qa_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleQaRun
+  defdelegate settle_qa_lead_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleQaLeadRun
+  defdelegate settle_demo_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleDemoRun
+  defdelegate settle_rebase_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleRebaseRun
 
-  defdelegate parse_stage_verdict(role_run_or_id), to: Actions.ParseStageVerdict
+  defdelegate parse_stage_verdict(run_or_id), to: Actions.ParseStageVerdict
 
   defdelegate approve_product_task(task, opts \\ []), to: Actions.ApproveProductTask
   defdelegate start_design_task(task, opts \\ []), to: Actions.StartDesignTask
@@ -64,7 +64,7 @@ defmodule Rail.Pipeline do
   defdelegate recheck_design(a, b), to: Actions.RecheckDesign
   defdelegate recheck_design(task_or_id), to: Actions.RecheckDesign
 
-  defdelegate uses_design?(task, role_runs \\ []), to: Rail.Pipeline.Schemas.Task
+  defdelegate uses_design?(task, runs \\ []), to: Rail.Pipeline.Schemas.Task
   defdelegate design_manifest_stamp(target), to: Actions.RecheckDesign
   defdelegate apply_design_manifest(scope, task, opts \\ []), to: Actions.RecheckDesign
 
@@ -96,10 +96,10 @@ defmodule Rail.Pipeline do
   defdelegate cancel_task(scope_or_task, task_or_opts), to: Actions.CancelTask
   defdelegate cancel_task(task_or_id), to: Actions.CancelTask
 
-  defdelegate register_question(task_or_id, role_run_or_id, question_or_attrs, opts), to: Actions.RegisterQuestion
-  defdelegate register_question(task_or_id, role_run_or_question, question_or_opts), to: Actions.RegisterQuestion
+  defdelegate register_question(task_or_id, run_or_id, question_or_attrs, opts), to: Actions.RegisterQuestion
+  defdelegate register_question(task_or_id, run_or_question, question_or_opts), to: Actions.RegisterQuestion
   defdelegate register_question(task_or_id, question_or_attrs), to: Actions.RegisterQuestion
-  defdelegate register_questions(task_or_id, role_run_or_id, questions, opts \\ []), to: Actions.RegisterQuestion
+  defdelegate register_questions(task_or_id, run_or_id, questions, opts \\ []), to: Actions.RegisterQuestion
 
   defdelegate answer_question(scope, question_or_id, answer_text), to: Actions.AnswerQuestion
   defdelegate answer_question(question_or_id, answer_text), to: Actions.AnswerQuestion
@@ -128,8 +128,8 @@ defmodule Rail.Pipeline do
   defdelegate send_chat_turn(scope, task_or_id, role_id, text, opts), to: Actions.SendChatTurn
   defdelegate send_chat_turn(scope_or_task, task_or_role, role_or_text, text_or_opts), to: Actions.SendChatTurn
   defdelegate send_chat_turn(task_or_id, role_id, text), to: Actions.SendChatTurn
-  defdelegate dispatch_chat_turn(task, role, role_run, opts), to: Actions.SendChatTurn
-  defdelegate dispatch_chat_turn(task, role, role_run), to: Actions.SendChatTurn
+  defdelegate dispatch_chat_turn(task, role, run, opts), to: Actions.SendChatTurn
+  defdelegate dispatch_chat_turn(task, role, run), to: Actions.SendChatTurn
   defdelegate maybe_dispatch_queued_pending_chat(task, opts), to: Actions.SendChatTurn
   defdelegate maybe_dispatch_queued_pending_chat(task), to: Actions.SendChatTurn
 
@@ -139,9 +139,9 @@ defmodule Rail.Pipeline do
   defdelegate cancel_pending_chat(scope, task_or_id, role_id), to: Actions.CancelPendingChat
   defdelegate cancel_pending_chat(task_or_id, role_id), to: Actions.CancelPendingChat
 
-  defdelegate settle_chat_turn(task_target, role_run_target, run_or_outcome, opts), to: Actions.SettleChatTurn
-  defdelegate settle_chat_turn(task_target, role_run_target, run_or_outcome), to: Actions.SettleChatTurn
-  defdelegate settle_chat_turn(task_target, role_run_target), to: Actions.SettleChatTurn
+  defdelegate settle_chat_turn(task_target, run_target, run_or_outcome, opts), to: Actions.SettleChatTurn
+  defdelegate settle_chat_turn(task_target, run_target, run_or_outcome), to: Actions.SettleChatTurn
+  defdelegate settle_chat_turn(task_target, run_target), to: Actions.SettleChatTurn
 
   defdelegate refresh_mergeability(scope_or_task, task_or_opts, opts), to: Actions.RefreshMergeability
   defdelegate refresh_mergeability(scope_or_task, task_or_opts), to: Actions.RefreshMergeability

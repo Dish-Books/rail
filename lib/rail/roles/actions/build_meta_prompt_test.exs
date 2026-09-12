@@ -2,7 +2,7 @@ defmodule Rail.Roles.Actions.BuildMetaPromptTest do
   use Rail.DataCase, async: true
 
   alias Rail.Roles
-  alias Rail.Roles.RoleRunRecord
+  alias Rail.Roles.RunRecord
   alias Rail.Roles.Schemas.Role
 
   test "builds meta prompt containing role details, current instructions, and evidence" do
@@ -12,7 +12,7 @@ defmodule Rail.Roles.Actions.BuildMetaPromptTest do
       system_prompt: "You write clean, test-driven code."
     }
 
-    source1 = %RoleRunRecord{
+    source1 = %RunRecord{
       task_id: "tsk_01",
       title: "Add OAuth",
       stage: "Engineer",
@@ -23,7 +23,7 @@ defmodule Rail.Roles.Actions.BuildMetaPromptTest do
       transcript_text: "Executed tests, all passed."
     }
 
-    source2 = %RoleRunRecord{
+    source2 = %RunRecord{
       task_id: "tsk_02",
       title: "Fix bug",
       stage: "Engineer",

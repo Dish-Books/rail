@@ -20,7 +20,7 @@ defmodule Rail.Tools.Actions.SpawnRun do
   before reporting a PID. The caller owns the returned port and is responsible
   for handing it off with `Rail.Tools.connect_port/2`.
   """
-  def spawn_run(executable, args, opts \\ []) when is_binary(executable) and is_list(args) do
+  def spawn_os_process(executable, args, opts \\ []) when is_binary(executable) and is_list(args) do
     port = Port.open({:spawn_executable, @shell}, port_opts(executable, args, opts))
 
     case Port.info(port, :os_pid) do
