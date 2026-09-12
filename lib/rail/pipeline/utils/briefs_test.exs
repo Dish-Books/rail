@@ -227,7 +227,9 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
     test "matches exact golden output" do
       expected =
         String.trim("""
-        Never commit anything under #{@scratch} into the pull request.
+        Never put anything under #{@scratch} into the change itself - it is your workspace, not part of the deliverable.
+
+        Leave your work in the worktree as files. Do not commit, push, or open a pull request - Rail takes the worktree from here.
 
         Review comments, reviewer findings and QA findings come back as further turns of this same conversation, so keep your worktree as you left it.
         """)
@@ -401,10 +403,9 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       assert brief =~ "- Base branch: main on remote `origin`"
       assert brief =~ "- Ticket: RAIL-77"
       assert brief =~ "- Other agents share this repository."
-      refute brief =~ "Hand the work over when every slice is done"
     end
 
-    test "includes handover instructions for engineer role when not rebasing" do
+    test "gives the engineer no git handover instructions" do
       brief =
         workspace_brief(
           worktree_path: "/workspace/proj/wt-1",
@@ -415,25 +416,8 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
           title: "Add \"quick\" search"
         )
 
-      assert brief =~ "Hand the work over when every slice is done and the checks are green:"
-      assert brief =~ "git push -u origin task-1-feat"
-
-      assert brief =~
-               "gh pr create --draft --base main --head task-1-feat --title \"Add 'quick' search\" --body \"Closes RAIL-77."
-
-      assert brief =~ "This task is NOT done until `gh pr create` has returned a pull request URL."
-    end
-
-    test "omits handover instructions for engineer when rebasing" do
-      brief =
-        workspace_brief(
-          worktree_path: "/workspace/proj/wt-1",
-          branch: "task-1-feat",
-          role: "engineer",
-          is_rebasing: true
-        )
-
-      refute brief =~ "Hand the work over when every slice is done"
+      refute brief =~ "git push"
+      refute brief =~ "gh pr create"
     end
   end
 
@@ -451,7 +435,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       assert stage_brief(:product, scratch_path: @scratch, identifier: "RAIL-1") == ""
       assert stage_brief(:design, scratch_path: @scratch) =~ "#{@scratch}/design/manifest.json"
       assert stage_brief(:architect, scratch_path: @scratch, identifier: "RAIL-1") =~ "#{@scratch}/plans/RAIL-1.md"
-      assert stage_brief(:engineer, scratch_path: @scratch) =~ "Never commit anything under #{@scratch}"
+      assert stage_brief(:engineer, scratch_path: @scratch) =~ "Never put anything under #{@scratch}"
       assert stage_brief(:review, scratch_path: @scratch) =~ "`VERDICT: APPROVED` or `VERDICT: CHANGES REQUESTED`"
       assert stage_brief(:qa, scratch_path: @scratch) =~ "#{@scratch}/qa/"
       assert stage_brief(:qa_lead, scratch_path: @scratch) =~ "The QA engineer's report is above"
@@ -462,7 +446,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       assert stage_brief("product", scratch_path: @scratch, identifier: "RAIL-2") == ""
       assert stage_brief("design", scratch_path: @scratch) =~ "#{@scratch}/design/manifest.json"
       assert stage_brief("architect", scratch_path: @scratch, identifier: "RAIL-2") =~ "#{@scratch}/plans/RAIL-2.md"
-      assert stage_brief("engineer", scratch_path: @scratch) =~ "Never commit anything under #{@scratch}"
+      assert stage_brief("engineer", scratch_path: @scratch) =~ "Never put anything under #{@scratch}"
       assert stage_brief("review", scratch_path: @scratch) =~ "`VERDICT: APPROVED` or `VERDICT: CHANGES REQUESTED`"
       assert stage_brief("qa", scratch_path: @scratch) =~ "#{@scratch}/qa/"
       assert stage_brief("qa_lead", scratch_path: @scratch) =~ "The QA engineer's report is above"
@@ -480,7 +464,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
         scratch_path: @scratch
       }
 
-      assert stage_brief(task) =~ "Never commit anything under #{@scratch}"
+      assert stage_brief(task) =~ "Never put anything under #{@scratch}"
     end
 
     test "dispatches to rebase_brief when is_rebasing is true" do
@@ -496,7 +480,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
 
       opts_brief = stage_brief(:engineer, scratch_path: @scratch, is_rebasing: true, branch: "hotfix")
       assert opts_brief =~ "no longer merges into main"
-      refute opts_brief =~ "Never commit anything under #{@scratch}"
+      refute opts_brief =~ "Never put anything under #{@scratch}"
     end
 
     test "handles edge cases and non-map/struct parameters cleanly" do

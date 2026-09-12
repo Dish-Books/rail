@@ -115,7 +115,6 @@ defmodule Rail.Runs.Actions.StartOsProcess do
 
   defp launch(os_process, run, executable, args, stream_path, task, backend, opts) do
     spawn_opts = [
-      env: run_env(stream_path),
       stdout_path: stream_path,
       stderr_path: "#{stream_path}.err",
       cd: task.worktree_path
@@ -177,15 +176,5 @@ defmodule Rail.Runs.Actions.StartOsProcess do
       ) || 0
 
     max_seq + 1
-  end
-
-  # The agent is told its scratch directory by absolute path in the brief, so the
-  # child only needs the stream files and a token.
-  defp run_env(stream_path) do
-    %{
-      "RAIL_STREAM" => stream_path,
-      "RAIL_STREAM_ERR" => "#{stream_path}.err",
-      "GH_TOKEN" => System.get_env("GH_TOKEN") || ""
-    }
   end
 end

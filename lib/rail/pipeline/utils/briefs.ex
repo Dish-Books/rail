@@ -152,7 +152,9 @@ defmodule Rail.Pipeline.Utils.Briefs do
   """
   def engineer_brief(opts \\ []) do
     String.trim("""
-    Never commit anything under #{scratch(opts)} into the pull request.
+    Never put anything under #{scratch(opts)} into the change itself - it is your workspace, not part of the deliverable.
+
+    Leave your work in the worktree as files. Do not commit, push, or open a pull request - Rail takes the worktree from here.
 
     Review comments, reviewer findings and QA findings come back as further turns of this same conversation, so keep your worktree as you left it.
     """)
@@ -364,19 +366,15 @@ defmodule Rail.Pipeline.Utils.Briefs do
     else
       base = get_opt(opts, :base_branch) || "main"
       identifier = get_opt(opts, :identifier) || get_opt(opts, :issue_identifier)
-      role = get_opt(opts, :role) || get_opt(opts, :role_id)
-      is_rebasing = get_opt(opts, :is_rebasing) || false
-      title = get_opt(opts, :title) || ""
 
       ticket_line = if identifier && identifier != "", do: "- Ticket: #{identifier}\n", else: ""
-      handover_section = workspace_handover(role, is_rebasing, branch, base, identifier, title)
 
       String.trim_trailing("""
       Workspace for this task:
       - Worktree: #{worktree_path} (your working directory; every path you touch is under it)
       - Branch: #{branch}, already checked out. It is named for this ticket - do NOT create a branch of your own, and do not rename this one.
       - Base branch: #{base} on remote `origin`
-      #{ticket_line}- Other agents share this repository. Never switch branches, never work in the main checkout, and never touch another worktree.#{handover_section}
+      #{ticket_line}- Other agents share this repository. Never switch branches, never work in the main checkout, and never touch another worktree.
       """) <> "\n"
     end
   end
@@ -422,22 +420,6 @@ defmodule Rail.Pipeline.Utils.Briefs do
   end
 
   defp find_picked_direction(_other), do: nil
-
-  defp workspace_handover(role, false, branch, base, identifier, title) when role in [:engineer, "engineer"] do
-    sanitized_title = String.replace(title, "\"", "'")
-    closes = if identifier && identifier != "", do: "Closes #{identifier}. ", else: ""
-
-    """
-
-    Hand the work over when every slice is done and the checks are green:
-      git push -u origin #{branch}
-      gh pr create --draft --base #{base} --head #{branch} --title "#{sanitized_title}" --body "#{closes}<what you built, the slices and their tests, check results, what you left out>"
-
-    Push the branch above by name - `-u origin #{branch}` from inside your worktree - so the PR opens against the ticket's branch rather than a new one. This task is NOT done until `gh pr create` has returned a pull request URL. Committing is not handing over. If the push or the PR fails, report the exact command and its error rather than reporting success. Quote the PR URL in your final report. If a pull request for this branch already exists, push to it and say so instead of opening a second one.
-    """
-  end
-
-  defp workspace_handover(_role, _is_rebasing, _branch, _base, _identifier, _title), do: ""
 
   defp resolve_direction_title(opts, key) do
     design = extract_design(opts)

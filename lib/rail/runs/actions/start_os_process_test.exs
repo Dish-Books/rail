@@ -135,7 +135,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
   } do
     {:ok, _backend} = Backends.update_backend(scope, backend, %{executable_path: "/bin/sh"})
 
-    script = ~s(printf '{"cwd":"%s","stream":"%s"}\n' "$PWD" "$RAIL_STREAM")
+    script = ~s(printf '{"cwd":"%s"}\n' "$PWD")
 
     {:ok, %{os_process: os_process}} =
       Runs.start_os_process(run, ["-c", script],
@@ -149,7 +149,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
       Enum.reduce_while(1..200, "", fn _i, _acc ->
         content = if File.exists?(os_process.stream_path), do: File.read!(os_process.stream_path), else: ""
 
-        if content =~ os_process.stream_path do
+        if content =~ Path.basename(worktree_path) do
           {:halt, content}
         else
           Process.sleep(10)
@@ -157,7 +157,6 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
         end
       end)
 
-    assert content =~ os_process.stream_path
     assert content =~ Path.basename(worktree_path)
 
     Tools.terminate_os_process(os_process.os_pid, grace_period: 50)
