@@ -1,6 +1,8 @@
 defmodule Rail.Pipeline.Actions.SettleProductRunTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.QuestionQueue
+
   alias Rail.Domain.TaskUsage
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -11,6 +13,7 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
+  alias Rail.Runs.DetectedQuestion
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -173,21 +176,21 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
   end
 
   test "preserves an existing blocked question without parking for approval", %{task: task, role: role} do
-    {:ok, %Question{id: expected_q_id}} = Pipeline.register_question(task, %{prompt: "Which scope?"})
+    asking_run = run(task, role, %{status: :blocked_on_input})
 
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :product,
-        stage_state: :blocked,
-        question_id: expected_q_id
-      })
+    {:ok, %Question{id: expected_q_id}} =
+      Pipeline.register_question(Repo.preload(asking_run, task: :issue), %DetectedQuestion{prompt: "Which scope?"})
 
-    os_process = task |> run(role, %{status: :blocked_on_input}) |> os_process()
+    {:ok, _task} = Pipeline.update_task(system_scope(), task.id, %{stage: :product})
+
+    os_process = os_process(asking_run)
 
     {:ok, _settled, _settled_rr} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-    assert {:ok, %Task{stage_state: :blocked, question_id: ^expected_q_id}, %Run{status: :blocked_on_input, exit_code: 0}} =
+    assert {:ok, %Task{stage_state: :blocked}, %Run{status: :blocked_on_input, exit_code: 0}} =
              Pipeline.settle_product_run(os_process)
+
+    assert Enum.map(pending_questions(task.id), & &1.id) == [expected_q_id]
   end
 
   test "retries a transient failure with backoff while retries remain", %{task: task, role: role} do

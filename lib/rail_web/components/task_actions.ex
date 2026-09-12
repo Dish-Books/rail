@@ -14,6 +14,7 @@ defmodule RailWeb.Components.TaskActions do
   alias Rail.Pipeline.TaskActionRunner
 
   attr :task, :any, required: true
+  attr :pending_questions, :list, default: []
   attr :running_action, :atom, default: nil
   attr :design, :any, default: nil
   attr :on_action, :string, default: "action_click"
@@ -21,7 +22,7 @@ defmodule RailWeb.Components.TaskActions do
   attr :class, :string, default: nil
 
   def task_actions(assigns) do
-    actions = build_actions(assigns.task, assigns.design)
+    actions = build_actions(assigns.task, assigns.design, assigns.pending_questions)
 
     assigns = assign(assigns, :actions, actions)
 
@@ -94,9 +95,9 @@ defmodule RailWeb.Components.TaskActions do
 
   # Helpers for building the exact action list per spec 05 §6.3 and §6.4
 
-  defp build_actions(nil, _design), do: []
+  defp build_actions(nil, _design, _pending_questions), do: []
 
-  defp build_actions(task, design) do
+  defp build_actions(task, design, pending_questions) do
     is_merged = merged?(task)
     conflicted = Formatters.has_merge_conflicts?(task) and not task.is_rebasing and not is_merged
 
@@ -104,7 +105,7 @@ defmodule RailWeb.Components.TaskActions do
       if is_merged do
         {[], false}
       else
-        build_stage_actions(task, design, conflicted)
+        build_stage_actions(task, design, conflicted, pending_questions)
       end
 
     trailing_actions = build_trailing_actions(task, conflicted, rebase_offered)
@@ -112,7 +113,7 @@ defmodule RailWeb.Components.TaskActions do
     stage_actions ++ trailing_actions
   end
 
-  defp build_stage_actions(task, design, conflicted) do
+  defp build_stage_actions(task, design, conflicted, pending_questions) do
     case task.stage_state do
       :awaiting_approval ->
         build_awaiting_approval_actions(task, design, conflicted)
@@ -153,7 +154,7 @@ defmodule RailWeb.Components.TaskActions do
 
       :blocked ->
         actions =
-          if is_nil(task.question_id) do
+          if pending_questions == [] do
             [
               %{
                 id: "action-unblock",

@@ -1,12 +1,17 @@
 defmodule Rail.Pipeline.Actions.RegisterQuestion do
   @moduledoc """
-  Action that registers an agent question detected during run execution.
-  Enforces duplicate-question suppression, parks the stage (`stage_state: :blocked`),
-  marks the run as `:blocked_on_input`, and broadcasts `pipeline_changed`.
+  Registers one question an agent asked, against the task and run that asked it.
 
-  A run that asks several things at once registers each as its own question. The
-  first one parks the task; the rest queue up behind it so the human answers them
-  one at a time without the stage resuming in between.
+  A prompt the run is already waiting on is reused rather than filed twice; another
+  run asking the same thing files its own, since the answer goes back to whoever
+  asked. The task parks (`stage_state: :blocked`) and the questions queue in the
+  order they were asked, so the human answers them one at a time without the stage
+  resuming in between. The run goes to `:blocked_on_input` and `pipeline_changed` is
+  broadcast either way.
+
+  Nothing suppresses a question. A reply already queued on the run goes out alongside
+  the answer when it resumes, so a question asked in that window is still filed rather
+  than lost.
   """
 
   import Ecto.Query
@@ -16,240 +21,81 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Roles
-  alias Rail.Roles.Schemas.Role
-  alias Rail.Runs
   alias Rail.Runs.DetectedQuestion
   alias Rail.Runs.Schemas.Run
 
-  require Logger
-
   @doc """
-  Registers every question in `questions` for a task and run, in order.
+  Registers the question `run` asked.
 
-  The first registration parks the task; later ones join the queue behind it.
-  Returns `{:ok, results}` with one registration result per question.
+  `run` carries its task and that task's issue, both preloaded — the title of the
+  issue is what a question without its own context summary is filed under.
   """
-  def register_questions(task_or_id, run_or_id, questions, opts \\ []) when is_list(questions) do
-    results =
-      Enum.map(questions, fn question ->
-        do_register(task_or_id, run_or_id, question, opts)
-      end)
-
-    {:ok, results}
-  end
-
-  @doc """
-  Registers a detected question for a task and run.
-  """
-  def register_question(task_or_id, run_or_id, question_or_attrs, opts) when is_list(opts) do
-    do_register(task_or_id, run_or_id, question_or_attrs, opts)
-  end
-
-  def register_question(task_or_id, question_or_attrs, opts) when is_list(opts) do
-    do_register(task_or_id, nil, question_or_attrs, opts)
-  end
-
-  def register_question(task_or_id, run_or_id, question_or_attrs) do
-    do_register(task_or_id, run_or_id, question_or_attrs, [])
-  end
-
-  @doc """
-  Convenience 2-arity variant.
-  """
-  def register_question(task_or_id, question_or_attrs) do
-    do_register(task_or_id, nil, question_or_attrs, [])
-  end
-
-  defp do_register(task_or_id, run_or_id, question_or_attrs, _opts) do
-    with %Task{} = task <- resolve_task(task_or_id),
-         run = resolve_run(run_or_id, task),
-         {:ok, prompt, options, context_summary, role_id} <- extract_question_attrs(question_or_attrs, task, run) do
-      handle_registration(task, run, prompt, options, context_summary, role_id)
-    else
-      nil -> {:error, :task_not_found}
-      {:error, reason} -> {:error, reason}
+  def register_question(%Run{task: %Task{} = task} = run, %DetectedQuestion{} = question) do
+    with {:ok, attrs} <- question_attrs(question, task, run) do
+      register_or_reuse_question(task, run, attrs)
     end
   end
 
-  defp handle_registration(%Task{} = task, run, prompt, options, context_summary, role_id) do
-    if undelivered_pending_answer?(run) do
-      drop_question(run)
-    else
-      register_or_reuse_question(task, run, prompt, options, context_summary, role_id)
+  defp question_attrs(%DetectedQuestion{} = question, %Task{} = task, %Run{} = run) do
+    case String.trim(to_string(question.prompt || "")) do
+      "" ->
+        {:error, :invalid_prompt}
+
+      prompt ->
+        {:ok,
+         %{
+           prompt: prompt,
+           options: question.options || [],
+           context_summary: question.context_summary || "Asked during: #{task_title(task)}",
+           run_id: run.id
+         }}
     end
   end
 
-  defp undelivered_pending_answer?(%Run{pending_answer: pending}) when is_binary(pending) do
-    String.trim(pending) != ""
-  end
+  defp register_or_reuse_question(%Task{} = task, %Run{} = run, attrs) do
+    question = find_existing_pending_question(run.id, attrs.prompt) || insert_question(task, attrs)
 
-  defp undelivered_pending_answer?(_other), do: false
+    {:ok, task} = task |> Task.changeset(%{stage_state: :blocked}) |> Repo.update()
 
-  defp drop_question(run) do
-    msg =
-      "[rail] Question asked before the human reply reached this role; " <>
-        "it goes to the resumed run, not the inbox."
-
-    Logger.info(msg)
-
-    if run do
-      Runs.append_run_event(run.id, msg)
-    end
-
-    {:ok, :dropped}
-  end
-
-  defp register_or_reuse_question(task, run, prompt, options, context_summary, role_id) do
-    existing_question = find_existing_pending_question(task.id, prompt)
-
-    {question, question_id} =
-      case existing_question do
-        %Question{} = existing ->
-          {existing, existing.id}
-
-        nil ->
-          resolved_role_id = role_id || (run && run.role_id) || resolve_default_role_id(task)
-
-          attrs = %{
-            task_id: task.id,
-            role_id: resolved_role_id,
-            prompt: prompt,
-            options: options,
-            context_summary: context_summary || "Asked during: #{task_title(task)}",
-            status: :pending
-          }
-
-          {:ok, new_question} =
-            %Question{}
-            |> Question.changeset(attrs)
-            |> Repo.insert()
-
-          {new_question, new_question.id}
-      end
-
-    # The task parks on the first question asked; the rest queue behind it, so an
-    # already-blocked task keeps the one the human is looking at in front. Read the
-    # current front from the database: registering a batch walks past a caller's copy.
-    blocking_question_id = current_question_id(task.id) || question_id
-
-    {:ok, updated_task} =
-      task
-      |> Task.changeset(%{
-        stage_state: :blocked,
-        question_id: blocking_question_id
-      })
-      |> Repo.update()
-
-    if run do
-      run
-      |> Run.changeset(%{status: :blocked_on_input})
-      |> Repo.update!()
-    end
+    run |> Run.changeset(%{status: :blocked_on_input}) |> Repo.update!()
 
     Pipeline.broadcast_pipeline_changed(%{
-      task_id: updated_task.id,
+      task_id: task.id,
       event: :question_registered,
-      question_id: question_id
+      question_id: question.id
     })
 
     {:ok, question}
   end
 
-  defp current_question_id(task_id) do
-    Repo.one(from t in Task, where: t.id == ^task_id, select: t.question_id)
+  defp insert_question(%Task{} = task, attrs) do
+    %Question{}
+    |> Question.changeset(%{
+      task_id: task.id,
+      run_id: attrs.run_id,
+      prompt: attrs.prompt,
+      options: attrs.options,
+      context_summary: attrs.context_summary,
+      status: :pending
+    })
+    |> Repo.insert!()
   end
 
-  defp find_existing_pending_question(task_id, prompt) do
+  # Scoped to the run: the same prompt from a different role is a different question,
+  # because the answer goes back to the run that asked it.
+  defp find_existing_pending_question(run_id, prompt) do
     normalized_target = String.downcase(String.trim(prompt))
 
-    pending_questions =
-      Repo.all(
-        from q in Question,
-          where: q.task_id == ^task_id and q.status == :pending,
-          order_by: [desc: q.inserted_at]
-      )
-
-    Enum.find(pending_questions, fn q ->
-      String.downcase(String.trim(q.prompt || "")) == normalized_target
-    end)
-  end
-
-  defp extract_question_attrs(%DetectedQuestion{} = q, task, run) do
-    trimmed_prompt = String.trim(q.prompt || "")
-
-    if trimmed_prompt == "" do
-      {:error, :invalid_prompt}
-    else
-      role_id = q.role_id || (run && run.role_id)
-      context_summary = q.context_summary || "Asked during: #{task_title(task)}"
-      {:ok, trimmed_prompt, q.options || [], context_summary, role_id}
-    end
-  end
-
-  defp extract_question_attrs(text, task, run) when is_binary(text) do
-    case Runs.detect_question(text,
-           task_id: task.id,
-           role_id: run && run.role_id,
-           task_title: task_title(task)
-         ) do
-      %DetectedQuestion{} = detected ->
-        extract_question_attrs(detected, task, run)
-
-      nil ->
-        {:error, :no_question_detected}
-    end
-  end
-
-  defp extract_question_attrs(attrs, task, run) when is_map(attrs) do
-    raw_prompt = attrs[:prompt] || attrs["prompt"] || ""
-    trimmed_prompt = String.trim(to_string(raw_prompt))
-
-    if trimmed_prompt == "" do
-      {:error, :invalid_prompt}
-    else
-      options = attrs[:options] || attrs["options"] || []
-      context_summary = attrs[:context_summary] || attrs["context_summary"] || "Asked during: #{task_title(task)}"
-      role_id = attrs[:role_id] || attrs["role_id"] || (run && run.role_id)
-      {:ok, trimmed_prompt, options, context_summary, role_id}
-    end
-  end
-
-  defp extract_question_attrs(_other, _task, _run), do: {:error, :invalid_question_attrs}
-
-  # The title lives on the issue the task links to.
-  defp task_title(%Task{issue: %Issue{title: title}}), do: title
-
-  defp task_title(%Task{issue_id: issue_id}) when is_binary(issue_id) do
-    case Repo.get(Issue, issue_id) do
-      %Issue{title: title} -> title
-      nil -> nil
-    end
-  end
-
-  defp task_title(%Task{}), do: nil
-
-  defp resolve_task(%Task{} = task), do: task
-  defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)
-  defp resolve_task(_other), do: nil
-
-  defp resolve_run(%Run{} = run, _task), do: run
-  defp resolve_run(run_id, _task) when is_binary(run_id), do: Repo.get(Run, run_id)
-  defp resolve_run(_other, task), do: find_run_for_task(task)
-
-  defp find_run_for_task(%Task{id: task_id}) do
-    Repo.one(
-      from r in Run,
-        where: r.task_id == ^task_id,
-        order_by: [desc: r.inserted_at],
-        limit: 1
+    from(q in Question,
+      where: q.run_id == ^run_id and q.status == :pending,
+      order_by: [desc: q.inserted_at]
     )
+    |> Repo.all()
+    |> Enum.find(&(String.downcase(String.trim(&1.prompt || "")) == normalized_target))
   end
 
-  defp resolve_default_role_id(%Task{project_id: project_id, stage: stage}) do
-    case Roles.get_role(project_id: project_id, stage: stage) do
-      {:ok, %Role{id: role_id}} -> role_id
-      _other -> nil
-    end
-  end
+  # The title lives on the issue the task links to. No clause covers an unloaded
+  # association: a caller that skipped the preload finds out here.
+  defp task_title(%Task{issue: %Issue{title: title}}), do: title
+  defp task_title(%Task{issue: nil}), do: nil
 end

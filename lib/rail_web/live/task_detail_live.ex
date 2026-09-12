@@ -369,6 +369,7 @@ defmodule RailWeb.TaskDetailLive do
             <!-- Task Actions Matrix -->
             <.task_actions
               task={@task}
+              pending_questions={@pending_questions}
               running_action={@running_action}
               design={@design}
               on_action="action_click"

@@ -5,6 +5,7 @@ defmodule RailWeb.Components.TaskActionsTest do
 
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Domain.Embeds.DesignDirection
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias RailWeb.Components.TaskActionModals
   alias RailWeb.Components.TaskActions
@@ -269,13 +270,12 @@ defmodule RailWeb.Components.TaskActionsTest do
     assert html =~ "action-send-back"
   end
 
-  test "renders Unblock when blocked and question_id is nil" do
+  test "renders Unblock when blocked with nothing pending" do
     html =
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :architect,
-          stage_state: :blocked,
-          question_id: nil
+          stage_state: :blocked
         }
       )
 
@@ -284,14 +284,14 @@ defmodule RailWeb.Components.TaskActionsTest do
     refute html =~ ~s(id="action-unblock" data-qa="action-unblock" disabled)
   end
 
-  test "does not render Unblock when question_id is present" do
+  test "does not render Unblock while a question is still pending" do
     html =
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :architect,
-          stage_state: :blocked,
-          question_id: "qst_123"
-        }
+          stage_state: :blocked
+        },
+        pending_questions: [%Question{id: "qst_123", prompt: "Which one?"}]
       )
 
     refute html =~ "Unblock"

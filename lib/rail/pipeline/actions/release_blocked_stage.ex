@@ -1,3 +1,4 @@
+# TODO why is this needed, lets remove the unblock path
 defmodule Rail.Pipeline.Actions.ReleaseBlockedStage do
   @moduledoc """
   Action that releases a stage blocked on an agent question.
@@ -12,6 +13,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStage do
   import Rail.Pipeline.Utils.SettleAction
 
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Runs
@@ -41,6 +43,8 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStage do
   defp authorize_scope(_scope), do: {:error, :not_authorized}
 
   defp do_release_blocked_stage(%Task{} = task) do
+    leave_unanswered(task)
+
     is_live = Runs.is_running?(task.id)
 
     latest_os_process =
@@ -74,7 +78,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStage do
   defp release_to_running(%Task{} = task) do
     {:ok, updated_task} =
       task
-      |> Task.changeset(%{question_id: nil, stage_state: :running})
+      |> Task.changeset(%{stage_state: :running})
       |> Repo.update()
 
     Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :stage_released})
@@ -98,12 +102,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStage do
       end
 
     if exit_code == 0 do
-      {:ok, cleared_task} =
-        task
-        |> Task.changeset(%{question_id: nil})
-        |> Repo.update()
-
-      settle = settle_action(cleared_task)
+      settle = settle_action(task)
 
       with {:ok, _settled_task, _run} <- Pipeline.settle_run(latest_os_process, %{exit_code: 0}),
            {:ok, advanced_task, _run} <- settle.(latest_os_process, %{}, []) do
@@ -112,7 +111,7 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStage do
     else
       {:ok, updated_task} =
         task
-        |> Task.changeset(%{question_id: nil, stage_state: :failed})
+        |> Task.changeset(%{stage_state: :failed})
         |> Repo.update()
 
       Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :stage_released})
@@ -123,11 +122,22 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStage do
   defp release_to_awaiting_approval(%Task{} = task) do
     {:ok, updated_task} =
       task
-      |> Task.changeset(%{question_id: nil, stage_state: :awaiting_approval})
+      |> Task.changeset(%{stage_state: :awaiting_approval})
       |> Repo.update()
 
     Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :stage_released})
     {:ok, updated_task}
+  end
+
+  # Releasing is the human waving the questions off rather than answering them, so
+  # the queue is emptied: what is left pending is what keeps a stage parked.
+  defp leave_unanswered(%Task{id: task_id}) do
+    now = DateTime.utc_now()
+
+    Repo.update_all(
+      from(q in Question, where: q.task_id == ^task_id and q.status == :pending),
+      set: [status: :unanswered, updated_at: now]
+    )
   end
 
   defp resolve_task(%Task{} = task), do: task

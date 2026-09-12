@@ -14,13 +14,12 @@ defmodule Rail.Pipeline.Utils.RunFinished do
   reaches its stage.
   """
 
+  import Rail.Pipeline.Utils.RegisterAskedQuestions
   import Rail.Pipeline.Utils.SettleAction
-  import Rail.Runs.Utils.OsProcessLog
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Runs
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
 
@@ -41,29 +40,13 @@ defmodule Rail.Pipeline.Utils.RunFinished do
   end
 
   defp settle_stage(%OsProcess{} = os_process, outcome, opts) do
-    with {:ok, _task, _run} <- Pipeline.settle_run(os_process, outcome, opts) do
-      case register_asked_questions(os_process) do
-        [] -> settle_action(task_for(os_process)).(os_process, outcome, opts)
-        _asked -> {:ok, task_for(os_process), run_for(os_process)}
+    # TODO: inline settle_run which should just return a run with the right preloads so
+    # register_asked_questions doesn't need to, maybe even on the os_process at the beginning of this file
+    with {:ok, %Task{} = task, %Run{} = run} <- Pipeline.settle_run(os_process, outcome, opts) do
+      case register_asked_questions(os_process, run) do
+        [] -> settle_action(task).(os_process, outcome, opts)
+        _asked -> {:ok, task, run}
       end
     end
   end
-
-  # An agent step ends by asking its batch of questions, so they are read out of the
-  # log once the process is gone rather than off the stream as it runs.
-  defp register_asked_questions(%OsProcess{} = os_process) do
-    run = run_for(os_process)
-
-    case os_process |> os_process_log() |> Runs.detect_questions() do
-      [] ->
-        []
-
-      questions ->
-        {:ok, _results} = Pipeline.register_questions(run.task_id, run.id, questions)
-        questions
-    end
-  end
-
-  defp task_for(%OsProcess{run: %Run{task: %Task{} = task}}), do: Repo.get(Task, task.id) || task
-  defp run_for(%OsProcess{run: %Run{} = run}), do: run
 end

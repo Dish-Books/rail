@@ -8,7 +8,6 @@ defmodule Rail.Pipeline.Actions.AnswerQuestions do
   the stage when it exits, the same as the run that asked did.
   """
 
-  import Ecto.Query
   import Rail.Pipeline.Utils.QuestionQueue
   import Rail.Pipeline.Utils.SendRunMessage
 
@@ -91,10 +90,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestions do
   end
 
   defp park_on(%Task{} = task, %Question{} = next) do
-    {:ok, task} =
-      task
-      |> Task.changeset(%{stage_state: :blocked, question_id: next.id})
-      |> Repo.update()
+    {:ok, task} = task |> Task.changeset(%{stage_state: :blocked}) |> Repo.update()
 
     Pipeline.broadcast_pipeline_changed(%{
       task_id: task.id,
@@ -106,8 +102,6 @@ defmodule Rail.Pipeline.Actions.AnswerQuestions do
   end
 
   defp deliver(%Task{} = task, opts) do
-    {:ok, task} = task |> Task.changeset(%{question_id: nil}) |> Repo.update()
-
     delivered = undelivered_answers(task.id)
 
     case run_that_asked(task, delivered) do
@@ -123,13 +117,11 @@ defmodule Rail.Pipeline.Actions.AnswerQuestions do
     end
   end
 
-  # A question carries the role that asked it, and a task has one run per role.
-  defp run_that_asked(%Task{id: task_id}, questions) do
+  # A question carries the run that asked it, so the round goes straight back there.
+  defp run_that_asked(%Task{}, questions) do
     questions
     |> Enum.reverse()
-    |> Enum.find_value(fn %Question{role_id: role_id} ->
-      role_id && Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_id)
-    end)
+    |> Enum.find_value(&Repo.get(Run, &1.run_id))
   end
 
   defp resolve_task(%Task{} = task), do: task

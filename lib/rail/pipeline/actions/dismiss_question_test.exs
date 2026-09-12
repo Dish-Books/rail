@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
+  alias Rail.Runs.DetectedQuestion
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -70,11 +71,21 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
-    %{project: project, issue: issue, task: task, roles: roles}
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:product].id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    run = Repo.preload(run, task: :issue)
+
+    %{project: project, issue: issue, task: task, run: run, roles: roles}
   end
 
-  test "dismisses a pending question and releases blocked task", %{task: task} do
-    {:ok, q} = Pipeline.register_question(task, %{prompt: "Should we proceed?"})
+  test "dismisses a pending question and releases blocked task", %{task: task, run: run} do
+    {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
 
     task = Pipeline.get_task!(system_scope(), task.id)
     assert task.stage_state == :blocked
@@ -90,9 +101,9 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     assert is_nil(reloaded_task.question_id)
   end
 
-  test "dismissing the front question hands the human the next one instead of releasing", %{task: task} do
-    {:ok, first} = Pipeline.register_question(task, %{prompt: "Should we proceed?"})
-    {:ok, second} = Pipeline.register_question(task, %{prompt: "Ship behind a flag?"})
+  test "dismissing the front question hands the human the next one instead of releasing", %{task: task, run: run} do
+    {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
+    {:ok, second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Ship behind a flag?"})
 
     assert Repo.get!(Task, task.id).question_id == first.id
 
@@ -111,8 +122,8 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     assert is_nil(reloaded_task.question_id)
   end
 
-  test "dismisses question without touching task if task was not parked on it", %{task: task} do
-    {:ok, q} = Pipeline.register_question(task, %{prompt: "Should we proceed?"})
+  test "dismisses question without touching task if task was not parked on it", %{task: task, run: run} do
+    {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task.id, %{stage_state: :running, question_id: nil})
@@ -124,7 +135,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     assert is_nil(reloaded_task.question_id)
   end
 
-  test "returns error when dismissing an answered question", %{task: task, roles: roles} do
+  test "returns error when dismissing an answered question", %{task: task, run: run, roles: roles} do
     {:ok, _product_run} =
       Runs.create_run(%{
         task_id: task.id,
@@ -134,7 +145,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, q_answered} = Pipeline.register_question(task, %{prompt: "Answered question?"})
+    {:ok, q_answered} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Answered question?"})
 
     {:ok, q_answered} =
       q_answered
@@ -144,19 +155,19 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     assert {:error, :already_resolved} = Pipeline.dismiss_question(q_answered.id)
   end
 
-  test "returns error when dismissing an already dismissed question", %{task: task} do
-    {:ok, q_dismissed} = Pipeline.register_question(task, %{prompt: "Dismissed question?"})
+  test "returns error when dismissing an already dismissed question", %{run: run} do
+    {:ok, q_dismissed} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Dismissed question?"})
     {:ok, q_dismissed} = Pipeline.dismiss_question(q_dismissed)
 
     assert {:error, :already_resolved} = Pipeline.dismiss_question(q_dismissed.id)
   end
 
-  test "validates scope authorization and existence", %{task: task} do
+  test "validates scope authorization and existence", %{run: run} do
     assert {:error, :not_authorized} = Pipeline.dismiss_question(%Rail.Scope{}, "qst_any")
     assert {:error, :not_found} = Pipeline.dismiss_question("qst_nonexistent")
     assert {:error, :not_found} = Pipeline.dismiss_question(123)
 
-    {:ok, q} = Pipeline.register_question(task, %{prompt: "Scoped question?"})
+    {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Scoped question?"})
 
     user_scope = %Rail.Scope{user: %{id: "usr_test"}}
     assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(user_scope, q.id)

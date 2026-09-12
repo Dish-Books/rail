@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
+  alias Rail.Runs.DetectedQuestion
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -67,11 +68,21 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
-    %{project: project, issue: issue, task: task, roles: roles}
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:product].id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    run = Repo.preload(run, task: :issue)
+
+    %{project: project, issue: issue, task: task, run: run, roles: roles}
   end
 
   test "lists questions by project and filters by status", %{project: project, task: task, roles: roles} do
-    {:ok, _product_run} =
+    {:ok, run} =
       Runs.create_run(%{
         task_id: task.id,
         role_id: roles[:product].id,
@@ -80,7 +91,9 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, q_answered} = Pipeline.register_question(task, %{prompt: "P1 Answered"})
+    run = Repo.preload(run, task: :issue)
+
+    {:ok, q_answered} = Pipeline.register_question(run, %DetectedQuestion{prompt: "P1 Answered"})
 
     {:ok, _q_answered} =
       q_answered
@@ -96,7 +109,17 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     {:ok, issue2} = Issues.capture_issue(system_scope(), project, "Second Task")
     {:ok, task1b} = Pipeline.create_task(issue2, :product)
 
-    {:ok, q1} = Pipeline.register_question(task1b, %{prompt: "P1 Pending"})
+    {:ok, run1b} =
+      Runs.create_run(%{
+        task_id: task1b.id,
+        role_id: roles[:product].id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    run1b = Repo.preload(run1b, task: :issue)
+
+    {:ok, q1} = Pipeline.register_question(run1b, %DetectedQuestion{prompt: "P1 Pending"})
 
     {:ok, project2} =
       Projects.create_project(system_scope(), %{
@@ -119,7 +142,26 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     {:ok, issue3} = Issues.capture_issue(system_scope(), project2, "Other Project Task")
     {:ok, task2} = Pipeline.create_task(issue3, :product)
 
-    {:ok, _q3} = Pipeline.register_question(task2, %{prompt: "P2 Pending"})
+    {:ok, role2} =
+      Roles.create_role(system_scope(), project2, %{
+        backend_id: roles[:product].backend_id,
+        stage: :product,
+        name: "product role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the product agent."
+      })
+
+    {:ok, run2} =
+      Runs.create_run(%{
+        task_id: task2.id,
+        role_id: role2.id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    run2 = Repo.preload(run2, task: :issue)
+
+    {:ok, _q3} = Pipeline.register_question(run2, %DetectedQuestion{prompt: "P2 Pending"})
 
     results_all = Pipeline.list_questions(project.id)
     assert length(results_all) == 2
@@ -132,10 +174,10 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     assert length(results_multi_status) == 2
   end
 
-  test "lists questions by task and supports order_by", %{task: task} do
-    {:ok, q1} = Pipeline.register_question(task, %{prompt: "First"})
+  test "lists questions by task and supports order_by", %{task: task, run: run} do
+    {:ok, q1} = Pipeline.register_question(run, %DetectedQuestion{prompt: "First"})
     {:ok, _dismissed} = Pipeline.dismiss_question(q1)
-    {:ok, q2} = Pipeline.register_question(task, %{prompt: "Second"})
+    {:ok, q2} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Second"})
 
     desc_order = Pipeline.list_questions(task.id, order_by: [desc: :inserted_at])
     assert Enum.map(desc_order, & &1.id) == [q2.id, q1.id]
@@ -145,7 +187,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
   end
 
   test "list_pending_questions convenience functions", %{project: project, task: task, roles: roles} do
-    {:ok, _product_run} =
+    {:ok, run} =
       Runs.create_run(%{
         task_id: task.id,
         role_id: roles[:product].id,
@@ -154,7 +196,9 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, q_answered} = Pipeline.register_question(task, %{prompt: "Answered question?"})
+    run = Repo.preload(run, task: :issue)
+
+    {:ok, q_answered} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Answered question?"})
 
     {:ok, _q_answered} =
       q_answered
@@ -170,7 +214,17 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     {:ok, issue_pending} = Issues.capture_issue(system_scope(), project, "Pending Question Task")
     {:ok, pending_task} = Pipeline.create_task(issue_pending, :product)
 
-    {:ok, q_pending} = Pipeline.register_question(pending_task, %{prompt: "Still open?"})
+    {:ok, pending_run} =
+      Runs.create_run(%{
+        task_id: pending_task.id,
+        role_id: roles[:product].id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    pending_run = Repo.preload(pending_run, task: :issue)
+
+    {:ok, q_pending} = Pipeline.register_question(pending_run, %DetectedQuestion{prompt: "Still open?"})
 
     pending_list = Pipeline.list_pending_questions(project.id)
     assert length(pending_list) == 1
@@ -208,9 +262,9 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     assert [] = Pipeline.list_pending_questions()
   end
 
-  test "get_question and get_question!", %{task: task} do
+  test "get_question and get_question!", %{run: run} do
     {:ok, %Question{id: expected_id}} =
-      Pipeline.register_question(task, %{prompt: "Which option?"})
+      Pipeline.register_question(run, %DetectedQuestion{prompt: "Which option?"})
 
     user_scope = %Rail.Scope{user: %{id: "usr_test"}}
 
@@ -232,9 +286,9 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     end
   end
 
-  test "supports preload option", %{task: %Rail.Pipeline.Schemas.Task{id: expected_task_id}} do
+  test "supports preload option", %{task: %Rail.Pipeline.Schemas.Task{id: expected_task_id}, run: run} do
     {:ok, %Question{id: q_id}} =
-      Pipeline.register_question(expected_task_id, %{
+      Pipeline.register_question(run, %DetectedQuestion{
         prompt: "Question prompt 7213?"
       })
 

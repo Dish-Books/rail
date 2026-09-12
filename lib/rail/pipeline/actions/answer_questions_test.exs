@@ -82,36 +82,31 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionsTest do
     %{task: task, role: role, run: run, run_id: run.id}
   end
 
-  test "an unanswered question keeps the task parked on the next one", %{task: task, role: role} do
+  test "an unanswered question keeps the task parked on the next one", %{task: task, run: run} do
     first =
-      Repo.insert!(%Question{task_id: task.id, role_id: role.id, prompt: "Which database?", status: :pending})
+      Repo.insert!(%Question{task_id: task.id, run_id: run.id, prompt: "Which database?", status: :pending})
 
     %Question{id: second_id} =
-      Repo.insert!(%Question{task_id: task.id, role_id: role.id, prompt: "Ship behind a flag?", status: :pending})
+      Repo.insert!(%Question{task_id: task.id, run_id: run.id, prompt: "Ship behind a flag?", status: :pending})
 
-    {:ok, task} = task |> Task.changeset(%{question_id: first.id}) |> Repo.update()
-
-    assert {:ok, %{task: %Task{stage_state: :blocked, question_id: ^second_id}}} =
+    assert {:ok, %{task: %Task{stage_state: :blocked}}} =
              Pipeline.answer_questions(task, %{first.id => "Postgres"})
 
-    assert Enum.map(pending_questions(task.id), & &1.prompt) == ["Ship behind a flag?"]
+    assert Enum.map(pending_questions(task.id), & &1.id) == [second_id]
     assert Repo.get!(Question, first.id).status == :answered
     refute Repo.get!(Question, first.id).delivered_at
   end
 
   test "answering the batch hands the whole round back on the run that asked", %{
     task: task,
-    role: role,
     run: run,
     run_id: run_id
   } do
     first =
-      Repo.insert!(%Question{task_id: task.id, role_id: role.id, prompt: "Which database?", status: :pending})
+      Repo.insert!(%Question{task_id: task.id, run_id: run.id, prompt: "Which database?", status: :pending})
 
     second =
-      Repo.insert!(%Question{task_id: task.id, role_id: role.id, prompt: "Ship behind a flag?", status: :pending})
-
-    {:ok, task} = task |> Task.changeset(%{question_id: first.id}) |> Repo.update()
+      Repo.insert!(%Question{task_id: task.id, run_id: run.id, prompt: "Ship behind a flag?", status: :pending})
 
     test_pid = self()
 
@@ -130,24 +125,23 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionsTest do
     refute opts[:is_chat]
     assert Enum.any?(argv, &(&1 =~ "Postgres" and &1 =~ "Yes, behind a flag"))
 
-    assert Repo.get!(Task, task.id).question_id == nil
     assert pending_questions(task.id) == []
     assert Repo.get!(Question, first.id).delivered_at
     assert Repo.get!(Question, second.id).delivered_at
   end
 
-  test "rejects a blank answer and an answer for another task's question", %{task: task, role: role} do
+  test "rejects a blank answer and an answer for another task's question", %{task: task, run: run} do
     question =
-      Repo.insert!(%Question{task_id: task.id, role_id: role.id, prompt: "Which database?", status: :pending})
+      Repo.insert!(%Question{task_id: task.id, run_id: run.id, prompt: "Which database?", status: :pending})
 
     assert {:error, :no_answers} = Pipeline.answer_questions(task, %{question.id => "   "})
     assert {:error, :no_answers} = Pipeline.answer_questions(task, %{"qst_nonexistent" => "Postgres"})
     assert Repo.get!(Question, question.id).status == :pending
   end
 
-  test "requires an authorized scope", %{task: task, role: role} do
+  test "requires an authorized scope", %{task: task, run: run} do
     question =
-      Repo.insert!(%Question{task_id: task.id, role_id: role.id, prompt: "Which database?", status: :pending})
+      Repo.insert!(%Question{task_id: task.id, run_id: run.id, prompt: "Which database?", status: :pending})
 
     assert {:error, :not_authorized} =
              Pipeline.answer_questions(%Rail.Scope{}, task, %{question.id => "Postgres"})

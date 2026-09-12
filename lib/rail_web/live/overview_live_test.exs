@@ -13,6 +13,7 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
+  alias Rail.Runs.DetectedQuestion
   alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -618,7 +619,7 @@ defmodule RailWeb.OverviewLiveTest do
         stage_state: :blocked
       })
 
-    {:ok, _run} =
+    {:ok, run} =
       Runs.create_run(%{
         task_id: task_id,
         role_id: role_id,
@@ -626,8 +627,10 @@ defmodule RailWeb.OverviewLiveTest do
         started_at: DateTime.utc_now()
       })
 
+    run = Rail.Repo.preload(run, task: :issue)
+
     {:ok, %Question{id: _q1_id, prompt: q1_prompt}} =
-      Pipeline.register_question(task_id, %{
+      Pipeline.register_question(run, %DetectedQuestion{
         prompt: "Which database adapter?",
         role_id: role_id,
         options: ["Postgres", "SQLite"],
@@ -641,10 +644,18 @@ defmodule RailWeb.OverviewLiveTest do
     })
 
     {:ok, orphan_issue} = Issues.capture_issue(system_scope(), project, "Orphan question task")
-    {:ok, %Task{id: orphan_task_id} = orphan_task} = Pipeline.create_task(orphan_issue, :product)
+    {:ok, %Task{id: orphan_task_id}} = Pipeline.create_task(orphan_issue, :product)
+
+    {:ok, orphan_run} =
+      Runs.create_run(%{
+        task_id: orphan_task_id,
+        role_id: role_id,
+        status: :blocked_on_input,
+        started_at: DateTime.utc_now()
+      })
 
     {:ok, %Question{prompt: q_orphan_prompt}} =
-      Pipeline.register_question(orphan_task, %{
+      Pipeline.register_question(Rail.Repo.preload(orphan_run, task: :issue), %DetectedQuestion{
         prompt: "Orphan clarification prompt?",
         options: ["Option Alpha", "Option Beta"]
       })
@@ -737,12 +748,12 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13423, :product)
 
     {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(system_scope(), %Task{id: task_id}.id, %{
+      Pipeline.update_task(system_scope(), task_id, %{
         stage: :engineer,
         stage_state: :blocked
       })
 
-    {:ok, _run} =
+    {:ok, run} =
       Runs.create_run(%{
         task_id: task_id,
         role_id: role_id,
@@ -750,8 +761,10 @@ defmodule RailWeb.OverviewLiveTest do
         started_at: DateTime.utc_now()
       })
 
+    run = Rail.Repo.preload(run, task: :issue)
+
     {:ok, %Question{id: q_id}} =
-      Pipeline.register_question(task_id, %{
+      Pipeline.register_question(run, %DetectedQuestion{
         prompt: "What port number?",
         role_id: role_id,
         options: []
@@ -1534,7 +1547,7 @@ defmodule RailWeb.OverviewLiveTest do
       options: ["Proceed", "Abort"],
       context_summary: "Context",
       task_id: "tsk_q_issue",
-      role: %{name: "Lead Architect"}
+      run: %{role: %{name: "Lead Architect"}}
     }
 
     row1 = %{

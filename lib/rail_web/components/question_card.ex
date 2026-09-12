@@ -171,7 +171,7 @@ defmodule RailWeb.Components.QuestionCard do
   defp task_key(_task, %{task_id: task_id}) when is_binary(task_id) and task_id != "", do: task_id
   defp task_key(_task, _question), do: nil
 
-  defp role_name(_task, %{role: %{name: name}}) when is_binary(name) and name != "", do: name
+  defp role_name(_task, %{run: %{role: %{name: name}}}) when is_binary(name) and name != "", do: name
   defp role_name(%{stage: stage}, _question) when stage != nil, do: format_role_id(to_string(stage))
   defp role_name(_task, _question), do: "Agent"
 

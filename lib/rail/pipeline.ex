@@ -22,10 +22,17 @@ defmodule Rail.Pipeline do
     Supervisor.init([Rail.Pipeline.TaskActionRunner], strategy: :one_for_one)
   end
 
+  # TODO we need to cleanup all of the actions in this file
+  # nothing should take a scope and then they should all take the struct instead of ids
+  # we need to stop passing ids as it causes extra code and db hits (we should remove all resolve functions
+  # only a single delegate per action
+  # also drop the bang functions and have callers match the ok tuple
   defdelegate settle_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleRun
   defdelegate run_finished(os_process, outcome \\ %{}, opts \\ []), to: Utils.RunFinished
   defdelegate send_run_message(run, text, opts \\ []), to: Utils.SendRunMessage
 
+  # TODO: I believe these are all just utils and don't need to be available outside of the pipeline context
+  # also change them be called finish_*_run
   defdelegate settle_product_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleProductRun
   defdelegate settle_design_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleDesignRun
   defdelegate settle_architect_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleArchitectRun
@@ -100,10 +107,7 @@ defmodule Rail.Pipeline do
   defdelegate cancel_task(scope_or_task, task_or_opts), to: Actions.CancelTask
   defdelegate cancel_task(task_or_id), to: Actions.CancelTask
 
-  defdelegate register_question(task_or_id, run_or_id, question_or_attrs, opts), to: Actions.RegisterQuestion
-  defdelegate register_question(task_or_id, run_or_question, question_or_opts), to: Actions.RegisterQuestion
-  defdelegate register_question(task_or_id, question_or_attrs), to: Actions.RegisterQuestion
-  defdelegate register_questions(task_or_id, run_or_id, questions, opts \\ []), to: Actions.RegisterQuestion
+  defdelegate register_question(run, question), to: Actions.RegisterQuestion
 
   defdelegate answer_questions(scope, task_or_id, answers, opts), to: Actions.AnswerQuestions
   defdelegate answer_questions(a, b, c), to: Actions.AnswerQuestions

@@ -65,7 +65,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :is_rebasing, :boolean, default: false
     field :stage_state_before_rebase, Ecto.Enum, values: @stage_states
     field :active_chat_role_id, :string
-    field :question_id, :string
     field :error, :string
     field :retry_after, :utc_datetime_usec
     field :rework_cycles, :integer, default: 0
@@ -101,7 +100,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     :is_rebasing,
     :stage_state_before_rebase,
     :active_chat_role_id,
-    :question_id,
     :error,
     :retry_after,
     :rework_cycles,

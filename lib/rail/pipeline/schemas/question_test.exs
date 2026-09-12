@@ -9,6 +9,8 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Runs
+  alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -127,15 +129,23 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
              |> Repo.insert()
   end
 
-  test "preloads belongs_to task and role", %{backend: backend, task: task} do
+  test "preloads belongs_to task and run", %{backend: backend, task: task} do
     %Task{id: task_id} = task = task
 
-    {:ok, %Role{id: role_id} = role} =
+    {:ok, %Role{} = role} =
       Roles.create_role(system_scope(), task.project_id, %{
         backend_id: backend.id,
         name: "Role 7502",
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert agent for role 7502."
+      })
+
+    {:ok, %Run{id: run_id} = run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :running,
+        started_at: DateTime.utc_now()
       })
 
     question =
@@ -144,17 +154,17 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
           %Question{},
           %{
             prompt: "Question for role?",
-            role_id: role.id
+            run_id: run.id
           },
           task.id
         )
       )
 
-    preloaded = Repo.preload(question, [:task, :role])
+    preloaded = Repo.preload(question, [:task, :run])
 
     assert %Question{
              task: %Task{id: ^task_id},
-             role: %Role{id: ^role_id}
+             run: %Run{id: ^run_id}
            } = preloaded
   end
 end

@@ -1,3 +1,4 @@
+# TODO: what is this doing, I want this combined into run_finished
 defmodule Rail.Pipeline.Actions.SettleRun do
   @moduledoc """
   What settling a finished run means for every run, whatever stage it belongs to.
@@ -16,6 +17,8 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   and the stage's settle action — wired in as that run's `on_finished` — decides
   where it goes. Nothing here looks at `task.stage`.
   """
+
+  import Rail.Pipeline.Utils.QuestionQueue
 
   alias Rail.Domain.RunFailure
   alias Rail.Domain.TaskUsage
@@ -62,8 +65,8 @@ defmodule Rail.Pipeline.Actions.SettleRun do
   end
 
   # A task blocked on a question stays put: the answer, not this run, moves it on.
-  defp settle_outcome(%Task{stage_state: :blocked, question_id: q_id}, _code, _error, run) when is_binary(q_id) do
-    {%{}, run}
+  defp settle_outcome(%Task{stage_state: :blocked, id: task_id}, _code, _error, run) do
+    if pending_questions(task_id) == [], do: :stage_decides, else: {%{}, run}
   end
 
   defp settle_outcome(_task, 0, _error, _run), do: :stage_decides

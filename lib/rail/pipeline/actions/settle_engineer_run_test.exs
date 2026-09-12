@@ -1,6 +1,8 @@
 defmodule Rail.Pipeline.Actions.SettleEngineerRunTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.QuestionQueue
+
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
@@ -9,6 +11,7 @@ defmodule Rail.Pipeline.Actions.SettleEngineerRunTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
+  alias Rail.Runs.DetectedQuestion
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -232,18 +235,6 @@ defmodule Rail.Pipeline.Actions.SettleEngineerRunTest do
   test "settle_run preserves blocked state when task was already blocked on question", %{task: task, roles: roles} do
     role = roles[:engineer]
 
-    {:ok, %Question{id: expected_q_id}} =
-      Pipeline.register_question(task, %{
-        prompt: "Question prompt 14599?"
-      })
-
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :engineer,
-        stage_state: :blocked,
-        question_id: expected_q_id
-      })
-
     {:ok, run} =
       Runs.create_run(%{
         task_id: task.id,
@@ -252,6 +243,13 @@ defmodule Rail.Pipeline.Actions.SettleEngineerRunTest do
         status: :blocked_on_input,
         started_at: DateTime.utc_now()
       })
+
+    {:ok, %Question{id: expected_q_id}} =
+      Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{
+        prompt: "Question prompt 14599?"
+      })
+
+    {:ok, _task} = Pipeline.update_task(system_scope(), task.id, %{stage: :engineer})
 
     Runs.append_run_event(run, "Exiting after ask")
 
@@ -269,8 +267,9 @@ defmodule Rail.Pipeline.Actions.SettleEngineerRunTest do
 
     {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
-    assert {:ok, %Task{stage: :engineer, stage_state: :blocked, question_id: ^expected_q_id},
-            %Run{status: :blocked_on_input, exit_code: 0}} =
+    assert {:ok, %Task{stage: :engineer, stage_state: :blocked}, %Run{status: :blocked_on_input, exit_code: 0}} =
              Pipeline.settle_engineer_run(os_process)
+
+    assert Enum.map(pending_questions(task.id), & &1.id) == [expected_q_id]
   end
 end

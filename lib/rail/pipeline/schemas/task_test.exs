@@ -17,6 +17,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
+  alias Rail.Runs.DetectedQuestion
   alias Rail.Runs.Schemas.Run
   alias Rail.Users
   alias Rail.Users.Schemas.User
@@ -243,8 +244,16 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   test "preloads has_many questions, plans, runs, and designs", %{task: task, roles: roles} do
     %Task{id: task_id} = task = task
 
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
     {:ok, _question} =
-      Pipeline.register_question(task, %{
+      Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{
         prompt: "Question prompt 12609?"
       })
 
@@ -256,14 +265,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     {:ok, _captured} = capture_scratch(:architect, %{task | scratch_path: plan_scratch_45368})
 
     {:ok, _plan} = Pipeline.get_plan(system_scope(), task)
-
-    {:ok, _run} =
-      Runs.create_run(%{
-        task_id: task.id,
-        role_id: roles[:engineer].id,
-        status: :finished,
-        started_at: DateTime.utc_now()
-      })
 
     design_scratch_13102 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
     design_dir_13102 = Path.join(design_scratch_13102, "design")

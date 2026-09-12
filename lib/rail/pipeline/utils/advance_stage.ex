@@ -8,6 +8,8 @@ defmodule Rail.Pipeline.Utils.AdvanceStage do
   left for a stage to decide, and this is the guard that hands it over.
   """
 
+  import Rail.Pipeline.Utils.QuestionQueue
+
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -37,7 +39,7 @@ defmodule Rail.Pipeline.Utils.AdvanceStage do
   end
 
   # A task parked on a question stays parked: the answer, not this run, moves it on.
-  defp advancing?(%Task{stage_state: :blocked, question_id: q_id}, _run) when is_binary(q_id), do: false
+  defp advancing?(%Task{stage_state: :blocked, id: task_id}, _run), do: pending_questions(task_id) == []
   defp advancing?(_task, %Run{exit_code: code}) when is_integer(code) and code != 0, do: false
   defp advancing?(_task, _run), do: true
 

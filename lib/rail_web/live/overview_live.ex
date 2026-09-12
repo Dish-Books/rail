@@ -481,14 +481,11 @@ defmodule RailWeb.OverviewLive do
   defp load_overview_state(socket, project_id) do
     scope = socket.assigns[:current_scope]
     tasks = Pipeline.list_tasks(scope, project_id, preload: [:project, :issue])
-    questions = Pipeline.list_pending_questions(scope, project_id, preload: [:task, :role])
+    questions = Pipeline.list_pending_questions(scope, project_id, preload: [:task, run: :role])
 
     questions_by_task_id = Map.new(questions, &{&1.task_id, &1})
-    questions_by_id = Map.new(questions, &{&1.id, &1})
 
-    question_for = fn task ->
-      questions_by_task_id[task.id] || (task.question_id && questions_by_id[task.question_id])
-    end
+    question_for = fn task -> questions_by_task_id[task.id] end
 
     waiting_tasks = Enum.filter(tasks, &OverviewQueue.needs_attention?/1)
     waiting_task_ids = MapSet.new(Enum.map(waiting_tasks, & &1.id))

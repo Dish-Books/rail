@@ -233,7 +233,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
       usage: %TaskUsage{input_tokens: 30, output_tokens: 15}
     }
 
-    assert {:ok, %Task{stage_state: :awaiting_approval, question_id: nil}, %Run{}} =
+    assert {:ok, %Task{stage_state: :awaiting_approval}, %Run{}} =
              Pipeline.settle_chat_turn(task, run_id, outcome)
 
     questions = Repo.all(from q in Question, where: q.task_id == ^task_id)

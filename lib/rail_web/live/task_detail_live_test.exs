@@ -18,6 +18,7 @@ defmodule RailWeb.TaskDetailLiveTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
+  alias Rail.Runs.DetectedQuestion
   alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -1970,7 +1971,7 @@ defmodule RailWeb.TaskDetailLiveTest do
   end
 
   test "Overview tab renders AnswerField when blocked with pending question, handles option click, answer, and dismiss",
-       %{conn: conn, project: project} do
+       %{backend: backend, conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_24",
@@ -2007,6 +2008,27 @@ defmodule RailWeb.TaskDetailLiveTest do
 
     {:ok, issue_13863} = Issues.capture_issue(system_scope(), project, "Task 13863")
 
+    {:ok, engineer_role} =
+      Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
+        stage: :engineer,
+        name: "engineer role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the engineer agent."
+      })
+
+    asking_run = fn task ->
+      {:ok, run} =
+        Runs.create_run(%{
+          task_id: task.id,
+          role_id: engineer_role.id,
+          status: :blocked_on_input,
+          started_at: DateTime.utc_now()
+        })
+
+      Repo.preload(run, task: :issue)
+    end
+
     {:ok, task} = Pipeline.create_task(issue_13863, :product)
 
     {:ok, task} =
@@ -2016,7 +2038,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       })
 
     {:ok, question} =
-      Pipeline.register_question(task, %{
+      Pipeline.register_question(asking_run.(task), %DetectedQuestion{
         prompt: "Which database adapter should be used?",
         options: ["PostgreSQL", "SQLite"],
         context_summary: "Found multiple adapters in repo"
@@ -2070,7 +2092,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       })
 
     {:ok, q_fallback} =
-      Pipeline.register_question(task_answer_fb, %{
+      Pipeline.register_question(asking_run.(task_answer_fb), %DetectedQuestion{
         prompt: "Which port?",
         options: ["5432", "5433"]
       })
@@ -2103,7 +2125,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       })
 
     {:ok, q2} =
-      Pipeline.register_question(task_dismiss_exp, %{
+      Pipeline.register_question(asking_run.(task_dismiss_exp), %DetectedQuestion{
         prompt: "Should we run seeds?",
         options: ["Yes", "No"]
       })
@@ -2136,7 +2158,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       })
 
     {:ok, q3} =
-      Pipeline.register_question(task_dismiss_fb, %{
+      Pipeline.register_question(asking_run.(task_dismiss_fb), %DetectedQuestion{
         prompt: "Run migrations?",
         options: ["Yes", "No"]
       })

@@ -5,14 +5,14 @@ defmodule Rail.Pipeline.Schemas.Question do
   use Rail.Schema
 
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Roles.Schemas.Role
+  alias Rail.Runs.Schemas.Run
 
   @statuses [:pending, :unanswered, :answered, :dismissed]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "qst"}
   schema "questions" do
     belongs_to :task, Task
-    belongs_to :role, Role
+    belongs_to :run, Run
 
     field :prompt, :string
     field :options, {:array, :string}, default: []
@@ -27,7 +27,7 @@ defmodule Rail.Pipeline.Schemas.Question do
 
   @cast_fields [
     :task_id,
-    :role_id,
+    :run_id,
     :prompt,
     :options,
     :context_summary,
@@ -39,6 +39,7 @@ defmodule Rail.Pipeline.Schemas.Question do
 
   @required_fields [
     :task_id,
+    :run_id,
     :prompt,
     :status
   ]
@@ -52,7 +53,7 @@ defmodule Rail.Pipeline.Schemas.Question do
     |> maybe_put_task_id(task_id)
     |> validate_required(@required_fields)
     |> foreign_key_constraint(:task_id)
-    |> foreign_key_constraint(:role_id)
+    |> foreign_key_constraint(:run_id)
   end
 
   def statuses, do: @statuses

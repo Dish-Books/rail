@@ -3,11 +3,13 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
+  alias Rail.Runs.DetectedQuestion
   alias Rail.Runs.Schemas.OsProcess
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -87,17 +89,25 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         stage: :engineer
       })
 
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :blocked_on_input,
+        started_at: DateTime.utc_now()
+      })
+
+    run = Repo.preload(run, task: :issue)
+
     {:ok, q} =
-      Pipeline.register_question(task, %{
-        prompt: "Question prompt 6812?",
-        status: :pending
+      Pipeline.register_question(run, %DetectedQuestion{
+        prompt: "Question prompt 6812?"
       })
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(system_scope(), task, %{
         stage: :engineer,
-        stage_state: :blocked,
-        question_id: q.id
+        stage_state: :blocked
       })
 
     {:ok, run} =
@@ -118,8 +128,8 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         started_at: DateTime.utc_now()
       })
 
-    assert {:ok, %Task{stage_state: :running, question_id: nil}} =
-             Pipeline.release_blocked_stage(task_id)
+    assert {:ok, %Task{stage_state: :running}} = Pipeline.release_blocked_stage(task_id)
+    assert Repo.get!(Question, q.id).status == :unanswered
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :stage_released}}
   end
@@ -156,17 +166,25 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         stage: :engineer
       })
 
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :blocked_on_input,
+        started_at: DateTime.utc_now()
+      })
+
+    run = Repo.preload(run, task: :issue)
+
     {:ok, q} =
-      Pipeline.register_question(task, %{
-        prompt: "Question prompt 6813?",
-        status: :pending
+      Pipeline.register_question(run, %DetectedQuestion{
+        prompt: "Question prompt 6813?"
       })
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task, %{
         stage: :engineer,
-        stage_state: :blocked,
-        question_id: q.id
+        stage_state: :blocked
       })
 
     {:ok, run} =
@@ -188,8 +206,8 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         started_at: DateTime.utc_now()
       })
 
-    assert {:ok, %Task{stage: :review, stage_state: :queued, question_id: nil}} =
-             Pipeline.release_blocked_stage(task)
+    assert {:ok, %Task{stage: :review, stage_state: :queued}} = Pipeline.release_blocked_stage(task)
+    assert Repo.get!(Question, q.id).status == :unanswered
   end
 
   test "sets failed state when finished run had non-zero exit_code", %{backend: backend, project: _project, task: task} do
@@ -220,17 +238,25 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         stage: :engineer
       })
 
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :blocked_on_input,
+        started_at: DateTime.utc_now()
+      })
+
+    run = Repo.preload(run, task: :issue)
+
     {:ok, q} =
-      Pipeline.register_question(task, %{
-        prompt: "Question prompt 6814?",
-        status: :pending
+      Pipeline.register_question(run, %DetectedQuestion{
+        prompt: "Question prompt 6814?"
       })
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task, %{
         stage: :engineer,
-        stage_state: :blocked,
-        question_id: q.id
+        stage_state: :blocked
       })
 
     {:ok, run} =
@@ -252,11 +278,15 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         started_at: DateTime.utc_now()
       })
 
-    assert {:ok, %Task{stage_state: :failed, question_id: nil}} =
-             Pipeline.release_blocked_stage(task)
+    assert {:ok, %Task{stage_state: :failed}} = Pipeline.release_blocked_stage(task)
+    assert Repo.get!(Question, q.id).status == :unanswered
   end
 
-  test "falls back to awaiting_approval when no run is behind the task", %{project: _project, task: task} do
+  test "falls back to awaiting_approval when no os process is behind the task", %{
+    backend: backend,
+    project: project,
+    task: task
+  } do
     {:ok, _project} =
       Projects.create_project(system_scope(), %{
         name: "Release Blocked Project 6805",
@@ -275,20 +305,37 @@ defmodule Rail.Pipeline.Actions.ReleaseBlockedStageTest do
         }
       })
 
+    {:ok, role} =
+      Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
+        name: "Role 6815",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are an expert agent for role 6815.",
+        stage: :product
+      })
+
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :blocked_on_input,
+        started_at: DateTime.utc_now()
+      })
+
+    run = Repo.preload(run, task: :issue)
+
     {:ok, q} =
-      Pipeline.register_question(task, %{
-        prompt: "Question prompt 6815?",
-        status: :pending
+      Pipeline.register_question(run, %DetectedQuestion{
+        prompt: "Question prompt 6815?"
       })
 
     {:ok, task} =
       Pipeline.update_task(system_scope(), task, %{
-        stage_state: :blocked,
-        question_id: q.id
+        stage_state: :blocked
       })
 
-    assert {:ok, %Task{stage_state: :awaiting_approval, question_id: nil}} =
-             Pipeline.release_blocked_stage(task)
+    assert {:ok, %Task{stage_state: :awaiting_approval}} = Pipeline.release_blocked_stage(task)
+    assert Repo.get!(Question, q.id).status == :unanswered
   end
 
   test "validates scope authorization and task existence", %{task: task} do
