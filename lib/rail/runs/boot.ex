@@ -5,6 +5,8 @@ defmodule Rail.Runs.Boot do
   use Task, restart: :transient
 
   import Ecto.Query
+  import Rail.Runs.Utils.DecodeUtf8Lenient
+  import Rail.Runs.Utils.DrainErrFile
   import Rail.Runs.Utils.NewEventState
   import Rail.Runs.Utils.OnOsProcessFinished
   import Rail.Runs.Utils.ParseLine
@@ -13,7 +15,6 @@ defmodule Rail.Runs.Boot do
   alias Rail.Backends.Schemas.Backend
   alias Rail.Pipeline
   alias Rail.Repo
-  alias Rail.Runs.Follower
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
@@ -163,11 +164,7 @@ defmodule Rail.Runs.Boot do
         parse_line(acc, line)
       end)
 
-    raw_stderr =
-      err_lines
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.join("\n")
+    raw_stderr = Enum.join(err_lines, "\n")
 
     error =
       compute_dead_error(
@@ -260,7 +257,7 @@ defmodule Rail.Runs.Boot do
         case File.read(stream_path) do
           {:ok, binary} ->
             binary
-            |> Follower.decode_utf8_lenient()
+            |> decode_utf8_lenient()
             |> String.split("\n")
             |> Enum.reject(&(&1 == ""))
 
@@ -273,7 +270,7 @@ defmodule Rail.Runs.Boot do
         []
       end
 
-    err_lines = Follower.drain_err_file("#{stream_path}.err")
+    err_lines = drain_err_file("#{stream_path}.err")
     {lines, err_lines}
   end
 end

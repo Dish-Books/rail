@@ -327,11 +327,7 @@ defmodule Rail.Runs.FollowerTest do
     Tools.terminate_os_process(pid, grace_period: 50)
   end
 
-  test "get_state call and ignored info messages", %{
-    backend: backend,
-    os_process: os_process,
-    run: run
-  } do
+  test "ignores info messages it does not recognize", %{os_process: os_process, run: run} do
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["5"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
 
@@ -341,14 +337,6 @@ defmodule Rail.Runs.FollowerTest do
     # The follower runs in its own process, so lend it this test's DB connection.
 
     Sandbox.allow(Repo, self(), follower_pid)
-
-    state = GenServer.call(follower_pid, :get_state)
-    assert state.os_process_id == os_process.id
-    assert state.run_id == run.id
-    assert state.os_pid == pid
-    assert state.stream_path == os_process.stream_path
-    # The backend comes off the run's role, not off the caller.
-    assert state.backend.id == backend.id
 
     dummy_pid = spawn(fn -> :ok end)
     send(follower_pid, {:EXIT, dummy_pid, :normal})
@@ -583,31 +571,6 @@ defmodule Rail.Runs.FollowerTest do
     assert_receive {:os_process_finished, _r, outcome}, 1_000
     assert outcome.exit_code == 0
     assert is_nil(outcome.error)
-  end
-
-  test "pump_stream/4 with final: true flushes partial line, drain_err_file/1 handles errors, decode_utf8_lenient/1 handles incomplete bytes",
-       %{
-         tmp_dir: tmp_dir
-       } do
-    stream = Path.join(tmp_dir, "pump_final.ndjson")
-    File.write!(stream, "complete line\n")
-
-    size = File.stat!(stream).size
-    {lines, offset, partial} = Follower.pump_stream(stream, size, "unflushed_partial", final: true)
-    assert lines == ["unflushed_partial"]
-    assert offset == size
-    assert partial == ""
-
-    # drain_err_file on a directory returns [] (read error)
-    assert Follower.drain_err_file(tmp_dir) == []
-
-    # pump_stream when file does not exist
-    assert {[], 0, "partial"} = Follower.pump_stream("/tmp/nonexistent_file_xyz", 0, "partial")
-
-    # decode_utf8_lenient with incomplete multibyte sequence
-    incomplete = <<224, 160>>
-    decoded = Follower.decode_utf8_lenient(incomplete)
-    assert decoded =~ "\uFFFD"
   end
 
   test "detects question in stream and registers it to block task", %{

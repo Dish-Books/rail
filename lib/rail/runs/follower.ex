@@ -4,10 +4,12 @@ defmodule Rail.Runs.Follower do
   """
   use GenServer, restart: :temporary
 
+  import Rail.Runs.Utils.DrainErrFile
   import Rail.Runs.Utils.GetFollowerPid
   import Rail.Runs.Utils.NewEventState
   import Rail.Runs.Utils.OnOsProcessFinished
   import Rail.Runs.Utils.ParseLine
+  import Rail.Runs.Utils.PumpStream
 
   alias Rail.Backends.Schemas.Backend
   alias Rail.Pipeline
@@ -24,12 +26,10 @@ defmodule Rail.Runs.Follower do
   defstruct [
     :os_process_id,
     :run_id,
-    :task_id,
     :stream_path,
     :err_path,
     :os_pid,
     :port,
-    :backend,
     :event_state,
     :tail_interval_ms,
     :batch_interval_ms,
@@ -71,60 +71,6 @@ defmodule Rail.Runs.Follower do
     end
   end
 
-  @doc """
-  Reads new bytes appended to the stream file, splits on newline, and yields complete lines.
-  """
-  def pump_stream(stream_path, file_offset, partial_line, opts \\ []) do
-    if File.exists?(stream_path) do
-      read_available_stream(stream_path, file_offset, partial_line, opts)
-    else
-      {[], file_offset, partial_line}
-    end
-  end
-
-  @doc """
-  Reads and decodes the stderr file if present.
-  """
-  def drain_err_file(err_path) do
-    if File.exists?(err_path) do
-      case File.read(err_path) do
-        {:ok, content} ->
-          content
-          |> decode_utf8_lenient()
-          |> String.split("\n")
-          |> Enum.map(&String.trim/1)
-          |> Enum.reject(&(&1 == ""))
-
-        {:error, _read_err} ->
-          []
-      end
-    else
-      []
-    end
-  end
-
-  @doc """
-  Decodes binary to UTF-8 leniently, replacing invalid or incomplete byte sequences with replacement characters.
-  """
-  def decode_utf8_lenient(binary) when is_binary(binary) do
-    case :unicode.characters_to_binary(binary, :utf8, :utf8) do
-      decoded when is_binary(decoded) ->
-        decoded
-
-      {:error, valid, rest} ->
-        <<_bad::binary-size(1), tail::binary>> = rest
-        valid <> "\uFFFD" <> decode_utf8_lenient(tail)
-
-      {:incomplete, valid, rest} ->
-        valid <> String.duplicate("\uFFFD", byte_size(rest))
-
-      # coveralls-ignore-start (defensive unicode fallback)
-      _other ->
-        binary
-        # coveralls-ignore-stop
-    end
-  end
-
   @impl true
   def init({%OsProcess{} = os_process, opts}) do
     %OsProcess{stream_path: stream_path, run: %Run{role: %{backend: %Backend{} = backend}} = run} = os_process
@@ -144,12 +90,10 @@ defmodule Rail.Runs.Follower do
     state = %__MODULE__{
       os_process_id: os_process.id,
       run_id: run.id,
-      task_id: os_process.task_id,
       stream_path: stream_path,
       err_path: "#{stream_path}.err",
       os_pid: os_process.os_pid,
       port: Keyword.get(opts, :port),
-      backend: backend,
       event_state: event_state,
       tail_interval_ms: tail_interval_ms,
       batch_interval_ms: batch_interval_ms,
@@ -172,11 +116,6 @@ defmodule Rail.Runs.Follower do
     state = %{state | exit_code: -1}
     {updated_os_process, final_state} = do_child_exit(state)
     {:stop, :normal, {:ok, updated_os_process}, final_state}
-  end
-
-  @impl true
-  def handle_call(:get_state, _from, state) do
-    {:reply, state, state}
   end
 
   @impl true
@@ -214,19 +153,14 @@ defmodule Rail.Runs.Follower do
 
   @impl true
   def handle_info(:batch_tick, state) do
-    state = flush_batch(state)
+    flush_pending_events(state.pending_events, state.run_id, state.os_process_id)
     Process.send_after(self(), :batch_tick, state.batch_interval_ms)
-    {:noreply, state}
+    {:noreply, %{state | pending_events: []}}
   end
 
   @impl true
   def handle_info({_port, {:exit_status, status}}, state) do
     {:noreply, %{state | exit_code: status}}
-  end
-
-  @impl true
-  def handle_info({:EXIT, _port, _reason}, state) do
-    {:noreply, state}
   end
 
   @impl true
@@ -248,15 +182,6 @@ defmodule Rail.Runs.Follower do
         end
       end
     )
-  end
-
-  defp flush_batch(state) do
-    if state.pending_events == [] do
-      state
-    else
-      flush_pending_events(state.pending_events, state.run_id, state.os_process_id)
-      %{state | pending_events: []}
-    end
   end
 
   defp flush_pending_events([], _run_id, _os_process_id), do: []
@@ -298,61 +223,6 @@ defmodule Rail.Runs.Follower do
     {:ok, updated_os_process}
   end
 
-  defp read_available_stream(stream_path, file_offset, partial_line, opts) do
-    case File.stat(stream_path) do
-      {:ok, %File.Stat{size: size}} when size > file_offset ->
-        read_stream_bytes(stream_path, file_offset, size, partial_line, opts)
-
-      _stat_error ->
-        finalize_partial_line(partial_line, file_offset, opts)
-    end
-  end
-
-  defp read_stream_bytes(stream_path, file_offset, size, partial_line, opts) do
-    case File.open(stream_path, [:read, :binary]) do
-      {:ok, handle} ->
-        :file.position(handle, file_offset)
-        result = :file.read(handle, size - file_offset)
-        File.close(handle)
-        handle_stream_read(result, size, file_offset, partial_line, opts)
-
-      # coveralls-ignore-start (defensive file open error fallback)
-      _open_error ->
-        {[], file_offset, partial_line}
-
-        # coveralls-ignore-stop
-        # coveralls-ignore-stop
-    end
-  end
-
-  defp handle_stream_read({:ok, bytes}, size, _file_offset, partial_line, opts) do
-    combined = partial_line <> bytes
-    parts = :binary.split(combined, "\n", [:global])
-    {complete_lines, [new_partial]} = Enum.split(parts, length(parts) - 1)
-
-    {final_lines, remaining_partial} =
-      if Keyword.get(opts, :final, false) and new_partial != "" do
-        {Enum.reverse([new_partial | Enum.reverse(complete_lines)]), ""}
-      else
-        {complete_lines, new_partial}
-      end
-
-    {Enum.map(final_lines, &decode_utf8_lenient/1), size, remaining_partial}
-  end
-
-  # coveralls-ignore-start (defensive file read error fallback)
-  defp handle_stream_read(_read_error, _size, file_offset, partial_line, _opts) do
-    {[], file_offset, partial_line}
-  end
-
-  defp finalize_partial_line(partial_line, file_offset, opts) do
-    if Keyword.get(opts, :final, false) and partial_line != "" do
-      {[decode_utf8_lenient(partial_line)], file_offset, ""}
-    else
-      {[], file_offset, partial_line}
-    end
-  end
-
   defp do_child_exit(state) do
     state = await_exit_code(state)
 
@@ -362,25 +232,11 @@ defmodule Rail.Runs.Follower do
     {event_state, pending_events, _skip} =
       process_incoming_lines(final_lines, %{state | file_offset: final_offset})
 
-    err_lines = drain_err_file(state.err_path)
     flush_pending_events(pending_events, state.run_id, state.os_process_id)
 
-    raw_stderr =
-      err_lines
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.join("\n")
-
+    raw_stderr = state.err_path |> drain_err_file() |> Enum.join("\n")
     error = compute_error(event_state.result_error, raw_stderr, state.exit_code)
-
-    exit_code =
-      compute_exit_code(
-        state.exit_code,
-        error,
-        event_state.saw_result,
-        event_state.result_error,
-        raw_stderr
-      )
+    exit_code = compute_exit_code(state.exit_code, error, event_state.saw_result)
 
     case Repo.get(OsProcess, state.os_process_id) do
       %OsProcess{} = os_process ->
@@ -424,6 +280,8 @@ defmodule Rail.Runs.Follower do
     end
   end
 
+  # coveralls-ignore-stop
+
   defp compute_error(result_error, raw_stderr, exit_code) do
     cond do
       is_binary(result_error) and result_error != "" and raw_stderr != "" ->
@@ -443,21 +301,14 @@ defmodule Rail.Runs.Follower do
     end
   end
 
-  # coveralls-ignore-stop
-
-  defp compute_exit_code(exit_code, error, saw_result, result_error, raw_stderr) do
+  # A nil `error` already means no result error and no stderr, so a run that
+  # reported a result and never said anything on the way out exited cleanly.
+  defp compute_exit_code(exit_code, error, saw_result) do
     cond do
-      is_integer(exit_code) and is_nil(error) ->
-        exit_code
-
-      is_integer(exit_code) ->
-        if exit_code == 0, do: 1, else: exit_code
-
-      saw_result and is_nil(result_error) and raw_stderr == "" ->
-        0
-
-      true ->
-        -1
+      is_integer(exit_code) and is_nil(error) -> exit_code
+      is_integer(exit_code) -> if exit_code == 0, do: 1, else: exit_code
+      is_nil(error) and saw_result -> 0
+      true -> -1
     end
   end
 
