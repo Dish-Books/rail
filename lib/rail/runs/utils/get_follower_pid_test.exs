@@ -3,6 +3,8 @@ defmodule Rail.Runs.Utils.GetFollowerPidTest do
 
   import Rail.Runs.Utils.GetFollowerPid
 
+  alias Rail.Projects.Schemas.Project
+  alias Rail.Roles
   alias Rail.Runs
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.OsProcess
@@ -19,13 +21,42 @@ defmodule Rail.Runs.Utils.GetFollowerPidTest do
     stream_path = Path.join(tmp_dir, "stream.ndjson")
     File.write!(stream_path, "")
 
+    # The Follower reads the stream format off the run's role, so the run needs a
+    # real role behind it.
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
+    project =
+      %Project{}
+      |> Project.changeset(%{
+        name: "Follower Pid Project",
+        github_repo: "org/follower-pid-#{System.unique_integer([:positive])}",
+        github_installation_id: System.unique_integer([:positive]),
+        linear_team_id: "team_follower_pid",
+        linear_team_key: "FPD",
+        default_branch: "main",
+        clone_path: Path.join(tmp_dir, "clone")
+      })
+      |> Repo.insert!()
+
+    {:ok, role} =
+      Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
+        stage: :engineer,
+        name: "follower pid role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the engineer."
+      })
+
     {:ok, run} =
       Runs.create_run(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
+
+    run = Repo.preload(run, role: :backend)
 
     os_process =
       %OsProcess{}

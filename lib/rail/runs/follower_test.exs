@@ -249,7 +249,7 @@ defmodule Rail.Runs.FollowerTest do
 
     assert Tools.os_process_alive?(pid)
 
-    {:ok, stopped_run} = Runs.stop_os_process(os_process.id, grace_period: 100)
+    {:ok, stopped_run} = Runs.stop_os_process(os_process, grace_period: 100)
     assert stopped_run.status == :finished
     refute Tools.os_process_alive?(pid)
   end
@@ -327,7 +327,7 @@ defmodule Rail.Runs.FollowerTest do
     Tools.terminate_os_process(pid, grace_period: 50)
   end
 
-  test "custom name, get_state call, and ignored info messages", %{
+  test "get_state call and ignored info messages", %{
     backend: backend,
     os_process: os_process,
     run: run
@@ -335,10 +335,8 @@ defmodule Rail.Runs.FollowerTest do
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["5"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
 
-    custom_name = :custom_follower_test_proc
-
     {:ok, follower_pid} =
-      Follower.start_link({%{os_process | os_pid: pid, run: run}, name: custom_name, tail_interval_ms: 50_000})
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run}, tail_interval_ms: 50_000)
 
     # The follower runs in its own process, so lend it this test's DB connection.
 
@@ -362,7 +360,7 @@ defmodule Rail.Runs.FollowerTest do
     Tools.terminate_os_process(pid, grace_period: 50)
   end
 
-  test "stop_os_process/2 accepts %OsProcess{} struct and run_id string", %{
+  test "stop_os_process/2 falls back to terminating the row when no follower is registered", %{
     os_process: os_process,
     run: run
   } do
@@ -376,12 +374,11 @@ defmodule Rail.Runs.FollowerTest do
 
     Sandbox.allow(Repo, self(), follower_pid)
 
-    # Stop via run_id
-    {:ok, stopped} = Follower.stop_os_process(run.id)
+    {:ok, stopped} = Follower.stop_os_process(os_process)
     assert stopped.status == :finished
     refute Tools.os_process_alive?(pid)
 
-    # Stop via %OsProcess{} struct (when follower is not running, falls back)
+    # The follower is gone now, so this second call takes the fallback path.
     {:ok, stopped2} = Follower.stop_os_process(stopped)
     assert stopped2.status == :finished
   end
@@ -399,6 +396,7 @@ defmodule Rail.Runs.FollowerTest do
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
+      |> Repo.preload(role: :backend)
 
     stream = Path.join(tmp_dir, "clean_success.ndjson")
     line = ~s({"type":"result","subtype":"success","is_error":false,"session_id":"sess-clean"}\n)
@@ -458,6 +456,7 @@ defmodule Rail.Runs.FollowerTest do
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
+      |> Repo.preload(role: :backend)
 
     stream1 = Path.join(tmp_dir, "err_only.ndjson")
     line1 = ~s({"type":"result","subtype":"error","is_error":true,"session_id":"sess-err1"}\n)
@@ -503,6 +502,7 @@ defmodule Rail.Runs.FollowerTest do
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
+      |> Repo.preload(role: :backend)
 
     stream2 = Path.join(tmp_dir, "err_both.ndjson")
     line2 = ~s({"type":"result","subtype":"error","is_error":true,"session_id":"sess-both"}\n)
@@ -550,6 +550,7 @@ defmodule Rail.Runs.FollowerTest do
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
+      |> Repo.preload(role: :backend)
 
     stream = Path.join(tmp_dir, "port_exit.ndjson")
     line = ~s({"type":"result","subtype":"success","session_id":"sess-port-exit"}\n)

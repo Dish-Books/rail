@@ -2,6 +2,8 @@ defmodule Rail.Runs.BootTest do
   use Rail.DataCase, async: true
 
   alias Rail.Domain.RunFailure
+  alias Rail.Projects.Schemas.Project
+  alias Rail.Roles
   alias Rail.Runs
   alias Rail.Runs.Boot
   alias Rail.Runs.FollowerSupervisor
@@ -21,11 +23,38 @@ defmodule Rail.Runs.BootTest do
   end
 
   test "adopts live child process, starts Follower and replays stream", %{tmp_dir: tmp_dir} do
+    # Adoption hands the row to a Follower, which reads the stream format off the
+    # run's role, so this run needs a real role behind it.
+    {:ok, backend} =
+      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
+    project =
+      %Project{}
+      |> Project.changeset(%{
+        name: "Boot Project",
+        github_repo: "org/boot-#{System.unique_integer([:positive])}",
+        github_installation_id: System.unique_integer([:positive]),
+        linear_team_id: "team_boot",
+        linear_team_key: "BOO",
+        default_branch: "main",
+        clone_path: Path.join(tmp_dir, "clone")
+      })
+      |> Repo.insert!()
+
+    {:ok, role} =
+      Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
+        stage: :engineer,
+        name: "boot role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the engineer."
+      })
+
     run =
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now(),
         attempt_log_lines: 1

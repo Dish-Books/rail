@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.StopChatTurn do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Runs
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Scope
 
@@ -42,7 +43,10 @@ defmodule Rail.Pipeline.Actions.StopChatTurn do
   end
 
   defp do_stop_chat_turn(%Task{active_chat_role_id: role_id} = task) do
-    Runs.stop_os_process(task.id)
+    case Runs.get_active_os_process(task.id) do
+      %OsProcess{} = os_process -> Runs.stop_os_process(os_process)
+      nil -> :ok
+    end
 
     case Repo.one(from r in Run, where: r.task_id == ^task.id and r.role_id == ^role_id) do
       %Run{} = run ->

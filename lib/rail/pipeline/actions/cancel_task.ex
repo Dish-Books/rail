@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Actions.CancelTask do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Runs
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Scope
 
   @doc """
@@ -46,7 +47,10 @@ defmodule Rail.Pipeline.Actions.CancelTask do
       Rail.Pipeline.stop_chat_turn(task.id)
     end
 
-    Runs.stop_os_process(task.id)
+    case Runs.get_active_os_process(task.id) do
+      %OsProcess{} = os_process -> Runs.stop_os_process(os_process)
+      nil -> :ok
+    end
 
     attrs =
       if task.is_rebasing do

@@ -260,7 +260,10 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
       record_different_role_chat_stop(task.id, stopped_role_id, target_role)
     end
 
-    Runs.stop_os_process(task.id)
+    case Runs.get_active_os_process(task.id) do
+      %OsProcess{} = os_process -> Runs.stop_os_process(os_process)
+      nil -> :ok
+    end
   end
 
   defp record_same_role_chat_stop(task_id, role_id) do
@@ -311,7 +314,10 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
     |> Task.changeset(%{stage_state: :queued, error: nil})
     |> Repo.update!()
 
-    Runs.stop_os_process(task.id)
+    case Runs.get_active_os_process(task.id) do
+      %OsProcess{} = os_process -> Runs.stop_os_process(os_process)
+      nil -> :ok
+    end
   end
 
   defp record_stage_interrupt_event(stage_role, stage_run, target_role) do

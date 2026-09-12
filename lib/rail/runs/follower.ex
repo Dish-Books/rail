@@ -4,7 +4,6 @@ defmodule Rail.Runs.Follower do
   """
   use GenServer, restart: :temporary
 
-  import Ecto.Query
   import Rail.Runs.Utils.GetFollowerPid
   import Rail.Runs.Utils.NewEventState
   import Rail.Runs.Utils.OnOsProcessFinished
@@ -43,43 +42,32 @@ defmodule Rail.Runs.Follower do
 
   @doc """
   Starts a new Follower GenServer.
+
+  `os_process` must carry its `run`, preloaded down to `role: :backend` -- the run
+  seeds the event state and the backend says what stream format to parse.
   """
   def start_link({%OsProcess{} = os_process, opts}) when is_list(opts) do
-    name =
-      case opts[:name] do
-        custom_name when is_tuple(custom_name) or (is_atom(custom_name) and custom_name not in [nil, false]) ->
-          custom_name
-
-        _fallback ->
-          {:via, Registry, {FollowerRegistry, os_process.id}}
-      end
-
+    name = {:via, Registry, {FollowerRegistry, os_process.id}}
     GenServer.start_link(__MODULE__, {os_process, opts}, name: name)
   end
 
   @doc """
   Stops a running process and its follower.
   """
-  def stop_os_process(run_or_id, opts \\ [])
+  def stop_os_process(%OsProcess{} = os_process, opts \\ []) do
+    case get_follower_pid(os_process.id) do
+      pid when is_pid(pid) ->
+        try do
+          GenServer.call(pid, {:stop_os_process, opts}, 10_000)
+          # coveralls-ignore-start (fallback if follower crashes during stop_os_process)
+        catch
+          :exit, _reason ->
+            fallback_stop_os_process(os_process, opts)
+            # coveralls-ignore-stop
+        end
 
-  def stop_os_process(%OsProcess{} = os_process, opts) do
-    do_stop_os_process(os_process, opts)
-  end
-
-  def stop_os_process(id, opts) when is_binary(id) do
-    os_process =
-      Repo.get(OsProcess, id) ||
-        Repo.one(
-          from r in OsProcess,
-            where: (r.run_id == ^id or r.task_id == ^id) and r.status in [:starting, :running],
-            order_by: [desc: r.inserted_at],
-            limit: 1
-        )
-
-    if os_process do
-      do_stop_os_process(os_process, opts)
-    else
-      {:error, :not_found}
+      nil ->
+        fallback_stop_os_process(os_process, opts)
     end
   end
 
@@ -139,9 +127,8 @@ defmodule Rail.Runs.Follower do
 
   @impl true
   def init({%OsProcess{} = os_process, opts}) do
-    %OsProcess{stream_path: stream_path} = os_process
-    run = run_for(os_process)
-    backend = backend_for(run)
+    %OsProcess{stream_path: stream_path, run: %Run{role: %{backend: %Backend{} = backend}} = run} = os_process
+
     tail_interval_ms = Keyword.get(opts, :tail_interval_ms, @default_tail_interval)
     batch_interval_ms = Keyword.get(opts, :batch_interval_ms, @default_batch_interval)
     skip_log_lines = Keyword.get(opts, :skip_log_lines, 0)
@@ -247,16 +234,6 @@ defmodule Rail.Runs.Follower do
     {:noreply, state}
   end
 
-  # The row is the whole brief, so a caller that already holds the run hands it over
-  # loaded rather than making this read it back.
-  defp run_for(%OsProcess{run: %Run{} = run}), do: run
-  defp run_for(%OsProcess{run_id: run_id}), do: Repo.get!(Run, run_id)
-
-  # A role with no backend configured still streams something; claude's format is
-  # what Rail parses by default.
-  defp backend_for(%Run{role: %{backend: %Backend{} = backend}}), do: backend
-  defp backend_for(_unconfigured), do: %Backend{name: :claude}
-
   defp process_incoming_lines(lines, state) do
     Enum.reduce(
       lines,
@@ -306,23 +283,6 @@ defmodule Rail.Runs.Follower do
     Repo.insert_all(RunEvent, entries)
     Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run_id}", {:run_events, run_id, entries})
     entries
-  end
-
-  defp do_stop_os_process(os_process, opts) do
-    case get_follower_pid(os_process.id) do
-      pid when is_pid(pid) ->
-        try do
-          GenServer.call(pid, {:stop_os_process, opts}, 10_000)
-          # coveralls-ignore-start (fallback if follower crashes during stop_os_process)
-        catch
-          :exit, _reason ->
-            fallback_stop_os_process(os_process, opts)
-            # coveralls-ignore-stop
-        end
-
-      nil ->
-        fallback_stop_os_process(os_process, opts)
-    end
   end
 
   defp fallback_stop_os_process(os_process, opts) do

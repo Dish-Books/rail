@@ -30,15 +30,7 @@ defmodule Rail.Runs.Actions.StopOsProcessTest do
 
   test "settles an os process with no live follower", %{run: run, os_process: os_process} do
     assert Runs.is_running?(run.task_id)
-    assert {:ok, %OsProcess{status: :finished}} = Runs.stop_os_process(os_process.id, grace_period: 50)
+    assert {:ok, %OsProcess{status: :finished}} = Runs.stop_os_process(os_process, grace_period: 50)
     refute Runs.is_running?(run.task_id)
-  end
-
-  test "finds the os process by task id", %{run: run} do
-    assert {:ok, %OsProcess{status: :finished}} = Runs.stop_os_process(run.task_id, grace_period: 50)
-  end
-
-  test "returns not_found for an unknown id" do
-    assert {:error, :not_found} = Runs.stop_os_process("osp_nonexistent")
   end
 end
