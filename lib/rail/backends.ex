@@ -4,9 +4,23 @@ defmodule Rail.Backends do
   """
 
   use Rail.PermissionsDecorator
+  use Supervisor
 
   alias Rail.Backends.Actions
   alias Rail.Backends.Schemas
+
+  @doc """
+  Starts the processes this context owns: the server that single-flights usage
+  refreshes and probes on a timer.
+  """
+  def start_link(opts \\ []) do
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  @impl true
+  def init(_opts) do
+    Supervisor.init([Rail.Backends.RefreshServer], strategy: :one_for_one)
+  end
 
   defdelegate list_accounts(scope \\ nil, opts \\ []), to: Actions.ListAccounts
 

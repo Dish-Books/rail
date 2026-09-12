@@ -4,8 +4,23 @@ defmodule Rail.Pipeline do
   Coordinates tasks, stage transitions, questions, plans, queue ordering, and dispatching.
   """
 
+  use Supervisor
+
   alias Rail.Pipeline.Actions
   alias Rail.Pipeline.Utils
+
+  @doc """
+  Starts the processes this context owns: the runner that single-flights the
+  actions in flight on each task.
+  """
+  def start_link(opts \\ []) do
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  @impl true
+  def init(_opts) do
+    Supervisor.init([Rail.Pipeline.TaskActionRunner], strategy: :one_for_one)
+  end
 
   defdelegate settle_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleRun
   defdelegate run_finished(os_process, outcome \\ %{}, opts \\ []), to: Utils.RunFinished

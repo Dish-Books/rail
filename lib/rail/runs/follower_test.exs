@@ -667,6 +667,8 @@ defmodule Rail.Runs.FollowerTest do
         started_at: DateTime.utc_now()
       })
 
+    run = Repo.preload(run, role: :backend)
+
     Runs.append_run_event(run, "Completed task implementation successfully.")
 
     stream = Path.join(tmp_dir, "question_stream.ndjson")
@@ -723,19 +725,21 @@ defmodule Rail.Runs.FollowerTest do
   end
 
   test "chat child exit preserves run status but updates conversation_id if new", %{
+    role: role,
     tmp_dir: tmp_dir
   } do
     task_id = UXID.generate!(prefix: "tsk")
-    role_id = UXID.generate!(prefix: "rol")
 
     {:ok, run} =
       Runs.create_run(%{
         task_id: task_id,
-        role_id: role_id,
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now(),
         conversation_id: "sess-orig"
       })
+
+    run = Repo.preload(run, role: :backend)
 
     Runs.append_run_event(run, "Completed task implementation successfully.")
 
@@ -779,18 +783,19 @@ defmodule Rail.Runs.FollowerTest do
     assert reloaded_rr.conversation_id == "sess-updated"
   end
 
-  test "chat child exit with same conversation_id leaves run unchanged", %{tmp_dir: tmp_dir} do
+  test "chat child exit with same conversation_id leaves run unchanged", %{role: role, tmp_dir: tmp_dir} do
     task_id = UXID.generate!(prefix: "tsk")
-    role_id = UXID.generate!(prefix: "rol")
 
     {:ok, run} =
       Runs.create_run(%{
         task_id: task_id,
-        role_id: role_id,
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now(),
         conversation_id: "sess-same"
       })
+
+    run = Repo.preload(run, role: :backend)
 
     Runs.append_run_event(run, "Completed task implementation successfully.")
 
@@ -833,17 +838,18 @@ defmodule Rail.Runs.FollowerTest do
     assert reloaded_rr.conversation_id == "sess-same"
   end
 
-  test "stage child exit without usage map updates run with nil usage", %{tmp_dir: tmp_dir} do
+  test "stage child exit without usage map updates run with nil usage", %{role: role, tmp_dir: tmp_dir} do
     task_id = UXID.generate!(prefix: "tsk")
-    role_id = UXID.generate!(prefix: "rol")
 
     {:ok, run} =
       Runs.create_run(%{
         task_id: task_id,
-        role_id: role_id,
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
+
+    run = Repo.preload(run, role: :backend)
 
     Runs.append_run_event(run, "Completed task implementation successfully.")
 

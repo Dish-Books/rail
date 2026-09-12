@@ -4,7 +4,28 @@ defmodule Rail.Runs do
   stream following, and run lifecycle management.
   """
 
+  use Supervisor
+
   alias Rail.Runs.Actions
+
+  @doc """
+  Starts the processes this context owns: the registry followers name themselves
+  in, the supervisor they run under, and the boot-time adoption pass.
+  """
+  def start_link(opts \\ []) do
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  @impl true
+  def init(_opts) do
+    children = [
+      {Registry, keys: :unique, name: Rail.Runs.FollowerRegistry},
+      Rail.Runs.FollowerSupervisor,
+      Rail.Runs.Boot
+    ]
+
+    Supervisor.init(children, strategy: :one_for_one)
+  end
 
   # Argv and prompt building
 

@@ -4,6 +4,8 @@ defmodule Rail.Application do
 
   @impl true
   def start(_type, _args) do
+    # Each context supervises its own processes, so the tree lists the contexts and
+    # the infrastructure they all share.
     children =
       [
         Rail.Vault,
@@ -12,12 +14,10 @@ defmodule Rail.Application do
         livesync_child() ++
         [
           {Phoenix.PubSub, name: Rail.PubSub},
-          {Registry, keys: :unique, name: Rail.Runs.FollowerRegistry},
-          Rail.Runs.FollowerSupervisor,
-          Rail.Runs.Boot,
           {Task.Supervisor, name: Rail.TaskSupervisor},
-          Rail.Backends.RefreshServer,
-          Rail.Pipeline.TaskActionRunner,
+          Rail.Runs,
+          Rail.Backends,
+          Rail.Pipeline,
           RailWeb.Endpoint
         ]
 

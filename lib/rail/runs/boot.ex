@@ -9,7 +9,6 @@ defmodule Rail.Runs.Boot do
   import Rail.Runs.Utils.OnOsProcessFinished
   import Rail.Runs.Utils.ParseLine
 
-  alias Ecto.Adapters.SQL
   alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Backends.Schemas.Backend
   alias Rail.Pipeline
