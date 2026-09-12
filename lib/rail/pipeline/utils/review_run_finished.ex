@@ -1,6 +1,6 @@
-defmodule Rail.Pipeline.Actions.SettleReviewRun do
+defmodule Rail.Pipeline.Utils.ReviewRunFinished do
   @moduledoc """
-  Settles a finished review-stage run.
+  Where a finished review-stage run leaves its task.
 
   Review is a gate: a pass sends the change on to QA, changes requested send it
   back to the engineer, and no clear verdict parks it for a human.
@@ -11,8 +11,8 @@ defmodule Rail.Pipeline.Actions.SettleReviewRun do
 
   alias Rail.Runs.Schemas.OsProcess
 
-  @doc "Settles the finished review `run` against `outcome`."
-  def settle_review_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
+  @doc "Finishes the review run that `os_process` belonged to."
+  def finish_review_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
     advance_stage(os_process, opts, &to_qa/3)
   end
 

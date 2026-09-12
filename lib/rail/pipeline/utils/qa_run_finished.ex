@@ -1,6 +1,6 @@
-defmodule Rail.Pipeline.Actions.SettleQaRun do
+defmodule Rail.Pipeline.Utils.QaRunFinished do
   @moduledoc """
-  Settles a finished QA-stage run.
+  Where a finished QA-stage run leaves its task.
 
   QA reports through a manifest in the task's scratch directory. The report lives
   there or nowhere: a run that left no manifest has not reported, whatever its
@@ -19,7 +19,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRun do
   alias Rail.Scope
 
   @doc "Settles the finished QA `run` against `outcome`."
-  def settle_qa_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
+  def finish_qa_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
     advance_stage(os_process, opts, &capture_report/3)
   end
 

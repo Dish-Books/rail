@@ -1,6 +1,8 @@
 defmodule Rail.Pipeline.Actions.SettleRunTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.ProductRunFinished
+
   alias Rail.Domain.TaskUsage
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -112,7 +114,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
 
     assert {:ok, %Task{id: ^task_id, stage: :product, stage_state: :awaiting_approval},
             %Run{status: :finished, exit_code: 0, auto_retries: 0}} =
-             Pipeline.settle_product_run(os_process)
+             finish_product_run(os_process)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}
   end
@@ -160,7 +162,7 @@ defmodule Rail.Pipeline.Actions.SettleRunTest do
     {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{}, %Run{}} =
-             Pipeline.settle_product_run(os_process)
+             finish_product_run(os_process)
 
     assert %Issue{title: ^title_before} = Repo.get!(Issue, issue.id)
   end

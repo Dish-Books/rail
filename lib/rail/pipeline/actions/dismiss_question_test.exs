@@ -5,11 +5,14 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Utils.QuestionQueue
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
   alias Rail.Runs.DetectedQuestion
+  alias Rail.Runs.Schemas.OsProcess
+  alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -84,55 +87,52 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     %{project: project, issue: issue, task: task, run: run, roles: roles}
   end
 
-  test "dismisses a pending question and releases blocked task", %{task: task, run: run} do
+  test "dismissing the only question resumes the run and says it was waved off", %{task: task, run: run} do
     {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
 
-    task = Pipeline.get_task!(system_scope(), task.id)
-    assert task.stage_state == :blocked
-    assert task.question_id == q.id
+    assert Pipeline.get_task!(system_scope(), task.id).stage_state == :blocked
+
+    test_pid = self()
+    run_id = run.id
+
+    expect(Runs, :start_os_process, fn %Run{id: ^run_id} = spawned, argv, _opts ->
+      send(test_pid, {:spawned, argv})
+      {:ok, %OsProcess{is_chat: false, run: spawned, task: task}}
+    end)
 
     assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(q.id)
 
-    reloaded_q = Repo.get!(Question, q.id)
-    assert reloaded_q.status == :dismissed
+    assert QuestionQueue.pending_questions(task.id) == []
+    assert Repo.get!(Question, q.id).delivered_at
 
-    reloaded_task = Repo.get!(Task, task.id)
-    assert reloaded_task.stage_state == :awaiting_approval
-    assert is_nil(reloaded_task.question_id)
+    assert_receive {:spawned, argv}
+    assert Enum.any?(argv, &(&1 =~ "Should we proceed?" and &1 =~ "Dismissed without an answer"))
   end
 
-  test "dismissing the front question hands the human the next one instead of releasing", %{task: task, run: run} do
+  test "dismissing one of a batch leaves the rest and does not resume the run", %{task: task, run: run} do
     {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
     {:ok, second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Ship behind a flag?"})
 
-    assert Repo.get!(Task, task.id).question_id == first.id
+    assert Enum.map(QuestionQueue.pending_questions(task.id), & &1.id) == [first.id, second.id]
 
+    # No spawn is stubbed: resuming the run here would raise on the unexpected call.
     assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(first.id)
 
-    # Still blocked, now on the second question; the stage has not resumed.
-    reloaded_task = Repo.get!(Task, task.id)
-    assert reloaded_task.stage_state == :blocked
-    assert reloaded_task.question_id == second.id
-
-    # Dismissing the last one drains the queue and releases the stage.
-    assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(second.id)
-
-    reloaded_task = Repo.get!(Task, task.id)
-    assert reloaded_task.stage_state == :awaiting_approval
-    assert is_nil(reloaded_task.question_id)
+    assert Repo.get!(Task, task.id).stage_state == :blocked
+    assert Enum.map(QuestionQueue.pending_questions(task.id), & &1.id) == [second.id]
+    refute Repo.get!(Question, first.id).delivered_at
   end
 
-  test "dismisses question without touching task if task was not parked on it", %{task: task, run: run} do
+  test "leaves a task that is no longer parked alone", %{task: task, run: run} do
     {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
 
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{stage_state: :running, question_id: nil})
+    {:ok, task} = Pipeline.update_task(system_scope(), task.id, %{stage_state: :running})
+
+    stub(Runs, :start_os_process, fn _run, _argv, _opts -> {:error, :not_expected} end)
 
     assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(q)
 
-    reloaded_task = Repo.get!(Task, task.id)
-    assert reloaded_task.stage_state == :running
-    assert is_nil(reloaded_task.question_id)
+    assert Repo.get!(Task, task.id).stage_state == :running
   end
 
   test "returns error when dismissing an answered question", %{task: task, run: run, roles: roles} do

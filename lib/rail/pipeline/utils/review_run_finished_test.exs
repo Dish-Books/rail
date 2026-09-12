@@ -1,5 +1,7 @@
-defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
+defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
   use Rail.DataCase, async: true
+
+  import Rail.Pipeline.Utils.ReviewRunFinished
 
   alias Rail.Issues
   alias Rail.Pipeline
@@ -135,7 +137,7 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
               exit_code: 0,
               stage_fingerprint_head_sha: head_sha,
               stage_fingerprint_dirty_digest: dirty_digest
-            }} = Pipeline.settle_review_run(os_process)
+            }} = finish_review_run(os_process)
 
     assert is_binary(head_sha) and head_sha != ""
     assert is_binary(dirty_digest) and dirty_digest != ""
@@ -226,7 +228,7 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
               rework_cycles_by_gate: %{^role_rev_id => 1},
               outstanding_reports: []
             }, %Run{status: :finished}} =
-             Pipeline.settle_review_run(os_process)
+             finish_review_run(os_process)
 
     engineer_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
     assert engineer_run.pending_answer =~ "Findings from Reviewer on the change you just pushed (rework 1 of 5)"
@@ -288,7 +290,7 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
               rework_cycles: 3,
               error: err
             }, %Run{status: :finished}} =
-             Pipeline.settle_review_run(os_process)
+             finish_review_run(os_process)
 
     assert err =~ "Reviewer is still requesting changes after 3 rework cycles."
     assert err =~ "Send back to Engineer to have them addressed, or Skip"
@@ -340,7 +342,7 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
               error: err,
               outstanding_reports: [^role_rev_id]
             }, %Run{status: :finished}} =
-             Pipeline.settle_review_run(os_process)
+             finish_review_run(os_process)
 
     assert err =~ "Reviewer ended without a clear verdict. Read its report, then Send back to Engineer or Skip"
   end
@@ -406,7 +408,7 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
     {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{stage: :qa, stage_state: :queued}, %Run{stage_fingerprint_head_sha: head_sha}} =
-             Pipeline.settle_review_run(os_process)
+             finish_review_run(os_process)
 
     qa_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_qa.id)
     assert qa_run.pending_answer =~ "The change has been reworked and the reviewer has signed off on it again."
@@ -458,7 +460,7 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
     {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{stage: :qa, stage_state: :queued}, %Run{}} =
-             Pipeline.settle_review_run(os_process)
+             finish_review_run(os_process)
 
     assert Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_qa.id) == nil
   end
@@ -523,7 +525,7 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
     {:ok, _st, _srr} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{stage: :engineer, stage_state: :queued}, %Run{status: :finished}} =
-             Pipeline.settle_review_run(os_process)
+             finish_review_run(os_process)
 
     eng_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
     assert eng_run.pending_answer =~ "Old engineer notes\n\nFindings from Reviewer"
@@ -598,7 +600,7 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
     {:ok, _st, _srr} = Pipeline.settle_run(run_2, %{exit_code: 0})
 
     assert {:ok, %Task{stage: :engineer, stage_state: :queued}, %Run{status: :finished}} =
-             Pipeline.settle_review_run(run_2)
+             finish_review_run(run_2)
   end
 
   test "resolve_fingerprint falls back to run fingerprint when worktree_path is not a git repo", %{
@@ -653,6 +655,6 @@ defmodule Rail.Pipeline.Actions.SettleReviewRunTest do
 
     assert {:ok, %Task{stage: :qa},
             %Run{stage_fingerprint_head_sha: "fallback_sha", stage_fingerprint_dirty_digest: "fallback_digest"}} =
-             Pipeline.settle_review_run(os_process)
+             finish_review_run(os_process)
   end
 end

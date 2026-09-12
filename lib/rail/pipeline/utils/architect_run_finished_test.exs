@@ -1,6 +1,7 @@
-defmodule Rail.Pipeline.Actions.SettleArchitectRunTest do
+defmodule Rail.Pipeline.Utils.ArchitectRunFinishedTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.ArchitectRunFinished
   import Rail.Pipeline.Utils.CaptureScratch
 
   alias Rail.Issues
@@ -123,7 +124,7 @@ defmodule Rail.Pipeline.Actions.SettleArchitectRunTest do
 
     assert {:ok, %Task{id: ^task_id, stage_state: :awaiting_approval, retry_after: nil, error: nil},
             %Run{status: :finished, exit_code: 0}} =
-             Pipeline.settle_architect_run(os_process)
+             finish_architect_run(os_process)
   end
 
   test "settles clean exit 0 for architect stage failing when plan file was not written", %{task: task, roles: roles} do
@@ -157,7 +158,7 @@ defmodule Rail.Pipeline.Actions.SettleArchitectRunTest do
     {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{id: ^task_id, stage_state: :failed, error: error_msg}, %Run{status: :finished, exit_code: 0}} =
-             Pipeline.settle_architect_run(os_process)
+             finish_architect_run(os_process)
 
     assert error_msg =~ "without writing a plan"
   end
@@ -209,7 +210,7 @@ defmodule Rail.Pipeline.Actions.SettleArchitectRunTest do
     {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, outcome)
 
     assert {:ok, %Task{id: ^task_id, stage_state: :awaiting_approval}, %Run{id: ^run_id, status: :finished}} =
-             Pipeline.settle_architect_run(os_process)
+             finish_architect_run(os_process)
 
     assert %OsProcess{id: ^os_process_id, status: :finished} = Repo.get!(OsProcess, os_process_id)
     assert %Plan{content: plan_content} = Repo.one(from p in Plan, where: p.task_id == ^task_id)

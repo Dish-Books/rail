@@ -14,7 +14,16 @@ defmodule Rail.Pipeline.Utils.RunFinished do
   reaches its stage.
   """
 
+  import Rail.Pipeline.Utils.ArchitectRunFinished
+  import Rail.Pipeline.Utils.DemoRunFinished
+  import Rail.Pipeline.Utils.DesignRunFinished
+  import Rail.Pipeline.Utils.EngineerRunFinished
+  import Rail.Pipeline.Utils.ProductRunFinished
+  import Rail.Pipeline.Utils.QaLeadRunFinished
+  import Rail.Pipeline.Utils.QaRunFinished
+  import Rail.Pipeline.Utils.RebaseRunFinished
   import Rail.Pipeline.Utils.RegisterAskedQuestions
+  import Rail.Pipeline.Utils.ReviewRunFinished
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -49,13 +58,15 @@ defmodule Rail.Pipeline.Utils.RunFinished do
     end
   end
 
-  defp finish_action(%Task{is_rebasing: true}), do: &Pipeline.settle_rebase_run/3
-  defp finish_action(%Task{stage: :product}), do: &Pipeline.settle_product_run/3
-  defp finish_action(%Task{stage: :design}), do: &Pipeline.settle_design_run/3
-  defp finish_action(%Task{stage: :architect}), do: &Pipeline.settle_architect_run/3
-  defp finish_action(%Task{stage: :engineer}), do: &Pipeline.settle_engineer_run/3
-  defp finish_action(%Task{stage: :review}), do: &Pipeline.settle_review_run/3
-  defp finish_action(%Task{stage: :qa}), do: &Pipeline.settle_qa_run/3
-  defp finish_action(%Task{stage: :qa_lead}), do: &Pipeline.settle_qa_lead_run/3
-  defp finish_action(%Task{stage: :demo}), do: &Pipeline.settle_demo_run/3
+  # The one place left that matches on `task.stage`: everything downstream of it is
+  # per-stage by construction, and no two stages share a finish.
+  defp finish_action(%Task{is_rebasing: true}), do: &finish_rebase_run/3
+  defp finish_action(%Task{stage: :product}), do: &finish_product_run/3
+  defp finish_action(%Task{stage: :design}), do: &finish_design_run/3
+  defp finish_action(%Task{stage: :architect}), do: &finish_architect_run/3
+  defp finish_action(%Task{stage: :engineer}), do: &finish_engineer_run/3
+  defp finish_action(%Task{stage: :review}), do: &finish_review_run/3
+  defp finish_action(%Task{stage: :qa}), do: &finish_qa_run/3
+  defp finish_action(%Task{stage: :qa_lead}), do: &finish_qa_lead_run/3
+  defp finish_action(%Task{stage: :demo}), do: &finish_demo_run/3
 end

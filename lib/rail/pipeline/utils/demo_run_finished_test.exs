@@ -1,6 +1,7 @@
-defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
+defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.DemoRunFinished
   import RailTest.PipelineHelpers
 
   alias Rail.Artifacts
@@ -113,7 +114,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage: :demo, stage_state: :failed, error: err}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(os_process)
+               finish_demo_run(os_process)
 
       assert err =~ "Demo manifest not found at"
     end
@@ -178,7 +179,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage_state: :failed, error: ^expected_err}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(os_process)
+               finish_demo_run(os_process)
     end
 
     test "demo run settlement fails when worktree code outside .rail/ was modified during recording", %{
@@ -246,7 +247,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage_state: :failed, error: ^expected_err}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(os_process)
+               finish_demo_run(os_process)
     end
 
     test "demo run settlement succeeds with the recording written to scratch", %{task: task, roles: roles} do
@@ -320,7 +321,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(os_process)
+               finish_demo_run(os_process)
 
       assert %Demo{version: 1, outcome: "recorded", stale: false} =
                Repo.one(from d in Demo, where: d.task_id == ^task.id)
@@ -408,7 +409,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(os_process)
+               finish_demo_run(os_process)
 
       demos = Repo.all(from d in Demo, where: d.task_id == ^task.id, order_by: [asc: d.version])
       assert length(demos) == 2
@@ -468,7 +469,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(os_process)
+               finish_demo_run(os_process)
 
       assert %Demo{version: 1, outcome: "declined", note: "Not suitable for demo recording"} =
                Repo.one(from d in Demo, where: d.task_id == ^task.id)
@@ -524,7 +525,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage: :demo, stage_state: :failed, error: err}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(os_process)
+               finish_demo_run(os_process)
 
       assert err =~ "UI timed out during demo recording"
 
@@ -564,7 +565,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 1, error: "Demo process crashed"})
 
       assert {:ok, %Task{stage: :demo, stage_state: :failed, error: "Demo process crashed"}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(os_process)
+               finish_demo_run(os_process)
     end
 
     test "supports settling demo with scratch_path and scratch_dir options", %{project: project, task: task, roles: roles} do
@@ -659,7 +660,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _st, _srr} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(os_process)
+               finish_demo_run(os_process)
 
       LinearMock.mock_create_issue_success(%{
         "id" => "lin_task_settle_run_14511",
@@ -708,7 +709,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _st, _srr} = Pipeline.settle_run(run_2, %{exit_code: 0})
 
       assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(run_2)
+               finish_demo_run(run_2)
     end
 
     test "fails when manifest format is invalid during capture", %{task: task, roles: roles} do
@@ -754,7 +755,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(os_process)
+               finish_demo_run(os_process)
 
       assert err =~ "segments"
     end
@@ -825,7 +826,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(os_process)
+               finish_demo_run(os_process)
 
       assert byte_size(err) > 0
     end
@@ -911,7 +912,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(os_process)
+               finish_demo_run(os_process)
     end
 
     test "handles non-git worktree directory gracefully during demo settlement", %{task: task, roles: roles} do
@@ -983,7 +984,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(os_process)
+               finish_demo_run(os_process)
     end
 
     test "resolves demo target from scratch_dir when task has no worktree_path", %{task: task, roles: roles} do
@@ -1050,7 +1051,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(os_process)
+               finish_demo_run(os_process)
     end
 
     test "supports explicit criteria in opts when settling demo", %{task: task, roles: roles} do
@@ -1120,7 +1121,7 @@ defmodule Rail.Pipeline.Actions.SettleDemoRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage: :ready_to_merge}, %Run{status: :finished}} =
-               Pipeline.settle_demo_run(os_process, %{}, criteria: ["Explicit criterion"])
+               finish_demo_run(os_process, %{}, criteria: ["Explicit criterion"])
     end
   end
 end

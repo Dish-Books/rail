@@ -1,6 +1,6 @@
-defmodule Rail.Pipeline.Actions.SettleDesignRun do
+defmodule Rail.Pipeline.Utils.DesignRunFinished do
   @moduledoc """
-  Settles a finished design-stage run.
+  Where a finished design-stage run leaves its task.
 
   The designer reports through a manifest in the task's scratch directory. A
   revision has to keep the direction a human already picked and move the version
@@ -19,8 +19,8 @@ defmodule Rail.Pipeline.Actions.SettleDesignRun do
   alias Rail.Runs.Schemas.Run
   alias Rail.Scope
 
-  @doc "Settles the finished design `run` against `outcome`."
-  def settle_design_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
+  @doc "Finishes the design run that `os_process` belonged to."
+  def finish_design_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
     advance_stage(os_process, opts, &capture_design/3)
   end
 

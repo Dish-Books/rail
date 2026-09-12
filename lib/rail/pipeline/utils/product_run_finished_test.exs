@@ -1,6 +1,7 @@
-defmodule Rail.Pipeline.Actions.SettleProductRunTest do
+defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.ProductRunFinished
   import Rail.Pipeline.Utils.QuestionQueue
 
   alias Rail.Domain.TaskUsage
@@ -119,7 +120,7 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
 
     Repo.delete!(run)
 
-    assert {:error, :invalid_state} = Pipeline.settle_product_run(os_process)
+    assert {:error, :invalid_state} = finish_product_run(os_process)
   end
 
   test "parks a clean exit at awaiting_approval and broadcasts", %{task: task, role: role} do
@@ -132,7 +133,7 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
 
     assert {:ok, %Task{id: ^task_id, stage: :product, stage_state: :awaiting_approval, error: nil, retry_after: nil},
             %Run{status: :finished, exit_code: 0, auto_retries: 0}} =
-             Pipeline.settle_product_run(os_process)
+             finish_product_run(os_process)
 
     assert %OsProcess{status: :finished} = Repo.get!(OsProcess, os_process.id)
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :run_settled}}
@@ -148,7 +149,7 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
     {:ok, _settled, _settled_rr} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{stage_state: :awaiting_approval}, %Run{}} =
-             Pipeline.settle_product_run(os_process)
+             finish_product_run(os_process)
   end
 
   test "writes nothing to Linear: the ticket stays in scratch until approval", %{
@@ -170,7 +171,7 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
 
     # No Linear mock is set up: a push would raise on the unexpected request.
     assert {:ok, %Task{stage_state: :awaiting_approval}, %Run{}} =
-             Pipeline.settle_product_run(os_process)
+             finish_product_run(os_process)
 
     assert %Issue{title: ^title_before} = Repo.get!(Issue, issue.id)
   end
@@ -188,7 +189,7 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
     {:ok, _settled, _settled_rr} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{stage_state: :blocked}, %Run{status: :blocked_on_input, exit_code: 0}} =
-             Pipeline.settle_product_run(os_process)
+             finish_product_run(os_process)
 
     assert Enum.map(pending_questions(task.id), & &1.id) == [expected_q_id]
   end
@@ -203,7 +204,7 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
 
     assert {:ok, %Task{id: ^task_id, stage_state: :queued, retry_after: %DateTime{}, error: ^transient_err},
             %Run{status: :finished, auto_retries: 1, exit_code: 1}} =
-             Pipeline.settle_product_run(os_process)
+             finish_product_run(os_process)
   end
 
   test "fails a transient failure once auto retries are exhausted", %{task: task, role: role} do
@@ -215,7 +216,7 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
 
     assert {:ok, %Task{stage_state: :failed, retry_after: nil, error: ^transient_err},
             %Run{status: :finished, auto_retries: 2, exit_code: 1}} =
-             Pipeline.settle_product_run(os_process)
+             finish_product_run(os_process)
   end
 
   test "fails a permanent failure immediately", %{task: task, role: role} do
@@ -225,7 +226,7 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
 
     assert {:ok, %Task{stage_state: :failed, retry_after: nil, error: "Exited with code 2"},
             %Run{status: :finished, exit_code: 2}} =
-             Pipeline.settle_product_run(os_process)
+             finish_product_run(os_process)
   end
 
   test "records usage from the outcome", %{task: task, role: role} do
@@ -235,7 +236,7 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
     {:ok, _settled, _settled_rr} = Pipeline.settle_run(os_process, %{exit_code: 0, usage: usage})
 
     assert {:ok, %Task{stage_state: :awaiting_approval}, %Run{status: :finished, exit_code: 0}} =
-             Pipeline.settle_product_run(os_process)
+             finish_product_run(os_process)
 
     assert %Run{usage: %TaskUsage{input_tokens: 11, output_tokens: 22}} =
              Repo.get!(Run, os_process.run_id)
@@ -251,6 +252,6 @@ defmodule Rail.Pipeline.Actions.SettleProductRunTest do
     {:ok, _settled, _settled_rr} = Pipeline.settle_run(os_process)
 
     assert {:ok, %Task{stage_state: :failed, error: "permanent boom"}, %Run{status: :finished, exit_code: 1}} =
-             Pipeline.settle_product_run(os_process)
+             finish_product_run(os_process)
   end
 end

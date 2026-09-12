@@ -1,5 +1,7 @@
-defmodule Rail.Pipeline.Actions.SettleQaLeadRunTest do
+defmodule Rail.Pipeline.Utils.QaLeadRunFinishedTest do
   use Rail.DataCase, async: true
+
+  import Rail.Pipeline.Utils.QaLeadRunFinished
 
   alias Rail.Issues
   alias Rail.Pipeline
@@ -128,7 +130,7 @@ defmodule Rail.Pipeline.Actions.SettleQaLeadRunTest do
               stage: :demo,
               stage_state: :queued
             }, %Run{status: :finished}} =
-             Pipeline.settle_qa_lead_run(os_process)
+             finish_qa_lead_run(os_process)
   end
 
   test "settles clean exit 0 for qa_lead stage with passed verdict advancing to ready_to_merge if no demo role", %{
@@ -181,6 +183,6 @@ defmodule Rail.Pipeline.Actions.SettleQaLeadRunTest do
               stage: :ready_to_merge,
               stage_state: :awaiting_approval
             }, %Run{status: :finished}} =
-             Pipeline.settle_qa_lead_run(os_process)
+             finish_qa_lead_run(os_process)
   end
 end

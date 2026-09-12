@@ -1,7 +1,10 @@
-defmodule Rail.Pipeline.Actions.SettleQaRunTest do
+defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
   use Rail.DataCase, async: true
 
   import Rail.Pipeline.Utils.PrepareScratch
+  import Rail.Pipeline.Utils.QaLeadRunFinished
+  import Rail.Pipeline.Utils.QaRunFinished
+  import Rail.Pipeline.Utils.ReviewRunFinished
   import RailTest.PipelineHelpers
 
   alias Rail.Artifacts.Schemas.QaReport
@@ -149,7 +152,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
               stage_state: :queued,
               outstanding_reports: [^role_qa_id]
             }, %Run{status: :finished}} =
-             Pipeline.settle_qa_run(os_process)
+             finish_qa_run(os_process)
   end
 
   test "settles clean exit 0 for qa stage with valid manifest capturing report and advancing to qa_lead", %{
@@ -274,7 +277,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
               stage_state: :queued,
               outstanding_reports: [^role_qa_id]
             }, %Run{status: :finished, exit_code: 0}} =
-             Pipeline.settle_qa_run(os_process)
+             finish_qa_run(os_process)
 
     assert %QaReport{
              task_id: ^task_id,
@@ -346,7 +349,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
               stage_state: :failed,
               error: err_msg
             }, %Run{status: :finished}} =
-             Pipeline.settle_qa_run(os_process)
+             finish_qa_run(os_process)
 
     assert err_msg =~ "Failed to parse QA manifest"
   end
@@ -402,7 +405,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
               stage_state: :failed,
               error: err_msg
             }, %Run{status: :finished}} =
-             Pipeline.settle_qa_run(os_process)
+             finish_qa_run(os_process)
 
     assert err_msg =~ "QA left no manifest"
   end
@@ -458,7 +461,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
     {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{stage: :qa_lead}, %Run{}} =
-             Pipeline.settle_qa_run(os_process)
+             finish_qa_run(os_process)
 
     assert %QaReport{commit: "scratch_sha"} = Repo.one(from q in QaReport, where: q.task_id == ^task.id)
   end
@@ -561,7 +564,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
               stage_state: :queued,
               rework_cycles: 1
             }, %Run{status: :finished}} =
-             Pipeline.settle_qa_run(os_process)
+             finish_qa_run(os_process)
 
     assert %QaReport{commit: "fail_qa_commit"} = Repo.one(from q in QaReport, where: q.task_id == ^task_id)
 
@@ -658,7 +661,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
               stage_state: :failed,
               error: err_msg
             }, %Run{status: :finished}} =
-             Pipeline.settle_qa_run(os_process)
+             finish_qa_run(os_process)
 
     assert err_msg =~ "linear_api_error"
   end
@@ -736,7 +739,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
     {:ok, _st, _srr} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{stage: :qa_lead, stage_state: :queued} = task_lead_queued, _rr} =
-             Pipeline.settle_qa_run(os_process)
+             finish_qa_run(os_process)
 
     # Step 2: Scratch prepare for QA Lead
     lead_scratch_dir = create_temp_git_repo()
@@ -775,7 +778,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
     {:ok, _st, _srr} = Pipeline.settle_run(run_2, %{exit_code: 0})
 
     assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, _rr2} =
-             Pipeline.settle_qa_lead_run(run_2)
+             finish_qa_lead_run(run_2)
   end
 
   test "settles gate with changes_requested parking for human when global rework ceiling is reached", %{
@@ -847,7 +850,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
               rework_cycles: 5,
               error: err
             }, %Run{status: :finished}} =
-             Pipeline.settle_qa_run(os_process)
+             finish_qa_run(os_process)
 
     assert err =~ "QA Tester is still requesting changes after 1 rework cycle."
   end
@@ -930,7 +933,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
     {:ok, _st, _srr} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{stage: :qa_lead, stage_state: :queued}, %Run{stage_fingerprint_head_sha: head_sha}} =
-             Pipeline.settle_qa_run(os_process)
+             finish_qa_run(os_process)
 
     lead_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_lead.id)
 
@@ -1002,7 +1005,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
     {:ok, _st, _srr} = Pipeline.settle_run(run_4, %{exit_code: 0})
 
     assert {:ok, %Task{stage: :demo, stage_state: :queued}, %Run{stage_fingerprint_head_sha: head_sha2}} =
-             Pipeline.settle_qa_lead_run(run_4)
+             finish_qa_lead_run(run_4)
 
     demo_run = Repo.one(from r in Run, where: r.task_id == ^task_id2 and r.role_id == ^role_demo.id)
     assert demo_run.pending_answer =~ "The change has been reworked and the previous gate has signed off on it again."
@@ -1078,7 +1081,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
     {:ok, _st, _srr} = Pipeline.settle_run(run_4, %{exit_code: 0})
 
     assert {:ok, %Task{stage: :qa, stage_state: :queued}, %Run{status: :finished}} =
-             Pipeline.settle_review_run(run_4)
+             finish_review_run(run_4)
 
     # Part D: Gate unclear with unknown role ID falls back to to_string(role_id)
     unknown_role_id = "rol_unknown_gate"
@@ -1109,7 +1112,7 @@ defmodule Rail.Pipeline.Actions.SettleQaRunTest do
     {:ok, _st, _srr} = Pipeline.settle_run(run_4, %{exit_code: 0})
 
     assert {:ok, %Task{stage_state: :awaiting_approval, error: err}, %Run{status: :finished}} =
-             Pipeline.settle_review_run(run_4)
+             finish_review_run(run_4)
 
     assert err =~ "rol_unknown_gate ended without a clear verdict."
   end

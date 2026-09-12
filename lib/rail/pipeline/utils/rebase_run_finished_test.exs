@@ -1,6 +1,7 @@
-defmodule Rail.Pipeline.Actions.SettleRebaseRunTest do
+defmodule Rail.Pipeline.Utils.RebaseRunFinishedTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.RebaseRunFinished
   import RailTest.Mocks.GitHub
 
   alias Rail.Issues
@@ -116,7 +117,7 @@ defmodule Rail.Pipeline.Actions.SettleRebaseRunTest do
               stage_state: :awaiting_approval,
               stage_state_before_rebase: nil
             }, %Run{status: :finished, exit_code: 0, auto_retries: 0}} =
-             Pipeline.settle_rebase_run(os_process)
+             finish_rebase_run(os_process)
   end
 
   test "settling clean exit 0 for rebasing task restores previous state and refreshes mergeability", %{
@@ -169,7 +170,7 @@ defmodule Rail.Pipeline.Actions.SettleRebaseRunTest do
               stage_state_before_rebase: nil,
               mergeability: :mergeable
             }, %Run{status: :finished}} =
-             Pipeline.settle_rebase_run(os_process, %{}, token: "tok_test")
+             finish_rebase_run(os_process, %{}, token: "tok_test")
   end
 
   test "settling non-zero exit for rebasing task preserves is_rebasing for retries", %{task: task, roles: roles} do
@@ -211,7 +212,7 @@ defmodule Rail.Pipeline.Actions.SettleRebaseRunTest do
               stage_state: :failed,
               error: "Permanent error"
             }, %Run{status: :finished}} =
-             Pipeline.settle_rebase_run(os_process)
+             finish_rebase_run(os_process)
   end
 
   test "settling clean exit for rebasing task falls back to updated_task if refresh_mergeability fails", %{
@@ -264,6 +265,6 @@ defmodule Rail.Pipeline.Actions.SettleRebaseRunTest do
               stage_state_before_rebase: nil,
               mergeability: :unknown
             }, %Run{status: :finished}} =
-             Pipeline.settle_rebase_run(os_process, %{}, token: "tok_test")
+             finish_rebase_run(os_process, %{}, token: "tok_test")
   end
 end

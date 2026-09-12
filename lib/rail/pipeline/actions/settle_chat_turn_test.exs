@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.EngineerRunFinished
   import RailTest.PipelineHelpers
 
   alias Rail.Artifacts.Schemas.Design
@@ -558,7 +559,7 @@ defmodule Rail.Pipeline.Actions.SettleChatTurnTest do
     {:ok, _settled, _settled_rr} = Pipeline.settle_run(stage_run, outcome, async: false)
 
     assert {:ok, %Task{stage: :review, stage_state: :queued}, %Run{}} =
-             Pipeline.settle_engineer_run(stage_run, %{}, async: false)
+             finish_engineer_run(stage_run, %{}, async: false)
 
     refreshed_task = Repo.get!(Task, task_id)
     assert refreshed_task.active_chat_role_id == rev_role_id

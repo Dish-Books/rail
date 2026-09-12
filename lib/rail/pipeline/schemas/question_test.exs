@@ -8,7 +8,6 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Roles.Schemas.Role
   alias Rail.Runs
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -56,12 +55,30 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
-    %{backend: backend, project: project, issue: issue, task: task}
+    {:ok, role} =
+      Roles.create_role(scope, project, %{
+        backend_id: backend.id,
+        stage: :product,
+        name: "product role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the product agent."
+      })
+
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    %{backend: backend, project: project, issue: issue, task: task, run: run}
   end
 
   test "changeset validates required fields" do
     assert %{
              task_id: ["can't be blank"],
+             run_id: ["can't be blank"],
              prompt: ["can't be blank"]
            } = errors_on(Question.changeset(%Question{}, %{}))
 
@@ -70,8 +87,9 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
            } = errors_on(Question.changeset(%Question{}, %{status: nil}))
   end
 
-  test "changeset accepts valid attributes and sets defaults", %{task: task} do
+  test "changeset accepts valid attributes and sets defaults", %{task: task, run: run} do
     attrs = %{
+      run_id: run.id,
       prompt: "Which approach should we take?",
       options: ["Approach 1", "Approach 2"],
       context_summary: "Detailed summary context",
@@ -119,34 +137,18 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
     refute Question.resolved?(123)
   end
 
-  test "validates foreign key on task_id", %{task: _task} do
+  test "validates foreign key on task_id", %{run: run} do
     assert {:error, %{errors: [task_id: {"does not exist", _details}]}} =
              %Question{}
              |> Question.changeset(
-               %{prompt: "Missing task prompt"},
+               %{prompt: "Missing task prompt", run_id: run.id},
                "tsk_000000000000000000000000"
              )
              |> Repo.insert()
   end
 
-  test "preloads belongs_to task and run", %{backend: backend, task: task} do
+  test "preloads belongs_to task and run", %{task: task, run: %Run{id: run_id} = run} do
     %Task{id: task_id} = task = task
-
-    {:ok, %Role{} = role} =
-      Roles.create_role(system_scope(), task.project_id, %{
-        backend_id: backend.id,
-        name: "Role 7502",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are an expert agent for role 7502."
-      })
-
-    {:ok, %Run{id: run_id} = run} =
-      Runs.create_run(%{
-        task_id: task.id,
-        role_id: role.id,
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
 
     question =
       Repo.insert!(

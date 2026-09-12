@@ -1,6 +1,7 @@
-defmodule Rail.Pipeline.Actions.SettleEngineerRunTest do
+defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.EngineerRunFinished
   import Rail.Pipeline.Utils.QuestionQueue
 
   alias Rail.Issues
@@ -110,7 +111,7 @@ defmodule Rail.Pipeline.Actions.SettleEngineerRunTest do
     {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{id: ^task_id, stage: :review, stage_state: :queued}, %Run{status: :finished, exit_code: 0}} =
-             Pipeline.settle_engineer_run(os_process)
+             finish_engineer_run(os_process)
   end
 
   test "handles transient failure with retry backoff when auto retries remain", %{task: task, roles: roles} do
@@ -153,7 +154,7 @@ defmodule Rail.Pipeline.Actions.SettleEngineerRunTest do
               retry_after: %DateTime{},
               error: ^transient_err
             }, %Run{status: :finished, auto_retries: 1, exit_code: 1}} =
-             Pipeline.settle_engineer_run(os_process)
+             finish_engineer_run(os_process)
   end
 
   test "handles transient failure marking failed when max auto retries are exhausted", %{task: task, roles: roles} do
@@ -191,7 +192,7 @@ defmodule Rail.Pipeline.Actions.SettleEngineerRunTest do
 
     assert {:ok, %Task{id: ^task_id, stage_state: :failed, retry_after: nil, error: ^transient_err},
             %Run{status: :finished, auto_retries: 2, exit_code: 1}} =
-             Pipeline.settle_engineer_run(os_process)
+             finish_engineer_run(os_process)
   end
 
   test "handles permanent failure immediately marking task and run as failed", %{task: task, roles: roles} do
@@ -229,7 +230,7 @@ defmodule Rail.Pipeline.Actions.SettleEngineerRunTest do
 
     assert {:ok, %Task{id: ^task_id, stage_state: :failed, error: ^perm_err},
             %Run{status: :finished, auto_retries: 0, exit_code: 1}} =
-             Pipeline.settle_engineer_run(os_process)
+             finish_engineer_run(os_process)
   end
 
   test "settle_run preserves blocked state when task was already blocked on question", %{task: task, roles: roles} do
@@ -268,7 +269,7 @@ defmodule Rail.Pipeline.Actions.SettleEngineerRunTest do
     {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
     assert {:ok, %Task{stage: :engineer, stage_state: :blocked}, %Run{status: :blocked_on_input, exit_code: 0}} =
-             Pipeline.settle_engineer_run(os_process)
+             finish_engineer_run(os_process)
 
     assert Enum.map(pending_questions(task.id), & &1.id) == [expected_q_id]
   end

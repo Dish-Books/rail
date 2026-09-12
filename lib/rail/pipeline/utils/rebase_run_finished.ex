@@ -1,6 +1,6 @@
-defmodule Rail.Pipeline.Actions.SettleRebaseRun do
+defmodule Rail.Pipeline.Utils.RebaseRunFinished do
   @moduledoc """
-  Settles a finished rebase run.
+  Where a finished rebase run leaves its task.
 
   A rebase is the engineer role doing a detour, so settling it restores the stage
   the task was parked at before the rebase started rather than advancing anything.
@@ -14,8 +14,8 @@ defmodule Rail.Pipeline.Actions.SettleRebaseRun do
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
 
-  @doc "Settles the finished rebase `run` against `outcome`."
-  def settle_rebase_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
+  @doc "Finishes the rebase run that `os_process` belonged to."
+  def finish_rebase_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
     # A rebase changes whether the branch merges, so the answer Rail is holding
     # for that is stale the moment one lands.
     with {:ok, task, %Run{exit_code: 0} = run} <- advance_stage(os_process, opts, &restore_stage_state/3) do

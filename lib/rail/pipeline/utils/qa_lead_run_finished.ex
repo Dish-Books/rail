@@ -1,6 +1,6 @@
-defmodule Rail.Pipeline.Actions.SettleQaLeadRun do
+defmodule Rail.Pipeline.Utils.QaLeadRunFinished do
   @moduledoc """
-  Settles a finished QA lead-stage run.
+  Where a finished QA lead-stage run leaves its task.
 
   QA lead is the last gate: a pass goes to the demo stage when the project has a
   demo role, and straight to the merge when it does not.
@@ -14,7 +14,7 @@ defmodule Rail.Pipeline.Actions.SettleQaLeadRun do
   alias Rail.Runs.Schemas.OsProcess
 
   @doc "Settles the finished QA lead `run` against `outcome`."
-  def settle_qa_lead_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
+  def finish_qa_lead_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
     advance_stage(os_process, opts, &to_demo_or_merge/3)
   end
 

@@ -1,6 +1,6 @@
-defmodule Rail.Pipeline.Actions.SettleEngineerRun do
+defmodule Rail.Pipeline.Utils.EngineerRunFinished do
   @moduledoc """
-  Settles a finished engineer-stage run.
+  Where a finished engineer-stage run leaves its task.
 
   The engineer produces no artifact Rail reads; a clean exit simply queues the
   review gate on what was pushed.
@@ -12,8 +12,8 @@ defmodule Rail.Pipeline.Actions.SettleEngineerRun do
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
 
-  @doc "Settles the finished engineer `run` against `outcome`."
-  def settle_engineer_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
+  @doc "Finishes the engineer run that `os_process` belonged to."
+  def finish_engineer_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
     advance_stage(os_process, opts, &queue_review/3)
   end
 

@@ -1,6 +1,7 @@
-defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
+defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.DesignRunFinished
   import RailTest.PipelineHelpers
 
   alias Rail.Artifacts
@@ -109,7 +110,7 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
 
     {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process)
 
-    assert {:ok, _task, _run} = Pipeline.settle_design_run(os_process)
+    assert {:ok, _task, _run} = finish_design_run(os_process)
     assert %OsProcess{id: ^os_process_id, status: :finished} = Repo.get!(OsProcess, os_process_id)
   end
 
@@ -145,7 +146,7 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage: :design, stage_state: :failed, error: err}, %Run{status: :finished}} =
-               Pipeline.settle_design_run(os_process)
+               finish_design_run(os_process)
 
       assert err =~ "No design manifest found at"
     end
@@ -224,7 +225,7 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage: :design, stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
-               Pipeline.settle_design_run(os_process, %{}, url_probe: fn _uri -> true end)
+               finish_design_run(os_process, %{}, url_probe: fn _uri -> true end)
 
       designs = Repo.all(from d in Rail.Artifacts.Schemas.Design, where: d.task_id == ^task.id)
       assert length(designs) == 1
@@ -319,7 +320,7 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
-               Pipeline.settle_design_run(os_process, %{}, url_probe: fn _uri -> true end)
+               finish_design_run(os_process, %{}, url_probe: fn _uri -> true end)
 
       assert err =~ "Manifest missing picked direction: dir-1"
     end
@@ -416,7 +417,7 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
-               Pipeline.settle_design_run(os_process, %{}, url_probe: fn _uri -> true end)
+               finish_design_run(os_process, %{}, url_probe: fn _uri -> true end)
 
       assert err =~ "Manifest version must be incremented after a pick or revision."
     end
@@ -513,7 +514,7 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
-               Pipeline.settle_design_run(os_process, %{}, url_probe: fn _uri -> true end)
+               finish_design_run(os_process, %{}, url_probe: fn _uri -> true end)
 
       assert err =~ "Design manifest is missing pickedKey (expected \"dir-1\")."
     end
@@ -610,7 +611,7 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
-               Pipeline.settle_design_run(os_process, %{}, url_probe: fn _uri -> true end)
+               finish_design_run(os_process, %{}, url_probe: fn _uri -> true end)
 
       assert err =~ "Design manifest pickedKey (dir-2) does not match chosen direction (dir-1)."
     end
@@ -710,7 +711,7 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
-               Pipeline.settle_design_run(os_process, %{}, url_probe: fn _uri -> true end)
+               finish_design_run(os_process, %{}, url_probe: fn _uri -> true end)
     end
 
     test "supports settling with scratch_dir and valid transition", %{task: task, roles: roles} do
@@ -808,7 +809,7 @@ defmodule Rail.Pipeline.Actions.SettleDesignRunTest do
       {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
 
       assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
-               Pipeline.settle_design_run(os_process, %{}, url_probe: fn _uri -> true end)
+               finish_design_run(os_process, %{}, url_probe: fn _uri -> true end)
     end
   end
 end

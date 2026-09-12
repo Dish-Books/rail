@@ -31,18 +31,6 @@ defmodule Rail.Pipeline do
   defdelegate run_finished(os_process, outcome \\ %{}, opts \\ []), to: Utils.RunFinished
   defdelegate send_run_message(run, text, opts \\ []), to: Utils.SendRunMessage
 
-  # TODO: I believe these are all just utils and don't need to be available outside of the pipeline context
-  # also change them be called finish_*_run
-  defdelegate settle_product_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleProductRun
-  defdelegate settle_design_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleDesignRun
-  defdelegate settle_architect_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleArchitectRun
-  defdelegate settle_engineer_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleEngineerRun
-  defdelegate settle_review_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleReviewRun
-  defdelegate settle_qa_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleQaRun
-  defdelegate settle_qa_lead_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleQaLeadRun
-  defdelegate settle_demo_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleDemoRun
-  defdelegate settle_rebase_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleRebaseRun
-
   defdelegate parse_stage_verdict(run_or_id), to: Actions.ParseStageVerdict
 
   defdelegate approve_product_task(task), to: Actions.ApproveProductTask
@@ -115,7 +103,6 @@ defmodule Rail.Pipeline do
 
   defdelegate dismiss_question(scope, question_or_id), to: Actions.DismissQuestion
   defdelegate dismiss_question(question_or_id), to: Actions.DismissQuestion
-
 
   defdelegate list_questions(scope, target_or_opts, opts), to: Actions.ListQuestions
   defdelegate list_questions(scope_or_target, target_or_opts), to: Actions.ListQuestions

@@ -1,6 +1,6 @@
-defmodule Rail.Pipeline.Actions.SettleDemoRun do
+defmodule Rail.Pipeline.Utils.DemoRunFinished do
   @moduledoc """
-  Settles a finished demo-stage run.
+  Where a finished demo-stage run leaves its task.
 
   The recording is only evidence if the worktree it was made from has not moved
   since, so that is checked before anything is captured. A manifest that reports
@@ -21,8 +21,8 @@ defmodule Rail.Pipeline.Actions.SettleDemoRun do
   alias Rail.Scope
   alias Rail.Users.Schemas.User
 
-  @doc "Settles the finished demo `run` against `outcome`."
-  def settle_demo_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
+  @doc "Finishes the demo run that `os_process` belonged to."
+  def finish_demo_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
     advance_stage(os_process, opts, &capture_demo/3)
   end
 

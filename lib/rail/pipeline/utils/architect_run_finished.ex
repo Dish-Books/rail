@@ -1,6 +1,6 @@
-defmodule Rail.Pipeline.Actions.SettleArchitectRun do
+defmodule Rail.Pipeline.Utils.ArchitectRunFinished do
   @moduledoc """
-  Settles a finished architect-stage run.
+  Where a finished architect-stage run leaves its task.
 
   The architect's ticket edits and its plan file are captured out of scratch here.
   A run that exits cleanly without leaving a plan has not done the job, so the
@@ -17,8 +17,8 @@ defmodule Rail.Pipeline.Actions.SettleArchitectRun do
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
 
-  @doc "Settles the finished architect `run` against `outcome`."
-  def settle_architect_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
+  @doc "Finishes the architect run that `os_process` belonged to."
+  def finish_architect_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
     advance_stage(os_process, opts, &capture_plan/3)
   end
 
