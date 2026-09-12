@@ -1,11 +1,13 @@
 defmodule Rail.Pipeline.Actions.DismissQuestion do
   @moduledoc """
-  Action that dismisses a pending agent question.
-  Updates the question status to `:dismissed`. If the task was parked on this question,
-  the next one in the queue takes its place; the blocked stage is only released, via
-  `Rail.Pipeline.release_blocked_stage/2`, once nothing is pending.
+  Dismisses a pending agent question: the human saw it and is not answering it.
+
+  Dismissing one of a batch leaves the rest, and the next in the queue goes in front.
+  Dismissing the last of them ends the round like answering it would, so the agent is
+  resumed with the answers it did get and told which questions were waved off.
   """
 
+  import Rail.Pipeline.Utils.DeliverResolvedRound
   import Rail.Pipeline.Utils.QuestionQueue
 
   alias Rail.Pipeline
@@ -21,7 +23,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestion do
     with :ok <- authorize_scope(scope),
          %Question{} = question <- resolve_question(question_or_id),
          :ok <- validate_pending(question) do
-      do_dismiss_question(scope, question)
+      do_dismiss_question(question)
     else
       {:error, reason} -> {:error, reason}
       nil -> {:error, :not_found}
@@ -39,23 +41,21 @@ defmodule Rail.Pipeline.Actions.DismissQuestion do
   defp validate_pending(%Question{status: :pending}), do: :ok
   defp validate_pending(%Question{}), do: {:error, :already_resolved}
 
-  defp do_dismiss_question(scope, %Question{} = question) do
+  defp do_dismiss_question(%Question{} = question) do
     {:ok, updated_question} =
       question
       |> Question.changeset(%{status: :dismissed})
       |> Repo.update()
 
     case Repo.get(Task, updated_question.task_id) do
-      %Task{} = task -> resolve_front_of_queue(scope, task)
+      %Task{} = task -> resolve_front_of_queue(task)
       nil -> :ok
     end
 
     {:ok, updated_question}
   end
 
-  # Dismissing one of a batch leaves the rest: the stage is only released once the
-  # whole queue has drained.
-  defp resolve_front_of_queue(scope, %Task{} = task) do
+  defp resolve_front_of_queue(%Task{} = task) do
     case next_pending_question(task.id) do
       %Question{} = next_question ->
         Pipeline.broadcast_pipeline_changed(%{
@@ -65,7 +65,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestion do
         })
 
       nil ->
-        Pipeline.release_blocked_stage(scope, task)
+        deliver_resolved_round(task)
     end
   end
 

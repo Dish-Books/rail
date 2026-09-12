@@ -369,7 +369,6 @@ defmodule RailWeb.TaskDetailLive do
             <!-- Task Actions Matrix -->
             <.task_actions
               task={@task}
-              pending_questions={@pending_questions}
               running_action={@running_action}
               design={@design}
               on_action="action_click"
@@ -1161,12 +1160,6 @@ defmodule RailWeb.TaskDetailLive do
     scope = socket.assigns.current_scope
     task = socket.assigns.task
     execute_action(socket, :cancel, fn -> Pipeline.cancel_task(scope, task) end)
-  end
-
-  defp handle_action_click("unblock", _params, socket) do
-    scope = socket.assigns.current_scope
-    task = socket.assigns.task
-    execute_action(socket, :unblock, fn -> Pipeline.release_blocked_stage(scope, task) end)
   end
 
   defp handle_action_click("mark_ready", _params, socket) do

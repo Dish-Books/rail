@@ -8,14 +8,13 @@ defmodule Rail.Pipeline.Actions.AnswerQuestions do
   the stage when it exits, the same as the run that asked did.
   """
 
+  import Rail.Pipeline.Utils.DeliverResolvedRound
   import Rail.Pipeline.Utils.QuestionQueue
-  import Rail.Pipeline.Utils.SendRunMessage
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
 
   @doc """
@@ -101,28 +100,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestions do
     {:ok, %{task: task}}
   end
 
-  defp deliver(%Task{} = task, opts) do
-    delivered = undelivered_answers(task.id)
-
-    case run_that_asked(task, delivered) do
-      %Run{} = run ->
-        mark_delivered(delivered)
-
-        delivered
-        |> format_answers()
-        |> then(&send_run_message(run, &1, opts))
-
-      nil ->
-        {:error, :no_run}
-    end
-  end
-
-  # A question carries the run that asked it, so the round goes straight back there.
-  defp run_that_asked(%Task{}, questions) do
-    questions
-    |> Enum.reverse()
-    |> Enum.find_value(&Repo.get(Run, &1.run_id))
-  end
+  defp deliver(%Task{} = task, opts), do: deliver_resolved_round(task, opts)
 
   defp resolve_task(%Task{} = task), do: task
   defp resolve_task(id) when is_binary(id), do: Repo.get(Task, id)

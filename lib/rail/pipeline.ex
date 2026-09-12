@@ -116,8 +116,6 @@ defmodule Rail.Pipeline do
   defdelegate dismiss_question(scope, question_or_id), to: Actions.DismissQuestion
   defdelegate dismiss_question(question_or_id), to: Actions.DismissQuestion
 
-  defdelegate release_blocked_stage(scope, task_or_id), to: Actions.ReleaseBlockedStage
-  defdelegate release_blocked_stage(task_or_id), to: Actions.ReleaseBlockedStage
 
   defdelegate list_questions(scope, target_or_opts, opts), to: Actions.ListQuestions
   defdelegate list_questions(scope_or_target, target_or_opts), to: Actions.ListQuestions

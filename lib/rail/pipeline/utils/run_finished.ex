@@ -15,7 +15,6 @@ defmodule Rail.Pipeline.Utils.RunFinished do
   """
 
   import Rail.Pipeline.Utils.RegisterAskedQuestions
-  import Rail.Pipeline.Utils.SettleAction
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -44,9 +43,19 @@ defmodule Rail.Pipeline.Utils.RunFinished do
     # register_asked_questions doesn't need to, maybe even on the os_process at the beginning of this file
     with {:ok, %Task{} = task, %Run{} = run} <- Pipeline.settle_run(os_process, outcome, opts) do
       case register_asked_questions(os_process, run) do
-        [] -> settle_action(task).(os_process, outcome, opts)
+        [] -> finish_action(task).(os_process, outcome, opts)
         _asked -> {:ok, task, run}
       end
     end
   end
+
+  defp finish_action(%Task{is_rebasing: true}), do: &Pipeline.settle_rebase_run/3
+  defp finish_action(%Task{stage: :product}), do: &Pipeline.settle_product_run/3
+  defp finish_action(%Task{stage: :design}), do: &Pipeline.settle_design_run/3
+  defp finish_action(%Task{stage: :architect}), do: &Pipeline.settle_architect_run/3
+  defp finish_action(%Task{stage: :engineer}), do: &Pipeline.settle_engineer_run/3
+  defp finish_action(%Task{stage: :review}), do: &Pipeline.settle_review_run/3
+  defp finish_action(%Task{stage: :qa}), do: &Pipeline.settle_qa_run/3
+  defp finish_action(%Task{stage: :qa_lead}), do: &Pipeline.settle_qa_lead_run/3
+  defp finish_action(%Task{stage: :demo}), do: &Pipeline.settle_demo_run/3
 end
