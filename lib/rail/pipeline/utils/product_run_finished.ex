@@ -4,7 +4,7 @@ defmodule Rail.Pipeline.Utils.ProductRunFinished do
 
   The product agent's ticket stays in scratch until a human approves it: nothing is
   captured here, a clean exit only parks the task at `awaiting_approval`, and
-  `approve_product_task/2` is what publishes the ticket and moves the pipeline on.
+  `approve_product_task/1` is what publishes the ticket and moves the pipeline on.
   """
 
   alias Rail.Repo

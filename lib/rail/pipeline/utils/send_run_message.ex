@@ -17,8 +17,7 @@ defmodule Rail.Pipeline.Utils.SendRunMessage do
   @doc """
   Spawns the next turn on `run` carrying `text`.
 
-  Options are `:is_chat`, false by default, and `:allow_fun`, passed through to the
-  spawn.
+  The one option is `:is_chat`, false by default.
   """
   def send_run_message(%Run{} = run, text, opts \\ []) when is_binary(text) do
     run = Repo.preload(run, [:task, role: :backend])
@@ -36,7 +35,7 @@ defmodule Rail.Pipeline.Utils.SendRunMessage do
             work_dir: task.worktree_path
           )
 
-        Runs.start_os_process(run, argv, Keyword.take(opts, [:is_chat, :allow_fun]))
+        Runs.start_os_process(run, argv, Keyword.take(opts, [:is_chat]))
 
       _incomplete ->
         {:error, :invalid_state}

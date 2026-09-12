@@ -22,11 +22,9 @@ defmodule Rail.Runs.Actions.StartOsProcess do
   Everything the spawn needs is derived from the run: the executable from
   its role's backend, which is an absolute path, and the working directory and
   stream path from its task.
-  `argv` is arguments only. The options are `:is_chat`, which marks a chat turn
-  riding alongside the stage rather than the stage's own run, and `:allow_fun`, a
-  1-arity function called with the Follower pid so a test can grant it access to
-  sandboxed resources. Nothing is wired in for the exit: `run_finished/3` works
-  from the row the spawn writes.
+  `argv` is arguments only. The one option is `:is_chat`, which marks a chat turn
+  riding alongside the stage rather than the stage's own run. Nothing is wired in
+  for the exit: `run_finished/3` works from the row the spawn writes.
 
   Returns `{:ok, %{task: task, run: run, os_process: os_process}}`, or
   `{:error, {:spawn_failed, reason, task}}`. A stage spawn is the dispatch of
@@ -46,7 +44,7 @@ defmodule Rail.Runs.Actions.StartOsProcess do
 
     result =
       case ensure_executable(executable, os_process, run) do
-        :ok -> launch(os_process, run, executable, argv, stream_path, task, backend, opts)
+        :ok -> launch(os_process, run, executable, argv, stream_path, task, backend)
         {:error, reason} -> {:error, reason}
       end
 
@@ -113,7 +111,7 @@ defmodule Rail.Runs.Actions.StartOsProcess do
     stream_path
   end
 
-  defp launch(os_process, run, executable, args, stream_path, task, backend, opts) do
+  defp launch(os_process, run, executable, args, stream_path, task, backend) do
     spawn_opts = [
       stdout_path: stream_path,
       stderr_path: "#{stream_path}.err",
@@ -127,7 +125,7 @@ defmodule Rail.Runs.Actions.StartOsProcess do
           |> OsProcess.changeset(%{status: :running, os_pid: os_pid})
           |> Repo.update()
 
-        follow(updated_run, run, port, os_pid, stream_path, backend, opts)
+        follow(updated_run, run, port, os_pid, stream_path, backend)
 
       # coveralls-ignore-start (defensive: port died before reporting a PID)
       {:error, reason} ->
@@ -136,7 +134,7 @@ defmodule Rail.Runs.Actions.StartOsProcess do
     end
   end
 
-  defp follow(os_process, run, port, os_pid, stream_path, backend, opts) do
+  defp follow(os_process, run, port, os_pid, stream_path, backend) do
     follower_opts = [
       os_process: os_process,
       run: run,
@@ -147,23 +145,8 @@ defmodule Rail.Runs.Actions.StartOsProcess do
       next_seq: os_process.start_seq
     ]
 
-    case FollowerSupervisor.start_follower(follower_opts) do
-      {:ok, follower_pid} ->
-        allow(follower_pid, opts)
-        Tools.connect_port(port, follower_pid)
-        {:ok, os_process}
-
-      # coveralls-ignore-start (defensive error handling if follower supervisor fails)
-      {:error, reason} ->
-        {:error, reason}
-        # coveralls-ignore-stop
-    end
-  end
-
-  defp allow(follower_pid, opts) do
-    case Keyword.get(opts, :allow_fun) do
-      fun when is_function(fun, 1) -> fun.(follower_pid)
-      _none -> :ok
+    with {:ok, _follower_pid} <- FollowerSupervisor.start_follower(follower_opts) do
+      {:ok, os_process}
     end
   end
 

@@ -1,6 +1,7 @@
 defmodule Rail.Runs.BootTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Domain.RunFailure
   alias Rail.Runs
   alias Rail.Runs.Boot
   alias Rail.Runs.FollowerSupervisor
@@ -52,13 +53,13 @@ defmodule Rail.Runs.BootTest do
       })
       |> Repo.insert!()
 
-    results = Boot.adopt_live_os_processes(node: to_string(Node.self()))
+    results = Boot.reconcile(node: to_string(Node.self()))
     assert [{:adopted_live, %OsProcess{id: ^os_process_id}, follower_pid}] = results
     assert is_pid(follower_pid)
     assert Process.alive?(follower_pid)
 
     # Calling adopt again sees it is already followed
-    repeat = Boot.adopt_live_os_processes(node: to_string(Node.self()))
+    repeat = Boot.reconcile(node: to_string(Node.self()))
     assert [{:already_following, _run, ^follower_pid}] = repeat
 
     FollowerSupervisor.stop_follower(follower_pid)
@@ -99,11 +100,11 @@ defmodule Rail.Runs.BootTest do
       })
       |> Repo.insert!()
 
-    results = Boot.adopt_live_os_processes(node: to_string(Node.self()))
+    results = Boot.reconcile(node: to_string(Node.self()))
     assert [{:adopted_dead, %OsProcess{status: :adopted_dead}}] = results
 
     # Run should be settled
-    settled_run = Runs.get_run!(run.id)
+    {:ok, settled_run} = Runs.get_run(run.id)
     assert settled_run.status == :finished
     assert settled_run.exit_code == 0
     assert settled_run.conversation_id == "sess-dead-1"
@@ -140,15 +141,15 @@ defmodule Rail.Runs.BootTest do
       })
       |> Repo.insert!()
 
-    results = Boot.adopt_live_os_processes(node: to_string(Node.self()))
+    results = Boot.reconcile(node: to_string(Node.self()))
     assert [{:adopted_dead, %OsProcess{status: :adopted_dead}}] = results
 
-    settled_run = Runs.get_run!(run.id)
+    {:ok, settled_run} = Runs.get_run(run.id)
     assert settled_run.status == :finished
     assert settled_run.exit_code == -1
     assert settled_run.error =~ "without reporting a result"
     # Verify failure pattern is recognized as transient by RunFailure
-    assert Runs.transient?(settled_run.error)
+    assert RunFailure.transient?(settled_run.error)
   end
 
   test "starting run without PID times out and fails after 60s", %{tmp_dir: tmp_dir} do
@@ -179,10 +180,10 @@ defmodule Rail.Runs.BootTest do
       })
       |> Repo.insert!()
 
-    results = Boot.adopt_live_os_processes(node: to_string(Node.self()), timeout_seconds: 60)
+    results = Boot.reconcile(node: to_string(Node.self()), timeout_seconds: 60)
     assert [{:failed_starting, %OsProcess{status: :finished}}] = results
 
-    settled_run = Runs.get_run!(run.id)
+    {:ok, settled_run} = Runs.get_run(run.id)
     assert settled_run.status == :finished
     assert settled_run.error =~ "Spawn timed out"
   end
@@ -215,7 +216,7 @@ defmodule Rail.Runs.BootTest do
       })
       |> Repo.insert!()
 
-    results = Boot.adopt_live_os_processes(node: to_string(Node.self()), timeout_seconds: 60)
+    results = Boot.reconcile(node: to_string(Node.self()), timeout_seconds: 60)
     assert [{:still_starting, %OsProcess{id: ^os_process_id}}] = results
   end
 
@@ -256,23 +257,23 @@ defmodule Rail.Runs.BootTest do
       started_at: DateTime.utc_now()
     })
 
-    results = Boot.adopt_live_os_processes(node: to_string(Node.self()))
+    results = Boot.reconcile(node: to_string(Node.self()))
     assert results == []
   end
 
-  test "start_link/1 executes adoption as task" do
+  test "start_link/1 stays out of the tree while adoption on boot is off" do
+    assert Boot.start_link(node: "nonexistent_node") == :ignore
+  end
+
+  test "start_link/1 reconciles as a task when adoption on boot is enabled" do
+    Application.put_env(:rail, :adopt_on_boot, true)
+    on_exit(fn -> Application.put_env(:rail, :adopt_on_boot, false) end)
+
     {:ok, pid} = Boot.start_link(node: "nonexistent_node")
     assert is_pid(pid)
     # Task should finish quickly and exit normally
     Process.sleep(50)
     refute Process.alive?(pid)
-  end
-
-  test "run/1 executes when adopt_on_boot is enabled" do
-    Application.put_env(:rail, :adopt_on_boot, true)
-    on_exit(fn -> Application.put_env(:rail, :adopt_on_boot, false) end)
-
-    assert Boot.reconcile(node: "nonexistent_node") == []
   end
 
   test "settles dead run with various error and stderr combinations", %{tmp_dir: tmp_dir} do
@@ -303,7 +304,7 @@ defmodule Rail.Runs.BootTest do
 
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run1.id}")
 
-    Boot.adopt_live_os_processes(node: to_string(Node.self()))
+    Boot.reconcile(node: to_string(Node.self()))
 
     assert_receive {:os_process_finished, _run, outcome1}, 500
     assert outcome1.error =~ "claude reported error"
@@ -334,8 +335,8 @@ defmodule Rail.Runs.BootTest do
       started_at: DateTime.utc_now()
     })
 
-    Boot.adopt_live_os_processes(node: to_string(Node.self()))
-    r2 = Runs.get_run!(run2.id)
+    Boot.reconcile(node: to_string(Node.self()))
+    {:ok, r2} = Runs.get_run(run2.id)
     assert r2.error == "claude reported error_max_turns"
 
     # Case 3: stderr only, saw_result was true
@@ -363,8 +364,8 @@ defmodule Rail.Runs.BootTest do
       started_at: DateTime.utc_now()
     })
 
-    Boot.adopt_live_os_processes(node: to_string(Node.self()))
-    r3 = Runs.get_run!(run3.id)
+    Boot.reconcile(node: to_string(Node.self()))
+    {:ok, r3} = Runs.get_run(run3.id)
     assert r3.error == "only stderr output"
 
     # Case 4: stream path does not exist
@@ -389,6 +390,6 @@ defmodule Rail.Runs.BootTest do
         started_at: DateTime.utc_now()
       })
 
-    assert [{:adopted_dead, %OsProcess{id: ^run4_id}}] = Boot.adopt_live_os_processes(node: to_string(Node.self()))
+    assert [{:adopted_dead, %OsProcess{id: ^run4_id}}] = Boot.reconcile(node: to_string(Node.self()))
   end
 end

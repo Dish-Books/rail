@@ -1,8 +1,9 @@
 defmodule Rail.Runs.FollowerSupervisorTest do
   use Rail.DataCase, async: true
 
+  import Rail.Runs.Utils.GetFollowerPid
+
   alias Rail.Backends.Schemas.Backend
-  alias Rail.Runs
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
@@ -67,14 +68,40 @@ defmodule Rail.Runs.FollowerSupervisorTest do
     assert Process.alive?(follower_pid)
 
     # Lookup in registry
-    assert Runs.get_follower_pid(os_process.id) == follower_pid
+    assert get_follower_pid(os_process.id) == follower_pid
 
     # Stop child via supervisor
     assert FollowerSupervisor.stop_follower(follower_pid) == :ok
     refute Process.alive?(follower_pid)
     Process.sleep(10)
-    assert Runs.get_follower_pid(os_process.id) == nil
+    assert get_follower_pid(os_process.id) == nil
 
     Tools.terminate_os_process(pid, grace_period: 50)
+  end
+
+  test "hands a spawned port to the follower and unlinks it from the caller", %{
+    backend: backend,
+    run: run,
+    os_process: os_process,
+    stream_path: stream_path
+  } do
+    {:ok, port, os_pid} = Tools.spawn_os_process("/bin/sleep", ["10"], stdout_path: stream_path)
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(
+        os_process: os_process,
+        backend: backend,
+        run: run,
+        stream_path: stream_path,
+        os_pid: os_pid,
+        port: port
+      )
+
+    assert Port.info(port, :connected) == {:connected, follower_pid}
+    {:links, links} = Process.info(self(), :links)
+    refute port in links
+
+    FollowerSupervisor.stop_follower(follower_pid)
+    Tools.terminate_os_process(os_pid, grace_period: 50)
   end
 end

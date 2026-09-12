@@ -1,7 +1,6 @@
 defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
   use Rail.DataCase, async: true
 
-  alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -9,8 +8,9 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Runs.FollowerSupervisor
+  alias Rail.Runs
   alias Rail.Runs.Schemas.OsProcess
+  alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -86,13 +86,12 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
 
     task_id = task.id
 
-    assert {:ok, %{task: %Task{id: ^task_id, stage: :design, stage_state: :running}, os_process: %OsProcess{}}} =
-             Pipeline.approve_product_task(task,
-               allow_fun: fn pid ->
-                 Sandbox.allow(Repo, self(), pid)
-                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-               end
-             )
+    expect(Runs, :start_os_process, fn %Run{} = run, _argv ->
+      {:ok, %{task: Repo.get!(Task, task_id), run: run, os_process: %OsProcess{task_id: task_id}}}
+    end)
+
+    assert {:ok, %{task: %Task{id: ^task_id, stage: :design}, os_process: %OsProcess{}}} =
+             Pipeline.approve_product_task(task)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :product_approved}}
 
@@ -119,13 +118,11 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
       "title" => "The split ticket"
     })
 
-    assert {:ok, %{task: %Task{stage: :design}}} =
-             Pipeline.approve_product_task(task,
-               allow_fun: fn pid ->
-                 Sandbox.allow(Repo, self(), pid)
-                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-               end
-             )
+    expect(Runs, :start_os_process, fn %Run{} = run, _argv ->
+      {:ok, %{task: Repo.get!(Task, task.id), run: run, os_process: %OsProcess{}}}
+    end)
+
+    assert {:ok, %{task: %Task{stage: :design}}} = Pipeline.approve_product_task(task)
 
     assert %Issue{title: "The split ticket"} = Repo.get_by!(Issue, identifier: "APT-2")
   end

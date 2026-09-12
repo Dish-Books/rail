@@ -2,10 +2,11 @@ defmodule Rail.Runs.Utils.OsProcessLog do
   @moduledoc false
 
   import Ecto.Query
+  import Rail.Runs.Utils.NewEventState
+  import Rail.Runs.Utils.ParseLine
 
   alias Rail.Backends.Schemas.Backend
   alias Rail.Repo
-  alias Rail.Runs
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
@@ -42,8 +43,8 @@ defmodule Rail.Runs.Utils.OsProcessLog do
       %Run{} = run ->
         os_process.run_id
         |> events_from(os_process.start_seq)
-        |> Enum.reduce(Runs.new_event_state(backend_for(run)), fn event, state ->
-          Runs.parse_line(state, event.line)
+        |> Enum.reduce(new_event_state(backend_for(run)), fn event, state ->
+          parse_line(state, event.line)
         end)
         |> Map.fetch!(:logs)
         |> Enum.reject(&tagged?/1)

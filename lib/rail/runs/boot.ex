@@ -5,13 +5,15 @@ defmodule Rail.Runs.Boot do
   use Task, restart: :transient
 
   import Ecto.Query
+  import Rail.Runs.Utils.NewEventState
+  import Rail.Runs.Utils.OnOsProcessFinished
+  import Rail.Runs.Utils.ParseLine
 
   alias Ecto.Adapters.SQL
   alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Backends.Schemas.Backend
   alias Rail.Pipeline
   alias Rail.Repo
-  alias Rail.Runs
   alias Rail.Runs.Follower
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.OsProcess
@@ -21,21 +23,22 @@ defmodule Rail.Runs.Boot do
   @default_starting_timeout_seconds 60
 
   @doc """
-  Starts the Boot reconciliation task in the supervision tree.
+  Starts the Boot reconciliation task in the supervision tree, unless adoption on
+  boot is turned off.
   """
   def start_link(opts \\ []) do
-    Task.start_link(__MODULE__, :reconcile, [opts])
+    if Application.get_env(:rail, :adopt_on_boot, true) do
+      Task.start_link(__MODULE__, :reconcile, [opts])
+    else
+      :ignore
+    end
   end
 
   @doc """
-  Runs adoption if runs tables exist and adoption is enabled.
+  Adopts every in-flight os process on this node, once the runs tables exist.
   """
   def reconcile(opts \\ []) do
-    if Application.get_env(:rail, :adopt_on_boot, true) and tables_exist?() do
-      adopt_live_os_processes(opts)
-    else
-      :ok
-    end
+    adopt_live_os_processes(opts)
 
     # coveralls-ignore-start (defensive rescue on boot failure)
   rescue
@@ -44,10 +47,8 @@ defmodule Rail.Runs.Boot do
       # coveralls-ignore-stop
   end
 
-  @doc """
-  Adopts all in-flight runs on the current node.
-  """
-  def adopt_live_os_processes(opts \\ []) do
+  # Adopts all in-flight runs on the current node.
+  defp adopt_live_os_processes(opts) do
     current_node = Keyword.get(opts, :node) || to_string(Node.self())
     timeout_seconds = Keyword.get(opts, :timeout_seconds, @default_starting_timeout_seconds)
     now = Keyword.get(opts, :now) || DateTime.utc_now()
@@ -173,7 +174,7 @@ defmodule Rail.Runs.Boot do
     backend = backend_for(run)
 
     event_state =
-      Runs.new_event_state(backend,
+      new_event_state(backend,
         task_id: os_process.task_id,
         role_id: (run && run.role_id) || "",
         conversation_id: run && run.conversation_id
@@ -183,7 +184,7 @@ defmodule Rail.Runs.Boot do
 
     updated_event_state =
       Enum.reduce(lines, event_state, fn line, acc ->
-        Runs.parse_line(acc, line)
+        parse_line(acc, line)
       end)
 
     raw_stderr =
@@ -242,7 +243,7 @@ defmodule Rail.Runs.Boot do
       Pipeline.run_finished(updated_os_process, outcome)
 
       # coveralls-ignore-stop
-      Runs.on_os_process_finished(updated_os_process, outcome)
+      on_os_process_finished(updated_os_process, outcome)
 
       Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:os_process_finished, updated_os_process, outcome})
     end
@@ -298,16 +299,5 @@ defmodule Rail.Runs.Boot do
 
     err_lines = Follower.drain_err_file("#{stream_path}.err")
     {lines, err_lines}
-  end
-
-  defp tables_exist? do
-    SQL.table_exists?(Repo, "runs") and
-      SQL.table_exists?(Repo, "runs")
-
-    # coveralls-ignore-start (defensive rescue if db connection fails during boot)
-  rescue
-    _error ->
-      false
-      # coveralls-ignore-stop
   end
 end

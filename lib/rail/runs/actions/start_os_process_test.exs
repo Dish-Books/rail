@@ -1,8 +1,8 @@
 defmodule Rail.Runs.Actions.StartOsProcessTest do
   use Rail.DataCase, async: true
 
-  alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Backends
+  alias Rail.Backends.Schemas.Backend
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
@@ -89,13 +89,9 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
   end
 
   test "spawns child, records runs row, sets os_pid and running status", %{run: run} do
-    {:ok, %{os_process: os_process}} =
-      Runs.start_os_process(run, ["2"],
-        allow_fun: fn pid ->
-          Sandbox.allow(Repo, self(), pid)
-          on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-        end
-      )
+    expect(FollowerSupervisor, :start_follower, fn _opts -> {:ok, self()} end)
+
+    {:ok, %{os_process: os_process}} = Runs.start_os_process(run, ["2"])
 
     assert %OsProcess{} = os_process
     assert os_process.run_id == run.id
@@ -112,13 +108,9 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
     run: run,
     scratch_path: scratch_path
   } do
-    {:ok, %{os_process: os_process}} =
-      Runs.start_os_process(run, ["2"],
-        allow_fun: fn pid ->
-          Sandbox.allow(Repo, self(), pid)
-          on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-        end
-      )
+    expect(FollowerSupervisor, :start_follower, fn _opts -> {:ok, self()} end)
+
+    {:ok, %{os_process: os_process}} = Runs.start_os_process(run, ["2"])
 
     assert os_process.stream_path == Path.join([scratch_path, "streams", "#{run.id}.ndjson"])
     assert File.exists?(os_process.stream_path)
@@ -137,13 +129,9 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
 
     script = ~s(printf '{"cwd":"%s"}\n' "$PWD")
 
-    {:ok, %{os_process: os_process}} =
-      Runs.start_os_process(run, ["-c", script],
-        allow_fun: fn pid ->
-          Sandbox.allow(Repo, self(), pid)
-          on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-        end
-      )
+    expect(FollowerSupervisor, :start_follower, fn _opts -> {:ok, self()} end)
+
+    {:ok, %{os_process: os_process}} = Runs.start_os_process(run, ["-c", script])
 
     content =
       Enum.reduce_while(1..200, "", fn _i, _acc ->
@@ -182,37 +170,24 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
     assert reloaded_run.error =~ "No such CLI binary"
   end
 
-  test "always starts a Follower under FollowerSupervisor", %{run: run} do
-    {:ok, %{os_process: os_process}} =
-      Runs.start_os_process(run, ["2"],
-        allow_fun: fn pid ->
-          Sandbox.allow(Repo, self(), pid)
-          on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-        end
-      )
-
-    assert os_process.status == :running
-    follower_pid = Runs.get_follower_pid(os_process.id)
-    assert is_pid(follower_pid)
-    assert Process.alive?(follower_pid)
-
-    Tools.terminate_os_process(os_process.os_pid, grace_period: 100)
-  end
-
-  test "calls opts[:allow_fun] with the Follower pid", %{run: run} do
+  test "hands the spawned port and stream to a Follower", %{backend: %Backend{id: backend_id}, run: run} do
     test_pid = self()
 
-    {:ok, %{os_process: os_process}} =
-      Runs.start_os_process(run, ["2"],
-        allow_fun: fn pid ->
-          Sandbox.allow(Repo, test_pid, pid)
-          on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-          send(test_pid, {:allowed, pid})
-        end
-      )
+    expect(FollowerSupervisor, :start_follower, fn opts ->
+      send(test_pid, {:follower_opts, opts})
+      {:ok, test_pid}
+    end)
 
-    assert_receive {:allowed, follower_pid}
-    assert follower_pid == Runs.get_follower_pid(os_process.id)
+    {:ok, %{os_process: os_process}} = Runs.start_os_process(run, ["2"])
+
+    assert_receive {:follower_opts, opts}
+    assert opts[:os_process].id == os_process.id
+    assert opts[:run].id == run.id
+    assert opts[:stream_path] == os_process.stream_path
+    assert opts[:os_pid] == os_process.os_pid
+    assert opts[:next_seq] == os_process.start_seq
+    assert opts[:backend].id == backend_id
+    assert is_port(opts[:port])
 
     Tools.terminate_os_process(os_process.os_pid, grace_period: 100)
   end

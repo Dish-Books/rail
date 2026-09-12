@@ -383,9 +383,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurn do
         work_dir: worktree_path
       )
 
-    spawner_opts = [is_chat: true] ++ Keyword.take(opts, [:allow_fun])
-
-    case Runs.start_os_process(updated_run, argv, spawner_opts) do
+    case Runs.start_os_process(updated_run, argv, is_chat: true) do
       {:ok, %{os_process: os_process}} ->
         {:ok, %{task: updated_task, run: updated_run, os_process: os_process}}
 

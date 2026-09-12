@@ -217,7 +217,7 @@ defmodule Rail.Runs.FollowerTest do
     assert outcome.error =~ "warning: minor deprecation"
 
     # Verify run row in DB
-    reloaded_run = Runs.get_run!(run.id)
+    {:ok, reloaded_run} = Runs.get_run(run.id)
     assert reloaded_run.status == :finished
     assert reloaded_run.conversation_id == "sess-exit-1"
     assert reloaded_run.usage.input_tokens == 50
@@ -842,7 +842,7 @@ defmodule Rail.Runs.FollowerTest do
     assert_receive {:os_process_finished, _run, _outcome}, 2_000
     assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
 
-    reloaded_rr = Runs.get_run!(run.id)
+    {:ok, reloaded_rr} = Runs.get_run(run.id)
     assert reloaded_rr.status == :running
     assert reloaded_rr.conversation_id == "sess-updated"
   end
@@ -902,7 +902,7 @@ defmodule Rail.Runs.FollowerTest do
     assert_receive {:os_process_finished, _run, _outcome}, 2_000
     assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
 
-    reloaded_rr = Runs.get_run!(run.id)
+    {:ok, reloaded_rr} = Runs.get_run(run.id)
     assert reloaded_rr.conversation_id == "sess-same"
   end
 
@@ -959,7 +959,7 @@ defmodule Rail.Runs.FollowerTest do
     assert_receive {:os_process_finished, _run, _outcome}, 2_000
     assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
 
-    reloaded_rr = Runs.get_run!(run.id)
+    {:ok, reloaded_rr} = Runs.get_run(run.id)
     assert reloaded_rr.status == :finished
     assert %TaskUsage{input_tokens: 0} = reloaded_rr.usage
   end

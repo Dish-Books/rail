@@ -1,6 +1,9 @@
 defmodule Rail.Runs.Utils.AssistantLog do
   @moduledoc false
 
+  import Rail.Runs.Utils.NewEventState
+  import Rail.Runs.Utils.ParseLine
+
   alias Rail.Backends.Schemas.Backend
   alias Rail.Repo
   alias Rail.Runs
@@ -23,8 +26,8 @@ defmodule Rail.Runs.Utils.AssistantLog do
 
     run.id
     |> Runs.list_run_events()
-    |> Enum.reduce(Runs.new_event_state(backend_for(run)), fn event, state ->
-      Runs.parse_line(state, event.line)
+    |> Enum.reduce(new_event_state(backend_for(run)), fn event, state ->
+      parse_line(state, event.line)
     end)
     |> Map.fetch!(:logs)
     |> Enum.reject(&tagged?/1)

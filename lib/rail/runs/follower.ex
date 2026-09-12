@@ -5,10 +5,13 @@ defmodule Rail.Runs.Follower do
   use GenServer, restart: :temporary
 
   import Ecto.Query
+  import Rail.Runs.Utils.GetFollowerPid
+  import Rail.Runs.Utils.NewEventState
+  import Rail.Runs.Utils.OnOsProcessFinished
+  import Rail.Runs.Utils.ParseLine
 
   alias Rail.Pipeline
   alias Rail.Repo
-  alias Rail.Runs
   alias Rail.Runs.FollowerRegistry
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
@@ -148,7 +151,7 @@ defmodule Rail.Runs.Follower do
     file_offset = Keyword.get(opts, :file_offset, 0)
 
     event_state =
-      Runs.new_event_state(backend,
+      new_event_state(backend,
         task_id: os_process.task_id,
         role_id: run.role_id,
         conversation_id: run.conversation_id
@@ -256,7 +259,7 @@ defmodule Rail.Runs.Follower do
       lines,
       {state.event_state, state.pending_events, state.next_seq, state.skip_log_lines},
       fn line, {ev_state, pending, seq, skip} ->
-        new_ev_state = Runs.parse_line(ev_state, line)
+        new_ev_state = parse_line(ev_state, line)
 
         if skip > 0 do
           {new_ev_state, pending, seq, skip - 1}
@@ -301,8 +304,8 @@ defmodule Rail.Runs.Follower do
   end
 
   defp do_stop_os_process(os_process, opts) do
-    case Registry.lookup(FollowerRegistry, os_process.id) do
-      [{pid, _registry_val}] ->
+    case get_follower_pid(os_process.id) do
+      pid when is_pid(pid) ->
         try do
           GenServer.call(pid, {:stop_os_process, opts}, 10_000)
           # coveralls-ignore-start (fallback if follower crashes during stop_os_process)
@@ -312,7 +315,7 @@ defmodule Rail.Runs.Follower do
             # coveralls-ignore-stop
         end
 
-      [] ->
+      nil ->
         fallback_stop_os_process(os_process, opts)
     end
   end
@@ -427,7 +430,7 @@ defmodule Rail.Runs.Follower do
         # Everything that happens next is derived from the row, so a process whose
         # exit this Follower missed settles identically when `Rail.Runs.Boot` finds it.
         Pipeline.run_finished(updated_os_process, outcome)
-        Runs.on_os_process_finished(updated_os_process, outcome)
+        on_os_process_finished(updated_os_process, outcome)
 
         Phoenix.PubSub.broadcast(
           Rail.PubSub,

@@ -3,7 +3,6 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
   import RailTest.PipelineHelpers
 
-  alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -12,7 +11,6 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
-  alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
@@ -182,16 +180,19 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
         conversation_id: "sess-chat-1"
       })
 
+    test_pid = self()
+
+    expect(Runs, :start_os_process, fn %Run{} = spawned, argv, opts ->
+      send(test_pid, {:spawned, spawned.id, argv, opts})
+      {:ok, %{run: spawned, os_process: %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat]}}}
+    end)
+
     assert {:ok, :sent, %Task{active_chat_role_id: ^role_id, stage: :engineer, stage_state: :queued}} =
              Pipeline.send_chat_turn(
                task_id,
                role_id,
                "Line 1\nLine 2",
-               async: false,
-               allow_fun: fn pid ->
-                 Sandbox.allow(Repo, self(), pid)
-                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-               end
+               async: false
              )
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :chat_dispatched}}
@@ -200,15 +201,9 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     assert Enum.any?(events, fn %RunEvent{line: line} -> line == "[human] Line 1" end)
     assert Enum.any?(events, fn %RunEvent{line: line} -> line == "[human] Line 2" end)
 
-    os_processes = Runs.list_os_processes(task_id: task_id)
-
-    assert [
-             %OsProcess{
-               is_chat: true,
-               status: :running,
-               run_id: ^run_id
-             }
-           ] = os_processes
+    assert_receive {:spawned, ^run_id, argv, opts}
+    assert opts[:is_chat]
+    assert Enum.any?(argv, &(&1 =~ "Line 1" and &1 =~ "Line 2"))
 
     refreshed_task = Repo.get!(Task, task_id)
     refreshed_run = Repo.get!(Run, run_id)
@@ -324,17 +319,20 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     {:ok, task} = task |> Task.changeset(%{stage_state: :running}) |> Repo.update()
 
+    test_pid = self()
+
+    expect(Runs, :start_os_process, fn %Run{} = spawned, argv, opts ->
+      send(test_pid, {:spawned, spawned.id, argv, opts})
+      {:ok, %{run: spawned, os_process: %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat]}}}
+    end)
+
     assert {:ok, :sent, %Task{active_chat_role_id: ^rev_role_id}} =
              Pipeline.send_chat_turn(
                task.id,
                rev_role_id,
                "Reviewer urgent question",
                delivery: :stop_and_send,
-               async: false,
-               allow_fun: fn pid ->
-                 Sandbox.allow(Repo, self(), pid)
-                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-               end
+               async: false
              )
 
     eng_events = Runs.list_run_events(eng_run_id)
@@ -378,17 +376,20 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     {:ok, task} = task |> Task.changeset(%{active_chat_role_id: role_a_id}) |> Repo.update()
 
+    test_pid = self()
+
+    expect(Runs, :start_os_process, fn %Run{} = spawned, argv, opts ->
+      send(test_pid, {:spawned, spawned.id, argv, opts})
+      {:ok, %{run: spawned, os_process: %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat]}}}
+    end)
+
     assert {:ok, :sent, %Task{active_chat_role_id: ^role_b_id}} =
              Pipeline.send_chat_turn(
                task.id,
                role_b_id,
                "Question for B",
                delivery: :stop_and_send,
-               async: false,
-               allow_fun: fn pid ->
-                 Sandbox.allow(Repo, self(), pid)
-                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-               end
+               async: false
              )
 
     role_a_events = Runs.list_run_events(role_a_run_id)
@@ -423,17 +424,20 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     {:ok, task} = task |> Task.changeset(%{active_chat_role_id: role_a_id}) |> Repo.update()
 
+    test_pid = self()
+
+    expect(Runs, :start_os_process, fn %Run{} = spawned, argv, opts ->
+      send(test_pid, {:spawned, spawned.id, argv, opts})
+      {:ok, %{run: spawned, os_process: %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat]}}}
+    end)
+
     assert {:ok, :sent, %Task{active_chat_role_id: ^role_a_id}} =
              Pipeline.send_chat_turn(
                task.id,
                role_a_id,
                "Urgent correction for A",
                delivery: :stop_and_send,
-               async: false,
-               allow_fun: fn pid ->
-                 Sandbox.allow(Repo, self(), pid)
-                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-               end
+               async: false
              )
 
     role_a_events = Runs.list_run_events(role_a_run_id)
@@ -595,24 +599,25 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
 
     user_scope = %Scope{system: false, user: %{id: "usr_1"}}
 
+    test_pid = self()
+
+    expect(Runs, :start_os_process, fn %Run{} = spawned, argv, opts ->
+      send(test_pid, {:spawned, spawned.id, argv, opts})
+      {:ok, %{run: spawned, os_process: %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat]}}}
+    end)
+
     # Arity 5 with Scope and async: true (default)
     assert {:ok, :sent, %Task{id: ^task_id}} =
              Pipeline.send_chat_turn(
                user_scope,
                task_id,
                role_id,
-               "Async message",
-               allow_fun: fn pid ->
-                 Sandbox.allow(Repo, self(), pid)
-                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-               end
+               "Async message"
              )
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :chat_dispatched}}, 1_000
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :chat_settled}}, 2_000
-
-    refreshed_task = Repo.get!(Task, task_id)
-    assert refreshed_task.active_chat_role_id == nil
+    assert_receive {:spawned, ^run_id, argv, _opts}, 1_000
+    assert Enum.any?(argv, &(&1 =~ "Async message"))
 
     events = Runs.list_run_events(run_id)
     assert Enum.any?(events, fn %RunEvent{line: line} -> line == "[human] Async message" end)
@@ -714,6 +719,13 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
       |> Task.changeset(%{stage: :engineer, stage_state: :running})
       |> Repo.update()
 
+    test_pid = self()
+
+    expect(Runs, :start_os_process, 3, fn %Run{} = spawned, argv, opts ->
+      send(test_pid, {:spawned, spawned.id, argv, opts})
+      {:ok, %{run: spawned, os_process: %OsProcess{run_id: spawned.id, is_chat: opts[:is_chat]}}}
+    end)
+
     # stop_and_send to same role during stage run
     assert {:ok, :sent, %Task{active_chat_role_id: ^target_role_id}} =
              Pipeline.send_chat_turn(
@@ -721,11 +733,7 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
                role,
                "Restart with this instruction",
                delivery: :stop_and_send,
-               async: false,
-               allow_fun: fn pid ->
-                 Sandbox.allow(Repo, self(), pid)
-                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-               end
+               async: false
              )
 
     # Missing stopped runs in DB
@@ -781,21 +789,13 @@ defmodule Rail.Pipeline.Actions.SendChatTurnTest do
     assert {:ok, :sent, %Task{}} =
              Pipeline.send_chat_turn(orphan_same_task, role, "Orphan same",
                delivery: :stop_and_send,
-               async: false,
-               allow_fun: fn pid ->
-                 Sandbox.allow(Repo, self(), pid)
-                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-               end
+               async: false
              )
 
     assert {:ok, :sent, %Task{}} =
              Pipeline.send_chat_turn(orphan_other_task, role, "Orphan other",
                delivery: :stop_and_send,
-               async: false,
-               allow_fun: fn pid ->
-                 Sandbox.allow(Repo, self(), pid)
-                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-               end
+               async: false
              )
   end
 end

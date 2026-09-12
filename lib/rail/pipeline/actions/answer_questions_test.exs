@@ -3,7 +3,6 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionsTest do
 
   import Rail.Pipeline.Utils.QuestionQueue
 
-  alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
@@ -12,6 +11,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionsTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -113,27 +113,27 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionsTest do
 
     {:ok, task} = task |> Task.changeset(%{question_id: first.id}) |> Repo.update()
 
-    assert {:ok,
-            %{
-              task: %Task{stage_state: :running, question_id: nil},
-              run: %Run{id: ^run_id},
-              os_process: os_process
-            }} =
-             Pipeline.answer_questions(
-               task,
-               %{first.id => "Postgres", second.id => "Yes, behind a flag"},
-               allow_fun: fn pid -> Sandbox.allow(Repo, self(), pid) end
-             )
+    test_pid = self()
+
+    expect(Runs, :start_os_process, fn %Run{id: ^run_id} = spawned, argv, opts ->
+      send(test_pid, {:spawned, argv, opts})
+      {:ok, %{task: task, run: spawned, os_process: %OsProcess{is_chat: false}}}
+    end)
+
+    assert {:ok, %{run: %Run{id: ^run_id}, os_process: %OsProcess{is_chat: false}}} =
+             Pipeline.answer_questions(task, %{first.id => "Postgres", second.id => "Yes, behind a flag"})
 
     # The turn resumes the same conversation rather than starting a new run.
     assert Repo.get!(Run, run.id).conversation_id == "sess_answer_questions"
-    refute os_process.is_chat
 
+    assert_receive {:spawned, argv, opts}
+    refute opts[:is_chat]
+    assert Enum.any?(argv, &(&1 =~ "Postgres" and &1 =~ "Yes, behind a flag"))
+
+    assert Repo.get!(Task, task.id).question_id == nil
     assert pending_questions(task.id) == []
     assert Repo.get!(Question, first.id).delivered_at
     assert Repo.get!(Question, second.id).delivered_at
-
-    Rail.Tools.terminate_os_process(os_process.os_pid, grace_period: 100)
   end
 
   test "rejects a blank answer and an answer for another task's question", %{task: task, role: role} do

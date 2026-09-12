@@ -24,14 +24,14 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
   spawns the design role against the approved ticket. Returns
   `{:ok, %{task: task, run: run, os_process: os_process}}`.
   """
-  def start_design_task(task_or_id, opts \\ []) when is_list(opts) do
+  def start_design_task(task_or_id) do
     with %Task{project: %Project{} = project} = task <- resolve_task(task_or_id),
          {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :design),
          {:ok, worktree_path} <- ensure_worktree(project, task),
          {:ok, task} <- claim_stage(task, worktree_path),
          _scratch = write_scratch(task),
          {:ok, run} <- Runs.start_or_resume_run(task, role, worktree_path) do
-      spawn_os_process(task, role, run, worktree_path, opts)
+      spawn_os_process(task, role, run, worktree_path)
     else
       nil -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
@@ -110,7 +110,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
     """)
   end
 
-  defp spawn_os_process(task, role, run, worktree_path, opts) do
+  defp spawn_os_process(task, role, run, worktree_path) do
     prompt =
       Runs.build_prompt(
         task: task,
@@ -132,7 +132,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
         work_dir: worktree_path
       )
 
-    Runs.start_os_process(run, argv, Keyword.take(opts, [:allow_fun]))
+    Runs.start_os_process(run, argv)
   end
 
   # The project and the issue are carried on the task from here on: every step below

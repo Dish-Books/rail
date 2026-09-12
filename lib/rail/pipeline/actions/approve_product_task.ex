@@ -23,17 +23,17 @@ defmodule Rail.Pipeline.Actions.ApproveProductTask do
   Approves the product stage of `task_or_id` and starts its design stage.
 
   Requires the task to be at `:product` and `:awaiting_approval`. Returns whatever
-  `start_design_task/2` returns, or `{:ok, %{task: task}}` with the task queued for the
+  `start_design_task/1` returns, or `{:ok, %{task: task}}` with the task queued for the
   architect stage when the project has no design role. Returns `{:error, reason}`, with
   the reason recorded on the task, when the ticket cannot be published.
   """
-  def approve_product_task(task_or_id, opts \\ []) when is_list(opts) do
+  def approve_product_task(task_or_id) do
     with %Task{} = task <- resolve_task(task_or_id),
          :ok <- approvable(task),
          {:ok, %Issue{} = issue} <- issue_for(task),
          {:ok, task} <- publish(task, issue) do
       Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :product_approved})
-      hand_off(task, opts)
+      hand_off(task)
     else
       nil -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
@@ -42,10 +42,10 @@ defmodule Rail.Pipeline.Actions.ApproveProductTask do
 
   # A project with no design role has nothing to design with, so the task queues for the
   # architect stage the dispatcher already knows how to run.
-  defp hand_off(%Task{} = task, opts) do
+  defp hand_off(%Task{} = task) do
     case Roles.get_role(project_id: task.project_id, stage: :design) do
       {:ok, %Role{}} ->
-        Pipeline.start_design_task(task, opts)
+        Pipeline.start_design_task(task)
 
       _no_designer ->
         {:ok, task} =

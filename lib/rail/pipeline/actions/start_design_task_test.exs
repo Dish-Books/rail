@@ -1,7 +1,6 @@
 defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
   use Rail.DataCase, async: true
 
-  alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -9,7 +8,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
-  alias Rail.Runs.FollowerSupervisor
+  alias Rail.Runs
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -67,20 +66,21 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
     %Role{id: role_id} = role
     %Task{id: task_id, scratch_path: scratch_dir} = task = insert_task(project, issue)
 
+    test_pid = self()
+
+    expect(Runs, :start_os_process, fn %Run{} = run, argv ->
+      send(test_pid, {:spawned, run, argv})
+      {:ok, %{task: Repo.get!(Task, task_id), run: run, os_process: %OsProcess{task_id: task_id}}}
+    end)
+
     assert {:ok,
             %{
-              task: %Task{id: ^task_id, stage: :design, stage_state: :running, worktree_path: worktree_path},
-              run: %Run{task_id: ^task_id, role_id: ^role_id, attempts: 1, status: :running},
+              task: %Task{id: ^task_id, stage: :design, worktree_path: worktree_path},
               os_process: %OsProcess{task_id: ^task_id}
-            }} =
-             Pipeline.start_design_task(task,
-               allow_fun: fn pid ->
-                 Sandbox.allow(Repo, self(), pid)
-                 on_exit(fn -> FollowerSupervisor.stop_follower(pid) end)
-               end
-             )
+            }} = Pipeline.start_design_task(task)
 
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :dispatched}}
+    assert_receive {:spawned, %Run{task_id: ^task_id, role_id: ^role_id, attempts: 1, status: :running}, argv}
+    assert Enum.any?(argv, &(&1 =~ "You are the design agent."))
     assert byte_size(worktree_path) > 0
     assert File.dir?(Path.join(scratch_dir, "design"))
 
