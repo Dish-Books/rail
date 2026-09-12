@@ -26,7 +26,6 @@ defmodule RailWeb.Components.ConversationTab do
   attr :expanded_activities, :any, default: []
   attr :chat_input, :string, default: ""
   attr :chat_sending, :boolean, default: false
-  attr :active_delivery_modal, :any, default: nil
 
   def conversation_tab(assigns) do
     runs = assigns.ordered_runs || []
@@ -131,12 +130,7 @@ defmodule RailWeb.Components.ConversationTab do
               {TaskUsage.describe(@selected_run.usage)}
             </span>
 
-            <!-- 5. Chat usage describe -->
-            <span :if={has_usage?(@selected_run.chat_usage)} id="metadata-run-chat-usage">
-              {"Chat: #{TaskUsage.describe(@selected_run.chat_usage)}"}
-            </span>
-
-            <!-- 6. Selectable conversation id -->
+            <!-- 5. Selectable conversation id -->
             <span
               :if={is_binary(@selected_run.conversation_id) and @selected_run.conversation_id != ""}
               id="metadata-run-conversation-id"
@@ -173,9 +167,6 @@ defmodule RailWeb.Components.ConversationTab do
           </div>
         </div>
       <% end %>
-
-      <!-- In-Flight Delivery Modal -->
-      <.delivery_modal :if={@active_delivery_modal} modal={@active_delivery_modal} />
     </div>
     """
   end
@@ -415,20 +406,19 @@ defmodule RailWeb.Components.ConversationTab do
   def composer(assigns) do
     role = assigns.role
     run = assigns.run
-    task = assigns.task
 
     role_id = if is_map(role), do: Map.get(role, :id)
     role_name = if is_map(role), do: Map.get(role, :name, "role"), else: "role"
 
-    is_thinking = task.active_chat_role_id != nil and task.active_chat_role_id == role_id
+    is_thinking = Run.running?(run)
     is_queued = run != nil and is_binary(run.pending_chat) and run.pending_chat != ""
     is_unavailable = run == nil or not Run.can_chat?(run)
 
     hint_text =
       cond do
         is_unavailable -> "Chat unavailable"
-        is_thinking -> "#{role_name} is responding..."
         is_queued -> "Add to queued message..."
+        is_thinking -> "Message #{role_name} (sends when it is done)..."
         true -> "Message #{role_name}..."
       end
 
@@ -447,75 +437,79 @@ defmodule RailWeb.Components.ConversationTab do
       data-qa="composer chat-composer"
       class="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700"
     >
-      <!-- Precedence Banners: thinking > queued > unavailable -->
-      <%= cond do %>
-        <% @is_thinking -> %>
-          <div
-            id="thinking-banner"
-            data-qa="thinking-banner"
-            class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-blue-100 dark:bg-blue-900/30 border border-blue-600 dark:border-blue-500/20 mb-3"
-          >
-            <div class="flex items-center gap-2 text-xs font-bold text-blue-600 dark:text-blue-500">
-              <svg class="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-                <circle
-                  class="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  stroke-width="3"
-                />
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-              </svg>
-              <span>{"#{@role_name} is thinking..."}</span>
-            </div>
+      <!-- Thinking and queued stack: a message typed mid-turn waits behind it. -->
+      <div
+        :if={@is_thinking}
+        id="thinking-banner"
+        data-qa="thinking-banner"
+        class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-blue-100 dark:bg-blue-900/30 border border-blue-600 dark:border-blue-500/20 mb-3"
+      >
+        <div class="flex items-center gap-2 text-xs font-bold text-blue-600 dark:text-blue-500">
+          <svg class="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          </svg>
+          <span>{"#{@role_name} is thinking..."}</span>
+        </div>
 
-            <button
-              type="button"
-              id="stop-chat-turn"
-              data-qa="stop-chat-turn"
-              phx-click="stop_chat_turn"
-              class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold text-red-600 dark:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
-            >
-              <.icon name="pi-stop-fill" class="h-3.5 w-3.5 shrink-0" />
-              <span>Stop</span>
-            </button>
-          </div>
-        <% @is_queued -> %>
-          <div
-            id="queued-banner"
-            data-qa="queued-banner"
-            class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 mb-3"
-          >
-            <div class="flex items-center gap-2 text-xs text-slate-900 dark:text-slate-100 truncate">
-              <.icon name="pi-clock" class="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
-              <span class="truncate">
-                {"Queued message: \"#{@run.pending_chat}\" (delivers when pipeline pauses)"}
-              </span>
-            </div>
+        <button
+          type="button"
+          id="stop-run"
+          data-qa="stop-run"
+          phx-click="stop_run"
+          class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold text-red-600 dark:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
+        >
+          <.icon name="pi-stop-fill" class="h-3.5 w-3.5 shrink-0" />
+          <span>Stop</span>
+        </button>
+      </div>
 
-            <button
-              type="button"
-              id="cancel-pending-chat"
-              data-qa="cancel-pending-chat"
-              phx-click="cancel_pending_chat"
-              phx-value-role_id={@role_id}
-              class="px-2.5 py-1 rounded text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors cursor-pointer shrink-0"
-            >
-              Cancel
-            </button>
-          </div>
-        <% @is_unavailable -> %>
-          <div
-            id="unavailable-banner"
-            data-qa="unavailable-banner"
-            class="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-200 dark:bg-slate-600 text-xs text-slate-500 dark:text-slate-400 mb-3"
+      <div
+        :if={@is_queued}
+        id="queued-banner"
+        data-qa="queued-banner"
+        class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 mb-3"
+      >
+        <div class="flex items-center gap-2 text-xs text-slate-900 dark:text-slate-100 truncate">
+          <.icon name="pi-clock" class="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
+          <span class="truncate">
+            {"Queued: \"#{@run.pending_chat}\" (sends when #{@role_name} is done)"}
+          </span>
+        </div>
+
+        <div class="flex items-center gap-1 shrink-0">
+          <button
+            :if={@is_thinking}
+            type="button"
+            id="send-queued-now"
+            data-qa="send-queued-now"
+            phx-click="stop_and_send_message"
+            class="px-2.5 py-1 rounded text-xs font-semibold text-blue-600 dark:text-blue-500 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors cursor-pointer"
           >
-            <.icon name="pi-info" class="h-4 w-4 shrink-0" />
-            <span>{"Cannot chat with #{@role_name} yet: the role has not started a conversation."}</span>
-          </div>
-        <% true -> %>
-      <% end %>
+            Send now
+          </button>
+
+          <button
+            type="button"
+            id="cancel-queued-message"
+            data-qa="cancel-queued-message"
+            phx-click="stop_run"
+            class="px-2.5 py-1 rounded text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      <div
+        :if={@is_unavailable}
+        id="unavailable-banner"
+        data-qa="unavailable-banner"
+        class="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-200 dark:bg-slate-600 text-xs text-slate-500 dark:text-slate-400 mb-3"
+      >
+        <.icon name="pi-info" class="h-4 w-4 shrink-0" />
+        <span>{"Cannot chat with #{@role_name} yet: the role has not started a conversation."}</span>
+      </div>
 
       <!-- Input Row (Enter sends) -->
       <form
@@ -532,7 +526,7 @@ defmodule RailWeb.Components.ConversationTab do
           data-qa="chat-input"
           value={@chat_input}
           placeholder={@hint_text}
-          disabled={@is_unavailable or @is_thinking or @chat_sending}
+          disabled={@is_unavailable or @chat_sending}
           autocomplete="off"
           class="flex-1 px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
         />
@@ -541,9 +535,7 @@ defmodule RailWeb.Components.ConversationTab do
           type="submit"
           id="chat-send-button"
           data-qa="chat-submit chat-send-button"
-          disabled={
-            @is_unavailable or @is_thinking or @chat_sending or String.trim(@chat_input) == ""
-          }
+          disabled={@is_unavailable or @chat_sending or String.trim(@chat_input) == ""}
           class="inline-flex items-center justify-center h-9 w-9 rounded-lg bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity shrink-0 cursor-pointer shadow-xs"
         >
           <%= if @chat_sending do %>
@@ -639,67 +631,6 @@ defmodule RailWeb.Components.ConversationTab do
           <% end %>
         <% end %>
       <% end %>
-    </div>
-    """
-  end
-
-  # --- Delivery Modal Component ---
-
-  attr :modal, :map, required: true
-
-  def delivery_modal(assigns) do
-    ~H"""
-    <div
-      id="delivery-modal-backdrop"
-      data-qa="delivery-modal"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-    >
-      <div
-        id="delivery-modal-card"
-        class="w-full max-w-md p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl space-y-4"
-      >
-        <h3 class="text-lg font-bold text-slate-900 dark:text-slate-100">
-          A run is in flight
-        </h3>
-
-        <p class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-          The pipeline is currently executing a run. How would you like to deliver your message to {@modal.role_name}?
-        </p>
-
-        <div class="flex flex-col sm:flex-row items-center justify-end gap-2 pt-2">
-          <button
-            type="button"
-            id="delivery-modal-cancel"
-            data-qa="delivery-cancel"
-            phx-click="cancel_chat_delivery"
-            class="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-          >
-            Cancel
-          </button>
-
-          <button
-            type="button"
-            id="delivery-modal-when-finished"
-            data-qa="delivery-when-finished"
-            phx-click="confirm_chat_delivery"
-            phx-value-delivery="when_finished"
-            class="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-semibold border border-slate-500 dark:border-slate-400 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-          >
-            Deliver when pipeline pauses
-          </button>
-
-          <button
-            type="button"
-            id="delivery-modal-stop-and-send"
-            data-qa="delivery-stop-and-send"
-            phx-click="confirm_chat_delivery"
-            phx-value-delivery="stop_and_send"
-            class="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 transition-opacity shadow-xs cursor-pointer"
-          >
-            Stop run & send now
-          </button>
-        </div>
-      </div>
     </div>
     """
   end

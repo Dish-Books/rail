@@ -1,14 +1,15 @@
 defmodule Rail.Pipeline.Actions.ParseStageVerdict do
   @moduledoc """
-  Reads a gate run's verdict out of its own log.
+  Reads a run's verdict out of its own log.
   """
 
   import Rail.Runs.Utils.AssistantLog
 
   alias Rail.Domain.StageVerdict
+  alias Rail.Runs.Schemas.Run
 
-  @prefixed_pattern ~r/^verdict\s*[:\-]?\s*(approved|changes\s+requested|pass(?:ed)?|fail(?:ed)?)(.*)$/i
-  @bare_pattern ~r/^(approved|changes\s+requested|pass(?:ed)?|fail(?:ed)?)\s*(?:[-–—:,.(](.*))?$/i
+  @prefixed_pattern ~r/^verdict\s*[:\-]?\s*(approved|changes\s+requested|pass(?:ed)?|fail(?:ed)?|done)(.*)$/i
+  @bare_pattern ~r/^(approved|changes\s+requested|pass(?:ed)?|fail(?:ed)?|done)\s*(?:[-–—:,.(](.*))?$/i
 
   @word_verdicts %{
     "approved" => :passed,
@@ -16,7 +17,8 @@ defmodule Rail.Pipeline.Actions.ParseStageVerdict do
     "passed" => :passed,
     "changes requested" => :changes_requested,
     "fail" => :changes_requested,
-    "failed" => :changes_requested
+    "failed" => :changes_requested,
+    "done" => :done
   }
 
   @doc """
@@ -29,9 +31,9 @@ defmodule Rail.Pipeline.Actions.ParseStageVerdict do
   check passed", "APPROVED once the leak is fixed"), which is the other reason
   the last line is the one that counts. Table rows are skipped.
   """
-  def parse_stage_verdict(run_or_id) do
+  def parse_stage_verdict(%Run{} = run) do
     {verdict, explanation} =
-      run_or_id
+      run
       |> assistant_log()
       |> String.replace("\r\n", "\n")
       |> String.split("\n")

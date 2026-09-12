@@ -18,7 +18,7 @@ defmodule RailWeb.Components.StageOutcome do
 
     error = if run, do: String.trim(get_field(run, :error) || ""), else: ""
 
-    visible = run != nil and error != "" and stage_state_failed?(task)
+    visible = run != nil and error != ""
     resolved_role_name = resolve_role_name(assigns.role_name, run, task)
 
     assigns =
@@ -85,10 +85,6 @@ defmodule RailWeb.Components.StageOutcome do
       end
 
     format_role_id(role_id)
-  end
-
-  defp stage_state_failed?(task) do
-    get_field(task, :stage_state) in [:failed, "failed"]
   end
 
   defp get_field(%_struct_mod{} = struct, field), do: Map.get(struct, field)

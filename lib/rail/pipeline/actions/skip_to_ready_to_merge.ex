@@ -1,49 +1,48 @@
 defmodule Rail.Pipeline.Actions.SkipToReadyToMerge do
   @moduledoc """
-  Action to skip a parked gate stage directly to `ready_to_merge`.
-  Allowed only when the task is parked (`awaiting_approval`) at a gate stage (`:review`, `:qa`, `:qa_lead`).
+  Takes a change from a gate straight to the merge on human request.
+
+  The gate is not overruled so much as stood down: a human who has read its
+  findings and decided to ship anyway does not need it to agree first. Only a
+  gate that has stopped can be skipped — while it is still working there is
+  nothing to decide about.
   """
 
+  import Rail.Pipeline.Utils.StageRun
+
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Repo
+  alias Rail.Runs.Schemas.Run
 
   @gate_stages [:review, :qa, :qa_lead]
 
   @doc """
-  Skips a parked gate stage directly to `ready_to_merge`:
-  - Enforces `stage_state == :awaiting_approval`.
-  - Enforces `stage in [:review, :qa, :qa_lead]`.
-  - Sets `stage: :ready_to_merge`, `stage_state: :awaiting_approval`.
-  - Clears `error` and `retry_after`.
-  - Broadcasts `pipeline_changed`.
+  Skips the gate `task` is parked at and enters `:ready_to_merge`.
   """
-  def skip_to_ready_to_merge(%Task{} = task) do
-    do_skip_to_ready_to_merge(task)
-  end
-
-  defp do_skip_to_ready_to_merge(%Task{stage_state: state}) when state != :awaiting_approval do
-    {:error, {:invalid_stage_state, state}}
-  end
-
-  defp do_skip_to_ready_to_merge(%Task{stage: stage}) when stage not in @gate_stages do
+  def skip_to_ready_to_merge(%Task{stage: stage}) when stage not in @gate_stages do
     {:error, {:invalid_stage, stage}}
   end
 
-  defp do_skip_to_ready_to_merge(%Task{} = task) do
-    attrs = %{
-      stage: :ready_to_merge,
-      stage_state: :awaiting_approval,
-      error: nil,
-      retry_after: nil
-    }
+  def skip_to_ready_to_merge(%Task{} = task) do
+    case stage_run(task) do
+      %Run{} = run -> skip_unless_running(task, run)
+      nil -> enter_ready_to_merge(task)
+    end
+  end
 
-    {:ok, updated_task} =
-      task
-      |> Task.changeset(attrs)
-      |> Repo.update()
+  defp skip_unless_running(%Task{} = task, %Run{} = run) do
+    if Run.running?(run) do
+      {:error, :stage_running}
+    else
+      enter_ready_to_merge(task)
+    end
+  end
 
-    Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :skipped_to_ready_to_merge})
+  defp enter_ready_to_merge(%Task{} = task) do
+    {:ok, task} = Pipeline.enter_stage(task, :ready_to_merge)
 
-    {:ok, updated_task}
+    Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :skipped_to_ready_to_merge})
+
+    {:ok, task}
   end
 end

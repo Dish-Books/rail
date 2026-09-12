@@ -19,26 +19,38 @@ defmodule Rail.Runs.Actions.StartOsProcess do
 
   Everything the spawn needs is derived from the run: the executable from
   its role's backend, which is an absolute path, and the working directory and
-  stream path from its task.
-  `argv` is arguments only. The one option is `:is_chat`, which marks a chat turn
-  riding alongside the stage rather than the stage's own run. Nothing is wired in
-  for the exit: `run_finished/3` works from the row the spawn writes.
+  stream path from its task. `argv` is arguments only. Nothing is wired in for
+  the exit: `run_finished/3` works from the row the spawn writes.
 
-  Returns `{:ok, os_process}` with its `:run` and `:task` loaded, or
-  `{:error, {:spawn_failed, reason, task}}`. A stage spawn is the dispatch of
-  the task's stage, so it carries the task with it: on success the task moves to
-  `:running` with the run's pending answer cleared, on failure to `:failed` with
-  the reason recorded, and either way `pipeline_changed` is broadcast. A chat
-  turn rides alongside the stage and leaves the task alone.
+  A spawn is a spawn whether it carries a stage's work or a message the human
+  just typed, so nothing here asks which it was and nothing here touches the
+  task. Returns `{:ok, os_process}` with its `:run` and `:task` loaded, or
+  `{:error, {:spawn_failed, reason, run}}` with the reason recorded on the run.
+
+  Returns `{:error, :dispatch_disabled}` when `RAIL_NO_DISPATCH=1` is set or the
+  `:no_dispatch` config is on. This is the one gate on invoking an agent CLI, so
+  it sits here rather than at each of the places that decide to: Rail still moves
+  tasks, records runs and renders everything, it just never spawns.
   """
-  def start_os_process(%Run{} = run, argv, opts \\ []) do
+  def start_os_process(%Run{} = run, argv) do
+    if dispatch_disabled?() do
+      {:error, :dispatch_disabled}
+    else
+      spawn_os_process(run, argv)
+    end
+  end
+
+  defp dispatch_disabled? do
+    System.get_env("RAIL_NO_DISPATCH") == "1" or Application.get_env(:rail, :no_dispatch, false)
+  end
+
+  defp spawn_os_process(%Run{} = run, argv) do
     run = Repo.preload(run, [:task, role: :backend])
     %Run{task: %Task{} = task, role: %Role{backend: %Backend{} = backend}} = run
 
-    is_chat = Keyword.get(opts, :is_chat, false)
     executable = backend.executable_path
     stream_path = prepare_stream_files(task, run)
-    os_process = insert_os_process(run, is_chat, stream_path)
+    os_process = insert_os_process(run, stream_path)
 
     result =
       case ensure_executable(executable, os_process, run) do
@@ -47,46 +59,43 @@ defmodule Rail.Runs.Actions.StartOsProcess do
       end
 
     case result do
-      {:ok, os_process} -> finalize(is_chat, task, run, os_process)
-      {:error, reason} -> fail(is_chat, task, reason)
+      {:ok, os_process} -> finalize(task, run, os_process)
+      {:error, reason} -> fail(run, reason)
     end
   end
 
-  defp finalize(false, task, run, os_process) do
+  defp finalize(task, run, os_process) do
     {:ok, run} =
       run
-      |> Run.changeset(%{pending_answer: nil, attempt_log_lines: 0})
+      |> Run.changeset(%{pending_answer: nil, attempt_log_lines: 0, error: nil})
       |> Repo.update()
-
-    {:ok, task} = task |> Task.changeset(%{stage_state: :running}) |> Repo.update()
 
     Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :dispatched})
 
     {:ok, %{os_process | run: run, task: task}}
   end
 
-  defp finalize(true, task, run, os_process) do
-    {:ok, %{os_process | run: run, task: task}}
+  # A failure that already said what went wrong keeps its own words: the missing
+  # binary check settles the run before returning here.
+  defp fail(run, reason) do
+    run = Repo.get!(Run, run.id)
+
+    run =
+      if is_binary(run.error) do
+        run
+      else
+        run |> Run.changeset(%{error: "Failed to spawn runner: #{inspect(reason)}"}) |> Repo.update!()
+      end
+
+    Pipeline.broadcast_pipeline_changed(%{task_id: run.task_id, event: :dispatch_failed})
+
+    {:error, {:spawn_failed, reason, run}}
   end
 
-  defp fail(false, task, reason) do
-    {:ok, task} =
-      task
-      |> Task.changeset(%{stage_state: :failed, error: "Failed to spawn runner: #{inspect(reason)}"})
-      |> Repo.update()
-
-    Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :dispatch_failed})
-
-    {:error, {:spawn_failed, reason, task}}
-  end
-
-  defp fail(true, task, reason), do: {:error, {:spawn_failed, reason, task}}
-
-  defp insert_os_process(run, is_chat, stream_path) do
+  defp insert_os_process(run, stream_path) do
     attrs = %{
       run_id: run.id,
       task_id: run.task_id,
-      is_chat: is_chat,
       stream_path: stream_path,
       node: to_string(Node.self()),
       status: :starting,

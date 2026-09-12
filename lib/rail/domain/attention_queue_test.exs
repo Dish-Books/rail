@@ -235,7 +235,7 @@ defmodule Rail.Domain.AttentionQueueTest do
     {_items, queue} = AttentionQueue.reconcile(queue, [TaskAttentionItem.new(task1), TaskAttentionItem.new(task2)])
 
     # Mutate task1
-    task1_mutated = Map.merge(task1, %{error: "Something broke", stage: :review, stage_state: :failed})
+    task1_mutated = Map.merge(task1, %{error: "Something broke", stage: :review})
 
     {updated, _queue} =
       AttentionQueue.reconcile(queue, [TaskAttentionItem.new(task1_mutated), TaskAttentionItem.new(task2)])

@@ -4,12 +4,13 @@ defmodule Rail.Runs.Actions.ListRunEvents do
   import Ecto.Query
 
   alias Rail.Repo
+  alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
 
   @doc """
   Lists all run events for a run ordered by sequence.
   """
-  def list_run_events(run_id, opts \\ []) do
+  def list_run_events(%Run{id: run_id}, opts \\ []) do
     limit = Keyword.get(opts, :limit)
 
     query =

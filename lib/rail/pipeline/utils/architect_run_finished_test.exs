@@ -1,8 +1,8 @@
 defmodule Rail.Pipeline.Utils.ArchitectRunFinishedTest do
   use Rail.DataCase, async: true
 
+  import Ecto.Query
   import Rail.Pipeline.Utils.ArchitectRunFinished
-  import Rail.Pipeline.Utils.CaptureScratch
 
   alias Rail.Issues
   alias Rail.Pipeline
@@ -12,7 +12,6 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinishedTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -76,144 +75,34 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinishedTest do
     # These tests exercise stage transitions, not Linear publishing.
     {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
-    %{backend: backend, project: project, issue: issue, task: task, roles: roles}
-  end
-
-  test "settles clean exit 0 for architect stage advancing to awaiting_approval when plan exists", %{
-    task: task,
-    roles: roles
-  } do
-    {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(task, %{
-        stage: :architect,
-        stage_state: :running
-      })
-
-    # settle_run captures the plan again, so keep the plan on the real filesystem.
-    plan_dir = Path.join("/tmp", "rail_plan_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(plan_dir)
-    File.write!(Path.join(plan_dir, "plan.md"), "# Architecture Plan")
-    on_exit(fn -> File.rm_rf(plan_dir) end)
-
-    {:ok, _captured} = capture_scratch(:architect, %{task | scratch_path: plan_dir})
-
-    {:ok, _plan} = Pipeline.get_plan(Repo.get!(Task, task_id))
+    {:ok, task} = Pipeline.update_task(task, %{stage: :architect})
 
     {:ok, run} =
       Runs.create_run(%{
-        task_id: task_id,
-        role_id: roles[:engineer].id,
+        task_id: task.id,
+        role_id: roles[:architect].id,
         conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
 
-    os_process =
-      %OsProcess{}
-      |> OsProcess.changeset(%{
-        run_id: run.id,
-        task_id: run.task_id,
-        stream_path: "/tmp/settle_architect/#{run.id}.ndjson",
-        node: to_string(Node.self()),
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-      |> Repo.insert!()
+    run = Repo.preload(run, [:task, :role])
 
-    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-    assert {:ok, %Task{id: ^task_id, stage_state: :awaiting_approval, retry_after: nil, error: nil},
-            %Run{status: :finished, exit_code: 0}} =
-             finish_architect_run(os_process)
+    %{backend: backend, project: project, issue: issue, task: task, roles: roles, run: run}
   end
 
-  test "settles clean exit 0 for architect stage failing when plan file was not written", %{task: task, roles: roles} do
-    {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(task, %{
-        stage: :architect,
-        stage_state: :running
-      })
+  test "captures the plan and leaves the task for a human to approve", %{task: task, run: run} do
+    File.mkdir_p!(task.scratch_path)
+    File.write!(Path.join(task.scratch_path, "plan.md"), "# Plan\n\nDo the thing.")
 
-    {:ok, run} =
-      Runs.create_run(%{
-        task_id: task_id,
-        role_id: roles[:engineer].id,
-        conversation_id: "sess_fixture",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-
-    os_process =
-      %OsProcess{}
-      |> OsProcess.changeset(%{
-        run_id: run.id,
-        task_id: run.task_id,
-        stream_path: "/tmp/settle_architect/#{run.id}.ndjson",
-        node: to_string(Node.self()),
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-      |> Repo.insert!()
-
-    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-    assert {:ok, %Task{id: ^task_id, stage_state: :failed, error: error_msg}, %Run{status: :finished, exit_code: 0}} =
-             finish_architect_run(os_process)
-
-    assert error_msg =~ "without writing a plan"
+    assert %Run{error: nil} = architect_run_finished(run, [])
+    assert Repo.exists?(from p in Plan, where: p.task_id == ^task.id)
+    assert %Task{stage: :architect} = Repo.get!(Task, task.id)
   end
 
-  test "resolves string keys, updates associated Run, and captures scratch artifacts", %{
-    task: task,
-    roles: roles
-  } do
-    scratch_dir = create_temp_git_repo()
-
-    {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(task, %{
-        stage: :architect,
-        stage_state: :running,
-        scratch_path: scratch_dir
-      })
-
-    {:ok, %Run{id: run_id}} =
-      Runs.create_run(%{
-        task_id: task_id,
-        role_id: roles[:engineer].id,
-        conversation_id: "sess_fixture",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-
-    %OsProcess{id: os_process_id} =
-      os_process =
-      %OsProcess{}
-      |> OsProcess.changeset(%{
-        run_id: run_id,
-        task_id: task_id,
-        stream_path: "/tmp/settle_architect/#{run_id}.ndjson",
-        node: to_string(Node.self()),
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-      |> Repo.insert!()
-
-    plan_path = Path.join(scratch_dir, "plan.md")
-    File.write!(plan_path, "# Captured Architecture Plan")
-
-    outcome = %{
-      "exit_code" => 0,
-      "usage" => %{"input_tokens" => 500, "output_tokens" => 150},
-      :os_process => os_process
-    }
-
-    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, outcome)
-
-    assert {:ok, %Task{id: ^task_id, stage_state: :awaiting_approval}, %Run{id: ^run_id, status: :finished}} =
-             finish_architect_run(os_process)
-
-    assert %OsProcess{id: ^os_process_id, status: :finished} = Repo.get!(OsProcess, os_process_id)
-    assert %Plan{content: plan_content} = Repo.one(from p in Plan, where: p.task_id == ^task_id)
-    assert plan_content =~ "Captured Architecture Plan"
+  test "an architect that wrote no plan records that on its run", %{task: task, run: run} do
+    assert %Run{error: error} = architect_run_finished(run, [])
+    assert error =~ "without writing a plan file"
+    refute Repo.exists?(from p in Plan, where: p.task_id == ^task.id)
   end
 end

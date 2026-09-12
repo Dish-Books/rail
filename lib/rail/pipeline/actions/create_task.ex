@@ -37,7 +37,6 @@ defmodule Rail.Pipeline.Actions.CreateTask do
     attrs = %{
       issue_id: issue.id,
       stage: stage,
-      stage_state: :queued,
       worktree_name: name,
       worktree_path: Path.join(project.clone_path, ".worktrees/#{name}"),
       scratch_path: scratch_path(project.id, id)

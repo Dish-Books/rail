@@ -7,6 +7,7 @@ defmodule Rail.Domain.FormattersTest do
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -101,7 +102,6 @@ defmodule Rail.Domain.FormattersTest do
 
       task_normal = %{
         stage: :architect,
-        stage_state: :awaiting_approval,
         runs: %{architect: %{status: :completed, error: "Old error"}}
       }
 
@@ -111,8 +111,7 @@ defmodule Rail.Domain.FormattersTest do
     test "picks first non-blank line of task.error", %{task: _task} do
       task = %{
         error: "\n   \nFirst non-blank error line\nSecond error line",
-        stage: :engineer,
-        stage_state: :failed
+        stage: :engineer
       }
 
       assert Formatters.overview_detail_for(task) == "First non-blank error line"
@@ -122,8 +121,8 @@ defmodule Rail.Domain.FormattersTest do
       task = %{
         error: "   ",
         stage: :engineer,
-        stage_state: :failed,
         current_role_id: "engineer",
+        run: %Run{status: :finished, error: "failed"},
         runs: %{
           "engineer" => %{
             status: :failed,
@@ -138,8 +137,8 @@ defmodule Rail.Domain.FormattersTest do
     test "uses passed runs map when provided", %{task: _task} do
       task = %{
         stage: :engineer,
-        stage_state: :failed,
-        current_role_id: :engineer
+        current_role_id: :engineer,
+        run: %Run{status: :finished, error: "failed"}
       }
 
       runs = %{
@@ -152,8 +151,7 @@ defmodule Rail.Domain.FormattersTest do
     test "collapses consecutive whitespace and trims line", %{task: _task} do
       task = %{
         error: "   Failed   to    build    target    main.dart   ",
-        stage: :engineer,
-        stage_state: :failed
+        stage: :engineer
       }
 
       assert Formatters.overview_detail_for(task) == "Failed to build target main.dart"
@@ -161,7 +159,7 @@ defmodule Rail.Domain.FormattersTest do
 
     test "caps at 140 characters with ellipsis when line exceeds 140 chars", %{task: _task} do
       long_line = String.duplicate("A", 200)
-      task = %{error: long_line, stage: :engineer, stage_state: :failed}
+      task = %{error: long_line, stage: :engineer}
 
       expected = String.duplicate("A", 140) <> "..."
       assert Formatters.overview_detail_for(task) == expected
@@ -169,139 +167,88 @@ defmodule Rail.Domain.FormattersTest do
 
     test "does not append ellipsis when line is 140 characters or fewer", %{task: _task} do
       exact_140 = String.duplicate("B", 140)
-      task = %{error: exact_140, stage: :engineer, stage_state: :failed}
+      task = %{error: exact_140, stage: :engineer}
 
       assert Formatters.overview_detail_for(task) == exact_140
     end
   end
 
   describe "stage_label/2" do
-    test "returns 'Waiting on you' for nil task or unknown state" do
+    test "returns 'Waiting on you' for nil task" do
       assert Formatters.stage_label(nil) == "Waiting on you"
-      assert Formatters.stage_label(%{stage_state: :unknown_state}) == "Waiting on you"
     end
 
-    test "active chat role has highest precedence", %{task: _task} do
-      task = %{
-        active_chat_role_id: "engineer",
-        stage: :architect,
-        stage_state: :failed
-      }
+    test "names the stage and what its run is doing" do
+      assert Formatters.stage_label(%{stage: :qa_lead, run: %Run{status: :running}}) == "QA Lead running"
 
-      assert Formatters.stage_label(task) == "Chatting with Engineer"
+      assert Formatters.stage_label(%{stage: :demo, run: %Run{status: :blocked_on_input}}) == "Demo needs an answer"
 
-      # Custom role name in opts
-      assert Formatters.stage_label(task, role_name: "Code Expert") == "Chatting with Code Expert"
+      assert Formatters.stage_label(%{stage: :engineer, run: %Run{status: :finished, error: "boom"}}) ==
+               "Engineer failed"
 
-      # Custom roles list in opts
-      roles = [%{id: "engineer", name: "Lead Engineer"}]
-      assert Formatters.stage_label(task, roles: roles) == "Chatting with Lead Engineer"
+      assert Formatters.stage_label(%{stage: :engineer, run: %Run{status: :finished}}) == "Engineer stopped"
+      assert Formatters.stage_label(%{stage: :qa}) == "Queued for QA"
+    end
 
-      # Unmatched custom role in roles list falls back to default
-      roles_other = [%{id: "other", name: "Other"}]
-      assert Formatters.stage_label(task, roles: roles_other) == "Chatting with Engineer"
+    test "a stage that is done says what the human has to decide" do
+      done = %Run{status: :finished, stage_outcome: :done}
 
-      # Default role names: product, designer, reviewer, qa, qa_lead, demo
-      assert Formatters.stage_label(%{active_chat_role_id: "product"}) == "Chatting with Product"
-      assert Formatters.stage_label(%{active_chat_role_id: "design"}) == "Chatting with Designer"
-      assert Formatters.stage_label(%{active_chat_role_id: "designer"}) == "Chatting with Designer"
-      assert Formatters.stage_label(%{active_chat_role_id: "architect"}) == "Chatting with Architect"
-      assert Formatters.stage_label(%{active_chat_role_id: "review"}) == "Chatting with Reviewer"
-      assert Formatters.stage_label(%{active_chat_role_id: "reviewer"}) == "Chatting with Reviewer"
-      assert Formatters.stage_label(%{active_chat_role_id: "qa"}) == "Chatting with QA"
-      assert Formatters.stage_label(%{active_chat_role_id: "qa_lead"}) == "Chatting with QA Lead"
-      assert Formatters.stage_label(%{active_chat_role_id: "demo"}) == "Chatting with Demo"
-      assert Formatters.stage_label(%{active_chat_role_id: "security_lead"}) == "Chatting with Security Lead"
+      assert Formatters.stage_label(%{stage: :product, run: done}) == "Review the ticket"
+      assert Formatters.stage_label(%{stage: :design, run: done}) == "Pick a design direction"
+      assert Formatters.stage_label(%{stage: :design, run: done}, design_picked: true) == "Review the design"
+      assert Formatters.stage_label(%{stage: :architect, run: done}) == "Review the plan"
+      assert Formatters.stage_label(%{stage: :engineer, run: done}) == "Ready to send to review"
+      assert Formatters.stage_label(%{stage: :review, run: done}) == "Review needs your call"
+      assert Formatters.stage_label(%{stage: :qa, run: done}) == "QA needs your call"
+      assert Formatters.stage_label(%{stage: :qa_lead, run: done}) == "QA needs your call"
+      assert Formatters.stage_label(%{stage: :demo, run: done}) == "Review the demo"
+      assert Formatters.stage_label(%{stage: :ready_to_merge, run: done}) == "Ready to merge"
+      assert Formatters.stage_label(%{stage: :debugger, run: done}) == "Waiting on you"
+    end
+
+    test "a conflicted branch says so rather than naming the stage" do
+      conflicted = %{stage: :engineer, shows_as_conflicted: true}
+
+      assert Formatters.stage_label(conflicted) == "Conflicts - needs a rebase"
+
+      done = %Run{status: :finished, stage_outcome: :done}
+
+      assert Formatters.stage_label(%{stage: :engineer, shows_as_conflicted: true, run: done}) ==
+               "Conflicts - needs a rebase"
     end
 
     test "rebase status formatting" do
-      t_queued = %{is_rebasing: true, stage_state: :queued}
-      assert Formatters.stage_label(t_queued) == "Queued to rebase"
+      assert Formatters.stage_label(%{is_rebasing: true}) == "Queued to rebase"
 
-      # Waiting to retry rebase
-      future_time = ~U[2026-01-01 12:00:00Z]
-      now_time = ~U[2026-01-01 11:00:00Z]
-      t_retry = %{is_rebasing: true, stage_state: :queued, retry_after: future_time}
-      assert Formatters.stage_label(t_retry, now: now_time) == "Retrying the rebase shortly"
+      assert Formatters.stage_label(%{is_rebasing: true, run: %Run{status: :running}}) == "Rebasing the branch"
 
-      t_running = %{is_rebasing: true, stage_state: :running}
-      assert Formatters.stage_label(t_running) == "Rebasing the branch"
+      assert Formatters.stage_label(%{is_rebasing: true, run: %Run{status: :blocked_on_input}}) ==
+               "Rebase needs an answer"
 
-      t_blocked = %{is_rebasing: true, stage_state: :blocked}
-      assert Formatters.stage_label(t_blocked) == "Rebase needs an answer"
+      assert Formatters.stage_label(%{is_rebasing: true, run: %Run{status: :finished, error: "boom"}}) ==
+               "Rebase failed"
 
-      t_paused = %{is_rebasing: true, stage_state: :paused_question}
-      assert Formatters.stage_label(t_paused) == "Rebase needs an answer"
-
-      t_failed = %{is_rebasing: true, stage_state: :failed}
-      assert Formatters.stage_label(t_failed) == "Rebase failed"
-
-      t_other = %{is_rebasing: true, stage_state: :idle}
-      assert Formatters.stage_label(t_other) == "Queued to rebase"
+      assert Formatters.stage_label(%{is_rebasing: true, run: %Run{status: :finished}}) == "Rebase stopped"
     end
 
     test "rework cycle suffix" do
-      # On or after engineer with rework_cycles > 0
-      t_eng = %{stage: :engineer, stage_state: :running, rework_cycles: 2}
-      assert Formatters.stage_label(t_eng) == "Engineer running · rework 2 of 5"
+      running = %Run{status: :running}
 
-      # Custom rework ceiling
+      t_eng = %{stage: :engineer, rework_cycles: 2, run: running}
+      assert Formatters.stage_label(t_eng) == "Engineer running · rework 2 of 5"
       assert Formatters.stage_label(t_eng, rework_ceiling: 8) == "Engineer running · rework 2 of 8"
 
-      # Before engineer (e.g. architect): no rework suffix
-      t_arch = %{stage: :architect, stage_state: :running, rework_cycles: 2}
+      # Before engineer there is nothing to have reworked yet.
+      t_arch = %{stage: :architect, rework_cycles: 2, run: running}
       assert Formatters.stage_label(t_arch) == "Architect running"
 
-      # rework_cycles = 0: no rework suffix
-      t_zero = %{stage: :engineer, stage_state: :running, rework_cycles: 0}
+      t_zero = %{stage: :engineer, rework_cycles: 0, run: running}
       assert Formatters.stage_label(t_zero) == "Engineer running"
     end
 
-    test "queued state with conflicts, retry, and normal" do
-      t_conflicted = %{stage: :engineer, stage_state: :queued, shows_as_conflicted: true}
-      assert Formatters.stage_label(t_conflicted) == "Conflicts - needs a rebase"
-
-      future_time = ~U[2026-01-01 12:00:00Z]
-      now_time = ~U[2026-01-01 11:00:00Z]
-      t_retry = %{stage: :review, stage_state: :queued, retry_after: future_time}
-      assert Formatters.stage_label(t_retry, now: now_time) == "Retrying Review shortly"
-
-      t_normal = %{stage: :qa, stage_state: :queued}
-      assert Formatters.stage_label(t_normal) == "Queued for QA"
-    end
-
-    test "running, blocked, failed states" do
-      assert Formatters.stage_label(%{stage: :qa_lead, stage_state: :running}) == "QA Lead running"
-      assert Formatters.stage_label(%{stage: :demo, stage_state: :blocked}) == "Demo needs an answer"
-      assert Formatters.stage_label(%{stage: :demo, stage_state: :blocked_rework}) == "Demo needs an answer"
-      assert Formatters.stage_label(%{stage: :engineer, stage_state: :failed}) == "Engineer failed"
-    end
-
-    test "awaiting_approval state across stages and design picked state" do
-      assert Formatters.stage_label(%{stage: :engineer, stage_state: :awaiting_approval, shows_as_conflicted: true}) ==
-               "Conflicts - needs a rebase"
-
-      assert Formatters.stage_label(%{stage: :product, stage_state: :awaiting_approval}) == "Review the ticket"
-      assert Formatters.stage_label(%{stage: :design, stage_state: :awaiting_approval}) == "Pick a design direction"
-
-      # Design with picked key in map or opts
-      assert Formatters.stage_label(%{stage: :design, stage_state: :awaiting_approval, design: %{picked_key: "dir-1"}}) ==
-               "Review the design"
-
-      assert Formatters.stage_label(%{stage: :design, stage_state: :awaiting_approval, design_picked_key: "dir-1"}) ==
-               "Review the design"
-
-      assert Formatters.stage_label(%{stage: :design, stage_state: :awaiting_approval}, design_picked: true) ==
-               "Review the design"
-
-      assert Formatters.stage_label(%{stage: :architect, stage_state: :awaiting_approval}) == "Review the plan"
-      assert Formatters.stage_label(%{stage: :engineer, stage_state: :awaiting_approval}) == "Ready to send to review"
-      assert Formatters.stage_label(%{stage: :review, stage_state: :awaiting_approval}) == "Review needs your call"
-      assert Formatters.stage_label(%{stage: :qa, stage_state: :awaiting_approval}) == "QA needs your call"
-      assert Formatters.stage_label(%{stage: :qa_lead, stage_state: :awaiting_approval}) == "QA needs your call"
-      assert Formatters.stage_label(%{stage: :demo, stage_state: :awaiting_approval}) == "Review the demo"
-      assert Formatters.stage_label(%{stage: :ready_to_merge, stage_state: :awaiting_approval}) == "Ready to merge"
-      assert Formatters.stage_label(%{stage: :custom_stage, stage_state: :awaiting_approval}) == "Waiting on you"
+    test "a task waiting to retry says so while it queues" do
+      t_retry = %{stage: :review, is_waiting_to_retry: true}
+      assert Formatters.stage_label(t_retry) == "Retrying Review shortly"
     end
   end
 
@@ -358,34 +305,34 @@ defmodule Rail.Domain.FormattersTest do
 
   describe "edge cases and type variations" do
     test "overview_detail_for handles whitespace-only error and non-map runs" do
-      t_whitespace = %{stage_state: :failed, runs: %{engineer: %{error: "  \n  \n  "}}}
+      t_whitespace = %{runs: %{engineer: %{error: "  \n  \n  "}}}
       assert Formatters.overview_detail_for(t_whitespace) == nil
 
-      t_no_runs = %{stage_state: :failed, runs: nil}
+      t_no_runs = %{runs: nil}
       assert Formatters.overview_detail_for(t_no_runs) == nil
 
-      t_invalid_runs = %{stage_state: :failed, current_role_id: :engineer, runs: "invalid"}
+      t_invalid_runs = %{current_role_id: :engineer, runs: "invalid"}
       assert Formatters.overview_detail_for(t_invalid_runs) == nil
 
       assert Formatters.overview_detail_for(nil) == nil
     end
 
     test "stage_label handles is_waiting_to_retry boolean flag" do
-      t_retry_true = %{stage: :engineer, stage_state: :queued, is_rebasing: true, is_waiting_to_retry: true}
+      t_retry_true = %{stage: :engineer, is_rebasing: true, is_waiting_to_retry: true}
       assert Formatters.stage_label(t_retry_true) == "Retrying the rebase shortly"
 
-      t_retry_false = %{stage: :engineer, stage_state: :queued, is_rebasing: true, is_waiting_to_retry: false}
+      t_retry_false = %{stage: :engineer, is_rebasing: true, is_waiting_to_retry: false}
       assert Formatters.stage_label(t_retry_false) == "Queued to rebase"
     end
 
     test "stage_label handles has_merge_conflicts and mergeability variations" do
-      t_hmc = %{stage: :engineer, stage_state: :queued, has_merge_conflicts: true}
+      t_hmc = %{stage: :engineer, has_merge_conflicts: true}
       assert Formatters.stage_label(t_hmc) == "Conflicts - needs a rebase"
 
-      t_merge_atom = %{stage: :engineer, stage_state: :queued, mergeability: :conflicts}
+      t_merge_atom = %{stage: :engineer, mergeability: :conflicts}
       assert Formatters.stage_label(t_merge_atom) == "Conflicts - needs a rebase"
 
-      t_merge_str = %{stage: :engineer, stage_state: :queued, mergeability: "conflicts"}
+      t_merge_str = %{stage: :engineer, mergeability: "conflicts"}
       assert Formatters.stage_label(t_merge_str) == "Conflicts - needs a rebase"
     end
 
@@ -395,20 +342,19 @@ defmodule Rail.Domain.FormattersTest do
       assert Formatters.stage_label(uri_task) == "Waiting on you"
 
       # String key map
-      str_task = %{"stage" => "engineer", "stage_state" => "running"}
+      str_task = %{"stage" => "engineer", "run" => %Run{status: :running}}
       assert Formatters.stage_label(str_task) == "Engineer running"
 
       # Valid string stage that converts to atom
-      str_stage_task = %{stage: "engineer", stage_state: :running}
+      str_stage_task = %{stage: "engineer", run: %Run{status: :running}}
       assert Formatters.stage_label(str_stage_task) == "Engineer running"
 
-      # String stage that does not exist as atom
-      bad_task = %{stage: "totally_unknown_stage_string_xyz", stage_state: :running}
-      assert Formatters.stage_label(bad_task) == " running"
+      # A stage Rail does not recognise names nothing it can label.
+      bad_task = %{stage: "totally_unknown_stage_string_xyz", run: %Run{status: :running}}
+      assert Formatters.stage_label(bad_task) == "Waiting on you"
 
-      # Non-atom / non-string stage
-      non_atom_task = %{stage: 999, stage_state: :running}
-      assert Formatters.stage_label(non_atom_task) == " running"
+      non_atom_task = %{stage: 999, run: %Run{status: :running}}
+      assert Formatters.stage_label(non_atom_task) == "Waiting on you"
 
       # Nil and non-map task
       assert Formatters.stage_label(nil) == "Waiting on you"
@@ -417,78 +363,87 @@ defmodule Rail.Domain.FormattersTest do
   end
 
   describe "stage_state_icon/1" do
-    test "returns expected icon across all states and stages" do
-      assert Formatters.stage_state_icon(%{active_chat_role_id: "engineer"}) == "pi-chat-circle"
-      assert Formatters.stage_state_icon(%{shows_as_conflicted: true}) == "pi-git-branch"
-      assert Formatters.stage_state_icon(%{stage_state: :running}) == "pi-play-circle"
-      assert Formatters.stage_state_icon(%{stage_state: :queued}) == "pi-clock"
-      assert Formatters.stage_state_icon(%{stage_state: :blocked}) == "pi-question"
-      assert Formatters.stage_state_icon(%{stage_state: :paused_question}) == "pi-question"
-      assert Formatters.stage_state_icon(%{stage_state: :awaiting_approval, stage: :ready_to_merge}) == "pi-git-merge"
-      assert Formatters.stage_state_icon(%{stage_state: :awaiting_approval, stage: :engineer}) == "pi-chat-text"
-      assert Formatters.stage_state_icon(%{stage_state: :failed}) == "pi-warning-circle"
-      assert Formatters.stage_state_icon(%{stage_state: :unknown_state}) == "pi-question"
+    test "picks an icon from what the run for the stage is doing" do
+      assert Formatters.stage_state_icon(%{stage: :engineer, run: %Run{status: :running}}) == "pi-play-circle"
+      assert Formatters.stage_state_icon(%{stage: :engineer}) == "pi-clock"
+
+      assert Formatters.stage_state_icon(%{stage: :engineer, run: %Run{status: :blocked_on_input}}) == "pi-question"
+
+      assert Formatters.stage_state_icon(%{stage: :engineer, run: %Run{status: :finished, error: "boom"}}) ==
+               "pi-warning-circle"
+
+      assert Formatters.stage_state_icon(%{stage: :engineer, run: %Run{status: :finished}}) == "pi-pause-circle"
+    end
+
+    test "a stage that is done asks for a decision, and the merge asks for a merge" do
+      done = %Run{status: :finished, stage_outcome: :done}
+
+      assert Formatters.stage_state_icon(%{stage: :engineer, run: done}) == "pi-chat-text"
+      assert Formatters.stage_state_icon(%{stage: :ready_to_merge, run: done}) == "pi-git-merge"
+    end
+
+    test "a conflicted branch shows the branch icon instead" do
+      assert Formatters.stage_state_icon(%{stage: :engineer, has_merge_conflicts: true, is_rebasing: false}) ==
+               "pi-git-branch"
     end
   end
 
   describe "stage_state_color/1 and stage_state_color_class/2" do
-    test "returns semantic color atom and tailwind classes" do
-      t_chat = %{active_chat_role_id: "engineer"}
-      assert Formatters.stage_state_color(t_chat) == :primary
-      assert Formatters.stage_state_color_class(t_chat, :text) =~ "text-blue-600 dark:text-blue-500"
-      assert Formatters.stage_state_color_class(t_chat, :chip) =~ "bg-blue-100 dark:bg-blue-900"
+    test "colors a task by what the run for its stage is doing" do
+      assert Formatters.stage_state_color(%{stage: :engineer, run: %Run{status: :running}}) == :primary
 
-      t_conflicted = %{shows_as_conflicted: true}
-      assert Formatters.stage_state_color(t_conflicted) == :amber
-      assert Formatters.stage_state_color_class(t_conflicted, :text) =~ "text-amber-700"
-      assert Formatters.stage_state_color_class(t_conflicted, :chip) =~ "bg-amber-100"
+      assert Formatters.stage_state_color(%{stage: :engineer, run: %Run{status: :blocked_on_input}}) == :amber
 
-      t_run = %{stage_state: :running}
-      assert Formatters.stage_state_color(t_run) == :primary
+      assert Formatters.stage_state_color(%{stage: :engineer, run: %Run{status: :finished, stage_outcome: :done}}) ==
+               :amber
 
-      t_block = %{stage_state: :blocked}
-      assert Formatters.stage_state_color(t_block) == :amber
+      assert Formatters.stage_state_color(%{stage: :engineer, run: %Run{status: :finished, error: "boom"}}) == :error
+      assert Formatters.stage_state_color(%{stage: :engineer, run: %Run{status: :finished}}) == :outline
+      assert Formatters.stage_state_color(%{stage: :engineer}) == :outline
+    end
 
-      t_appr = %{stage_state: :awaiting_approval}
-      assert Formatters.stage_state_color(t_appr) == :amber
+    test "a conflicted branch is amber whatever its run says" do
+      assert Formatters.stage_state_color(%{stage: :engineer, has_merge_conflicts: true, is_rebasing: false}) == :amber
+    end
 
-      t_queue = %{stage_state: :queued}
-      assert Formatters.stage_state_color(t_queue) == :outline
-      assert Formatters.stage_state_color_class(t_queue, :text) =~ "text-slate-500 dark:text-slate-400"
-      assert Formatters.stage_state_color_class(t_queue, :chip) =~ "bg-slate-100 dark:bg-slate-700"
+    test "maps each color to text and chip classes" do
+      running = %{stage: :engineer, run: %Run{status: :running}}
+      failed = %{stage: :engineer, run: %Run{status: :finished, error: "boom"}}
 
-      t_fail = %{stage_state: :failed}
-      assert Formatters.stage_state_color(t_fail) == :error
-      assert Formatters.stage_state_color_class(t_fail, :text) =~ "text-red-600 dark:text-red-500"
-      assert Formatters.stage_state_color_class(t_fail, :chip) =~ "bg-red-100 dark:bg-red-900"
+      assert Formatters.stage_state_color_class(running) =~ "text-blue-600"
+      assert Formatters.stage_state_color_class(running, :chip) =~ "bg-blue-100"
+      assert Formatters.stage_state_color_class(failed) =~ "text-red-600"
+      assert Formatters.stage_state_color_class(failed, :chip) =~ "bg-red-100"
+      assert Formatters.stage_state_color_class(%{stage: :engineer}) =~ "text-slate-500"
+      assert Formatters.stage_state_color_class(%{stage: :engineer}, :chip) =~ "bg-slate-100"
 
-      t_other = %{stage_state: :unknown_state}
-      assert Formatters.stage_state_color(t_other) == :outline
+      blocked = %{stage: :engineer, run: %Run{status: :blocked_on_input}}
+      assert Formatters.stage_state_color_class(blocked) =~ "text-amber-700"
+      assert Formatters.stage_state_color_class(blocked, :chip) =~ "bg-amber-100"
     end
   end
 
   describe "shows_as_conflicted?/1 and has_merge_conflicts?/1" do
-    test "detects merge conflicts accurately" do
-      assert Formatters.shows_as_conflicted?(%{shows_as_conflicted: true})
-      assert Formatters.shows_as_conflicted?(%{conflicted: true})
-      assert Formatters.shows_as_conflicted?(%{has_merge_conflicts: true, is_rebasing: false, stage_state: :queued})
+    test "a conflicted branch only shows as conflicted once nothing is running on it" do
+      running = %{has_merge_conflicts: true, is_rebasing: false, run: %Run{status: :running}}
+      refute Formatters.shows_as_conflicted?(running)
 
-      assert Formatters.shows_as_conflicted?(%{
-               mergeability: :conflicts,
-               is_rebasing: false,
-               stage_state: :awaiting_approval
-             })
+      stopped = %{has_merge_conflicts: true, is_rebasing: false, run: %Run{status: :finished}}
+      assert Formatters.shows_as_conflicted?(stopped)
 
-      assert Formatters.shows_as_conflicted?(%{mergeability: "conflicting", is_rebasing: false, stage_state: :queued})
+      never_run = %{has_merge_conflicts: true, is_rebasing: false}
+      assert Formatters.shows_as_conflicted?(never_run)
+    end
 
-      # False if rebasing
-      refute Formatters.shows_as_conflicted?(%{has_merge_conflicts: true, is_rebasing: true, stage_state: :queued})
+    test "a task already rebasing is not offered another rebase" do
+      refute Formatters.shows_as_conflicted?(%{has_merge_conflicts: true, is_rebasing: true})
+    end
 
-      # False if running
-      refute Formatters.shows_as_conflicted?(%{has_merge_conflicts: true, is_rebasing: false, stage_state: :running})
-
-      # Non conflicted
-      refute Formatters.shows_as_conflicted?(%{has_merge_conflicts: false, stage_state: :queued})
+    test "reads conflicts from mergeability as well as the explicit flag" do
+      assert Formatters.has_merge_conflicts?(%{mergeability: :conflicting})
+      assert Formatters.has_merge_conflicts?(%{has_merge_conflicts: true})
+      refute Formatters.has_merge_conflicts?(%{mergeability: :clean})
+      refute Formatters.has_merge_conflicts?(%{})
     end
   end
 
@@ -539,10 +494,10 @@ defmodule Rail.Domain.FormattersTest do
     end
 
     test "rework ceiling computed from rework_budget_base + 5 or explicit rework_ceiling" do
-      t_base = %{stage: :engineer, stage_state: :running, rework_cycles: 2, rework_budget_base: 3}
+      t_base = %{stage: :engineer, rework_cycles: 2, rework_budget_base: 3, run: %Run{status: :running}}
       assert Formatters.stage_label(t_base) == "Engineer running · rework 2 of 8"
 
-      t_custom = %{stage: :engineer, stage_state: :running, rework_cycles: 1, rework_ceiling: 9}
+      t_custom = %{stage: :engineer, rework_cycles: 1, rework_ceiling: 9, run: %Run{status: :running}}
       assert Formatters.stage_label(t_custom) == "Engineer running · rework 1 of 9"
 
       # stage_state_color_class with default 1-arg

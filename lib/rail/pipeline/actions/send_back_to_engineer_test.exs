@@ -71,21 +71,24 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "returns task_running when task is currently running", %{task: task} do
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        stage: :review,
-        stage_state: :running
+  test "refuses while the stage's run is still working", %{task: task, roles: roles} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+
+    {:ok, _running} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:review].id,
+        status: :running,
+        started_at: DateTime.utc_now()
       })
 
-    assert {:error, :task_running} = Pipeline.send_back_to_engineer(task)
+    assert {:error, :stage_running} = Pipeline.send_back_to_engineer(task)
   end
 
   test "returns stage_before_engineer for product, design, and architect stages", %{project: project, task: task} do
     {:ok, t_prod} =
       Pipeline.update_task(task, %{
-        stage: :product,
-        stage_state: :awaiting_approval
+        stage: :product
       })
 
     assert {:error, :stage_before_engineer} = Pipeline.send_back_to_engineer(t_prod)
@@ -102,8 +105,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
 
     {:ok, t_des} =
       Pipeline.update_task(t_des, %{
-        stage: :design,
-        stage_state: :awaiting_approval
+        stage: :design
       })
 
     assert {:error, :stage_before_engineer} = Pipeline.send_back_to_engineer(t_des)
@@ -120,8 +122,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
 
     {:ok, t_arch} =
       Pipeline.update_task(t_arch, %{
-        stage: :architect,
-        stage_state: :awaiting_approval
+        stage: :architect
       })
 
     assert {:error, :stage_before_engineer} = Pipeline.send_back_to_engineer(t_arch)
@@ -130,8 +131,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
   test "returns task_merged when task is in merged stage", %{task: task} do
     {:ok, task} =
       Pipeline.update_task(task, %{
-        stage: :merged,
-        stage_state: :awaiting_approval
+        stage: :merged
       })
 
     assert {:error, :task_merged} = Pipeline.send_back_to_engineer(task)
@@ -142,8 +142,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
 
     {:ok, task} =
       Pipeline.update_task(task, %{
-        stage: :review,
-        stage_state: :awaiting_approval
+        stage: :review
       })
 
     assert {:error, :no_engineer_role} = Pipeline.send_back_to_engineer(task)
@@ -165,7 +164,6 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(task, %{
         stage: :review,
-        stage_state: :awaiting_approval,
         rework_cycles: 4,
         rework_budget_base: 0,
         rework_cycles_by_gate: %{role_rev.id => 3},
@@ -199,7 +197,6 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
             %Task{
               id: ^task_id,
               stage: :engineer,
-              stage_state: :queued,
               rework_cycles: 4,
               rework_budget_base: 4,
               rework_cycles_by_gate: ^expected_empty,
@@ -223,8 +220,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(task, %{
-        stage: :qa,
-        stage_state: :awaiting_approval
+        stage: :qa
       })
 
     {:ok, _eng_run} =
@@ -236,7 +232,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
         started_at: DateTime.utc_now()
       })
 
-    assert {:ok, %Task{stage: :engineer, stage_state: :queued}} =
+    assert {:ok, %Task{stage: :engineer}} =
              Pipeline.send_back_to_engineer(task, "Direct string comment")
 
     eng_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
@@ -248,8 +244,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(task, %{
-        stage: :qa,
-        stage_state: :awaiting_approval
+        stage: :qa
       })
 
     assert {:error, :no_session} = Pipeline.send_back_to_engineer(task, "Please fix")

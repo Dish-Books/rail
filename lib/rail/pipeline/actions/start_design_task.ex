@@ -49,7 +49,7 @@ defmodule Rail.Pipeline.Actions.StartDesignTask do
 
   defp claim_stage(%Task{} = task, worktree_path) do
     task
-    |> Task.changeset(%{stage: :design, worktree_path: worktree_path, retry_after: nil, error: nil})
+    |> Task.changeset(%{stage: :design, worktree_path: worktree_path, error: nil})
     |> Repo.update()
   end
 

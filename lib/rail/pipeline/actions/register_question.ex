@@ -4,7 +4,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
 
   A prompt the run is already waiting on is reused rather than filed twice; another
   run asking the same thing files its own, since the answer goes back to whoever
-  asked. The task parks (`stage_state: :blocked`) and the questions queue in the
+  asked. The run parks (`status: :blocked_on_input`) and the questions queue in the
   order they were asked, so the human answers them one at a time without the stage
   resuming in between. The run goes to `:blocked_on_input` and `pipeline_changed` is
   broadcast either way.
@@ -54,8 +54,6 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
 
   defp register_or_reuse_question(%Task{} = task, %Run{} = run, attrs) do
     question = find_existing_pending_question(run.id, attrs.prompt) || insert_question(task, attrs)
-
-    {:ok, task} = task |> Task.changeset(%{stage_state: :blocked}) |> Repo.update()
 
     run |> Run.changeset(%{status: :blocked_on_input}) |> Repo.update!()
 

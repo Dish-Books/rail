@@ -6,6 +6,7 @@ defmodule RailWeb.Components.TaskActionsTest do
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Domain.Embeds.DesignDirection
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Runs.Schemas.Run
   alias RailWeb.Components.TaskActionModals
   alias RailWeb.Components.TaskActions
 
@@ -14,7 +15,7 @@ defmodule RailWeb.Components.TaskActionsTest do
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :merged,
-          stage_state: :awaiting_approval,
+          run: %Run{status: :finished, stage_outcome: :done},
           worktree_path: "/tmp/worktree"
         }
       )
@@ -32,7 +33,7 @@ defmodule RailWeb.Components.TaskActionsTest do
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :ready_to_merge,
-          stage_state: :awaiting_approval,
+          run: %Run{status: :finished, stage_outcome: :done},
           pr_number: 42,
           pr_is_draft: true,
           mergeability: :clean
@@ -54,7 +55,7 @@ defmodule RailWeb.Components.TaskActionsTest do
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :ready_to_merge,
-          stage_state: :awaiting_approval,
+          run: %Run{status: :finished, stage_outcome: :done},
           pr_number: 42,
           pr_is_draft: true,
           mergeability: :conflicts
@@ -75,7 +76,7 @@ defmodule RailWeb.Components.TaskActionsTest do
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :ready_to_merge,
-          stage_state: :awaiting_approval,
+          run: %Run{status: :finished, stage_outcome: :done},
           pr_number: 42,
           pr_is_draft: false,
           mergeability: :conflicts
@@ -96,7 +97,7 @@ defmodule RailWeb.Components.TaskActionsTest do
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :ready_to_merge,
-          stage_state: :awaiting_approval,
+          run: %Run{status: :finished, stage_outcome: :done},
           pr_number: 42,
           pr_is_draft: false,
           mergeability: :clean
@@ -124,7 +125,7 @@ defmodule RailWeb.Components.TaskActionsTest do
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :design,
-          stage_state: :awaiting_approval,
+          run: %Run{status: :finished, stage_outcome: :done},
           designs: [design]
         },
         design: design
@@ -143,7 +144,7 @@ defmodule RailWeb.Components.TaskActionsTest do
         render_component(&TaskActions.task_actions/1,
           task: %Task{
             stage: gate_stage,
-            stage_state: :awaiting_approval
+            run: %Run{status: :finished, stage_outcome: :done}
           }
         )
 
@@ -160,7 +161,7 @@ defmodule RailWeb.Components.TaskActionsTest do
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :product,
-          stage_state: :awaiting_approval
+          run: %Run{status: :finished, stage_outcome: :done}
         }
       )
 
@@ -174,7 +175,7 @@ defmodule RailWeb.Components.TaskActionsTest do
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :engineer,
-          stage_state: :awaiting_approval
+          run: %Run{status: :finished, stage_outcome: :done}
         }
       )
 
@@ -188,7 +189,7 @@ defmodule RailWeb.Components.TaskActionsTest do
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :demo,
-          stage_state: :failed
+          run: %Run{status: :finished, error: "boom"}
         }
       )
 
@@ -203,7 +204,7 @@ defmodule RailWeb.Components.TaskActionsTest do
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :design,
-          stage_state: :failed
+          run: %Run{status: :finished, error: "boom"}
         }
       )
 
@@ -219,7 +220,7 @@ defmodule RailWeb.Components.TaskActionsTest do
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :engineer,
-          stage_state: :failed
+          run: %Run{status: :finished, error: "boom"}
         }
       )
 
@@ -227,22 +228,19 @@ defmodule RailWeb.Components.TaskActionsTest do
     assert html =~ "action-retry"
   end
 
-  test "renders Cancel run when running, stays enabled, while cleanup is disabled" do
+  test "offers no stage actions while the run is working, and disables clean up" do
     html =
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :engineer,
-          stage_state: :running
+          run: %Run{status: :running}
         }
       )
 
-    assert html =~ "Cancel run"
-    assert html =~ "action-cancel"
-    refute html =~ ~s(id="action-cancel" data-qa="action-cancel" disabled)
+    # Stopping lives in the conversation, not here.
+    refute html =~ "action-cancel"
 
-    # Clean up is disabled while running
     assert html =~ ~s(id="action-cleanup" data-qa="action-cleanup" disabled)
-    # Chat is kind nil and stays enabled
     refute html =~ ~s(id="action-chat" data-qa="action-chat" disabled)
   end
 
@@ -250,9 +248,7 @@ defmodule RailWeb.Components.TaskActionsTest do
     html =
       render_component(&TaskActions.task_actions/1,
         task: %Task{
-          stage: :engineer,
-          stage_state: :queued,
-          retry_after: nil
+          stage: :engineer
         }
       )
 
@@ -265,7 +261,7 @@ defmodule RailWeb.Components.TaskActionsTest do
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :architect,
-          stage_state: :blocked
+          run: %Run{status: :blocked_on_input}
         }
       )
 
@@ -280,7 +276,7 @@ defmodule RailWeb.Components.TaskActionsTest do
       render_component(&TaskActions.task_actions/1,
         task: %Task{
           stage: :ready_to_merge,
-          stage_state: :awaiting_approval,
+          run: %Run{status: :finished, stage_outcome: :done},
           pr_number: 55,
           mergeability: :clean
         },
@@ -383,7 +379,7 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "handles unhandled stage_state gracefully" do
     html =
       render_component(&TaskActions.task_actions/1,
-        task: %Task{stage: :engineer, stage_state: :unknown_state, worktree_path: "/tmp/w"}
+        task: %Task{stage: :engineer, worktree_path: "/tmp/w"}
       )
 
     refute html =~ "action-approve"
@@ -393,7 +389,7 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "resolves design directions and picked key from task.designs fallback" do
     task = %Task{
       stage: :design,
-      stage_state: :awaiting_approval,
+      run: %Run{status: :finished, stage_outcome: :done},
       designs: [
         %Design{
           version: 1,
@@ -411,7 +407,7 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "resolves design directions and unpicked key from task.designs fallback" do
     task = %Task{
       stage: :design,
-      stage_state: :awaiting_approval,
+      run: %Run{status: :finished, stage_outcome: :done},
       designs: [
         %Design{
           version: 1,
@@ -428,7 +424,7 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "handles design with no directions or picked key gracefully" do
     task = %Task{
       stage: :design,
-      stage_state: :awaiting_approval,
+      run: %Run{status: :finished, stage_outcome: :done},
       designs: []
     }
 

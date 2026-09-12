@@ -13,13 +13,7 @@ defmodule Rail.Runs.Actions.AppendRunEvent do
   the human write these between turns, and every one carries a marker that keeps it
   out of what the agent itself said.
   """
-  def append_run_event(run_or_id, line) do
-    run_id =
-      case run_or_id do
-        %Run{id: id} -> id
-        id when is_binary(id) -> id
-      end
-
+  def append_run_event(%Run{id: run_id}, line) do
     event_attrs = %{run_id: run_id, line: line}
 
     {:ok, event} =

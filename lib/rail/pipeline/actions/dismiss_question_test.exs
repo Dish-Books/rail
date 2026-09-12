@@ -6,7 +6,6 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
-  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
@@ -94,13 +93,13 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   } do
     {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
 
-    assert Repo.get!(Task, task.id).stage_state == :blocked
+    assert Repo.reload!(run).status == :blocked_on_input
 
     test_pid = self()
 
-    expect(Runs, :start_os_process, fn %Run{id: ^run_id} = spawned, argv, _opts ->
+    expect(Runs, :start_os_process, fn %Run{id: ^run_id} = spawned, argv ->
       send(test_pid, {:spawned, argv})
-      {:ok, %OsProcess{is_chat: false, run: spawned, task: task}}
+      {:ok, %OsProcess{run: spawned, task: task}}
     end)
 
     assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(q)
@@ -121,7 +120,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     # No spawn is stubbed: resuming the run here would raise on the unexpected call.
     assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(first)
 
-    assert Repo.get!(Task, task.id).stage_state == :blocked
+    assert Repo.reload!(run).status == :blocked_on_input
     assert Enum.map(pending_questions(task.id), & &1.id) == [second.id]
     refute Repo.get!(Question, first.id).delivered_at
   end
@@ -129,13 +128,16 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   test "leaves a task that is no longer parked alone", %{task: task, run: run} do
     {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
 
-    {:ok, task} = Pipeline.update_task(task, %{stage_state: :running})
+    # Another question is still pending, so waving this one off resumes nothing.
+    {:ok, _second} =
+      Pipeline.register_question(run, %DetectedQuestion{prompt: "And the migration?"})
 
-    stub(Runs, :start_os_process, fn _run, _argv, _opts -> {:error, :not_expected} end)
+    stub(Runs, :start_os_process, fn _run, _argv -> {:error, :not_expected} end)
 
     assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(q)
 
-    assert Repo.get!(Task, task.id).stage_state == :running
+    assert Repo.reload!(run).status == :blocked_on_input
+    assert [%Question{prompt: "And the migration?"}] = pending_questions(task.id)
   end
 
   test "returns error when dismissing an answered question", %{task: task, run: run, roles: roles} do

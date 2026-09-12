@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.StageRun
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Design
@@ -26,12 +27,12 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
   - Checks that any previously chosen direction (`picked_key`) is preserved.
   - If valid:
     - Captures the design artifact.
-    - Sets `stage_state: :awaiting_approval, error: nil`.
+    - Latches the designer's run done.
     - Logs success event on the designer's run.
     - Broadcasts `pipeline_changed`.
     - Returns `{:ok, updated_task}`.
   - If invalid:
-    - Sets `stage_state: :failed, error: reason`.
+    - Records the reason on the designer's run and leaves it open.
     - Logs turn-down event on the designer's run.
     - Broadcasts `pipeline_changed`.
     - Returns `{:error, reason}`.
@@ -98,7 +99,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
   end
 
   defp do_recheck_design(%Task{} = task, opts) do
-    if task.stage_state == :running or Runs.running?(task.id) do
+    if task |> stage_run() |> Run.running?() do
       {:error, "The Designer is still running; wait for it to finish."}
     else
       execute_recheck(task, opts)
@@ -110,26 +111,33 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
 
     case apply_design_manifest(task, apply_opts) do
       {:ok, %Design{} = design} ->
-        {:ok, updated_task} =
-          task
-          |> Task.changeset(%{stage_state: :awaiting_approval, error: nil})
-          |> Repo.update()
-
+        record_recheck(task, nil)
+        {:ok, task} = task |> Task.changeset(%{error: nil}) |> Repo.update()
         log_designer_event(task, "[rail] Design re-checked: manifest v#{design.version} accepted.")
-        Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :design_rechecked})
-        {:ok, updated_task}
+        Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :design_rechecked})
+        {:ok, task}
 
       {:error, reason} ->
         err_msg = if is_binary(reason), do: reason, else: inspect(reason)
 
-        {:ok, updated_task} =
-          task
-          |> Task.changeset(%{stage_state: :failed, error: err_msg})
-          |> Repo.update()
-
+        record_recheck(task, err_msg)
+        {:ok, task} = task |> Task.changeset(%{error: err_msg}) |> Repo.update()
         log_designer_event(task, "[rail] Design re-check turned it down: #{err_msg}")
-        Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :design_recheck_failed})
+        Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :design_recheck_failed})
         {:error, err_msg}
+    end
+  end
+
+  # The verdict is about the designer's work, so it is recorded on the designer's
+  # run: accepted latches it done, turned down leaves it open with the reason.
+  defp record_recheck(%Task{} = task, error) do
+    case stage_run(task, :design) do
+      %Run{} = run ->
+        outcome = if error, do: :in_progress, else: :done
+        run |> Run.changeset(%{error: error, stage_outcome: outcome}) |> Repo.update!()
+
+      nil ->
+        :ok
     end
   end
 
@@ -142,7 +150,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesign do
                order_by: [desc: r.inserted_at],
                limit: 1
            ) do
-      Runs.append_run_event(run.id, line)
+      Runs.append_run_event(run, line)
     else
       _other -> :ok
     end

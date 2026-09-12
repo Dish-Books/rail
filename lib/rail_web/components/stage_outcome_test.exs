@@ -6,20 +6,20 @@ defmodule RailWeb.Components.StageOutcomeTest do
   alias RailWeb.Components.StageOutcome
 
   test "renders nothing when run is nil" do
-    task = %{stage: :engineer, stage_state: :failed}
+    task = %{stage: :engineer}
     html = render_component(&StageOutcome.stage_outcome/1, task: task, run: nil)
     refute html =~ "id=\"stage-outcome\""
   end
 
   test "renders nothing when the error is blank" do
-    task = %{stage: :engineer, stage_state: :failed}
+    task = %{stage: :engineer}
     run = %{error: "   "}
     html = render_component(&StageOutcome.stage_outcome/1, task: task, run: run)
     refute html =~ "id=\"stage-outcome\""
   end
 
   test "renders Failure heading and error box when stage_state is failed and error present" do
-    task = %{stage: :engineer, stage_state: :failed}
+    task = %{stage: :engineer}
     run = %{role_id: "engineer", error: "mix test failed with 2 errors"}
 
     html = render_component(&StageOutcome.stage_outcome/1, task: task, run: run)
@@ -31,9 +31,9 @@ defmodule RailWeb.Components.StageOutcomeTest do
     assert html =~ "mix test failed with 2 errors"
   end
 
-  test "renders nothing when stage_state is not failed even if the run carries an error" do
-    task = %{stage: :engineer, stage_state: :running}
-    run = %{role_id: "engineer", error: "old error"}
+  test "renders nothing when the run carries no error" do
+    task = %{stage: :engineer}
+    run = %{role_id: "engineer", error: nil}
 
     html = render_component(&StageOutcome.stage_outcome/1, task: task, run: run)
 
@@ -41,7 +41,7 @@ defmodule RailWeb.Components.StageOutcomeTest do
   end
 
   test "uses explicit role_name when provided" do
-    task = %{stage: :engineer, stage_state: :failed}
+    task = %{stage: :engineer}
     run = %{error: "some error"}
 
     html = render_component(&StageOutcome.stage_outcome/1, task: task, run: run, role_name: "Code Expert")
@@ -50,7 +50,7 @@ defmodule RailWeb.Components.StageOutcomeTest do
   end
 
   test "delegated CoreComponents.stage_outcome renders properly" do
-    task = %{stage: :engineer, stage_state: :failed}
+    task = %{stage: :engineer}
     run = %{role_id: "engineer", error: "Boom"}
 
     html = render_component(&RailWeb.CoreComponents.stage_outcome/1, task: task, run: run)

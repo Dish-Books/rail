@@ -37,8 +37,7 @@ defmodule RailWeb.Components.DemoPanelTest do
 
     task = %Task{
       id: "tsk_demo_1",
-      stage: :engineer,
-      stage_state: :running
+      stage: :engineer
     }
 
     html = render_component(&DemoPanel.demo_panel/1, demo: demo, task: task)
@@ -95,8 +94,7 @@ defmodule RailWeb.Components.DemoPanelTest do
 
     task = %Task{
       id: "tsk_demo_2",
-      stage: :engineer,
-      stage_state: :running
+      stage: :engineer
     }
 
     html = render_component(&DemoPanel.demo_panel/1, demo: demo, task: task)
@@ -137,7 +135,6 @@ defmodule RailWeb.Components.DemoPanelTest do
 
     task = %{
       stage: :ready_to_merge,
-      stage_state: :awaiting_approval,
       worktree_path: "/tmp/wt"
     }
 

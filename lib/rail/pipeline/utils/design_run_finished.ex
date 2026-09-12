@@ -1,30 +1,25 @@
 defmodule Rail.Pipeline.Utils.DesignRunFinished do
   @moduledoc """
-  Where a finished design-stage run leaves its task.
+  Where a finished design run leaves its task.
 
   The designer reports through a manifest in the task's scratch directory. A
   revision has to keep the direction a human already picked and move the version
-  forward; anything else fails the stage rather than quietly replacing the design
-  that was chosen.
+  forward; anything else is recorded as a failure on the run rather than quietly
+  replacing the design that was chosen. A human picks or approves, and that is
+  what enters the next stage.
   """
 
   import Ecto.Query
-  import Rail.Pipeline.Utils.AdvanceStage
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Design
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Scope
 
-  @doc "Finishes the design run that `os_process` belonged to."
-  def finish_design_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
-    advance_stage(os_process, opts, &capture_design/3)
-  end
-
-  defp capture_design(%Task{scratch_path: scratch_dir} = task, run, opts) do
+  @doc "Finishes `run` as the design stage."
+  def design_run_finished(%Run{task: %Task{scratch_path: scratch_dir} = task} = run, opts) do
     scope = Scope.for_system()
     read_opts = Keyword.take(opts, [:url_probe, :req_options])
     capture_opts = Keyword.take(opts, [:project, :issue, :owner_user, :url_probe, :req_options])
@@ -32,15 +27,16 @@ defmodule Rail.Pipeline.Utils.DesignRunFinished do
     with {:ok, manifest} <- Artifacts.read_design(scope, scratch_dir, read_opts),
          :ok <- validate_transition(manifest, previous_design(task)),
          {:ok, _design} <- Artifacts.capture_design(scope, task, scratch_dir, capture_opts) do
-      {:ok, run} = run |> Run.changeset(%{auto_retries: 0}) |> Repo.update()
-
-      {%{stage_state: :awaiting_approval, retry_after: nil, error: nil}, run}
+      run
     else
-      {:error, reason} ->
-        error = if is_binary(reason), do: reason, else: inspect(reason)
-
-        {%{stage_state: :failed, error: error, retry_after: nil}, run}
+      {:error, reason} -> fail(run, reason)
     end
+  end
+
+  defp fail(%Run{} = run, reason) do
+    error = if is_binary(reason), do: reason, else: inspect(reason)
+    {:ok, run} = run |> Run.changeset(%{error: error}) |> Repo.update()
+    run
   end
 
   defp previous_design(%Task{id: task_id}) do

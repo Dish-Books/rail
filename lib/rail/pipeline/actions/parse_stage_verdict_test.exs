@@ -134,8 +134,4 @@ defmodule Rail.Pipeline.Actions.ParseStageVerdictTest do
 
     assert %StageVerdict{verdict: :unclear} = Pipeline.parse_stage_verdict(run)
   end
-
-  test "returns unclear for an unknown run" do
-    assert %StageVerdict{verdict: :unclear} = Pipeline.parse_stage_verdict("rr_000000000000000000000000")
-  end
 end

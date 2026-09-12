@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Runs
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -80,7 +81,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task_merged} =
       Pipeline.update_task(task, %{
         stage: :merged,
-        stage_state: :awaiting_approval,
         worktree_path: worktree
       })
 
@@ -99,7 +99,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task_merged_at} =
       Pipeline.update_task(task_merged_at, %{
         stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
         worktree_path: worktree,
         merged_at: DateTime.utc_now()
       })
@@ -119,7 +118,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task_no_demo} =
       Pipeline.update_task(task_no_demo, %{
         stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
         worktree_path: worktree
       })
 
@@ -132,7 +130,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
         worktree_path: worktree
       })
 
@@ -193,7 +190,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task_missing_dir} =
       Pipeline.update_task(task_missing_dir, %{
         stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
         worktree_path: "/tmp/nonexistent_#{System.unique_integer([:positive])}"
       })
 
@@ -257,7 +253,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task_non_git} =
       Pipeline.update_task(task_non_git, %{
         stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
         worktree_path: scratch_dir
       })
 
@@ -317,7 +312,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task_nil_worktree} =
       Pipeline.update_task(task_nil_worktree, %{
         stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
         worktree_path: "/tmp/rail-removed-worktree"
       })
 
@@ -372,7 +366,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
         worktree_path: worktree
       })
 
@@ -416,7 +409,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
         dirty_digest: digest
       )
 
-    assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}} =
+    assert {:ok, %Task{stage: :ready_to_merge}} =
              Pipeline.refresh_demo_freshness(task)
 
     refute Repo.get!(Demo, demo.id).stale
@@ -430,7 +423,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
         worktree_path: worktree
       })
 
@@ -478,7 +470,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
             %Task{
               id: task_id,
               stage: :demo,
-              stage_state: :queued,
               error: nil
             }} = Pipeline.refresh_demo_freshness(task, [])
 
@@ -486,7 +477,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
 
     assert Repo.get!(Demo, demo.id).stale
     assert Repo.get!(Task, task.id).stage == :demo
-    assert Repo.get!(Task, task.id).stage_state == :queued
   end
 
   test "re-queues ready_to_merge task to demo queued when dirty digest changes", %{task: task} do
@@ -496,7 +486,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
         worktree_path: worktree
       })
 
@@ -540,7 +529,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
         dirty_digest: "outdated_digest"
       )
 
-    assert {:ok, %Task{stage: :demo, stage_state: :queued}} = Pipeline.refresh_demo_freshness(task)
+    assert {:ok, %Task{stage: :demo}} = Pipeline.refresh_demo_freshness(task)
 
     assert Repo.get!(Demo, demo.id).stale
   end
@@ -552,7 +541,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :review,
-        stage_state: :queued,
         worktree_path: worktree
       })
 
@@ -596,24 +584,30 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
         dirty_digest: "previous_digest"
       )
 
-    assert {:ok, %Task{id: task_id, stage: :review, stage_state: :queued}} =
+    assert {:ok, %Task{id: task_id, stage: :review}} =
              Pipeline.refresh_demo_freshness(task)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :demo_marked_stale}}
 
     assert Repo.get!(Demo, demo.id).stale
     assert Repo.get!(Task, task.id).stage == :review
-    assert Repo.get!(Task, task.id).stage_state == :queued
   end
 
-  test "marks demo stale but preserves running task state when task is busy", %{task: task} do
+  test "marks a demo stale but leaves a task whose run is still working", %{task: task, roles: roles} do
     worktree = create_temp_git_repo()
 
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :ready_to_merge,
-        stage_state: :running,
         worktree_path: worktree
+      })
+
+    {:ok, _running} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:demo].id,
+        status: :running,
+        started_at: DateTime.utc_now()
       })
 
     demo_scratch_10009 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
@@ -656,7 +650,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
         dirty_digest: "different_digest"
       )
 
-    assert {:ok, %Task{stage: :ready_to_merge, stage_state: :running}} =
+    assert {:ok, %Task{stage: :ready_to_merge}} =
              Pipeline.refresh_demo_freshness(task)
 
     assert Repo.get!(Demo, demo.id).stale

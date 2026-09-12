@@ -8,6 +8,7 @@ defmodule RailWeb.IssuesLiveTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
+  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -818,7 +819,7 @@ defmodule RailWeb.IssuesLiveTest do
         task: %Task{
           id: "tsk_mock_2",
           stage: :engineer,
-          stage_state: :running,
+          run: %Run{status: :running},
           issue: nil
         }
       )

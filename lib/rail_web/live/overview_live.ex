@@ -23,6 +23,7 @@ defmodule RailWeb.OverviewLive do
   alias Rail.Pipeline
   alias Rail.Projects
   alias Rail.Roles
+  alias Rail.Runs.Schemas.Run
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -499,7 +500,7 @@ defmodule RailWeb.OverviewLive do
         fn key -> AttentionQueue.waiting_since(updated_attention_queue, key) end
       )
 
-    running_count = Enum.count(tasks, fn t -> t.stage_state == :running end)
+    running_count = Enum.count(tasks, &Run.running?(&1.run))
     roster_groups = build_roster_groups(scope, project_id, tasks)
     dispatch_disabled = check_dispatch_disabled()
 
@@ -534,32 +535,23 @@ defmodule RailWeb.OverviewLive do
     end)
   end
 
-  defp build_role_entry(role, tasks) do
-    active_task =
-      Enum.find(tasks, fn task ->
-        task.active_chat_role_id == role.id or
-          (Map.get(task, :current_role_id) == role.id and task.stage_state in [:running, :blocked]) or
-          (role.stage != nil and task.stage == role.stage and
-             task.stage_state in [:running, :blocked, :awaiting_approval, :paused_question, :paused_chat, :blocked_rework])
-      end)
+  # A role is busy on a task when the task is parked at that role's stage and its
+  # run has something to say — running, blocked, or waiting on a human.
+  defp role_busy_on?(task, role) do
+    Map.get(task, :current_role_id) == role.id or
+      (role.stage != nil and task.stage == role.stage and
+         Run.state(task.run) in [:running, :blocked, :done])
+  end
 
-    waiting? =
-      active_task != nil and
-        active_task.stage_state in [:blocked, :awaiting_approval, :paused_question, :blocked_rework]
+  defp build_role_entry(role, tasks) do
+    active_task = Enum.find(tasks, &role_busy_on?(&1, role))
+    waiting? = active_task != nil and Run.state(active_task.run) in [:blocked, :done]
 
     subtitle =
       cond do
-        is_nil(active_task) ->
-          "Idle"
-
-        waiting? ->
-          "Waiting on you · #{task_key(active_task)}"
-
-        active_task.active_chat_role_id != nil ->
-          "#{task_key(active_task)} · chatting"
-
-        true ->
-          "#{task_key(active_task)} · running"
+        is_nil(active_task) -> "Idle"
+        waiting? -> "Waiting on you · #{task_key(active_task)}"
+        true -> "#{task_key(active_task)} · running"
       end
 
     %{
@@ -574,7 +566,7 @@ defmodule RailWeb.OverviewLive do
   defp task_key(%{id: id}) when is_binary(id) and id != "", do: id
 
   defp check_dispatch_disabled do
-    System.get_env("RAIL_NO_DISPATCH") == "1"
+    System.get_env("RAIL_NO_DISPATCH") == "1" or Application.get_env(:rail, :no_dispatch, false)
   end
 
   # Answers go back a round at a time: this records one and the task stays parked

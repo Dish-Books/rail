@@ -1,13 +1,18 @@
 defmodule Rail.Pipeline.Actions.SendBackToEngineer do
   @moduledoc """
-  Action to send a task back to the Engineer stage on human request.
-  Resets the rework budget allowance (granting a fresh budget round), formats
-  any human note alongside all outstanding gate reports, and re-queues the engineer.
+  Sends a change back to the engineer on human request.
+
+  This is the human overruling the rework budget: a fresh round is granted, every
+  finding the change is still carrying is collected into one note for the
+  engineer, and the engineer stage is entered again. A stage that is still working
+  is left alone — there is nothing to send back until it stops.
   """
 
   import Ecto.Query
   import Rail.Pipeline.Utils.CarriedReports
+  import Rail.Pipeline.Utils.StageRun
 
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles
@@ -18,20 +23,9 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
   @stages_before_engineer [:product, :design, :architect]
 
   @doc """
-  Sends a task back to the Engineer:
-  - Enforces `stage_state != :running`, `stage not in [:product, :design, :architect]`, and `stage != :merged`.
-  - Grants a fresh rework budget (`rework_budget_base = rework_cycles`, `rework_cycles_by_gate: %{}`).
-  - Collects all gate reports listed in `outstanding_reports` and clears the list.
-  - Populates the engineer role's `pending_answer` with human comment, instructions, and reports.
-  - Sets `stage = :engineer`, `stage_state = :queued`, clears `error` and `retry_after`.
-  - Broadcasts `pipeline_changed`.
+  Sends `task` back to the engineer with everything it is still carrying.
   """
-
   def send_back_to_engineer(task, opts \\ [])
-
-  def send_back_to_engineer(%Task{stage_state: :running}, _opts) do
-    {:error, :task_running}
-  end
 
   def send_back_to_engineer(%Task{stage: stage}, _opts) when stage in @stages_before_engineer do
     {:error, :stage_before_engineer}
@@ -42,12 +36,17 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
   end
 
   def send_back_to_engineer(%Task{} = task, opts) do
-    case Roles.get_role(project_id: task.project_id, stage: :engineer) do
-      {:ok, %Role{} = engineer_role} ->
-        execute_send_back(task, engineer_role, opts)
+    if task |> stage_run() |> Run.running?() do
+      {:error, :stage_running}
+    else
+      resolve_engineer(task, opts)
+    end
+  end
 
-      _no_role ->
-        {:error, :no_engineer_role}
+  defp resolve_engineer(%Task{} = task, opts) do
+    case Roles.get_role(project_id: task.project_id, stage: :engineer) do
+      {:ok, %Role{} = engineer_role} -> execute_send_back(task, engineer_role, opts)
+      _no_role -> {:error, :no_engineer_role}
     end
   end
 
@@ -63,26 +62,23 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineer do
     carried = carried_reports(task)
     message = build_engineer_message(note, carried)
 
-    Runs.append_pending_answer(engineer_run, message, auto_retries: 0)
+    Runs.append_pending_answer(engineer_run, message)
 
     attrs = %{
-      stage: :engineer,
-      stage_state: :queued,
       rework_budget_base: task.rework_cycles || 0,
       rework_cycles_by_gate: %{},
-      outstanding_reports: [],
-      error: nil,
-      retry_after: nil
+      outstanding_reports: []
     }
 
-    {:ok, updated_task} =
+    {:ok, task} =
       task
       |> Task.changeset(attrs)
       |> Repo.update()
 
-    Rail.Pipeline.broadcast_pipeline_changed(%{task_id: updated_task.id, event: :sent_back_to_engineer})
+    {:ok, _run} = Pipeline.enter_stage(task, :engineer, opts)
+    Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :sent_back_to_engineer})
 
-    {:ok, updated_task}
+    {:ok, Repo.reload!(task)}
   end
 
   defp extract_note(opts) when is_binary(opts), do: String.trim(opts)

@@ -65,7 +65,6 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionsTest do
 
     {:ok, task} =
       Pipeline.update_task(task, %{
-        stage_state: :blocked,
         worktree_path: Path.join(tmp_dir, "worktree"),
         scratch_path: Path.join(tmp_dir, "scratch")
       })
@@ -89,7 +88,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionsTest do
     %Question{id: second_id} =
       Repo.insert!(%Question{task_id: task.id, run_id: run.id, prompt: "Ship behind a flag?", status: :pending})
 
-    assert {:ok, %{task: %Task{stage_state: :blocked}}} =
+    assert {:ok, %{task: %Task{}}} =
              Pipeline.answer_questions(task, %{first.id => "Postgres"})
 
     assert Enum.map(pending_questions(task.id), & &1.id) == [second_id]
@@ -110,19 +109,18 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionsTest do
 
     test_pid = self()
 
-    expect(Runs, :start_os_process, fn %Run{id: ^run_id} = spawned, argv, opts ->
-      send(test_pid, {:spawned, argv, opts})
-      {:ok, %OsProcess{is_chat: false, run: spawned, task: task}}
+    expect(Runs, :start_os_process, fn %Run{id: ^run_id} = spawned, argv ->
+      send(test_pid, {:spawned, argv})
+      {:ok, %OsProcess{run: spawned, task: task}}
     end)
 
-    assert {:ok, %OsProcess{is_chat: false, run: %Run{id: ^run_id}}} =
+    assert {:ok, %OsProcess{run: %Run{id: ^run_id}}} =
              Pipeline.answer_questions(task, %{first.id => "Postgres", second.id => "Yes, behind a flag"})
 
     # The turn resumes the same conversation rather than starting a new run.
     assert Repo.get!(Run, run.id).conversation_id == "sess_answer_questions"
 
-    assert_receive {:spawned, argv, opts}
-    refute opts[:is_chat]
+    assert_receive {:spawned, argv}
     assert Enum.any?(argv, &(&1 =~ "Postgres" and &1 =~ "Yes, behind a flag"))
 
     assert pending_questions(task.id) == []

@@ -438,7 +438,6 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
         pr_number: 99,
         worktree_path: worktree
       })
@@ -482,7 +481,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
 
     mock_pull_request_state_success("testorg/testrepo", 99, mergeable: true, draft: false)
 
-    assert {:ok, %Task{stage: :demo, stage_state: :queued, mergeability: :mergeable}} =
+    assert {:ok, %Task{stage: :demo, mergeability: :mergeable}} =
              Pipeline.refresh_mergeability(task, token: "tok_test")
   end
 end

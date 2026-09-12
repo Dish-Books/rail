@@ -15,7 +15,6 @@ defmodule RailWeb.Components.NoDemoBannerTest do
     task = %Task{
       id: "tsk_demo_elig",
       stage: :ready_to_merge,
-      stage_state: :awaiting_approval,
       worktree_path: "/tmp/worktree"
     }
 
@@ -36,7 +35,6 @@ defmodule RailWeb.Components.NoDemoBannerTest do
     merged_task = %Task{
       id: "tsk_merged",
       stage: :merged,
-      stage_state: :awaiting_approval,
       merged_at: DateTime.utc_now(),
       worktree_path: "/tmp/worktree"
     }
@@ -50,18 +48,16 @@ defmodule RailWeb.Components.NoDemoBannerTest do
     no_worktree_task = %Task{
       id: "tsk_no_wt",
       stage: :ready_to_merge,
-      stage_state: :awaiting_approval,
       worktree_path: "/tmp/rail-removed-worktree"
     }
 
     html_no_wt = render_component(&NoDemoBanner.no_demo_banner/1, task: no_worktree_task)
     refute html_no_wt =~ "id=\"action-record-demo\""
 
-    # Plain map task that is not eligible
+    # Plain map task that is not eligible: already merged
     plain_map_task = %{
       id: "tsk_plain",
-      stage: :ready_to_merge,
-      stage_state: :running,
+      stage: :merged,
       worktree_path: "/tmp/worktree"
     }
 
@@ -72,7 +68,6 @@ defmodule RailWeb.Components.NoDemoBannerTest do
     plain_map_elig = %{
       id: "tsk_plain_elig",
       stage: :ready_to_merge,
-      stage_state: :awaiting_approval,
       worktree_path: "/tmp/worktree"
     }
 

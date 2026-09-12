@@ -232,9 +232,10 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
         Leave your work in the worktree as files. Do not commit, push, or open a pull request - Rail takes the worktree from here.
 
         Review comments, reviewer findings and QA findings come back as further turns of this same conversation, so keep your worktree as you left it.
+
+        Rail reads your last line as your verdict, exactly `VERDICT: DONE`, and only once you say it does the change go to review. Say it when the work is actually finished and not before: if you stop part way, for a question or anything else, leave the verdict off and the task waits for you rather than moving on without you.
         """)
 
-      assert engineer_brief(scratch_path: @scratch) == expected
       assert engineer_brief(scratch_path: @scratch) == expected
     end
   end

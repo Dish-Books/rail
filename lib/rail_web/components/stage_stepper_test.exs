@@ -3,10 +3,11 @@ defmodule RailWeb.Components.StageStepperTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Runs.Schemas.Run
   alias RailWeb.Components.StageStepper
 
   test "renders all canonical stages when task uses design" do
-    task = %{stage: :product, stage_state: :queued}
+    task = %{stage: :product}
     html = render_component(&StageStepper.stage_stepper/1, task: task)
 
     assert html =~ "id=\"stage-stepper\""
@@ -23,7 +24,7 @@ defmodule RailWeb.Components.StageStepperTest do
   end
 
   test "skips design stage when task does not use design" do
-    task = %{stage: :architect, stage_state: :running}
+    task = %{stage: :architect}
     html = render_component(&StageStepper.stage_stepper/1, task: task)
 
     assert html =~ "id=\"stage-chip-product\""
@@ -32,7 +33,7 @@ defmodule RailWeb.Components.StageStepperTest do
   end
 
   test "shows checkmark for done stages and current icon for current stage" do
-    task = %{stage: :engineer, stage_state: :running}
+    task = %{stage: :engineer}
     html = render_component(&StageStepper.stage_stepper/1, task: task)
 
     # Product is done: check_circle
@@ -46,26 +47,26 @@ defmodule RailWeb.Components.StageStepperTest do
   end
 
   test "delegated CoreComponents.stage_stepper renders properly" do
-    task = %{stage: :demo, stage_state: :failed}
+    task = %{stage: :demo}
     html = render_component(&RailWeb.CoreComponents.stage_stepper/1, task: task)
 
     assert html =~ "id=\"stage-stepper\""
     assert html =~ ~s(data-stage="demo" data-current="true")
   end
 
-  test "renders amber chip style when current stage has awaiting_approval or blocked state" do
-    task = %{stage: :engineer, stage_state: :awaiting_approval}
+  test "renders an amber chip when the current stage is waiting on a human" do
+    task = %{stage: :engineer, run: %Run{status: :finished, stage_outcome: :done}}
     html = render_component(&StageStepper.stage_stepper/1, task: task)
 
     assert html =~ "border-amber-500"
   end
 
   test "handles string and invalid stage values gracefully" do
-    task_string = %{stage: "qa", stage_state: :running}
+    task_string = %{stage: "qa"}
     html_string = render_component(&StageStepper.stage_stepper/1, task: task_string)
     assert html_string =~ ~s(data-stage="qa" data-current="true")
 
-    task_invalid = %{stage: "unknown_stage_xyz", stage_state: :running}
+    task_invalid = %{stage: "unknown_stage_xyz"}
     html_invalid = render_component(&StageStepper.stage_stepper/1, task: task_invalid)
     assert html_invalid =~ "id=\"stage-stepper\""
 

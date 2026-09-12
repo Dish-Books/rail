@@ -55,11 +55,10 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     %{project: project, issue: issue, task: task}
   end
 
-  test "filters tasks by stage and stage_state", %{project: project, task: task} do
+  test "filters tasks by stage", %{project: project, task: task} do
     {:ok, %Task{id: prod_id}} =
       Pipeline.update_task(task, %{
-        stage: :product,
-        stage_state: :queued
+        stage: :product
       })
 
     LinearMock.mock_create_issue_success(%{
@@ -74,8 +73,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, %Task{id: eng_q_id}} =
       Pipeline.update_task(Repo.get!(Task, eng_q_id), %{
-        stage: :engineer,
-        stage_state: :queued
+        stage: :engineer
       })
 
     LinearMock.mock_create_issue_success(%{
@@ -86,20 +84,14 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, issue_7104} = Issues.capture_issue(system_scope(), project, "Task 7104")
 
-    {:ok, t_eng_running} = Pipeline.create_task(issue_7104, :product)
+    {:ok, t_eng_other} = Pipeline.create_task(issue_7104, :product)
 
-    {:ok, _t_eng_running} =
-      Pipeline.update_task(t_eng_running, %{
-        stage: :engineer,
-        stage_state: :running
-      })
+    {:ok, %Task{id: eng_other_id}} = Pipeline.update_task(t_eng_other, %{stage: :engineer})
 
-    # Filter by stage
     assert [%Task{id: ^prod_id}] = Pipeline.list_tasks(project.id, stage: :product)
 
-    # Filter by stage and stage_state
-    assert [%Task{id: ^eng_q_id}] =
-             Pipeline.list_tasks(project.id, stage: :engineer, stage_state: :queued)
+    engineer_ids = project.id |> Pipeline.list_tasks(stage: :engineer) |> Enum.map(& &1.id) |> Enum.sort()
+    assert engineer_ids == Enum.sort([eng_q_id, eng_other_id])
   end
 
   test "supports custom order_by", %{project: project, task: task} do

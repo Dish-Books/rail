@@ -37,7 +37,7 @@ defmodule Rail.Runs.Utils.AssistantLog do
   def assistant_log(%Run{} = run) do
     run = Repo.preload(run, role: :backend)
 
-    run.id
+    run
     |> Runs.list_run_events()
     |> Enum.reduce(new_event_state(backend_for(run)), fn event, state ->
       parse_line(state, event.line)
@@ -46,15 +46,6 @@ defmodule Rail.Runs.Utils.AssistantLog do
     |> Enum.reject(&tagged?/1)
     |> Enum.join("\n")
   end
-
-  def assistant_log(run_id) when is_binary(run_id) do
-    case Repo.get(Run, run_id) do
-      %Run{} = run -> assistant_log(run)
-      nil -> ""
-    end
-  end
-
-  def assistant_log(_other), do: ""
 
   defp backend_for(%Run{role: %{backend: %Backend{} = backend}}), do: backend
   defp backend_for(_unconfigured), do: %Backend{name: :claude}

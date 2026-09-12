@@ -1,20 +1,15 @@
 defmodule Rail.Pipeline.Utils.ReviewRunFinished do
   @moduledoc """
-  Where a finished review-stage run leaves its task.
+  Where a finished review run leaves its task.
 
   Review is a gate: a pass sends the change on to QA, changes requested send it
-  back to the engineer, and no clear verdict parks it for a human.
+  back to the engineer.
   """
 
-  import Rail.Pipeline.Utils.AdvanceStage
   import Rail.Pipeline.Utils.GateOutcome
 
-  alias Rail.Runs.Schemas.OsProcess
+  alias Rail.Runs.Schemas.Run
 
-  @doc "Finishes the review run that `os_process` belonged to."
-  def finish_review_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
-    advance_stage(os_process, opts, &to_qa/3)
-  end
-
-  defp to_qa(task, run, _opts), do: gate_outcome(task, run, :qa)
+  @doc "Finishes `run` as the review stage."
+  def review_run_finished(%Run{} = run, opts), do: gate_outcome(run, :qa, opts)
 end

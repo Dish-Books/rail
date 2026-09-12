@@ -24,13 +24,13 @@ defmodule Rail.Pipeline.Utils.DeliverResolvedRound do
 
   Returns `{:error, :no_run}` when the round has nothing left to resume.
   """
-  def deliver_resolved_round(%Task{} = task, opts \\ []) do
+  def deliver_resolved_round(%Task{} = task) do
     round = resolved_round(task.id)
 
     case run_that_asked(round) do
       %Run{} = run ->
         mark_delivered(round)
-        send_run_message(run, format_round(round), opts)
+        send_run_message(run, format_round(round))
 
       nil ->
         {:error, :no_run}

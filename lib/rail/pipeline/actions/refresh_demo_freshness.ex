@@ -6,11 +6,13 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshness do
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.StageRun
 
   alias Rail.Artifacts.Schemas.Demo
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+  alias Rail.Runs.Schemas.Run
 
   @doc """
   Checks demo freshness against the current worktree fingerprint:
@@ -75,23 +77,17 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshness do
       |> Demo.changeset(%{stale: true})
       |> Repo.update()
 
-    if task.stage == :ready_to_merge and task.stage_state == :awaiting_approval and not Task.busy?(task) do
-      {:ok, updated_task} =
-        task
-        |> Task.changeset(%{
-          stage: :demo,
-          stage_state: :queued,
-          error: nil,
-          retry_after: nil
-        })
-        |> Repo.update()
+    # The demo run is the one that would be re-recorded, so it is the one that
+    # has to be idle — the task itself sits at :ready_to_merge, which runs nothing.
+    if task.stage == :ready_to_merge and not (task |> stage_run(:demo) |> Run.running?()) do
+      {:ok, _run} = Rail.Pipeline.enter_stage(task, :demo)
 
       Rail.Pipeline.broadcast_pipeline_changed(%{
-        task_id: updated_task.id,
+        task_id: task.id,
         event: :demo_stale_requeued
       })
 
-      {:ok, updated_task}
+      {:ok, Repo.reload!(task)}
     else
       Rail.Pipeline.broadcast_pipeline_changed(%{
         task_id: task.id,

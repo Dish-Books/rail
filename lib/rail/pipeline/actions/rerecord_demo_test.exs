@@ -11,6 +11,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Runs
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -80,7 +81,6 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
         worktree_path: worktree,
         error: "Previous failure"
       })
@@ -123,9 +123,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
             %Task{
               id: task_id,
               stage: :demo,
-              stage_state: :queued,
-              error: nil,
-              retry_after: nil
+              error: nil
             }} = Pipeline.rerecord_demo(task)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :demo_rerecord}}
@@ -139,12 +137,11 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :demo,
-        stage_state: :failed,
         worktree_path: worktree,
         error: "Recording failed"
       })
 
-    assert {:ok, %Task{stage: :demo, stage_state: :queued, error: nil}} =
+    assert {:ok, %Task{stage: :demo, error: nil}} =
              Pipeline.rerecord_demo(task, [])
   end
 
@@ -154,7 +151,6 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     {:ok, task_merged_stage} =
       Pipeline.update_task(task, %{
         stage: :merged,
-        stage_state: :awaiting_approval,
         worktree_path: worktree
       })
 
@@ -171,7 +167,6 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     {:ok, task_merged_at} =
       Pipeline.update_task(task_merged_at, %{
         stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
         worktree_path: worktree,
         merged_at: DateTime.utc_now()
       })
@@ -187,7 +182,6 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
         worktree_path: nonexistent_path
       })
 
@@ -200,13 +194,12 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     assert reloaded.error == "Worktree does not exist on disk (#{nonexistent_path})."
   end
 
-  test "can_rerecord_demo? checks eligibility accurately", %{project: project, task: task} do
+  test "can_rerecord_demo? checks eligibility accurately", %{project: project, task: task, roles: roles} do
     worktree = create_temp_git_repo()
 
     {:ok, eligible_ready} =
       Pipeline.update_task(task, %{
         stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
         worktree_path: worktree
       })
 
@@ -223,7 +216,6 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     {:ok, eligible_demo_failed} =
       Pipeline.update_task(eligible_demo_failed, %{
         stage: :demo,
-        stage_state: :failed,
         worktree_path: worktree
       })
 
@@ -240,9 +232,19 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     {:ok, busy_task} =
       Pipeline.update_task(busy_task, %{
         stage: :ready_to_merge,
-        stage_state: :running,
         worktree_path: worktree
       })
+
+    # Nothing is re-recorded while the stage's run is still working.
+    {:ok, _running} =
+      Runs.create_run(%{
+        task_id: busy_task.id,
+        role_id: roles[:demo].id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, busy_task} = Pipeline.update_task(busy_task, %{stage: :demo})
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_rerecord_demo_9406",
@@ -257,7 +259,6 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     {:ok, merged_task} =
       Pipeline.update_task(merged_task, %{
         stage: :merged,
-        stage_state: :awaiting_approval,
         worktree_path: worktree
       })
 
@@ -274,7 +275,6 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
     {:ok, missing_path_task} =
       Pipeline.update_task(missing_path_task, %{
         stage: :ready_to_merge,
-        stage_state: :awaiting_approval,
         worktree_path: "/tmp/rail-removed-worktree"
       })
 

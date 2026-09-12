@@ -40,16 +40,19 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
         linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
       })
 
-    for stage <- [:product, :design] do
-      {:ok, _role} =
-        Roles.create_role(scope, project, %{
-          backend_id: backend.id,
-          stage: stage,
-          name: "#{stage} role",
-          model: "claude-3-7-sonnet",
-          system_prompt: "You are the #{stage} agent."
-        })
-    end
+    roles =
+      Map.new([:product, :design], fn stage ->
+        {:ok, role} =
+          Roles.create_role(scope, project, %{
+            backend_id: backend.id,
+            stage: stage,
+            name: "#{stage} role",
+            model: "claude-3-7-sonnet",
+            system_prompt: "You are the #{stage} agent."
+          })
+
+        {stage, role}
+      end)
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_approve_product_1",
@@ -71,7 +74,6 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
       title: issue.title,
       description: issue.description,
       stage: :product,
-      stage_state: :awaiting_approval,
       worktree_name: name,
       worktree_path: Path.join(project.clone_path, ".worktrees/#{name}"),
       scratch_path: scratch_dir
@@ -88,7 +90,8 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
       issue: issue,
       task: task,
       task_attrs: task_attrs,
-      tickets_dir: tickets_dir
+      tickets_dir: tickets_dir,
+      roles: roles
     }
   end
 
@@ -152,14 +155,21 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
     assert %Issue{title: "The split ticket"} = Repo.get_by!(Issue, identifier: "APT-2")
   end
 
-  test "refuses a task that is not awaiting approval", %{project: project, task_attrs: task_attrs} do
+  test "refuses while the product run is still working", %{project: project, task_attrs: task_attrs, roles: roles} do
     task =
       %Task{}
-      |> Task.changeset(%{task_attrs | stage_state: :running}, project.id)
+      |> Task.changeset(task_attrs, project.id)
       |> Repo.insert!()
 
-    assert {:error, {:invalid_stage_state, :running}} =
-             Pipeline.approve_product_task(task)
+    {:ok, _running} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:product].id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    assert {:error, :stage_running} = Pipeline.approve_product_task(task)
   end
 
   test "refuses a task that is past the product stage", %{project: project, task_attrs: task_attrs} do
@@ -175,7 +185,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
   test "records the error when the run left no ticket", %{task: task} do
     assert {:error, :no_ticket} = Pipeline.approve_product_task(task)
 
-    assert %Task{stage: :product, stage_state: :awaiting_approval, error: error} = Repo.get!(Task, task.id)
+    assert %Task{stage: :product, error: error} = Repo.get!(Task, task.id)
     assert error =~ "no ticket"
   end
 
@@ -185,7 +195,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductTaskTest do
 
     assert {:error, {:push_failed, _reason}} = Pipeline.approve_product_task(task)
 
-    assert %Task{stage: :product, stage_state: :awaiting_approval, error: error} = Repo.get!(Task, task.id)
+    assert %Task{stage: :product, error: error} = Repo.get!(Task, task.id)
     assert error =~ "Failed to publish the ticket"
   end
 end

@@ -47,8 +47,7 @@ defmodule RailWeb.Components.ConversationTabTest do
       status: :running,
       started_at: ~U[2026-09-09 10:05:00Z],
       attempts: 1,
-      conversation_id: "conv_eng_2",
-      chat_usage: %TaskUsage{input_tokens: 200, output_tokens: 100}
+      conversation_id: "conv_eng_2"
     }
 
     role1 = %Role{id: "architect", name: "Architect", icon_name: "pi-compass-tool"}
@@ -223,11 +222,11 @@ defmodule RailWeb.Components.ConversationTabTest do
     assert html =~ "No messages yet."
   end
 
-  test "renders Composer banners in precedence: thinking > queued > unavailable" do
+  test "renders Composer banners: thinking and queued stack, unavailable stands alone" do
     role = %Role{id: "engineer", name: "Engineer", icon_name: "pi-code"}
 
     # 1. Thinking banner
-    task_thinking = %Task{id: "tsk_think", active_chat_role_id: "engineer"}
+    task_thinking = %Task{id: "tsk_think"}
 
     run_live = %Run{
       id: "rr_live",
@@ -249,12 +248,12 @@ defmodule RailWeb.Components.ConversationTabTest do
 
     assert html_thinking =~ ~s(data-qa="thinking-banner")
     assert html_thinking =~ "Engineer is thinking..."
-    assert html_thinking =~ ~s(data-qa="stop-chat-turn")
+    assert html_thinking =~ ~s(data-qa="stop-run")
     refute html_thinking =~ ~s(data-qa="queued-banner")
     refute html_thinking =~ ~s(data-qa="unavailable-banner")
 
     # 2. Queued banner
-    task_idle = %Task{id: "tsk_queued", active_chat_role_id: nil}
+    task_idle = %Task{id: "tsk_queued"}
 
     run_queued = %Run{
       id: "rr_queued",
@@ -276,8 +275,11 @@ defmodule RailWeb.Components.ConversationTabTest do
       )
 
     assert html_queued =~ ~s(data-qa="queued-banner")
-    assert html_queued =~ "Queued message: &quot;Check test coverage&quot; (delivers when pipeline pauses)"
-    assert html_queued =~ ~s(data-qa="cancel-pending-chat")
+    assert html_queued =~ "Queued: &quot;Check test coverage&quot; (sends when Engineer is done)"
+    assert html_queued =~ ~s(data-qa="cancel-queued-message")
+    # Nothing is running, so the message goes out on its own: no Send now.
+    refute html_queued =~ ~s(data-qa="send-queued-now")
+    refute html_queued =~ ~s(data-qa="thinking-banner")
 
     # 3. Unavailable banner (no conversation ID)
     run_unstarted = %Run{
@@ -304,21 +306,32 @@ defmodule RailWeb.Components.ConversationTabTest do
     assert html_unavail =~ "Chat unavailable"
   end
 
-  test "renders delivery modal when run is in flight" do
-    modal = %{
-      text: "Can you fix the unit tests?",
+  test "a message queued while the role works offers Send now beside the thinking banner" do
+    role = %Role{id: "engineer", name: "Engineer", icon_name: "pi-code"}
+
+    run = %Run{
+      id: "rr_both",
       role_id: "engineer",
-      role_name: "Engineer"
+      status: :running,
+      started_at: ~U[2026-09-09 10:00:00Z],
+      conversation_id: "sess_both",
+      pending_chat: "Also check the migration"
     }
 
-    html = render_component(&ConversationTab.delivery_modal/1, modal: modal)
+    html =
+      render_component(&ConversationTab.conversation_tab/1,
+        task: %Task{id: "tsk_both"},
+        ordered_runs: [run],
+        selected_run: run,
+        selected_role_id: "engineer",
+        selected_role: role,
+        roles_map: %{"engineer" => role}
+      )
 
-    assert html =~ ~s(data-qa="delivery-modal")
-    assert html =~ "A run is in flight"
-    assert html =~ "The pipeline is currently executing a run. How would you like to deliver your message to Engineer?"
-    assert html =~ ~s(data-qa="delivery-cancel")
-    assert html =~ ~s(data-qa="delivery-when-finished")
-    assert html =~ ~s(data-qa="delivery-stop-and-send")
+    assert html =~ ~s(data-qa="thinking-banner")
+    assert html =~ ~s(data-qa="queued-banner")
+    assert html =~ ~s(data-qa="send-queued-now")
+    assert html =~ ~s(data-qa="cancel-queued-message")
   end
 
   test "renders Raw Log view with color classes and handoff button" do
@@ -359,13 +372,8 @@ defmodule RailWeb.Components.ConversationTabTest do
     assert html =~ "normal debug line"
   end
 
-  test "renders run metadata with chat_usage and single step tool activity" do
+  test "renders run metadata and single step tool activity" do
     task = %Task{id: "tsk_single_step", stage: :engineer}
-
-    chat_usage = %TaskUsage{
-      input_tokens: 250,
-      output_tokens: 120
-    }
 
     run = %Run{
       id: "rr_chat",
@@ -373,8 +381,7 @@ defmodule RailWeb.Components.ConversationTabTest do
       status: :completed,
       started_at: ~U[2026-09-09 10:00:00Z],
       completed_at: ~U[2026-09-09 10:05:00Z],
-      chat_usage: chat_usage,
-      usage: "not_a_struct"
+      usage: %TaskUsage{input_tokens: 250, output_tokens: 120}
     }
 
     raw_logs = [
@@ -397,8 +404,7 @@ defmodule RailWeb.Components.ConversationTabTest do
         show_raw_log: false
       )
 
-    assert html =~ ~s(id="metadata-run-chat-usage")
-    assert html =~ "Chat:"
+    assert html =~ ~s(id="metadata-run-usage")
     assert html =~ "Tool activity (1 step)"
     assert html =~ "config.ex"
 

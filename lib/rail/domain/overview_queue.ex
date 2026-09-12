@@ -96,6 +96,7 @@ defmodule Rail.Domain.OverviewQueue do
   alias Rail.Domain.AgentRow
   alias Rail.Domain.AttentionItem
   alias Rail.Domain.CompactStripBlock
+  alias Rail.Domain.Formatters
   alias Rail.Domain.OverviewQueueState
   alias Rail.Domain.QuestionAttentionItem
   alias Rail.Domain.SingleCardBlock
@@ -183,7 +184,7 @@ defmodule Rail.Domain.OverviewQueue do
       question != nil or is_nil(task) ->
         :question
 
-      stage_state(task) == :awaiting_approval and stage(task) != :ready_to_merge and not conflicted?(task) ->
+      stage_state(task) == :done and stage(task) != :ready_to_merge and not conflicted?(task) ->
         :approval
 
       stage_state(task) == :failed ->
@@ -230,10 +231,11 @@ defmodule Rail.Domain.OverviewQueue do
         bool
 
       nil ->
+        # Private Helpers
         not merged?(task) and
           not busy?(task) and
           ((stage(task) == :ready_to_merge and not rebasing?(task)) or
-             stage_state(task) in [:awaiting_approval, :failed, :blocked, :paused_question, :blocked_rework] or
+             stage_state(task) in [:done, :failed, :blocked, :stopped] or
              (conflicted?(task) and not rebasing?(task)))
     end
   end
@@ -250,18 +252,16 @@ defmodule Rail.Domain.OverviewQueue do
         true
 
       get_field(task, :has_merge_conflicts) == true and not rebasing?(task) ->
-        stage_state(task) in [:queued, :awaiting_approval, nil]
+        stage_state(task) in [:queued, :done, :stopped]
 
       get_field(task, :mergeability) in [:conflicts, "conflicts", :conflicting, "conflicting"] and
           not rebasing?(task) ->
-        stage_state(task) in [:queued, :awaiting_approval, nil]
+        stage_state(task) in [:queued, :done, :stopped]
 
       true ->
         false
     end
   end
-
-  # Private Helpers
 
   defp task_for_item(%TaskAttentionItem{task: task}), do: task
   defp task_for_item(%QuestionAttentionItem{}), do: nil
@@ -301,11 +301,12 @@ defmodule Rail.Domain.OverviewQueue do
     [%CompactStripBlock{rows: compact_rows} | blocks_acc]
   end
 
-  defp busy?(task), do: get_field(task, :is_busy) == true
+  defp busy?(task), do: get_field(task, :is_busy) == true or stage_state(task) == :running
   defp rebasing?(task), do: get_field(task, :is_rebasing) == true
 
   defp stage(task), do: task |> get_field(:stage) |> to_atom()
-  defp stage_state(task), do: task |> get_field(:stage_state) |> to_atom()
+
+  defp stage_state(task), do: Formatters.stage_state(task)
 
   defp to_atom(nil), do: nil
   defp to_atom(atom) when is_atom(atom), do: atom

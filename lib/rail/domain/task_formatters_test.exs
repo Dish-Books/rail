@@ -2,15 +2,16 @@ defmodule Rail.Domain.TaskFormattersTest do
   use Rail.DataCase, async: true
 
   alias Rail.Domain.TaskFormatters
+  alias Rail.Runs.Schemas.Run
 
   test "delegates all formatting functions to Formatters" do
     task = %{
       title: "Implement Task",
       description: "Ticket text",
       stage: :engineer,
-      stage_state: :running,
       rework_cycles: 1,
-      rework_budget_base: 0
+      rework_budget_base: 0,
+      run: %Run{status: :running}
     }
 
     assert TaskFormatters.stage_label(task) == "Engineer running · rework 1 of 5"

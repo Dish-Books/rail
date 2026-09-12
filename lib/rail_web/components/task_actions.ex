@@ -108,28 +108,17 @@ defmodule RailWeb.Components.TaskActions do
   end
 
   defp build_stage_actions(task, design, conflicted) do
-    case task.stage_state do
-      :awaiting_approval ->
+    case Formatters.stage_state(task) do
+      :done ->
         build_awaiting_approval_actions(task, design, conflicted)
 
       :failed ->
         {build_failed_actions(task), false}
 
+      # Stopping a run is done in the conversation with the role doing the work,
+      # where the human can see what they are interrupting.
       :running ->
-        {
-          [
-            %{
-              id: "action-cancel",
-              label: "Cancel run",
-              kind: :cancel,
-              style: :outlined,
-              icon: "pi-stop-circle",
-              action: "cancel",
-              params: %{}
-            }
-          ],
-          false
-        }
+        {[], false}
 
       :queued ->
         {[], false}
@@ -366,7 +355,7 @@ defmodule RailWeb.Components.TaskActions do
     trailing = [chat_btn]
 
     trailing =
-      if conflicted and not rebase_offered and task.stage_state != :running do
+      if conflicted and not rebase_offered and Formatters.stage_state(task) != :running do
         rebase_btn = %{
           id: "action-rebase",
           label: "Rebase branch",
@@ -406,13 +395,8 @@ defmodule RailWeb.Components.TaskActions do
 
   defp action_disabled?(_task, nil, _running_kind), do: false
 
-  defp action_disabled?(task, kind, running_kind) do
-    is_busy =
-      running_kind != nil or
-        (is_binary(task.active_chat_role_id) and task.active_chat_role_id != "") or
-        (task.stage_state == :running and kind != :cancel)
-
-    is_busy
+  defp action_disabled?(task, _kind, running_kind) do
+    running_kind != nil or Formatters.stage_state(task) == :running
   end
 
   defp button_style_class(:filled) do

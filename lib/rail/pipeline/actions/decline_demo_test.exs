@@ -79,7 +79,6 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :demo,
-        stage_state: :queued,
         error: "Previous error"
       })
 
@@ -87,9 +86,7 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
             %Task{
               id: task_id,
               stage: :ready_to_merge,
-              stage_state: :awaiting_approval,
-              error: nil,
-              retry_after: nil
+              error: nil
             }} = Pipeline.decline_demo(task)
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :demo_declined}}
@@ -107,8 +104,7 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
   test "declines demo with custom note and increments version on subsequent demo", %{task: task} do
     {:ok, task} =
       Pipeline.update_task(task, %{
-        stage: :demo,
-        stage_state: :queued
+        stage: :demo
       })
 
     demo_scratch_8651 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
@@ -144,7 +140,7 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
 
     {:ok, _demo} = Artifacts.capture_demo(system_scope(), task, demo_scratch_8651)
 
-    assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}} =
+    assert {:ok, %Task{stage: :ready_to_merge}} =
              Pipeline.decline_demo(task, "Non-UI refactor, CLI verified")
 
     latest_demo =
@@ -168,11 +164,10 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :demo,
-        stage_state: :queued,
         worktree_path: worktree
       })
 
-    assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}} =
+    assert {:ok, %Task{stage: :ready_to_merge}} =
              Pipeline.decline_demo(task, "No demo needed")
 
     assert %Demo{
@@ -191,7 +186,6 @@ defmodule Rail.Pipeline.Actions.DeclineDemoTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :demo,
-        stage_state: :queued,
         worktree_path: scratch_worktree
       })
 

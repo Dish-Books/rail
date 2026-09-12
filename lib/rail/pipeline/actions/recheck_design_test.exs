@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
+  alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -123,7 +124,6 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :design,
-        stage_state: :failed,
         error: "Canvas URL could not be opened or returned 404/410",
         scratch_path: scratch_dir
       })
@@ -139,12 +139,11 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     mock_design_uploads(2)
 
-    assert {:ok, %Task{id: task_id, stage: :design, stage_state: :awaiting_approval, error: nil}} =
+    assert {:ok, %Task{id: task_id, stage: :design, error: nil}} =
              Pipeline.recheck_design(task, url_probe: fn _uri -> true end)
 
-    reloaded_task = Repo.get!(Task, task_id)
-    assert reloaded_task.stage_state == :awaiting_approval
-    assert is_nil(reloaded_task.error)
+    assert is_nil(Repo.get!(Task, task_id).error)
+    assert %Run{stage_outcome: :done, error: nil} = Repo.reload!(run)
 
     design = Repo.one(from d in Design, where: d.task_id == ^task_id, order_by: [desc: d.version], limit: 1)
     assert design.canvas_url == "https://claude.ai/design/valid-canvas"
@@ -201,7 +200,6 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :design,
-        stage_state: :failed,
         error: "Initial gate failure",
         scratch_path: scratch_dir
       })
@@ -213,10 +211,10 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     mock_design_uploads(4)
 
-    assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}} =
+    assert {:ok, %Task{error: nil}} =
              Pipeline.recheck_design(task, url_probe: fn _uri -> true end)
 
-    assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}} =
+    assert {:ok, %Task{error: nil}} =
              Pipeline.recheck_design(task, url_probe: fn _uri -> true end)
   end
 
@@ -260,7 +258,6 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :design,
-        stage_state: :failed,
         error: "Initial failure",
         scratch_path: scratch_dir
       })
@@ -277,9 +274,9 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     assert {:error, reason} = Pipeline.recheck_design(task)
     assert reason =~ "absolute https URL"
 
-    reloaded_task = Repo.get!(Task, task.id)
-    assert reloaded_task.stage_state == :failed
-    assert reloaded_task.error =~ "absolute https URL"
+    assert Repo.get!(Task, task.id).error =~ "absolute https URL"
+    assert %Run{stage_outcome: :in_progress, error: design_error} = Repo.reload!(run)
+    assert design_error =~ "absolute https URL"
 
     events = Repo.all(from e in RunEvent, where: e.run_id == ^run.id, order_by: [asc: e.seq])
 
@@ -288,11 +285,15 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
            end)
   end
 
-  test "returns error when designer is actively running", %{task: task} do
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        stage: :design,
-        stage_state: :running
+  test "returns error when designer is actively running", %{task: task, roles: roles} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :design})
+
+    {:ok, _running} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:design].id,
+        status: :running,
+        started_at: DateTime.utc_now()
       })
 
     assert {:error, "The Designer is still running; wait for it to finish."} =
@@ -302,8 +303,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
   test "noops and returns ok when task stage is not design", %{task: task} do
     {:ok, task} =
       Pipeline.update_task(task, %{
-        stage: :engineer,
-        stage_state: :awaiting_approval
+        stage: :engineer
       })
 
     assert {:ok, %Task{stage: :engineer}} = Pipeline.recheck_design(task)
@@ -353,7 +353,6 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :design,
-        stage_state: :failed,
         scratch_path: scratch_dir
       })
 
@@ -366,7 +365,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     {:ok, _picked} = design |> Design.changeset(%{picked_key: "dir-1"}) |> Repo.update()
 
     {:ok, task} =
-      Pipeline.update_task(task, %{stage: :design, stage_state: :failed})
+      Pipeline.update_task(task, %{stage: :design})
 
     mock_design_uploads(2)
 
@@ -418,7 +417,6 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :design,
-        stage_state: :failed,
         scratch_path: scratch_dir
       })
 
@@ -431,7 +429,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     {:ok, _picked} = design |> Design.changeset(%{picked_key: "dir-1"}) |> Repo.update()
 
     {:ok, task} =
-      Pipeline.update_task(task, %{stage: :design, stage_state: :failed})
+      Pipeline.update_task(task, %{stage: :design})
 
     manifest_path = Path.join(design_dir, "manifest.json")
     manifest = manifest_path |> File.read!() |> Jason.decode!()
@@ -474,7 +472,6 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :design,
-        stage_state: :failed,
         scratch_path: scratch_dir
       })
 
@@ -616,7 +613,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     mock_design_uploads(1)
 
-    assert {:ok, %Task{stage_state: :awaiting_approval}} =
+    assert {:ok, %Task{}} =
              Pipeline.recheck_design(scratch_task, url_probe: fn _uri -> true end)
 
     # A manifest written into the worktree instead is a design Rail never saw.

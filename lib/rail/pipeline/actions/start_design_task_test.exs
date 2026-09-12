@@ -67,7 +67,6 @@ defmodule Rail.Pipeline.Actions.StartDesignTaskTest do
           title: issue.title,
           description: issue.description,
           stage: :product,
-          stage_state: :awaiting_approval,
           worktree_name: name,
           worktree_path: Path.join(project.clone_path, ".worktrees/#{name}"),
           scratch_path: Path.join(System.tmp_dir!(), "rail_test_scratch_#{System.unique_integer([:positive])}")

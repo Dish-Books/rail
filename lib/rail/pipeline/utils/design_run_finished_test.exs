@@ -12,7 +12,6 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -79,47 +78,28 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
     %{backend: backend, project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "maybe_finish_os_process updates run when passed as top-level run struct", %{task: task, roles: roles} do
-    {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(task, %{
-        stage: :design,
-        stage_state: :running
-      })
+  test "a designer that left no manifest records that on its run", %{task: task, roles: roles} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :design})
 
     {:ok, run} =
       Runs.create_run(%{
-        task_id: task_id,
-        role_id: roles[:engineer].id,
+        task_id: task.id,
+        role_id: roles[:design].id,
         conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
 
-    %OsProcess{id: os_process_id} =
-      os_process =
-      %OsProcess{}
-      |> OsProcess.changeset(%{
-        run_id: run.id,
-        task_id: task_id,
-        stream_path: "/tmp/settle_design/#{run.id}.ndjson",
-        node: to_string(Node.self()),
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-      |> Repo.insert!()
-
-    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process)
-
-    assert {:ok, _task, _run} = finish_design_run(os_process)
-    assert %OsProcess{id: ^os_process_id, status: :finished} = Repo.get!(OsProcess, os_process_id)
+    assert %Run{error: error} = design_run_finished(Repo.preload(run, [:task, :role], force: true), [])
+    assert error =~ "manifest"
+    assert %Task{stage: :design} = Repo.get!(Task, task.id)
   end
 
-  describe "settle_run at design stage" do
+  describe "capturing the design" do
     test "designer run settlement fails when manifest is missing", %{task: task, roles: roles} do
       {:ok, task} =
         Pipeline.update_task(task, %{
-          stage: :design,
-          stage_state: :running
+          stage: :design
         })
 
       {:ok, run} =
@@ -131,22 +111,9 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
           started_at: DateTime.utc_now()
         })
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
+      assert %Run{error: err} = design_run_finished(Repo.preload(run, [:task, :role], force: true), [])
 
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage: :design, stage_state: :failed, error: err}, %Run{status: :finished}} =
-               finish_design_run(os_process)
+      assert %Task{stage: :design} = Repo.get!(Task, task.id)
 
       assert err =~ "No design manifest found at"
     end
@@ -194,7 +161,6 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :design,
-          stage_state: :running,
           worktree_path: worktree_dir,
           scratch_path: worktree_dir
         })
@@ -210,22 +176,10 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
 
       mock_design_uploads(2)
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
+      assert %Run{error: nil} =
+               design_run_finished(Repo.preload(run, [:task, :role], force: true), url_probe: fn _uri -> true end)
 
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage: :design, stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
-               finish_design_run(os_process, %{}, url_probe: fn _uri -> true end)
+      assert %Task{stage: :design} = Repo.get!(Task, task.id)
 
       designs = Repo.all(from d in Rail.Artifacts.Schemas.Design, where: d.task_id == ^task.id)
       assert length(designs) == 1
@@ -271,7 +225,6 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :design,
-          stage_state: :running,
           worktree_path: worktree_dir,
           scratch_path: worktree_dir
         })
@@ -305,22 +258,8 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
           started_at: DateTime.utc_now()
         })
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
-
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
-               finish_design_run(os_process, %{}, url_probe: fn _uri -> true end)
+      assert %Run{error: err} =
+               design_run_finished(Repo.preload(run, [:task, :role], force: true), url_probe: fn _uri -> true end)
 
       assert err =~ "Manifest missing picked direction: dir-1"
     end
@@ -368,7 +307,6 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :design,
-          stage_state: :running,
           worktree_path: worktree_dir,
           scratch_path: worktree_dir
         })
@@ -402,22 +340,8 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
           started_at: DateTime.utc_now()
         })
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
-
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
-               finish_design_run(os_process, %{}, url_probe: fn _uri -> true end)
+      assert %Run{error: err} =
+               design_run_finished(Repo.preload(run, [:task, :role], force: true), url_probe: fn _uri -> true end)
 
       assert err =~ "Manifest version must be incremented after a pick or revision."
     end
@@ -465,7 +389,6 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :design,
-          stage_state: :running,
           worktree_path: worktree_dir,
           scratch_path: worktree_dir
         })
@@ -499,22 +422,8 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
           started_at: DateTime.utc_now()
         })
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
-
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
-               finish_design_run(os_process, %{}, url_probe: fn _uri -> true end)
+      assert %Run{error: err} =
+               design_run_finished(Repo.preload(run, [:task, :role], force: true), url_probe: fn _uri -> true end)
 
       assert err =~ "Design manifest is missing pickedKey (expected \"dir-1\")."
     end
@@ -562,7 +471,6 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :design,
-          stage_state: :running,
           worktree_path: worktree_dir,
           scratch_path: worktree_dir
         })
@@ -596,22 +504,8 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
           started_at: DateTime.utc_now()
         })
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
-
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
-               finish_design_run(os_process, %{}, url_probe: fn _uri -> true end)
+      assert %Run{error: err} =
+               design_run_finished(Repo.preload(run, [:task, :role], force: true), url_probe: fn _uri -> true end)
 
       assert err =~ "Design manifest pickedKey (dir-2) does not match chosen direction (dir-1)."
     end
@@ -659,7 +553,6 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :design,
-          stage_state: :running,
           worktree_path: "/tmp/rail-removed-worktree"
         })
 
@@ -696,22 +589,8 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
 
       {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: worktree_dir})
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
-
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
-               finish_design_run(os_process, %{}, url_probe: fn _uri -> true end)
+      assert %Run{error: nil} =
+               design_run_finished(Repo.preload(run, [:task, :role], force: true), url_probe: fn _uri -> true end)
     end
 
     test "supports settling with scratch_dir and valid transition", %{task: task, roles: roles} do
@@ -757,7 +636,6 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :design,
-          stage_state: :running,
           worktree_path: "/tmp/rail-removed-worktree"
         })
 
@@ -794,22 +672,8 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
 
       {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: worktree_dir})
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_design/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
-
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
-               finish_design_run(os_process, %{}, url_probe: fn _uri -> true end)
+      assert %Run{error: nil} =
+               design_run_finished(Repo.preload(run, [:task, :role], force: true), url_probe: fn _uri -> true end)
     end
   end
 end

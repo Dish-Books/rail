@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
+  alias Rail.Runs
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -68,64 +69,21 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "refuses to start rebase when task is busy (running or active chat)", %{project: _project} do
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Start Rebase Project 8802",
-        github_repo: "org/start-rebase-8802",
-        github_installation_id: 8802,
-        linear_team_id: "team_start_rebase_8802",
-        linear_team_key: "P8802",
-        default_branch: "main",
-        clone_path: "/tmp/repos/start-rebase-8802",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+  test "refuses to start a rebase while the stage's run is still working", %{task: task, roles: roles} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+
+    {:ok, _running} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:review].id,
+        status: :running,
+        started_at: DateTime.utc_now()
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_start_rebase_8803",
-      "identifier" => "TSK-8803",
-      "title" => "Task 8803"
-    })
-
-    {:ok, issue_8803} = Issues.capture_issue(system_scope(), project, "Task 8803")
-
-    {:ok, task_running} = Pipeline.create_task(issue_8803, :product)
-
-    {:ok, task_running} =
-      Pipeline.update_task(task_running, %{
-        stage: :review,
-        stage_state: :running
-      })
-
-    assert {:error, :task_busy} = Pipeline.start_rebase(task_running)
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_start_rebase_8804",
-      "identifier" => "TSK-8804",
-      "title" => "Task 8804"
-    })
-
-    {:ok, issue_8804} = Issues.capture_issue(system_scope(), project, "Task 8804")
-
-    {:ok, task_chatting} = Pipeline.create_task(issue_8804, :product)
-
-    {:ok, task_chatting} =
-      Pipeline.update_task(task_chatting, %{
-        stage: :review,
-        stage_state: :awaiting_approval,
-        active_chat_role_id: "reviewer"
-      })
-
-    assert {:error, :task_busy} = Pipeline.start_rebase(task_chatting)
+    assert {:error, :task_busy} = Pipeline.start_rebase(task)
   end
 
-  test "starts rebase, queues task, preserves stage_state_before_rebase, and broadcasts", %{
+  test "starts a rebase, flags the detour, and broadcasts", %{
     project: _project,
     task: _task
   } do
@@ -162,18 +120,13 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(task, %{
         stage: :qa,
-        stage_state: :awaiting_approval,
-        error: "Some previous error",
-        retry_after: DateTime.utc_now()
+        error: "Some previous error"
       })
 
     assert {:ok,
             %Task{
               is_rebasing: true,
-              stage_state_before_rebase: :awaiting_approval,
-              stage_state: :queued,
-              error: nil,
-              retry_after: nil
+              error: nil
             }} = Pipeline.start_rebase(task, [])
 
     assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :rebase_started}}

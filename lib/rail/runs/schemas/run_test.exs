@@ -17,8 +17,7 @@ defmodule Rail.Runs.Schemas.RunTest do
       conversation_id: "conv-123",
       exit_code: 0,
       error: nil,
-      usage: %{input_tokens: 100, output_tokens: 50},
-      chat_usage: %{input_tokens: 20, output_tokens: 10}
+      usage: %{input_tokens: 100, output_tokens: 50}
     }
 
     changeset = Run.changeset(%Run{}, attrs)
@@ -31,9 +30,6 @@ defmodule Rail.Runs.Schemas.RunTest do
 
     usage_changeset = get_change(changeset, :usage)
     assert %TaskUsage{input_tokens: 100, output_tokens: 50} = apply_changes(usage_changeset)
-
-    chat_usage_changeset = get_change(changeset, :chat_usage)
-    assert %TaskUsage{input_tokens: 20, output_tokens: 10} = apply_changes(chat_usage_changeset)
   end
 
   test "changeset/2 validates required fields" do

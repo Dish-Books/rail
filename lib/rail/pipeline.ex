@@ -21,10 +21,10 @@ defmodule Rail.Pipeline do
     Supervisor.init([Rail.Pipeline.TaskActionRunner], strategy: :one_for_one)
   end
 
-  defdelegate settle_run(os_process, outcome \\ %{}, opts \\ []), to: Actions.SettleRun
   defdelegate run_finished(os_process, outcome \\ %{}, opts \\ []), to: Actions.RunFinished
-  defdelegate parse_stage_verdict(run_or_id), to: Actions.ParseStageVerdict
+  defdelegate parse_stage_verdict(run), to: Actions.ParseStageVerdict
 
+  defdelegate enter_stage(task, stage, opts \\ []), to: Actions.EnterStage
   defdelegate approve_product_task(task), to: Actions.ApproveProductTask
   defdelegate start_product_run(task), to: Actions.StartProductRun
   defdelegate start_design_task(task), to: Actions.StartDesignTask
@@ -48,7 +48,6 @@ defmodule Rail.Pipeline do
 
   defdelegate send_back_to_engineer(task, opts \\ []), to: Actions.SendBackToEngineer
   defdelegate skip_to_ready_to_merge(task), to: Actions.SkipToReadyToMerge
-  defdelegate cancel_task(task, opts \\ []), to: Actions.CancelTask
 
   defdelegate register_question(run, question), to: Actions.RegisterQuestion
   defdelegate answer_questions(task, answers, opts \\ []), to: Actions.AnswerQuestions
@@ -56,16 +55,9 @@ defmodule Rail.Pipeline do
   defdelegate get_question(id), to: Actions.GetQuestion
   defdelegate list_questions(target \\ nil, opts \\ []), to: Actions.ListQuestions
 
-  # TODO: lets change this to send_message(run, text) no opts, queue only for when agent is done
-  # remove dispatch_chat_turn and maybe_dispatch_queued_pending_chat
-  # remove stop_chat_turn and cancel_pending_chat we should instead have a generic stop_run
-  # settle_chat_turn becomes a util and added to run_finished finish_action, it needs the same question handling as the others
-  defdelegate send_chat_turn(task, role_id, text, opts \\ []), to: Actions.SendChatTurn
-  defdelegate dispatch_chat_turn(task, role, run, opts \\ []), to: Actions.SendChatTurn
-  defdelegate maybe_dispatch_queued_pending_chat(task, opts \\ []), to: Actions.SendChatTurn
-  defdelegate stop_chat_turn(task), to: Actions.StopChatTurn
-  defdelegate cancel_pending_chat(task, role_id), to: Actions.CancelPendingChat
-  defdelegate settle_chat_turn(task_target, run_target, run_or_outcome \\ %{}, opts \\ []), to: Actions.SettleChatTurn
+  defdelegate send_message(run, text), to: Actions.SendMessage
+  defdelegate stop_and_send_message(run, opts \\ []), to: Actions.StopAndSendMessage
+  defdelegate stop_run(run, opts \\ []), to: Actions.StopRun
 
   defdelegate refresh_mergeability(task, opts \\ []), to: Actions.RefreshMergeability
   defdelegate mark_pr_ready(task, opts \\ []), to: Actions.MarkPrReady

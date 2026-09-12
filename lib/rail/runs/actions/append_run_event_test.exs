@@ -19,7 +19,7 @@ defmodule Rail.Runs.Actions.AppendRunEventTest do
 
   test "takes a run struct or an id and keeps the log in order", %{run: run} do
     assert %RunEvent{line: "from struct", seq: first} = Runs.append_run_event(run, "from struct")
-    assert %RunEvent{line: "from id", seq: second} = Runs.append_run_event(run.id, "from id")
+    assert %RunEvent{line: "from id", seq: second} = Runs.append_run_event(run, "from id")
 
     # The position is the database's to assign; all this asks is that it advances.
     assert is_integer(first)

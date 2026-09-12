@@ -15,7 +15,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -86,8 +85,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
     test "demo run settlement fails when manifest is missing", %{task: task, roles: roles} do
       {:ok, task} =
         Pipeline.update_task(task, %{
-          stage: :demo,
-          stage_state: :running
+          stage: :demo
         })
 
       {:ok, run} =
@@ -99,22 +97,9 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
           started_at: DateTime.utc_now()
         })
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
+      assert %Run{error: err} = demo_run_finished(Repo.preload(run, [:task, :role], force: true), [])
 
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage: :demo, stage_state: :failed, error: err}, %Run{status: :finished}} =
-               finish_demo_run(os_process)
+      assert %Task{stage: :demo} = Repo.get!(Task, task.id)
 
       assert err =~ "Demo manifest not found at"
     end
@@ -146,7 +131,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :demo,
-          stage_state: :running,
           worktree_path: worktree,
           scratch_path: worktree
         })
@@ -164,22 +148,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
       expected_err = "The worktree moved during the demo run."
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
-
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage_state: :failed, error: ^expected_err}, %Run{status: :finished}} =
-               finish_demo_run(os_process)
+      assert %Run{error: ^expected_err} = demo_run_finished(Repo.preload(run, [:task, :role], force: true), [])
     end
 
     test "demo run settlement fails when worktree code outside .rail/ was modified during recording", %{
@@ -214,7 +183,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :demo,
-          stage_state: :running,
           worktree_path: worktree,
           scratch_path: worktree
         })
@@ -232,22 +200,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
       expected_err = "Worktree code outside .rail/ was modified during recording."
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
-
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage_state: :failed, error: ^expected_err}, %Run{status: :finished}} =
-               finish_demo_run(os_process)
+      assert %Run{error: ^expected_err} = demo_run_finished(Repo.preload(run, [:task, :role], force: true), [])
     end
 
     test "demo run settlement succeeds with the recording written to scratch", %{task: task, roles: roles} do
@@ -290,7 +243,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :demo,
-          stage_state: :running,
           worktree_path: worktree,
           scratch_path: scratch
         })
@@ -306,22 +258,9 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
           stage_fingerprint_dirty_digest: original_digest
         })
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
+      assert %Run{error: nil} = demo_run_finished(Repo.preload(run, [:task, :role], force: true), [])
 
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
-               finish_demo_run(os_process)
+      assert %Task{stage: :ready_to_merge} = Repo.get!(Task, task.id)
 
       assert %Demo{version: 1, outcome: "recorded", stale: false} =
                Repo.one(from d in Demo, where: d.task_id == ^task.id)
@@ -363,7 +302,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :demo,
-          stage_state: :running,
           worktree_path: worktree_dir,
           scratch_path: worktree_dir
         })
@@ -394,22 +332,9 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
       mock_demo_uploads(1)
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
+      assert %Run{error: nil} = demo_run_finished(Repo.preload(run, [:task, :role], force: true), [])
 
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
-               finish_demo_run(os_process)
+      assert %Task{stage: :ready_to_merge} = Repo.get!(Task, task.id)
 
       demos = Repo.all(from d in Demo, where: d.task_id == ^task.id, order_by: [asc: d.version])
       assert length(demos) == 2
@@ -440,7 +365,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :demo,
-          stage_state: :running,
           worktree_path: worktree_dir,
           scratch_path: worktree_dir
         })
@@ -454,22 +378,9 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
           started_at: DateTime.utc_now()
         })
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
+      assert %Run{error: nil} = demo_run_finished(Repo.preload(run, [:task, :role], force: true), [])
 
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval, error: nil}, %Run{status: :finished}} =
-               finish_demo_run(os_process)
+      assert %Task{stage: :ready_to_merge} = Repo.get!(Task, task.id)
 
       assert %Demo{version: 1, outcome: "declined", note: "Not suitable for demo recording"} =
                Repo.one(from d in Demo, where: d.task_id == ^task.id)
@@ -496,7 +407,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :demo,
-          stage_state: :running,
           worktree_path: worktree_dir,
           scratch_path: worktree_dir
         })
@@ -510,22 +420,9 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
           started_at: DateTime.utc_now()
         })
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
+      assert %Run{error: err} = demo_run_finished(Repo.preload(run, [:task, :role], force: true), [])
 
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage: :demo, stage_state: :failed, error: err}, %Run{status: :finished}} =
-               finish_demo_run(os_process)
+      assert %Task{stage: :demo} = Repo.get!(Task, task.id)
 
       assert err =~ "UI timed out during demo recording"
 
@@ -533,11 +430,10 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
                Repo.one(from d in Demo, where: d.task_id == ^task.id)
     end
 
-    test "demo run non-zero exit code fails stage", %{task: task, roles: roles} do
+    test "a demo run that left no manifest records that on its run", %{task: task, roles: roles} do
       {:ok, task} =
         Pipeline.update_task(task, %{
-          stage: :demo,
-          stage_state: :running
+          stage: :demo
         })
 
       {:ok, run} =
@@ -546,26 +442,13 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
           role_id: roles[:engineer].id,
           conversation_id: "sess_fixture",
           status: :running,
-          started_at: DateTime.utc_now(),
-          auto_retries: 0
-        })
-
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
           started_at: DateTime.utc_now()
         })
-        |> Repo.insert!()
 
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 1, error: "Demo process crashed"})
+      assert %Run{error: error} = demo_run_finished(Repo.preload(run, [:task, :role], force: true), [])
+      assert error =~ "manifest"
 
-      assert {:ok, %Task{stage: :demo, stage_state: :failed, error: "Demo process crashed"}, %Run{status: :finished}} =
-               finish_demo_run(os_process)
+      assert %Task{stage: :demo} = Repo.get!(Task, task.id)
     end
 
     test "supports settling demo with scratch_path and scratch_dir options", %{project: project, task: task, roles: roles} do
@@ -628,7 +511,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       {:ok, task1} =
         Pipeline.update_task(task, %{
           stage: :demo,
-          stage_state: :running,
           worktree_path: "/tmp/rail-removed-worktree"
         })
 
@@ -645,22 +527,9 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
       {:ok, _persisted} = Pipeline.update_task(task1, %{scratch_path: scratch_1})
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run1.id,
-          task_id: run1.task_id,
-          stream_path: "/tmp/settle_demo/#{run1.id}-#{System.unique_integer([:positive])}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
+      assert %Run{} = demo_run_finished(Repo.preload(run1, [:task, :role], force: true), [])
 
-      {:ok, _st, _srr} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %Run{status: :finished}} =
-               finish_demo_run(os_process)
+      assert %Task{stage: :ready_to_merge} = Repo.get!(Task, task.id)
 
       LinearMock.mock_create_issue_success(%{
         "id" => "lin_task_settle_run_14511",
@@ -677,7 +546,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       {:ok, task2} =
         Pipeline.update_task(task2, %{
           stage: :demo,
-          stage_state: :running,
           worktree_path: "/tmp/rail-removed-worktree"
         })
 
@@ -694,22 +562,9 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
       {:ok, _persisted} = Pipeline.update_task(task2, %{scratch_path: scratch_2})
 
-      run_2 =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run2.id,
-          task_id: run2.task_id,
-          stream_path: "/tmp/settle_demo/#{run2.id}-#{System.unique_integer([:positive])}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
+      assert %Run{} = demo_run_finished(Repo.preload(run2, [:task, :role], force: true), [])
 
-      {:ok, _st, _srr} = Pipeline.settle_run(run_2, %{exit_code: 0})
-
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %Run{status: :finished}} =
-               finish_demo_run(run_2)
+      assert %Task{stage: :ready_to_merge} = Repo.get!(Task, task.id)
     end
 
     test "fails when manifest format is invalid during capture", %{task: task, roles: roles} do
@@ -725,7 +580,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :demo,
-          stage_state: :running,
           worktree_path: "/tmp/rail-removed-worktree"
         })
 
@@ -740,22 +594,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
       {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: scratch_dir})
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
-
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
-               finish_demo_run(os_process)
+      assert %Run{error: err} = demo_run_finished(Repo.preload(run, [:task, :role], force: true), [])
 
       assert err =~ "segments"
     end
@@ -796,7 +635,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :demo,
-          stage_state: :running,
           worktree_path: "/tmp/rail-removed-worktree"
         })
 
@@ -811,22 +649,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
       {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: scratch_dir})
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
-
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage_state: :failed, error: err}, %Run{status: :finished}} =
-               finish_demo_run(os_process)
+      assert %Run{error: err} = demo_run_finished(Repo.preload(run, [:task, :role], force: true), [])
 
       assert byte_size(err) > 0
     end
@@ -876,7 +699,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
         Pipeline.update_task(task, %{
           issue_id: issue.id,
           stage: :demo,
-          stage_state: :running,
           worktree_path: "/tmp/nonexistent_wt_#{System.unique_integer([:positive])}"
         })
 
@@ -897,22 +719,9 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
       {:ok, _persisted} = Pipeline.update_task(task, %{scratch_path: scratch_dir})
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
+      assert %Run{} = demo_run_finished(Repo.preload(run, [:task, :role], force: true), [])
 
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %Run{status: :finished}} =
-               finish_demo_run(os_process)
+      assert %Task{stage: :ready_to_merge} = Repo.get!(Task, task.id)
     end
 
     test "handles non-git worktree directory gracefully during demo settlement", %{task: task, roles: roles} do
@@ -951,7 +760,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :demo,
-          stage_state: :running,
           worktree_path: scratch_dir,
           scratch_path: scratch_dir
         })
@@ -969,22 +777,9 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
       mock_demo_uploads(1)
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
+      assert %Run{} = demo_run_finished(Repo.preload(run, [:task, :role], force: true), [])
 
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %Run{status: :finished}} =
-               finish_demo_run(os_process)
+      assert %Task{stage: :ready_to_merge} = Repo.get!(Task, task.id)
     end
 
     test "resolves demo target from scratch_dir when task has no worktree_path", %{task: task, roles: roles} do
@@ -999,7 +794,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :demo,
-          stage_state: :running,
           worktree_path: "/tmp/rail-removed-worktree"
         })
 
@@ -1036,22 +830,9 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
       mock_demo_uploads(1)
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
+      assert %Run{} = demo_run_finished(Repo.preload(run, [:task, :role], force: true), [])
 
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}, %Run{status: :finished}} =
-               finish_demo_run(os_process)
+      assert %Task{stage: :ready_to_merge} = Repo.get!(Task, task.id)
     end
 
     test "supports explicit criteria in opts when settling demo", %{task: task, roles: roles} do
@@ -1090,7 +871,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       {:ok, task} =
         Pipeline.update_task(task, %{
           stage: :demo,
-          stage_state: :running,
           worktree_path: worktree_dir,
           scratch_path: worktree_dir
         })
@@ -1106,22 +886,9 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
 
       mock_demo_uploads(1)
 
-      os_process =
-        %OsProcess{}
-        |> OsProcess.changeset(%{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: "/tmp/settle_demo/#{run.id}.ndjson",
-          node: to_string(Node.self()),
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-        |> Repo.insert!()
+      assert %Run{} = demo_run_finished(Repo.preload(run, [:task, :role], force: true), criteria: ["Explicit criterion"])
 
-      {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-      assert {:ok, %Task{stage: :ready_to_merge}, %Run{status: :finished}} =
-               finish_demo_run(os_process, %{}, criteria: ["Explicit criterion"])
+      assert %Task{stage: :ready_to_merge} = Repo.get!(Task, task.id)
     end
   end
 end

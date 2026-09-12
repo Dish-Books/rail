@@ -47,21 +47,12 @@ defmodule Rail.Pipeline.Actions.DeclineDemo do
            %Demo{}
            |> Demo.changeset(demo_attrs)
            |> Repo.insert(),
-         {:ok, updated_task} <-
-           task
-           |> Task.changeset(%{
-             stage: :ready_to_merge,
-             stage_state: :awaiting_approval,
-             error: nil,
-             retry_after: nil
-           })
-           |> Repo.update() do
-      Rail.Pipeline.broadcast_pipeline_changed(%{
-        task_id: updated_task.id,
-        event: :demo_declined
-      })
+         {:ok, _run} <- Rail.Pipeline.enter_stage(task, :ready_to_merge) do
+      task = Repo.reload!(task)
 
-      {:ok, updated_task}
+      Rail.Pipeline.broadcast_pipeline_changed(%{task_id: task.id, event: :demo_declined})
+
+      {:ok, task}
     end
   end
 

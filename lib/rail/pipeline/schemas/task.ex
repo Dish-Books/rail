@@ -32,29 +32,11 @@ defmodule Rail.Pipeline.Schemas.Task do
     :debugger
   ]
 
-  @stage_states [
-    :idle,
-    :queued,
-    :running,
-    :paused_question,
-    :paused_chat,
-    :awaiting_approval,
-    :changes_requested,
-    :failed,
-    :canceled,
-    :blocked_rework,
-    :blocked
-  ]
-
   @mergeabilities [:clean, :mergeable, :conflicting, :blocked, :unknown]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "tsk"}
   schema "tasks" do
-    belongs_to :project, Project
-    belongs_to :issue, Issue
-
     field :stage, Ecto.Enum, values: @stages, default: :product
-    field :stage_state, Ecto.Enum, values: @stage_states, default: :queued
     field :worktree_name, :string
     field :worktree_path, :string
     field :scratch_path, :string
@@ -63,16 +45,16 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :mergeability, Ecto.Enum, values: @mergeabilities
     field :pr_is_draft, :boolean
     field :is_rebasing, :boolean, default: false
-    field :stage_state_before_rebase, Ecto.Enum, values: @stage_states
-    field :active_chat_role_id, :string
     field :error, :string
-    field :retry_after, :utc_datetime_usec
     field :rework_cycles, :integer, default: 0
     field :rework_budget_base, :integer, default: 0
     field :rework_cycles_by_gate, :map, default: %{}
     field :outstanding_reports, {:array, :string}, default: []
     field :viewed_diff_files, Rail.Pipeline.Types.ViewedDiffFiles, default: %{}
     field :merged_at, :utc_datetime_usec
+
+    belongs_to :project, Project
+    belongs_to :issue, Issue
 
     has_many :questions, Question
     has_many :plans, Plan
@@ -89,7 +71,6 @@ defmodule Rail.Pipeline.Schemas.Task do
   @cast_fields [
     :issue_id,
     :stage,
-    :stage_state,
     :worktree_name,
     :worktree_path,
     :scratch_path,
@@ -98,10 +79,7 @@ defmodule Rail.Pipeline.Schemas.Task do
     :mergeability,
     :pr_is_draft,
     :is_rebasing,
-    :stage_state_before_rebase,
-    :active_chat_role_id,
     :error,
-    :retry_after,
     :rework_cycles,
     :rework_budget_base,
     :rework_cycles_by_gate,
@@ -113,7 +91,6 @@ defmodule Rail.Pipeline.Schemas.Task do
   @required_fields [
     :project_id,
     :stage,
-    :stage_state,
     :worktree_name,
     :worktree_path,
     :scratch_path
@@ -144,7 +121,6 @@ defmodule Rail.Pipeline.Schemas.Task do
   end
 
   def stages, do: @stages
-  def stage_states, do: @stage_states
   def mergeabilities, do: @mergeabilities
 
   def next_stage(:product), do: :design
@@ -251,45 +227,6 @@ defmodule Rail.Pipeline.Schemas.Task do
   end
 
   def cast_stage(_other), do: :error
-
-  # Stage state helpers:
-  def paused?(state) when is_atom(state), do: state in [:paused_question, :paused_chat, :blocked]
-  def paused?(%__MODULE__{stage_state: state}), do: paused?(state)
-  def paused?(_other), do: false
-
-  def running?(:running), do: true
-  def running?(%__MODULE__{stage_state: :running}), do: true
-  def running?(_other), do: false
-
-  def queued?(:queued), do: true
-  def queued?(%__MODULE__{stage_state: :queued}), do: true
-  def queued?(_other), do: false
-
-  def awaiting_approval?(:awaiting_approval), do: true
-  def awaiting_approval?(%__MODULE__{stage_state: :awaiting_approval}), do: true
-  def awaiting_approval?(_other), do: false
-
-  def active?(state) when is_atom(state), do: state in [:running, :paused_chat]
-  def active?(%__MODULE__{stage_state: state}), do: active?(state)
-  def active?(_other), do: false
-
-  def terminal_state?(state) when is_atom(state), do: state in [:failed, :canceled]
-  def terminal_state?(%__MODULE__{stage_state: state}), do: terminal_state?(state)
-  def terminal_state?(_other), do: false
-
-  @doc """
-  Returns true if the task is currently busy with an in-flight run:
-  - stage_state is :running, or
-  - active_chat_role_id is non-nil, or
-  - an OS process is actively running for this task.
-  """
-  def busy?(%__MODULE__{} = task) do
-    task.stage_state == :running or
-      is_binary(task.active_chat_role_id) or
-      (is_binary(task.id) and Rail.Runs.running?(task.id))
-  end
-
-  def busy?(_other), do: false
 
   @doc """
   Returns whether the task uses the Designer stage:

@@ -2,6 +2,7 @@ defmodule RailWeb.OverviewLiveTest do
   use RailWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
+  import RailTest.PipelineHelpers
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
@@ -15,6 +16,7 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
   alias Rail.Runs.DetectedQuestion
+  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -300,9 +302,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, _task} =
       Pipeline.update_task(task, %{
-        stage: :engineer,
-        stage_state: :failed
+        stage: :engineer
       })
+
+    _stage = put_stage_state(task, :failed)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
     assert has_element?(view, "#attention-badge")
@@ -357,9 +360,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, _task} =
       Pipeline.update_task(task, %{
-        stage: :engineer,
-        stage_state: :running
+        stage: :engineer
       })
+
+    _stage = put_stage_state(task, :running)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
     assert has_element?(view, "#running-agent-count-pill", "1 agent running")
@@ -377,9 +381,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, _task2} =
       Pipeline.update_task(task2, %{
-        stage: :engineer,
-        stage_state: :running
+        stage: :engineer
       })
+
+    _stage = put_stage_state(task2, :running)
 
     send(view.pid, :pipeline_changed)
     assert has_element?(view, "#running-agent-count-pill", "2 agents running")
@@ -447,9 +452,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, _task1} =
       Pipeline.update_task(task1, %{
-        stage: :engineer,
-        stage_state: :running
+        stage: :engineer
       })
+
+    _stage = put_stage_state(task1, :running)
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_overview_live_13420",
@@ -463,9 +469,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, _task2} =
       Pipeline.update_task(task2, %{
-        stage: :engineer,
-        stage_state: :running
+        stage: :engineer
       })
+
+    _stage = put_stage_state(task2, :running)
 
     # When viewing P1 only, running count should be 1
     assert {:ok, view, _html} = live(authed_conn, ~p"/?project=#{p1_id}")
@@ -521,9 +528,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, %Task{id: merged_id}} =
       Pipeline.update_task(Repo.get!(Task, merged_id), %{
-        stage: :merged,
-        stage_state: :queued
+        stage: :merged
       })
+
+    _stage = put_stage_state(Repo.get!(Task, merged_id), :queued)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
 
@@ -616,9 +624,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(Repo.get!(Task, task_id), %{
-        stage: :engineer,
-        stage_state: :blocked
+        stage: :engineer
       })
+
+    _stage = put_stage_state(Repo.get!(Task, task_id), :blocked)
 
     {:ok, run} =
       Runs.create_run(%{
@@ -646,6 +655,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, orphan_issue} = Issues.capture_issue(system_scope(), project, "Orphan question task")
     {:ok, %Task{id: orphan_task_id}} = Pipeline.create_task(orphan_issue, :product)
+
+    # The run that asks is the task's stage run, which is what the task is read
+    # through.
+    {:ok, _moved} = Pipeline.update_task(Repo.get!(Task, orphan_task_id), %{stage: :engineer})
 
     {:ok, orphan_run} =
       Runs.create_run(%{
@@ -750,9 +763,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, %Task{id: task_id}} =
       Pipeline.update_task(Repo.get!(Task, task_id), %{
-        stage: :engineer,
-        stage_state: :blocked
+        stage: :engineer
       })
+
+    _stage = put_stage_state(Repo.get!(Task, task_id), :blocked)
 
     {:ok, run} =
       Runs.create_run(%{
@@ -858,9 +872,10 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: arch_id}} =
       Pipeline.update_task(Repo.get!(Task, arch_id), %{
         stage: :architect,
-        stage_state: :awaiting_approval,
         error: "Architect notes here"
       })
+
+    _stage = put_stage_state(Repo.get!(Task, arch_id), :awaiting_approval)
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_overview_live_13425",
@@ -875,9 +890,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, %Task{id: prod_id}} =
       Pipeline.update_task(Repo.get!(Task, prod_id), %{
-        stage: :product,
-        stage_state: :awaiting_approval
+        stage: :product
       })
+
+    _stage = put_stage_state(Repo.get!(Task, prod_id), :awaiting_approval)
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_overview_live_13426",
@@ -892,9 +908,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, %Task{id: eng_id}} =
       Pipeline.update_task(Repo.get!(Task, eng_id), %{
-        stage: :engineer,
-        stage_state: :awaiting_approval
+        stage: :engineer
       })
+
+    _stage = put_stage_state(Repo.get!(Task, eng_id), :awaiting_approval)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
 
@@ -990,9 +1007,10 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: failed_id}} =
       Pipeline.update_task(Repo.get!(Task, failed_id), %{
         stage: :engineer,
-        stage_state: :failed,
         error: "Compilation error in worker.ex"
       })
+
+    _stage = put_stage_state(Repo.get!(Task, failed_id), :failed)
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_overview_live_13428",
@@ -1007,9 +1025,10 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: merge_id}} =
       Pipeline.update_task(Repo.get!(Task, merge_id), %{
         stage: :ready_to_merge,
-        stage_state: :queued,
         pr_number: nil
       })
+
+    _stage = put_stage_state(Repo.get!(Task, merge_id), :queued)
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_overview_live_13429",
@@ -1025,9 +1044,10 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: conflict_id}} =
       Pipeline.update_task(Repo.get!(Task, conflict_id), %{
         stage: :engineer,
-        stage_state: :queued,
         mergeability: :conflicting
       })
+
+    _stage = put_stage_state(Repo.get!(Task, conflict_id), :queued)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
 
@@ -1131,9 +1151,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, %Task{id: t_queued_id}} =
       Pipeline.update_task(Repo.get!(Task, t_queued_id), %{
-        stage: :design,
-        stage_state: :queued
+        stage: :design
       })
+
+    _stage = put_stage_state(Repo.get!(Task, t_queued_id), :queued)
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_overview_live_13431",
@@ -1148,9 +1169,10 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: t_rebase_id}} =
       Pipeline.update_task(Repo.get!(Task, t_rebase_id), %{
         stage: :engineer,
-        stage_state: :running,
         is_rebasing: true
       })
+
+    _stage = put_stage_state(Repo.get!(Task, t_rebase_id), :running)
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_task_overview_live_13432",
@@ -1164,9 +1186,10 @@ defmodule RailWeb.OverviewLiveTest do
 
     {:ok, %Task{id: t_running_id}} =
       Pipeline.update_task(Repo.get!(Task, t_running_id), %{
-        stage: :engineer,
-        stage_state: :running
+        stage: :engineer
       })
+
+    _stage = put_stage_state(Repo.get!(Task, t_running_id), :running)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
 
@@ -1319,9 +1342,10 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: t_eng_id}} =
       Pipeline.update_task(Repo.get!(Task, t_eng_id), %{
         issue_id: issue_id,
-        stage: :engineer,
-        stage_state: :running
+        stage: :engineer
       })
+
+    _stage = put_stage_state(Repo.get!(Task, t_eng_id), :running)
 
     # Chatting task for Architect
     LinearMock.mock_create_issue_success(%{
@@ -1337,10 +1361,10 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: t_arch_id}} =
       Pipeline.update_task(Repo.get!(Task, t_arch_id), %{
         issue_id: nil,
-        stage: :architect,
-        stage_state: :running,
-        active_chat_role_id: r_arch_id
+        stage: :architect
       })
+
+    _stage = put_stage_state(Repo.get!(Task, t_arch_id), :running)
 
     # Waiting task for QA
     LinearMock.mock_create_issue_success(%{
@@ -1356,9 +1380,10 @@ defmodule RailWeb.OverviewLiveTest do
     {:ok, %Task{id: t_qa_id}} =
       Pipeline.update_task(Repo.get!(Task, t_qa_id), %{
         issue_id: nil,
-        stage: :qa,
-        stage_state: :awaiting_approval
+        stage: :qa
       })
+
+    _stage = put_stage_state(Repo.get!(Task, t_qa_id), :awaiting_approval)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
 
@@ -1370,10 +1395,11 @@ defmodule RailWeb.OverviewLiveTest do
     assert has_element?(view, "#role-active-link-#{r_eng_id}")
     assert render(view) =~ "#{issue_identifier} · running"
 
-    # System Architect: chatting
+    # System Architect: working. Chatting is no longer a state of its own —
+    # a message is just another turn of the run.
     assert has_element?(view, "#role-row-#{r_arch_id}")
     assert has_element?(view, "#role-active-link-#{r_arch_id}")
-    assert render(view) =~ "#{t_arch_id} · chatting"
+    assert render(view) =~ "#{t_arch_id} · running"
 
     # QA Specialist: waiting
     assert has_element?(view, "#role-row-#{r_qa_id}")
@@ -1413,7 +1439,7 @@ defmodule RailWeb.OverviewLiveTest do
     task_with_issue = %Task{
       id: "tsk_compact_strip",
       stage: :engineer,
-      stage_state: :awaiting_approval,
+      run: %Run{status: :finished, stage_outcome: :done},
       issue: %Issue{identifier: "ISS-42", title: "Other Kind Task"}
     }
 
@@ -1431,7 +1457,7 @@ defmodule RailWeb.OverviewLiveTest do
       id: "tsk_reb_1",
       issue: %Issue{title: "Rebase In Agent"},
       is_rebasing: true,
-      stage_state: :running,
+      run: %Run{status: :running},
       stage: :engineer,
       updated_at: now
     }
@@ -1439,7 +1465,7 @@ defmodule RailWeb.OverviewLiveTest do
     task_blocked = %Task{
       id: "tsk_blk_1",
       issue: %Issue{title: "Blocked In Agent"},
-      stage_state: :blocked,
+      run: %Run{status: :blocked_on_input},
       stage: :engineer,
       updated_at: now
     }
@@ -1447,14 +1473,14 @@ defmodule RailWeb.OverviewLiveTest do
     task_approval = %Task{
       id: "tsk_appr_1",
       issue: %Issue{title: "Approval In Agent"},
-      stage_state: :awaiting_approval,
+      run: %Run{status: :finished, stage_outcome: :done},
       stage: :architect,
       updated_at: now
     }
 
     task_failed = %Task{
       id: "tsk_fail_1",
-      stage_state: :failed,
+      run: %Run{status: :finished, error: "boom"},
       stage: :engineer,
       issue: %Issue{identifier: "WAG-100", title: "Failed In Agent"},
       updated_at: now
@@ -1463,7 +1489,7 @@ defmodule RailWeb.OverviewLiveTest do
     task_other = %Task{
       id: "tsk_other_1",
       issue: %Issue{title: "Other In Agent"},
-      stage_state: :running,
+      run: %Run{status: :running},
       stage: nil,
       updated_at: now
     }
@@ -1471,7 +1497,7 @@ defmodule RailWeb.OverviewLiveTest do
     task_role = %{
       id: "tsk_role_map",
       issue: %{title: "Map with role"},
-      stage_state: :running,
+      run: %Run{status: :running},
       stage: nil,
       role: %{name: "Custom Agent Role"},
       project: nil,
@@ -1502,7 +1528,7 @@ defmodule RailWeb.OverviewLiveTest do
     task = %Task{
       id: "tsk_test_diff",
       stage: :review,
-      stage_state: :awaiting_approval,
+      run: %Run{status: :finished, stage_outcome: :done},
       issue: %Issue{identifier: "APP-50", title: "Default Diff Task"},
       inserted_at: DateTime.utc_now(),
       project: nil
@@ -1523,7 +1549,7 @@ defmodule RailWeb.OverviewLiveTest do
       id: "tsk_plain",
       issue: %Issue{title: "Plain Task"},
       stage: nil,
-      stage_state: :awaiting_approval,
+      run: %Run{status: :finished, stage_outcome: :done},
       inserted_at: DateTime.utc_now(),
       project: nil
     }

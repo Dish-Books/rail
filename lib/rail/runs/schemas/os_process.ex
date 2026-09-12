@@ -2,10 +2,9 @@ defmodule Rail.Runs.Schemas.OsProcess do
   @moduledoc """
   Schema for one OS process executing an agent run.
 
-  A run spawns a new OS process for each attempt, chat turn, and rebase.
-
-  `is_chat` says who settles the process when it exits: a chat turn rides
-  alongside the stage and leaves it alone, everything else settles it.
+  A run spawns a new OS process for each attempt, each message, and each rebase.
+  They are all the same thing: `run_finished/3` settles every one of them the
+  same way, from the row the spawn wrote.
   """
   use Rail.Schema
 
@@ -16,7 +15,6 @@ defmodule Rail.Runs.Schemas.OsProcess do
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "proc"}
   schema "os_processes" do
-    field :is_chat, :boolean, default: false
     field :os_pid, :integer
     field :stream_path, :string
     field :node, :string
@@ -32,7 +30,6 @@ defmodule Rail.Runs.Schemas.OsProcess do
   @cast_fields [
     :run_id,
     :task_id,
-    :is_chat,
     :os_pid,
     :stream_path,
     :node,

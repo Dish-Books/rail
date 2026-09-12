@@ -20,7 +20,7 @@ defmodule Rail.Runs.Actions.ListRunEventsTest do
   end
 
   test "orders by seq and honours the limit", %{run: run} do
-    assert Enum.map(Runs.list_run_events(run.id), & &1.line) == ["line 1", "line 2", "line 3"]
-    assert length(Runs.list_run_events(run.id, limit: 2)) == 2
+    assert Enum.map(Runs.list_run_events(run), & &1.line) == ["line 1", "line 2", "line 3"]
+    assert length(Runs.list_run_events(run, limit: 2)) == 2
   end
 end

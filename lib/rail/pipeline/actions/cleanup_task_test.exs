@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Roles
+  alias Rail.Runs
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -70,61 +71,18 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "refuses to clean up when task is busy", %{project: _project, task: _task} do
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Cleanup Task Project 8702",
-        github_repo: "org/cleanup-task-8702",
-        github_installation_id: 8702,
-        linear_team_id: "team_cleanup_task_8702",
-        linear_team_key: "P8702",
-        default_branch: "main",
-        clone_path: "/tmp/repos/cleanup-task-8702",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
+  test "refuses to clean up while the stage's run is still working", %{task: task, roles: roles} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_cleanup_task_8703",
-      "identifier" => "TSK-8703",
-      "title" => "Task 8703"
-    })
-
-    {:ok, issue_8703} = Issues.capture_issue(system_scope(), project, "Task 8703")
-
-    {:ok, task} = Pipeline.create_task(issue_8703, :product)
-
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        stage: :engineer,
-        stage_state: :running
+    {:ok, _running} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :running,
+        started_at: DateTime.utc_now()
       })
 
     assert {:error, :task_busy} = Pipeline.cleanup_task(task)
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_cleanup_task_8704",
-      "identifier" => "TSK-8704",
-      "title" => "Task 8704"
-    })
-
-    {:ok, issue_8704} = Issues.capture_issue(system_scope(), project, "Task 8704")
-
-    {:ok, task_chat} = Pipeline.create_task(issue_8704, :product)
-
-    {:ok, task_chat} =
-      Pipeline.update_task(task_chat, %{
-        stage: :qa,
-        stage_state: :awaiting_approval,
-        active_chat_role_id: "qa"
-      })
-
-    assert {:error, :task_busy} = Pipeline.cleanup_task(task_chat)
   end
 
   test "cleans up worktree, branch and scratch directory, and broadcasts", %{
@@ -176,7 +134,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(task, %{
         stage: :merged,
-        stage_state: :queued,
         worktree_name: "cleanup-branch",
         worktree_path: worktree_path,
         scratch_path: scratch_dir

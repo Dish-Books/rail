@@ -2,7 +2,6 @@ defmodule Rail.Pipeline.Utils.RebaseRunFinishedTest do
   use Rail.DataCase, async: true
 
   import Rail.Pipeline.Utils.RebaseRunFinished
-  import RailTest.Mocks.GitHub
 
   alias Rail.Issues
   alias Rail.Pipeline
@@ -11,7 +10,6 @@ defmodule Rail.Pipeline.Utils.RebaseRunFinishedTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -75,68 +73,7 @@ defmodule Rail.Pipeline.Utils.RebaseRunFinishedTest do
     # These tests exercise stage transitions, not Linear publishing.
     {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
-    %{backend: backend, project: project, issue: issue, task: task, roles: roles}
-  end
-
-  test "settles clean exit 0 for rebasing task restoring previous stage state", %{task: task, roles: roles} do
-    {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(task, %{
-        stage: :ready_to_merge,
-        stage_state: :running,
-        is_rebasing: true,
-        stage_state_before_rebase: :awaiting_approval
-      })
-
-    {:ok, run} =
-      Runs.create_run(%{
-        task_id: task_id,
-        role_id: roles[:engineer].id,
-        conversation_id: "sess_fixture",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-
-    os_process =
-      %OsProcess{}
-      |> OsProcess.changeset(%{
-        run_id: run.id,
-        task_id: run.task_id,
-        stream_path: "/tmp/settle_rebase/#{run.id}.ndjson",
-        node: to_string(Node.self()),
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-      |> Repo.insert!()
-
-    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-    assert {:ok,
-            %Task{
-              id: ^task_id,
-              is_rebasing: false,
-              stage_state: :awaiting_approval,
-              stage_state_before_rebase: nil
-            }, %Run{status: :finished, exit_code: 0, auto_retries: 0}} =
-             finish_rebase_run(os_process)
-  end
-
-  test "settling clean exit 0 for rebasing task restores previous state and refreshes mergeability", %{
-    project: project,
-    task: task,
-    roles: roles
-  } do
-    {:ok, _project} = Projects.update_project(system_scope(), project, %{github_repo: "testorg/rebase_settle"})
-
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        stage: :review,
-        stage_state: :running,
-        is_rebasing: true,
-        stage_state_before_rebase: :awaiting_approval,
-        pr_number: 999,
-        mergeability: :conflicting,
-        pr_is_draft: false
-      })
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, is_rebasing: true})
 
     {:ok, run} =
       Runs.create_run(%{
@@ -147,124 +84,30 @@ defmodule Rail.Pipeline.Utils.RebaseRunFinishedTest do
         started_at: DateTime.utc_now()
       })
 
-    mock_pull_request_state_success("testorg/rebase_settle", 999, mergeable: true, draft: false)
+    run = Repo.preload(run, [:task, :role])
 
-    os_process =
-      %OsProcess{}
-      |> OsProcess.changeset(%{
-        run_id: run.id,
-        task_id: run.task_id,
-        stream_path: "/tmp/settle_rebase/#{run.id}.ndjson",
-        node: to_string(Node.self()),
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-      |> Repo.insert!()
-
-    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-    assert {:ok,
-            %Task{
-              is_rebasing: false,
-              stage_state: :awaiting_approval,
-              stage_state_before_rebase: nil,
-              mergeability: :mergeable
-            }, %Run{status: :finished}} =
-             finish_rebase_run(os_process, %{}, token: "tok_test")
+    %{backend: backend, project: project, issue: issue, task: task, roles: roles, run: run}
   end
 
-  test "settling non-zero exit for rebasing task preserves is_rebasing for retries", %{task: task, roles: roles} do
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        stage: :review,
-        stage_state: :running,
-        is_rebasing: true,
-        stage_state_before_rebase: :queued
-      })
+  test "a landed rebase clears the detour and leaves the stage where it was", %{task: task, run: run} do
+    run = %{run | exit_code: 0}
 
-    {:ok, run} =
-      Runs.create_run(%{
-        task_id: task.id,
-        role_id: roles[:engineer].id,
-        conversation_id: "sess_fixture",
-        status: :running,
-        started_at: DateTime.utc_now(),
-        auto_retries: 0
-      })
-
-    os_process =
-      %OsProcess{}
-      |> OsProcess.changeset(%{
-        run_id: run.id,
-        task_id: run.task_id,
-        stream_path: "/tmp/settle_rebase/#{run.id}.ndjson",
-        node: to_string(Node.self()),
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-      |> Repo.insert!()
-
-    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 1, error: "Permanent error"})
-
-    assert {:ok,
-            %Task{
-              is_rebasing: true,
-              stage_state: :failed,
-              error: "Permanent error"
-            }, %Run{status: :finished}} =
-             finish_rebase_run(os_process)
+    assert %Run{} = rebase_run_finished(run, [])
+    assert %Task{stage: :engineer, is_rebasing: false} = Repo.get!(Task, task.id)
   end
 
-  test "settling clean exit for rebasing task falls back to updated_task if refresh_mergeability fails", %{
-    project: project,
-    task: task,
-    roles: roles
-  } do
-    {:ok, _project} = Projects.update_project(system_scope(), project, %{github_repo: "testorg/rebase_settle_fail"})
+  test "a rebase that failed stays a rebase, so it can be run again", %{task: task, run: run} do
+    run = %{run | exit_code: 1}
 
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        stage: :ready_to_merge,
-        stage_state: :running,
-        is_rebasing: true,
-        stage_state_before_rebase: :awaiting_approval,
-        mergeability: :unknown,
-        pr_number: 998,
-        pr_is_draft: false
-      })
+    assert %Run{} = rebase_run_finished(run, [])
+    assert %Task{is_rebasing: true} = Repo.get!(Task, task.id)
+  end
 
-    {:ok, run} =
-      Runs.create_run(%{
-        task_id: task.id,
-        role_id: roles[:engineer].id,
-        conversation_id: "sess_fixture",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
+  test "landing a rebase clears the detour even for a task that was conflicting", %{task: task, run: run} do
+    {:ok, _task} = Pipeline.update_task(task, %{mergeability: :conflicting})
+    run = %{run | exit_code: 0, task: Repo.get!(Task, task.id)}
 
-    mock_pull_request_state_error("testorg/rebase_settle_fail", 998, 500, "Internal Server Error")
-
-    os_process =
-      %OsProcess{}
-      |> OsProcess.changeset(%{
-        run_id: run.id,
-        task_id: run.task_id,
-        stream_path: "/tmp/settle_rebase/#{run.id}.ndjson",
-        node: to_string(Node.self()),
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-      |> Repo.insert!()
-
-    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-    assert {:ok,
-            %Task{
-              is_rebasing: false,
-              stage_state: :awaiting_approval,
-              stage_state_before_rebase: nil,
-              mergeability: :unknown
-            }, %Run{status: :finished}} =
-             finish_rebase_run(os_process, %{}, token: "tok_test")
+    assert %Run{task: %Task{is_rebasing: false}} = rebase_run_finished(run, [])
+    assert %Task{is_rebasing: false} = Repo.get!(Task, task.id)
   end
 end

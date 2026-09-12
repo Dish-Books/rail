@@ -1,6 +1,8 @@
 defmodule Rail.Pipeline.Actions.StartProductRunTest do
   use Rail.DataCase, async: true
 
+  import Ecto.Query
+
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -142,7 +144,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
 
     assert {:error, {:worktree_failed, _reason}} = Pipeline.start_product_run(task)
 
-    assert %Task{stage_state: stage_state} = Repo.get!(Task, task_id)
-    assert stage_state != :running
+    assert %Task{} = Repo.get!(Task, task_id)
+    refute Repo.exists?(from r in Run, where: r.task_id == ^task_id)
   end
 end

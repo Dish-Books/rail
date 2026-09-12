@@ -83,8 +83,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(task, %{
-        stage: :engineer,
-        stage_state: :running
+        stage: :engineer
       })
 
     task_title = Repo.get!(Issue, task.issue_id).title
@@ -115,7 +114,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
               status: :pending
             }} = Pipeline.register_question(run, detector)
 
-    assert %Task{stage_state: :blocked} = Repo.get!(Task, task_id)
+    assert %Task{} = Repo.get!(Task, task_id)
     assert Enum.map(pending_questions(task_id), & &1.id) == [q_id]
     assert %Run{status: :blocked_on_input} = Repo.get!(Run, run.id)
 
@@ -127,8 +126,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     {:ok, task} =
       Pipeline.update_task(task, %{
-        stage: :engineer,
-        stage_state: :running
+        stage: :engineer
       })
 
     {:ok, run} =
@@ -150,8 +148,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
   test "belongs to the run that asked", %{task: task, roles: roles} do
     {:ok, task} =
       Pipeline.update_task(task, %{
-        stage: :engineer,
-        stage_state: :running
+        stage: :engineer
       })
 
     {:ok, run} =
@@ -173,7 +170,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     assert {:ok, %Question{prompt: "Which cache eviction policy?", options: ["Yes", "No"], run_id: ^expected_run_id}} =
              Pipeline.register_question(run, question)
 
-    assert %Task{stage_state: :blocked} = Repo.get!(Task, task.id)
+    assert %Task{} = Repo.get!(Task, task.id)
   end
 
   test "files the question even when a reply is already queued on the run", %{task: task, roles: roles} do
@@ -181,8 +178,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     {:ok, task} =
       Pipeline.update_task(task, %{
-        stage: :engineer,
-        stage_state: :running
+        stage: :engineer
       })
 
     {:ok, run} =
@@ -200,7 +196,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     assert {:ok, %Question{id: question_id}} = Pipeline.register_question(run, detector)
 
-    assert %Task{stage_state: :blocked} = Repo.get!(Task, task.id)
+    assert %Task{} = Repo.get!(Task, task.id)
     assert Enum.map(pending_questions(task.id), & &1.id) == [question_id]
     assert %Run{status: :blocked_on_input, pending_answer: "Previous queued answer from human"} = Repo.get!(Run, run.id)
   end
@@ -213,8 +209,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     {:ok, task} =
       Pipeline.update_task(task, %{
-        stage: :engineer,
-        stage_state: :running
+        stage: :engineer
       })
 
     {:ok, run} =
@@ -238,7 +233,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     assert {:ok, %Question{id: ^existing_id}} = Pipeline.register_question(run, detector)
 
-    assert %Task{stage_state: :blocked} = Repo.get!(Task, task.id)
+    assert %Task{} = Repo.get!(Task, task.id)
     assert Enum.map(pending_questions(task.id), & &1.id) == [existing_id]
   end
 
@@ -263,7 +258,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
         prompt: "Question prompt 7909?"
       })
 
-    {:ok, task} = Pipeline.update_task(task, %{stage_state: :blocked})
+    {:ok, task} = Pipeline.update_task(task, %{})
 
     {:ok, run} =
       Runs.create_run(%{
@@ -281,7 +276,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     # The second question queues behind the first: the human keeps answering the one
     # already in front, and the stage stays parked.
-    assert %Task{stage_state: :blocked} = Repo.get!(Task, task.id)
+    assert %Task{} = Repo.get!(Task, task.id)
 
     assert Enum.map(pending_questions(task.id), & &1.id) == [first_id, second_id]
   end

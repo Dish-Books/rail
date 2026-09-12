@@ -5,6 +5,7 @@ defmodule RailWeb.Components.WithAgentSection do
   import RailWeb.CoreComponents, only: [project_badge: 1]
 
   alias Rail.Domain.Formatters
+  alias Rail.Runs.Schemas.Run
 
   attr :rows, :list, required: true
 
@@ -77,20 +78,28 @@ defmodule RailWeb.Components.WithAgentSection do
   end
 
   defp state_pill_label(%{is_rebasing: true}), do: "Rebasing"
-  defp state_pill_label(%{stage_state: :running}), do: "Running"
-  defp state_pill_label(%{stage_state: :queued}), do: "Queued"
-  defp state_pill_label(%{stage_state: :blocked}), do: "Blocked"
-  defp state_pill_label(%{stage_state: :awaiting_approval}), do: "Awaiting approval"
-  defp state_pill_label(%{stage_state: :failed}), do: "Failed"
+  defp state_pill_label(task), do: task |> stage_state() |> pill_label()
+
+  defp pill_label(:running), do: "Running"
+  defp pill_label(:queued), do: "Queued"
+  defp pill_label(:blocked), do: "Blocked"
+  defp pill_label(:done), do: "Awaiting approval"
+  defp pill_label(:failed), do: "Failed"
+  defp pill_label(:stopped), do: "Stopped"
 
   defp state_pill_class(%{is_rebasing: true}), do: "bg-blue-100 dark:bg-blue-950 text-blue-900 dark:text-blue-200"
-  defp state_pill_class(%{stage_state: :running}), do: "bg-blue-100 dark:bg-blue-950 text-blue-900 dark:text-blue-200"
-  defp state_pill_class(%{stage_state: :queued}), do: "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200"
+  defp state_pill_class(task), do: task |> stage_state() |> pill_class()
 
-  defp state_pill_class(%{stage_state: s}) when s in [:blocked, :awaiting_approval],
+  defp pill_class(:running), do: "bg-blue-100 dark:bg-blue-950 text-blue-900 dark:text-blue-200"
+
+  defp pill_class(state) when state in [:blocked, :done],
     do: "bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200"
 
-  defp state_pill_class(%{stage_state: :failed}), do: "bg-red-100 dark:bg-red-950 text-red-900 dark:text-red-200"
+  defp pill_class(:failed), do: "bg-red-100 dark:bg-red-950 text-red-900 dark:text-red-200"
+  defp pill_class(_other), do: "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200"
+
+  # A task has no state of its own: this is what the run for its stage says.
+  defp stage_state(task), do: task |> Map.get(:run) |> Run.state()
 
   defp task_role_line(task) do
     task_key = task_key(task)

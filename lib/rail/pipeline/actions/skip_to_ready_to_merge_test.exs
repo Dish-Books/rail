@@ -5,10 +5,15 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
+  alias Rail.Roles
+  alias Rail.Runs
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
+
+    {:ok, backend} =
+      Rail.Backends.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
     {:ok, workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{
@@ -47,42 +52,36 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
-    %{project: project, issue: issue, task: task}
+    {:ok, review_role} =
+      Roles.create_role(scope, project, %{
+        backend_id: backend.id,
+        stage: :review,
+        name: "review role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the reviewer."
+      })
+
+    %{project: project, issue: issue, task: task, review_role: review_role}
   end
 
-  test "returns invalid_stage_state when task is not awaiting_approval", %{project: project, task: task} do
-    {:ok, t_queued} =
-      Pipeline.update_task(task, %{
-        stage: :review,
-        stage_state: :queued
+  test "refuses to skip a gate that is still working", %{task: task, review_role: review_role} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+
+    {:ok, _running} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: review_role.id,
+        status: :running,
+        started_at: DateTime.utc_now()
       })
 
-    assert {:error, {:invalid_stage_state, :queued}} = Pipeline.skip_to_ready_to_merge(t_queued)
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_skip_ready_6601",
-      "identifier" => "TSK-6601",
-      "title" => "Task 6601"
-    })
-
-    {:ok, issue_6601} = Issues.capture_issue(system_scope(), project, "Task 6601")
-
-    {:ok, t_running} = Pipeline.create_task(issue_6601, :product)
-
-    {:ok, t_running} =
-      Pipeline.update_task(t_running, %{
-        stage: :review,
-        stage_state: :running
-      })
-
-    assert {:error, {:invalid_stage_state, :running}} = Pipeline.skip_to_ready_to_merge(t_running)
+    assert {:error, :stage_running} = Pipeline.skip_to_ready_to_merge(task)
   end
 
   test "returns invalid_stage when task is not at a gate stage", %{project: project, task: task} do
     {:ok, t_eng} =
       Pipeline.update_task(task, %{
-        stage: :engineer,
-        stage_state: :awaiting_approval
+        stage: :engineer
       })
 
     assert {:error, {:invalid_stage, :engineer}} = Pipeline.skip_to_ready_to_merge(t_eng)
@@ -99,8 +98,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
     {:ok, t_prod} =
       Pipeline.update_task(t_prod, %{
-        stage: :product,
-        stage_state: :awaiting_approval
+        stage: :product
       })
 
     assert {:error, {:invalid_stage, :product}} = Pipeline.skip_to_ready_to_merge(t_prod)
@@ -117,8 +115,7 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
     {:ok, t_arch} =
       Pipeline.update_task(t_arch, %{
-        stage: :architect,
-        stage_state: :awaiting_approval
+        stage: :architect
       })
 
     assert {:error, {:invalid_stage, :architect}} = Pipeline.skip_to_ready_to_merge(t_arch)
@@ -130,7 +127,6 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
     {:ok, %Task{id: task_id} = task} =
       Pipeline.update_task(task, %{
         stage: :review,
-        stage_state: :awaiting_approval,
         error: "Parked on findings"
       })
 
@@ -138,7 +134,6 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
             %Task{
               id: ^task_id,
               stage: :ready_to_merge,
-              stage_state: :awaiting_approval,
               error: nil
             }} = Pipeline.skip_to_ready_to_merge(task)
 
@@ -148,11 +143,10 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
   test "skips to ready_to_merge awaiting_approval from qa and qa_lead gates", %{project: project, task: task} do
     {:ok, t_qa} =
       Pipeline.update_task(task, %{
-        stage: :qa,
-        stage_state: :awaiting_approval
+        stage: :qa
       })
 
-    assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}} =
+    assert {:ok, %Task{stage: :ready_to_merge}} =
              Pipeline.skip_to_ready_to_merge(t_qa)
 
     LinearMock.mock_create_issue_success(%{
@@ -167,11 +161,10 @@ defmodule Rail.Pipeline.Actions.SkipToReadyToMergeTest do
 
     {:ok, t_lead} =
       Pipeline.update_task(t_lead, %{
-        stage: :qa_lead,
-        stage_state: :awaiting_approval
+        stage: :qa_lead
       })
 
-    assert {:ok, %Task{stage: :ready_to_merge, stage_state: :awaiting_approval}} =
+    assert {:ok, %Task{stage: :ready_to_merge}} =
              Pipeline.skip_to_ready_to_merge(t_lead)
   end
 end

@@ -58,10 +58,24 @@ defmodule Rail.Runs.FollowerTest do
     tmp_dir = Path.join(System.tmp_dir!(), "follower_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp_dir)
 
+    # A run always belongs to a real task: settling one reads the task off it.
+    task =
+      %PipelineTask{}
+      |> PipelineTask.changeset(
+        %{
+          stage: :engineer,
+          worktree_name: "follower-#{System.unique_integer([:positive])}",
+          worktree_path: Path.join(tmp_dir, "worktree"),
+          scratch_path: Path.join(tmp_dir, "scratch")
+        },
+        project.id
+      )
+      |> Repo.insert!()
+
     run =
       %Run{}
       |> Run.changeset(%{
-        task_id: UXID.generate!(prefix: "tsk"),
+        task_id: task.id,
         role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
@@ -93,6 +107,7 @@ defmodule Rail.Runs.FollowerTest do
       backend: backend,
       role: role,
       workspace: workspace,
+      task: task,
       run: run,
       os_process: os_process,
       stream_path: stream_path,
@@ -176,7 +191,7 @@ defmodule Rail.Runs.FollowerTest do
     assert length(events) == 2
 
     # Check database persistence
-    saved_events = Runs.list_run_events(run.id)
+    saved_events = Runs.list_run_events(run)
     assert length(saved_events) == 2
     assert Enum.at(saved_events, 0).line == line1
     assert Enum.at(saved_events, 1).line == line2
@@ -312,7 +327,7 @@ defmodule Rail.Runs.FollowerTest do
     # Wait for the follower to flush its batch.
     events =
       Enum.reduce_while(1..100, [], fn _i, _acc ->
-        case Runs.list_run_events(run.id) do
+        case Runs.list_run_events(run) do
           [_first, _second] = events -> {:halt, events}
           _other -> Process.sleep(10) && {:cont, []}
         end
@@ -618,8 +633,7 @@ defmodule Rail.Runs.FollowerTest do
 
     {:ok, task} =
       Pipeline.update_task(task, %{
-        stage: :engineer,
-        stage_state: :running
+        stage: :engineer
       })
 
     {:ok, run} =
@@ -680,8 +694,7 @@ defmodule Rail.Runs.FollowerTest do
              "Ship behind a flag?"
            ]
 
-    reloaded_task = Repo.get!(PipelineTask, task.id)
-    assert reloaded_task.stage_state == :blocked
+    assert Repo.reload!(run).status == :blocked_on_input
 
     assert Repo.get!(Run, run.id).status == :blocked_on_input
   end
@@ -713,7 +726,6 @@ defmodule Rail.Runs.FollowerTest do
       Repo.insert!(%OsProcess{
         run_id: run.id,
         task_id: task_id,
-        is_chat: true,
         stream_path: stream,
         node: to_string(Node.self()),
         status: :running,
@@ -769,7 +781,6 @@ defmodule Rail.Runs.FollowerTest do
       Repo.insert!(%OsProcess{
         run_id: run.id,
         task_id: task_id,
-        is_chat: true,
         stream_path: stream,
         node: to_string(Node.self()),
         status: :running,
@@ -800,9 +811,11 @@ defmodule Rail.Runs.FollowerTest do
     assert reloaded_rr.conversation_id == "sess-same"
   end
 
-  test "stage child exit without usage map updates run with nil usage", %{role: role, tmp_dir: tmp_dir} do
-    task_id = UXID.generate!(prefix: "tsk")
-
+  test "stage child exit without usage map updates run with nil usage", %{
+    role: role,
+    task: %PipelineTask{id: task_id},
+    tmp_dir: tmp_dir
+  } do
     {:ok, run} =
       Runs.create_run(%{
         task_id: task_id,

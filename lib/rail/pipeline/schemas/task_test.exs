@@ -87,9 +87,8 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     assert %{project_id: ["can't be blank"]} = errors_on(Task.changeset(%Task{}, %{}))
 
     assert %{
-             stage: ["can't be blank"],
-             stage_state: ["can't be blank"]
-           } = errors_on(Task.changeset(%Task{}, %{stage: nil, stage_state: nil}))
+             stage: ["can't be blank"]
+           } = errors_on(Task.changeset(%Task{}, %{stage: nil}))
   end
 
   test "changeset accepts valid attributes and sets defaults", %{project: project} do
@@ -115,7 +114,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
 
     assert changeset.valid?
     assert get_field(changeset, :stage) == :product
-    assert get_field(changeset, :stage_state) == :queued
     assert get_field(changeset, :pr_number) == 101
     assert get_field(changeset, :mergeability) == :mergeable
   end
@@ -124,16 +122,12 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     attrs = %{
       title: "Task with Invalid Enums",
       stage: "invalid_stage",
-      stage_state: "invalid_stage_state",
-      mergeability: "invalid_mergeability",
-      stage_state_before_rebase: "invalid_before_rebase"
+      mergeability: "invalid_mergeability"
     }
 
     assert %{
              stage: ["is invalid"],
-             stage_state: ["is invalid"],
-             mergeability: ["is invalid"],
-             stage_state_before_rebase: ["is invalid"]
+             mergeability: ["is invalid"]
            } = errors_on(Task.changeset(%Task{}, attrs, project.id))
   end
 
@@ -300,19 +294,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
            } = preloaded
   end
 
-  test "busy?/1 helper" do
-    idle = %Task{stage_state: :queued, active_chat_role_id: nil, id: nil}
-    refute Task.busy?(idle)
-
-    running_stage = %Task{stage_state: :running, active_chat_role_id: nil, id: nil}
-    assert Task.busy?(running_stage)
-
-    active_chat = %Task{stage_state: :queued, active_chat_role_id: "rol_123", id: nil}
-    assert Task.busy?(active_chat)
-
-    refute Task.busy?(nil)
-  end
-
   describe "uses_design?/1,2" do
     test "returns true when task is in :product or :design stage" do
       assert Task.uses_design?(%Task{stage: :product})
@@ -412,7 +393,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   end
 
   describe "schema enums, accessors, and stage lifecycle helpers" do
-    test "stages/0, stage_states/0, mergeabilities/0 return expected lists" do
+    test "stages/0 and mergeabilities/0 return expected lists" do
       assert length(Task.stages()) == 11
       assert :product in Task.stages()
       assert :merged in Task.stages()
@@ -422,10 +403,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       assert Task.stage_index(:debugger) == nil
       assert Task.next_stage(:debugger) == nil
       refute Task.advanceable?(:debugger)
-
-      assert length(Task.stage_states()) == 11
-      assert :queued in Task.stage_states()
-      assert :blocked in Task.stage_states()
 
       assert :clean in Task.mergeabilities()
       assert :mergeable in Task.mergeabilities()
@@ -560,71 +537,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       assert :error = Task.cast_stage("invalid")
       assert :error = Task.cast_stage(nil)
       assert :error = Task.cast_stage(123)
-    end
-
-    test "paused?, running?, and queued? predicate helpers for atoms and Task structs" do
-      # paused?
-      assert Task.paused?(:paused_question)
-      assert Task.paused?(:paused_chat)
-      assert Task.paused?(:blocked)
-      refute Task.paused?(:running)
-      refute Task.paused?(:idle)
-      assert Task.paused?(%Task{stage_state: :blocked})
-      refute Task.paused?(%Task{stage_state: :running})
-      refute Task.paused?(nil)
-      refute Task.paused?("running")
-      refute Task.paused?(123)
-
-      # running?
-      assert Task.running?(:running)
-      refute Task.running?(:queued)
-      assert Task.running?(%Task{stage_state: :running})
-      refute Task.running?(%Task{stage_state: :queued})
-      refute Task.running?(nil)
-      refute Task.running?("running")
-      refute Task.running?(123)
-
-      # queued?
-      assert Task.queued?(:queued)
-      refute Task.queued?(:running)
-      assert Task.queued?(%Task{stage_state: :queued})
-      refute Task.queued?(%Task{stage_state: :running})
-      refute Task.queued?(nil)
-      refute Task.queued?("queued")
-      refute Task.queued?(123)
-    end
-
-    test "awaiting_approval?, active?, and terminal_state? predicate helpers for atoms and Task structs" do
-      # awaiting_approval?
-      assert Task.awaiting_approval?(:awaiting_approval)
-      refute Task.awaiting_approval?(:running)
-      assert Task.awaiting_approval?(%Task{stage_state: :awaiting_approval})
-      refute Task.awaiting_approval?(%Task{stage_state: :running})
-      refute Task.awaiting_approval?(nil)
-      refute Task.awaiting_approval?("awaiting")
-      refute Task.awaiting_approval?(123)
-
-      # active?
-      assert Task.active?(:running)
-      assert Task.active?(:paused_chat)
-      refute Task.active?(:idle)
-      refute Task.active?(:queued)
-      assert Task.active?(%Task{stage_state: :running})
-      assert Task.active?(%Task{stage_state: :paused_chat})
-      refute Task.active?(%Task{stage_state: :idle})
-      refute Task.active?(nil)
-      refute Task.active?("running")
-      refute Task.active?(123)
-
-      # terminal_state?
-      assert Task.terminal_state?(:failed)
-      assert Task.terminal_state?(:canceled)
-      refute Task.terminal_state?(:running)
-      assert Task.terminal_state?(%Task{stage_state: :failed})
-      refute Task.terminal_state?(%Task{stage_state: :running})
-      refute Task.terminal_state?(nil)
-      refute Task.terminal_state?("failed")
-      refute Task.terminal_state?(123)
     end
   end
 end

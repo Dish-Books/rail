@@ -5,6 +5,7 @@ defmodule Rail.Domain.Formatters do
 
   alias Rail.Pipeline.Schemas.Plan
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Runs.Schemas.Run
 
   @doc """
   Derives an issue title from typed idea ask text.
@@ -52,109 +53,56 @@ defmodule Rail.Domain.Formatters do
   end
 
   @doc """
-  Formats a task's stage label per spec 04 §1.9 with full precedence:
-  1. Active chat: `"Chatting with {RoleName}"`
-  2. Rebasing: `"Queued to rebase"` / `"Retrying the rebase shortly"` / `"Rebasing the branch"` / `"Rebase needs an answer"` / `"Rebase failed"`
-  3. Cycle suffix: `" · rework X of Y"` when reworked and not before engineer
-  4. State label: queued (conflicts / retry / queued), running, blocked, failed, awaiting approval (by stage or conflicts)
+  Formats a task's stage label, read off the run for the stage it is at.
   """
   def stage_label(task, opts \\ [])
 
   def stage_label(nil, _opts), do: "Waiting on you"
 
   def stage_label(task, opts) do
-    chat_role_id = get_field(task, :active_chat_role_id)
-
-    cond do
-      chat_role_id != nil ->
-        role_name = role_name_for_chat(chat_role_id, opts)
-        "Chatting with #{role_name}"
-
-      rebasing?(task) and stage_state(task) != :awaiting_approval ->
-        rebase_label(task, opts)
-
-      true ->
-        standard_stage_label(task, opts)
+    if rebasing?(task) do
+      rebase_label(task, opts)
+    else
+      standard_stage_label(task, opts)
     end
   end
 
   @doc """
-  Returns the Phosphor icon class for a task's state per spec 05 §0.6:
-  1. Chat active -> "pi-chat-circle"
-  2. Conflicted -> "pi-git-branch"
-  3. Running -> "pi-play-circle"
-  4. Queued -> "pi-clock"
-  5. Blocked -> "pi-question"
-  6. Awaiting approval -> "pi-git-merge" if ready_to_merge else "pi-chat-text"
-  7. Failed -> "pi-warning-circle"
+  What the run for a task's stage is doing.
+
+  A task has no state of its own. `:ready_to_merge` and `:merged` have no role and
+  so no run: arriving at one is the whole of what it means, and what happens next
+  is the human's, so they read as done.
+  """
+  def stage_state(task) do
+    # A rebasing task is the engineer on a detour, so it reads off that run
+    # wherever the task is parked.
+    if not rebasing?(task) and stage(task) in [:ready_to_merge, :merged] do
+      :done
+    else
+      task |> get_field(:run) |> Run.state()
+    end
+  end
+
+  @doc """
+  Returns the Phosphor icon class for a task's state.
   """
   def stage_state_icon(task) do
-    cond do
-      get_field(task, :active_chat_role_id) != nil ->
-        "pi-chat-circle"
-
-      shows_as_conflicted?(task) ->
-        "pi-git-branch"
-
-      true ->
-        case stage_state(task) do
-          :running ->
-            "pi-play-circle"
-
-          :queued ->
-            "pi-clock"
-
-          s when s in [:blocked, :paused_question, :blocked_rework] ->
-            "pi-question"
-
-          :awaiting_approval ->
-            if stage(task) == :ready_to_merge do
-              "pi-git-merge"
-            else
-              "pi-chat-text"
-            end
-
-          :failed ->
-            "pi-warning-circle"
-
-          _other ->
-            "pi-question"
-        end
+    if shows_as_conflicted?(task) do
+      "pi-git-branch"
+    else
+      icon_for_state(task, stage_state(task))
     end
   end
 
   @doc """
-  Returns the semantic color atom (:primary, :amber, :outline, :error) for a task per spec 05 §0.6:
-  1. Chat active or running -> :primary
-  2. Conflicted, blocked, or awaiting_approval -> :amber
-  3. Queued -> :outline
-  4. Failed -> :error
+  Returns the semantic color atom (:primary, :amber, :outline, :error) for a task.
   """
   def stage_state_color(task) do
-    cond do
-      get_field(task, :active_chat_role_id) != nil ->
-        :primary
-
-      shows_as_conflicted?(task) ->
-        :amber
-
-      true ->
-        case stage_state(task) do
-          :running ->
-            :primary
-
-          s when s in [:blocked, :paused_question, :blocked_rework, :awaiting_approval] ->
-            :amber
-
-          :queued ->
-            :outline
-
-          :failed ->
-            :error
-
-          _other ->
-            :outline
-        end
+    if shows_as_conflicted?(task) do
+      :amber
+    else
+      color_for_state(stage_state(task))
     end
   end
 
@@ -192,7 +140,7 @@ defmodule Rail.Domain.Formatters do
   Returns true if the task has merge conflicts, is not rebasing, and is in queued or awaiting_approval state.
   """
   def shows_as_conflicted?(task) do
-    has_merge_conflicts?(task) and not rebasing?(task) and stage_state(task) in [:queued, :awaiting_approval, nil]
+    has_merge_conflicts?(task) and not rebasing?(task) and stage_state(task) in [:queued, :done, :stopped]
   end
 
   @doc """
@@ -448,26 +396,20 @@ defmodule Rail.Domain.Formatters do
 
   defp rebase_label(task, opts) do
     case stage_state(task) do
-      :queued ->
-        if waiting_to_retry?(task, opts),
-          do: "Retrying the rebase shortly",
-          else: "Queued to rebase"
-
-      :running ->
-        "Rebasing the branch"
-
-      s when s in [:blocked, :paused_question, :blocked_rework] ->
-        "Rebase needs an answer"
-
-      :failed ->
-        "Rebase failed"
-
-      _other ->
-        "Queued to rebase"
+      :queued -> if waiting_to_retry?(task, opts), do: "Retrying the rebase shortly", else: "Queued to rebase"
+      :running -> "Rebasing the branch"
+      :blocked -> "Rebase needs an answer"
+      :failed -> "Rebase failed"
+      :stopped -> "Rebase stopped"
+      _other -> "Queued to rebase"
     end
   end
 
   defp standard_stage_label(task, opts) do
+    if stage(task), do: labelled_stage(task, opts), else: "Waiting on you"
+  end
+
+  defp labelled_stage(task, opts) do
     current_stage = stage(task)
     cycle = rework_cycle_suffix(task, current_stage, opts)
     stage_name = stage_label_name(current_stage)
@@ -479,17 +421,17 @@ defmodule Rail.Domain.Formatters do
       :running ->
         "#{stage_name} running#{cycle}"
 
-      s when s in [:blocked, :paused_question, :blocked_rework] ->
+      :blocked ->
         "#{stage_name} needs an answer"
 
       :failed ->
         "#{stage_name} failed"
 
-      :awaiting_approval ->
-        awaiting_approval_label(task, current_stage, opts)
+      :stopped ->
+        "#{stage_name} stopped#{cycle}"
 
-      _other ->
-        "Waiting on you"
+      :done ->
+        awaiting_approval_label(task, current_stage, opts)
     end
   end
 
@@ -569,22 +511,7 @@ defmodule Rail.Domain.Formatters do
 
   defp rebasing?(task), do: get_field(task, :is_rebasing) == true
 
-  defp waiting_to_retry?(task, opts) do
-    case get_field(task, :is_waiting_to_retry) do
-      bool when is_boolean(bool) ->
-        bool
-
-      nil ->
-        case get_field(task, :retry_after) do
-          %DateTime{} = retry_after ->
-            now = Keyword.get(opts, :now) || DateTime.utc_now()
-            DateTime.after?(retry_after, now)
-
-          _other ->
-            false
-        end
-    end
-  end
+  defp waiting_to_retry?(task, _opts), do: get_field(task, :is_waiting_to_retry) == true
 
   defp conflicted?(task) do
     cond do
@@ -595,10 +522,10 @@ defmodule Rail.Domain.Formatters do
         true
 
       get_field(task, :has_merge_conflicts) == true and not rebasing?(task) ->
-        stage_state(task) in [:queued, :awaiting_approval, nil]
+        stage_state(task) in [:queued, :done, :stopped]
 
       get_field(task, :mergeability) in [:conflicts, "conflicts"] and not rebasing?(task) ->
-        stage_state(task) in [:queued, :awaiting_approval, nil]
+        stage_state(task) in [:queued, :done, :stopped]
 
       true ->
         false
@@ -654,43 +581,6 @@ defmodule Rail.Domain.Formatters do
     end
   end
 
-  defp role_name_for_chat(role_id, opts) do
-    role_id_str = to_string(role_id)
-
-    cond do
-      Keyword.has_key?(opts, :role_name) ->
-        Keyword.get(opts, :role_name)
-
-      Keyword.has_key?(opts, :roles) ->
-        roles = Keyword.get(opts, :roles, [])
-        match = Enum.find(roles, fn r -> get_field(r, :id) == role_id or get_field(r, :id) == role_id_str end)
-
-        if match do
-          get_field(match, :name) || default_role_name(role_id_str)
-        else
-          default_role_name(role_id_str)
-        end
-
-      true ->
-        default_role_name(role_id_str)
-    end
-  end
-
-  defp default_role_name("product"), do: "Product"
-  defp default_role_name("design"), do: "Designer"
-  defp default_role_name("designer"), do: "Designer"
-  defp default_role_name("architect"), do: "Architect"
-  defp default_role_name("engineer"), do: "Engineer"
-  defp default_role_name("review"), do: "Reviewer"
-  defp default_role_name("reviewer"), do: "Reviewer"
-  defp default_role_name("qa"), do: "QA"
-  defp default_role_name("qa_lead"), do: "QA Lead"
-  defp default_role_name("demo"), do: "Demo"
-
-  defp default_role_name(other) when is_binary(other) do
-    to_title(other)
-  end
-
   defp stage_label_name(stage) do
     Task.stage_label(stage) || to_title(stage)
   end
@@ -707,8 +597,24 @@ defmodule Rail.Domain.Formatters do
     |> Enum.map_join(" ", &String.capitalize/1)
   end
 
+  defp icon_for_state(_task, :running), do: "pi-play-circle"
+  defp icon_for_state(_task, :queued), do: "pi-clock"
+  defp icon_for_state(_task, :blocked), do: "pi-question"
+  defp icon_for_state(_task, :failed), do: "pi-warning-circle"
+  defp icon_for_state(_task, :stopped), do: "pi-pause-circle"
+
+  defp icon_for_state(task, :done) do
+    if stage(task) == :ready_to_merge, do: "pi-git-merge", else: "pi-chat-text"
+  end
+
+  defp icon_for_state(_task, _other), do: "pi-question"
+
+  defp color_for_state(:running), do: :primary
+  defp color_for_state(state) when state in [:blocked, :done], do: :amber
+  defp color_for_state(:failed), do: :error
+  defp color_for_state(_other), do: :outline
+
   defp stage(task), do: task |> get_field(:stage) |> to_atom()
-  defp stage_state(task), do: task |> get_field(:stage_state) |> to_atom()
 
   defp to_atom(nil), do: nil
   defp to_atom(atom) when is_atom(atom), do: atom

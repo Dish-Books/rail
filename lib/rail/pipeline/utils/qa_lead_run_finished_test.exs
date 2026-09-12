@@ -10,7 +10,6 @@ defmodule Rail.Pipeline.Utils.QaLeadRunFinishedTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -74,115 +73,41 @@ defmodule Rail.Pipeline.Utils.QaLeadRunFinishedTest do
     # These tests exercise stage transitions, not Linear publishing.
     {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
-    %{backend: backend, project: project, issue: issue, task: task, roles: roles}
-  end
-
-  test "settles clean exit 0 for qa_lead stage with passed verdict advancing to demo if configured", %{
-    task: task,
-    roles: roles
-  } do
-    {:ok, role_lead} =
-      Roles.update_role(system_scope(), roles[:qa_lead], %{
-        name: "QA Lead"
-      })
-
-    {:ok, _role_demo} =
-      Roles.update_role(system_scope(), roles[:demo], %{
-        name: "Demo Recorder"
-      })
-
-    {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(task, %{
-        stage: :qa_lead,
-        stage_state: :running
-      })
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa_lead})
 
     {:ok, run} =
       Runs.create_run(%{
-        task_id: task_id,
-        role_id: role_lead.id,
+        task_id: task.id,
+        role_id: roles[:qa_lead].id,
         conversation_id: "sess_fixture",
         status: :running,
         started_at: DateTime.utc_now()
       })
 
-    output = "QA Lead evaluation successful.\n\nVERDICT: PASSED"
+    run = Repo.preload(run, [:task, :role])
 
-    Runs.append_run_event(run, output)
-
-    os_process =
-      %OsProcess{}
-      |> OsProcess.changeset(%{
-        run_id: run.id,
-        task_id: run.task_id,
-        stream_path: "/tmp/settle_qa_lead/#{run.id}.ndjson",
-        node: to_string(Node.self()),
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-      |> Repo.insert!()
-
-    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-    assert {:ok,
-            %Task{
-              id: ^task_id,
-              stage: :demo,
-              stage_state: :queued
-            }, %Run{status: :finished}} =
-             finish_qa_lead_run(os_process)
+    %{backend: backend, project: project, issue: issue, task: task, roles: roles, run: run}
   end
 
-  test "settles clean exit 0 for qa_lead stage with passed verdict advancing to ready_to_merge if no demo role", %{
-    task: task,
-    roles: roles
-  } do
+  test "a pass goes to demo when the project has one", %{task: task, run: run} do
+    Runs.append_run_event(run, "QA Lead evaluation successful.\n\nVERDICT: PASSED")
+
+    assert %Run{} = qa_lead_run_finished(run, [])
+    assert %Task{stage: :demo} = Repo.get!(Task, task.id)
+  end
+
+  test "a pass goes straight to the merge when there is no demo role", %{task: task, run: run, roles: roles} do
     {:ok, _deleted} = Roles.delete_role(system_scope(), roles[:demo])
+    Runs.append_run_event(run, "QA Lead evaluation successful.\n\nVERDICT: APPROVED")
 
-    {:ok, role_lead} =
-      Roles.update_role(system_scope(), roles[:qa_lead], %{
-        name: "QA Lead"
-      })
+    assert %Run{} = qa_lead_run_finished(run, [])
+    assert %Task{stage: :ready_to_merge} = Repo.get!(Task, task.id)
+  end
 
-    {:ok, %Task{id: task_id} = _task} =
-      Pipeline.update_task(task, %{
-        stage: :qa_lead,
-        stage_state: :running
-      })
+  test "changes requested sends the change back to the engineer", %{task: task, run: run} do
+    Runs.append_run_event(run, "Two things are still wrong.\n\nVERDICT: CHANGES REQUESTED")
 
-    {:ok, run} =
-      Runs.create_run(%{
-        task_id: task_id,
-        role_id: role_lead.id,
-        conversation_id: "sess_fixture",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-
-    output = "QA Lead evaluation successful.\n\nVERDICT: APPROVED"
-
-    Runs.append_run_event(run, output)
-
-    os_process =
-      %OsProcess{}
-      |> OsProcess.changeset(%{
-        run_id: run.id,
-        task_id: run.task_id,
-        stream_path: "/tmp/settle_qa_lead/#{run.id}.ndjson",
-        node: to_string(Node.self()),
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
-      |> Repo.insert!()
-
-    {:ok, _settled_task, _settled_run} = Pipeline.settle_run(os_process, %{exit_code: 0})
-
-    assert {:ok,
-            %Task{
-              id: ^task_id,
-              stage: :ready_to_merge,
-              stage_state: :awaiting_approval
-            }, %Run{status: :finished}} =
-             finish_qa_lead_run(os_process)
+    assert %Run{} = qa_lead_run_finished(run, [])
+    assert %Task{stage: :engineer, rework_cycles: 1} = Repo.get!(Task, task.id)
   end
 end

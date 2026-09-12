@@ -1,25 +1,21 @@
 defmodule Rail.Pipeline.Utils.EngineerRunFinished do
   @moduledoc """
-  Where a finished engineer-stage run leaves its task.
+  Where a finished engineer run leaves its task.
 
-  The engineer produces no artifact Rail reads; a clean exit simply queues the
-  review gate on what was pushed.
+  The engineer produces no artifact Rail reads, so its own word is the signal: it
+  gets here only once it has said `VERDICT: DONE`, and that hands what is in the
+  worktree to review. A demo recorded against the old tree is evidence of a build
+  that no longer exists, so it is re-checked on the way.
   """
 
-  import Rail.Pipeline.Utils.AdvanceStage
-
-  alias Rail.Repo
-  alias Rail.Runs.Schemas.OsProcess
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Runs.Schemas.Run
 
-  @doc "Finishes the engineer run that `os_process` belonged to."
-  def finish_engineer_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
-    advance_stage(os_process, opts, &queue_review/3)
-  end
-
-  defp queue_review(_task, run, _opts) do
-    {:ok, run} = run |> Run.changeset(%{auto_retries: 0}) |> Repo.update()
-
-    {%{stage: :review, stage_state: :queued, retry_after: nil, error: nil}, run}
+  @doc "Finishes `run` as the engineer stage."
+  def engineer_run_finished(%Run{task: %Task{} = task} = run, opts) do
+    Pipeline.refresh_demo_freshness(task, opts)
+    Pipeline.enter_stage(task, :review, opts)
+    run
   end
 end

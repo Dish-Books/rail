@@ -2,45 +2,26 @@ defmodule Rail.Pipeline.Utils.RebaseRunFinished do
   @moduledoc """
   Where a finished rebase run leaves its task.
 
-  A rebase is the engineer role doing a detour, so settling it restores the stage
-  the task was parked at before the rebase started rather than advancing anything.
-  """
+  A rebase is the engineer role on a detour: the task never left the stage it was
+  parked at, so finishing one clears the detour and nothing else. It settles apart
+  from the stages because the engineer run it borrows is usually already latched
+  `:done` from the work it did before the branch ever conflicted.
 
-  import Rail.Pipeline.Utils.AdvanceStage
+  A rebase changes whether the branch merges, so the answer Rail is holding for
+  that is stale the moment one lands.
+  """
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
 
-  @doc "Finishes the rebase run that `os_process` belonged to."
-  def finish_rebase_run(%OsProcess{} = os_process, _outcome \\ %{}, opts \\ []) do
-    # A rebase changes whether the branch merges, so the answer Rail is holding
-    # for that is stale the moment one lands.
-    with {:ok, task, %Run{exit_code: 0} = run} <- advance_stage(os_process, opts, &restore_stage_state/3) do
-      {:ok, refresh_mergeability(task, opts), run}
-    end
+  @doc "Finishes `run` as a rebase detour."
+  def rebase_run_finished(%Run{exit_code: 0, task: %Task{} = task} = run, opts) do
+    {:ok, task} = task |> Task.changeset(%{is_rebasing: false}) |> Repo.update()
+    Pipeline.refresh_mergeability(task, opts)
+    %{run | task: task}
   end
 
-  defp refresh_mergeability(%Task{} = task, opts) do
-    case Pipeline.refresh_mergeability(task, opts) do
-      {:ok, refreshed} -> refreshed
-      _failure -> task
-    end
-  end
-
-  defp restore_stage_state(%Task{} = task, run, _opts) do
-    {:ok, run} = run |> Run.changeset(%{auto_retries: 0}) |> Repo.update()
-
-    attrs = %{
-      is_rebasing: false,
-      stage_state: task.stage_state_before_rebase || :queued,
-      stage_state_before_rebase: nil,
-      retry_after: nil,
-      error: nil
-    }
-
-    {attrs, run}
-  end
+  def rebase_run_finished(%Run{} = run, _opts), do: run
 end

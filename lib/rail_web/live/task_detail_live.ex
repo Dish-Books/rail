@@ -65,7 +65,6 @@ defmodule RailWeb.TaskDetailLive do
       |> assign(:expanded_activities, MapSet.new())
       |> assign(:chat_input, "")
       |> assign(:chat_sending, false)
-      |> assign(:active_delivery_modal, nil)
       |> assign(:subscribed_run_id, nil)
       |> assign(:file_diffs, [])
       |> assign(:viewed_diff_files, %{})
@@ -375,7 +374,7 @@ defmodule RailWeb.TaskDetailLive do
 
             <!-- Pending Question Card on Overview (spec 05 §2.6 / §5) -->
             <.answer_field
-              :if={@task.stage_state == :blocked and @pending_question != nil}
+              :if={Run.state(@task.run) == :blocked and @pending_question != nil}
               question={@pending_question}
               questions={@pending_questions}
               answer_text={@answer_text}
@@ -453,7 +452,6 @@ defmodule RailWeb.TaskDetailLive do
               expanded_activities={@expanded_activities}
               chat_input={@chat_input}
               chat_sending={@chat_sending}
-              active_delivery_modal={@active_delivery_modal}
             />
           </div>
 
@@ -683,69 +681,18 @@ defmodule RailWeb.TaskDetailLive do
 
   def handle_event("send_chat", params, socket) do
     message = Map.get(params, "message") || socket.assigns[:chat_input] || ""
-    trimmed = String.trim(message)
-    role = socket.assigns[:selected_role]
-    task = socket.assigns[:task]
+    run = socket.assigns[:selected_run]
 
-    if trimmed == "" or socket.assigns[:chat_sending] or is_nil(role) or is_nil(task) do
+    if String.trim(message) == "" or socket.assigns[:chat_sending] or is_nil(run) do
       {:noreply, socket}
     else
-      if task_has_live_run?(task) do
-        modal = %{
-          text: trimmed,
-          role_id: role.id,
-          role_name: role.name
-        }
+      socket = assign(socket, :chat_sending, true)
 
-        {:noreply, assign(socket, :active_delivery_modal, modal)}
-      else
-        socket = assign(socket, :chat_sending, true)
-
-        case Pipeline.send_chat_turn(task, role.id, trimmed, delivery: :immediate) do
-          {:error, _reason} ->
-            {:noreply, assign(socket, :chat_sending, false)}
-
-          _success ->
-            socket =
-              socket
-              |> assign(:chat_sending, false)
-              |> assign(:chat_input, "")
-              |> refresh_task()
-
-            {:noreply, socket}
-        end
-      end
-    end
-  end
-
-  def handle_event("cancel_chat_delivery", _params, socket) do
-    {:noreply, assign(socket, :active_delivery_modal, nil)}
-  end
-
-  def handle_event("confirm_chat_delivery", %{"delivery" => delivery_mode}, socket) do
-    modal = socket.assigns[:active_delivery_modal]
-
-    if is_nil(modal) do
-      {:noreply, socket}
-    else
-      delivery_atom =
-        case delivery_mode do
-          "stop_and_send" -> :stop_and_send
-          _other -> :when_finished
-        end
-
-      task = socket.assigns[:task]
-
-      socket =
-        socket
-        |> assign(:active_delivery_modal, nil)
-        |> assign(:chat_sending, true)
-
-      case Pipeline.send_chat_turn(task, modal.role_id, modal.text, delivery: delivery_atom) do
+      case Pipeline.send_message(run, message) do
         {:error, _reason} ->
           {:noreply, assign(socket, :chat_sending, false)}
 
-        _success ->
+        {:ok, _delivery, _run} ->
           socket =
             socket
             |> assign(:chat_sending, false)
@@ -757,28 +704,32 @@ defmodule RailWeb.TaskDetailLive do
     end
   end
 
-  def handle_event("stop_chat_turn", _params, socket) do
-    task = socket.assigns[:task]
+  def handle_event("stop_run", _params, socket) do
+    case socket.assigns[:selected_run] do
+      %Run{} = run ->
+        {:ok, _run, queued} = Pipeline.stop_run(run)
 
-    if task do
-      Pipeline.stop_chat_turn(task)
+        socket =
+          socket
+          |> assign(:chat_input, restore_draft(queued, socket.assigns[:chat_input]))
+          |> refresh_task()
+
+        {:noreply, socket}
+
+      _no_run ->
+        {:noreply, socket}
     end
-
-    {:noreply, refresh_task(socket)}
   end
 
-  def handle_event("cancel_pending_chat", params, socket) do
-    role_id =
-      Map.get(params, "role_id") ||
-        (socket.assigns[:selected_role] && socket.assigns.selected_role.id)
+  def handle_event("stop_and_send_message", _params, socket) do
+    case socket.assigns[:selected_run] do
+      %Run{} = run ->
+        _sent = Pipeline.stop_and_send_message(run)
+        {:noreply, refresh_task(socket)}
 
-    task = socket.assigns[:task]
-
-    if task && role_id do
-      Pipeline.cancel_pending_chat(task, role_id)
+      _no_run ->
+        {:noreply, socket}
     end
-
-    {:noreply, refresh_task(socket)}
   end
 
   def handle_event("refresh_diff", _params, socket) do
@@ -1113,11 +1064,6 @@ defmodule RailWeb.TaskDetailLive do
     execute_action(socket, :recheck_design, fn -> Pipeline.recheck_design(task) end)
   end
 
-  defp handle_action_click("cancel", _params, socket) do
-    task = socket.assigns.task
-    execute_action(socket, :cancel, fn -> Pipeline.cancel_task(task) end)
-  end
-
   defp handle_action_click("mark_ready", _params, socket) do
     task = socket.assigns.task
     execute_action(socket, :mark_ready, fn -> Pipeline.mark_pr_ready(task) end)
@@ -1209,20 +1155,20 @@ defmodule RailWeb.TaskDetailLive do
     end
   end
 
+  defp restore_draft(nil, draft), do: draft || ""
+  defp restore_draft(queued, nil), do: queued
+  defp restore_draft(queued, ""), do: queued
+  defp restore_draft(queued, draft), do: "#{queued}\n\n#{draft}"
+
   defp task_busy?(task, running_action) do
     running_action != nil or
-      (is_struct(task) and (task.stage_state in [:running, :rebasing] or task.is_rebasing == true))
+      (is_struct(task) and (task.is_rebasing == true or Formatters.stage_state(task) == :running))
   end
 
   defp resolve_current_run(%Task{} = task) do
     run = if is_list(task.runs) and task.runs != [], do: List.last(task.runs)
 
-    role_id =
-      cond do
-        run != nil and run.role_id != nil -> run.role_id
-        task.active_chat_role_id != nil -> task.active_chat_role_id
-        true -> task.stage
-      end
+    role_id = if run != nil and run.role_id != nil, do: run.role_id, else: task.stage
 
     {run, RailWeb.Components.StageOutcome.format_role_id(role_id)}
   end
@@ -1318,7 +1264,7 @@ defmodule RailWeb.TaskDetailLive do
 
   # A run can ask several things at once, so a blocked task shows the whole queue as
   # tabs, in the order they were asked.
-  defp resolve_pending_questions(%{stage_state: :blocked, id: task_id}) do
+  defp resolve_pending_questions(%{run: %Run{status: :blocked_on_input}, id: task_id}) do
     Pipeline.list_questions(task_id, status: :pending, order_by: [asc: :inserted_at, asc: :id])
   end
 
@@ -1368,13 +1314,7 @@ defmodule RailWeb.TaskDetailLive do
     end
   end
 
-  defp task_has_live_run?(task) do
-    is_struct(task) and
-      (task.stage_state in [:running, :rebasing] or task.is_rebasing == true or
-         Runs.running?(task.id))
-  end
-
-  defp load_run_events(%Run{id: run_id}), do: Runs.list_run_events(run_id)
+  defp load_run_events(%Run{} = run), do: Runs.list_run_events(run)
   defp load_run_events(_other), do: []
 
   # `:run_events` is the log the page holds; the rendered lines and the parsed

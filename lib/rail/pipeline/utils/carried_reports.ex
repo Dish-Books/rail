@@ -44,16 +44,15 @@ defmodule Rail.Pipeline.Utils.CarriedReports do
   end
 
   defp section_for(%Task{} = task, role_id) do
-    findings =
-      from(r in Run,
-        where: r.task_id == ^task.id and r.role_id == ^role_id,
-        order_by: [desc: r.inserted_at],
-        limit: 1,
-        select: r.id
+    latest =
+      Repo.one(
+        from r in Run,
+          where: r.task_id == ^task.id and r.role_id == ^role_id,
+          order_by: [desc: r.inserted_at],
+          limit: 1
       )
-      |> Repo.one()
-      |> assistant_log()
-      |> String.trim()
+
+    findings = if latest, do: latest |> assistant_log() |> String.trim(), else: ""
 
     if findings == "" do
       []
