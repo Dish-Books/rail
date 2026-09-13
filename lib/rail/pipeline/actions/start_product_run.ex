@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
   and the spawned run.
   """
 
+  import Rail.Pipeline.Utils.FormatComments
   import Rail.Pipeline.Utils.FormatTicket
 
   alias Rail.Git
@@ -95,6 +96,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
 
   defp brief(%Task{scratch_path: scratch_path} = task) do
     file = "#{scratch_path}/tickets/#{identifier(task)}.md"
+    %Issue{comments: comments} = Repo.preload(task.issue, comments: :replies)
 
     String.trim("""
     The ticket is the file #{file}. Rail publishes that file when your run completes cleanly.
@@ -114,6 +116,10 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
     - The `---` front matter block starts on the first line of the file. `title` is required; `priority` and `estimate` keep whatever they are already set to when left out.
     - Everything below the closing `---` becomes the ticket body verbatim, and the file replaces the ticket in full.
     - This file is the only way to publish a ticket.
+
+    Every comment on the issue, oldest first. This is the whole discussion; do not look for more.
+
+    #{format_comments(comments)}
     """)
   end
 

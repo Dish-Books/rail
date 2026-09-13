@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
   import Ecto.Query
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -81,9 +82,18 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
     role: %Role{id: role_id},
     issue: %Issue{id: issue_id} = issue
   } do
+    Repo.insert!(%Comment{
+      issue_id: issue_id,
+      external_id: "lin_comment_start_product",
+      author_name: "Ana",
+      body: "It only happens on Sysco bills."
+    })
+
     expect(Tools, :start_os_process, fn %Run{role_id: ^role_id, status: :running} = run, argv ->
       assert ["-p", prompt, "--model", "claude-3-7-sonnet", "--effort", "high" | _flags] = argv
       assert prompt =~ "tickets/#{issue.identifier}.md"
+      assert prompt =~ ~s(<comment author="Ana")
+      assert prompt =~ "It only happens on Sysco bills."
       assert "--system-prompt" in argv
 
       {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
