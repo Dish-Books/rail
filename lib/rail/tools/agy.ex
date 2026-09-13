@@ -4,6 +4,8 @@ defmodule Rail.Tools.Agy do
   account it logged, as the fields a `Rail.Tools.Schemas.Backend` records.
   """
 
+  import Rail.Tools.Utils.BackendEnv
+
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
 
@@ -21,7 +23,7 @@ defmodule Rail.Tools.Agy do
     executable = backend.executable_path || ""
 
     if executable_file?(executable) do
-      run_in_temp_dir(executable)
+      run_in_temp_dir(backend, executable)
     else
       not_configured_result(executable)
     end
@@ -52,23 +54,23 @@ defmodule Rail.Tools.Agy do
 
   # The CLI only names the signed-in account in its log, so it is given a
   # scratch one per probe and the directory is cleaned up afterwards.
-  defp run_in_temp_dir(executable) do
+  defp run_in_temp_dir(backend, executable) do
     temp_dir = Path.join(System.tmp_dir!(), "agy_usage_#{System.unique_integer([:positive])}")
     File.mkdir_p(temp_dir)
     scratch_log = Path.join(temp_dir, "agy_scratch.log")
 
     try do
-      run_usage(executable, scratch_log, temp_dir)
+      run_usage(backend, executable, scratch_log, temp_dir)
     after
       _rm_file = File.rm(scratch_log)
       _rm_dir = File.rmdir(temp_dir)
     end
   end
 
-  defp run_usage(executable, scratch_log, temp_dir) do
+  defp run_usage(backend, executable, scratch_log, temp_dir) do
     args = ["-p", "/usage", "--output-format", "json", "--log-file", scratch_log]
 
-    case Tools.run(executable, args, timeout: @timeout, cd: temp_dir) do
+    case Tools.run(executable, args, timeout: @timeout, cd: temp_dir, env: backend_env(backend)) do
       {:error, :timeout} ->
         unavailable_result("Usage check timed out after 20s")
 

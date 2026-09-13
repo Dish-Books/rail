@@ -12,6 +12,8 @@ defmodule Rail.Tools.Schemas.Backend do
   @primary_key {:id, UXID, autogenerate: true, prefix: "bkd"}
   schema "backends" do
     field :name, Ecto.Enum, values: @names
+    # Tells apart two backends of the same kind, e.g. a work and a personal account.
+    field :label, :string
     field :executable_path, :string, default: ""
     # A model the user has made available on this backend.
     embeds_many :models, Model, primary_key: false, on_replace: :delete do
@@ -38,7 +40,8 @@ defmodule Rail.Tools.Schemas.Backend do
     timestamps()
   end
 
-  @config_fields [:name, :executable_path]
+  @config_fields [:name, :label, :executable_path]
+  @required_config_fields [:name, :executable_path]
   @usage_fields [:name, :status, :account_label, :account_detail, :fetched_at, :unavailable_reason]
 
   @doc "Returns the backends that can be configured."
@@ -48,16 +51,34 @@ defmodule Rail.Tools.Schemas.Backend do
   def statuses, do: @statuses
 
   @doc """
-  Builds a changeset for the configuration the user owns: the executable path
-  and the models selectable on it.
+  Returns the environment variable a backend's CLI reads its config directory
+  from, or nil when it has none.
+  """
+  def env_var(:claude), do: "CLAUDE_CONFIG_DIR"
+  def env_var(:codex), do: "CODEX_HOME"
+  def env_var(_name), do: nil
+
+  @doc """
+  Returns the directory a backend's CLI keeps its signed-in account in. It is
+  Rail's, one per backend, so no two backends can share an account by accident
+  and none touches the account the CLI uses outside Rail.
+  """
+  def config_dir(%__MODULE__{id: id}) when is_binary(id) do
+    root = Application.get_env(:rail, :backends_root) || Path.join(System.user_home!(), ".rail/backends")
+    Path.join(root, id)
+  end
+
+  @doc """
+  Builds a changeset for the configuration the user owns: the label, the
+  executable path and the models selectable on it.
   """
   def changeset(backend, attrs) do
     backend
     |> cast(attrs, @config_fields)
     |> update_change(:executable_path, &String.trim(&1 || ""))
-    |> validate_required(@config_fields)
+    |> update_change(:label, &String.trim/1)
+    |> validate_required(@required_config_fields)
     |> cast_embed(:models, with: &model_changeset/2)
-    |> unique_constraint(:name)
   end
 
   @doc """
@@ -69,7 +90,6 @@ defmodule Rail.Tools.Schemas.Backend do
     |> cast(attrs, @usage_fields)
     |> validate_required([:name, :status])
     |> cast_embed(:usage, with: &usage_group_changeset/2)
-    |> unique_constraint(:name)
   end
 
   # A model with no display name shows as its id rather than as nothing.

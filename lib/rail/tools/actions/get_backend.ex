@@ -4,8 +4,8 @@ defmodule Rail.Tools.Actions.GetBackend do
   alias Rail.Repo
   alias Rail.Tools.Schemas.Backend
 
-  def get_backend(name) do
-    case Repo.get_by(Backend, name: name) do
+  def get_backend(id) do
+    case Repo.get(Backend, id) do
       %Backend{} = backend -> {:ok, backend}
       nil -> {:error, :backend_not_found}
     end

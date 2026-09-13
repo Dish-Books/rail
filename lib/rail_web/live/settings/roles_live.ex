@@ -77,7 +77,7 @@ defmodule RailWeb.Settings.RolesLive do
       theme={@theme}
       show_project_switcher={@show_project_switcher}
     >
-      <div class="max-w-5xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="roles-settings">
+      <div class="max-w-[90rem] mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="roles-settings">
         <div>
           <h1
             class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
@@ -854,11 +854,19 @@ defmodule RailWeb.Settings.RolesLive do
   defp default_model_for(%Backend{name: name}), do: @default_models[name]
   defp default_model_for(_unconfigured), do: nil
 
-  defp backend_label(%Backend{name: name}) do
-    case name do
-      :claude -> "Claude Code (claude -p)"
-      :agy -> "Antigravity (agy -p)"
-      other -> to_string(other)
+  # Two backends of one kind are told apart by what the user called them, then
+  # by the account signed in.
+  defp backend_label(%Backend{name: name} = backend) do
+    kind =
+      case name do
+        :claude -> "Claude Code (claude -p)"
+        :agy -> "Antigravity (agy -p)"
+        other -> to_string(other)
+      end
+
+    case Enum.find([backend.label, backend.account_label], &(&1 not in [nil, ""])) do
+      account when is_binary(account) -> "#{kind} · #{account}"
+      nil -> kind
     end
   end
 

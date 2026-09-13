@@ -1,6 +1,7 @@
 defmodule Rail.Tools.Actions.StartOsProcess do
   @moduledoc false
 
+  import Rail.Tools.Utils.BackendEnv
   import Rail.Tools.Utils.EnsureExecutable
 
   alias Rail.Pipeline
@@ -17,8 +18,8 @@ defmodule Rail.Tools.Actions.StartOsProcess do
   Spawns a detached CLI runner for a run, records the `runs` row, starts its
   Follower, and settles the dispatch either way.
 
-  Everything the spawn needs is derived from the run: the executable from
-  its role's backend, which is an absolute path, and the working directory and
+  Everything the spawn needs is derived from the run: the executable and the
+  account's config directory from its role's backend, and the working directory and
   stream path from its task. `argv` is arguments only. Nothing is wired in for
   the exit: `run_finished/3` works from the row the spawn writes.
 
@@ -52,7 +53,7 @@ defmodule Rail.Tools.Actions.StartOsProcess do
 
     result =
       case ensure_executable(executable, os_process, run) do
-        :ok -> launch(os_process, run, executable, argv, stream_path, task)
+        :ok -> launch(os_process, run, backend, argv, stream_path, task)
         {:error, reason} -> {:error, reason}
       end
 
@@ -108,14 +109,15 @@ defmodule Rail.Tools.Actions.StartOsProcess do
     stream_path
   end
 
-  defp launch(os_process, run, executable, args, stream_path, task) do
+  defp launch(os_process, run, backend, args, stream_path, task) do
     spawn_opts = [
       stdout_path: stream_path,
       stderr_path: "#{stream_path}.err",
-      cd: task.worktree_path
+      cd: task.worktree_path,
+      env: backend_env(backend)
     ]
 
-    case Tools.spawn_os_process(executable, args, spawn_opts) do
+    case Tools.spawn_os_process(backend.executable_path, args, spawn_opts) do
       {:ok, port, os_pid} ->
         {:ok, os_process} =
           os_process

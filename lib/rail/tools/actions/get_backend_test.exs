@@ -5,12 +5,11 @@ defmodule Rail.Tools.Actions.GetBackendTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
 
-  test "get_backend/1 finds a backend by atom or string name" do
+  test "get_backend/1 finds a backend by id" do
     %Backend{id: backend_id} =
       Repo.insert!(Backend.changeset(%Backend{}, %{name: :claude, executable_path: "/usr/bin/claude"}))
 
-    assert {:ok, %Backend{id: ^backend_id}} = Tools.get_backend(:claude)
-    assert {:ok, %Backend{id: ^backend_id}} = Tools.get_backend("claude")
-    assert {:error, :backend_not_found} = Tools.get_backend(:agy)
+    assert {:ok, %Backend{id: ^backend_id}} = Tools.get_backend(backend_id)
+    assert {:error, :backend_not_found} = Tools.get_backend("bkd_missing")
   end
 end

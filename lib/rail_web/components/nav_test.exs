@@ -168,10 +168,12 @@ defmodule RailWeb.Components.NavTest do
     titles = [
       {:overview, "Overview"},
       {:issues, "Issues"},
-      {:backends, "Backends"},
+      {:backends, "Settings"},
       {:settings, "Settings"},
       {:connected_accounts, "Settings"},
       {:projects, "Settings"},
+      {:users, "Settings"},
+      {:roles, "Settings"},
       {:tasks, "Task"},
       {:other_custom, "Rail"}
     ]

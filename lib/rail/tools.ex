@@ -23,6 +23,7 @@ defmodule Rail.Tools do
     children = [
       {Registry, keys: :unique, name: Rail.Tools.FollowerRegistry},
       Rail.Tools.FollowerSupervisor,
+      {DynamicSupervisor, name: Rail.Tools.LoginSupervisor, strategy: :one_for_one},
       Rail.Tools.Boot
     ]
 
@@ -52,4 +53,16 @@ defmodule Rail.Tools do
 
   @decorate can?(resource: :backends, action: :manage)
   defdelegate update_backend(scope, backend, attrs), to: Actions.UpdateBackend
+
+  @decorate can?(resource: :backends, action: :manage)
+  defdelegate start_backend_login(scope, backend, owner \\ self()), to: Actions.StartBackendLogin
+
+  @decorate can?(resource: :backends, action: :manage)
+  defdelegate submit_backend_login_code(scope, session, code), to: Actions.SubmitBackendLoginCode
+
+  @decorate can?(resource: :backends, action: :manage)
+  defdelegate cancel_backend_login(scope, session), to: Actions.CancelBackendLogin
+
+  @decorate can?(resource: :backends, action: :manage)
+  defdelegate logout_backend(scope, backend), to: Actions.LogoutBackend
 end

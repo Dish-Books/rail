@@ -7,20 +7,17 @@ defmodule Rail.Tools.Actions.RefreshUsage do
   alias Rail.Tools.Claude
   alias Rail.Tools.Schemas.Backend
 
+  @probes %{claude: &Claude.probe/1, agy: &Agy.probe/1}
+
+  # Every configured backend is probed, one per account, and a kind nothing
+  # knows how to probe is left out.
   def refresh_usage do
-    claude = start_probe(:claude, &Claude.probe/1)
-    agy = start_probe(:agy, &Agy.probe/1)
+    tasks =
+      for %Backend{name: name} = backend <- Tools.list_backends(), probe = @probes[name] do
+        {backend, Task.async(fn -> probe.(backend) end)}
+      end
 
-    {:ok, Enum.map(claude ++ agy, &await_usage/1)}
-  end
-
-  # A backend the user has not configured has nothing to probe, and no reason to
-  # stop the ones that do.
-  defp start_probe(name, probe) do
-    case Tools.get_backend(name) do
-      {:ok, backend} -> [{backend, Task.async(fn -> probe.(backend) end)}]
-      {:error, :backend_not_found} -> []
-    end
+    {:ok, Enum.map(tasks, &await_usage/1)}
   end
 
   # The probes run in tasks, but the write stays here: the caller owns the

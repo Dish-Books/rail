@@ -50,6 +50,10 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
   } do
     assert {:ok, view, html} = live(conn, ~p"/settings/connected-accounts")
 
+    # Settings is the destination lit in the rail, not the overview.
+    assert has_element?(view, "#nav-settings[data-active='true']")
+    refute has_element?(view, "#nav-overview[data-active='true']")
+
     assert html =~ "Connected Accounts"
     assert html =~ "Manage third-party services connected to your account"
     assert html =~ "GitHub"

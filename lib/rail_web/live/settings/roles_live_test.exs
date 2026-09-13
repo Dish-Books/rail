@@ -24,6 +24,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     {:ok, claude_backend} =
       Rail.Tools.create_backend(Rail.Scope.for_system(), %{
         name: :claude,
+        label: "work",
         executable_path: "/usr/local/bin/claude",
         models: [%{id: "claude-sonnet-5", display_name: "claude-sonnet-5"}]
       })
@@ -159,6 +160,10 @@ defmodule RailWeb.Settings.RolesLiveTest do
     view |> element("#assign-stage-button-product") |> render_click()
     assert has_element?(view, "#role-editor-modal")
     assert has_element?(view, "#role-modal-title", "Create New Role")
+
+    # Two backends of one kind are told apart by their label.
+    assert has_element?(view, "#role-backend-select option", "Claude Code (claude -p) · work")
+    assert has_element?(view, "#role-backend-select option", "Antigravity (agy -p)")
 
     # Validate form change with backend change
     view
