@@ -9,11 +9,4 @@ defmodule Rail.Projects.Actions.UpdateProject do
     |> Project.changeset(attrs)
     |> Repo.update()
   end
-
-  def update_project(scope, id, attrs) when is_binary(id) do
-    case Repo.get(Project, id) do
-      %Project{} = project -> update_project(scope, project, attrs)
-      nil -> {:error, :not_found}
-    end
-  end
 end

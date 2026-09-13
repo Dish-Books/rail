@@ -5,54 +5,29 @@ defmodule Rail.Pipeline.Actions.ListTasks do
 
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Scope
 
   @doc """
-  Lists tasks for a project with optional filters.
+  Lists tasks, filtered and preloaded as `opts` asks.
   """
-  def list_tasks(scope, project_id, opts \\ [])
-
-  def list_tasks(%Scope{system: true}, project_id, opts) when is_binary(project_id) or is_nil(project_id) do
-    fetch_tasks(project_id, opts)
+  def list_tasks(opts \\ []) do
+    Task
+    |> from(as: :task)
+    |> order_by(^Keyword.get(opts, :order_by, asc: :inserted_at))
+    |> preload(^Keyword.get(opts, :preload, []))
+    |> filter_project(opts[:project_id])
+    |> filter_stage(opts[:stage])
+    |> Repo.all()
   end
 
-  def list_tasks(%Scope{user: %{}}, project_id, opts) when is_binary(project_id) or is_nil(project_id) do
-    fetch_tasks(project_id, opts)
+  defp filter_project(query, project_id) when is_binary(project_id) do
+    where(query, [task: t], t.project_id == ^project_id)
   end
 
-  def list_tasks(_scope, _project_id, _opts), do: []
+  defp filter_project(query, _all_projects), do: query
 
-  defp fetch_tasks(project_id, opts) do
-    query = from(t in Task)
+  defp filter_stage(query, nil), do: query
 
-    query =
-      if is_binary(project_id) do
-        from(t in query, where: t.project_id == ^project_id)
-      else
-        query
-      end
-
-    query =
-      case Keyword.get(opts, :stage) do
-        stage when is_atom(stage) and stage != nil -> from(t in query, where: t.stage == ^stage)
-        nil -> query
-      end
-
-    query =
-      case Keyword.get(opts, :stage_state) do
-        state when is_atom(state) and state != nil -> from(t in query, where: t.stage_state == ^state)
-        nil -> query
-      end
-
-    query =
-      case Keyword.get(opts, :preload) do
-        preloads when is_list(preloads) and preloads != [] -> from(t in query, preload: ^preloads)
-        _other -> query
-      end
-
-    order = Keyword.get(opts, :order_by, asc: :inserted_at)
-    query = from(t in query, order_by: ^order)
-
-    Repo.all(query)
+  defp filter_stage(query, stage) when is_atom(stage) do
+    where(query, [task: t], t.stage == ^stage)
   end
 end

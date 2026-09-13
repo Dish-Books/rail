@@ -36,7 +36,7 @@ defmodule RailWeb.Components.Button do
   attr :href, :any, default: nil
   attr :navigate, :any, default: nil
   attr :patch, :any, default: nil
-  attr :rest, :global, include: ~w(disabled form name value download target rel)
+  attr :rest, :global, include: ["disabled", "form", "name", "value", "download", "target", "rel"]
 
   slot :inner_block, required: true
 
@@ -45,14 +45,14 @@ defmodule RailWeb.Components.Button do
       assign(assigns, :styles, [@base, @sizes[assigns.size], @variants[assigns.variant], assigns.class])
 
     case nav_attrs(assigns) do
+      attrs when is_map(attrs) -> assigns |> assign(:nav, attrs) |> nav_button()
       nil -> plain_button(assigns)
-      attrs -> assigns |> assign(:nav, attrs) |> nav_button()
     end
   end
 
-  defp nav_attrs(%{navigate: to}) when not is_nil(to), do: %{navigate: to}
-  defp nav_attrs(%{patch: to}) when not is_nil(to), do: %{patch: to}
-  defp nav_attrs(%{href: to}) when not is_nil(to), do: %{href: to}
+  defp nav_attrs(%{navigate: to}) when is_binary(to), do: %{navigate: to}
+  defp nav_attrs(%{patch: to}) when is_binary(to), do: %{patch: to}
+  defp nav_attrs(%{href: to}) when is_binary(to), do: %{href: to}
   defp nav_attrs(_assigns), do: nil
 
   defp plain_button(assigns) do

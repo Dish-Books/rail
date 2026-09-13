@@ -5,28 +5,32 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Projects
+  alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Runs
+  alias Rail.Runs.DetectedQuestion
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
-    scope = system_scope()
+    {:ok, backend} =
+      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "List Questions Workspace",
-        external_id: "lin_ws_list_questions",
-        token: "lin_api_token_list_questions",
-        webhook_secret: "whsec_list_questions"
-      })
+    scope = system_scope()
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "List Questions Project 7201",
         github_repo: "org/list-questions-7201",
         github_installation_id: 7201,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "List Questions Workspace",
+          external_id: "lin_ws_list_questions",
+          token: "lin_api_token_list_questions",
+          webhook_secret: "whsec_list_questions"
+        },
         linear_team_id: "team_list_questions_7201",
         linear_team_key: "P7201",
+        default_branch: "main",
         clone_path: "/tmp/repos/list-questions-7201",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -41,6 +45,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
+            backend_id: backend.id,
             stage: stage,
             name: "#{stage} role",
             model: "claude-3-7-sonnet",
@@ -56,18 +61,41 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
       "title" => "List Questions Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "List Questions Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "List Questions Issue"})
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_list_questions_1"})
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:product].id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
 
-    %{project: project, issue: issue, task: task, roles: roles}
+    run = Repo.preload(run, task: :issue)
+
+    %{project: project, issue: issue, task: task, run: run, roles: roles}
   end
 
-  test "lists questions by project and filters by status", %{project: project, task: task} do
-    {:ok, q_answered} = Pipeline.register_question(task, %{prompt: "P1 Answered"})
-    {:ok, _q_answered} = Pipeline.answer_question(q_answered, "Because")
+  test "lists questions by project and filters by status", %{project: project, task: task, roles: roles} do
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:product].id,
+        conversation_id: "sess_product",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    run = Repo.preload(run, task: :issue)
+
+    {:ok, q_answered} = Pipeline.register_question(run, %DetectedQuestion{prompt: "P1 Answered"})
+
+    {:ok, _q_answered} =
+      q_answered
+      |> Question.changeset(%{answer: "Because", status: :answered, answered_at: DateTime.utc_now()})
+      |> Repo.update()
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_list_questions_2",
@@ -75,19 +103,35 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
       "title" => "Second Task"
     })
 
-    {:ok, issue2} = Issues.capture_issue(system_scope(), project, "Second Task")
-    LinearMock.mock_update_issue_success(%{"id" => "lin_list_questions_2"})
-    {:ok, task1b} = Pipeline.bring_local(system_scope(), issue2)
+    {:ok, issue2} = Issues.create_issue(project, %{description: "Second Task"})
+    {:ok, task1b} = Pipeline.create_task(issue2, :product)
 
-    {:ok, q1} = Pipeline.register_question(task1b, %{prompt: "P1 Pending"})
+    {:ok, run1b} =
+      Runs.create_run(%{
+        task_id: task1b.id,
+        role_id: roles[:product].id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    run1b = Repo.preload(run1b, task: :issue)
+
+    {:ok, q1} = Pipeline.register_question(run1b, %DetectedQuestion{prompt: "P1 Pending"})
 
     {:ok, project2} =
       Projects.create_project(system_scope(), %{
+        linear_workspace: %{
+          name: "List Questions Workspace",
+          external_id: "lin_ws_list_questions_x3",
+          token: "lin_api_token_list_questions",
+          webhook_secret: "whsec_list_questions"
+        },
         name: "List Questions Project Two",
         github_repo: "org/list-questions-two",
         github_installation_id: 7204,
         linear_team_id: "team_list_questions_two",
         linear_team_key: "LQ2",
+        default_branch: "main",
         clone_path: "/tmp/repos/list-questions-two",
         linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
       })
@@ -98,11 +142,29 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
       "title" => "Other Project Task"
     })
 
-    {:ok, issue3} = Issues.capture_issue(system_scope(), project2, "Other Project Task")
-    LinearMock.mock_update_issue_success(%{"id" => "lin_list_questions_3"})
-    {:ok, task2} = Pipeline.bring_local(system_scope(), issue3)
+    {:ok, issue3} = Issues.create_issue(project2, %{description: "Other Project Task"})
+    {:ok, task2} = Pipeline.create_task(issue3, :product)
 
-    {:ok, _q3} = Pipeline.register_question(task2, %{prompt: "P2 Pending"})
+    {:ok, role2} =
+      Roles.create_role(system_scope(), project2, %{
+        backend_id: roles[:product].backend_id,
+        stage: :product,
+        name: "product role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the product agent."
+      })
+
+    {:ok, run2} =
+      Runs.create_run(%{
+        task_id: task2.id,
+        role_id: role2.id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    run2 = Repo.preload(run2, task: :issue)
+
+    {:ok, _q3} = Pipeline.register_question(run2, %DetectedQuestion{prompt: "P2 Pending"})
 
     results_all = Pipeline.list_questions(project.id)
     assert length(results_all) == 2
@@ -115,10 +177,10 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     assert length(results_multi_status) == 2
   end
 
-  test "lists questions by task and supports order_by", %{task: task} do
-    {:ok, q1} = Pipeline.register_question(task, %{prompt: "First"})
+  test "lists questions by task and supports order_by", %{task: task, run: run} do
+    {:ok, q1} = Pipeline.register_question(run, %DetectedQuestion{prompt: "First"})
     {:ok, _dismissed} = Pipeline.dismiss_question(q1)
-    {:ok, q2} = Pipeline.register_question(task, %{prompt: "Second"})
+    {:ok, q2} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Second"})
 
     desc_order = Pipeline.list_questions(task.id, order_by: [desc: :inserted_at])
     assert Enum.map(desc_order, & &1.id) == [q2.id, q1.id]
@@ -127,9 +189,24 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     assert Enum.map(asc_order, & &1.id) == [q1.id, q2.id]
   end
 
-  test "list_pending_questions convenience functions", %{project: project, task: task} do
-    {:ok, q_answered} = Pipeline.register_question(task, %{prompt: "Answered question?"})
-    {:ok, _q_answered} = Pipeline.answer_question(q_answered, "Because")
+  test "filters a project's questions down to the pending ones", %{project: project, task: task, roles: roles} do
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:product].id,
+        conversation_id: "sess_product",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    run = Repo.preload(run, task: :issue)
+
+    {:ok, q_answered} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Answered question?"})
+
+    {:ok, _q_answered} =
+      q_answered
+      |> Question.changeset(%{answer: "Because", status: :answered, answered_at: DateTime.utc_now()})
+      |> Repo.update()
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_list_questions_pending",
@@ -137,75 +214,49 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
       "title" => "Pending Question Task"
     })
 
-    {:ok, issue_pending} = Issues.capture_issue(system_scope(), project, "Pending Question Task")
-    LinearMock.mock_update_issue_success(%{"id" => "lin_list_questions_pending"})
-    {:ok, pending_task} = Pipeline.bring_local(system_scope(), issue_pending)
+    {:ok, issue_pending} = Issues.create_issue(project, %{description: "Pending Question Task"})
+    {:ok, pending_task} = Pipeline.create_task(issue_pending, :product)
 
-    {:ok, q_pending} = Pipeline.register_question(pending_task, %{prompt: "Still open?"})
+    {:ok, pending_run} =
+      Runs.create_run(%{
+        task_id: pending_task.id,
+        role_id: roles[:product].id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
 
-    pending_list = Pipeline.list_pending_questions(project.id)
+    pending_run = Repo.preload(pending_run, task: :issue)
+
+    {:ok, q_pending} = Pipeline.register_question(pending_run, %DetectedQuestion{prompt: "Still open?"})
+
+    pending_list = Pipeline.list_questions(project.id, status: :pending)
     assert length(pending_list) == 1
     assert hd(pending_list).id == q_pending.id
 
-    global_pending = Pipeline.list_pending_questions()
+    global_pending = Pipeline.list_questions(nil, status: :pending)
     assert Enum.any?(global_pending, &(&1.id == q_pending.id))
   end
 
-  test "scope authorization for list_questions and list_pending_questions" do
-    unauth_scope = %Rail.Scope{}
-    assert Pipeline.list_questions(unauth_scope, "prj_test") == []
-    assert Pipeline.list_pending_questions(unauth_scope, "prj_test") == []
-
-    auth_scope = Rail.Scope.for_system()
-    assert [] = Pipeline.list_questions(auth_scope, "prj_test")
-
-    user_scope = %Rail.Scope{user: %{id: "usr_test"}}
-    assert [] = Pipeline.list_questions(user_scope, "prj_test")
-    assert [] = Pipeline.list_pending_questions(user_scope, "prj_test")
-  end
-
-  test "overloaded variants and convenience functions for list_questions and list_pending_questions" do
-    user_scope = %Rail.Scope{user: %{id: "usr_test"}}
-    assert [] = Pipeline.list_questions(user_scope, status: :pending)
-    assert [] = Pipeline.list_questions(user_scope, "prj_test")
-    assert [] = Pipeline.list_pending_questions(user_scope, status: :pending)
-    assert [] = Pipeline.list_pending_questions(user_scope, "prj_test")
-
+  test "returns nothing for targets that hold no questions" do
     assert [] = Pipeline.list_questions("prj_test")
     assert [] = Pipeline.list_questions("tsk_test")
     assert [] = Pipeline.list_questions()
-    assert [] = Pipeline.list_pending_questions("prj_test")
-    assert [] = Pipeline.list_pending_questions("prj_test", order_by: [asc: :inserted_at])
-    assert [] = Pipeline.list_pending_questions()
+    assert [] = Pipeline.list_questions("prj_test", status: :pending)
+    assert [] = Pipeline.list_questions("prj_test", status: :pending, order_by: [asc: :inserted_at])
+    assert [] = Pipeline.list_questions(nil, status: :pending)
   end
 
-  test "get_question and get_question!", %{task: task} do
+  test "get_question", %{run: run} do
     {:ok, %Question{id: expected_id}} =
-      Pipeline.register_question(task, %{prompt: "Which option?"})
-
-    user_scope = %Rail.Scope{user: %{id: "usr_test"}}
+      Pipeline.register_question(run, %DetectedQuestion{prompt: "Which option?"})
 
     assert {:ok, %Question{id: ^expected_id}} = Pipeline.get_question(expected_id)
-    assert %Question{id: ^expected_id} = Pipeline.get_question!(expected_id)
-
-    assert {:ok, %Question{id: ^expected_id}} = Pipeline.get_question(user_scope, expected_id)
-    assert %Question{id: ^expected_id} = Pipeline.get_question!(user_scope, expected_id)
-
     assert {:error, :not_found} = Pipeline.get_question("qst_nonexistent")
-    assert {:error, :not_authorized} = Pipeline.get_question(%Rail.Scope{}, expected_id)
-
-    assert_raise Ecto.NoResultsError, fn ->
-      Pipeline.get_question!("qst_nonexistent")
-    end
-
-    assert_raise Ecto.NoResultsError, fn ->
-      Pipeline.get_question!(%Rail.Scope{}, expected_id)
-    end
   end
 
-  test "supports preload option", %{task: %Rail.Pipeline.Schemas.Task{id: expected_task_id} = task} do
+  test "supports preload option", %{task: %Rail.Pipeline.Schemas.Task{id: expected_task_id}, run: run} do
     {:ok, %Question{id: q_id}} =
-      Pipeline.register_question(expected_task_id, %{
+      Pipeline.register_question(run, %DetectedQuestion{
         prompt: "Question prompt 7213?"
       })
 

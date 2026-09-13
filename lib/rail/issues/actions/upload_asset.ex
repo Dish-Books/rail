@@ -4,27 +4,10 @@ defmodule Rail.Issues.Actions.UploadAsset do
   import Rail.Issues.Utils.TokenResolver
 
   alias Rail.Issues.Clients.Linear
-  alias Rail.Projects.Schemas.LinearWorkspace
-  alias Rail.Projects.Schemas.Project
 
-  def upload_asset(scope, filename, content_type, data_binary) when is_binary(filename) do
-    upload_asset(scope, filename, content_type, data_binary, [])
-  end
-
-  def upload_asset(scope, %Project{} = project, filename, content_type, data_binary) do
-    upload_asset(scope, filename, content_type, data_binary, project: project)
-  end
-
-  def upload_asset(scope, %LinearWorkspace{} = workspace, filename, content_type, data_binary) do
-    upload_asset(scope, filename, content_type, data_binary, workspace: workspace)
-  end
-
-  def upload_asset(_scope, filename, content_type, data_binary, opts) when is_binary(filename) and is_list(opts) do
-    target = Keyword.get(opts, :project) || Keyword.get(opts, :workspace)
-
+  def upload_asset(target, filename, content_type, data_binary) do
     with {:ok, token} <- workspace_token(target) do
-      size = byte_size(data_binary)
-      Linear.file_upload(token, filename, content_type, size, data_binary)
+      Linear.file_upload(token, filename, content_type, byte_size(data_binary), data_binary)
     end
   end
 end

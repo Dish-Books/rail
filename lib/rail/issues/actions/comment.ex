@@ -8,11 +8,10 @@ defmodule Rail.Issues.Actions.Comment do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
 
-  def comment(scope, %Issue{} = issue, comment_body, owner_user \\ nil) do
+  def comment(%Issue{} = issue, comment_body, owner_user \\ nil) do
     project = Repo.get(Project, issue.project_id)
-    user_target = owner_user || scope
 
-    with {:ok, token, _identity} <- resolve_token(user_target, project) do
+    with {:ok, token, _identity} <- resolve_token(owner_user, project) do
       Linear.create_comment(token, issue.external_id, comment_body)
     end
   end

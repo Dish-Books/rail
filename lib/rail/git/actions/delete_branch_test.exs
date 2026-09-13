@@ -2,7 +2,7 @@ defmodule Rail.Git.Actions.DeleteBranchTest do
   use Rail.DataCase, async: true
 
   alias Rail.Git
-  alias Rail.ToolEnv
+  alias Rail.Tools
 
   test "deletes an existing branch" do
     repo = create_temp_git_repo()
@@ -10,7 +10,7 @@ defmodule Rail.Git.Actions.DeleteBranchTest do
 
     assert :ok = Git.delete_branch(repo, "to_delete")
 
-    {out, 0} = ToolEnv.run("git", ["branch", "--list", "to_delete"], cd: repo)
+    {out, 0} = Tools.run("git", ["branch", "--list", "to_delete"], cd: repo)
     assert String.trim(out) == ""
   end
 

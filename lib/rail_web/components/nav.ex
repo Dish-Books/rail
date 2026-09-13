@@ -67,7 +67,6 @@ defmodule RailWeb.Components.Nav do
                 :settings,
                 :connected_accounts,
                 :projects,
-                :linear_workspace,
                 :users,
                 :roles,
                 :backends
@@ -363,7 +362,6 @@ defmodule RailWeb.Components.Nav do
   defp section_title(:settings), do: "Settings"
   defp section_title(:connected_accounts), do: "Settings"
   defp section_title(:projects), do: "Settings"
-  defp section_title(:linear_workspace), do: "Settings"
   defp section_title(:tasks), do: "Task"
   defp section_title(_other), do: "Rail"
 

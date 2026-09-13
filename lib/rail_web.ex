@@ -87,6 +87,7 @@ defmodule RailWeb do
       use Gettext, backend: RailWeb.Gettext
 
       import Phoenix.HTML
+      import RailWeb.Helpers
 
       alias Phoenix.LiveView.JS
       alias RailWeb.Layouts

@@ -20,8 +20,8 @@ defmodule Rail.Roles.Actions.CopyRoles do
     {:error, :target_project_not_found}
   end
 
-  defp execute_copy(scope, target_project_id, source_project_id, opts) do
-    source_roles = Rail.Roles.list_roles(scope, source_project_id)
+  defp execute_copy(_scope, target_project_id, source_project_id, opts) do
+    source_roles = Rail.Roles.list_roles(source_project_id)
     replace_all = Keyword.get(opts, :replace_all, false)
 
     Repo.transaction(fn ->
@@ -37,11 +37,12 @@ defmodule Rail.Roles.Actions.CopyRoles do
         end
 
         attrs = %{
+          project_id: target_project_id,
           stage: role.stage,
           name: role.name,
           description: role.description,
           icon_name: role.icon_name,
-          cli_backend: role.cli_backend,
+          backend_id: role.backend_id,
           model: role.model,
           reasoning_effort: role.reasoning_effort,
           system_prompt: role.system_prompt,
@@ -49,7 +50,7 @@ defmodule Rail.Roles.Actions.CopyRoles do
           position: role.position
         }
 
-        changeset = Role.changeset(%Role{}, attrs, target_project_id)
+        changeset = Role.changeset(%Role{}, attrs)
 
         case Repo.insert(changeset) do
           {:ok, copied} -> copied

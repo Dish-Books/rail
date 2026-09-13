@@ -9,9 +9,6 @@ defmodule RailWeb.UserAuthTest do
   alias Rail.Users.Schemas.User
   alias RailWeb.UserAuth
 
-  @remember_me_cookie "_rail_web_user_remember_me"
-  @remember_me_cookie_max_age 60 * 60 * 24 * 14
-
   setup %{conn: conn} do
     conn =
       conn
@@ -80,41 +77,31 @@ defmodule RailWeb.UserAuthTest do
       assert redirected_to(conn) == "/custom/path"
     end
 
-    test "writes cookie if remember_me is true in params", %{conn: conn, user: user} do
+    test "revokes the token the session was holding", %{conn: conn, user: user} do
+      previous_token = Users.generate_user_session_token(user)
+
       conn =
         conn
-        |> fetch_cookies()
-        |> UserAuth.log_in_user(user, %{"remember_me" => "true"})
+        |> put_session(:user_token, previous_token)
+        |> UserAuth.log_in_user(user)
 
-      assert get_session(conn, :user_remember_me) == true
-      assert %{max_age: @remember_me_cookie_max_age} = conn.resp_cookies[@remember_me_cookie]
-    end
-
-    test "writes cookie if remember_me was set in session", %{conn: conn, user: user} do
-      conn =
-        conn
-        |> put_session(:user_remember_me, true)
-        |> fetch_cookies()
-        |> UserAuth.log_in_user(user, %{})
-
-      assert %{max_age: @remember_me_cookie_max_age} = conn.resp_cookies[@remember_me_cookie]
+      assert get_session(conn, :user_token) != previous_token
+      refute Users.get_user_by_session_token(previous_token)
     end
   end
 
   describe "log_out_user/1" do
-    test "erases session and cookies", %{conn: conn, user: user} do
+    test "erases the session and revokes the token", %{conn: conn, user: user} do
       user_token = Users.generate_user_session_token(user)
 
       conn =
         conn
         |> put_session(:user_token, user_token)
         |> put_session(:live_socket_id, "users_sessions:#{Base.url_encode64(user_token)}")
-        |> put_resp_cookie(@remember_me_cookie, user_token)
         |> UserAuth.log_out_user()
 
       assert redirected_to(conn) == ~p"/"
       refute get_session(conn, :user_token)
-      assert %{max_age: 0} = conn.resp_cookies[@remember_me_cookie]
       refute Users.get_user_by_session_token(user_token)
     end
 
@@ -144,18 +131,15 @@ defmodule RailWeb.UserAuthTest do
       assert %Scope{user: %User{id: ^user_id}} = conn.assigns.current_scope
     end
 
-    test "authenticates user from cookie", %{conn: conn, user: user, user_id: user_id} do
-      logged_in_conn =
-        conn |> fetch_cookies() |> UserAuth.log_in_user(user, %{"remember_me" => "true"})
-
-      %{value: signed_token} = logged_in_conn.resp_cookies[@remember_me_cookie]
+    test "does not authenticate from a cookie", %{conn: conn, user: user} do
+      user_token = Users.generate_user_session_token(user)
 
       conn =
         conn
-        |> put_req_cookie(@remember_me_cookie, signed_token)
+        |> put_req_cookie("_rail_web_user_remember_me", user_token)
         |> UserAuth.fetch_current_user([])
 
-      assert %Scope{user: %User{id: ^user_id}} = conn.assigns.current_scope
+      assert is_nil(conn.assigns.current_scope)
     end
 
     test "reissues token if older than reissue age", %{conn: conn, user: user} do
@@ -298,7 +282,9 @@ defmodule RailWeb.UserAuthTest do
     end
 
     test "require_admin continues when user is admin", %{user: user} do
-      admin_user = %{user | admin: true}
+      assert {:ok, admin_user} =
+               Users.update_user(Scope.for_system(), user, %{admin: true})
+
       user_token = Users.generate_user_session_token(admin_user)
       session = %{"user_token" => user_token}
       socket = %LiveView.Socket{endpoint: RailWeb.Endpoint}
@@ -307,7 +293,7 @@ defmodule RailWeb.UserAuthTest do
     end
 
     test "require_admin halts when user is not admin", %{user: user} do
-      assert {:ok, non_admin_user} = Users.set_admin(Scope.for_system(), user, false)
+      assert {:ok, non_admin_user} = Users.update_user(Scope.for_system(), user, %{admin: false})
       user_token = Users.generate_user_session_token(non_admin_user)
       session = %{"user_token" => user_token}
       socket = %LiveView.Socket{endpoint: RailWeb.Endpoint}

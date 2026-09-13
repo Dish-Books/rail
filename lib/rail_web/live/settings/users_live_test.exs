@@ -97,23 +97,19 @@ defmodule RailWeb.Settings.UsersLiveTest do
     assert has_element?(view, "#toggle-admin-button-#{regular_user.id}", "Make Admin")
   end
 
-  test "cannot revoke admin from sole administrator", %{
-    admin_conn: conn,
-    admin_user: admin_user
-  } do
+  test "cannot toggle admin on yourself", %{admin_conn: conn, admin_user: admin_user} do
     assert {:ok, view, _html} = live(conn, ~p"/settings/users")
 
-    view
-    |> element("#toggle-admin-button-#{admin_user.id}")
-    |> render_click()
+    refute has_element?(view, "#toggle-admin-button-#{admin_user.id}")
+
+    render_click(view, "toggle_admin", %{"user_id" => admin_user.id})
 
     assert has_element?(
              view,
              "#users-error-text",
-             "Cannot revoke admin permissions from the sole administrator."
+             "You cannot change your own admin permissions."
            )
 
-    # Dismiss error
     view |> element("#clear-users-error-button") |> render_click()
     refute has_element?(view, "#users-error-banner")
   end
@@ -154,7 +150,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
   } do
     assert {:ok, view, _html} = live(conn, ~p"/settings/users")
 
-    expect(Users, :set_admin, fn _scope, _user, _val ->
+    expect(Users, :update_user, fn _scope, _user, _attrs ->
       {:error, :not_authorized}
     end)
 
@@ -166,7 +162,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
              "You are not authorized to modify user permissions."
            )
 
-    expect(Users, :set_admin, fn _scope, _user, _val ->
+    expect(Users, :update_user, fn _scope, _user, _attrs ->
       {:error, :db_error}
     end)
 

@@ -189,7 +189,6 @@ defmodule RailWeb.Components.NavTest do
       {:settings, "Settings"},
       {:connected_accounts, "Settings"},
       {:projects, "Settings"},
-      {:linear_workspace, "Settings"},
       {:tasks, "Task"},
       {:other_custom, "Rail"}
     ]

@@ -6,7 +6,7 @@ defmodule Rail.Users.Actions.RegisterOAuthUserTest do
   alias Ueberauth.Auth.Credentials
   alias Ueberauth.Auth.Info
 
-  test "first registered user receives admin: true" do
+  test "registered users are not admin by default" do
     attrs = %{
       github_id: "1001",
       login: "first_user",
@@ -15,22 +15,23 @@ defmodule Rail.Users.Actions.RegisterOAuthUserTest do
       github_token: "gho_token_1"
     }
 
-    assert {:ok, %User{github_id: "1001", admin: true}} = Users.register_oauth_user(attrs)
-  end
-
-  test "subsequent registered users receive admin: false by default" do
-    assert {:ok, %User{admin: true}} =
-             Users.register_oauth_user(%{
-               github_id: "2001",
-               login: "first_user_2",
-               email: "first2@example.com"
-             })
+    assert {:ok, %User{github_id: "1001", admin: false}} = Users.register_oauth_user(attrs)
 
     assert {:ok, %User{github_id: "2002", admin: false}} =
              Users.register_oauth_user(%{
                github_id: "2002",
                login: "second_user",
                email: "second@example.com"
+             })
+  end
+
+  test "registers an admin when the attrs ask for one" do
+    assert {:ok, %User{admin: true}} =
+             Users.register_oauth_user(%{
+               github_id: "2001",
+               login: "admin_user",
+               email: "adminuser@example.com",
+               admin: true
              })
   end
 
@@ -70,7 +71,8 @@ defmodule Rail.Users.Actions.RegisterOAuthUserTest do
                login: "orig_login",
                name: "Original Name",
                email: "orig@example.com",
-               github_token: "token_1"
+               github_token: "token_1",
+               admin: true
              })
 
     assert {:ok,
@@ -140,7 +142,8 @@ defmodule Rail.Users.Actions.RegisterOAuthUserTest do
              Users.register_oauth_user(%{
                github_id: "admin_up_gh",
                login: "admin_up_user",
-               email: "adminup@example.com"
+               email: "adminup@example.com",
+               admin: true
              })
 
     assert {:ok, %User{id: ^user_id, admin: false}} =

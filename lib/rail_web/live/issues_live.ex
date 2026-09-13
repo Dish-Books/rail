@@ -16,10 +16,6 @@ defmodule RailWeb.IssuesLive do
   alias Rail.Projects
 
   def mount(_params, _session, socket) do
-    if connected?(socket) do
-      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline_changed")
-    end
-
     socket =
       socket
       |> assign(:page_title, "Issues")
@@ -27,12 +23,13 @@ defmodule RailWeb.IssuesLive do
       |> assign(:current_project_id, nil)
       |> assign(:current_project, nil)
       |> assign(:show_finished, false)
-      |> assign(:filter_priority, nil)
+      |> assign(:filter_priority, "all")
       |> assign(:all_issues, [])
       |> assign(:visible_issues, [])
       |> assign(:filtered_issues, [])
       |> assign(:priority_counts, %{})
       |> assign(:tasks_by_issue_id, %{})
+      |> assign(:runs_by_issue_id, %{})
       |> assign(:is_syncing, false)
       |> assign(:editing_issue, nil)
       |> assign(:archiving_issue, nil)
@@ -92,7 +89,7 @@ defmodule RailWeb.IssuesLive do
               id="issues-subtitle"
               data-qa="issues-subtitle"
             >
-              {subtitle_for(@current_project)}
+              {project_subtitle(@current_project)}
             </p>
           </div>
 
@@ -143,7 +140,7 @@ defmodule RailWeb.IssuesLive do
             phx-value-priority="all"
             class={[
               "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer",
-              if(is_nil(@filter_priority),
+              if(@filter_priority == "all",
                 do: "bg-blue-600 dark:bg-blue-500 text-white",
                 else:
                   "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
@@ -163,7 +160,7 @@ defmodule RailWeb.IssuesLive do
               phx-value-priority={to_string(p)}
               class={[
                 "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer",
-                if(@filter_priority == p,
+                if(@filter_priority == to_string(p),
                   do: "bg-blue-600 dark:bg-blue-500 text-white",
                   else:
                     "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
@@ -249,6 +246,7 @@ defmodule RailWeb.IssuesLive do
               <.issue_card
                 issue={issue}
                 task={Map.get(@tasks_by_issue_id, issue.id)}
+                run={Map.get(@runs_by_issue_id, issue.id)}
               />
             </div>
           </div>
@@ -270,28 +268,8 @@ defmodule RailWeb.IssuesLive do
     """
   end
 
-  def handle_event("filter_priority", %{"priority" => priority_str}, socket) do
-    new_filter =
-      case priority_str do
-        "all" ->
-          nil
-
-        str ->
-          case Issue.cast_priority(str) do
-            {:ok, priority} ->
-              if socket.assigns.filter_priority == priority, do: nil, else: priority
-
-            :error ->
-              nil
-          end
-      end
-
-    socket =
-      socket
-      |> assign(:filter_priority, new_filter)
-      |> apply_filters()
-
-    {:noreply, socket}
+  def handle_event("filter_priority", %{"priority" => priority}, socket) do
+    {:noreply, socket |> assign(:filter_priority, priority) |> apply_filters()}
   end
 
   def handle_event("toggle_show_finished", _params, socket) do
@@ -306,16 +284,14 @@ defmodule RailWeb.IssuesLive do
   end
 
   def handle_event("sync_issues", _params, socket) do
-    scope = socket.assigns[:current_scope]
     project = socket.assigns.current_project
 
     socket = assign(socket, :is_syncing, true)
 
     if project do
-      Issues.sync_issues(scope, project)
+      Issues.sync_issues(project)
     else
-      projects = Projects.list_projects(scope)
-      Enum.each(projects, fn p -> Issues.sync_issues(scope, p) end)
+      Enum.each(Projects.list_projects(), &Issues.sync_issues/1)
     end
 
     socket =
@@ -326,25 +302,17 @@ defmodule RailWeb.IssuesLive do
     {:noreply, socket}
   end
 
-  def handle_event("bring_local", %{"issue_id" => issue_id}, socket) do
-    scope = socket.assigns[:current_scope]
-    user = socket.assigns[:current_user]
-
-    case Issues.get_issue(scope, issue_id) do
-      {:ok, issue} ->
-        Pipeline.bring_local(scope, issue, user)
-        socket = reload_data(socket)
-        {:noreply, socket}
-
-      _error ->
-        {:noreply, socket}
+  def handle_event("start_product_run", %{"issue_id" => issue_id}, socket) do
+    with {:ok, issue} <- Issues.get_issue(issue_id),
+         {:ok, task} <- Pipeline.create_task(issue, :product) do
+      Pipeline.start_product_run(task)
     end
+
+    {:noreply, reload_data(socket)}
   end
 
   def handle_event("open_editor", %{"issue_id" => issue_id}, socket) do
-    scope = socket.assigns[:current_scope]
-
-    case Issues.get_issue(scope, issue_id) do
+    case Issues.get_issue(issue_id) do
       {:ok, issue} ->
         socket = assign(socket, :editing_issue, issue)
         {:noreply, socket}
@@ -365,9 +333,7 @@ defmodule RailWeb.IssuesLive do
     if trimmed_title == "" do
       {:noreply, socket}
     else
-      scope = socket.assigns[:current_scope]
-
-      case Issues.get_issue(scope, issue_id) do
+      case Issues.get_issue(issue_id) do
         {:ok, issue} ->
           attrs = %{
             title: trimmed_title,
@@ -376,7 +342,7 @@ defmodule RailWeb.IssuesLive do
             state: Map.get(params, "state")
           }
 
-          Issues.update_issue(scope, issue, attrs)
+          Issues.update_issue(issue, attrs)
 
           socket =
             socket
@@ -396,9 +362,7 @@ defmodule RailWeb.IssuesLive do
   end
 
   def handle_event("open_archive", %{"issue_id" => issue_id}, socket) do
-    scope = socket.assigns[:current_scope]
-
-    case Issues.get_issue(scope, issue_id) do
+    case Issues.get_issue(issue_id) do
       {:ok, issue} ->
         socket = assign(socket, :archiving_issue, issue)
         {:noreply, socket}
@@ -414,11 +378,9 @@ defmodule RailWeb.IssuesLive do
   end
 
   def handle_event("confirm_archive", %{"issue_id" => issue_id}, socket) do
-    scope = socket.assigns[:current_scope]
-
-    case Issues.get_issue(scope, issue_id) do
+    case Issues.get_issue(issue_id) do
       {:ok, issue} ->
-        Issues.archive_issue(scope, issue)
+        Issues.archive_issue(issue)
 
         socket =
           socket
@@ -433,36 +395,23 @@ defmodule RailWeb.IssuesLive do
     end
   end
 
-  def handle_info(:pipeline_changed, socket) do
-    socket = reload_data(socket)
-    {:noreply, socket}
+  # Where a task got to is what the run for the stage it sits at says, picked out
+  # of the runs already loaded rather than queried per row.
+  defp stage_run(%{runs: runs, stage: stage}) when is_list(runs) do
+    Enum.find(runs, &(&1.role != nil and &1.role.stage == stage))
   end
 
-  def handle_info(%{event: "pipeline_changed"}, socket) do
-    socket = reload_data(socket)
-    {:noreply, socket}
-  end
+  defp project_subtitle(nil), do: "Linear issues across all projects"
 
-  def handle_info({:live_sync, _data}, socket) do
-    socket = reload_data(socket)
-    {:noreply, socket}
-  end
-
-  def handle_info(_msg, socket) do
-    {:noreply, socket}
-  end
-
-  def subtitle_for(nil), do: "Linear issues across all projects"
-
-  def subtitle_for(%{linear_team_key: key, name: name}) when is_binary(key) and key != "" do
+  defp project_subtitle(%{linear_team_key: key, name: name}) when is_binary(key) and key != "" do
     "Linear issues in #{key} (#{name})"
   end
 
-  def subtitle_for(%{name: name}) when is_binary(name) and name != "" do
+  defp project_subtitle(%{name: name}) when is_binary(name) and name != "" do
     "Linear issues for #{name}"
   end
 
-  def subtitle_for(_other), do: "No target repository set • Issues live in Linear; set one in Settings"
+  defp project_subtitle(_other), do: "No target repository set • Issues live in Linear; set one in Settings"
 
   # --- Private Helpers ---
 
@@ -471,9 +420,7 @@ defmodule RailWeb.IssuesLive do
   end
 
   defp load_project(socket, project_id) when is_binary(project_id) do
-    scope = socket.assigns[:current_scope]
-
-    case Projects.get_project(scope, project_id) do
+    case Projects.get_project(project_id) do
       {:ok, project} ->
         assign(socket, :current_project, project)
 
@@ -483,7 +430,6 @@ defmodule RailWeb.IssuesLive do
   end
 
   defp reload_data(socket) do
-    scope = socket.assigns[:current_scope]
     project_id = socket.assigns.current_project_id
     show_finished = socket.assigns.show_finished
 
@@ -491,13 +437,16 @@ defmodule RailWeb.IssuesLive do
 
     all_issues =
       if project_id do
-        Issues.list_issues(scope, Keyword.put(opts, :project_id, project_id))
+        Issues.list_issues(Keyword.put(opts, :project_id, project_id))
       else
-        Issues.list_issues(scope, opts)
+        Issues.list_issues(opts)
       end
 
-    tasks = Pipeline.list_tasks(scope, project_id)
+    tasks = Pipeline.list_tasks(project_id: project_id, preload: [runs: :role])
     tasks_by_issue_id = Map.new(tasks, fn task -> {task.issue_id, task} end)
+
+    # The card shows where a task got to, which is what the run for its stage says.
+    runs_by_issue_id = Map.new(tasks, fn task -> {task.issue_id, stage_run(task)} end)
 
     visible_issues =
       if show_finished do
@@ -516,18 +465,17 @@ defmodule RailWeb.IssuesLive do
     |> assign(:visible_issues, visible_issues)
     |> assign(:priority_counts, priority_counts)
     |> assign(:tasks_by_issue_id, tasks_by_issue_id)
+    |> assign(:runs_by_issue_id, runs_by_issue_id)
     |> apply_filters()
   end
 
   defp apply_filters(socket) do
     visible_issues = socket.assigns.visible_issues
-    filter_priority = socket.assigns.filter_priority
 
     filtered_issues =
-      if filter_priority do
-        Enum.filter(visible_issues, fn issue -> issue.priority == filter_priority end)
-      else
-        visible_issues
+      case socket.assigns.filter_priority do
+        "all" -> visible_issues
+        priority -> Enum.filter(visible_issues, &(to_string(&1.priority) == priority))
       end
 
     assign(socket, :filtered_issues, filtered_issues)

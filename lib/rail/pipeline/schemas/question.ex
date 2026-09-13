@@ -5,14 +5,14 @@ defmodule Rail.Pipeline.Schemas.Question do
   use Rail.Schema
 
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Roles.Schemas.Role
+  alias Rail.Runs.Schemas.Run
 
   @statuses [:pending, :unanswered, :answered, :dismissed]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "qst"}
   schema "questions" do
     belongs_to :task, Task
-    belongs_to :role, Role
+    belongs_to :run, Run
 
     field :prompt, :string
     field :options, {:array, :string}, default: []
@@ -20,23 +20,26 @@ defmodule Rail.Pipeline.Schemas.Question do
     field :answer, :string
     field :status, Ecto.Enum, values: @statuses, default: :pending
     field :answered_at, :utc_datetime_usec
+    field :delivered_at, :utc_datetime_usec
 
     timestamps()
   end
 
   @cast_fields [
     :task_id,
-    :role_id,
+    :run_id,
     :prompt,
     :options,
     :context_summary,
     :answer,
     :status,
-    :answered_at
+    :answered_at,
+    :delivered_at
   ]
 
   @required_fields [
     :task_id,
+    :run_id,
     :prompt,
     :status
   ]
@@ -50,7 +53,7 @@ defmodule Rail.Pipeline.Schemas.Question do
     |> maybe_put_task_id(task_id)
     |> validate_required(@required_fields)
     |> foreign_key_constraint(:task_id)
-    |> foreign_key_constraint(:role_id)
+    |> foreign_key_constraint(:run_id)
   end
 
   def statuses, do: @statuses

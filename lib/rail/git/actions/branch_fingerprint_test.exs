@@ -2,12 +2,11 @@ defmodule Rail.Git.Actions.BranchFingerprintTest do
   use Rail.DataCase, async: true
 
   alias Rail.Git
-  alias Rail.Git.BranchFingerprint
 
   test "returns fingerprint for clean repository" do
     repo = create_temp_git_repo()
 
-    assert %BranchFingerprint{head_sha: head_sha, dirty_digest: digest} =
+    assert %{head_sha: head_sha, dirty_digest: digest} =
              Git.branch_fingerprint(repo)
 
     assert byte_size(head_sha) == 40
@@ -47,14 +46,14 @@ defmodule Rail.Git.Actions.BranchFingerprintTest do
     assert fp_clean.dirty_digest != fp_dirty.dirty_digest
   end
 
-  test "with ignore_rail: true excludes .rail directory from dirty digest" do
+  test "excludes .rail directory from dirty digest" do
     repo = create_temp_git_repo()
-    fp_clean = Git.branch_fingerprint(repo, ignore_rail: true)
+    fp_clean = Git.branch_fingerprint(repo)
 
     File.mkdir_p!(Path.join(repo, ".rail"))
     File.write!(Path.join(repo, ".rail/settings.json"), "{}\n")
 
-    fp_rail_dirty = Git.branch_fingerprint(repo, ignore_rail: true)
+    fp_rail_dirty = Git.branch_fingerprint(repo)
 
     assert fp_clean.dirty_digest == fp_rail_dirty.dirty_digest
   end

@@ -6,6 +6,10 @@
 
 @plugin "../vendor/phosphor-icons";
 
+/* Role icons are chosen at runtime (Rail.Roles.Schemas.Role.icon_names/0), so the
+   plugin never sees them as literals in scanned source. */
+@source inline("{pi-arrows-split,pi-book-open,pi-brain,pi-bug,pi-chat-text-fill,pi-check-square-fill,pi-clipboard-text,pi-code,pi-compass-tool,pi-cube,pi-detective,pi-eye,pi-flask,pi-gear,pi-globe-hemisphere-west,pi-lightbulb,pi-magnifying-glass,pi-paint-brush,pi-palette,pi-pen-nib,pi-robot,pi-rocket-launch,pi-ruler,pi-seal-check-fill,pi-shield-check,pi-terminal-window,pi-test-tube,pi-users-three,pi-video-camera,pi-wrench}");
+
 /* Theme is an explicit attribute on <html>, set server-side and by assets/js/hooks/theme.js. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 

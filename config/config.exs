@@ -16,6 +16,10 @@ config :logger, :default_formatter,
 
 config :phoenix, :json_library, Jason
 
+config :rail, Oban,
+  repo: Rail.Repo,
+  queues: [issues: 5]
+
 config :rail, Rail.Cache,
   gc_interval: to_timeout(hour: 12),
   max_size: 100_000,

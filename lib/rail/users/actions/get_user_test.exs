@@ -12,8 +12,8 @@ defmodule Rail.Users.Actions.GetUserTest do
                email: "getuser@example.com"
              })
 
-    assert {:ok, %User{id: ^user_id}} = Users.get_user(user_id)
-    assert {:error, :not_found} = Users.get_user("usr_nonexistent")
+    assert {:ok, %User{id: ^user_id}} = Users.get_user(id: user_id)
+    assert {:error, :not_found} = Users.get_user(id: "usr_nonexistent")
   end
 
   test "get_user/1 finds user by keyword list" do
@@ -26,20 +26,5 @@ defmodule Rail.Users.Actions.GetUserTest do
 
     assert {:ok, %User{id: ^user_id}} = Users.get_user(email: "keyword@example.com")
     assert {:error, :not_found} = Users.get_user(email: "nonexistent@example.com")
-  end
-
-  test "get_user!/1 returns user or raises" do
-    assert {:ok, %User{id: user_id}} =
-             Users.register_oauth_user(%{
-               github_id: "get_user_bang",
-               login: "get_user_bang",
-               email: "getuserbang@example.com"
-             })
-
-    assert %User{id: ^user_id} = Users.get_user!(user_id)
-
-    assert_raise Ecto.NoResultsError, fn ->
-      Users.get_user!("usr_nonexistent")
-    end
   end
 end

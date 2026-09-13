@@ -6,8 +6,8 @@ defmodule Rail.Runs.ClaudeEvents do
   and final execution results with cumulative usage accounting.
   """
 
-  alias Rail.Domain.TaskUsage
-  alias Rail.Runs.QuestionDetector
+  alias Rail.Runs.Schemas.Run
+  alias Rail.Runs
   alias Rail.Runs.ToolSummarizer
 
   defstruct [
@@ -15,11 +15,11 @@ defmodule Rail.Runs.ClaudeEvents do
     :task_id,
     :role_id,
     :result_error,
-    :detected_question,
+    detected_questions: [],
     logs: [],
     final_text: "",
     assistant_text: "",
-    usage: %TaskUsage{},
+    usage: %Run.Usage{},
     num_turns: 0,
     thinking_tokens: 0,
     saw_result: false
@@ -39,7 +39,7 @@ defmodule Rail.Runs.ClaudeEvents do
       conversation_id: opts[:conversation_id],
       task_id: opts[:task_id],
       role_id: opts[:role_id],
-      usage: opts[:usage] || %TaskUsage{},
+      usage: opts[:usage] || %Run.Usage{},
       num_turns: opts[:num_turns] || 0,
       thinking_tokens: opts[:thinking_tokens] || 0
     }
@@ -145,12 +145,13 @@ defmodule Rail.Runs.ClaudeEvents do
         state.result_error
       end
 
-    result_log = "[result] #{subtype} · #{TaskUsage.describe(usage)}"
+    result_log = "[result] #{subtype} · #{Run.usage(usage)}"
 
     %{
       state
       | saw_result: true,
         final_text: final_text,
+        detected_questions: absorb_questions(state, final_text),
         usage: usage,
         thinking_tokens: thinking_tokens,
         num_turns: num_turns,
@@ -181,25 +182,11 @@ defmodule Rail.Runs.ClaudeEvents do
       new_assistant_text = state.assistant_text <> text <> "\n"
       lines = String.split(text, "\n")
 
-      {new_logs, detected_question} =
-        Enum.reduce(lines, {state.logs, state.detected_question}, fn line, {logs_acc, q_acc} ->
-          new_q =
-            case q_acc do
-              %QuestionDetector{} = existing ->
-                existing
-
-              nil ->
-                QuestionDetector.detect_question(line, task_id: state.task_id, role_id: state.role_id)
-            end
-
-          {Enum.concat(logs_acc, [line]), new_q}
-        end)
-
       %{
         state
         | assistant_text: new_assistant_text,
-          logs: new_logs,
-          detected_question: detected_question
+          logs: Enum.concat(state.logs, lines),
+          detected_questions: absorb_questions(state, text)
       }
     end
   end
@@ -247,28 +234,11 @@ defmodule Rail.Runs.ClaudeEvents do
   defp extract_usage(event, current_usage) do
     case event["usage"] do
       %{} = u ->
-        cost =
-          case event["total_cost_usd"] do
-            num when is_number(num) ->
-              Decimal.new("#{num}")
-
-            str when is_binary(str) ->
-              case Decimal.parse(str) do
-                {d, ""} -> d
-                _parse_err -> nil
-              end
-
-            _other_cost ->
-              nil
-          end
-
-        %TaskUsage{
+        %Run.Usage{
           input_tokens: to_int(u["input_tokens"]),
           output_tokens: to_int(u["output_tokens"]),
           cache_read_input_tokens: to_int(u["cache_read_input_tokens"]),
-          cache_creation_input_tokens: to_int(u["cache_creation_input_tokens"]),
-          total_cost: cost,
-          currency: "USD"
+          cache_creation_input_tokens: to_int(u["cache_creation_input_tokens"])
         }
 
       _missing_usage ->
@@ -295,4 +265,12 @@ defmodule Rail.Runs.ClaudeEvents do
   end
 
   defp to_int(_other_val), do: 0
+
+  # Questions can surface in streamed assistant prose or only in the final result
+  # payload, so both feed the same accumulator. Order is kept and repeats collapse.
+  defp absorb_questions(%__MODULE__{} = state, text) do
+    state.detected_questions
+    |> Enum.concat(Runs.detect_questions(text, task_id: state.task_id, role_id: state.role_id))
+    |> Enum.uniq_by(&String.downcase(String.trim(&1.prompt || "")))
+  end
 end

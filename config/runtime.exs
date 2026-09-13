@@ -125,3 +125,7 @@ if config_env() == :prod do
     ],
     secret_key_base: secret_key_base
 end
+
+# The one gate on invoking an agent CLI. Read here so app code never touches the
+# environment directly.
+config :rail, :no_dispatch, System.get_env("RAIL_NO_DISPATCH") == "1"

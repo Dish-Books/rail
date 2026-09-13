@@ -16,6 +16,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                github_installation_id: 55_667,
                linear_team_id: "team_upd",
                linear_team_key: "ORIG",
+               default_branch: "main",
                clone_path: "/tmp/orig"
              })
 
@@ -25,29 +26,6 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                active: false,
                default_branch: "develop"
              })
-  end
-
-  test "admin updates project by string id" do
-    admin_scope = Scope.for_user(%{admin: true})
-    repo = "example/update-id-repo-#{System.unique_integer([:positive])}"
-
-    assert {:ok, %Project{id: project_id}} =
-             Projects.create_project(admin_scope, %{
-               name: "Project By ID",
-               github_repo: repo,
-               github_installation_id: 55_668,
-               linear_team_id: "team_by_id",
-               linear_team_key: "PBI",
-               clone_path: "/tmp/pbi"
-             })
-
-    assert {:ok, %Project{id: ^project_id, name: "Renamed Project"}} =
-             Projects.update_project(admin_scope, project_id, %{name: "Renamed Project"})
-  end
-
-  test "returns {:error, :not_found} when updating by non-existent string id" do
-    admin_scope = Scope.for_user(%{admin: true})
-    assert {:error, :not_found} = Projects.update_project(admin_scope, "prj_000000000000000000000000", %{name: "X"})
   end
 
   test "returns validation error changeset for invalid attributes" do
@@ -61,6 +39,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                github_installation_id: 55_669,
                linear_team_id: "team_inv",
                linear_team_key: "INV",
+               default_branch: "main",
                clone_path: "/tmp/inv"
              })
 
@@ -79,6 +58,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                github_installation_id: 55_670,
                linear_team_id: "team_guard",
                linear_team_key: "GRD",
+               default_branch: "main",
                clone_path: "/tmp/guard"
              })
 
@@ -97,6 +77,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                github_installation_id: 55_671,
                linear_team_id: "team_guard_nil",
                linear_team_key: "GRDN",
+               default_branch: "main",
                clone_path: "/tmp/guard_nil"
              })
 

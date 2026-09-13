@@ -1,7 +1,7 @@
 defmodule RailTest.GitHelpers do
   @moduledoc false
 
-  alias Rail.ToolEnv
+  alias Rail.Tools
 
   @doc """
   Creates a real temporary git repository on disk with initial commits.
@@ -12,8 +12,12 @@ defmodule RailTest.GitHelpers do
     branch = Keyword.get(opts, :branch, "main")
     initial_commit? = Keyword.get(opts, :initial_commit, true)
 
+    # unique_integer restarts per VM, so a dir left behind by a killed run can
+    # collide; the random suffix keeps each run's repos to itself.
     unique_id = System.unique_integer([:positive])
-    dir = Path.join("/tmp", "#{prefix}_#{unique_id}")
+    salt = Base.encode32(:crypto.strong_rand_bytes(5), case: :lower, padding: false)
+    dir = Path.join("/tmp", "#{prefix}_#{unique_id}_#{salt}")
+    File.rm_rf!(dir)
     File.mkdir_p!(dir)
 
     git!(dir, ["init", "-b", branch])
@@ -38,7 +42,7 @@ defmodule RailTest.GitHelpers do
   Executes a git command in the given directory and raises if it fails.
   """
   def git!(dir, args) do
-    case ToolEnv.run("git", args, cd: dir, stderr_to_stdout: true) do
+    case Tools.run("git", args, cd: dir, stderr_to_stdout: true) do
       {out, 0} ->
         out
 

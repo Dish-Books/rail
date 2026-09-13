@@ -1,9 +1,9 @@
 defmodule Rail.Runs.ClaudeEventsTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Domain.TaskUsage
+  alias Rail.Runs.Schemas.Run
   alias Rail.Runs.ClaudeEvents
-  alias Rail.Runs.QuestionDetector
+  alias Rail.Runs.DetectedQuestion
 
   test "parses system init event, captures session id and logs tool/server counts" do
     state = ClaudeEvents.new(task_id: "task-1", role_id: "role-1")
@@ -64,12 +64,11 @@ defmodule Rail.Runs.ClaudeEventsTest do
              "[QUESTION: Scope to one repo?] [OPTIONS: yes, no]"
            ]
 
-    assert %QuestionDetector{} = state.detected_question
-    assert state.detected_question.prompt == "Scope to one repo?"
-    assert state.detected_question.options == ["yes", "no"]
+    assert [%DetectedQuestion{prompt: "Scope to one repo?", options: ["yes", "no"]}] =
+             state.detected_questions
   end
 
-  test "assistant text ignores placeholder questions and keeps only the first question" do
+  test "assistant text ignores placeholder questions and keeps every real question" do
     state = ClaudeEvents.new(task_id: "tsk_1", role_id: "rol_eng")
 
     first_event = %{
@@ -82,7 +81,7 @@ defmodule Rail.Runs.ClaudeEventsTest do
     }
 
     state = ClaudeEvents.handle_event(state, first_event)
-    assert is_nil(state.detected_question)
+    assert state.detected_questions == []
 
     second_event = %{
       "type" => "assistant",
@@ -95,7 +94,11 @@ defmodule Rail.Runs.ClaudeEventsTest do
     }
 
     state = ClaudeEvents.handle_event(state, second_event)
-    assert state.detected_question.prompt == "First real question?"
+
+    assert Enum.map(state.detected_questions, & &1.prompt) == [
+             "First real question?",
+             "Second ignored question?"
+           ]
   end
 
   test "parses assistant tool_use event and logs tool summary" do
@@ -147,7 +150,7 @@ defmodule Rail.Runs.ClaudeEventsTest do
     state = ClaudeEvents.handle_event(state, event)
 
     assert state.logs == ["[tool error] File not found: /repo/missing.dart"]
-    assert is_nil(state.detected_question)
+    assert state.detected_questions == []
   end
 
   test "rate_limit_event logs when status is not allowed" do
@@ -182,7 +185,6 @@ defmodule Rail.Runs.ClaudeEventsTest do
       "session_id" => "sess-final-1",
       "result" => "All done.",
       "num_turns" => 3,
-      "total_cost_usd" => 0.125,
       "usage" => %{
         "input_tokens" => 10,
         "output_tokens" => 20,
@@ -200,25 +202,23 @@ defmodule Rail.Runs.ClaudeEventsTest do
     assert state.num_turns == 3
     assert state.thinking_tokens == 7
 
-    assert %TaskUsage{} = state.usage
+    assert %Run.Usage{} = state.usage
     assert state.usage.input_tokens == 10
     assert state.usage.output_tokens == 20
     assert state.usage.cache_read_input_tokens == 1000
     assert state.usage.cache_creation_input_tokens == 500
-    assert Decimal.equal?(state.usage.total_cost, Decimal.new("0.125"))
 
     assert ClaudeEvents.success?(state)
     refute ClaudeEvents.reported_failure?(state)
     assert Enum.any?(state.logs, &(&1 =~ "[result] success"))
   end
 
-  test "result event with string cost and float turns parses correctly" do
+  test "result event with string and float token counts parses correctly" do
     state = ClaudeEvents.new()
 
     event = %{
       "type" => "result",
       "subtype" => "success",
-      "total_cost_usd" => "0.0450",
       "num_turns" => 2,
       "usage" => %{
         "input_tokens" => "100",
@@ -227,7 +227,6 @@ defmodule Rail.Runs.ClaudeEventsTest do
     }
 
     state = ClaudeEvents.handle_event(state, event)
-    assert Decimal.equal?(state.usage.total_cost, Decimal.new("0.0450"))
     assert state.usage.input_tokens == 100
     assert state.usage.output_tokens == 50
   end
@@ -296,7 +295,7 @@ defmodule Rail.Runs.ClaudeEventsTest do
     assert is_nil(state.conversation_id)
   end
 
-  test "handles result event with empty final_text on error and invalid cost string" do
+  test "handles result event with empty final_text on error and an unreadable token count" do
     state = ClaudeEvents.new()
 
     event = %{
@@ -304,7 +303,6 @@ defmodule Rail.Runs.ClaudeEventsTest do
       "subtype" => "error_empty",
       "result" => "",
       "is_error" => true,
-      "total_cost_usd" => "invalid_cost",
       "usage" => %{
         "input_tokens" => "bad_int",
         "output_tokens_details" => %{"thinking_tokens" => "15"}
@@ -314,7 +312,6 @@ defmodule Rail.Runs.ClaudeEventsTest do
     state = ClaudeEvents.handle_event(state, event)
 
     assert state.result_error == "claude reported error_empty"
-    assert is_nil(state.usage.total_cost)
     assert state.usage.input_tokens == 0
     assert state.thinking_tokens == 15
   end

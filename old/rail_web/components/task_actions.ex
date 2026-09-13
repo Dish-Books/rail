@@ -1,0 +1,400 @@
+defmodule RailWeb.Components.TaskActions do
+  @moduledoc """
+  Task actions wrap component rendering the exact action button matrix
+  for a task moving through the pipeline, including trailing common actions,
+  enable/disable states, and progress spinners.
+  """
+
+  use RailWeb, :html
+
+  import RailWeb.CoreComponents, only: [icon: 1]
+
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.TaskActionRunner
+  alias Rail.Runs.Schemas.Run
+
+  attr :task, :any, required: true
+  attr :run, :any, default: nil
+  attr :running_action, :atom, default: nil
+  attr :design, :any, default: nil
+  attr :on_action, :string, default: "action_click"
+  attr :id, :string, default: "task-actions"
+  attr :class, :string, default: nil
+
+  def task_actions(assigns) do
+    assigns = assign(assigns, :actions, build_actions(assigns.task, assigns.run, assigns.design))
+
+    ~H"""
+    <div
+      id={@id}
+      data-qa="task-actions"
+      class={["flex flex-wrap items-center gap-2", @class]}
+    >
+      <%= for action <- @actions do %>
+        <% is_disabled = action_disabled?(@run, action.kind, @running_action)
+
+        show_spinner =
+          @running_action == action.kind and TaskActionRunner.shows_progress?(action.kind)
+
+        data_qa =
+          if String.starts_with?(action.id, "action-pick-design-") do
+            "#{action.id} pick-direction-button"
+          else
+            action.id
+          end %>
+        <button
+          type="button"
+          id={action.id}
+          data-qa={data_qa}
+          disabled={is_disabled}
+          phx-click={@on_action}
+          phx-value-action={action.action}
+          phx-value-kind={action.kind}
+          phx-value-direction_key={Map.get(action.params, :direction_key)}
+          phx-value-ignore_conflicts={
+            if Map.get(action.params, :ignore_conflicts), do: "true", else: "false"
+          }
+          class={[
+            button_style_class(action.style),
+            is_disabled && "opacity-40 cursor-not-allowed pointer-events-none"
+          ]}
+        >
+          <%= if show_spinner do %>
+            <svg
+              class="animate-spin h-4 w-4 shrink-0 text-current"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              data-qa="action-spinner"
+            >
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
+              </circle>
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              >
+              </path>
+            </svg>
+          <% else %>
+            <.icon :if={action.icon} name={action.icon} class="h-4 w-4 shrink-0" />
+          <% end %>
+          <span>{action.label}</span>
+        </button>
+      <% end %>
+    </div>
+    """
+
+    # Helpers for building the exact action list per spec 05 §6.3 and §6.4
+  end
+
+  defp build_actions(nil, _run, _design), do: []
+
+  defp build_actions(task, run, design) do
+    is_merged = merged?(task)
+    conflicted = Task.conflicted?(task) and not is_merged
+
+    {stage_actions, rebase_offered} =
+      if is_merged do
+        {[], false}
+      else
+        build_stage_actions(task, run, design, conflicted)
+      end
+
+    stage_actions ++ build_trailing_actions(task, run, conflicted, rebase_offered)
+  end
+
+  defp build_stage_actions(task, run, design, conflicted) do
+    case Run.state(run) do
+      :done ->
+        build_awaiting_approval_actions(task, run, design, conflicted)
+
+      :failed ->
+        {build_failed_actions(task), false}
+
+      # Stopping a run is done in the conversation with the role doing the work,
+      # where the human can see what they are interrupting.
+      :running ->
+        {[], false}
+
+      :queued ->
+        {[], false}
+
+      :blocked ->
+        {[], false}
+
+      _other ->
+        {[], false}
+    end
+  end
+
+  defp build_awaiting_approval_actions(task, _run, design, conflicted) do
+    cond do
+      task.stage == :ready_to_merge ->
+        build_ready_to_merge_actions(task, conflicted)
+
+      task.stage == :design and is_nil(picked_key(design)) ->
+        build_design_pick_actions(design)
+
+      Task.gate?(task.stage) ->
+        actions = [
+          %{
+            id: "action-send-back-to-engineer",
+            label: "Send back to Engineer",
+            kind: :send_back,
+            style: :filled,
+            icon: "pi-arrow-counter-clockwise",
+            action: "send_back_to_engineer",
+            params: %{}
+          }
+        ]
+
+        {actions, false}
+
+      true ->
+        # Approving is stage-specific and has no action behind it yet.
+        {[], false}
+    end
+  end
+
+  defp build_ready_to_merge_actions(task, conflicted) do
+    draft = task.pr_is_draft == true and is_integer(task.pr_number)
+
+    send_back_btn = %{
+      id: "action-send-back-to-engineer",
+      label: "Send back to Engineer",
+      kind: :send_back,
+      style: :outlined,
+      icon: "pi-arrow-counter-clockwise",
+      action: "send_back_to_engineer",
+      params: %{}
+    }
+
+    cond do
+      conflicted ->
+        rebase_btn = %{
+          id: "action-rebase",
+          label: "Rebase branch",
+          kind: :rebase,
+          style: :filled,
+          icon: "pi-git-merge",
+          action: "rebase",
+          params: %{}
+        }
+
+        if draft do
+          mark_ready_btn = %{
+            id: "action-mark-ready",
+            label: "Mark ready for review",
+            kind: :mark_ready,
+            style: :outlined,
+            icon: "pi-chat-text",
+            action: "mark_ready",
+            params: %{}
+          }
+
+          {[rebase_btn, mark_ready_btn, send_back_btn], true}
+        else
+          merge_anyway_btn = %{
+            id: "action-merge-anyway",
+            label: "Merge anyway",
+            kind: :merge,
+            style: :outlined,
+            icon: "pi-git-merge",
+            action: "merge",
+            params: %{ignore_conflicts: true}
+          }
+
+          {[rebase_btn, merge_anyway_btn, send_back_btn], true}
+        end
+
+      not draft ->
+        merge_btn = %{
+          id: "action-merge",
+          label: "Merge pull request",
+          kind: :merge,
+          style: :filled,
+          icon: "pi-git-merge",
+          action: "merge",
+          params: %{ignore_conflicts: false}
+        }
+
+        {[merge_btn, send_back_btn], false}
+
+      draft ->
+        mark_ready_btn = %{
+          id: "action-mark-ready",
+          label: "Mark ready for review",
+          kind: :mark_ready,
+          style: :filled,
+          icon: "pi-chat-text",
+          action: "mark_ready",
+          params: %{}
+        }
+
+        {[mark_ready_btn, send_back_btn], false}
+    end
+  end
+
+  defp build_design_pick_actions(design) do
+    pickable = directions(design)
+
+    direction_actions =
+      Enum.map(pickable, fn dir ->
+        %{
+          id: "action-pick-design-#{dir.key}",
+          label: "Use #{dir.title}",
+          kind: :approve,
+          style: :filled,
+          icon: "pi-check",
+          action: "pick_design_direction",
+          params: %{direction_key: dir.key}
+        }
+      end)
+
+    {direction_actions, false}
+  end
+
+  defp build_failed_actions(task) do
+    stage_specific =
+      case task.stage do
+        :demo ->
+          [
+            %{
+              id: "action-rerecord-demo",
+              label: "Re-record demo",
+              kind: :retry,
+              style: :filled,
+              icon: "pi-arrow-clockwise",
+              action: "rerecord_demo",
+              params: %{}
+            }
+          ]
+
+        :design ->
+          [
+            %{
+              id: "action-recheck-design",
+              label: "Design is done",
+              kind: :recheck_design,
+              style: :filled,
+              icon: "pi-check-square",
+              action: "recheck_design",
+              params: %{}
+            },
+            %{
+              id: "action-retry",
+              label: "Re-run designer",
+              kind: :retry,
+              style: :outlined,
+              icon: "pi-arrow-clockwise",
+              action: "retry",
+              params: %{}
+            }
+          ]
+
+        _other ->
+          [
+            %{
+              id: "action-retry",
+              label: "Retry",
+              kind: :retry,
+              style: :filled,
+              icon: "pi-arrow-clockwise",
+              action: "retry",
+              params: %{}
+            }
+          ]
+      end
+
+    stage_specific
+  end
+
+  defp build_trailing_actions(task, run, conflicted, rebase_offered) do
+    chat_btn = %{
+      id: "action-chat",
+      label: "Chat",
+      kind: nil,
+      style: :outlined,
+      icon: "pi-chat-circle",
+      action: "chat",
+      params: %{}
+    }
+
+    cleanup_btn = %{
+      id: "action-cleanup",
+      label: "Clean up",
+      kind: :cleanup,
+      style: :text,
+      icon: "pi-trash",
+      action: "cleanup",
+      params: %{}
+    }
+
+    trailing = [chat_btn]
+
+    trailing =
+      if conflicted and not rebase_offered and not Run.running?(run) do
+        rebase_btn = %{
+          id: "action-rebase",
+          label: "Rebase branch",
+          kind: :rebase,
+          style: :outlined,
+          icon: "pi-git-merge",
+          action: "rebase",
+          params: %{}
+        }
+
+        [rebase_btn | trailing]
+      else
+        trailing
+      end
+
+    has_diff = not Task.before?(task.stage, :engineer)
+
+    trailing =
+      if has_diff do
+        diff_btn = %{
+          id: "action-view-diff",
+          label: "View diff",
+          kind: nil,
+          style: :text,
+          icon: "pi-git-diff",
+          action: "diff",
+          params: %{}
+        }
+
+        [diff_btn | trailing]
+      else
+        trailing
+      end
+
+    Enum.reverse([cleanup_btn | trailing])
+  end
+
+  defp action_disabled?(_run, nil, _running_kind), do: false
+  defp action_disabled?(run, _kind, running_kind), do: running_kind != nil or Run.running?(run)
+
+  defp button_style_class(:filled) do
+    "px-4 py-2 rounded-full text-xs font-semibold inline-flex items-center gap-2 transition-colors bg-blue-600 dark:bg-blue-500 text-white hover:bg-blue-600 dark:hover:bg-blue-500/90 cursor-pointer shadow-xs"
+  end
+
+  defp button_style_class(:outlined) do
+    "px-4 py-2 rounded-full text-xs font-semibold inline-flex items-center gap-2 transition-colors border border-slate-500 dark:border-slate-400 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+  end
+
+  defp button_style_class(:text) do
+    "px-3 py-2 rounded-full text-xs font-semibold inline-flex items-center gap-2 transition-colors text-blue-600 dark:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+  end
+
+  defp merged?(task) do
+    task.stage == :merged or is_struct(task.merged_at, DateTime)
+  end
+
+  # The design is handed in by whoever is drawing this; a task carries no copy.
+  defp picked_key(%{picked_key: picked_key}), do: picked_key
+  defp picked_key(_no_design), do: nil
+
+  defp directions(%{directions: directions}) when is_list(directions), do: directions
+  defp directions(_no_design), do: []
+end

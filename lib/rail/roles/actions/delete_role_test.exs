@@ -7,6 +7,9 @@ defmodule Rail.Roles.Actions.DeleteRoleTest do
   alias Rail.Scope
 
   setup do
+    {:ok, backend} =
+      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, project} =
@@ -16,11 +19,13 @@ defmodule Rail.Roles.Actions.DeleteRoleTest do
         github_installation_id: 4104,
         linear_team_id: "team_delete_role",
         linear_team_key: "DLR",
+        default_branch: "main",
         clone_path: "/tmp/repos/delete-role"
       })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{
+        backend_id: backend.id,
         name: "Engineer",
         stage: :engineer,
         model: "claude-3-7-sonnet",
@@ -34,7 +39,7 @@ defmodule Rail.Roles.Actions.DeleteRoleTest do
     scope = Scope.for_user(%{admin: true})
 
     assert {:ok, %Role{id: ^role_id}} = Roles.delete_role(scope, role)
-    assert Roles.get_role(scope, role.id) == {:error, :not_found}
+    assert Roles.get_role(id: role.id) == {:error, :role_not_found}
   end
 
   test "deletes role with system scope", %{role: %Role{id: role_id} = role} do
@@ -47,7 +52,7 @@ defmodule Rail.Roles.Actions.DeleteRoleTest do
     scope = Scope.for_user(%{admin: false})
 
     assert {:error, :not_authorized} = Roles.delete_role(scope, role)
-    assert {:ok, %Role{id: ^role_id}} = Roles.get_role(Scope.for_system(), role.id)
+    assert {:ok, %Role{id: ^role_id}} = Roles.get_role(id: role.id)
   end
 
   test "returns not authorized for nil scope", %{role: role} do

@@ -1,9 +1,10 @@
 defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
   use Rail.DataCase, async: true
 
-  import Ecto.Query
+  import Rail.Pipeline.Utils.QuestionQueue
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
@@ -11,30 +12,30 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
-  alias Rail.Runs.QuestionDetector
-  alias Rail.Runs.Schemas.RoleRun
-  alias Rail.Runs.Schemas.RunEvent
+  alias Rail.Runs.DetectedQuestion
+  alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
-    scope = system_scope()
+    {:ok, backend} =
+      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Register Question Workspace",
-        external_id: "lin_ws_register_question",
-        token: "lin_api_token_register_question",
-        webhook_secret: "whsec_register_question"
-      })
+    scope = system_scope()
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Register Question Project 7901",
         github_repo: "org/register-question-7901",
         github_installation_id: 7901,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Register Question Workspace",
+          external_id: "lin_ws_register_question",
+          token: "lin_api_token_register_question",
+          webhook_secret: "whsec_register_question"
+        },
         linear_team_id: "team_register_question_7901",
         linear_team_key: "P7901",
+        default_branch: "main",
         clone_path: "/tmp/repos/register-question-7901",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -49,6 +50,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
+            backend_id: backend.id,
             stage: stage,
             name: "#{stage} role",
             model: "claude-3-7-sonnet",
@@ -64,35 +66,34 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
       "title" => "Register Question Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Register Question Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Register Question Issue"})
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_register_question_1"})
-
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "registers a detected question struct and blocks task and role run", %{task: task, roles: roles} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-
+  test "registers a detected question struct and blocks task and run", %{task: task, roles: roles} do
     role = roles[:engineer]
 
-    {:ok, %Task{id: task_id, title: task_title}} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :engineer,
-        stage_state: :running
+    {:ok, %Task{id: task_id} = task} =
+      Pipeline.update_task(task, %{
+        stage: :engineer
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    task_title = Repo.get!(Issue, task.issue_id).title
+
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task_id,
         role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
 
-    detector = %QuestionDetector{
+    run = Repo.preload(run, task: :issue)
+
+    detector = %DetectedQuestion{
       prompt: "Use Postgres or SQLite?",
       options: ["Postgres", "SQLite"],
       task_id: task_id,
@@ -106,72 +107,75 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
               prompt: "Use Postgres or SQLite?",
               options: ["Postgres", "SQLite"],
               status: :pending
-            }} = Pipeline.register_question(task_id, role_run.id, detector)
+            }} = Pipeline.register_question(run, detector)
 
-    assert %Task{stage_state: :blocked, question_id: ^q_id} = Repo.get!(Task, task_id)
-    assert %RoleRun{status: :blocked_on_input} = Repo.get!(RoleRun, role_run.id)
-
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :question_registered}}
+    assert %Task{} = Repo.get!(Task, task_id)
+    assert Enum.map(pending_questions(task_id), & &1.id) == [q_id]
+    assert %Run{status: :blocked_on_input} = Repo.get!(Run, run.id)
   end
 
   test "registers question using raw string with marker", %{task: task, roles: roles} do
     role = roles[:engineer]
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :engineer,
-        stage_state: :running
+      Pipeline.update_task(task, %{
+        stage: :engineer
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
 
-    raw_text = "[QUESTION: Which cache backend?] [OPTIONS: Redis, ETS]"
+    run = Repo.preload(run, task: :issue)
+
+    detected = Runs.detect_question("[QUESTION: Which cache backend?] [OPTIONS: Redis, ETS]")
 
     assert {:ok, %Question{prompt: "Which cache backend?", options: ["Redis", "ETS"]}} =
-             Pipeline.register_question(task, role_run, raw_text)
+             Pipeline.register_question(run, detected)
   end
 
-  test "registers question using map attributes and resolves role when role_run is nil", %{task: task, roles: roles} do
-    _role = roles[:engineer]
-
+  test "belongs to the run that asked", %{task: task, roles: roles} do
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :engineer,
-        stage_state: :running
+      Pipeline.update_task(task, %{
+        stage: :engineer
       })
 
-    map_attrs = %{
-      prompt: "Map prompt question?",
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    %Run{id: expected_run_id} = run = Repo.preload(run, task: :issue)
+
+    question = %DetectedQuestion{
+      prompt: "Which cache eviction policy?",
       options: ["Yes", "No"],
       context_summary: "Context details"
     }
 
-    assert {:ok, %Question{prompt: "Map prompt question?", options: ["Yes", "No"]}} =
-             Pipeline.register_question(task, map_attrs)
+    assert {:ok, %Question{prompt: "Which cache eviction policy?", options: ["Yes", "No"], run_id: ^expected_run_id}} =
+             Pipeline.register_question(run, question)
 
-    reloaded = Repo.get!(Task, task.id)
-    assert reloaded.stage_state == :blocked
+    assert %Task{} = Repo.get!(Task, task.id)
   end
 
-  test "duplicate suppression: drops question if role_run has pending_answer", %{task: task, roles: roles} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "run:test_role_run")
-
+  test "files the question even when a reply is already queued on the run", %{task: task, roles: roles} do
     role = roles[:engineer]
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :engineer,
-        stage_state: :running
+      Pipeline.update_task(task, %{
+        stage: :engineer
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :running,
@@ -179,19 +183,15 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
         pending_answer: "Previous queued answer from human"
       })
 
-    detector = %QuestionDetector{prompt: "Should I proceed anyway?", options: []}
+    run = Repo.preload(run, task: :issue)
 
-    assert {:ok, :dropped} = Pipeline.register_question(task.id, role_run.id, detector)
+    detector = %DetectedQuestion{prompt: "Should I proceed anyway?", options: []}
 
-    # Task is NOT blocked
-    reloaded_task = Repo.get!(Task, task.id)
-    assert reloaded_task.stage_state == :running
-    assert is_nil(reloaded_task.question_id)
+    assert {:ok, %Question{id: question_id}} = Pipeline.register_question(run, detector)
 
-    # Run event recorded
-    events = Repo.all(from e in RunEvent, where: e.role_run_id == ^role_run.id)
-    assert length(events) == 1
-    assert hd(events).line =~ "Question asked before the human reply reached this role"
+    assert %Task{} = Repo.get!(Task, task.id)
+    assert Enum.map(pending_questions(task.id), & &1.id) == [question_id]
+    assert %Run{status: :blocked_on_input, pending_answer: "Previous queued answer from human"} = Repo.get!(Run, run.id)
   end
 
   test "duplicate suppression: reuses existing pending question with case-insensitively identical prompt", %{
@@ -201,89 +201,90 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     role = roles[:engineer]
 
     {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :engineer,
-        stage_state: :running
+      Pipeline.update_task(task, %{
+        stage: :engineer
       })
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
 
+    run = Repo.preload(run, task: :issue)
+
     {:ok, %Question{id: existing_id}} =
-      Pipeline.register_question(task, %{
+      Pipeline.register_question(run, %DetectedQuestion{
         prompt: "Should we use PostgreSQL?",
         role_id: role.id
       })
 
     # Incoming question has different casing and extra spaces
-    detector = %QuestionDetector{prompt: "  should we use postgresql?  ", options: []}
+    detector = %DetectedQuestion{prompt: "  should we use postgresql?  ", options: []}
 
-    assert {:ok, %Question{id: ^existing_id}} = Pipeline.register_question(task, role_run, detector)
+    assert {:ok, %Question{id: ^existing_id}} = Pipeline.register_question(run, detector)
 
-    assert %Task{stage_state: :blocked, question_id: ^existing_id} = Repo.get!(Task, task.id)
+    assert %Task{} = Repo.get!(Task, task.id)
+    assert Enum.map(pending_questions(task.id), & &1.id) == [existing_id]
   end
 
-  test "single-question-per-run limit: ignores question if task is already blocked on a question", %{
+  test "a second question queues behind the one the task is parked on", %{
     task: task,
     roles: roles
   } do
     role = roles[:engineer]
 
-    {:ok, q} =
-      Pipeline.register_question(task, %{
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    run = Repo.preload(run, task: :issue)
+
+    {:ok, %Question{id: first_id}} =
+      Pipeline.register_question(run, %DetectedQuestion{
         prompt: "Question prompt 7909?"
       })
 
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage_state: :blocked,
-        question_id: q.id
-      })
+    {:ok, task} = Pipeline.update_task(task, %{})
 
-    {:ok, role_run} =
-      Runs.create_role_run(%{
+    {:ok, run} =
+      Runs.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :blocked_on_input,
         started_at: DateTime.utc_now()
       })
 
-    detector = %QuestionDetector{prompt: "Second question in same run?", options: []}
+    run = Repo.preload(run, task: :issue)
 
-    assert {:ok, :already_registered} = Pipeline.register_question(task, role_run, detector)
-    assert Repo.get!(Task, task.id).question_id == q.id
+    detector = %DetectedQuestion{prompt: "Second question in same run?", options: []}
+
+    assert {:ok, %Question{id: second_id}} = Pipeline.register_question(run, detector)
+
+    # The second question queues behind the first: the human keeps answering the one
+    # already in front, and the stage stays parked.
+    assert %Task{} = Repo.get!(Task, task.id)
+
+    assert Enum.map(pending_questions(task.id), & &1.id) == [first_id, second_id]
   end
 
-  test "error cases: not found, invalid prompt, no question detected", %{project: project, task: task} do
-    assert {:error, :task_not_found} = Pipeline.register_question("tsk_missing", %{prompt: "Q?"})
-    assert {:error, :task_not_found} = Pipeline.register_question(123, %{prompt: "Q?"})
-
-    # Task without a role resolves role_id to nil
-    {:ok, task_no_role} =
-      Pipeline.update_task(system_scope(), task.id, %{
-        stage: :design
+  test "rejects a blank prompt", %{task: task, roles: roles} do
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :running,
+        started_at: DateTime.utc_now()
       })
 
-    assert {:ok, %Question{prompt: "Q?"}} = Pipeline.register_question(task_no_role, %{prompt: "Q?"}, [])
+    run = Repo.preload(run, task: :issue)
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_register_question_7902",
-      "identifier" => "TSK-7902",
-      "title" => "Task 7902"
-    })
-
-    {:ok, issue_7902} = Issues.capture_issue(system_scope(), project, "Task 7902")
-
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_register_question_7902"})
-
-    {:ok, task} = Pipeline.bring_local(system_scope(), issue_7902)
-    assert {:error, :invalid_prompt} = Pipeline.register_question(task, %{prompt: "   "})
-    assert {:error, :no_question_detected} = Pipeline.register_question(task, "Just some prose text")
-    assert {:error, :invalid_question_attrs} = Pipeline.register_question(task, 12_345)
+    assert {:error, :invalid_prompt} = Pipeline.register_question(run, %DetectedQuestion{prompt: "   "})
   end
 end

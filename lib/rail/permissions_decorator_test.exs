@@ -51,9 +51,9 @@ defmodule Rail.PermissionsDecoratorTest do
       assert {:ok, {^scope, "prj_123"}} = TestActions.get_project(scope, "prj_123")
     end
 
-    test "regular user scope passes view but denied manage/create" do
+    test "regular user scope is denied" do
       scope = Scope.user_scope(admin: false)
-      assert {:ok, {^scope, "prj_123"}} = TestActions.get_project(scope, "prj_123")
+      assert {:error, :not_authorized} = TestActions.get_project(scope, "prj_123")
       assert {:error, :not_authorized} = TestActions.create_project(scope, %{name: "Test"})
     end
 

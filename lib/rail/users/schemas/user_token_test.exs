@@ -13,42 +13,28 @@ defmodule Rail.Users.Schemas.UserTokenTest do
                email: "tokuser@example.com"
              })
 
-    assert {token, %UserToken{token: token, context: "session", user_id: ^user_id}} =
+    assert {token, %UserToken{context: "session", user_id: ^user_id} = user_token} =
              UserToken.build_session_token(%User{id: user_id})
 
     assert byte_size(token) == 32
+
+    digest = :crypto.hash(:sha256, token)
+    assert %UserToken{token: ^digest} = user_token
+    refute user_token.token == token
   end
 
-  test "verify_session_token_query returns query that finds valid token" do
-    assert {:ok, %User{id: user_id} = user} =
+  test "build_session_token never stores the raw token" do
+    assert {:ok, user} =
              Users.register_oauth_user(%{
-               github_id: "verify_tok_gh",
-               login: "verify_user",
-               email: "verifyuser@example.com"
+               github_id: "raw_tok_gh",
+               login: "raw_tok_user",
+               email: "rawtok@example.com"
              })
 
     {token, user_token} = UserToken.build_session_token(user)
     Repo.insert!(user_token)
 
-    assert {:ok, query} = UserToken.verify_session_token_query(token)
-    assert {%{id: ^user_id}, _inserted_at} = Repo.one(query)
-  end
-
-  test "verify_session_token_query excludes expired tokens" do
-    assert {:ok, user} =
-             Users.register_oauth_user(%{
-               github_id: "expired_tok_gh",
-               login: "expired_user",
-               email: "expireduser@example.com"
-             })
-
-    {token, user_token} = UserToken.build_session_token(user)
-
-    fifteen_days_ago = DateTime.shift(DateTime.utc_now(), day: -15)
-
-    Repo.insert!(%{user_token | inserted_at: fifteen_days_ago})
-
-    assert {:ok, query} = UserToken.verify_session_token_query(token)
-    assert is_nil(Repo.one(query))
+    assert is_nil(Repo.get_by(UserToken, token: token))
+    assert %UserToken{} = Repo.get_by(UserToken, token: :crypto.hash(:sha256, token))
   end
 end

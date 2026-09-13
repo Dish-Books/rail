@@ -4,17 +4,11 @@ defmodule RailWeb.IssuesLiveTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Issues
-  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
-  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
-  alias RailWeb.Components.ArchiveIssueModal
-  alias RailWeb.Components.IssueCard
-  alias RailWeb.Components.IssueEditorModal
-  alias RailWeb.IssuesLive
 
   test "redirects unauthenticated user to /auth/github", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/auth/github"}}} = live(conn, ~p"/issues")
@@ -62,21 +56,20 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: project_id, name: project_name}} =
              Projects.create_project(scope, %{
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13212",
+                 external_id: "lin_ws_issues_live_13212_x7",
+                 token: "lin_api_token_issues_live_13212",
+                 webhook_secret: "whsec_issues_live_13212"
+               },
                name: "Issues Project",
                github_repo: "example/issues-project",
                github_installation_id: 601,
                linear_team_id: "t_iss",
                linear_team_key: "ISS",
+               default_branch: "main",
                clone_path: "/tmp/issues-project",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -131,21 +124,20 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13212",
+                 external_id: "lin_ws_issues_live_13212_x8",
+                 token: "lin_api_token_issues_live_13212",
+                 webhook_secret: "whsec_issues_live_13212"
+               },
                name: "Demo Project",
                github_repo: "example/demo-project",
                github_installation_id: 701,
                linear_team_id: "t_demo",
                linear_team_key: "DEMO",
+               default_branch: "main",
                clone_path: "/tmp/demo-project",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -157,14 +149,10 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "Deduplicated title"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Deduplicated title")
-
-    LinearMock.mock_update_issue_success(%{"id" => "lin_issues_live_13201"})
-
-    LinearMock.mock_update_issue_success(%{"id" => issue.external_id})
+    {:ok, issue} = Issues.create_issue(project, %{description: "Deduplicated title"})
 
     {:ok, issue} =
-      Issues.update_issue(system_scope(), issue, %{
+      Issues.update_issue(issue, %{
         description: "Deduplicated title\nDetailed explanation of the issue.",
         priority: :urgent,
         state: :in_progress,
@@ -189,7 +177,7 @@ defmodule RailWeb.IssuesLiveTest do
              "Dedicated Worktree: .worktrees/feat-demo-101"
            )
 
-    assert has_element?(view, "#bring-local-#{issue.id}", "Bring local")
+    assert has_element?(view, "#start-product-run-#{issue.id}", "Start")
     assert has_element?(view, "#archive-issue-#{issue.id}")
   end
 
@@ -205,21 +193,20 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13212",
+                 external_id: "lin_ws_issues_live_13212_x9",
+                 token: "lin_api_token_issues_live_13212",
+                 webhook_secret: "whsec_issues_live_13212"
+               },
                name: "Priority Project",
                github_repo: "example/priority-project",
                github_installation_id: 702,
                linear_team_id: "t_prio",
                linear_team_key: "PRIO",
+               default_branch: "main",
                clone_path: "/tmp/priority-project",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -231,10 +218,10 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "Urgent issue"
     })
 
-    {:ok, issue_urgent} = Issues.capture_issue(system_scope(), project, "Urgent issue")
+    {:ok, issue_urgent} = Issues.create_issue(project, %{description: "Urgent issue"})
 
     {:ok, issue_urgent} =
-      Issues.update_issue(system_scope(), issue_urgent, %{
+      Issues.update_issue(issue_urgent, %{
         priority: :urgent,
         state: :backlog
       })
@@ -245,10 +232,10 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "High issue 1"
     })
 
-    {:ok, issue_high_1} = Issues.capture_issue(system_scope(), project, "High issue 1")
+    {:ok, issue_high_1} = Issues.create_issue(project, %{description: "High issue 1"})
 
     {:ok, issue_high_1} =
-      Issues.update_issue(system_scope(), issue_high_1, %{
+      Issues.update_issue(issue_high_1, %{
         priority: :high,
         state: :backlog
       })
@@ -259,10 +246,10 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "High issue 2"
     })
 
-    {:ok, issue_high_2} = Issues.capture_issue(system_scope(), project, "High issue 2")
+    {:ok, issue_high_2} = Issues.create_issue(project, %{description: "High issue 2"})
 
     {:ok, issue_high_2} =
-      Issues.update_issue(system_scope(), issue_high_2, %{
+      Issues.update_issue(issue_high_2, %{
         priority: :high,
         state: :backlog
       })
@@ -273,10 +260,10 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "Low issue"
     })
 
-    {:ok, issue_low} = Issues.capture_issue(system_scope(), project, "Low issue")
+    {:ok, issue_low} = Issues.create_issue(project, %{description: "Low issue"})
 
     {:ok, issue_low} =
-      Issues.update_issue(system_scope(), issue_low, %{
+      Issues.update_issue(issue_low, %{
         priority: :low,
         state: :backlog
       })
@@ -303,9 +290,9 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#issue-card-#{issue_high_2.id}")
     refute has_element?(view, "#issue-card-#{issue_low.id}")
 
-    # Clicking High again toggles off
+    # Clicking High again keeps it filtered; only the All chip clears
     view |> element("#filter-priority-high") |> render_click()
-    assert has_element?(view, "#issue-card-#{issue_urgent.id}")
+    refute has_element?(view, "#issue-card-#{issue_urgent.id}")
     assert has_element?(view, "#issue-card-#{issue_high_1.id}")
 
     # Select Urgent filter
@@ -318,9 +305,10 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#issue-card-#{issue_urgent.id}")
     assert has_element?(view, "#issue-card-#{issue_high_1.id}")
 
-    # Priority with unknown string
+    # A priority nothing has matches nothing
     view |> element("#filter-priority-all") |> render_click(%{"priority" => "invalid_prio"})
-    assert has_element?(view, "#issue-card-#{issue_urgent.id}")
+    refute has_element?(view, "#issue-card-#{issue_urgent.id}")
+    refute has_element?(view, "#issue-card-#{issue_high_1.id}")
   end
 
   test "toggles Show finished filter chip", %{conn: conn} do
@@ -335,21 +323,20 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13212",
+                 external_id: "lin_ws_issues_live_13212_x10",
+                 token: "lin_api_token_issues_live_13212",
+                 webhook_secret: "whsec_issues_live_13212"
+               },
                name: "Finished Project",
                github_repo: "example/finished-project",
                github_installation_id: 703,
                linear_team_id: "t_fin",
                linear_team_key: "FIN",
+               default_branch: "main",
                clone_path: "/tmp/finished-project",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -361,12 +348,10 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "Active task"
     })
 
-    {:ok, active_issue} = Issues.capture_issue(system_scope(), project, "Active task")
-
-    LinearMock.mock_update_issue_success(%{"id" => active_issue.external_id})
+    {:ok, active_issue} = Issues.create_issue(project, %{description: "Active task"})
 
     {:ok, active_issue} =
-      Issues.update_issue(system_scope(), active_issue, %{
+      Issues.update_issue(active_issue, %{
         state: :in_progress
       })
 
@@ -376,10 +361,10 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "Done task"
     })
 
-    {:ok, done_issue} = Issues.capture_issue(system_scope(), project, "Done task")
+    {:ok, done_issue} = Issues.create_issue(project, %{description: "Done task"})
 
     {:ok, done_issue} =
-      Issues.update_issue(system_scope(), done_issue, %{
+      Issues.update_issue(done_issue, %{
         state: :done
       })
 
@@ -397,7 +382,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#filter-priority-all", "All (2)")
 
     # Finished issue has no Bring local button and no task link
-    refute has_element?(view, "#bring-local-#{done_issue.id}")
+    refute has_element?(view, "#start-product-run-#{done_issue.id}")
     refute has_element?(view, "#task-link-#{done_issue.id}")
 
     # Toggle show finished off
@@ -418,67 +403,45 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace 13212",
-        external_id: "lin_ws_issues_live_13212",
-        token: "lin_api_token_issues_live_13212",
-        webhook_secret: "whsec_issues_live_13212"
-      })
-
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Bring Local Project",
                github_repo: "example/bring-local",
                github_installation_id: 704,
-               linear_workspace_id: ws_id,
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13212",
+                 external_id: "lin_ws_issues_live_13212",
+                 token: "lin_api_token_issues_live_13212",
+                 webhook_secret: "whsec_issues_live_13212"
+               },
                linear_team_id: "t_bl",
                linear_team_key: "BL",
                linear_state_ids: %{"in_progress" => "st_in_prog_bl"},
+               default_branch: "main",
                clone_path: "/tmp/bring-local-proj",
                active: true
              })
 
     LinearMock.mock_create_issue_success(%{"id" => "lin_bl_1", "identifier" => "BL-10", "title" => "Bring local feature"})
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Bring local feature")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Bring local feature"})
 
     {:ok, issue} =
-      Issues.update_issue(system_scope(), issue, %{
+      Issues.update_issue(issue, %{
         state: :backlog
       })
 
-    LinearMock.mock_update_issue_success(%{
-      "id" => "lin_bl_1",
-      "identifier" => "BL-10",
-      "title" => "Bring local feature",
-      "description" => issue.description,
-      "state" => %{"id" => "st_in_prog_bl", "name" => "In Progress", "type" => "started"},
-      "branchName" => nil,
-      "url" => issue.url,
-      "createdAt" => "2026-09-01T10:00:00.000Z",
-      "updatedAt" => "2026-09-02T12:00:00.000Z"
-    })
-
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
-    assert has_element?(view, "#bring-local-#{issue.id}")
+    assert has_element?(view, "#start-product-run-#{issue.id}")
 
-    view |> element("#bring-local-#{issue.id}") |> render_click()
+    view |> element("#start-product-run-#{issue.id}") |> render_click()
 
     # Now task link is displayed instead of bring local
-    refute has_element?(view, "#bring-local-#{issue.id}")
+    refute has_element?(view, "#start-product-run-#{issue.id}")
     assert has_element?(view, "#task-link-#{issue.id}")
 
-    # Clicking nonexistent issue bring_local does not crash
-    render_click(view, "bring_local", %{"issue_id" => "iss_nonexistent"})
+    # Clicking start on a nonexistent issue does not crash
+    render_click(view, "start_product_run", %{"issue_id" => "iss_nonexistent"})
   end
 
   test "opens issue editor modal, updates attributes, and saves changes", %{conn: conn} do
@@ -493,30 +456,20 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace 13213",
-        external_id: "lin_ws_issues_live_13213",
-        token: "lin_api_token_issues_live_13213",
-        webhook_secret: "whsec_issues_live_13213"
-      })
-
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Editor Project",
                github_repo: "example/editor-proj",
                github_installation_id: 705,
-               linear_workspace_id: ws_id,
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13213",
+                 external_id: "lin_ws_issues_live_13213",
+                 token: "lin_api_token_issues_live_13213",
+                 webhook_secret: "whsec_issues_live_13213"
+               },
                linear_team_id: "t_ed",
                linear_team_key: "ED",
+               default_branch: "main",
                clone_path: "/tmp/editor-proj",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -524,12 +477,10 @@ defmodule RailWeb.IssuesLiveTest do
 
     LinearMock.mock_create_issue_success(%{"id" => "lin_ed_1", "identifier" => "ED-50", "title" => "Initial title"})
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Initial title")
-
-    LinearMock.mock_update_issue_success(%{"id" => "lin_ed_1"})
+    {:ok, issue} = Issues.create_issue(project, %{description: "Initial title"})
 
     {:ok, issue} =
-      Issues.update_issue(system_scope(), issue, %{
+      Issues.update_issue(issue, %{
         description: "Initial description",
         priority: :low
       })
@@ -563,19 +514,6 @@ defmodule RailWeb.IssuesLiveTest do
     view |> element("#issue-editor-form") |> render_submit(%{"issue_id" => issue.id, "title" => "   "})
     assert has_element?(view, "#issue-editor-dialog")
 
-    # Mock Linear update for valid submit
-    LinearMock.mock_update_issue_success(%{
-      "id" => "lin_ed_1",
-      "identifier" => "ED-50",
-      "title" => "Updated title",
-      "description" => "Updated description",
-      "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"},
-      "branchName" => nil,
-      "url" => issue.url,
-      "createdAt" => "2026-09-01T10:00:00.000Z",
-      "updatedAt" => "2026-09-02T12:00:00.000Z"
-    })
-
     view
     |> element("#issue-editor-form")
     |> render_submit(%{
@@ -607,31 +545,21 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace 13214",
-        external_id: "lin_ws_issues_live_13214",
-        token: "lin_api_token_issues_live_13214",
-        webhook_secret: "whsec_issues_live_13214"
-      })
-
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Archive Project",
                github_repo: "example/archive-proj",
                github_installation_id: 706,
-               linear_workspace_id: ws_id,
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13214",
+                 external_id: "lin_ws_issues_live_13214",
+                 token: "lin_api_token_issues_live_13214",
+                 webhook_secret: "whsec_issues_live_13214"
+               },
                linear_team_id: "t_arc",
                linear_team_key: "ARC",
                linear_state_ids: %{"canceled" => "st_canceled_arc"},
+               default_branch: "main",
                clone_path: "/tmp/archive-proj",
                active: true
              })
@@ -642,10 +570,10 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "Issue to archive"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Issue to archive")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Issue to archive"})
 
     {:ok, issue} =
-      Issues.update_issue(system_scope(), issue, %{
+      Issues.update_issue(issue, %{
         state: :backlog
       })
 
@@ -711,30 +639,20 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace 13215",
-        external_id: "lin_ws_issues_live_13215",
-        token: "lin_api_token_issues_live_13215",
-        webhook_secret: "whsec_issues_live_13215"
-      })
-
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: project_id}} =
              Projects.create_project(scope, %{
                name: "Sync Project",
                github_repo: "example/sync-proj",
                github_installation_id: 707,
-               linear_workspace_id: ws_id,
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13215",
+                 external_id: "lin_ws_issues_live_13215",
+                 token: "lin_api_token_issues_live_13215",
+                 webhook_secret: "whsec_issues_live_13215"
+               },
                linear_team_id: "t_sync",
                linear_team_key: "SYNC",
+               default_branch: "main",
                clone_path: "/tmp/sync-proj",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -754,168 +672,6 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view_all, "#sync-issues-button", "Sync Issues")
   end
 
-  test "reloads on PubSub pipeline_changed and live_sync messages", %{conn: conn} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_issues_live_11",
-        login: "issues_live_user_11",
-        email: "issues_live_user_11@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-    scope = Scope.for_user(user)
-
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
-    assert {:ok, %Project{id: _project_id} = project} =
-             Projects.create_project(scope, %{
-               name: "PubSub Project",
-               github_repo: "example/pubsub-proj",
-               github_installation_id: 708,
-               linear_team_id: "t_ps",
-               linear_team_key: "PS",
-               clone_path: "/tmp/pubsub-proj",
-               active: true,
-               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
-             })
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_issues_live_13211",
-      "identifier" => "PS-1",
-      "title" => "Pubsub created issue"
-    })
-
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Pubsub created issue")
-
-    {:ok, issue} =
-      Issues.update_issue(system_scope(), issue, %{
-        state: :backlog
-      })
-
-    refute has_element?(view, "#issue-card-#{issue.id}")
-
-    send(view.pid, :pipeline_changed)
-    assert has_element?(view, "#issue-card-#{issue.id}")
-
-    send(view.pid, %{event: "pipeline_changed"})
-    assert has_element?(view, "#issue-card-#{issue.id}")
-
-    send(view.pid, {:live_sync, %{}})
-    assert has_element?(view, "#issue-card-#{issue.id}")
-
-    send(view.pid, :unknown_info)
-    assert has_element?(view, "#issue-card-#{issue.id}")
-  end
-
-  test "component helper functions cover all edge cases", %{conn: _conn} do
-    # card_body_for edge cases
-    assert IssueCard.card_body_for(%{title: "Test", description: ""}) == ""
-    assert IssueCard.card_body_for(%{title: "Test", description: nil}) == ""
-    assert IssueCard.card_body_for(%{title: "Test", description: "Test"}) == ""
-    assert IssueCard.card_body_for(%{title: "Test", description: "Test\nSecond line"}) == "Second line"
-    assert IssueCard.card_body_for(%{title: "Other", description: "Hello world"}) == "Hello world"
-
-    # worktree_name edge cases
-    assert IssueCard.worktree_name(%{branch_name: "custom-branch", identifier: "ENG-1", id: "1"}) == "custom-branch"
-    assert IssueCard.worktree_name(%{branch_name: nil, identifier: "ENG/FEATURE 1", id: "1"}) == "eng-feature-1"
-    assert IssueCard.worktree_name(%{branch_name: "", identifier: "", id: "99"}) == "issue-99"
-
-    # priority_label & status_label edge cases
-    assert IssueCard.priority_label(:urgent) == "Urgent"
-    assert IssueCard.priority_label(nil) == "Medium"
-    assert IssueCard.status_label(:in_progress) == "In Progress"
-    assert IssueCard.status_label(nil) == "Triage"
-
-    # render_component checks
-    rendered =
-      render_component(&IssueCard.issue_card/1,
-        issue: %{
-          id: "iss_mock_1",
-          identifier: "MOCK-1",
-          project: %{name: "P1", linear_team_key: "P1"},
-          url: nil,
-          title: "Mock Title",
-          description: "Mock Description",
-          priority: :low,
-          state: :done,
-          branch_name: nil
-        },
-        task: nil
-      )
-
-    assert rendered =~ "MOCK-1"
-    assert rendered =~ "Mock Title"
-
-    # With task
-    rendered_with_task =
-      render_component(&IssueCard.issue_card/1,
-        issue: %{
-          id: "iss_mock_2",
-          identifier: "MOCK-2",
-          project: nil,
-          url: "https://linear.app/mock-2",
-          title: "Mock Title 2",
-          description: nil,
-          priority: nil,
-          state: :in_progress,
-          branch_name: "feat-mock-2"
-        },
-        task: %Task{
-          id: "tsk_mock_2",
-          stage: :engineer,
-          stage_state: :running,
-          issue: nil
-        }
-      )
-
-    assert rendered_with_task =~ "Engineer running"
-
-    # IssueEditorModal rendered directly
-    editor_rendered =
-      render_component(&IssueEditorModal.issue_editor_modal/1,
-        issue: %{
-          id: "iss_mock_3",
-          identifier: "MOCK-3",
-          url: "https://linear.app/mock-3",
-          title: "Editor test",
-          description: "Body",
-          priority: :high,
-          state: :triage
-        },
-        visible: true
-      )
-
-    assert editor_rendered =~ "Edit MOCK-3"
-    assert editor_rendered =~ "Editor test"
-
-    assert render_component(&IssueEditorModal.issue_editor_modal/1, issue: nil, visible: false) == ""
-
-    # ArchiveIssueModal rendered directly
-    archive_rendered =
-      render_component(&ArchiveIssueModal.archive_issue_modal/1,
-        issue: %{
-          id: "iss_mock_4",
-          identifier: "MOCK-4",
-          title: "To archive"
-        },
-        visible: true
-      )
-
-    assert archive_rendered =~ "Archive MOCK-4?"
-    assert archive_rendered =~ "To archive"
-
-    assert render_component(&ArchiveIssueModal.archive_issue_modal/1, issue: nil, visible: false) == ""
-  end
-
   test "handles subtitle for projects with and without team keys", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -928,21 +684,20 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: p_id, name: p_name}} =
              Projects.create_project(scope, %{
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13212",
+                 external_id: "lin_ws_issues_live_13212_x11",
+                 token: "lin_api_token_issues_live_13212",
+                 webhook_secret: "whsec_issues_live_13212"
+               },
                name: "With Key Project",
                github_repo: "example/with-key",
                github_installation_id: 801,
                linear_team_id: "t_key",
                linear_team_key: "KEY",
+               default_branch: "main",
                clone_path: "/tmp/with-key",
                active: true,
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
@@ -954,13 +709,5 @@ defmodule RailWeb.IssuesLiveTest do
     # Nonexistent project ID
     assert {:ok, view_bad, _html} = live(authed_conn, ~p"/issues?project=prj_nonexistent")
     assert has_element?(view_bad, "#issues-subtitle", "Linear issues across all projects")
-
-    # Direct unit tests of subtitle_for
-    assert IssuesLive.subtitle_for(nil) == "Linear issues across all projects"
-    assert IssuesLive.subtitle_for(%{linear_team_key: "ENG", name: "Rail"}) == "Linear issues in ENG (Rail)"
-    assert IssuesLive.subtitle_for(%{linear_team_key: "", name: "Rail"}) == "Linear issues for Rail"
-    assert IssuesLive.subtitle_for(%{linear_team_key: nil, name: "Rail"}) == "Linear issues for Rail"
-    assert IssuesLive.subtitle_for(%{}) == "No target repository set • Issues live in Linear; set one in Settings"
-    assert IssuesLive.subtitle_for("other") == "No target repository set • Issues live in Linear; set one in Settings"
   end
 end

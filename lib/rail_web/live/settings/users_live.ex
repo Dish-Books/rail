@@ -181,6 +181,7 @@ defmodule RailWeb.Settings.UsersLive do
 
                 <!-- Toggle Admin Button -->
                 <.button
+                  :if={user.id != @current_scope.user.id}
                   size="sm"
                   variant={if user.admin, do: "danger", else: "accent"}
                   id={"toggle-admin-button-#{user.id}"}
@@ -207,58 +208,48 @@ defmodule RailWeb.Settings.UsersLive do
     scope = socket.assigns.current_scope
     user = Enum.find(socket.assigns.users, &(&1.id == user_id))
 
-    if user do
-      new_admin = not user.admin
+    cond do
+      is_nil(user) ->
+        {:noreply, socket}
 
-      case Users.set_admin(scope, user, new_admin) do
-        {:ok, _updated_user} ->
-          {:ok, refreshed_users} = Users.list_users(scope)
+      # Changing your own admin flag is how an admin locks themselves out.
+      user.id == scope.user.id ->
+        socket = assign(socket, :error_message, "You cannot change your own admin permissions.")
 
-          socket =
-            socket
-            |> assign(:users, refreshed_users)
-            |> assign(:error_message, nil)
+        {:noreply, socket}
 
-          {:noreply, socket}
-
-        {:error, :cannot_remove_sole_admin} ->
-          socket =
-            assign(
-              socket,
-              :error_message,
-              "Cannot revoke admin permissions from the sole administrator."
-            )
-
-          {:noreply, socket}
-
-        {:error, :not_authorized} ->
-          socket =
-            assign(
-              socket,
-              :error_message,
-              "You are not authorized to modify user permissions."
-            )
-
-          {:noreply, socket}
-
-        {:error, _other} ->
-          socket =
-            assign(
-              socket,
-              :error_message,
-              "Failed to update user permissions."
-            )
-
-          {:noreply, socket}
-      end
-    else
-      {:noreply, socket}
+      true ->
+        toggle_admin(socket, scope, user)
     end
   end
 
   def handle_event("clear_error", _params, socket) do
     socket = assign(socket, :error_message, nil)
     {:noreply, socket}
+  end
+
+  defp toggle_admin(socket, scope, user) do
+    case Users.update_user(scope, user, %{admin: not user.admin}) do
+      {:ok, _updated_user} ->
+        {:ok, refreshed_users} = Users.list_users(scope)
+
+        socket =
+          socket
+          |> assign(:users, refreshed_users)
+          |> assign(:error_message, nil)
+
+        {:noreply, socket}
+
+      {:error, :not_authorized} ->
+        socket = assign(socket, :error_message, "You are not authorized to modify user permissions.")
+
+        {:noreply, socket}
+
+      {:error, _other} ->
+        socket = assign(socket, :error_message, "Failed to update user permissions.")
+
+        {:noreply, socket}
+    end
   end
 
   defp linear_connected?(user) do

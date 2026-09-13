@@ -8,6 +8,9 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
   alias Rail.Scope
 
   setup do
+    {:ok, backend} =
+      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Create Role Project",
@@ -15,16 +18,21 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
         github_installation_id: 4101,
         linear_team_id: "team_create_role",
         linear_team_key: "CRR",
+        default_branch: "main",
         clone_path: "/tmp/repos/create-role"
       })
 
-    %{project: project}
+    %{project: project, backend: backend}
   end
 
-  test "creates role for project struct with admin scope", %{project: %Project{id: project_id} = project} do
+  test "creates role for project struct with admin scope", %{
+    project: %Project{id: project_id} = project,
+    backend: backend
+  } do
     scope = Scope.for_user(%{admin: true})
 
     attrs = %{
+      backend_id: backend.id,
       name: "Product Agent",
       stage: :product,
       model: "claude-3-7-sonnet",
@@ -35,10 +43,11 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
              Roles.create_role(scope, project, attrs)
   end
 
-  test "creates role for project id with system scope", %{project: %Project{id: project_id} = project} do
+  test "creates role for project id with system scope", %{project: %Project{id: project_id}, backend: backend} do
     scope = Scope.for_system()
 
     attrs = %{
+      backend_id: backend.id,
       name: "QA Agent",
       stage: :qa,
       model: "claude-3-7-sonnet",
@@ -57,14 +66,16 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
     assert %{
              name: ["can't be blank"],
              model: ["can't be blank"],
-             system_prompt: ["can't be blank"]
+             system_prompt: ["can't be blank"],
+             backend_id: ["can't be blank"]
            } = errors_on(changeset)
   end
 
-  test "returns validation error when project does not exist" do
+  test "returns validation error when project does not exist", %{backend: backend} do
     scope = Scope.for_user(%{admin: true})
 
     attrs = %{
+      backend_id: backend.id,
       name: "Ghost Role",
       model: "claude",
       system_prompt: "Ghost prompt"

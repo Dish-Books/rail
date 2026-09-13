@@ -4,8 +4,6 @@ defmodule RailWeb.Components.RoleRoster do
 
   import RailWeb.CoreComponents, only: [icon: 1]
 
-  alias Rail.Domain.Formatters
-
   attr :groups, :list, required: true
   attr :is_filtered, :boolean, default: false
 
@@ -55,8 +53,8 @@ defmodule RailWeb.Components.RoleRoster do
           <!-- Role Rows -->
           <div :for={entry <- role_entries} id={"role-row-#{entry.role.id}"} data-qa="role-row">
             <.link
-              :if={entry.active_task}
-              navigate={~p"/tasks/#{entry.active_task.id}"}
+              :if={entry.active_run}
+              navigate={~p"/tasks/#{entry.active_run.task_id}"}
               id={"role-active-link-#{entry.role.id}"}
               data-qa="role-active-link"
               class="flex items-center space-x-2.5 p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shadow-xs group"
@@ -80,7 +78,7 @@ defmodule RailWeb.Components.RoleRoster do
             </.link>
 
             <div
-              :if={is_nil(entry.active_task)}
+              :if={is_nil(entry.active_run)}
               id={"role-idle-#{entry.role.id}"}
               data-qa="role-idle"
               class="flex items-center space-x-2.5 p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xs opacity-75"
@@ -108,25 +106,10 @@ defmodule RailWeb.Components.RoleRoster do
   attr :role, :any, required: true
 
   def role_avatar(assigns) do
-    icon_name = icon_for_role(assigns.role)
-    assigns = assign(assigns, :icon_name, icon_name)
-
     ~H"""
     <div class="flex items-center justify-center h-7 w-7 rounded-full bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 shrink-0">
-      <.icon name={@icon_name} class="h-4 w-4" />
+      <.icon name={@role.icon_name} class="h-4 w-4" />
     </div>
     """
   end
-
-  # Stored role icons may still carry a legacy Material name, so normalize them.
-  defp icon_for_role(%{icon_name: icon_name}) when is_binary(icon_name) and icon_name != "" do
-    Formatters.role_icon_for(icon_name)
-  end
-
-  defp icon_for_role(%{stage: :engineer}), do: "pi-code"
-  defp icon_for_role(%{stage: :architect}), do: "pi-compass-tool"
-  defp icon_for_role(%{stage: :design}), do: "pi-palette"
-  defp icon_for_role(%{stage: :demo}), do: "pi-video-camera-fill"
-  defp icon_for_role(%{stage: s}) when s in [:qa, :qa_lead], do: "pi-check-square-fill"
-  defp icon_for_role(_role), do: "pi-robot"
 end

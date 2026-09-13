@@ -11,22 +11,20 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
   test "list_issues lists issues for project with default show_finished: false" do
     scope = Scope.for_system()
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "List Issues Workspace",
-        external_id: "lin_ws_list_issues",
-        token: "lin_api_token_list_issues",
-        webhook_secret: "whsec_list_issues"
-      })
-
     {:ok, %Project{id: project_id_1} = project_1} =
       Projects.create_project(scope, %{
         name: "List Issues Project One",
         github_repo: "org/list-issues-one",
         github_installation_id: 5701,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "List Issues Workspace",
+          external_id: "lin_ws_list_issues",
+          token: "lin_api_token_list_issues",
+          webhook_secret: "whsec_list_issues"
+        },
         linear_team_id: "team_list_issues_one",
         linear_team_key: "LI1",
+        default_branch: "main",
         clone_path: "/tmp/repos/list-issues-one"
       })
 
@@ -35,9 +33,15 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         name: "List Issues Project Two",
         github_repo: "org/list-issues-two",
         github_installation_id: 5702,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "List Issues Workspace",
+          external_id: "lin_ws_list_issues_2",
+          token: "lin_api_token_list_issues",
+          webhook_secret: "whsec_list_issues"
+        },
         linear_team_id: "team_list_issues_two",
         linear_team_key: "LI2",
+        default_branch: "main",
         clone_path: "/tmp/repos/list-issues-two"
       })
 
@@ -66,7 +70,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       }
     ])
 
-    {:ok, [%Issue{id: id1}, %Issue{id: id2}]} = Issues.sync_issues(scope, project_1)
+    {:ok, [%Issue{id: id1}, %Issue{id: id2}]} = Issues.sync_issues(project_1)
 
     LinearMock.mock_issues_success([
       %{
@@ -82,35 +86,28 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       }
     ])
 
-    {:ok, [_issue_3]} = Issues.sync_issues(scope, project_2)
-
-    user_scope = Scope.for_user(%{admin: false})
+    {:ok, [_issue_3]} = Issues.sync_issues(project_2)
 
     # Default show_finished: false excludes done issue id2
-    assert [%Issue{id: ^id1}] = Issues.list_issues(user_scope, project_1)
+    assert [%Issue{id: ^id1}] = Issues.list_issues(project_1)
 
     # Explicit show_finished: true includes done issue id2
     assert [%Issue{id: ^id1}, %Issue{id: ^id2}] =
-             Issues.list_issues(user_scope, project_id: project_id_1, show_finished: true)
+             Issues.list_issues(project_id: project_id_1, show_finished: true)
 
     # 3-arity list_issues with project struct and opts
     assert [%Issue{id: ^id1}, %Issue{id: ^id2}] =
-             Issues.list_issues(user_scope, project_1, show_finished: true)
+             Issues.list_issues(project_1, show_finished: true)
 
-    assert [%Issue{id: ^id1}] = Issues.list_issues(user_scope, project_id: project_id_1, state: :triage)
+    assert [%Issue{id: ^id1}] = Issues.list_issues(project_id: project_id_1, state: :triage)
 
     # Preload option preloads associations
     assert [%Issue{id: ^id1, project: %Project{id: ^project_id_1}}] =
-             Issues.list_issues(user_scope, project_id: project_id_1, preload: [:project])
+             Issues.list_issues(project_id: project_id_1, preload: [:project])
 
     assert project_id_2 != project_id_1
-    assert length(Issues.list_issues(scope, show_finished: true)) == 3
-    assert length(Issues.list_issues(scope, show_finished: false)) == 2
-    assert length(Issues.list_issues(scope)) == 2
-  end
-
-  test "list_issues returns not authorized for unauthorized scope" do
-    assert {:error, :not_authorized} = Issues.list_issues(nil, [])
-    assert {:error, :not_authorized} = Issues.list_issues(nil, %Project{id: "prj_test"}, [])
+    assert length(Issues.list_issues(show_finished: true)) == 3
+    assert length(Issues.list_issues(show_finished: false)) == 2
+    assert length(Issues.list_issues()) == 2
   end
 end

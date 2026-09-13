@@ -7,8 +7,9 @@ defmodule Rail.Issues.Actions.SyncIssues do
   alias Rail.Issues.Clients.Linear
   alias Rail.Issues.Schemas.Issue
   alias Rail.Repo
+  alias Rail.Users.Schemas.User
 
-  def sync_issues(_scope, project) do
+  def sync_issues(project) do
     with {:ok, token} <- workspace_token(project),
          {:ok, nodes} <- fetch_linear_issues(token, project) do
       upsert_nodes(project.id, nodes)
@@ -36,12 +37,14 @@ defmodule Rail.Issues.Actions.SyncIssues do
 
   defp upsert_issue(project_id, node) do
     attrs = %{
+      project_id: project_id,
       external_id: node.id,
       identifier: node.identifier,
       title: node.title,
       description: node.description,
       state: map_state_type(node.state && node.state.type),
       state_name: node.state && node.state.name,
+      owner_user_id: owner_user_id(node),
       branch_name: node.branch_name,
       url: node.url,
       linear_created_at: parse_datetime(node.created_at),
@@ -51,15 +54,21 @@ defmodule Rail.Issues.Actions.SyncIssues do
     case Repo.get_by(Issue, external_id: node.id) do
       %Issue{} = existing ->
         existing
-        |> Issue.changeset(attrs, project_id)
+        |> Issue.changeset(attrs)
         |> Repo.update!()
 
       nil ->
         %Issue{}
-        |> Issue.changeset(attrs, project_id)
+        |> Issue.changeset(attrs)
         |> Repo.insert!()
     end
   end
+
+  defp owner_user_id(%{assignee_id: assignee_id}) when is_binary(assignee_id) do
+    Repo.one(from u in User, where: u.linear_user_id == ^assignee_id, select: u.id)
+  end
+
+  defp owner_user_id(_node), do: nil
 
   defp map_state_type("triage"), do: :triage
   defp map_state_type("backlog"), do: :backlog

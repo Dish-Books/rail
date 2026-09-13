@@ -6,32 +6,29 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
-  alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
-
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Sync Issues Workspace",
-        external_id: "lin_ws_sync_issues",
-        token: "lin_api_token_sync_issues",
-        webhook_secret: "whsec_sync_issues"
-      })
 
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Sync Issues Project",
         github_repo: "org/sync-issues",
         github_installation_id: 5501,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Sync Issues Workspace",
+          external_id: "lin_ws_sync_issues",
+          token: "lin_api_token_sync_issues",
+          webhook_secret: "whsec_sync_issues"
+        },
         linear_team_id: "team_sync_issues",
         linear_team_key: "SYN",
+        default_branch: "main",
         clone_path: "/tmp/repos/sync-issues"
       })
 
-    %{project: project, workspace: workspace}
+    %{project: project}
   end
 
   test "sync_issues/2 syncs new issues and maps state types", %{project: %Project{id: project_id} = project} do
@@ -117,9 +114,7 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
 
     LinearMock.mock_issues_success(nodes)
 
-    scope = Scope.for_system()
-
-    assert {:ok, synced} = Issues.sync_issues(scope, project)
+    assert {:ok, synced} = Issues.sync_issues(project)
     assert length(synced) == 7
 
     assert %Issue{project_id: ^project_id, state: :triage, state_name: "Triage"} =
@@ -159,7 +154,7 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
       }
     ])
 
-    {:ok, [%Issue{id: existing_id}]} = Issues.sync_issues(system_scope(), project)
+    {:ok, [%Issue{id: existing_id}]} = Issues.sync_issues(project)
 
     updated_node = %{
       "id" => "lin_exist_1",
@@ -175,23 +170,14 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
 
     LinearMock.mock_issues_success([updated_node])
 
-    scope = Scope.for_user(%{admin: false})
-
     assert {:ok, [%Issue{id: ^existing_id, title: "Updated Title", state: :in_progress}]} =
-             Issues.sync_issues(scope, project)
+             Issues.sync_issues(project)
   end
 
   test "sync_issues/2 returns error on API failure", %{project: project} do
     LinearMock.mock_api_error(500, %{"error" => "Linear Server Down"})
 
-    scope = Scope.for_system()
-
     assert {:error, {:linear_api_error, 500, %{"error" => "Linear Server Down"}}} =
-             Issues.sync_issues(scope, project)
-  end
-
-  test "sync_issues/2 returns :not_authorized for invalid scope", %{project: project} do
-    assert {:error, :not_authorized} = Issues.sync_issues(nil, project)
-    assert {:error, :not_authorized} = Issues.sync_issues(%Scope{user: nil}, project)
+             Issues.sync_issues(project)
   end
 end

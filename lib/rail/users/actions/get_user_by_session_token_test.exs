@@ -37,9 +37,10 @@ defmodule Rail.Users.Actions.GetUserBySessionTokenTest do
 
     {token, user_token} = UserToken.build_session_token(user)
 
-    fifteen_days_ago = DateTime.shift(DateTime.utc_now(), day: -15)
+    expired_at =
+      DateTime.shift(DateTime.utc_now(), day: -(UserToken.session_validity_in_days() + 1))
 
-    Repo.insert!(%{user_token | inserted_at: fifteen_days_ago})
+    Repo.insert!(%{user_token | inserted_at: expired_at})
 
     assert is_nil(Users.get_user_by_session_token(token))
   end

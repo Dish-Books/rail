@@ -48,6 +48,7 @@ defmodule Rail.MixProject do
 
   defp deps do
     [
+      {:attrs, "~> 0.6"},
       {:bandit, "~> 1.5"},
       {:cloak_ecto, github: "michaelst/cloak_ecto", ref: "5a97ae633be28d5d98d010450a396e11c65d5cc8"},
       {:credo, "~> 1.7", only: :dev, runtime: false},
@@ -63,10 +64,10 @@ defmodule Rail.MixProject do
       {:jason, "~> 1.2"},
       {:jose, "~> 1.11"},
       {:lazy_html, ">= 0.1.0", only: :test},
-      {:live_sync, "~> 0.1"},
       {:mimic, "~> 2.0", only: :test},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false},
+      {:oban, "~> 2.19"},
       {:phoenix_ecto, "~> 4.5"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_dashboard, "~> 0.8.3"},

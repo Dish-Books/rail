@@ -15,6 +15,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
       github_installation_id: 12_345,
       linear_team_id: "team_1",
       linear_team_key: "RAIL",
+      default_branch: "main",
       clone_path: "/tmp/rail"
     }
 
@@ -32,6 +33,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
       github_installation_id: 67_890,
       linear_team_id: "team_sys",
       linear_team_key: "SYS",
+      default_branch: "main",
       clone_path: "/tmp/sys"
     }
 
@@ -64,6 +66,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
       github_installation_id: 11_111,
       linear_team_id: "team_first",
       linear_team_key: "FIRST",
+      default_branch: "main",
       clone_path: "/tmp/first"
     }
 
@@ -85,6 +88,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
       github_installation_id: 22_222,
       linear_team_id: "team_unauth",
       linear_team_key: "UNAUTH",
+      default_branch: "main",
       clone_path: "/tmp/unauth"
     }
 
@@ -100,6 +104,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
       github_installation_id: 33_333,
       linear_team_id: "team_nil",
       linear_team_key: "NIL",
+      default_branch: "main",
       clone_path: "/tmp/nil"
     }
 

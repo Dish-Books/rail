@@ -101,6 +101,8 @@ end
 - Utils follow a similar pattern as actions, except they are not exposed and can be referenced only from inside the context.
 - To use a util it should be imported into the action module and called directly - never aliased or called by its full name.
 - Utils should only be used for functionality that needs to be shared across multiple actions; if it is only used in one action it should be a local private function in the action module.
+- Utils must only contain a single public function
+- Utils must not be defdelegated
 
 ```elixir
 defmodule Rail.Pipeline.Actions.AdvanceStage do

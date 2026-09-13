@@ -22,12 +22,6 @@ defmodule RailWeb.Router do
     plug RailWeb.UserAuth, :require_admin_user
   end
 
-  pipeline :asset_session do
-    plug :fetch_session
-    plug :put_secure_browser_headers
-    plug RailWeb.UserAuth, :fetch_current_user
-  end
-
   pipeline :api do
     plug :accepts, ["json"]
   end
@@ -70,7 +64,7 @@ defmodule RailWeb.Router do
       ] do
       live "/", OverviewLive
       live "/issues", IssuesLive
-      live "/tasks/:id", TaskDetailLive
+      live "/tasks/:id", TaskLive
       live "/settings/connected-accounts", Settings.ConnectedAccountsLive
     end
 
@@ -81,17 +75,10 @@ defmodule RailWeb.Router do
         NavHook
       ] do
       live "/settings/projects", Settings.ProjectsLive
-      live "/settings/linear-workspace", Settings.LinearWorkspaceLive
       live "/settings/users", Settings.UsersLive
       live "/settings/roles", Settings.RolesLive
       live "/settings/backends", Settings.BackendsLive
     end
-  end
-
-  scope "/assets", RailWeb do
-    pipe_through [:asset_session, :require_authenticated_user]
-
-    get "/:kind/:id", AssetController, :show
   end
 
   scope "/", RailWeb do

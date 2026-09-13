@@ -2,20 +2,23 @@ defmodule Rail.Issues.Schemas.Issue do
   @moduledoc false
   use Rail.Schema
 
+  alias Rail.Issues.Workers.SyncIssue
   alias Rail.Projects.Schemas.Project
+  alias Rail.Users.Schemas.User
 
   @priorities [:urgent, :high, :medium, :low]
   @states [:backlog, :triage, :todo, :in_progress, :in_review, :done, :canceled]
 
-  @derive {LiveSync.Watch, subscription_key: :project_id, table: "issues"}
   @primary_key {:id, UXID, autogenerate: true, prefix: "iss"}
   schema "issues" do
     belongs_to :project, Project
+    belongs_to :owner_user, User
     field :external_id, :string
     field :identifier, :string
     field :title, :string
     field :description, :string
     field :priority, Ecto.Enum, values: @priorities, default: :medium
+    field :estimate, :integer
     field :state, Ecto.Enum, values: @states
     field :state_name, :string
     field :branch_name, :string
@@ -27,17 +30,20 @@ defmodule Rail.Issues.Schemas.Issue do
   end
 
   @cast_fields [
+    :branch_name,
+    :description,
+    :estimate,
     :external_id,
     :identifier,
-    :title,
-    :description,
-    :priority,
-    :state,
-    :state_name,
-    :branch_name,
-    :url,
     :linear_created_at,
-    :linear_updated_at
+    :linear_updated_at,
+    :owner_user_id,
+    :priority,
+    :project_id,
+    :state_name,
+    :state,
+    :title,
+    :url
   ]
 
   @required_fields [
@@ -48,13 +54,14 @@ defmodule Rail.Issues.Schemas.Issue do
     :state
   ]
 
-  def changeset(issue, attrs, project_id \\ nil) do
+  def changeset(issue, attrs) do
     issue
     |> cast(attrs, @cast_fields)
-    |> maybe_put_project_id(project_id)
     |> validate_required(@required_fields)
     |> unique_constraint(:external_id)
     |> foreign_key_constraint(:project_id)
+    |> foreign_key_constraint(:owner_user_id)
+    |> sync_to_linear()
   end
 
   def priorities, do: @priorities
@@ -84,17 +91,6 @@ defmodule Rail.Issues.Schemas.Issue do
   def active?(state) when is_atom(state), do: state in [:triage, :backlog, :todo, :in_progress, :in_review]
   def active?(_other), do: false
 
-  def cast_priority(priority) when is_atom(priority) do
-    if priority in @priorities, do: {:ok, priority}, else: :error
-  end
-
-  def cast_priority(priority) when is_binary(priority) do
-    found = Enum.find(@priorities, fn p -> Atom.to_string(p) == priority end)
-    if found, do: {:ok, found}, else: :error
-  end
-
-  def cast_priority(_other), do: :error
-
   def cast_state(state) when is_atom(state) do
     if state in @states, do: {:ok, state}, else: :error
   end
@@ -115,6 +111,20 @@ defmodule Rail.Issues.Schemas.Issue do
 
   def cast_state(_other), do: :error
 
-  defp maybe_put_project_id(changeset, nil), do: changeset
-  defp maybe_put_project_id(changeset, project_id), do: put_change(changeset, :project_id, project_id)
+  # Every write goes up to Linear, so no caller can forget to say so. This runs
+  # inside the write's own transaction, which is what makes the job and the row
+  # land together or not at all. An insert has nothing to sync back: the ticket
+  # is opened in Linear first and the row is what came back from it.
+  defp sync_to_linear(%Ecto.Changeset{data: %__MODULE__{id: id}, changes: changes} = changeset)
+       when is_binary(id) and changes != %{} do
+    prepare_changes(changeset, fn prepared ->
+      %{issue_id: id, fields: Map.keys(prepared.changes)}
+      |> SyncIssue.new()
+      |> Oban.insert!()
+
+      prepared
+    end)
+  end
+
+  defp sync_to_linear(%Ecto.Changeset{} = changeset), do: changeset
 end

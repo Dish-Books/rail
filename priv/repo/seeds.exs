@@ -3,6 +3,7 @@ import Ecto.Query
 alias Rail.Projects.Schemas.Project
 alias Rail.Repo
 alias Rail.Roles.Schemas.Role
+alias Rail.Tools.Schemas.Backend
 alias Rail.Users.Schemas.User
 
 # 1. Admin User
@@ -44,14 +45,25 @@ default_project =
     })
     |> Repo.insert!()
 
-# 3. Default Roles for Project
+# 3. CLI Backends — a role cannot exist without the backend it runs on, and the
+# path it records is the absolute one the spawner executes.
+claude_backend =
+  Repo.get_by(Backend, name: :claude) ||
+    %Backend{}
+    |> Backend.changeset(%{
+      name: :claude,
+      executable_path: System.find_executable("claude") || "claude"
+    })
+    |> Repo.insert!()
+
+# 4. Default Roles for Project
 default_roles = [
   %{
     stage: :product,
     name: "Product Manager",
     description: "Clarifies problem statements, gathers requirements, and prepares issues for architecture",
-    icon_name: "hero-clipboard-document-list",
-    cli_backend: :claude,
+    icon_name: "pi-clipboard-text",
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:
@@ -63,8 +75,8 @@ default_roles = [
     stage: :architect,
     name: "Software Architect",
     description: "Designs technical architecture, file changes, and implementation plans",
-    icon_name: "hero-cube-transparent",
-    cli_backend: :claude,
+    icon_name: "pi-cube",
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:
@@ -76,8 +88,8 @@ default_roles = [
     stage: :design,
     name: "Product Designer",
     description: "Designs user interfaces, layout specs, and UX flows",
-    icon_name: "hero-paint-brush",
-    cli_backend: :claude,
+    icon_name: "pi-paint-brush",
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:
@@ -89,8 +101,8 @@ default_roles = [
     stage: :engineer,
     name: "Software Engineer",
     description: "Implements vertical slices, writes tests, and adheres to code standards",
-    icon_name: "hero-code-bracket",
-    cli_backend: :claude,
+    icon_name: "pi-code",
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:
@@ -102,8 +114,8 @@ default_roles = [
     stage: :review,
     name: "Code Reviewer",
     description: "Reviews code changes against quality standards, architecture, and tests",
-    icon_name: "hero-eye",
-    cli_backend: :claude,
+    icon_name: "pi-eye",
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:
@@ -115,8 +127,8 @@ default_roles = [
     stage: :qa,
     name: "QA Engineer",
     description: "Executes automated test suites and exercises running applications",
-    icon_name: "hero-beaker",
-    cli_backend: :claude,
+    icon_name: "pi-flask",
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:
@@ -128,8 +140,8 @@ default_roles = [
     stage: :qa_lead,
     name: "QA Lead",
     description: "Evaluates overall quality gates, reviews QA reports, and grants sign-off",
-    icon_name: "hero-shield-check",
-    cli_backend: :claude,
+    icon_name: "pi-shield-check",
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:
@@ -141,8 +153,8 @@ default_roles = [
     stage: :demo,
     name: "Demo Presenter",
     description: "Generates narrated demonstration walkthroughs of completed features",
-    icon_name: "hero-video-camera",
-    cli_backend: :claude,
+    icon_name: "pi-video-camera",
+    backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt:
@@ -157,7 +169,7 @@ for role_attrs <- default_roles do
 
   if !Repo.exists?(from(r in Role, where: r.project_id == ^default_project.id and r.stage == ^stage)) do
     %Role{}
-    |> Role.changeset(role_attrs, default_project.id)
+    |> Role.changeset(Map.put(role_attrs, :project_id, default_project.id))
     |> Repo.insert!()
   end
 end

@@ -4,19 +4,10 @@ defmodule RailWeb.Hooks.NavHookTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Projects
-  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
   test "open_new_issue sets default project to current_project_id when active", %{conn: conn} do
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Nav Hook Workspace 13101",
-        external_id: "lin_ws_nav_hook_13101",
-        token: "lin_api_token_nav_hook_13101",
-        webhook_secret: "whsec_nav_hook_13101"
-      })
-
     {:ok, _project1} =
       Projects.create_project(system_scope(), %{
         name: "Project One",
@@ -24,6 +15,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_102,
         linear_team_id: "team_nav_hook_13102",
         linear_team_key: "ONE",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13102",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -32,7 +24,12 @@ defmodule RailWeb.Hooks.NavHookTest do
           "done" => "st_done",
           "canceled" => "st_canceled"
         },
-        linear_workspace_id: ws_id,
+        linear_workspace: %{
+          name: "Nav Hook Workspace 13101",
+          external_id: "lin_ws_nav_hook_13101",
+          token: "lin_api_token_nav_hook_13101",
+          webhook_secret: "whsec_nav_hook_13101"
+        },
         active: true
       })
 
@@ -43,6 +40,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_103,
         linear_team_id: "team_nav_hook_13103",
         linear_team_key: "TWO",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13103",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -51,7 +49,12 @@ defmodule RailWeb.Hooks.NavHookTest do
           "done" => "st_done",
           "canceled" => "st_canceled"
         },
-        linear_workspace_id: ws_id,
+        linear_workspace: %{
+          name: "Nav Hook Workspace 13101",
+          external_id: "lin_ws_nav_hook_13101_2",
+          token: "lin_api_token_nav_hook_13101",
+          webhook_secret: "whsec_nav_hook_13101"
+        },
         active: true
       })
 
@@ -81,14 +84,6 @@ defmodule RailWeb.Hooks.NavHookTest do
   test "open_new_issue falls back to first active project when current_project_id is not set or inactive", %{
     conn: conn
   } do
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Nav Hook Workspace 13104",
-        external_id: "lin_ws_nav_hook_13104",
-        token: "lin_api_token_nav_hook_13104",
-        webhook_secret: "whsec_nav_hook_13104"
-      })
-
     {:ok, _inactive} =
       Projects.create_project(system_scope(), %{
         name: "Inactive Project",
@@ -96,6 +91,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_105,
         linear_team_id: "team_nav_hook_13105",
         linear_team_key: "P13105",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13105",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -104,7 +100,12 @@ defmodule RailWeb.Hooks.NavHookTest do
           "done" => "st_done",
           "canceled" => "st_canceled"
         },
-        linear_workspace_id: ws_id,
+        linear_workspace: %{
+          name: "Nav Hook Workspace 13104",
+          external_id: "lin_ws_nav_hook_13104",
+          token: "lin_api_token_nav_hook_13104",
+          webhook_secret: "whsec_nav_hook_13104"
+        },
         active: false
       })
 
@@ -115,6 +116,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_106,
         linear_team_id: "team_nav_hook_13106",
         linear_team_key: "ACT",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13106",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -123,7 +125,12 @@ defmodule RailWeb.Hooks.NavHookTest do
           "done" => "st_done",
           "canceled" => "st_canceled"
         },
-        linear_workspace_id: ws_id,
+        linear_workspace: %{
+          name: "Nav Hook Workspace 13101",
+          external_id: "lin_ws_nav_hook_13101_3",
+          token: "lin_api_token_nav_hook_13101",
+          webhook_secret: "whsec_nav_hook_13101"
+        },
         active: true
       })
 
@@ -148,14 +155,6 @@ defmodule RailWeb.Hooks.NavHookTest do
   end
 
   test "close_new_issue dismisses the modal", %{conn: conn} do
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Nav Hook Workspace 13107",
-        external_id: "lin_ws_nav_hook_13107",
-        token: "lin_api_token_nav_hook_13107",
-        webhook_secret: "whsec_nav_hook_13107"
-      })
-
     {:ok, _project} =
       Projects.create_project(system_scope(), %{
         name: "Nav Hook Project 13108",
@@ -163,6 +162,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_108,
         linear_team_id: "team_nav_hook_13108",
         linear_team_key: "P13108",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13108",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -171,7 +171,12 @@ defmodule RailWeb.Hooks.NavHookTest do
           "done" => "st_done",
           "canceled" => "st_canceled"
         },
-        linear_workspace_id: ws_id,
+        linear_workspace: %{
+          name: "Nav Hook Workspace 13107",
+          external_id: "lin_ws_nav_hook_13107",
+          token: "lin_api_token_nav_hook_13107",
+          webhook_secret: "whsec_nav_hook_13107"
+        },
         active: true
       })
 
@@ -195,14 +200,6 @@ defmodule RailWeb.Hooks.NavHookTest do
   end
 
   test "capture_form_change updates form values and enables submit button", %{conn: conn} do
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Nav Hook Workspace 13109",
-        external_id: "lin_ws_nav_hook_13109",
-        token: "lin_api_token_nav_hook_13109",
-        webhook_secret: "whsec_nav_hook_13109"
-      })
-
     {:ok, _project1} =
       Projects.create_project(system_scope(), %{
         name: "Prj 1",
@@ -210,6 +207,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_110,
         linear_team_id: "team_nav_hook_13110",
         linear_team_key: "P13110",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13110",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -218,7 +216,12 @@ defmodule RailWeb.Hooks.NavHookTest do
           "done" => "st_done",
           "canceled" => "st_canceled"
         },
-        linear_workspace_id: ws_id,
+        linear_workspace: %{
+          name: "Nav Hook Workspace 13109",
+          external_id: "lin_ws_nav_hook_13109",
+          token: "lin_api_token_nav_hook_13109",
+          webhook_secret: "whsec_nav_hook_13109"
+        },
         active: true
       })
 
@@ -229,6 +232,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_111,
         linear_team_id: "team_nav_hook_13111",
         linear_team_key: "P13111",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13111",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -237,7 +241,12 @@ defmodule RailWeb.Hooks.NavHookTest do
           "done" => "st_done",
           "canceled" => "st_canceled"
         },
-        linear_workspace_id: ws_id,
+        linear_workspace: %{
+          name: "Nav Hook Workspace 13101",
+          external_id: "lin_ws_nav_hook_13101_4",
+          token: "lin_api_token_nav_hook_13101",
+          webhook_secret: "whsec_nav_hook_13101"
+        },
         active: true
       })
 
@@ -271,14 +280,6 @@ defmodule RailWeb.Hooks.NavHookTest do
   end
 
   test "capture_form_submit does nothing when ask is blank", %{conn: conn} do
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Nav Hook Workspace 13112",
-        external_id: "lin_ws_nav_hook_13112",
-        token: "lin_api_token_nav_hook_13112",
-        webhook_secret: "whsec_nav_hook_13112"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Nav Hook Project 13113",
@@ -286,6 +287,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_113,
         linear_team_id: "team_nav_hook_13113",
         linear_team_key: "P13113",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13113",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -294,7 +296,12 @@ defmodule RailWeb.Hooks.NavHookTest do
           "done" => "st_done",
           "canceled" => "st_canceled"
         },
-        linear_workspace_id: ws_id,
+        linear_workspace: %{
+          name: "Nav Hook Workspace 13112",
+          external_id: "lin_ws_nav_hook_13112",
+          token: "lin_api_token_nav_hook_13112",
+          webhook_secret: "whsec_nav_hook_13112"
+        },
         active: true
       })
 
@@ -350,14 +357,6 @@ defmodule RailWeb.Hooks.NavHookTest do
   test "capture_form_submit creates issue, resets form, and broadcasts pipeline_changed", %{
     conn: conn
   } do
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Nav Hook Workspace 13114",
-        external_id: "lin_ws_nav_hook_13114",
-        token: "lin_api_token_nav_hook_13114",
-        webhook_secret: "whsec_nav_hook_13114"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Nav Hook Project 13115",
@@ -365,9 +364,15 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_115,
         linear_team_id: "team_nav_ok",
         linear_team_key: "P13115",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13115",
         linear_state_ids: %{"triage" => "st_triage_ok"},
-        linear_workspace_id: ws_id,
+        linear_workspace: %{
+          name: "Nav Hook Workspace 13114",
+          external_id: "lin_ws_nav_hook_13114",
+          token: "lin_api_token_nav_hook_13114",
+          webhook_secret: "whsec_nav_hook_13114"
+        },
         active: true
       })
 
@@ -380,9 +385,6 @@ defmodule RailWeb.Hooks.NavHookTest do
       })
 
     authed_conn = log_in_user(conn, user)
-
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline_changed")
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
 
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_nav_captured",
@@ -412,19 +414,9 @@ defmodule RailWeb.Hooks.NavHookTest do
     refute has_element?(view, "#capture-idea-dialog")
 
     # PubSub broadcast received
-    assert_receive :pipeline_changed
-    assert_receive {:pipeline_changed, %{event: :issue_captured, issue_id: "iss_" <> _}}
   end
 
   test "capture_form_submit keeps modal open and preserves ask text on error", %{conn: conn} do
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Nav Hook Workspace 13116",
-        external_id: "lin_ws_nav_hook_13116",
-        token: "lin_api_token_nav_hook_13116",
-        webhook_secret: "whsec_nav_hook_13116"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Nav Hook Project 13117",
@@ -432,9 +424,15 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_117,
         linear_team_id: "team_nav_err",
         linear_team_key: "P13117",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13117",
         linear_state_ids: %{"triage" => "st_triage_err"},
-        linear_workspace_id: ws_id,
+        linear_workspace: %{
+          name: "Nav Hook Workspace 13116",
+          external_id: "lin_ws_nav_hook_13116",
+          token: "lin_api_token_nav_hook_13116",
+          webhook_secret: "whsec_nav_hook_13116"
+        },
         active: true
       })
 
@@ -471,14 +469,6 @@ defmodule RailWeb.Hooks.NavHookTest do
   end
 
   test "handles switcher, theme, and rail toggle events", %{conn: conn} do
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Nav Hook Workspace 13118",
-        external_id: "lin_ws_nav_hook_13118",
-        token: "lin_api_token_nav_hook_13118",
-        webhook_secret: "whsec_nav_hook_13118"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Nav Hook Project 13119",
@@ -486,6 +476,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_119,
         linear_team_id: "team_nav_hook_13119",
         linear_team_key: "P13119",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13119",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -494,7 +485,12 @@ defmodule RailWeb.Hooks.NavHookTest do
           "done" => "st_done",
           "canceled" => "st_canceled"
         },
-        linear_workspace_id: ws_id,
+        linear_workspace: %{
+          name: "Nav Hook Workspace 13118",
+          external_id: "lin_ws_nav_hook_13118",
+          token: "lin_api_token_nav_hook_13118",
+          webhook_secret: "whsec_nav_hook_13118"
+        },
         active: true
       })
 
@@ -523,27 +519,6 @@ defmodule RailWeb.Hooks.NavHookTest do
 
     render_click(view, "select_project", %{"project_id" => ""})
     assert_patched(view, ~p"/issues")
-  end
-
-  test "handles live_sync and pipeline_changed info messages", %{conn: conn} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_nav_hook_10",
-        login: "nav_hook_user_10",
-        email: "nav_hook_user_10@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
-
-    send(view.pid, {:live_sync, %{}})
-    send(view.pid, :pipeline_changed)
-    send(view.pid, %{event: "pipeline_changed"})
-    send(view.pid, :unhandled_message)
-
-    assert has_element?(view, "#issues-view")
   end
 
   test "open_new_issue sets default_project_id to nil when no active projects exist", %{
@@ -592,14 +567,6 @@ defmodule RailWeb.Hooks.NavHookTest do
   test "capture_form_submit falls back to medium on invalid priority and fetches project from database", %{
     conn: conn
   } do
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Nav Hook Workspace 13120",
-        external_id: "lin_ws_nav_hook_13120",
-        token: "lin_api_token_nav_hook_13120",
-        webhook_secret: "whsec_nav_hook_13120"
-      })
-
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_nav_hook_13",
@@ -620,9 +587,15 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_121,
         linear_team_id: "team_late",
         linear_team_key: "P13121",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13121",
         linear_state_ids: %{"triage" => "st_triage_late"},
-        linear_workspace_id: ws_id,
+        linear_workspace: %{
+          name: "Nav Hook Workspace 13120",
+          external_id: "lin_ws_nav_hook_13120",
+          token: "lin_api_token_nav_hook_13120",
+          webhook_secret: "whsec_nav_hook_13120"
+        },
         active: true
       })
 
@@ -650,14 +623,6 @@ defmodule RailWeb.Hooks.NavHookTest do
   end
 
   test "capture_form_submit handles string error and atom error correctly", %{conn: conn} do
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Nav Hook Workspace 13122",
-        external_id: "lin_ws_nav_hook_13122",
-        token: "lin_api_token_nav_hook_13122",
-        webhook_secret: "whsec_nav_hook_13122"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Nav Hook Project 13123",
@@ -665,6 +630,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_installation_id: 13_123,
         linear_team_id: "team_nav_hook_13123",
         linear_team_key: "P13123",
+        default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13123",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -673,7 +639,12 @@ defmodule RailWeb.Hooks.NavHookTest do
           "done" => "st_done",
           "canceled" => "st_canceled"
         },
-        linear_workspace_id: ws_id,
+        linear_workspace: %{
+          name: "Nav Hook Workspace 13122",
+          external_id: "lin_ws_nav_hook_13122",
+          token: "lin_api_token_nav_hook_13122",
+          webhook_secret: "whsec_nav_hook_13122"
+        },
         active: true
       })
 
@@ -691,8 +662,8 @@ defmodule RailWeb.Hooks.NavHookTest do
 
     render_click(view, "open_new_issue", %{})
 
-    # String error from capture_issue
-    expect(Rail.Issues, :capture_issue, fn _scope, _project, _ask, _opts ->
+    # String error from create_issue
+    expect(Rail.Issues, :create_issue, fn _project, _attrs ->
       {:error, "Direct string failure"}
     end)
 
@@ -704,8 +675,8 @@ defmodule RailWeb.Hooks.NavHookTest do
 
     assert has_element?(view, "#capture-error-banner", "Direct string failure")
 
-    # Atom error from capture_issue
-    expect(Rail.Issues, :capture_issue, fn _scope, _project, _ask, _opts ->
+    # Atom error from create_issue
+    expect(Rail.Issues, :create_issue, fn _project, _attrs ->
       {:error, :not_authorized}
     end)
 

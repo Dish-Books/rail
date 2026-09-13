@@ -8,6 +8,9 @@ defmodule Rail.Roles.Schemas.RoleTest do
   alias Rail.Roles.Schemas.Role
 
   setup do
+    {:ok, backend} =
+      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, project} =
@@ -17,18 +20,20 @@ defmodule Rail.Roles.Schemas.RoleTest do
         github_installation_id: 4503,
         linear_team_id: "team_role_schema",
         linear_team_key: "RLS",
+        default_branch: "main",
         clone_path: "/tmp/repos/role-schema"
       })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{
+        backend_id: backend.id,
         name: "Engineer",
         stage: :engineer,
         model: "claude-3-7-sonnet",
         system_prompt: "You are an expert engineer."
       })
 
-    %{project: project, role: role}
+    %{backend: backend, project: project, role: role}
   end
 
   test "canonical_stages/0 returns list of 9 stages" do
@@ -41,16 +46,6 @@ defmodule Rail.Roles.Schemas.RoleTest do
     refute :rebase in stages
   end
 
-  test "stages/0, backends/0, and reasoning_efforts/0 return allowed values" do
-    stages = Role.stages()
-    assert :product in stages
-    assert :merged in stages
-    assert :debugger in stages
-
-    assert Role.backends() == [:claude, :agy, :codex]
-    assert Role.reasoning_efforts() == [:low, :medium, :high]
-  end
-
   test "changeset validates required fields" do
     changeset = Role.changeset(%Role{}, %{})
 
@@ -58,23 +53,37 @@ defmodule Rail.Roles.Schemas.RoleTest do
              project_id: ["can't be blank"],
              name: ["can't be blank"],
              model: ["can't be blank"],
-             system_prompt: ["can't be blank"]
+             system_prompt: ["can't be blank"],
+             backend_id: ["can't be blank"]
            } = errors_on(changeset)
   end
 
-  test "changeset accepts valid attributes and sets defaults", %{project: project} do
+  test "changeset accepts valid attributes and sets defaults", %{backend: backend, project: project} do
+    attrs = %{
+      name: "Architect Agent",
+      model: "claude-3-7-sonnet",
+      system_prompt: "You design systems.",
+      backend_id: backend.id
+    }
+
+    changeset = Role.changeset(%Role{}, Map.put(attrs, :project_id, project.id))
+
+    assert changeset.valid?
+    assert get_field(changeset, :max_concurrent) == 1
+    assert get_field(changeset, :position) == 0
+  end
+
+  test "changeset requires a backend", %{project: project} do
     attrs = %{
       name: "Architect Agent",
       model: "claude-3-7-sonnet",
       system_prompt: "You design systems."
     }
 
-    changeset = Role.changeset(%Role{}, attrs, project.id)
+    changeset = Role.changeset(%Role{}, Map.put(attrs, :project_id, project.id))
 
-    assert changeset.valid?
-    assert get_field(changeset, :cli_backend) == :claude
-    assert get_field(changeset, :max_concurrent) == 1
-    assert get_field(changeset, :position) == 0
+    refute changeset.valid?
+    assert %{backend_id: ["can't be blank"]} = errors_on(changeset)
   end
 
   test "changeset validates numeric bounds", %{project: project} do
@@ -86,7 +95,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
       position: -1
     }
 
-    changeset = Role.changeset(%Role{}, attrs, project.id)
+    changeset = Role.changeset(%Role{}, Map.put(attrs, :project_id, project.id))
 
     assert %{
              max_concurrent: ["must be greater than or equal to 1"],
@@ -100,78 +109,56 @@ defmodule Rail.Roles.Schemas.RoleTest do
       model: "model-1",
       system_prompt: "Prompt",
       stage: "invalid_stage",
-      cli_backend: "invalid_backend",
       reasoning_effort: "invalid_effort"
     }
 
-    changeset = Role.changeset(%Role{}, attrs, project.id)
+    changeset = Role.changeset(%Role{}, Map.put(attrs, :project_id, project.id))
 
     assert %{
              stage: ["is invalid"],
-             cli_backend: ["is invalid"],
              reasoning_effort: ["is invalid"]
            } = errors_on(changeset)
   end
 
-  test "changeset enforces partial unique index on project_id and stage", %{project: project} do
+  test "changeset enforces partial unique index on project_id and stage", %{backend: backend, project: project} do
     assert {:error, changeset} =
              %Role{}
-             |> Role.changeset(
-               %{
+             |> Role.changeset(%{
+                 project_id: project.id,
                  name: "Engineer 2",
                  stage: :engineer,
                  model: "claude-3-7-sonnet",
-                 system_prompt: "Code 2"
-               },
-               project.id
-             )
+                 system_prompt: "Code 2",
+                 backend_id: backend.id
+               })
              |> Repo.insert()
 
     assert %{stage: ["has already been taken"]} = errors_on(changeset)
   end
 
-  test "allows multiple unbound roles with stage: nil in the same project", %{project: project} do
+  test "allows multiple unbound roles with stage: nil in the same project", %{backend: backend, project: project} do
     assert {:ok, %Role{stage: nil, name: "Unbound 1"}} =
              %Role{}
-             |> Role.changeset(
-               %{name: "Unbound 1", stage: nil, model: "m", system_prompt: "p"},
-               project.id
-             )
+             |> Role.changeset(%{project_id: project.id, name: "Unbound 1", stage: nil, model: "m", system_prompt: "p", backend_id: backend.id})
              |> Repo.insert()
 
     assert {:ok, %Role{stage: nil, name: "Unbound 2"}} =
              %Role{}
-             |> Role.changeset(
-               %{name: "Unbound 2", stage: nil, model: "m", system_prompt: "p"},
-               project.id
-             )
+             |> Role.changeset(%{project_id: project.id, name: "Unbound 2", stage: nil, model: "m", system_prompt: "p", backend_id: backend.id})
              |> Repo.insert()
   end
 
-  test "ignores project_id passed in attrs to prevent unverified overrides", %{project: project} do
-    other_project_id = "prj_000000000000000000000000"
-
-    attrs = %{
-      name: "Role Safe",
-      model: "claude",
-      system_prompt: "Prompt",
-      project_id: other_project_id
-    }
-
-    changeset = Role.changeset(%Role{}, attrs, project.id)
-    assert get_field(changeset, :project_id) == project.id
-  end
-
-  test "validates foreign key on project_id" do
+  test "validates foreign key on project_id", %{backend: backend} do
     attrs = %{
       name: "Missing Project Role",
       model: "claude",
-      system_prompt: "Prompt"
+      system_prompt: "Prompt",
+      backend_id: backend.id
     }
 
     assert {:error, changeset} =
              %Role{}
-             |> Role.changeset(attrs, "prj_000000000000000000000000")
+             |> Role.changeset(Map.put(attrs, :project_id, "prj_000000000000000000000000"))
              |> Repo.insert()
 
     assert %{project_id: ["does not exist"]} = errors_on(changeset)

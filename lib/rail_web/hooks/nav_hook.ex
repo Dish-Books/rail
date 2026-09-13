@@ -4,20 +4,22 @@ defmodule RailWeb.Hooks.NavHook do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline
   alias Rail.Projects
+  alias Rail.Runs
+  alias Rail.Runs.Schemas.Run
+  alias Rail.Scope
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
   def on_mount(:default, params, _session, socket) do
     scope = socket.assigns.current_scope
-    projects = Projects.list_projects(scope)
+    projects = Projects.list_projects()
 
     attention_count =
       if projects == [] do
         0
       else
-        count_attention(scope, projects)
+        count_attention(projects)
       end
 
     url_project =
@@ -32,11 +34,6 @@ defmodule RailWeb.Hooks.NavHook do
       end
 
     current_project_id = url_project || saved_project
-
-    if connected?(socket) do
-      subscribe_livesync(current_project_id)
-      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline_changed")
-    end
 
     socket =
       socket
@@ -55,7 +52,6 @@ defmodule RailWeb.Hooks.NavHook do
       |> assign(:current_section, :overview)
       |> attach_hook(:nav_handle_params, :handle_params, &handle_nav_params/3)
       |> attach_hook(:nav_handle_events, :handle_event, &handle_nav_events/3)
-      |> attach_hook(:nav_handle_info, :handle_info, &handle_nav_info/2)
 
     {:cont, socket}
   end
@@ -69,12 +65,12 @@ defmodule RailWeb.Hooks.NavHook do
 
     current_path = URI.parse(uri).path
 
-    if socket.assigns[:current_scope] do
-      Users.set_project_filter(socket.assigns.current_scope, project_id)
-    end
+    scope = socket.assigns[:current_scope]
 
-    if connected?(socket) and project_id != socket.assigns[:current_project_id] do
-      subscribe_livesync(project_id)
+    # Updating a user requires :users/:manage; the session's own user is already
+    # authenticated by the router, so this self-update runs as the system.
+    if scope && scope.user do
+      Users.update_user(Scope.for_system(), scope.user, %{last_project_filter: project_id})
     end
 
     socket =
@@ -168,11 +164,9 @@ defmodule RailWeb.Hooks.NavHook do
     if String.trim(ask) == "" do
       {:halt, socket}
     else
-      scope = socket.assigns.current_scope
-
       project =
         Enum.find(socket.assigns.projects, &(&1.id == project_id)) ||
-          fetch_project(scope, project_id)
+          fetch_project(project_id)
 
       if is_nil(project) do
         socket =
@@ -184,13 +178,11 @@ defmodule RailWeb.Hooks.NavHook do
       else
         socket = assign(socket, :capture_submitting, true)
 
-        case Issues.capture_issue(scope, project, ask, priority: priority) do
-          {:ok, issue} ->
-            Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline_changed", :pipeline_changed)
-            Pipeline.broadcast_pipeline_changed(%{event: :issue_captured, issue_id: issue.id})
-
+        case Issues.create_issue(project, %{description: ask, priority: priority}) do
+          {:ok, _issue} ->
             socket =
               socket
+              |> refresh_nav_state()
               |> assign(:show_new_issue_modal, false)
               |> assign(:capture_ask, "")
               |> assign(:capture_project_id, nil)
@@ -219,47 +211,22 @@ defmodule RailWeb.Hooks.NavHook do
     {:cont, socket}
   end
 
-  defp handle_nav_info({:live_sync, _data}, socket) do
-    {:cont, refresh_nav_state(socket)}
-  end
-
-  defp handle_nav_info(:pipeline_changed, socket) do
-    {:cont, refresh_nav_state(socket)}
-  end
-
-  defp handle_nav_info(%{event: "pipeline_changed"}, socket) do
-    {:cont, refresh_nav_state(socket)}
-  end
-
-  defp handle_nav_info(_msg, socket) do
-    {:cont, socket}
-  end
-
   defp refresh_nav_state(socket) do
-    scope = socket.assigns.current_scope
-    projects = Projects.list_projects(scope)
-    attention_count = count_attention(scope, projects)
+    projects = Projects.list_projects()
+    attention_count = count_attention(projects)
 
     socket
     |> assign(:projects, projects)
     |> assign(:attention_count, attention_count)
   end
 
-  defp count_attention(scope, projects) do
-    tasks =
-      Enum.flat_map(projects, fn project ->
-        Pipeline.list_tasks(scope, project.id)
-      end)
-
-    Enum.count(tasks, &Rail.Domain.OverviewQueue.needs_attention?/1)
-  end
-
-  defp subscribe_livesync(nil) do
-    LiveSync.Replication.subscribe("live_sync:all")
-  end
-
-  defp subscribe_livesync(project_id) do
-    LiveSync.Replication.subscribe("live_sync:#{project_id}")
+  # What needs a human is counted in runs, the same as the overview lists them.
+  defp count_attention(projects) do
+    projects
+    |> Enum.flat_map(fn project ->
+      Runs.list_runs(project_id: project.id, preload: [:questions, task: :issue])
+    end)
+    |> Enum.count(&Run.needs_attention?/1)
   end
 
   defp default_capture_project_id(projects, current_project_id) do
@@ -284,20 +251,15 @@ defmodule RailWeb.Hooks.NavHook do
     ask = Map.get(params, "ask", "")
     project_id = Map.get(params, "project_id")
     raw_priority = Map.get(params, "priority", "medium")
-
-    priority =
-      case Issue.cast_priority(raw_priority) do
-        {:ok, p} -> p
-        :error -> :medium
-      end
+    priority = Enum.find(Issue.priorities(), &(Atom.to_string(&1) == raw_priority)) || :medium
 
     {ask, project_id, priority}
   end
 
-  defp fetch_project(_scope, id) when id in [nil, ""], do: nil
+  defp fetch_project(id) when id in [nil, ""], do: nil
 
-  defp fetch_project(scope, project_id) do
-    case Projects.get_project(scope, project_id) do
+  defp fetch_project(project_id) do
+    case Projects.get_project(project_id) do
       {:ok, project} -> project
       _other -> nil
     end

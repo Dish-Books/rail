@@ -1,34 +1,39 @@
 defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.QuestionQueue
+
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
-  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Runs
+  alias Rail.Runs.DetectedQuestion
+  alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
-    scope = system_scope()
+    {:ok, backend} =
+      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Dismiss Question Workspace",
-        external_id: "lin_ws_dismiss_question",
-        token: "lin_api_token_dismiss_question",
-        webhook_secret: "whsec_dismiss_question"
-      })
+    scope = system_scope()
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Dismiss Question Project 6701",
         github_repo: "org/dismiss-question-6701",
         github_installation_id: 6701,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Dismiss Question Workspace",
+          external_id: "lin_ws_dismiss_question",
+          token: "lin_api_token_dismiss_question",
+          webhook_secret: "whsec_dismiss_question"
+        },
         linear_team_id: "team_dismiss_question_6701",
         linear_team_key: "P6701",
+        default_branch: "main",
         clone_path: "/tmp/repos/dismiss-question-6701",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -45,7 +50,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
       "title" => "Dismiss Question Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Dismiss Question Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Dismiss Question Issue"})
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_dismiss_question_1"})
 
@@ -53,6 +58,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
+            backend_id: backend.id,
             stage: stage,
             name: "#{stage} role",
             model: "claude-3-7-sonnet",
@@ -62,63 +68,98 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
         {stage, role}
       end)
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
-    %{project: project, issue: issue, task: task, roles: roles}
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:product].id,
+        status: :running,
+        conversation_id: "sess_dismiss",
+        started_at: DateTime.utc_now()
+      })
+
+    run = Repo.preload(run, task: :issue)
+
+    %{project: project, issue: issue, task: task, run: run, roles: roles}
   end
 
-  test "dismisses a pending question and releases blocked task", %{task: task} do
-    {:ok, q} = Pipeline.register_question(task, %{prompt: "Should we proceed?"})
+  test "dismissing records it and tells the agent nothing until the round is sent", %{
+    task: task,
+    run: %Run{id: run_id} = run
+  } do
+    {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
 
-    task = Pipeline.get_task!(system_scope(), task.id)
-    assert task.stage_state == :blocked
-    assert task.question_id == q.id
+    assert Repo.reload!(run).status == :blocked_on_input
 
-    assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(q.id)
+    # No spawn is expected: waving a question off says nothing to the agent.
+    assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(q)
 
-    reloaded_q = Repo.get!(Question, q.id)
-    assert reloaded_q.status == :dismissed
+    assert pending_questions(task.id) == []
+    refute Repo.get!(Question, q.id).delivered_at
 
-    reloaded_task = Repo.get!(Task, task.id)
-    assert reloaded_task.stage_state == :awaiting_approval
-    assert is_nil(reloaded_task.question_id)
+    {:ok, :sent, %Run{id: ^run_id} = sent} = Pipeline.send_answers(Repo.reload!(run))
+
+    assert Repo.get!(Question, q.id).delivered_at
+
+    lines = sent |> Runs.list_run_events() |> Enum.map(& &1.line)
+    assert Enum.any?(lines, &(&1 =~ "Should we proceed?"))
+    assert Enum.any?(lines, &(&1 =~ "Dismissed without an answer"))
   end
 
-  test "dismisses question without touching task if task was not parked on it", %{task: task} do
-    {:ok, q} = Pipeline.register_question(task, %{prompt: "Should we proceed?"})
+  test "dismissing one of a batch leaves the rest and does not resume the run", %{task: task, run: run} do
+    {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
+    {:ok, second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Ship behind a flag?"})
 
-    {:ok, task} =
-      Pipeline.update_task(system_scope(), task.id, %{stage_state: :running, question_id: nil})
+    assert Enum.map(pending_questions(task.id), & &1.id) == [first.id, second.id]
+
+    # No spawn is stubbed: resuming the run here would raise on the unexpected call.
+    assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(first)
+
+    assert Repo.reload!(run).status == :blocked_on_input
+    assert Enum.map(pending_questions(task.id), & &1.id) == [second.id]
+    refute Repo.get!(Question, first.id).delivered_at
+  end
+
+  test "leaves a task that is no longer parked alone", %{task: task, run: run} do
+    {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
+
+    # Another question is still pending, so waving this one off resumes nothing.
+    {:ok, _second} =
+      Pipeline.register_question(run, %DetectedQuestion{prompt: "And the migration?"})
+
+    stub(Runs, :start_os_process, fn _run, _argv -> {:error, :not_expected} end)
 
     assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(q)
 
-    reloaded_task = Repo.get!(Task, task.id)
-    assert reloaded_task.stage_state == :running
-    assert is_nil(reloaded_task.question_id)
+    assert Repo.reload!(run).status == :blocked_on_input
+    assert [%Question{prompt: "And the migration?"}] = pending_questions(task.id)
   end
 
-  test "returns error when dismissing an answered question", %{task: task} do
-    {:ok, q_answered} = Pipeline.register_question(task, %{prompt: "Answered question?"})
-    {:ok, q_answered} = Pipeline.answer_question(q_answered, "Yes")
+  test "returns error when dismissing an answered question", %{task: task, run: run, roles: roles} do
+    {:ok, _product_run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:product].id,
+        conversation_id: "sess_product",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
 
-    assert {:error, :already_resolved} = Pipeline.dismiss_question(q_answered.id)
+    {:ok, q_answered} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Answered question?"})
+
+    {:ok, q_answered} =
+      q_answered
+      |> Question.changeset(%{answer: "Yes", status: :answered, answered_at: DateTime.utc_now()})
+      |> Repo.update()
+
+    assert {:error, :already_resolved} = Pipeline.dismiss_question(q_answered)
   end
 
-  test "returns error when dismissing an already dismissed question", %{task: task} do
-    {:ok, q_dismissed} = Pipeline.register_question(task, %{prompt: "Dismissed question?"})
+  test "returns error when dismissing an already dismissed question", %{run: run} do
+    {:ok, q_dismissed} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Dismissed question?"})
     {:ok, q_dismissed} = Pipeline.dismiss_question(q_dismissed)
 
-    assert {:error, :already_resolved} = Pipeline.dismiss_question(q_dismissed.id)
-  end
-
-  test "validates scope authorization and existence", %{task: task} do
-    assert {:error, :not_authorized} = Pipeline.dismiss_question(%Rail.Scope{}, "qst_any")
-    assert {:error, :not_found} = Pipeline.dismiss_question("qst_nonexistent")
-    assert {:error, :not_found} = Pipeline.dismiss_question(123)
-
-    {:ok, q} = Pipeline.register_question(task, %{prompt: "Scoped question?"})
-
-    user_scope = %Rail.Scope{user: %{id: "usr_test"}}
-    assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(user_scope, q.id)
+    assert {:error, :already_resolved} = Pipeline.dismiss_question(q_dismissed)
   end
 end

@@ -26,7 +26,14 @@ if [[ -z "$STAGE" ]]; then
   fi
 fi
 
-if [[ -n "${RAIL_SCRATCH:-}" ]]; then
+# Rail no longer exports RAIL_SCRATCH: the brief names the scratch directory by
+# absolute path, so recover it from the prompt the way the stage is recovered.
+RAIL_SCRATCH="${RAIL_SCRATCH:-}"
+if [[ -z "$RAIL_SCRATCH" ]]; then
+  RAIL_SCRATCH=$(printf '%s\n' "$*" | grep -oE '/[^[:space:]"]*/scratch/tsk_[A-Za-z0-9]+' | head -n 1 || true)
+fi
+
+if [[ -n "$RAIL_SCRATCH" ]]; then
   mkdir -p "$RAIL_SCRATCH"
 
   IDENTIFIER="ISS-1"
@@ -160,11 +167,6 @@ fi
 FIXTURE="$REPO_ROOT/test/fixtures/streams/${STAGE}_stream.ndjson"
 if [[ -f "$FIXTURE" ]]; then
   cat "$FIXTURE"
-  if [[ -n "${RAIL_STREAM:-}" && -f "$RAIL_STREAM" ]]; then
-    if [[ ! -s "$RAIL_STREAM" ]]; then
-      cat "$FIXTURE" >> "$RAIL_STREAM"
-    fi
-  fi
 else
   echo '{"type":"system","subtype":"init","session_id":"sess-generic","tools":[],"mcp_servers":[]}'
   echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Done.\n\nVERDICT: PASSED"}]}}'

@@ -7,6 +7,9 @@ defmodule Rail.Roles.Actions.UpdateRoleTest do
   alias Rail.Scope
 
   setup do
+    {:ok, backend} =
+      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
     scope = system_scope()
 
     {:ok, project} =
@@ -16,11 +19,13 @@ defmodule Rail.Roles.Actions.UpdateRoleTest do
         github_installation_id: 4103,
         linear_team_id: "team_update_role",
         linear_team_key: "UPR",
+        default_branch: "main",
         clone_path: "/tmp/repos/update-role"
       })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{
+        backend_id: backend.id,
         name: "Old Name",
         stage: :engineer,
         model: "claude-3-7-sonnet",

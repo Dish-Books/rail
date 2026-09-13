@@ -8,28 +8,30 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Roles.Schemas.Role
+  alias Rail.Runs
+  alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
-    scope = system_scope()
+    {:ok, backend} =
+      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Question Schema Workspace",
-        external_id: "lin_ws_question_schema",
-        token: "lin_api_token_question_schema",
-        webhook_secret: "whsec_question_schema"
-      })
+    scope = system_scope()
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Question Schema Project 7501",
         github_repo: "org/question-schema-7501",
         github_installation_id: 7501,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Question Schema Workspace",
+          external_id: "lin_ws_question_schema",
+          token: "lin_api_token_question_schema",
+          webhook_secret: "whsec_question_schema"
+        },
         linear_team_id: "team_question_schema_7501",
         linear_team_key: "P7501",
+        default_branch: "main",
         clone_path: "/tmp/repos/question-schema-7501",
         linear_state_ids: %{
           "triage" => "st_triage",
@@ -46,18 +48,34 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
       "title" => "Question Schema Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Question Schema Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Question Schema Issue"})
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_question_schema_1"})
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
-    {:ok, task} = Pipeline.bring_local(scope, issue)
+    {:ok, role} =
+      Roles.create_role(scope, project, %{
+        backend_id: backend.id,
+        stage: :product,
+        name: "product role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the product agent."
+      })
 
-    %{project: project, issue: issue, task: task}
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    %{backend: backend, project: project, issue: issue, task: task, run: run}
   end
 
   test "changeset validates required fields" do
     assert %{
              task_id: ["can't be blank"],
+             run_id: ["can't be blank"],
              prompt: ["can't be blank"]
            } = errors_on(Question.changeset(%Question{}, %{}))
 
@@ -66,8 +84,9 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
            } = errors_on(Question.changeset(%Question{}, %{status: nil}))
   end
 
-  test "changeset accepts valid attributes and sets defaults", %{task: task} do
+  test "changeset accepts valid attributes and sets defaults", %{task: task, run: run} do
     attrs = %{
+      run_id: run.id,
       prompt: "Which approach should we take?",
       options: ["Approach 1", "Approach 2"],
       context_summary: "Detailed summary context",
@@ -115,25 +134,18 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
     refute Question.resolved?(123)
   end
 
-  test "validates foreign key on task_id", %{task: _task} do
+  test "validates foreign key on task_id", %{run: run} do
     assert {:error, %{errors: [task_id: {"does not exist", _details}]}} =
              %Question{}
              |> Question.changeset(
-               %{prompt: "Missing task prompt"},
+               %{prompt: "Missing task prompt", run_id: run.id},
                "tsk_000000000000000000000000"
              )
              |> Repo.insert()
   end
 
-  test "preloads belongs_to task and role", %{task: task} do
+  test "preloads belongs_to task and run", %{task: task, run: %Run{id: run_id} = run} do
     %Task{id: task_id} = task = task
-
-    {:ok, %Role{id: role_id} = role} =
-      Roles.create_role(system_scope(), task.project_id, %{
-        name: "Role 7502",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are an expert agent for role 7502."
-      })
 
     question =
       Repo.insert!(
@@ -141,17 +153,17 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
           %Question{},
           %{
             prompt: "Question for role?",
-            role_id: role.id
+            run_id: run.id
           },
           task.id
         )
       )
 
-    preloaded = Repo.preload(question, [:task, :role])
+    preloaded = Repo.preload(question, [:task, :run])
 
     assert %Question{
              task: %Task{id: ^task_id},
-             role: %Role{id: ^role_id}
+             run: %Run{id: ^run_id}
            } = preloaded
   end
 end

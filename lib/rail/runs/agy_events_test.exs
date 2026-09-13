@@ -1,9 +1,9 @@
 defmodule Rail.Runs.AgyEventsTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Domain.TaskUsage
+  alias Rail.Runs.Schemas.Run
   alias Rail.Runs.AgyEvents
-  alias Rail.Runs.QuestionDetector
+  alias Rail.Runs.DetectedQuestion
 
   test "parses init event, updates conversation id and logs tool count" do
     state = AgyEvents.new(task_id: "tsk_1", role_id: "rol_1")
@@ -77,11 +77,10 @@ defmodule Rail.Runs.AgyEventsTest do
     assert state.num_turns == 2
     assert state.thinking_tokens == 10
 
-    assert %TaskUsage{} = state.usage
+    assert %Run.Usage{} = state.usage
     assert state.usage.input_tokens == 300
     assert state.usage.output_tokens == 40
     assert state.usage.cache_read_input_tokens == 2700
-    assert is_nil(state.usage.total_cost)
 
     assert AgyEvents.success?(state)
     refute AgyEvents.reported_failure?(state)
@@ -290,9 +289,8 @@ defmodule Rail.Runs.AgyEventsTest do
 
     state = AgyEvents.handle_event(state, step)
 
-    assert %QuestionDetector{} = state.detected_question
-    assert state.detected_question.prompt == "Which schema?"
-    assert state.detected_question.options == ["public", "private"]
+    assert [%DetectedQuestion{prompt: "Which schema?", options: ["public", "private"]}] =
+             state.detected_questions
 
     # Subsequent line in later step preserves existing question
     later_step = %{
@@ -305,7 +303,7 @@ defmodule Rail.Runs.AgyEventsTest do
     }
 
     state = AgyEvents.handle_event(state, later_step)
-    assert state.detected_question.prompt == "Which schema?"
+    assert Enum.map(state.detected_questions, & &1.prompt) == ["Which schema?"]
   end
 
   test "parse_line decodes NDJSON or logs non-JSON stdout" do
