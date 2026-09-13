@@ -1,6 +1,8 @@
 defmodule RailWeb.Router do
   use RailWeb, :router
 
+  import Oban.Web.Router
+
   alias RailWeb.Hooks.NavHook
 
   pipeline :browser do
@@ -76,6 +78,16 @@ defmodule RailWeb.Router do
       live "/settings/roles", Settings.RolesLive
       live "/settings/backends", Settings.BackendsLive
     end
+  end
+
+  scope "/" do
+    pipe_through [:browser, :require_admin_user]
+
+    oban_dashboard "/oban",
+      on_mount: [
+        {RailWeb.UserAuth, :require_authenticated},
+        {RailWeb.UserAuth, :require_admin}
+      ]
   end
 
   scope "/", RailWeb do
