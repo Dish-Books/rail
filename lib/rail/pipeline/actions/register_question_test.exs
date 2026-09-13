@@ -14,7 +14,6 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, backend} =
@@ -60,11 +59,20 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
         {stage, role}
       end)
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_register_question_1",
-      "identifier" => "RGQ-1",
-      "title" => "Register Question Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_register_question_1",
+              "identifier" => "RGQ-1",
+              "title" => "Register Question Issue"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Register Question Issue"})
 

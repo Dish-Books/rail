@@ -16,7 +16,6 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup %{conn: conn} do
     {:ok, user} =
@@ -59,11 +58,20 @@ defmodule RailWeb.TaskLiveTest do
         system_prompt: "You are the product agent."
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_live_1",
-      "identifier" => "TLV-1",
-      "title" => "Task Live Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_task_live_1",
+              "identifier" => "TLV-1",
+              "title" => "Task Live Issue"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Task Live Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)
@@ -127,7 +135,13 @@ defmodule RailWeb.TaskLiveTest do
       "---\ntitle: A better ticket\n---\n\nThe body the agent wrote."
     )
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_live_1", "identifier" => "TLV-1"})
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueUpdate" => %{"success" => true, "issue" => %{"id" => "lin_task_live_1", "identifier" => "TLV-1"}}
+        }
+      })
+    end)
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
     assert has_element?(view, "[data-qa='product_ticket']", "The body the agent wrote.")

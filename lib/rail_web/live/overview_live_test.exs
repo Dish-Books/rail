@@ -14,7 +14,6 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Users
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   test "redirects unauthenticated user to /auth/github", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/auth/github"}}} = live(conn, ~p"/")
@@ -295,11 +294,20 @@ defmodule RailWeb.OverviewLiveTest do
       project: project,
       roles: roles
     } do
-      LinearMock.mock_create_issue_success(%{
-        "id" => "lin_queue_running",
-        "identifier" => "QUE-1",
-        "title" => "Running work"
-      })
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{
+                "id" => "lin_queue_running",
+                "identifier" => "QUE-1",
+                "title" => "Running work"
+              }
+            }
+          }
+        })
+      end)
 
       {:ok, issue} = Issues.create_issue(project, %{description: "Running work"})
       {:ok, task} = Pipeline.create_task(issue, :product)
@@ -327,11 +335,20 @@ defmodule RailWeb.OverviewLiveTest do
       project: project,
       roles: roles
     } do
-      LinearMock.mock_create_issue_success(%{
-        "id" => "lin_queue_order",
-        "identifier" => "QUE-9",
-        "title" => "Ordering"
-      })
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{
+                "id" => "lin_queue_order",
+                "identifier" => "QUE-9",
+                "title" => "Ordering"
+              }
+            }
+          }
+        })
+      end)
 
       {:ok, issue} = Issues.create_issue(project, %{description: "Ordering"})
 
@@ -376,11 +393,20 @@ defmodule RailWeb.OverviewLiveTest do
       project: project,
       roles: roles
     } do
-      LinearMock.mock_create_issue_success(%{
-        "id" => "lin_queue_blocked",
-        "identifier" => "QUE-4",
-        "title" => "Needs answers"
-      })
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{
+                "id" => "lin_queue_blocked",
+                "identifier" => "QUE-4",
+                "title" => "Needs answers"
+              }
+            }
+          }
+        })
+      end)
 
       {:ok, issue} = Issues.create_issue(project, %{description: "Needs answers"})
       {:ok, task} = Pipeline.create_task(issue, :product)
@@ -432,11 +458,20 @@ defmodule RailWeb.OverviewLiveTest do
     end
 
     test "a merged task waits on nobody", %{conn: conn, project: project, roles: roles} do
-      LinearMock.mock_create_issue_success(%{
-        "id" => "lin_queue_merged",
-        "identifier" => "QUE-6",
-        "title" => "Shipped work"
-      })
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{
+                "id" => "lin_queue_merged",
+                "identifier" => "QUE-6",
+                "title" => "Shipped work"
+              }
+            }
+          }
+        })
+      end)
 
       {:ok, issue} = Issues.create_issue(project, %{description: "Shipped work"})
       {:ok, task} = Pipeline.create_task(issue, :product)
@@ -459,11 +494,20 @@ defmodule RailWeb.OverviewLiveTest do
     end
 
     test "the role roster reads each role's own run", %{conn: conn, project: project, roles: roles} do
-      LinearMock.mock_create_issue_success(%{
-        "id" => "lin_queue_roster",
-        "identifier" => "QUE-7",
-        "title" => "Roster work"
-      })
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{
+                "id" => "lin_queue_roster",
+                "identifier" => "QUE-7",
+                "title" => "Roster work"
+              }
+            }
+          }
+        })
+      end)
 
       {:ok, issue} = Issues.create_issue(project, %{description: "Roster work"})
       {:ok, task} = Pipeline.create_task(issue, :product)
@@ -493,11 +537,20 @@ defmodule RailWeb.OverviewLiveTest do
     end
 
     test "answering by picking one of the options offered", %{conn: conn, project: project, roles: roles} do
-      LinearMock.mock_create_issue_success(%{
-        "id" => "lin_queue_options",
-        "identifier" => "QUE-11",
-        "title" => "Option work"
-      })
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{
+                "id" => "lin_queue_options",
+                "identifier" => "QUE-11",
+                "title" => "Option work"
+              }
+            }
+          }
+        })
+      end)
 
       {:ok, issue} = Issues.create_issue(project, %{description: "Option work"})
       {:ok, task} = Pipeline.create_task(issue, :product)
@@ -525,11 +578,20 @@ defmodule RailWeb.OverviewLiveTest do
     end
 
     test "a blank answer is not recorded", %{conn: conn, project: project, roles: roles} do
-      LinearMock.mock_create_issue_success(%{
-        "id" => "lin_queue_blank",
-        "identifier" => "QUE-12",
-        "title" => "Blank work"
-      })
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issueCreate" => %{
+              "success" => true,
+              "issue" => %{
+                "id" => "lin_queue_blank",
+                "identifier" => "QUE-12",
+                "title" => "Blank work"
+              }
+            }
+          }
+        })
+      end)
 
       {:ok, issue} = Issues.create_issue(project, %{description: "Blank work"})
       {:ok, task} = Pipeline.create_task(issue, :product)

@@ -7,7 +7,6 @@ defmodule RailWeb.Live.RunConversationTest do
   alias Rail.Pipeline
   alias Rail.Projects
   alias Rail.Roles
-  alias RailTest.Mocks.Linear, as: LinearMock
   alias RailWeb.Live.RunConversation
 
   setup do
@@ -48,11 +47,20 @@ defmodule RailWeb.Live.RunConversationTest do
         {stage, role}
       end)
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_conversation_1",
-      "identifier" => "CNV-1",
-      "title" => "Conversation Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_conversation_1",
+              "identifier" => "CNV-1",
+              "title" => "Conversation Issue"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Conversation Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)

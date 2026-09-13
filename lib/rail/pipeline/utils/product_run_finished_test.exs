@@ -10,7 +10,6 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, backend} =
@@ -56,11 +55,20 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
         {stage, role}
       end)
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_settle_product_1",
-      "identifier" => "S14601-1",
-      "title" => "Settle Product Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_settle_product_1",
+              "identifier" => "S14601-1",
+              "title" => "Settle Product Issue"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Settle Product Issue"})
 

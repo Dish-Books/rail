@@ -12,7 +12,6 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Tools
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, backend} =
@@ -44,15 +43,28 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
         }
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_dismiss_question_1",
-      "identifier" => "DSQ-1",
-      "title" => "Dismiss Question Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_dismiss_question_1",
+              "identifier" => "DSQ-1",
+              "title" => "Dismiss Question Issue"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Dismiss Question Issue"})
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_dismiss_question_1"})
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{"issueUpdate" => %{"success" => true, "issue" => %{"id" => "lin_dismiss_question_1"}}}
+      })
+    end)
 
     roles =
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->

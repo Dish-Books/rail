@@ -8,7 +8,6 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, backend} =
@@ -54,11 +53,20 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
         {stage, role}
       end)
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_list_questions_1",
-      "identifier" => "LQS-1",
-      "title" => "List Questions Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_list_questions_1",
+              "identifier" => "LQS-1",
+              "title" => "List Questions Issue"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "List Questions Issue"})
 

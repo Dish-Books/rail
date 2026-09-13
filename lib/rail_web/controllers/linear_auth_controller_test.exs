@@ -1,8 +1,6 @@
 defmodule RailWeb.LinearAuthControllerTest do
   use RailWeb.ConnCase, async: true
 
-  import RailTest.Mocks.Linear
-
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Users
@@ -57,13 +55,26 @@ defmodule RailWeb.LinearAuthControllerTest do
       authed_conn: conn,
       user_id: user_id
     } do
-      mock_exchange_success(
-        access_token: "lin_callback_at",
-        refresh_token: "lin_callback_rt",
-        expires_in: 3600
-      )
+      Req.Test.expect(Rail.Linear, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        assert URI.decode_query(body)["grant_type"] == "authorization_code"
 
-      mock_viewer_success(id: "lin_viewer_id", name: "Linear Callback User")
+        Req.Test.json(conn, %{
+          "access_token" => "lin_callback_at",
+          "token_type" => "Bearer",
+          "expires_in" => 3600,
+          "refresh_token" => "lin_callback_rt",
+          "scope" => ["read", "write", "issues:create", "comments:create"]
+        })
+      end)
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "viewer" => %{"id" => "lin_viewer_id", "name" => "Linear Callback User", "email" => "user@example.com"}
+          }
+        })
+      end)
 
       conn =
         conn
@@ -83,7 +94,11 @@ defmodule RailWeb.LinearAuthControllerTest do
     end
 
     test "handles code exchange failure", %{authed_conn: conn} do
-      mock_exchange_error(400, "invalid_grant")
+      Req.Test.expect(Rail.Linear, fn conn ->
+        conn
+        |> Plug.Conn.put_status(400)
+        |> Req.Test.json(%{"error" => "invalid_grant", "error_description" => "Invalid authorization code"})
+      end)
 
       conn =
         conn
@@ -95,8 +110,24 @@ defmodule RailWeb.LinearAuthControllerTest do
     end
 
     test "handles viewer fetch failure", %{authed_conn: conn} do
-      mock_exchange_success()
-      mock_viewer_error(401)
+      Req.Test.expect(Rail.Linear, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        assert URI.decode_query(body)["grant_type"] == "authorization_code"
+
+        Req.Test.json(conn, %{
+          "access_token" => "mock_linear_access_token",
+          "token_type" => "Bearer",
+          "expires_in" => 3600,
+          "refresh_token" => "mock_linear_refresh_token",
+          "scope" => ["read", "write", "issues:create", "comments:create"]
+        })
+      end)
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        conn
+        |> Plug.Conn.put_status(401)
+        |> Req.Test.json(%{"errors" => [%{"message" => "Not authenticated"}]})
+      end)
 
       conn =
         conn
@@ -122,8 +153,24 @@ defmodule RailWeb.LinearAuthControllerTest do
     end
 
     test "handles linking failure when the user cannot be updated", %{authed_conn: conn} do
-      mock_exchange_success()
-      mock_viewer_success()
+      Req.Test.expect(Rail.Linear, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        assert URI.decode_query(body)["grant_type"] == "authorization_code"
+
+        Req.Test.json(conn, %{
+          "access_token" => "mock_linear_access_token",
+          "token_type" => "Bearer",
+          "expires_in" => 3600,
+          "refresh_token" => "mock_linear_refresh_token",
+          "scope" => ["read", "write", "issues:create", "comments:create"]
+        })
+      end)
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{"viewer" => %{"id" => "lin_usr_123", "name" => "Linear Test User", "email" => "user@example.com"}}
+        })
+      end)
 
       expect(Users, :update_user, fn _scope, _user, _attrs -> {:error, :db_error} end)
 

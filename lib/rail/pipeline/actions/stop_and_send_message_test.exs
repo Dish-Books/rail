@@ -8,7 +8,6 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessageTest do
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
@@ -42,11 +41,20 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessageTest do
         system_prompt: "You are the engineer."
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_stop_and_send_1",
-      "identifier" => "SAS-1",
-      "title" => "Stop And Send Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_stop_and_send_1",
+              "identifier" => "SAS-1",
+              "title" => "Stop And Send Issue"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Stop And Send Issue"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)

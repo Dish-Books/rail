@@ -14,7 +14,6 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools.Schemas.OsProcess
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
@@ -55,11 +54,20 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
         system_prompt: "You are the product agent."
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_run_finished_1",
-      "identifier" => "RFN-1",
-      "title" => "Run Finished Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_run_finished_1",
+              "identifier" => "RFN-1",
+              "title" => "Run Finished Issue"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Run Finished Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)

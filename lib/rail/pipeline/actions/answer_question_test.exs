@@ -10,7 +10,6 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
@@ -44,11 +43,20 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
         system_prompt: "You are the engineer."
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_answer_question_1",
-      "identifier" => "ANS-1",
-      "title" => "Answer Question Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_answer_question_1",
+              "identifier" => "ANS-1",
+              "title" => "Answer Question Issue"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Answer Question Issue"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)

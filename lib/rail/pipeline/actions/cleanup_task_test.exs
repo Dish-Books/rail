@@ -8,7 +8,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Roles
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, backend} =
@@ -54,11 +53,20 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         {stage, role}
       end)
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_cleanup_task_1",
-      "identifier" => "CLT-1",
-      "title" => "Cleanup Task Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_cleanup_task_1",
+              "identifier" => "CLT-1",
+              "title" => "Cleanup Task Issue"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Cleanup Task Issue"})
 
@@ -122,11 +130,20 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     File.mkdir_p!(scratch_dir)
     File.write!(Path.join(scratch_dir, "scratch.txt"), "temporary content")
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_cleanup_task_8707",
-      "identifier" => "TSK-8707",
-      "title" => "Task 8707"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_task_cleanup_task_8707",
+              "identifier" => "TSK-8707",
+              "title" => "Task 8707"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue_8707} = Issues.create_issue(project, %{description: "Task 8707"})
 
@@ -174,11 +191,20 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         }
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_cleanup_task_8709",
-      "identifier" => "TSK-8709",
-      "title" => "Task 8709"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_task_cleanup_task_8709",
+              "identifier" => "TSK-8709",
+              "title" => "Task 8709"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue_8709} = Issues.create_issue(project, %{description: "Task 8709"})
 

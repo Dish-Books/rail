@@ -15,7 +15,6 @@ defmodule Rail.Tools.FollowerTest do
   alias Rail.Tools.Follower
   alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.OsProcess
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   # The Follower watches a real OS process.
   @moduletag :real_spawn
@@ -577,11 +576,20 @@ defmodule Rail.Tools.FollowerTest do
         stage: :engineer
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_follower_12505",
-      "identifier" => "TSK-12505",
-      "title" => "Task 12505"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_task_follower_12505",
+              "identifier" => "TSK-12505",
+              "title" => "Task 12505"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue_12505} = Issues.create_issue(project, %{description: "Task 12505"})
 

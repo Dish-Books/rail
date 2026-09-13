@@ -7,7 +7,6 @@ defmodule RailWeb.LinearWebhookControllerTest do
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   test "returns 404 when workspace does not exist", %{conn: conn} do
     body = Jason.encode!(%{"type" => "Issue", "action" => "create"})
@@ -248,7 +247,16 @@ defmodule RailWeb.LinearWebhookControllerTest do
         }
       })
 
-    LinearMock.mock_create_issue_success(%{"id" => "lin_wh_iss_2", "identifier" => "ENG-888", "title" => "Initial Title"})
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_wh_iss_2", "identifier" => "ENG-888", "title" => "Initial Title"}
+          }
+        }
+      })
+    end)
 
     {:ok, existing_issue} = Issues.create_issue(project, %{description: "Initial Title"})
 

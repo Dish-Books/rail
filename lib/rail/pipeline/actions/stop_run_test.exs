@@ -8,7 +8,6 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
@@ -42,11 +41,20 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
         system_prompt: "You are the engineer."
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_stop_run_1",
-      "identifier" => "STP-1",
-      "title" => "Stop Run Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_stop_run_1",
+              "identifier" => "STP-1",
+              "title" => "Stop Run Issue"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Stop Run Issue"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)

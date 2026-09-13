@@ -16,7 +16,6 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
   alias Rail.Users.Schemas.User
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, backend} =
@@ -54,11 +53,20 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
         system_prompt: "You are the product agent."
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_start_product_1",
-      "identifier" => "SPT-1",
-      "title" => "Attachments follow their source document"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_start_product_1",
+              "identifier" => "SPT-1",
+              "title" => "Attachments follow their source document"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Attachments follow their source document"})
 

@@ -10,7 +10,6 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
@@ -49,11 +48,20 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
         {stage, role}
       end)
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_approve_plan_1",
-      "identifier" => "APV-1",
-      "title" => "Approve Plan Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_approve_plan_1",
+              "identifier" => "APV-1",
+              "title" => "Approve Plan Issue"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Approve Plan Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)

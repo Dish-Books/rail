@@ -9,7 +9,6 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, backend} =
@@ -41,11 +40,20 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
         }
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_question_schema_1",
-      "identifier" => "QSC-1",
-      "title" => "Question Schema Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_question_schema_1",
+              "identifier" => "QSC-1",
+              "title" => "Question Schema Issue"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Question Schema Issue"})
 

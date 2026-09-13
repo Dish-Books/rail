@@ -11,7 +11,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, backend} =
@@ -44,16 +43,34 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
         system_prompt: "You are the product agent."
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_schema_1",
-      "identifier" => "TSK-1",
-      "title" => "Task Schema Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_task_schema_1",
+              "identifier" => "TSK-1",
+              "title" => "Task Schema Issue"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, %Issue{id: issue_id} = issue} = Issues.create_issue(project, %{description: "Task Schema Issue"})
     {:ok, %Task{id: task_id} = task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, issue_id: issue_id, task: task, task_id: task_id, role: role}
+  end
+
+  test "an issue has at most one task", %{project: project, issue: issue, issue_id: issue_id, task_id: task_id} do
+    attrs = %{issue_id: issue_id, worktree_name: "wt", worktree_path: "/tmp/wt", scratch_path: "/tmp/scratch"}
+
+    assert {:error, changeset} = %Task{} |> Task.changeset(attrs, project.id) |> Repo.insert()
+    assert %{issue_id: ["has already been taken"]} = errors_on(changeset)
+
+    assert {:ok, %Task{id: ^task_id}} = Pipeline.create_task(issue, :product)
   end
 
   test "changeset validates required fields" do

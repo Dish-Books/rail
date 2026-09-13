@@ -12,7 +12,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
@@ -51,11 +50,20 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
         {stage, role}
       end)
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_run_finished_1",
-      "identifier" => "RUN-1",
-      "title" => "Run Finished Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_run_finished_1",
+              "identifier" => "RUN-1",
+              "title" => "Run Finished Issue"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Run Finished Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)
