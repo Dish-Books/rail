@@ -21,6 +21,9 @@ config :rail, Rail.Repo,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
 
+# Anchors live reload patterns to this checkout so edits in .claude/worktrees don't reload.
+root = Regex.escape(Path.expand("..", __DIR__))
+
 config :rail, RailWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT", "4000"))],
   check_origin: false,
@@ -34,9 +37,9 @@ config :rail, RailWeb.Endpoint,
   live_reload: [
     web_console_logger: true,
     patterns: [
-      ~r"priv/static/(?!uploads/).*(js|css|png|jpeg|jpg|gif|svg)$",
-      ~r"lib/rail_web/(controllers|live|components|hooks)/.*(ex|heex)$",
-      ~r"lib/rail_web/(router|endpoint)\.ex$"
+      ~r"^#{root}/priv/static/(?!uploads/).*(js|css|png|jpeg|jpg|gif|svg)$",
+      ~r"^#{root}/lib/rail_web/(controllers|live|components|hooks)/.*(ex|heex)$",
+      ~r"^#{root}/lib/rail_web/(router|endpoint)\.ex$"
     ]
   ]
 
