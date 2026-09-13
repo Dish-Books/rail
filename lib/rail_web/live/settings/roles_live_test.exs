@@ -93,7 +93,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     scope = Rail.Scope.for_user(admin_user)
 
     assert {:ok, %Role{id: _eng_id}} =
-             Roles.create_role(scope, project.id, %{
+             Roles.create_role(scope, project, %{
                name: "Senior Engineer",
                description: "Writes tested features",
                stage: :engineer,
@@ -288,7 +288,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     scope = Rail.Scope.for_user(admin_user)
 
     assert {:ok, %Role{id: role_id}} =
-             Roles.create_role(scope, project.id, %{
+             Roles.create_role(scope, project, %{
                name: "QA Lead",
                description: "Coordinates QA",
                stage: :qa_lead,
@@ -354,7 +354,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     scope = Rail.Scope.for_user(admin_user)
 
     assert {:ok, %Role{id: role_id}} =
-             Roles.create_role(scope, project.id, %{
+             Roles.create_role(scope, project, %{
                name: "Temporary Reviewer",
                stage: :review,
                backend_id: claude_backend.id,
@@ -404,7 +404,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       })
 
     assert {:ok, %Role{}} =
-             Roles.create_role(scope, source_project.id, %{
+             Roles.create_role(scope, source_project, %{
                name: "Demo Recorder Role",
                stage: :demo,
                backend_id: agy_backend.id,

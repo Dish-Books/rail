@@ -13,11 +13,11 @@ defmodule Rail.Issues.Actions.UpdateIssue do
   alias Rail.Repo
 
   @doc """
-  Updates `issue` with `attrs`, given as a map or a keyword list.
+  Updates `issue` with the `attrs` map.
   """
-  def update_issue(%Issue{} = issue, attrs) do
+  def update_issue(%Issue{} = issue, %{} = attrs) do
     issue
-    |> Issue.changeset(Map.new(attrs))
+    |> Issue.changeset(attrs)
     |> Repo.update()
   end
 end

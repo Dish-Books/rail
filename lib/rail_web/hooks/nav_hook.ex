@@ -2,8 +2,6 @@ defmodule RailWeb.Hooks.NavHook do
   @moduledoc false
   use RailWeb, :live_view
 
-  alias Rail.Issues
-  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
@@ -40,12 +38,6 @@ defmodule RailWeb.Hooks.NavHook do
       |> assign(:is_rail_extended, true)
       |> assign(:theme, "dark")
       |> assign(:show_project_switcher, false)
-      |> assign(:show_new_issue_modal, false)
-      |> assign(:capture_ask, "")
-      |> assign(:capture_project_id, nil)
-      |> assign(:capture_priority, :medium)
-      |> assign(:capture_error, nil)
-      |> assign(:capture_submitting, false)
       |> assign(:projects, projects)
       |> assign(:attention_count, attention_count)
       |> assign(:current_project_id, current_project_id)
@@ -119,105 +111,8 @@ defmodule RailWeb.Hooks.NavHook do
     {:halt, socket}
   end
 
-  defp handle_nav_events("open_new_issue", _params, socket) do
-    default_project_id =
-      default_capture_project_id(socket.assigns.projects, socket.assigns.current_project_id)
-
-    socket =
-      socket
-      |> assign(:show_new_issue_modal, true)
-      |> assign(:capture_ask, "")
-      |> assign(:capture_project_id, default_project_id)
-      |> assign(:capture_priority, :medium)
-      |> assign(:capture_error, nil)
-      |> assign(:capture_submitting, false)
-
-    {:halt, socket}
-  end
-
-  defp handle_nav_events("close_new_issue", _params, socket) do
-    socket =
-      socket
-      |> assign(:show_new_issue_modal, false)
-      |> assign(:capture_ask, "")
-      |> assign(:capture_error, nil)
-      |> assign(:capture_submitting, false)
-
-    {:halt, socket}
-  end
-
-  defp handle_nav_events("capture_form_change", params, socket) do
-    {ask, project_id, priority} = extract_capture_params(params)
-
-    socket =
-      socket
-      |> assign(:capture_ask, ask)
-      |> assign(:capture_project_id, project_id)
-      |> assign(:capture_priority, priority)
-
-    {:halt, socket}
-  end
-
-  defp handle_nav_events("capture_form_submit", params, socket) do
-    {ask, project_id, priority} = extract_capture_params(params)
-
-    if String.trim(ask) == "" do
-      {:halt, socket}
-    else
-      project =
-        Enum.find(socket.assigns.projects, &(&1.id == project_id)) ||
-          fetch_project(project_id)
-
-      if is_nil(project) do
-        socket =
-          socket
-          |> assign(:capture_submitting, false)
-          |> assign(:capture_error, "Project not found")
-
-        {:halt, socket}
-      else
-        socket = assign(socket, :capture_submitting, true)
-
-        case Issues.create_issue(project, %{description: ask, priority: priority}) do
-          {:ok, _issue} ->
-            socket =
-              socket
-              |> refresh_nav_state()
-              |> assign(:show_new_issue_modal, false)
-              |> assign(:capture_ask, "")
-              |> assign(:capture_project_id, nil)
-              |> assign(:capture_priority, :medium)
-              |> assign(:capture_error, nil)
-              |> assign(:capture_submitting, false)
-
-            {:halt, socket}
-
-          {:error, reason} ->
-            socket =
-              socket
-              |> assign(:capture_ask, ask)
-              |> assign(:capture_project_id, project_id)
-              |> assign(:capture_priority, priority)
-              |> assign(:capture_submitting, false)
-              |> assign(:capture_error, format_capture_error(reason))
-
-            {:halt, socket}
-        end
-      end
-    end
-  end
-
   defp handle_nav_events(_event, _params, socket) do
     {:cont, socket}
-  end
-
-  defp refresh_nav_state(socket) do
-    projects = Projects.list_projects()
-    attention_count = count_attention(projects)
-
-    socket
-    |> assign(:projects, projects)
-    |> assign(:attention_count, attention_count)
   end
 
   # What needs a human is counted in runs, the same as the overview lists them.
@@ -228,44 +123,4 @@ defmodule RailWeb.Hooks.NavHook do
     end)
     |> Enum.count(&Run.needs_attention?/1)
   end
-
-  defp default_capture_project_id(projects, current_project_id) do
-    active_projects = Enum.filter(projects, & &1.active)
-
-    cond do
-      is_binary(current_project_id) and
-          Enum.any?(active_projects, &(&1.id == current_project_id)) ->
-        current_project_id
-
-      active_projects != [] ->
-        hd(active_projects).id
-
-      true ->
-        nil
-    end
-  end
-
-  defp extract_capture_params(params) do
-    params = params["capture"] || params["issue"] || params
-
-    ask = Map.get(params, "ask", "")
-    project_id = Map.get(params, "project_id")
-    raw_priority = Map.get(params, "priority", "medium")
-    priority = Enum.find(Issue.priorities(), &(Atom.to_string(&1) == raw_priority)) || :medium
-
-    {ask, project_id, priority}
-  end
-
-  defp fetch_project(id) when id in [nil, ""], do: nil
-
-  defp fetch_project(project_id) do
-    case Projects.get_project(project_id) do
-      {:ok, project} -> project
-      _other -> nil
-    end
-  end
-
-  defp format_capture_error(reason) when is_binary(reason), do: reason
-  defp format_capture_error(reason) when is_atom(reason), do: Atom.to_string(reason)
-  defp format_capture_error(reason), do: inspect(reason)
 end

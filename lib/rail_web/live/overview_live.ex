@@ -60,12 +60,6 @@ defmodule RailWeb.OverviewLive do
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
-      show_new_issue_modal={@show_new_issue_modal}
-      capture_ask={@capture_ask}
-      capture_project_id={@capture_project_id}
-      capture_priority={@capture_priority}
-      capture_error={@capture_error}
-      capture_submitting={@capture_submitting}
     >
       <div id="overview-view" data-qa="overview-view" class="space-y-6">
         <!-- Header row: Overview in bold + running agents pill -->

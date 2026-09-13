@@ -3,16 +3,15 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
-  alias Rail.Scope
-  alias RailTest.Mocks.Linear, as: LinearMock
+  alias Rail.Repo
 
-  test "list_issues lists issues for project with default show_finished: false" do
-    scope = Scope.for_system()
-
-    {:ok, %Project{id: project_id_1} = project_1} =
-      Projects.create_project(scope, %{
+  setup do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
         name: "List Issues Project One",
         github_repo: "org/list-issues-one",
         github_installation_id: 5701,
@@ -28,13 +27,13 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         clone_path: "/tmp/repos/list-issues-one"
       })
 
-    {:ok, %Project{id: project_id_2} = project_2} =
-      Projects.create_project(scope, %{
+    {:ok, other_project} =
+      Projects.create_project(system_scope(), %{
         name: "List Issues Project Two",
         github_repo: "org/list-issues-two",
         github_installation_id: 5702,
         linear_workspace: %{
-          name: "List Issues Workspace",
+          name: "List Issues Workspace Two",
           external_id: "lin_ws_list_issues_2",
           token: "lin_api_token_list_issues",
           webhook_secret: "whsec_list_issues"
@@ -45,69 +44,149 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         clone_path: "/tmp/repos/list-issues-two"
       })
 
-    LinearMock.mock_issues_success([
-      %{
-        "id" => "lin_list_1",
-        "identifier" => "ENG-501",
-        "title" => "Triage Issue",
-        "description" => "Triage",
-        "state" => %{"id" => "st_1", "name" => "Triage", "type" => "triage"},
-        "branchName" => nil,
-        "url" => "https://linear.app/issue/ENG-501",
-        "createdAt" => "2026-09-01T10:00:00.000Z",
-        "updatedAt" => "2026-09-01T10:00:00.000Z"
-      },
-      %{
-        "id" => "lin_list_2",
-        "identifier" => "ENG-502",
-        "title" => "Done Issue",
-        "description" => "Done",
-        "state" => %{"id" => "st_2", "name" => "Done", "type" => "completed"},
-        "branchName" => nil,
-        "url" => "https://linear.app/issue/ENG-502",
-        "createdAt" => "2026-09-01T10:00:00.000Z",
-        "updatedAt" => "2026-09-01T10:01:00.000Z"
-      }
-    ])
+    %{project: project, other_project: other_project}
+  end
 
-    {:ok, [%Issue{id: id1}, %Issue{id: id2}]} = Issues.sync_issues(project_1)
+  test "list_issues filters by project, state and whether finished issues show", %{
+    project: %Project{id: project_id},
+    other_project: other_project
+  } do
+    %Issue{id: triage_id} =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project_id,
+        external_id: "lin_l1",
+        identifier: "LI1-1",
+        title: "Triage",
+        state: :triage
+      })
+      |> Repo.insert!()
 
-    LinearMock.mock_issues_success([
-      %{
-        "id" => "lin_list_3",
-        "identifier" => "ENG-503",
-        "title" => "In Progress Issue",
-        "description" => "In Progress",
-        "state" => %{"id" => "st_3", "name" => "In Progress", "type" => "started"},
-        "branchName" => nil,
-        "url" => "https://linear.app/issue/ENG-503",
-        "createdAt" => "2026-09-01T10:00:00.000Z",
-        "updatedAt" => "2026-09-01T10:00:00.000Z"
-      }
-    ])
+    %Issue{id: done_id} =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project_id,
+        external_id: "lin_l2",
+        identifier: "LI1-2",
+        title: "Done",
+        state: :done
+      })
+      |> Repo.insert!()
 
-    {:ok, [_issue_3]} = Issues.sync_issues(project_2)
+    %Issue{}
+    |> Issue.changeset(%{
+      project_id: other_project.id,
+      external_id: "lin_l3",
+      identifier: "LI2-1",
+      title: "Elsewhere",
+      state: :in_progress
+    })
+    |> Repo.insert!()
 
-    # Default show_finished: false excludes done issue id2
-    assert [%Issue{id: ^id1}] = Issues.list_issues(project_1)
+    assert %{issues: [%Issue{id: ^triage_id}], total: 1} = Issues.list_issues(project_id: project_id)
 
-    # Explicit show_finished: true includes done issue id2
-    assert [%Issue{id: ^id1}, %Issue{id: ^id2}] =
-             Issues.list_issues(project_id: project_id_1, show_finished: true)
+    assert %{issues: [%Issue{id: ^triage_id}, %Issue{id: ^done_id}], total: 2} =
+             Issues.list_issues(project_id: project_id, show_finished: true)
 
-    # 3-arity list_issues with project struct and opts
-    assert [%Issue{id: ^id1}, %Issue{id: ^id2}] =
-             Issues.list_issues(project_1, show_finished: true)
+    assert %{issues: [%Issue{id: ^triage_id}]} = Issues.list_issues(project_id: project_id, state: :triage)
 
-    assert [%Issue{id: ^id1}] = Issues.list_issues(project_id: project_id_1, state: :triage)
+    assert %{issues: [%Issue{id: ^triage_id, project: %Project{id: ^project_id}}]} =
+             Issues.list_issues(project_id: project_id, preload: [:project])
 
-    # Preload option preloads associations
-    assert [%Issue{id: ^id1, project: %Project{id: ^project_id_1}}] =
-             Issues.list_issues(project_id: project_id_1, preload: [:project])
+    assert %{total: 3} = Issues.list_issues(show_finished: true)
+    assert %{total: 2} = Issues.list_issues()
+  end
 
-    assert project_id_2 != project_id_1
-    assert length(Issues.list_issues(show_finished: true)) == 3
-    assert length(Issues.list_issues(show_finished: false)) == 2
-    assert length(Issues.list_issues()) == 2
+  test "list_issues searches titles and identifiers, taking the search literally", %{project: project} do
+    %Issue{id: login_id} =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        external_id: "lin_s1",
+        identifier: "LI1-10",
+        title: "Fix Login redirect",
+        state: :triage
+      })
+      |> Repo.insert!()
+
+    %Issue{id: percent_id} =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        external_id: "lin_s2",
+        identifier: "LI1-20",
+        title: "Show 100% width",
+        state: :triage
+      })
+      |> Repo.insert!()
+
+    %Issue{}
+    |> Issue.changeset(%{
+      project_id: project.id,
+      external_id: "lin_s3",
+      identifier: "LI1-30",
+      title: "Other",
+      state: :triage
+    })
+    |> Repo.insert!()
+
+    assert %{issues: [%Issue{id: ^login_id}], total: 1} = Issues.list_issues(search: "login")
+    assert %{issues: [%Issue{id: ^percent_id}]} = Issues.list_issues(search: "li1-20")
+    assert %{issues: [%Issue{id: ^percent_id}]} = Issues.list_issues(search: "100%")
+    assert %{issues: [], total: 0} = Issues.list_issues(search: "1_0")
+    assert %{total: 3} = Issues.list_issues(search: "   ")
+  end
+
+  test "list_issues pages through issues and counts past the page", %{project: project} do
+    ids =
+      for {priority, n} <- Enum.with_index([:urgent, :high, :high, :low, :medium]) do
+        %Issue{}
+        |> Issue.changeset(%{
+          project_id: project.id,
+          external_id: "lin_p#{n}",
+          identifier: "LI1-#{100 + n}",
+          title: "Paged #{n}",
+          priority: priority,
+          state: :backlog
+        })
+        |> Repo.insert!()
+        |> Map.fetch!(:id)
+      end
+
+    [first, second, third, fourth, fifth] = ids
+
+    assert %{
+             issues: [%Issue{id: ^first}, %Issue{id: ^second}],
+             total: 5,
+             priority_counts: %{urgent: 1, high: 2, low: 1, medium: 1}
+           } = Issues.list_issues(limit: 2)
+
+    assert %{issues: [%Issue{id: ^third}, %Issue{id: ^fourth}], total: 5} = Issues.list_issues(limit: 2, offset: 2)
+    assert %{issues: [%Issue{id: ^fifth}]} = Issues.list_issues(limit: 2, offset: 4)
+
+    # Picking a priority narrows the list and its total, but every chip still counts.
+    assert %{
+             issues: [%Issue{id: ^second}, %Issue{id: ^third}],
+             total: 2,
+             priority_counts: %{urgent: 1, high: 2, low: 1, medium: 1}
+           } = Issues.list_issues(priority: :high)
+  end
+
+  test "list_issues preloads the issue's task", %{project: project} do
+    issue =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        external_id: "lin_t1",
+        identifier: "LI1-40",
+        title: "Tasked",
+        state: :backlog
+      })
+      |> Repo.insert!()
+
+    {:ok, %Task{id: task_id}} = Pipeline.create_task(%{issue | project: project}, :product)
+
+    assert %{issues: [%Issue{task: %Task{id: ^task_id, runs: []}}]} =
+             Issues.list_issues(preload: [task: :runs])
   end
 end

@@ -3,6 +3,7 @@ defmodule Rail.Issues.Schemas.Issue do
   use Rail.Schema
 
   alias Rail.Issues.Workers.SyncIssue
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Users.Schemas.User
 
@@ -11,8 +12,6 @@ defmodule Rail.Issues.Schemas.Issue do
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "iss"}
   schema "issues" do
-    belongs_to :project, Project
-    belongs_to :owner_user, User
     field :external_id, :string
     field :identifier, :string
     field :title, :string
@@ -23,8 +22,11 @@ defmodule Rail.Issues.Schemas.Issue do
     field :state_name, :string
     field :branch_name, :string
     field :url, :string
-    field :linear_created_at, :utc_datetime_usec
-    field :linear_updated_at, :utc_datetime_usec
+
+    belongs_to :project, Project
+    belongs_to :owner_user, User
+
+    has_one :task, Task
 
     timestamps()
   end
@@ -35,8 +37,6 @@ defmodule Rail.Issues.Schemas.Issue do
     :estimate,
     :external_id,
     :identifier,
-    :linear_created_at,
-    :linear_updated_at,
     :owner_user_id,
     :priority,
     :project_id,
@@ -56,12 +56,22 @@ defmodule Rail.Issues.Schemas.Issue do
 
   def changeset(issue, attrs) do
     issue
+    |> linear_changeset(attrs)
+    |> sync_to_linear()
+  end
+
+  @doc """
+  A changeset for what Linear itself reports, such as a webhook. It is the same
+  as `changeset/2` except that nothing is queued to push back to Linear, since
+  Linear is where the change came from.
+  """
+  def linear_changeset(issue, attrs) do
+    issue
     |> cast(attrs, @cast_fields)
     |> validate_required(@required_fields)
     |> unique_constraint(:external_id)
     |> foreign_key_constraint(:project_id)
     |> foreign_key_constraint(:owner_user_id)
-    |> sync_to_linear()
   end
 
   def priorities, do: @priorities

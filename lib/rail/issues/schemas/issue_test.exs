@@ -17,8 +17,6 @@ defmodule Rail.Issues.Schemas.IssueTest do
       priority: :urgent,
       branch_name: "fix/login-crash",
       url: "https://linear.app/issue/ENG-101",
-      linear_created_at: ~U[2026-09-01 10:00:00.000000Z],
-      linear_updated_at: ~U[2026-09-01 11:00:00.000000Z],
       project_id: "prj_test_123"
     }
 
@@ -159,6 +157,5 @@ defmodule Rail.Issues.Schemas.IssueTest do
       refute Issue.active?("todo")
       refute Issue.active?(123)
     end
-
   end
 end

@@ -2,23 +2,20 @@ defmodule Rail.Issues do
   @moduledoc """
   Context boundary for Linear-backed issues.
 
-  Nothing here is scoped to a user. Linear is the system of record and every
-  write reaches it as the workspace, except where a caller names the user the
-  work belongs to — `move_state/4` and `comment/4` take that user explicitly so
-  the comment carries their name.
+  Local edits write the issue and `Rail.Issues.Workers.SyncIssue` pushes them to
+  Linear. Writes reach Linear as the workspace, except a comment, which goes out
+  as the scope's user so it carries their name.
   """
 
   alias Rail.Issues.Actions
 
-  defdelegate sync_issues(project), to: Actions.SyncIssues
-  defdelegate create_issue(project, attrs), to: Actions.CreateIssue
+  defdelegate list_issues(opts \\ []), to: Actions.ListIssues
   defdelegate get_issue(id), to: Actions.GetIssue
-  defdelegate get_issue!(id), to: Actions.GetIssue
-  defdelegate list_issues(project_or_opts \\ []), to: Actions.ListIssues
-  defdelegate list_issues(project, opts), to: Actions.ListIssues
+  defdelegate create_issue(project, attrs), to: Actions.CreateIssue
   defdelegate update_issue(issue, attrs), to: Actions.UpdateIssue
-  defdelegate archive_issue(issue), to: Actions.ArchiveIssue
-  defdelegate move_state(project, issue, state_type, owner_user \\ nil), to: Actions.MoveState
+
+  defdelegate sync_issues(project), to: Actions.SyncIssues
+  defdelegate handle_linear_webhook(workspace, payload), to: Actions.HandleLinearWebhook
   defdelegate upload_asset(target, filename, content_type, data_binary), to: Actions.UploadAsset
-  defdelegate comment(issue, comment_body, owner_user \\ nil), to: Actions.Comment
+  defdelegate comment(scope, issue, body), to: Actions.Comment
 end

@@ -8,14 +8,12 @@ defmodule Rail.Users.Actions.LinearToken do
 
   @expiry_threshold_seconds 300
 
-  def linear_token(%Scope{user: %User{id: id}}), do: do_linear_token(id)
-  def linear_token(%Scope{user: %{id: id}}) when is_binary(id), do: do_linear_token(id)
-  def linear_token(%User{id: id}), do: do_linear_token(id)
-  def linear_token(id) when is_binary(id), do: do_linear_token(id)
-  def linear_token(_scope), do: {:error, :not_linked}
-
-  defp do_linear_token(user_id) do
-    case Repo.get(User, user_id) do
+  @doc """
+  The scope's user's Linear access token, refreshed first when it is about to
+  expire.
+  """
+  def linear_token(%Scope{user: user}) do
+    case Repo.get(User, user.id) do
       %User{linear_access_token: token} = user when is_binary(token) and token != "" ->
         check_and_maybe_refresh(user)
 
@@ -46,24 +44,21 @@ defmodule Rail.Users.Actions.LinearToken do
   defp refresh_token_and_update(_user), do: {:error, :not_linked}
 
   defp persist_refreshed_tokens(%User{} = user, tokens) do
-    expires_in = tokens[:expires_in]
-
     expires_at =
-      if is_integer(expires_in) do
-        DateTime.shift(DateTime.utc_now(), second: expires_in)
-      else
-        tokens[:expires_at]
+      case tokens["expires_in"] do
+        seconds when is_integer(seconds) -> DateTime.shift(DateTime.utc_now(), second: seconds)
+        _never -> nil
       end
 
     user
     |> User.changeset(%{
-      linear_access_token: tokens.access_token,
-      linear_refresh_token: tokens[:refresh_token] || user.linear_refresh_token,
+      linear_access_token: tokens["access_token"],
+      linear_refresh_token: tokens["refresh_token"] || user.linear_refresh_token,
       linear_token_expires_at: expires_at
     })
     |> Repo.update()
     |> case do
-      {:ok, _updated_user} -> {:ok, tokens.access_token}
+      {:ok, _updated_user} -> {:ok, tokens["access_token"]}
       {:error, changeset} -> {:error, changeset}
     end
   end

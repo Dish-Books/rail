@@ -76,6 +76,7 @@ defmodule Rail.Pipeline.Schemas.Task do
     |> validate_required(@required_fields)
     |> foreign_key_constraint(:project_id)
     |> foreign_key_constraint(:issue_id)
+    |> unique_constraint(:issue_id)
   end
 
   @doc """

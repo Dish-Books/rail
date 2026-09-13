@@ -6,7 +6,6 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Projects
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, project} =
@@ -27,16 +26,25 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
         linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_prog_1"}
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_up_1",
-      "identifier" => "ENG-601",
-      "title" => "Initial Title",
-      "description" => "Initial Title",
-      "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"},
-      "url" => "https://linear.app/issue/ENG-601",
-      "createdAt" => "2026-09-01T10:00:00.000Z",
-      "updatedAt" => "2026-09-01T10:00:00.000Z"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_up_1",
+              "identifier" => "ENG-601",
+              "title" => "Initial Title",
+              "description" => "Initial Title",
+              "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"},
+              "url" => "https://linear.app/issue/ENG-601",
+              "createdAt" => "2026-09-01T10:00:00.000Z",
+              "updatedAt" => "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Initial Title"})
 
@@ -61,9 +69,5 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
     {:ok, _issue} = Issues.update_issue(issue, %{title: issue.title})
 
     refute_enqueued(worker: SyncIssue)
-  end
-
-  test "takes a keyword list as readily as a map", %{issue: issue} do
-    assert {:ok, %Issue{state: :in_progress}} = Issues.update_issue(issue, state: :in_progress)
   end
 end

@@ -29,12 +29,6 @@ defmodule RailWeb.Layouts do
   attr :projects, :list, required: true
   attr :theme, :string, required: true
   attr :show_project_switcher, :boolean, required: true
-  attr :show_new_issue_modal, :boolean, required: true
-  attr :capture_ask, :string, required: true
-  attr :capture_project_id, :string, required: true
-  attr :capture_priority, :any, required: true
-  attr :capture_error, :string, required: true
-  attr :capture_submitting, :boolean, required: true
 
   slot :inner_block, required: true
 
@@ -55,12 +49,6 @@ defmodule RailWeb.Layouts do
           projects={@projects}
           theme={@theme}
           show_project_switcher={@show_project_switcher}
-          show_new_issue_modal={@show_new_issue_modal}
-          capture_ask={@capture_ask}
-          capture_project_id={@capture_project_id}
-          capture_priority={@capture_priority}
-          capture_error={@capture_error}
-          capture_submitting={@capture_submitting}
         />
 
         <main class="flex-1 overflow-y-auto p-6" id="main-content">

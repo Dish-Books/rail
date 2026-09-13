@@ -10,7 +10,7 @@ defmodule Rail.Roles do
   defdelegate get_role(by), to: Actions.GetRole
 
   @decorate can?(resource: :roles, action: :manage)
-  defdelegate create_role(scope, project_or_id, attrs), to: Actions.CreateRole
+  defdelegate create_role(scope, project, attrs), to: Actions.CreateRole
 
   @decorate can?(resource: :roles, action: :manage)
   defdelegate update_role(scope, role, attrs), to: Actions.UpdateRole

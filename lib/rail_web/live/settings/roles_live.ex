@@ -75,12 +75,6 @@ defmodule RailWeb.Settings.RolesLive do
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
-      show_new_issue_modal={@show_new_issue_modal}
-      capture_ask={@capture_ask}
-      capture_project_id={@capture_project_id}
-      capture_priority={@capture_priority}
-      capture_error={@capture_error}
-      capture_submitting={@capture_submitting}
     >
       <div class="max-w-5xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="roles-settings">
         <div>
@@ -787,7 +781,7 @@ defmodule RailWeb.Settings.RolesLive do
     attrs =
       build_role_attrs(role_params, existing_role, length(socket.assigns.roles), socket.assigns.backends)
 
-    case execute_role_save(scope, project_id, modal, existing_role, attrs) do
+    case execute_role_save(scope, socket.assigns.current_project, modal, existing_role, attrs) do
       {:ok, _role} ->
         refreshed = Roles.list_roles(project_id)
 
@@ -965,11 +959,11 @@ defmodule RailWeb.Settings.RolesLive do
     }
   end
 
-  defp execute_role_save(scope, project_id, :create_role, _existing_role, attrs) do
-    Roles.create_role(scope, project_id, attrs)
+  defp execute_role_save(scope, project, :create_role, _existing_role, attrs) do
+    Roles.create_role(scope, project, attrs)
   end
 
-  defp execute_role_save(scope, _project_id, _modal, existing_role, attrs) do
+  defp execute_role_save(scope, _project, _modal, existing_role, attrs) do
     Roles.update_role(scope, existing_role, attrs)
   end
 end

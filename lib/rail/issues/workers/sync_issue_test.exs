@@ -6,7 +6,6 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Projects
   alias Rail.Repo
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, project} =
@@ -27,12 +26,21 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
         linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_prog"}
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_sync_1",
-      "identifier" => "SYN-1",
-      "title" => "Sync Issue",
-      "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"}
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_sync_1",
+              "identifier" => "SYN-1",
+              "title" => "Sync Issue",
+              "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"}
+            }
+          }
+        }
+      })
+    end)
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Sync Issue"})
 
@@ -42,25 +50,50 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
   test "pushes only the fields the update changed", %{issue: issue} do
     {:ok, issue} = Issues.update_issue(issue, %{title: "New title", description: "New body"})
 
-    LinearMock.mock_update_issue_success(%{
-      "id" => "lin_sync_1",
-      "identifier" => "SYN-1",
-      "title" => "New title"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueUpdate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_sync_1",
+              "identifier" => "SYN-1",
+              "title" => "New title"
+            }
+          }
+        }
+      })
+    end)
 
     assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["title"]})
   end
 
-  test "sends Linear the workflow state id, not Rail's word for it", %{issue: issue} do
-    {:ok, issue} = Issues.update_issue(issue, %{state: :in_progress})
+  test "sends Linear the workflow state id and priority number, not Rail's words for them", %{issue: issue} do
+    {:ok, issue} = Issues.update_issue(issue, %{state: :in_progress, priority: :urgent})
 
-    LinearMock.mock_update_issue_success(%{
-      "id" => "lin_sync_1",
-      "identifier" => "SYN-1",
-      "title" => "Sync Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
 
-    assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["state"]})
+      assert %{"id" => "lin_sync_1", "input" => %{"stateId" => "st_prog", "priority" => 1} = input} =
+               Jason.decode!(body)["variables"]
+
+      assert map_size(input) == 2
+
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+    end)
+
+    assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["state", "priority"]})
+  end
+
+  test "fails the job when Linear does not take the update", %{issue: issue} do
+    {:ok, issue} = Issues.update_issue(issue, %{title: "Refused"})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => false}}})
+    end)
+
+    assert {:error, {:linear_mutation_failed, "issueUpdate"}} =
+             perform_job(SyncIssue, %{issue_id: issue.id, fields: ["title"]})
   end
 
   test "says nothing to Linear when no pushable field changed", %{issue: issue} do

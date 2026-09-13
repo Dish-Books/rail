@@ -1,8 +1,6 @@
 defmodule Rail.Users.Actions.LinearTokenTest do
   use Rail.DataCase, async: true
 
-  import RailTest.Mocks.Linear
-
   alias Rail.Scope
   alias Rail.Users
   alias Rail.Users.Schemas.User
@@ -24,10 +22,8 @@ defmodule Rail.Users.Actions.LinearTokenTest do
     assert {:error, :not_linked} = Users.linear_token(scope)
   end
 
-  test "returns not_linked when user is not found or scope invalid" do
-    assert {:error, :not_linked} = Users.linear_token(nil)
-    assert {:error, :not_linked} = Users.linear_token(%Scope{user: nil})
-    assert {:error, :not_linked} = Users.linear_token("usr_unknown_token_id")
+  test "returns not_linked for a user Rail does not know" do
+    assert {:error, :not_linked} = Users.linear_token(%Scope{user: %{id: "usr_unknown_token_id"}})
   end
 
   test "returns existing token when expiry is well in the future (> 5 minutes)", %{
@@ -60,11 +56,17 @@ defmodule Rail.Users.Actions.LinearTokenTest do
                linear_token_expires_at: two_minutes_later
              })
 
-    mock_refresh_success(
-      access_token: "lin_at_fresh_from_linear",
-      refresh_token: "lin_rt_fresh_from_linear",
-      expires_in: 7200
-    )
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert URI.decode_query(body)["grant_type"] == "refresh_token"
+
+      Req.Test.json(conn, %{
+        "access_token" => "lin_at_fresh_from_linear",
+        "token_type" => "Bearer",
+        "expires_in" => 7200,
+        "refresh_token" => "lin_rt_fresh_from_linear"
+      })
+    end)
 
     assert {:ok, "lin_at_fresh_from_linear"} = Users.linear_token(scope)
 
@@ -76,7 +78,8 @@ defmodule Rail.Users.Actions.LinearTokenTest do
 
   test "automatically refreshes token when token is already expired", %{
     user: user,
-    user_id: user_id
+    user_id: user_id,
+    scope: scope
   } do
     ten_minutes_ago = DateTime.shift(DateTime.utc_now(), minute: -10)
 
@@ -87,19 +90,25 @@ defmodule Rail.Users.Actions.LinearTokenTest do
                linear_token_expires_at: ten_minutes_ago
              })
 
-    mock_refresh_success(
-      access_token: "lin_at_renewed",
-      refresh_token: "lin_rt_renewed",
-      expires_in: 3600
-    )
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert URI.decode_query(body)["grant_type"] == "refresh_token"
 
-    assert {:ok, "lin_at_renewed"} = Users.linear_token(user_id)
+      Req.Test.json(conn, %{
+        "access_token" => "lin_at_renewed",
+        "token_type" => "Bearer",
+        "expires_in" => 3600,
+        "refresh_token" => "lin_rt_renewed"
+      })
+    end)
+
+    assert {:ok, "lin_at_renewed"} = Users.linear_token(scope)
 
     reloaded = Repo.get!(User, user_id)
     assert reloaded.linear_access_token == "lin_at_renewed"
   end
 
-  test "retains the existing refresh token when the refresh response omits one", %{user: user} do
+  test "retains the existing refresh token when the refresh response omits one", %{user: user, scope: scope} do
     four_min_later = DateTime.shift(DateTime.utc_now(), minute: 4)
 
     assert {:ok, %User{}} =
@@ -124,7 +133,7 @@ defmodule Rail.Users.Actions.LinearTokenTest do
       )
     end)
 
-    assert {:ok, "lin_at_only_access"} = Users.linear_token(user)
+    assert {:ok, "lin_at_only_access"} = Users.linear_token(scope)
 
     reloaded = Repo.get!(User, user.id)
     assert reloaded.linear_access_token == "lin_at_only_access"
@@ -141,7 +150,11 @@ defmodule Rail.Users.Actions.LinearTokenTest do
                linear_token_expires_at: one_min_later
              })
 
-    mock_refresh_error(400, "invalid_grant")
+    Req.Test.expect(Rail.Linear, fn conn ->
+      conn
+      |> Plug.Conn.put_status(400)
+      |> Req.Test.json(%{"error" => "invalid_grant", "error_description" => "Invalid refresh token"})
+    end)
 
     assert {:error, {:linear_token_refresh_error, 400, %{"error" => "invalid_grant"}}} =
              Users.linear_token(scope)

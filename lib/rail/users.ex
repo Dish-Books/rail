@@ -18,7 +18,9 @@ defmodule Rail.Users do
   @decorate can?(resource: :users, action: :manage)
   defdelegate update_user(scope, user, attrs), to: Actions.UpdateUser
 
-  defdelegate linear_token(scope_or_user), to: Actions.LinearToken
+  defdelegate linear_token(scope), to: Actions.LinearToken
+  defdelegate link_linear(scope, code), to: Actions.LinkLinear
+  defdelegate unlink_linear(scope), to: Actions.UnlinkLinear
 
   defdelegate can?(scope, action), to: Actions.Can
   defdelegate can?(scope, resource, action), to: Actions.Can

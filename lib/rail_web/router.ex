@@ -29,7 +29,7 @@ defmodule RailWeb.Router do
   scope "/webhooks", RailWeb do
     pipe_through :api
 
-    post "/linear/:workspace_id", LinearWebhookController, :handle
+    post "/linear", LinearWebhookController, :handle
   end
 
   scope "/auth/linear", RailWeb do
@@ -37,9 +37,6 @@ defmodule RailWeb.Router do
 
     get "/", LinearAuthController, :request
     get "/callback", LinearAuthController, :callback
-    get "/unlink", LinearAuthController, :unlink
-    post "/unlink", LinearAuthController, :unlink
-    delete "/unlink", LinearAuthController, :unlink
   end
 
   scope "/auth", RailWeb do

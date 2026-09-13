@@ -9,10 +9,10 @@ defmodule Rail.Issues.Workers.SyncIssue do
   """
   use Oban.Worker, queue: :issues, max_attempts: 5
 
-  import Rail.Issues.Utils.TokenResolver
+  import Rail.Issues.Utils.LinearPriority
 
-  alias Rail.Issues.Clients.Linear
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Linear.Client, as: Linear
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
 
@@ -33,21 +33,24 @@ defmodule Rail.Issues.Workers.SyncIssue do
     end
   end
 
-  defp update_linear(%Project{} = project, %Issue{} = issue, attrs) do
-    with {:ok, token, _identity} <- resolve_token(owner(issue), project),
-         {:ok, _updated} <- Linear.update_issue(token, issue.external_id, attrs) do
-      :ok
+  defp update_linear(%Project{} = project, %Issue{} = issue, input) do
+    case Linear.update_issue(project, issue.external_id, input) do
+      {:ok, %{"issueUpdate" => %{"success" => true}}} -> :ok
+      {:ok, _not_updated} -> {:error, {:linear_mutation_failed, "issueUpdate"}}
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  # `state` is Rail's word for it; Linear wants the workflow state's own id.
+  # Linear names things its own way: a workflow state by its id, a priority by
+  # its number.
   defp linear_attrs(%Issue{} = issue, %Project{} = project, fields) do
     fields
     |> Enum.map(&to_existing_field/1)
     |> Enum.filter(&(&1 in @pushable))
     |> Map.new(fn
-      :state -> {:state_id, project.linear_state_ids[to_string(issue.state)]}
-      field -> {field, Map.fetch!(issue, field)}
+      :state -> {"stateId", project.linear_state_ids[to_string(issue.state)]}
+      :priority -> {"priority", linear_priority(issue.priority)}
+      field -> {to_string(field), Map.fetch!(issue, field)}
     end)
     |> Map.reject(fn {_field, value} -> is_nil(value) end)
   end
@@ -59,7 +62,4 @@ defmodule Rail.Issues.Workers.SyncIssue do
   rescue
     ArgumentError -> :unknown
   end
-
-  defp owner(%Issue{owner_user_id: user_id}) when is_binary(user_id), do: %{id: user_id}
-  defp owner(%Issue{}), do: nil
 end

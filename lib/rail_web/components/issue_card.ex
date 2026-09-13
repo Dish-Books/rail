@@ -12,8 +12,6 @@ defmodule RailWeb.Components.IssueCard do
   attr :run, :any, default: nil
 
   def issue_card(assigns) do
-    assigns = assign(assigns, :body, body_of(assigns.issue))
-
     ~H"""
     <div
       id={"issue-card-#{@issue.id}"}
@@ -77,14 +75,14 @@ defmodule RailWeb.Components.IssueCard do
 
       <!-- Card Body: deduplicated description up to 4 lines with ellipsis -->
       <p
-        :if={@body != ""}
+        :if={@issue.description not in [nil, ""]}
         data-qa="issue-body"
         class="text-xs text-slate-500 dark:text-slate-400 line-clamp-4 whitespace-pre-line leading-relaxed"
       >
-        {@body}
+        {@issue.description}
       </p>
 
-      <!-- Footer row: Dedicated Worktree info, Action button & Archive button -->
+      <!-- Footer row: Dedicated Worktree info, Action button -->
       <div
         class="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400"
         onclick="event.stopPropagation()"
@@ -122,19 +120,6 @@ defmodule RailWeb.Components.IssueCard do
             <.icon name="pi-arrow-down-left" class="h-3.5 w-3.5" />
             <span>Start</span>
           </button>
-
-          <!-- Archive button -->
-          <button
-            type="button"
-            id={"archive-issue-#{@issue.id}"}
-            data-qa={"archive_issue_#{@issue.id}"}
-            phx-click="open_archive"
-            phx-value-issue_id={@issue.id}
-            title="Archive issue"
-            class="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
-          >
-            <.icon name="pi-trash" class="h-4 w-4" />
-          </button>
         </div>
       </div>
     </div>
@@ -169,24 +154,4 @@ defmodule RailWeb.Components.IssueCard do
   defp priority_badge_class(:medium), do: "border-blue-500 text-blue-500 bg-blue-500/10"
   defp priority_badge_class(:low), do: "border-slate-400 text-slate-400 bg-slate-400/10"
   defp priority_badge_class(_other), do: "border-blue-500 text-blue-500 bg-blue-500/10"
-
-  # The title is the first line of the ask, so a body that opens with it would
-  # read the title twice.
-  defp body_of(issue) do
-    title = String.trim(issue.title || "")
-    description = issue.description || ""
-
-    cond do
-      description == "" -> ""
-      title != "" and String.starts_with?(description, title) -> without_first_line(description)
-      true -> description
-    end
-  end
-
-  defp without_first_line(description) do
-    case String.split(description, ~r/\r?\n/, parts: 2) do
-      [_first_line, rest] -> String.trim(rest)
-      [_single_line] -> ""
-    end
-  end
 end

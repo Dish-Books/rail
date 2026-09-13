@@ -110,8 +110,7 @@ defmodule RailWeb.Components.NavTest do
         current_project_id: nil,
         projects: [p1, p2],
         theme: "dark",
-        show_project_switcher: false,
-        show_new_issue_modal: false
+        show_project_switcher: false
       )
 
     assert html =~ "id=\"top-app-bar\""
@@ -135,8 +134,7 @@ defmodule RailWeb.Components.NavTest do
         current_project_id: "prj_1",
         projects: [p1],
         theme: "light",
-        show_project_switcher: false,
-        show_new_issue_modal: false
+        show_project_switcher: false
       )
 
     assert html =~ "Alpha App"
@@ -153,8 +151,7 @@ defmodule RailWeb.Components.NavTest do
         current_project_id: "prj_1",
         projects: [p1],
         theme: "dark",
-        show_project_switcher: true,
-        show_new_issue_modal: false
+        show_project_switcher: true
       )
 
     assert html =~ "id=\"project-switcher-dialog\""
@@ -162,23 +159,6 @@ defmodule RailWeb.Components.NavTest do
     assert html =~ "id=\"project-option-prj_1\""
     assert html =~ "Beta Project"
     assert html =~ "BET"
-  end
-
-  test "top_app_bar renders new issue dialog when open" do
-    html =
-      render_component(&Nav.top_app_bar/1,
-        current_section: :tasks,
-        current_project_id: nil,
-        projects: [],
-        theme: "dark",
-        show_project_switcher: false,
-        show_new_issue_modal: true
-      )
-
-    assert html =~ "id=\"new-issue-modal\""
-    assert html =~ "data-qa=\"capture_dialog\""
-    assert html =~ "New Issue"
-    assert html =~ "id=\"close-new-issue-button\""
   end
 
   test "top_app_bar section titles match every destination" do
@@ -200,8 +180,7 @@ defmodule RailWeb.Components.NavTest do
           current_project_id: nil,
           projects: [],
           theme: "dark",
-          show_project_switcher: false,
-          show_new_issue_modal: false
+          show_project_switcher: false
         )
 
       assert html =~ expected_title

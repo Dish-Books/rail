@@ -1,14 +1,17 @@
 defmodule RailWeb.IssuesLiveTest do
   use RailWeb.ConnCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   import Phoenix.LiveViewTest
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.SyncProjectIssues
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
+  alias Rail.Repo
   alias Rail.Scope
   alias Rail.Users
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   test "redirects unauthenticated user to /auth/github", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/auth/github"}}} = live(conn, ~p"/issues")
@@ -110,7 +113,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#new-issue-modal")
   end
 
-  test "renders issue cards with all attributes, badges, body deduplication, and worktree", %{
+  test "renders issue cards with all attributes, badges, full body, and worktree", %{
     conn: conn
   } do
     {:ok, user} =
@@ -143,17 +146,26 @@ defmodule RailWeb.IssuesLiveTest do
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_issues_live_13201",
-      "identifier" => "DEMO-101",
-      "title" => "Deduplicated title"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_issues_live_13201",
+              "identifier" => "DEMO-101",
+              "title" => "Demo title"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Deduplicated title"})
+    {:ok, issue} = Issues.create_issue(project, %{title: "Demo title"})
 
     {:ok, issue} =
       Issues.update_issue(issue, %{
-        description: "Deduplicated title\nDetailed explanation of the issue.",
+        description: "Demo title\nDetailed explanation of the issue.",
         priority: :urgent,
         state: :in_progress,
         branch_name: "feat-demo-101",
@@ -166,10 +178,15 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-identifier']", "DEMO-101")
     assert has_element?(view, "#issue-card-#{issue.id} [data-qa='project-badge']", "DEMO")
     assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-external-link']")
-    assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-title']", "Deduplicated title")
+    assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-title']", "Demo title")
     assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-priority-badge']", "Urgent")
     assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-status-badge']", "In Progress")
-    assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-body']", "Detailed explanation of the issue.")
+
+    assert has_element?(
+             view,
+             "#issue-card-#{issue.id} [data-qa='issue-body']",
+             ~r/Demo title\s+Detailed explanation of the issue\./
+           )
 
     assert has_element?(
              view,
@@ -178,7 +195,6 @@ defmodule RailWeb.IssuesLiveTest do
            )
 
     assert has_element?(view, "#start-product-run-#{issue.id}", "Start")
-    assert has_element?(view, "#archive-issue-#{issue.id}")
   end
 
   test "filters by priority chips and updates chip counts", %{conn: conn} do
@@ -212,13 +228,22 @@ defmodule RailWeb.IssuesLiveTest do
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_issues_live_13202",
-      "identifier" => "PRIO-1",
-      "title" => "Urgent issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_issues_live_13202",
+              "identifier" => "PRIO-1",
+              "title" => "Urgent issue"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue_urgent} = Issues.create_issue(project, %{description: "Urgent issue"})
+    {:ok, issue_urgent} = Issues.create_issue(project, %{title: "Urgent issue"})
 
     {:ok, issue_urgent} =
       Issues.update_issue(issue_urgent, %{
@@ -226,13 +251,22 @@ defmodule RailWeb.IssuesLiveTest do
         state: :backlog
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_issues_live_13203",
-      "identifier" => "PRIO-2",
-      "title" => "High issue 1"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_issues_live_13203",
+              "identifier" => "PRIO-2",
+              "title" => "High issue 1"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue_high_1} = Issues.create_issue(project, %{description: "High issue 1"})
+    {:ok, issue_high_1} = Issues.create_issue(project, %{title: "High issue 1"})
 
     {:ok, issue_high_1} =
       Issues.update_issue(issue_high_1, %{
@@ -240,13 +274,22 @@ defmodule RailWeb.IssuesLiveTest do
         state: :backlog
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_issues_live_13204",
-      "identifier" => "PRIO-3",
-      "title" => "High issue 2"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_issues_live_13204",
+              "identifier" => "PRIO-3",
+              "title" => "High issue 2"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue_high_2} = Issues.create_issue(project, %{description: "High issue 2"})
+    {:ok, issue_high_2} = Issues.create_issue(project, %{title: "High issue 2"})
 
     {:ok, issue_high_2} =
       Issues.update_issue(issue_high_2, %{
@@ -254,13 +297,22 @@ defmodule RailWeb.IssuesLiveTest do
         state: :backlog
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_issues_live_13205",
-      "identifier" => "PRIO-4",
-      "title" => "Low issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_issues_live_13205",
+              "identifier" => "PRIO-4",
+              "title" => "Low issue"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue_low} = Issues.create_issue(project, %{description: "Low issue"})
+    {:ok, issue_low} = Issues.create_issue(project, %{title: "Low issue"})
 
     {:ok, issue_low} =
       Issues.update_issue(issue_low, %{
@@ -285,6 +337,7 @@ defmodule RailWeb.IssuesLiveTest do
 
     # Select High filter
     view |> element("#filter-priority-high") |> render_click()
+    assert_patched(view, ~p"/issues?priority=high")
     refute has_element?(view, "#issue-card-#{issue_urgent.id}")
     assert has_element?(view, "#issue-card-#{issue_high_1.id}")
     assert has_element?(view, "#issue-card-#{issue_high_2.id}")
@@ -302,13 +355,14 @@ defmodule RailWeb.IssuesLiveTest do
 
     # Click All chip resets
     view |> element("#filter-priority-all") |> render_click()
+    assert_patched(view, ~p"/issues")
     assert has_element?(view, "#issue-card-#{issue_urgent.id}")
     assert has_element?(view, "#issue-card-#{issue_high_1.id}")
 
-    # A priority nothing has matches nothing
+    # A priority that is not one of ours is no filter at all
     view |> element("#filter-priority-all") |> render_click(%{"priority" => "invalid_prio"})
-    refute has_element?(view, "#issue-card-#{issue_urgent.id}")
-    refute has_element?(view, "#issue-card-#{issue_high_1.id}")
+    assert has_element?(view, "#issue-card-#{issue_urgent.id}")
+    assert has_element?(view, "#issue-card-#{issue_high_1.id}")
   end
 
   test "toggles Show finished filter chip", %{conn: conn} do
@@ -342,26 +396,44 @@ defmodule RailWeb.IssuesLiveTest do
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_issues_live_13206",
-      "identifier" => "FIN-1",
-      "title" => "Active task"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_issues_live_13206",
+              "identifier" => "FIN-1",
+              "title" => "Active task"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, active_issue} = Issues.create_issue(project, %{description: "Active task"})
+    {:ok, active_issue} = Issues.create_issue(project, %{title: "Active task"})
 
     {:ok, active_issue} =
       Issues.update_issue(active_issue, %{
         state: :in_progress
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_issues_live_13207",
-      "identifier" => "FIN-2",
-      "title" => "Done task"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_issues_live_13207",
+              "identifier" => "FIN-2",
+              "title" => "Done task"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, done_issue} = Issues.create_issue(project, %{description: "Done task"})
+    {:ok, done_issue} = Issues.create_issue(project, %{title: "Done task"})
 
     {:ok, done_issue} =
       Issues.update_issue(done_issue, %{
@@ -422,9 +494,18 @@ defmodule RailWeb.IssuesLiveTest do
                active: true
              })
 
-    LinearMock.mock_create_issue_success(%{"id" => "lin_bl_1", "identifier" => "BL-10", "title" => "Bring local feature"})
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_bl_1", "identifier" => "BL-10", "title" => "Bring local feature"}
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Bring local feature"})
+    {:ok, issue} = Issues.create_issue(project, %{title: "Bring local feature"})
 
     {:ok, issue} =
       Issues.update_issue(issue, %{
@@ -475,9 +556,18 @@ defmodule RailWeb.IssuesLiveTest do
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    LinearMock.mock_create_issue_success(%{"id" => "lin_ed_1", "identifier" => "ED-50", "title" => "Initial title"})
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_ed_1", "identifier" => "ED-50", "title" => "Initial title"}
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Initial title"})
+    {:ok, issue} = Issues.create_issue(project, %{title: "Initial title"})
 
     {:ok, issue} =
       Issues.update_issue(issue, %{
@@ -533,100 +623,6 @@ defmodule RailWeb.IssuesLiveTest do
     render_click(view, "open_editor", %{"issue_id" => "iss_nonexistent"})
   end
 
-  test "opens archive confirmation modal and confirms archive", %{conn: conn} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_issues_live_9",
-        login: "issues_live_user_9",
-        email: "issues_live_user_9@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-    scope = Scope.for_user(user)
-
-    assert {:ok, %Project{id: _project_id} = project} =
-             Projects.create_project(scope, %{
-               name: "Archive Project",
-               github_repo: "example/archive-proj",
-               github_installation_id: 706,
-               linear_workspace: %{
-                 name: "Issues Live Workspace 13214",
-                 external_id: "lin_ws_issues_live_13214",
-                 token: "lin_api_token_issues_live_13214",
-                 webhook_secret: "whsec_issues_live_13214"
-               },
-               linear_team_id: "t_arc",
-               linear_team_key: "ARC",
-               linear_state_ids: %{"canceled" => "st_canceled_arc"},
-               default_branch: "main",
-               clone_path: "/tmp/archive-proj",
-               active: true
-             })
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_arc_view_1",
-      "identifier" => "ARC-99",
-      "title" => "Issue to archive"
-    })
-
-    {:ok, issue} = Issues.create_issue(project, %{description: "Issue to archive"})
-
-    {:ok, issue} =
-      Issues.update_issue(issue, %{
-        state: :backlog
-      })
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
-
-    refute has_element?(view, "#archive-issue-dialog")
-
-    # Open archive modal from card
-    view |> element("#archive-issue-#{issue.id}") |> render_click()
-    assert has_element?(view, "#archive-issue-dialog")
-    assert has_element?(view, "#archive-modal-title", "Archive ARC-99?")
-
-    assert has_element?(
-             view,
-             "#archive-modal-body",
-             "This archives \"Issue to archive\" and marks it as canceled in Linear."
-           )
-
-    # Cancel archive
-    view |> element("#cancel-archive-button") |> render_click()
-    refute has_element?(view, "#archive-issue-dialog")
-
-    # Open archive modal from editor
-    view |> element("#issue-card-#{issue.id}") |> render_click()
-    assert has_element?(view, "#issue-editor-dialog")
-    view |> element("#editor-archive-button") |> render_click()
-    assert has_element?(view, "#archive-issue-dialog")
-
-    # Confirm archive
-    LinearMock.mock_update_issue_success(%{
-      "id" => "lin_arc_view_1",
-      "identifier" => "ARC-99",
-      "title" => "Issue to archive",
-      "description" => issue.description,
-      "state" => %{"id" => "st_canceled_arc", "name" => "Canceled", "type" => "canceled"},
-      "branchName" => nil,
-      "url" => issue.url,
-      "createdAt" => "2026-09-01T10:00:00.000Z",
-      "updatedAt" => "2026-09-02T12:00:00.000Z"
-    })
-
-    view |> element("#confirm-archive-button") |> render_click()
-
-    refute has_element?(view, "#archive-issue-dialog")
-    refute has_element?(view, "#issue-editor-dialog")
-    # Finished issue is hidden since show_finished is false
-    refute has_element?(view, "#issue-card-#{issue.id}")
-
-    # Confirm archive on nonexistent issue
-    render_click(view, "confirm_archive", %{"issue_id" => "iss_nonexistent"})
-    render_click(view, "open_archive", %{"issue_id" => "iss_nonexistent"})
-  end
-
   test "sync_issues button triggers sync on current project or all projects", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -658,18 +654,123 @@ defmodule RailWeb.IssuesLiveTest do
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    LinearMock.mock_issues_success([])
-
+    # No Linear stub is queued: the click only queues the pull.
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues?project=#{project_id}")
 
     view |> element("#sync-issues-button") |> render_click()
-    assert has_element?(view, "#sync-issues-button", "Sync Issues")
+    assert_enqueued(worker: SyncProjectIssues, args: %{project_id: project_id})
+    assert has_element?(view, "#sync-issues-button[disabled]", "Syncing...")
 
-    # Unfiltered sync
-    LinearMock.mock_issues_success([])
+    # The worker saying the last page landed frees the button and shows what came in.
+    %Issue{}
+    |> Issue.changeset(%{
+      project_id: project_id,
+      external_id: "lin_synced",
+      identifier: "SYNC-1",
+      title: "Synced",
+      state: :triage
+    })
+    |> Repo.insert!()
+
+    send(view.pid, {:issues_synced, project_id})
+    assert has_element?(view, "#sync-issues-button", "Sync Issues")
+    assert has_element?(view, "[data-qa='issue-title']", "Synced")
+
+    # Unfiltered sync covers every project
     assert {:ok, view_all, _html} = live(authed_conn, ~p"/issues")
     view_all |> element("#sync-issues-button") |> render_click()
+    assert has_element?(view_all, "#sync-issues-button", "Syncing...")
+
+    send(view_all.pid, {:issues_synced, project_id})
     assert has_element?(view_all, "#sync-issues-button", "Sync Issues")
+  end
+
+  test "searches issues from the URL and pages through them", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_13",
+        login: "issues_live_user_13",
+        email: "issues_live_user_13@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+
+    assert {:ok, %Project{id: project_id}} =
+             Projects.create_project(Scope.for_user(user), %{
+               name: "Paging Project",
+               github_repo: "example/paging-proj",
+               github_installation_id: 708,
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13216",
+                 external_id: "lin_ws_issues_live_13216",
+                 token: "lin_api_token_issues_live_13216",
+                 webhook_secret: "whsec_issues_live_13216"
+               },
+               linear_team_id: "t_page",
+               linear_team_key: "PAGE",
+               default_branch: "main",
+               clone_path: "/tmp/paging-proj",
+               active: true
+             })
+
+    [first | _rest] =
+      issues =
+      Enum.map(1..51, fn n ->
+        %Issue{}
+        |> Issue.changeset(%{
+          project_id: project_id,
+          external_id: "lin_page_#{n}",
+          identifier: "PAGE-#{n}",
+          title: if(n == 51, do: "Fix login redirect", else: "Paged issue #{n}"),
+          state: :backlog
+        })
+        |> Repo.insert!()
+      end)
+
+    last = List.last(issues)
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
+
+    assert has_element?(view, "#filter-priority-all", "All (51)")
+    assert has_element?(view, "#issues-page-range", "Showing 1–50 of 51")
+    assert has_element?(view, "#issue-card-#{first.id}")
+    refute has_element?(view, "#issue-card-#{last.id}")
+    refute has_element?(view, "#issues-page-prev")
+
+    view |> element("#issues-page-next") |> render_click()
+    assert_patched(view, ~p"/issues?page=2")
+    assert has_element?(view, "#issues-page-range", "Showing 51–51 of 51")
+    assert has_element?(view, "#issue-card-#{last.id}")
+    refute has_element?(view, "#issue-card-#{first.id}")
+    refute has_element?(view, "#issues-page-next")
+
+    # Searching goes back to the first page of what matches.
+    view |> element("#issues-search-form") |> render_change(%{"q" => "LOGIN"})
+    assert_patched(view, ~p"/issues?q=LOGIN")
+    assert has_element?(view, "#issues-page-range", "Showing 1–1 of 1")
+    assert has_element?(view, "#issue-card-#{last.id}")
+    assert has_element?(view, "#issues-search[value='LOGIN']")
+
+    view |> element("#issues-search-form") |> render_submit(%{"q" => "PAGE-12"})
+    assert_patched(view, ~p"/issues?q=PAGE-12")
+    assert has_element?(view, "[data-qa='issue-identifier']", "PAGE-12")
+    refute has_element?(view, "#issue-card-#{last.id}")
+
+    view |> element("#issues-search-form") |> render_change(%{"q" => "nothing like this"})
+    assert has_element?(view, "[data-qa='empty-state-title']", "No issues match")
+    refute has_element?(view, "#issues-pagination")
+
+    # The URL alone is enough to land on a page; one past the end shows the last,
+    # and a bad page number is page one.
+    assert {:ok, linked, _html} = live(authed_conn, ~p"/issues?page=2")
+    assert has_element?(linked, "#issue-card-#{last.id}")
+
+    assert {:ok, past_end, _html} = live(authed_conn, ~p"/issues?page=9&q=issue")
+    assert has_element?(past_end, "#issues-page-range", "Showing 1–50 of 50")
+
+    assert {:ok, bad_page, _html} = live(authed_conn, ~p"/issues?page=nope")
+    assert has_element?(bad_page, "#issues-page-range", "Showing 1–50 of 51")
   end
 
   test "handles subtitle for projects with and without team keys", %{conn: conn} do

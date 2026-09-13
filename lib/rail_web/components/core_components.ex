@@ -13,8 +13,6 @@ defmodule RailWeb.CoreComponents do
   defdelegate role_roster(assigns), to: RailWeb.Components.RoleRoster
   defdelegate issue_card(assigns), to: RailWeb.Components.IssueCard
   defdelegate issue_editor_modal(assigns), to: RailWeb.Components.IssueEditorModal
-  defdelegate archive_issue_modal(assigns), to: RailWeb.Components.ArchiveIssueModal
-  defdelegate capture_issue_modal(assigns), to: RailWeb.Components.CaptureIssueModal
   defdelegate markdown(assigns), to: RailWeb.Components.Markdown
   defdelegate answer_field(assigns), to: RailWeb.Components.AnswerField
 end

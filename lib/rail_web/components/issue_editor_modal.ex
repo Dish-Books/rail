@@ -138,18 +138,7 @@ defmodule RailWeb.Components.IssueEditorModal do
           </div>
 
           <!-- Modal Footer -->
-          <div class="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-700">
-            <button
-              type="button"
-              id="editor-archive-button"
-              data-qa="editor-archive-button"
-              phx-click="open_archive"
-              phx-value-issue_id={@issue.id}
-              class="px-3 py-1.5 rounded-lg border border-red-500/30 text-red-500 hover:bg-red-500/10 text-xs font-semibold cursor-pointer"
-            >
-              Archive Issue
-            </button>
-
+          <div class="flex items-center justify-end pt-4 border-t border-slate-200 dark:border-slate-700">
             <div class="flex items-center gap-3">
               <button
                 type="button"

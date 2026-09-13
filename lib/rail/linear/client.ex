@@ -1,143 +1,308 @@
 defmodule Rail.Linear.Client do
   @moduledoc """
-  HTTP and GraphQL client for Linear OAuth and API operations.
+  The one client for Linear: OAuth, and GraphQL for issues, comments and uploads.
+
+  It makes the call and hands back what Linear said, as Linear said it: GraphQL
+  calls return the response's `data`, OAuth calls the token response body.
+  Shaping any of that into Rail's terms is the caller's job.
+
+  Every API call names the project it acts for and picks its own token. A write
+  that belongs to a person passes `as:` their scope and goes out as
+  them, so Linear shows their name on it; everything else — and anything by a
+  user who never linked Linear — goes out as the workspace.
   """
+
+  alias Rail.Projects.Schemas.LinearWorkspace
+  alias Rail.Projects.Schemas.Project
+  alias Rail.Repo
+  alias Rail.Scope
+  alias Rail.Users
+
+  require Logger
 
   @default_authorize_url "https://linear.app/oauth/authorize"
   @default_token_url "https://api.linear.app/oauth/token"
   @default_graphql_url "https://api.linear.app/graphql"
   @default_scope "read,write,issues:create,comments:create"
+  @page_size 100
+
+  @issue_fields """
+  id
+  identifier
+  title
+  description
+  priority
+  estimate
+  assignee {
+    id
+  }
+  state {
+    id
+    name
+    type
+  }
+  branchName
+  url
+  """
 
   def config do
-    Application.get_env(:rail, :linear_oauth, [])
+    Application.get_env(:rail, :linear, Application.get_env(:rail, :linear_oauth, []))
   end
 
   def authorize_url(opts \\ []) do
-    cfg = config()
-    client_id = Keyword.get(opts, :client_id, cfg[:client_id])
-    redirect_uri = Keyword.get(opts, :redirect_uri, cfg[:redirect_uri])
-    state = Keyword.get(opts, :state)
-    scope = Keyword.get(opts, :scope, @default_scope)
-
-    base_params = [
-      {"response_type", "code"},
-      {"client_id", client_id},
-      {"redirect_uri", redirect_uri},
-      {"actor", "user"},
-      {"scope", scope}
-    ]
+    cfg = oauth_config()
 
     params =
-      if state do
-        [{"state", state} | base_params]
-      else
-        base_params
-      end
+      [
+        {"response_type", "code"},
+        {"client_id", Keyword.get(opts, :client_id, cfg[:client_id])},
+        {"redirect_uri", Keyword.get(opts, :redirect_uri, cfg[:redirect_uri])},
+        {"actor", "user"},
+        {"scope", Keyword.get(opts, :scope, @default_scope)}
+      ]
+
+    params = if state = opts[:state], do: [{"state", state} | params], else: params
 
     @default_authorize_url <> "?" <> URI.encode_query(params)
   end
 
   def exchange_code(code, opts \\ []) do
-    cfg = config()
-    client_id = Keyword.get(opts, :client_id, cfg[:client_id])
-    client_secret = Keyword.get(opts, :client_secret, cfg[:client_secret])
-    redirect_uri = Keyword.get(opts, :redirect_uri, cfg[:redirect_uri])
+    cfg = oauth_config()
 
     form = [
       grant_type: "authorization_code",
       code: code,
-      client_id: client_id,
-      client_secret: client_secret,
-      redirect_uri: redirect_uri
+      client_id: Keyword.get(opts, :client_id, cfg[:client_id]),
+      client_secret: Keyword.get(opts, :client_secret, cfg[:client_secret]),
+      redirect_uri: Keyword.get(opts, :redirect_uri, cfg[:redirect_uri])
     ]
 
-    req = build_req(opts)
-
-    case Req.post(req, url: @default_token_url, form: form) do
-      {:ok, %{status: 200, body: %{"access_token" => access_token} = body}} ->
-        expires_in = body["expires_in"]
-        expires_at = if expires_in, do: DateTime.shift(DateTime.utc_now(), second: expires_in)
-
-        {:ok,
-         %{
-           access_token: access_token,
-           refresh_token: body["refresh_token"],
-           expires_in: expires_in,
-           expires_at: expires_at,
-           scope: body["scope"]
-         }}
-
-      {:ok, %{status: status, body: body}} ->
-        {:error, {:linear_oauth_error, status, body}}
-
-      {:error, reason} ->
-        {:error, reason}
+    case Req.post(build_req(opts), url: @default_token_url, form: form) do
+      {:ok, %{status: 200, body: %{"access_token" => _token} = body}} -> {:ok, body}
+      {:ok, %{status: status, body: body}} -> {:error, {:linear_oauth_error, status, body}}
+      {:error, reason} -> {:error, reason}
     end
   end
 
   def refresh_token(refresh_token, opts \\ []) do
-    cfg = config()
-    client_id = Keyword.get(opts, :client_id, cfg[:client_id])
-    client_secret = Keyword.get(opts, :client_secret, cfg[:client_secret])
+    cfg = oauth_config()
 
     form = [
       grant_type: "refresh_token",
       refresh_token: refresh_token,
-      client_id: client_id,
-      client_secret: client_secret
+      client_id: Keyword.get(opts, :client_id, cfg[:client_id]),
+      client_secret: Keyword.get(opts, :client_secret, cfg[:client_secret])
     ]
 
-    req = build_req(opts)
-
-    case Req.post(req, url: @default_token_url, form: form) do
-      {:ok, %{status: 200, body: %{"access_token" => access_token} = body}} ->
-        expires_in = body["expires_in"]
-        expires_at = if expires_in, do: DateTime.shift(DateTime.utc_now(), second: expires_in)
-
-        {:ok,
-         %{
-           access_token: access_token,
-           refresh_token: body["refresh_token"],
-           expires_in: expires_in,
-           expires_at: expires_at
-         }}
-
-      {:ok, %{status: status, body: body}} ->
-        {:error, {:linear_token_refresh_error, status, body}}
-
-      {:error, reason} ->
-        {:error, reason}
+    case Req.post(build_req(opts), url: @default_token_url, form: form) do
+      {:ok, %{status: 200, body: %{"access_token" => _token} = body}} -> {:ok, body}
+      {:ok, %{status: status, body: body}} -> {:error, {:linear_token_refresh_error, status, body}}
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  def viewer(access_token, opts \\ []) do
-    req = build_req(opts)
+  def viewer(token, opts \\ []) do
+    query = """
+    query Viewer {
+      viewer {
+        id
+        name
+        email
+      }
+    }
+    """
 
-    query = "query { viewer { id name } }"
+    execute_query(token, query, %{}, opts)
+  end
 
-    case Req.post(req,
-           url: @default_graphql_url,
-           auth: {:bearer, access_token},
-           json: %{query: query}
+  @doc """
+  Fetches one page of the project's team issues. Pass `after:` the previous
+  page's `pageInfo.endCursor` to continue.
+  """
+  def issues(%Project{} = project, opts \\ []) do
+    query = """
+    query Issues($teamId: String!, $first: Int!, $after: String) {
+      team(id: $teamId) {
+        issues(first: $first, after: $after) {
+          nodes {
+            #{@issue_fields}
+          }
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+        }
+      }
+    }
+    """
+
+    variables = %{"teamId" => project.linear_team_id, "first" => @page_size, "after" => opts[:after]}
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, variables, opts)
+    end
+  end
+
+  @doc """
+  Opens a ticket on the project's team. `input` is Linear's `IssueCreateInput`.
+  """
+  def create_issue(%Project{} = project, %{} = input, opts \\ []) do
+    query = """
+    mutation IssueCreate($input: IssueCreateInput!) {
+      issueCreate(input: $input) {
+        success
+        issue {
+          #{@issue_fields}
+        }
+      }
+    }
+    """
+
+    input = Map.put(input, "teamId", project.linear_team_id)
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, %{"input" => input}, opts)
+    end
+  end
+
+  @doc """
+  Updates a ticket. `input` is Linear's `IssueUpdateInput`.
+  """
+  def update_issue(%Project{} = project, issue_id, %{} = input, opts \\ []) do
+    query = """
+    mutation IssueUpdate($id: String!, $input: IssueUpdateInput!) {
+      issueUpdate(id: $id, input: $input) {
+        success
+      }
+    }
+    """
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, %{"id" => issue_id, "input" => input}, opts)
+    end
+  end
+
+  @doc """
+  Asks Linear where a file goes and puts it there, returning the `fileUpload`
+  data the upload was made from.
+  """
+  def file_upload(target, filename, content_type, data_binary, opts \\ []) do
+    query = """
+    mutation FileUpload($filename: String!, $contentType: String!, $size: Int!) {
+      fileUpload(filename: $filename, contentType: $contentType, size: $size) {
+        success
+        uploadFile {
+          uploadUrl
+          assetUrl
+          headers {
+            key
+            value
+          }
+        }
+      }
+    }
+    """
+
+    variables = %{"filename" => filename, "contentType" => content_type, "size" => byte_size(data_binary)}
+
+    with {:ok, token} <- token(target, opts),
+         {:ok, %{"fileUpload" => %{"success" => true, "uploadFile" => upload_file}} = data} <-
+           execute_query(token, query, variables, opts),
+         :ok <- put_file(upload_file, data_binary, opts) do
+      {:ok, data}
+    end
+  end
+
+  @doc """
+  Comments on a ticket. `input` is Linear's `CommentCreateInput`.
+  """
+  def create_comment(%Project{} = project, %{} = input, opts \\ []) do
+    query = """
+    mutation CommentCreate($input: CommentCreateInput!) {
+      commentCreate(input: $input) {
+        success
+        comment {
+          id
+          body
+          createdAt
+        }
+      }
+    }
+    """
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, %{"input" => input}, opts)
+    end
+  end
+
+  defp put_file(%{"uploadUrl" => url} = upload_file, data_binary, opts) do
+    headers = Enum.map(upload_file["headers"] || [], &{&1["key"], &1["value"]})
+
+    case Req.put(build_req(opts), url: url, body: data_binary, headers: headers) do
+      {:ok, %{status: status}} when status in 200..299 -> :ok
+      {:ok, %{status: status, body: body}} -> {:error, {:linear_upload_error, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp oauth_config, do: Application.get_env(:rail, :linear_oauth, [])
+
+  defp token(target, opts) do
+    case opts[:as] do
+      %Scope{user: %{}} = scope -> user_token(scope, target)
+      _workspace -> workspace_token(target)
+    end
+  end
+
+  defp user_token(scope, target) do
+    case Users.linear_token(scope) do
+      {:ok, token} ->
+        {:ok, token}
+
+      {:error, _not_linked} ->
+        with {:ok, token} <- workspace_token(target) do
+          Logger.warning("[rail] pushed to Linear as the workspace")
+          {:ok, token}
+        end
+    end
+  end
+
+  defp workspace_token(%LinearWorkspace{token: token}) when is_binary(token) and token != "" do
+    {:ok, token}
+  end
+
+  defp workspace_token(%Project{linear_workspace: %LinearWorkspace{token: token}})
+       when is_binary(token) and token != "" do
+    {:ok, token}
+  end
+
+  defp workspace_token(%Project{id: project_id}) when is_binary(project_id) do
+    case Repo.get_by(LinearWorkspace, project_id: project_id) do
+      %LinearWorkspace{token: token} when is_binary(token) and token != "" -> {:ok, token}
+      _other -> {:error, :no_workspace_token}
+    end
+  end
+
+  defp workspace_token(_fallback), do: {:error, :no_workspace_token}
+
+  defp execute_query(token, query, variables, opts) do
+    graphql_url = Keyword.get(opts, :graphql_url, Keyword.get(config(), :graphql_url, @default_graphql_url))
+
+    case Req.post(build_req(opts),
+           url: graphql_url,
+           auth: {:bearer, token},
+           json: %{query: query, variables: variables}
          ) do
-      {:ok, %{status: 200, body: %{"data" => %{"viewer" => %{"id" => id} = viewer}}}} ->
-        {:ok, %{id: id, name: viewer["name"]}}
-
-      {:ok, %{status: status, body: body}} ->
-        {:error, {:linear_api_error, status, body}}
-
-      {:error, reason} ->
-        {:error, reason}
+      {:ok, %{status: 200, body: %{"errors" => [_error | _rest] = errors}}} -> {:error, {:linear_graphql_error, errors}}
+      {:ok, %{status: 200, body: %{"data" => data}}} -> {:ok, data}
+      {:ok, %{status: status, body: body}} -> {:error, {:linear_api_error, status, body}}
+      {:error, reason} -> {:error, reason}
     end
   end
 
   defp build_req(opts) do
-    cfg = config()
-    req_options = Keyword.get(cfg, :req_options, [])
-    custom_opts = Keyword.get(opts, :req_options, [])
-
     Req.new()
-    |> Req.merge(req_options)
-    |> Req.merge(custom_opts)
+    |> Req.merge(Keyword.get(config(), :req_options, []))
+    |> Req.merge(Keyword.get(opts, :req_options, []))
   end
 end
