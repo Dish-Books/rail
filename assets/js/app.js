@@ -9,6 +9,7 @@ import { ChatAutoscroll } from "./hooks/chat_autoscroll";
 import { DiffHighlight } from "./hooks/diff_highlight";
 import { DemoPlayer } from "./hooks/demo_player";
 import { CopyText } from "./hooks/copy_text";
+import { LocalTime } from "./hooks/local_time";
 
 const Hooks = {
   Theme,
@@ -17,7 +18,8 @@ const Hooks = {
   ChatAutoscroll,
   DiffHighlight,
   DemoPlayer,
-  CopyText
+  CopyText,
+  LocalTime
 };
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");

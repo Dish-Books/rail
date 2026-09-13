@@ -9,22 +9,23 @@ defmodule RailWeb.CoreComponents do
 
   alias RailWeb.Components
 
+  defdelegate activity_feed(assigns), to: Components.ActivityFeed
   defdelegate answer_field(assigns), to: Components.AnswerField
   defdelegate assignee(assigns), to: Components.IssueIcons
   defdelegate button(assigns), to: Components.Button
   defdelegate dispatch_banner(assigns), to: Components.DispatchBanner
-  defdelegate empty_state(assigns), to: Components.EmptyState
   defdelegate icon(assigns), to: Components.Icon
   defdelegate issue_card(assigns), to: Components.IssueCard
   defdelegate markdown(assigns), to: Components.Markdown
   defdelegate nav(assigns), to: Components.Nav
+  defdelegate overview_stats(assigns), to: Components.OverviewStats
   defdelegate priority_icon(assigns), to: Components.IssueIcons
   defdelegate project_badge(assigns), to: Components.ProjectBadge
-  defdelegate question_card(assigns), to: Components.QuestionCard
   defdelegate role_roster(assigns), to: Components.RoleRoster
   defdelegate settings_nav(assigns), to: Components.SettingsNav
   defdelegate status_icon(assigns), to: Components.IssueIcons
   defdelegate task_layout(assigns), to: Components.TaskLayout
+  defdelegate throughput_chart(assigns), to: Components.ThroughputChart
   defdelegate top_app_bar(assigns), to: Components.Nav
-  defdelegate with_agent_section(assigns), to: Components.WithAgentSection
+  defdelegate up_next(assigns), to: Components.UpNext
 end

@@ -4,9 +4,9 @@ defmodule RailWeb.OverviewLiveTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.DetectedQuestion
-  alias Rail.Pipeline.Schemas.Question
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -33,8 +33,7 @@ defmodule RailWeb.OverviewLiveTest do
     assert {:ok, view, _html} = live(authed_conn, ~p"/")
 
     assert has_element?(view, "#overview-view")
-    assert has_element?(view, "#overview-title", "Overview")
-    assert has_element?(view, "#running-agent-count-pill", "0 agents running")
+    assert has_element?(view, "#overview-stats")
 
     # Nav rail checks
     assert has_element?(view, "#navigation-rail")
@@ -235,7 +234,7 @@ defmodule RailWeb.OverviewLiveTest do
     refute has_element?(view, "#project-switcher-dialog")
   end
 
-  describe "the queue, which is a list of runs" do
+  describe "the overview, which reads runs and the tasks they belong to" do
     setup %{conn: conn} do
       {:ok, user} =
         Users.register_oauth_user(%{
@@ -273,7 +272,7 @@ defmodule RailWeb.OverviewLiveTest do
         Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
       roles =
-        Map.new([:product, :engineer], fn stage ->
+        Map.new([:product, :architect, :engineer, :qa], fn stage ->
           {:ok, role} =
             Roles.create_role(scope, project, %{
               backend_id: backend.id,
@@ -286,196 +285,311 @@ defmodule RailWeb.OverviewLiveTest do
           {stage, role}
         end)
 
-      %{conn: log_in_user(conn, user), scope: scope, project: project, roles: roles}
+      # Each issue created answers Linear once, under a key of its own. A
+      # `:completed_at` is Linear completing the issue.
+      task_for = fn title, attrs ->
+        {completed_at, attrs} = Map.pop(attrs, :completed_at)
+        n = System.unique_integer([:positive])
+
+        Req.Test.expect(Rail.Linear, fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueCreate" => %{
+                "success" => true,
+                "issue" => %{"id" => "lin_queue_#{n}", "identifier" => "QUE-#{n}", "title" => title}
+              }
+            }
+          })
+        end)
+
+        {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: title})
+        issue = issue |> Issue.linear_changeset(%{completed_at: completed_at}) |> Repo.update!()
+        {:ok, task} = Pipeline.create_task(issue, :product)
+        {:ok, task} = Pipeline.update_task(task, attrs)
+        Repo.preload(task, :issue)
+      end
+
+      %{conn: log_in_user(conn, user), project: project, roles: roles, task_for: task_for}
     end
 
-    test "a run that is working shows under WITH AN AGENT and counts as running", %{
+    test "with nothing going on, nothing waits and every role is idle", %{
       conn: conn,
       project: project,
       roles: roles
     } do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{
-                "id" => "lin_queue_running",
-                "identifier" => "QUE-1",
-                "title" => "Running work"
-              }
-            }
-          }
-        })
-      end)
+      assert {:ok, view, _html} = live(conn, ~p"/?project=#{project.id}")
 
-      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Running work"})
-      {:ok, task} = Pipeline.create_task(issue, :product)
-      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "0")
+      assert has_element?(view, "#stat-shipped-delta", "same as prior 30")
+      refute has_element?(view, "#stat-oldest-waiting")
+      assert has_element?(view, "#up-next-empty", "Nothing is waiting on you.")
+      assert has_element?(view, "#activity-feed-empty")
+      assert has_element?(view, "#roster-running-count", "0 / 4 running")
+      assert has_element?(view, "#role-row-#{roles[:qa].id}[data-tone='idle']", "Idle · no work assigned")
+      assert has_element?(view, "#throughput-total", "0 total")
+      refute has_element?(view, "[data-qa='roster-project-header']")
+    end
+
+    test "the numbers across the top count what is in flight, what shipped and what waits", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      waiting = task_for.("Waiting work", %{})
 
       {:ok, _run} =
         Pipeline.create_run(%{
-          task_id: task.id,
-          role_id: roles[:engineer].id,
-          status: :running,
-          started_at: DateTime.utc_now()
+          task_id: waiting.id,
+          role_id: roles[:product].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.shift(now, hour: -3),
+          completed_at: DateTime.shift(now, second: -(2 * 3600 + 14 * 60))
         })
+
+      task_for.("Shipped today", %{completed_at: now})
+      task_for.("Shipped this month", %{completed_at: DateTime.shift(now, day: -5)})
+      task_for.("Shipped last month", %{completed_at: DateTime.shift(now, day: -45)})
 
       assert {:ok, view, _html} = live(conn, ~p"/")
 
-      assert has_element?(view, "#running-agent-count-pill", "1 agent running")
-      assert has_element?(view, "#with-agent-section")
-      assert has_element?(view, "[data-qa='with-agent-state-pill']", "Running")
-      assert has_element?(view, "[data-qa='with-agent-title']", "Running work")
-      refute has_element?(view, "#waiting-on-you-section")
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "1")
+      assert has_element?(view, "#stat-shipped [data-qa='stat-value']", "2")
+      assert has_element?(view, "#stat-shipped-delta", "+1 vs prior 30")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+      assert has_element?(view, "#stat-oldest-waiting", "oldest 2h 14m")
+
+      assert has_element?(view, "#throughput-total", "2 total")
+      assert view |> render() |> :binary.matches("data-qa=\"throughput-bar\"") |> length() == 30
+
+      # Unfiltered, the roster names the project each group of roles belongs to.
+      assert has_element?(view, "[data-qa='roster-project-header']", "Queue App")
     end
 
-    test "the runs waiting are listed longest-waiting first", %{
+    test "up next leads with the longest-waiting run, and every entry only links to its task", %{
       conn: conn,
-      project: project,
-      roles: roles
+      roles: roles,
+      task_for: task_for
     } do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{
-                "id" => "lin_queue_order",
-                "identifier" => "QUE-9",
-                "title" => "Ordering"
-              }
-            }
-          }
+      now = DateTime.utc_now()
+
+      review = task_for.("Ticket to review", %{})
+
+      {:ok, review_run} =
+        Pipeline.create_run(%{
+          task_id: review.id,
+          role_id: roles[:product].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.shift(now, hour: -4),
+          completed_at: DateTime.shift(now, hour: -3)
         })
-      end)
 
-      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Ordering"})
-
-      waiting_run = fn stopped_at ->
-        {:ok, task} = Pipeline.create_task(issue, :product)
+      blocked_run = fn title, role, prompts, stopped_at ->
+        task = task_for.(title, %{stage: role.stage})
 
         {:ok, run} =
           Pipeline.create_run(%{
             task_id: task.id,
-            role_id: roles[:product].id,
+            role_id: role.id,
             status: :running,
             conversation_id: "sess_#{System.unique_integer([:positive])}",
-            started_at: DateTime.utc_now()
+            started_at: DateTime.shift(stopped_at, minute: -30)
           })
 
-        run = Repo.preload(run, task: :issue)
-        {:ok, _question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which one?"})
+        for prompt <- prompts do
+          {:ok, _question} =
+            Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: prompt})
+        end
 
         {:ok, blocked} = Pipeline.get_run(run.id)
         {:ok, stopped} = Pipeline.update_run(blocked, %{completed_at: stopped_at})
-        stopped
+        {task, stopped}
       end
 
-      recent = waiting_run.(~U[2026-01-01 11:00:00Z])
-      oldest = waiting_run.(~U[2026-01-01 09:00:00Z])
-      middle = waiting_run.(~U[2026-01-01 10:00:00Z])
+      {one_task, one_question} =
+        blocked_run.("Naming decision", roles[:architect], ["Which name?"], DateTime.shift(now, hour: -2))
+
+      {two_task, two_questions} =
+        blocked_run.("Two decisions", roles[:engineer], ["Which db?", "Behind a flag?"], DateTime.shift(now, hour: -1))
 
       assert {:ok, view, html} = live(conn, ~p"/")
 
-      assert has_element?(view, "#waiting-on-you-section")
+      assert has_element?(view, "#up-next-featured-#{review_run.id}[href='/tasks/#{review.id}']", "Ticket to review")
+      assert has_element?(view, "#up-next-featured-#{review_run.id} [data-qa='up-next-chip']", "Ready for review")
+      assert has_element?(view, "#up-next-featured-#{review_run.id}", "Review ticket")
+
+      assert has_element?(view, "#up-next-row-#{one_question.id}[href='/tasks/#{one_task.id}']", "asked a question")
+      assert has_element?(view, "#up-next-row-#{two_questions.id}[href='/tasks/#{two_task.id}']", "asked 2 questions")
+      assert has_element?(view, "#up-next-row-#{two_questions.id}", "Answer")
 
       positions =
-        Enum.map([oldest, middle, recent], fn run ->
-          html |> :binary.match("question-card-#{run.id}") |> elem(0)
+        Enum.map([review_run, one_question, two_questions], fn run ->
+          html |> :binary.match(run.id) |> elem(0)
         end)
 
       assert positions == Enum.sort(positions)
+
+      # Answering happens on the task, never here.
+      refute has_element?(view, "[data-qa='answer-input']")
+
+      assert has_element?(view, "#stat-oldest-waiting", "oldest 3h 0m")
+      assert has_element?(view, "#role-row-#{roles[:product].id}[data-tone='waiting']", "Handed off")
+      assert has_element?(view, "#role-row-#{roles[:architect].id}[data-tone='waiting']", "Blocked")
+
+      assert has_element?(view, "#activity-ended-#{review_run.id}", "back for review")
+      assert has_element?(view, "#activity-asked-#{one_question.id}", "asked a question")
+      assert has_element?(view, "#activity-asked-#{two_questions.id}", "asked 2 questions")
     end
 
-    test "a blocked run shows every question it asked, and only sends once none are pending", %{
+    test "a run whose questions are all answered leads as ready to send", %{
       conn: conn,
-      project: project,
-      roles: roles
+      roles: roles,
+      task_for: task_for
     } do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{
-                "id" => "lin_queue_blocked",
-                "identifier" => "QUE-4",
-                "title" => "Needs answers"
-              }
-            }
-          }
-        })
-      end)
-
-      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Needs answers"})
-      {:ok, task} = Pipeline.create_task(issue, :product)
+      task = task_for.("Answered work", %{})
 
       {:ok, run} =
         Pipeline.create_run(%{
           task_id: task.id,
           role_id: roles[:product].id,
           status: :running,
-          conversation_id: "sess_blocked",
+          conversation_id: "sess_answered",
           started_at: DateTime.utc_now()
         })
 
-      run = Repo.preload(run, task: :issue)
+      {:ok, question} =
+        Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: "Which one?"})
 
-      {:ok, %Question{id: first_id}} =
-        Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
-
-      {:ok, %Question{id: second_id}} =
-        Pipeline.register_question(run, %DetectedQuestion{prompt: "Ship behind a flag?"})
+      {:ok, _answered} = Pipeline.answer_question(question, "That one")
 
       assert {:ok, view, _html} = live(conn, ~p"/")
 
-      assert has_element?(view, "[data-qa='overview-card question-card']")
-      assert has_element?(view, "[data-qa='question-prompt']", "Which database?")
-      assert has_element?(view, "[data-qa='question-prompt']", "Ship behind a flag?")
-      assert has_element?(view, "[data-qa='questions-pending-note']", "2 still to answer")
-      assert has_element?(view, "[data-qa='send-answers-button'][disabled]")
-
-      view
-      |> element("#answer-form-#{first_id}")
-      |> render_submit(%{"question_id" => first_id, "answer" => "Postgres"})
-
-      assert has_element?(view, "[data-qa='question-answer']", "Postgres")
-      assert has_element?(view, "[data-qa='questions-pending-note']", "1 still to answer")
-      assert has_element?(view, "[data-qa='send-answers-button'][disabled]")
-
-      view
-      |> element("#dismiss-question-#{second_id}")
-      |> render_click()
-
-      assert has_element?(view, "[data-qa='question-dismissed']")
-      refute has_element?(view, "[data-qa='send-answers-button'][disabled]")
-
-      view |> element("#send-answers-#{run.id}") |> render_click()
-
-      assert %Question{delivered_at: %DateTime{}} = Repo.get!(Question, first_id)
-      assert %Question{delivered_at: %DateTime{}} = Repo.get!(Question, second_id)
+      assert has_element?(view, "#up-next-featured-#{run.id} [data-qa='up-next-chip']", "Needs an answer")
+      assert has_element?(view, "#up-next-featured-#{run.id} [data-qa='up-next-summary']", "ready to send")
+      assert has_element?(view, "#up-next-featured-#{run.id}", "Answer questions")
     end
 
-    test "a merged task waits on nobody", %{conn: conn, project: project, roles: roles} do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{
-                "id" => "lin_queue_merged",
-                "identifier" => "QUE-6",
-                "title" => "Shipped work"
-              }
-            }
-          }
-        })
-      end)
+    test "a run waiting on a pending question leads with that question", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      task = task_for.("Pending work", %{})
 
-      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Shipped work"})
-      {:ok, task} = Pipeline.create_task(issue, :product)
-      {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:product].id,
+          status: :running,
+          conversation_id: "sess_pending",
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, _question} =
+        Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: "Which database?"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#up-next-featured-#{run.id} [data-qa='up-next-summary']", "Which database?")
+    end
+
+    test "since yesterday lists what runs did and what shipped, newest first, and roles read the same runs", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+
+      running_task = task_for.("Running work", %{stage: :engineer})
+
+      {:ok, running} =
+        Pipeline.create_run(%{
+          task_id: running_task.id,
+          role_id: roles[:engineer].id,
+          status: :running,
+          started_at: DateTime.shift(now, minute: -10)
+        })
+
+      failed_task = task_for.("Failed work", %{stage: :qa})
+
+      {:ok, failed} =
+        Pipeline.create_run(%{
+          task_id: failed_task.id,
+          role_id: roles[:qa].id,
+          status: :failed,
+          error: "Exited with code 2",
+          started_at: DateTime.shift(now, hour: -5),
+          completed_at: DateTime.shift(now, hour: -4)
+        })
+
+      stopped_task = task_for.("Stopped work", %{stage: :architect})
+
+      {:ok, stopped} =
+        Pipeline.create_run(%{
+          task_id: stopped_task.id,
+          role_id: roles[:architect].id,
+          status: :finished,
+          started_at: DateTime.shift(now, hour: -4),
+          completed_at: DateTime.shift(now, hour: -3)
+        })
+
+      moved_on = task_for.("Moved on work", %{stage: :design})
+
+      {:ok, finished} =
+        Pipeline.create_run(%{
+          task_id: moved_on.id,
+          role_id: roles[:product].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.shift(now, hour: -3),
+          completed_at: DateTime.shift(now, hour: -2)
+        })
+
+      shipped = task_for.("Shipped work", %{completed_at: DateTime.shift(now, hour: -1)})
+
+      old_task = task_for.("Old work", %{stage: :architect})
+
+      {:ok, old} =
+        Pipeline.create_run(%{
+          task_id: old_task.id,
+          role_id: roles[:architect].id,
+          status: :finished,
+          started_at: DateTime.shift(now, day: -3),
+          completed_at: DateTime.shift(now, day: -3)
+        })
+
+      assert {:ok, view, html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#activity-started-#{running.id}", "engineer role")
+      assert has_element?(view, "#activity-started-#{running.id}", "started on #{running_task.issue.identifier}")
+      refute has_element?(view, "#activity-ended-#{running.id}")
+      assert has_element?(view, "#activity-ended-#{failed.id}", "failed on")
+      assert has_element?(view, "#activity-ended-#{stopped.id}", "stopped on")
+      assert has_element?(view, "#activity-ended-#{finished.id}", "finished on")
+      assert has_element?(view, "#activity-shipped-#{shipped.issue.id}", "#{shipped.issue.identifier} shipped")
+      refute has_element?(view, "#activity-started-#{old.id}")
+
+      positions =
+        Enum.map(
+          ["activity-shipped-#{shipped.issue.id}", "activity-ended-#{finished.id}", "activity-ended-#{stopped.id}"],
+          fn id ->
+            html |> :binary.match(id) |> elem(0)
+          end
+        )
+
+      assert positions == Enum.sort(positions)
+
+      assert has_element?(view, "#roster-running-count", "1 / 4 running")
+      assert has_element?(view, "#role-row-#{roles[:engineer].id}[data-tone='running']", "Running")
+      assert has_element?(view, "#role-row-#{roles[:qa].id}[data-tone='failed']", "Failed 4h 0m ago")
+      assert has_element?(view, "#role-row-#{roles[:architect].id}[data-tone='idle']", "Last ran 3h 0m ago")
+      assert has_element?(view, "#role-row-#{roles[:product].id}[href='/tasks/#{moved_on.id}']", "Last ran 2h 0m ago")
+    end
+
+    test "a merged task waits on nobody", %{conn: conn, roles: roles, task_for: task_for} do
+      task = task_for.("Shipped work", %{stage: :merged, merged_at: DateTime.utc_now()})
 
       {:ok, _run} =
         Pipeline.create_run(%{
@@ -489,42 +603,7 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/")
 
-      assert has_element?(view, "#overview-empty-state")
-      refute has_element?(view, "#waiting-on-you-section")
-    end
-
-    test "the role roster reads each role's own run", %{conn: conn, project: project, roles: roles} do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{
-                "id" => "lin_queue_roster",
-                "identifier" => "QUE-7",
-                "title" => "Roster work"
-              }
-            }
-          }
-        })
-      end)
-
-      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Roster work"})
-      {:ok, task} = Pipeline.create_task(issue, :product)
-      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
-
-      {:ok, _run} =
-        Pipeline.create_run(%{
-          task_id: task.id,
-          role_id: roles[:engineer].id,
-          status: :running,
-          started_at: DateTime.utc_now()
-        })
-
-      assert {:ok, view, _html} = live(conn, ~p"/?project=#{project.id}")
-
-      assert has_element?(view, "#role-row-#{roles[:engineer].id}", "QUE-7 · running")
-      assert has_element?(view, "#role-idle-#{roles[:product].id}", "Idle")
+      assert has_element?(view, "#up-next-empty")
     end
 
     test "the dispatch banner shows while dispatch is switched off", %{conn: conn} do
@@ -536,94 +615,10 @@ defmodule RailWeb.OverviewLiveTest do
       assert render(view) =~ "RAIL_NO_DISPATCH=1 is set"
     end
 
-    test "answering by picking one of the options offered", %{conn: conn, project: project, roles: roles} do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{
-                "id" => "lin_queue_options",
-                "identifier" => "QUE-11",
-                "title" => "Option work"
-              }
-            }
-          }
-        })
-      end)
-
-      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Option work"})
-      {:ok, task} = Pipeline.create_task(issue, :product)
-
-      {:ok, run} =
-        Pipeline.create_run(%{
-          task_id: task.id,
-          role_id: roles[:product].id,
-          status: :running,
-          conversation_id: "sess_options",
-          started_at: DateTime.utc_now()
-        })
-
-      {:ok, question} =
-        Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{
-          prompt: "Which database?",
-          options: ["Postgres", "Sqlite"]
-        })
-
-      assert {:ok, view, _html} = live(conn, ~p"/")
-
-      view |> element("#question-option-#{question.id}-0") |> render_click()
-
-      assert %Question{status: :answered, answer: "Postgres"} = Repo.reload!(question)
-    end
-
-    test "a blank answer is not recorded", %{conn: conn, project: project, roles: roles} do
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{
-          "data" => %{
-            "issueCreate" => %{
-              "success" => true,
-              "issue" => %{
-                "id" => "lin_queue_blank",
-                "identifier" => "QUE-12",
-                "title" => "Blank work"
-              }
-            }
-          }
-        })
-      end)
-
-      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Blank work"})
-      {:ok, task} = Pipeline.create_task(issue, :product)
-
-      {:ok, run} =
-        Pipeline.create_run(%{
-          task_id: task.id,
-          role_id: roles[:product].id,
-          status: :running,
-          conversation_id: "sess_blank",
-          started_at: DateTime.utc_now()
-        })
-
-      {:ok, question} =
-        Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: "Which database?"})
-
-      assert {:ok, view, _html} = live(conn, ~p"/")
-
-      view |> element("#answer-form-#{question.id}") |> render_change(%{"answer" => "Post"})
-      view |> element("#answer-form-#{question.id}") |> render_submit(%{"question_id" => question.id, "answer" => "  "})
-
-      assert %Question{status: :pending} = Repo.reload!(question)
-
-      # A question already gone is left alone.
-      render_hook(view, "dismiss_question", %{"question_id" => "qst_missing"})
-      assert has_element?(view, "#answer-form-#{question.id}")
-    end
-
     test "a project that no longer exists shows no roster", %{conn: conn, roles: roles} do
       assert {:ok, view, _html} = live(conn, ~p"/?project=prj_missing")
 
-      refute has_element?(view, "#role-idle-#{roles[:product].id}")
+      refute has_element?(view, "#role-row-#{roles[:product].id}")
     end
   end
 end

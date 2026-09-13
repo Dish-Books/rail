@@ -23,6 +23,7 @@ defmodule Rail.Issues.Schemas.Issue do
     field :state_name, :string
     field :branch_name, :string
     field :url, :string
+    field :completed_at, :utc_datetime
 
     belongs_to :project, Project
     belongs_to :owner_user, User
@@ -35,6 +36,7 @@ defmodule Rail.Issues.Schemas.Issue do
 
   @cast_fields [
     :branch_name,
+    :completed_at,
     :description,
     :estimate,
     :external_id,

@@ -21,9 +21,21 @@ defmodule Rail.Issues.Utils.FormatLinearIssue do
       state: state(state["type"]),
       state_name: state["name"],
       branch_name: node["branchName"],
-      url: node["url"]
+      url: node["url"],
+      completed_at: completed_at(node["completedAt"])
     }
   end
+
+  # Linear sends milliseconds, but the column holds seconds and `insert_all`
+  # writes the value without casting it, so it is truncated here.
+  defp completed_at(timestamp) when is_binary(timestamp) do
+    case DateTime.from_iso8601(timestamp) do
+      {:ok, at, _offset} -> DateTime.truncate(at, :second)
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp completed_at(_not_completed), do: nil
 
   # Linear's 0 means "no priority set", which Rail keeps as its default.
   defp priority(1), do: :urgent

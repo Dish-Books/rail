@@ -11,7 +11,7 @@ defmodule Rail.Issues.Actions.ListIssues do
   match in all.
 
   Options: `:project_id`, `:owner_user_id`, `:state`, `:show_finished`, `:search`,
-  `:priority`, `:limit`, `:offset` and `:preload`.
+  `:completed_after`, `:priority`, `:limit`, `:offset` and `:preload`.
 
   Returns `%{issues: [...], total: n, priority_counts: %{priority => n}}`.
   `total` is every issue the filters match, not just the page. The priority
@@ -25,6 +25,7 @@ defmodule Rail.Issues.Actions.ListIssues do
       |> filter_state(opts[:state])
       |> filter_finished(Keyword.get(opts, :show_finished, false))
       |> filter_search(opts[:search])
+      |> filter_completed_after(opts[:completed_after])
 
     priority_counts =
       matching
@@ -69,6 +70,12 @@ defmodule Rail.Issues.Actions.ListIssues do
   end
 
   defp filter_search(query, _none), do: query
+
+  defp filter_completed_after(query, nil), do: query
+
+  defp filter_completed_after(query, %DateTime{} = after_at) do
+    where(query, [i], i.completed_at >= ^after_at)
+  end
 
   defp filter_priority(query, nil), do: query
   defp filter_priority(query, priority), do: where(query, [i], i.priority == ^priority)

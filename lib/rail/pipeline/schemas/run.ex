@@ -164,10 +164,12 @@ defmodule Rail.Pipeline.Schemas.Run do
   Returns true if this run is waiting on a human at all.
 
   A blocked run stays blocked until its answers are sent, so it keeps its place
-  in the queue while the human works through the batch.
+  in the queue while the human works through the batch. A product run that is
+  done is waiting on its ticket to be approved, which moves the task on.
   """
   def needs_attention?(%__MODULE__{task: %Task{} = task} = run) do
-    task.stage != :merged and is_nil(task.merged_at) and state(run) == :blocked
+    task.stage != :merged and is_nil(task.merged_at) and
+      (state(run) == :blocked or (task.stage == :product and state(run) == :done))
   end
 
   @doc """

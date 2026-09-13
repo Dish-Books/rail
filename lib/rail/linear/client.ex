@@ -44,6 +44,7 @@ defmodule Rail.Linear.Client do
   }
   branchName
   url
+  completedAt
   """
 
   @comment_fields """

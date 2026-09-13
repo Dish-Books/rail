@@ -2,10 +2,14 @@ defmodule RailWeb.OverviewLive do
   @moduledoc false
   use RailWeb, :live_view
 
+  alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
   alias Rail.Roles
+
+  @throughput_days 30
+  @activity_limit 8
 
   def mount(_params, _session, socket) do
     socket =
@@ -13,12 +17,6 @@ defmodule RailWeb.OverviewLive do
       |> assign(:page_title, "Overview")
       |> assign(:current_section, :overview)
       |> assign(:current_project_id, nil)
-      |> assign(:running_count, 0)
-      |> assign(:waiting, [])
-      |> assign(:with_agent, [])
-      |> assign(:roster_groups, [])
-      |> assign(:dispatch_disabled, check_dispatch_disabled())
-      |> assign(:submitting, false)
 
     {:ok, socket}
   end
@@ -32,8 +30,6 @@ defmodule RailWeb.OverviewLive do
 
     socket =
       socket
-      |> assign(:page_title, "Overview")
-      |> assign(:current_section, :overview)
       |> assign(:current_project_id, project_id)
       |> load_overview_state(project_id)
 
@@ -53,170 +49,195 @@ defmodule RailWeb.OverviewLive do
       theme={@theme}
       show_project_switcher={@show_project_switcher}
     >
-      <div id="overview-view" data-qa="overview-view" class="space-y-6">
-        <!-- Header row: Overview in bold + running agents pill -->
-        <div class="flex items-center space-x-3" id="overview-header" data-qa="overview-hero">
-          <h1
-            class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100"
-            id="overview-title"
-            data-qa="overview_title"
-          >
-            Overview
-          </h1>
-          <span
-            id="running-agent-count-pill"
-            data-qa="running_agent_count_pill"
-            class="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100"
-          >
-            {running_agents_label(@running_count)}
-          </span>
+      <div
+        id="overview-view"
+        data-qa="overview-view"
+        class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]"
+      >
+        <div id="overview-main" class="min-w-0 space-y-8">
+          <.dispatch_banner :if={@dispatch_disabled} visible={@dispatch_disabled} />
+
+          <.overview_stats stats={@stats} />
+
+          <section id="up-next-section">
+            <h2 class="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+              Up next
+            </h2>
+            <.up_next runs={@waiting} />
+          </section>
+
+          <section id="since-yesterday-section">
+            <h2 class="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+              Since yesterday
+            </h2>
+            <.activity_feed entries={@activity} />
+          </section>
         </div>
 
-        <!-- Optional Dispatch-Disabled Banner -->
-        <.dispatch_banner :if={@dispatch_disabled} visible={@dispatch_disabled} />
+        <aside
+          id="overview-sidebar"
+          class="space-y-8 lg:border-l lg:border-slate-200 lg:dark:border-slate-700/70 lg:pl-8"
+        >
+          <.role_roster
+            groups={@roster_groups}
+            is_filtered={@current_project_id != nil}
+            running_count={@running_count}
+            role_count={@roster_groups |> Enum.map(&length(elem(&1, 1))) |> Enum.sum()}
+          />
 
-        <!-- Main Layout: 2 Columns (Main Queue on Left, Role Roster on Right) -->
-        <div class="flex items-start gap-6">
-          <!-- Main Queue Column -->
-          <div class="flex-1 min-w-0" id="overview-main-queue">
-            <!-- "WAITING ON YOU · {count}" Section -->
-            <div :if={@waiting != []} id="waiting-on-you-section" class="mb-6">
-              <h2
-                id="waiting-header"
-                data-qa="waiting-header"
-                class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3"
-              >
-                WAITING ON YOU · {length(@waiting)}
-              </h2>
-
-              <div class="space-y-3" id="waiting-blocks-list">
-                <.question_card :for={run <- @waiting} run={run} submitting={@submitting} />
-              </div>
-            </div>
-
-            <!-- "WITH AN AGENT · {count} · RECENTLY UPDATED" Section -->
-            <.with_agent_section runs={@with_agent} />
-
-            <!-- "All clear" Empty State (only when waiting and with_agent are both empty) -->
-            <.empty_state :if={@waiting == [] and @with_agent == []} />
-          </div>
-
-          <!-- Role Roster Sidebar -->
-          <.role_roster groups={@roster_groups} is_filtered={@current_project_id != nil} />
-        </div>
+          <section id="throughput-section">
+            <h2 class="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+              Throughput
+            </h2>
+            <.throughput_chart days={@throughput} />
+          </section>
+        </aside>
       </div>
     </Layouts.app>
     """
   end
 
-  def handle_event("answer_question", %{"question_id" => question_id, "answer" => answer}, socket) do
-    answer_one(question_id, answer)
-
-    socket = load_overview_state(socket, socket.assigns[:current_project_id])
-    {:noreply, socket}
-  end
-
-  def handle_event("dismiss_question", %{"question_id" => question_id}, socket) do
-    dismiss_question(question_id)
-
-    socket = load_overview_state(socket, socket.assigns[:current_project_id])
-    {:noreply, socket}
-  end
-
-  def handle_event("send_answers", %{"run_id" => run_id}, socket) do
-    with {:ok, run} <- Pipeline.get_run(run_id) do
-      Pipeline.send_answers(run)
-    end
-
-    {:noreply, load_overview_state(socket, socket.assigns[:current_project_id])}
-  end
-
-  def handle_event("submit_question_answer", %{"question_id" => question_id, "answer" => answer}, socket) do
-    case String.trim(answer) do
-      "" ->
-        {:noreply, socket}
-
-      trimmed ->
-        answer_one(question_id, trimmed)
-        socket = load_overview_state(socket, socket.assigns[:current_project_id])
-        {:noreply, socket}
-    end
-  end
-
-  def handle_event("noop", _params, socket) do
-    {:noreply, socket}
-  end
-
-  # The overview is a list of runs. What each one is doing it says itself, and the
-  # questions it asked hang off it, so nothing here has to work out which run a
-  # task means.
+  # The overview is a list of runs and the tasks they belong to. What each run is
+  # doing it says itself, so nothing here has to work out which run a task means.
   defp load_overview_state(socket, project_id) do
-    runs =
-      Pipeline.list_runs(
-        project_id: project_id,
-        preload: [:role, :questions, task: [:project, :issue]]
-      )
+    now = DateTime.utc_now()
+
+    runs = Pipeline.list_runs(project_id: project_id, preload: [:role, :questions, task: [:project, :issue]])
+    tasks = Pipeline.list_tasks(project_id: project_id, preload: [:issue])
+    waiting = runs |> Enum.filter(&Run.needs_attention?/1) |> Enum.sort_by(&Run.waiting_since/1, DateTime)
+
+    # Shipped means Linear completed the issue. Sixty days covers this month's
+    # count and the month it is compared with.
+    %{issues: completed} =
+      Issues.list_issues(project_id: project_id, show_finished: true, completed_after: DateTime.shift(now, day: -60))
 
     socket
-    |> assign(:waiting, runs |> Enum.filter(&Run.needs_attention?/1) |> Enum.sort_by(&Run.waiting_since/1, DateTime))
-    |> assign(:with_agent, runs |> Enum.filter(&Run.running?/1) |> Enum.sort_by(& &1.started_at, {:desc, DateTime}))
+    |> assign(:waiting, waiting)
+    |> assign(:stats, stats(tasks, completed, waiting, now))
+    |> assign(:activity, activity(runs, completed, DateTime.shift(now, day: -1)))
     |> assign(:running_count, Enum.count(runs, &Run.running?/1))
-    |> assign(:roster_groups, build_roster_groups(project_id, runs))
-    |> assign(:dispatch_disabled, check_dispatch_disabled())
+    |> assign(:roster_groups, build_roster_groups(project_id, runs, now))
+    |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
+    |> assign(:dispatch_disabled, Application.get_env(:rail, :no_dispatch, false))
   end
 
-  defp build_roster_groups(project_id, runs) when is_binary(project_id) do
+  defp stats(tasks, completed, waiting, now) do
+    shipped = shipped_between(completed, DateTime.shift(now, day: -30), now)
+    prior = shipped_between(completed, DateTime.shift(now, day: -60), DateTime.shift(now, day: -30))
+
+    %{
+      in_progress: Enum.count(tasks, &(is_nil(&1.merged_at) and &1.stage != :merged and is_nil(&1.issue.completed_at))),
+      shipped: shipped,
+      shipped_delta: shipped - prior,
+      waiting: length(waiting),
+      oldest_waiting: oldest_waiting(waiting, now)
+    }
+  end
+
+  defp shipped_between(completed, from, to) do
+    Enum.count(completed, &(not DateTime.before?(&1.completed_at, from) and DateTime.before?(&1.completed_at, to)))
+  end
+
+  defp oldest_waiting([], _now), do: nil
+  defp oldest_waiting([oldest | _rest], now), do: format_age(DateTime.diff(now, Run.waiting_since(oldest)))
+
+  defp throughput(completed, today) do
+    shipped_on = Enum.frequencies_by(completed, &DateTime.to_date(&1.completed_at))
+
+    today
+    |> Date.add(1 - @throughput_days)
+    |> Date.range(today)
+    |> Enum.map(&%{date: &1, count: Map.get(shipped_on, &1, 0)})
+  end
+
+  # Every run says when it started and, once it is not working, how it ended; an
+  # issue says when it shipped. The feed is those moments, newest first.
+  defp activity(runs, completed, since) do
+    shipped =
+      for issue <- completed do
+        %{id: "shipped-#{issue.id}", at: issue.completed_at, actor: nil, text: "#{issue.identifier} shipped"}
+      end
+
+    runs
+    |> Enum.flat_map(&run_activity/1)
+    |> Enum.concat(shipped)
+    |> Enum.filter(&DateTime.after?(&1.at, since))
+    |> Enum.sort_by(& &1.at, {:desc, DateTime})
+    |> Enum.take(@activity_limit)
+  end
+
+  defp run_activity(%Run{} = run) do
+    key = run.task.issue.identifier
+    entry = &%{id: "#{&1}-#{run.id}", at: &2, actor: run.role.name, text: &3}
+
+    ended =
+      case Run.state(run) do
+        :running -> nil
+        :blocked -> entry.("asked", Run.waiting_since(run), "asked #{questions(run)} on #{key}")
+        :done -> entry.("ended", Run.waiting_since(run), done_text(run, key))
+        :failed -> entry.("ended", Run.waiting_since(run), "failed on #{key}")
+        :stopped -> entry.("ended", Run.waiting_since(run), "stopped on #{key}")
+      end
+
+    Enum.reject([entry.("started", run.started_at, "started on #{key}"), ended], &is_nil/1)
+  end
+
+  defp done_text(run, key) do
+    if Run.needs_attention?(run), do: "handed #{key} back for review", else: "finished on #{key}"
+  end
+
+  defp questions(%Run{questions: [_one]}), do: "a question"
+  defp questions(%Run{questions: questions}), do: "#{length(questions)} questions"
+
+  defp build_roster_groups(project_id, runs, now) when is_binary(project_id) do
     case Projects.get_project(project_id) do
-      {:ok, project} -> [{project, role_entries(project, runs)}]
+      {:ok, project} -> [{project, role_entries(project, runs, now)}]
       _no_project -> []
     end
   end
 
-  defp build_roster_groups(nil, runs) do
+  defp build_roster_groups(nil, runs, now) do
     Enum.map(Projects.list_projects(), fn project ->
       project_runs = Enum.filter(runs, &(&1.task.project_id == project.id))
-      {project, role_entries(project, project_runs)}
+      {project, role_entries(project, project_runs, now)}
     end)
   end
 
-  defp role_entries(project, runs) do
+  defp role_entries(project, runs, now) do
     project.id
     |> Roles.list_roles()
-    |> Enum.map(&build_role_entry(&1, runs))
+    |> Enum.map(fn role -> build_role_entry(role, Enum.filter(runs, &(&1.role_id == role.id)), now) end)
   end
 
-  # A role is busy on its own run — the one it is holding — and on nothing else.
-  defp build_role_entry(role, runs) do
-    active_run = Enum.find(runs, &(&1.role_id == role.id and Run.state(&1) in [:running, :blocked, :done]))
-    waiting? = active_run != nil and Run.state(active_run) in [:blocked, :done]
+  # A role reads off its own runs: one waiting on a human comes first, then one
+  # working, then whichever it touched last.
+  defp build_role_entry(role, runs, now) do
+    waiting = Enum.find(runs, &Run.needs_attention?/1)
+    running = Enum.find(runs, &Run.running?/1)
+    last = Enum.max_by(runs, &Run.waiting_since/1, DateTime, fn -> nil end)
 
-    subtitle =
+    {tone, run, subtitle} =
       cond do
-        is_nil(active_run) -> "Idle"
-        waiting? -> "Waiting on you · #{active_run.task.issue.identifier}"
-        true -> "#{active_run.task.issue.identifier} · running"
+        waiting -> {:waiting, waiting, waiting_subtitle(waiting)}
+        running -> {:running, running, "Running · #{running.task.issue.identifier}"}
+        last -> last_subtitle(last, now)
+        true -> {:idle, nil, "Idle · no work assigned"}
       end
 
-    %{role: role, active_run: active_run, waiting?: waiting?, subtitle: subtitle}
+    %{role: role, tone: tone, run: run, subtitle: subtitle}
   end
 
-  defp check_dispatch_disabled, do: Application.get_env(:rail, :no_dispatch, false)
-
-  # Answering records and nothing more: the agent hears the whole round when the
-  # human presses Send answers.
-  defp answer_one(question_id, answer) do
-    with {:ok, question} <- Pipeline.get_question(question_id) do
-      Pipeline.answer_question(question, answer)
-    end
+  defp waiting_subtitle(run) do
+    key = run.task.issue.identifier
+    if Run.state(run) == :done, do: "Handed off #{key} · waiting on you", else: "Blocked · #{key} · waiting on you"
   end
 
-  defp running_agents_label(1), do: "1 agent running"
-  defp running_agents_label(n), do: "#{n} agents running"
+  defp last_subtitle(run, now) do
+    key = run.task.issue.identifier
+    age = format_age(DateTime.diff(now, Run.waiting_since(run)))
 
-  defp dismiss_question(question_id) do
-    case Pipeline.get_question(question_id) do
-      {:ok, question} -> Pipeline.dismiss_question(question)
-      _not_found -> :ok
-    end
+    if Run.state(run) == :failed,
+      do: {:failed, run, "Failed #{age} ago · #{key}"},
+      else: {:idle, run, "Last ran #{age} ago · #{key}"}
   end
 end

@@ -39,6 +39,7 @@ defmodule Rail.Issues.Workers.LinearSync do
     :owner_user_id,
     :branch_name,
     :url,
+    :completed_at,
     :updated_at
   ]
 

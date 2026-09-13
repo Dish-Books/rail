@@ -199,6 +199,28 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
              Issues.list_issues(preload: [task: :runs])
   end
 
+  test "list_issues narrows to the issues completed since a moment", %{project: project} do
+    completed = fn external_id, completed_at ->
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        external_id: external_id,
+        identifier: "LI1-#{external_id}",
+        title: external_id,
+        state: :done,
+        completed_at: completed_at
+      })
+      |> Repo.insert!()
+    end
+
+    %Issue{id: recent_id} = completed.("recent", ~U[2026-09-10 00:00:00Z])
+    completed.("long_ago", ~U[2026-01-01 00:00:00Z])
+    completed.("open", nil)
+
+    assert %{issues: [%Issue{id: ^recent_id}]} =
+             Issues.list_issues(show_finished: true, completed_after: ~U[2026-09-01 00:00:00Z])
+  end
+
   test "list_issues narrows to the issues a user owns", %{project: project} do
     {:ok, %{id: owner_id}} =
       Rail.Users.register_oauth_user(%{github_id: "gh_list_owner", login: "list_owner", email: "list_owner@example.com"})

@@ -204,6 +204,16 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     refute Run.needs_attention?(running)
   end
 
+  test "a done product run is waiting on its ticket to be approved" do
+    done = %Run{status: :finished, stage_outcome: :done, task: %Task{stage: :product, merged_at: nil}}
+    assert Run.needs_attention?(done)
+  end
+
+  test "a done run past product needs nothing" do
+    done = %Run{status: :finished, stage_outcome: :done, task: %Task{stage: :design, merged_at: nil}}
+    refute Run.needs_attention?(done)
+  end
+
   test "a merged task needs nothing, however its run ended" do
     merged_stage = %Run{status: :blocked_on_input, task: %Task{stage: :merged, merged_at: nil}}
     refute Run.needs_attention?(merged_stage)

@@ -64,7 +64,9 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
                 "identifier" => "SPI-1",
                 "title" => "New title",
                 "priority" => 0,
-                "state" => %{"id" => "st_2", "name" => "In Progress", "type" => "started"}
+                "state" => %{"id" => "st_2", "name" => "In Progress", "type" => "started"},
+                # Linear sends milliseconds; the column holds seconds.
+                "completedAt" => "2026-09-11T19:49:42.614Z"
               },
               %{
                 "id" => "lin_new",
@@ -87,8 +89,13 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
     assert :ok = perform_job(LinearSync, %{project_id: project.id})
 
-    assert %Issue{id: ^existing_id, title: "New title", state: :in_progress, priority: :medium} =
-             Repo.get_by(Issue, external_id: "lin_existing")
+    assert %Issue{
+             id: ^existing_id,
+             title: "New title",
+             state: :in_progress,
+             priority: :medium,
+             completed_at: ~U[2026-09-11 19:49:42Z]
+           } = Repo.get_by(Issue, external_id: "lin_existing")
 
     assert %Issue{
              project_id: ^project_id,

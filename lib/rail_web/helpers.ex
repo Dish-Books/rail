@@ -8,6 +8,7 @@ defmodule RailWeb.Helpers do
 
   alias RailWeb.Utils
 
+  defdelegate format_age(seconds), to: Utils.FormatAge
   defdelegate format_duration(seconds), to: Utils.FormatDuration
   defdelegate format_run_status(status), to: Utils.FormatRunStatus
   defdelegate render_markdown(content), to: Utils.RenderMarkdown

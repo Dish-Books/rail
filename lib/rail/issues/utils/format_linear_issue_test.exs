@@ -29,6 +29,14 @@ defmodule Rail.Issues.Utils.FormatLinearIssueTest do
              })
   end
 
+  test "reads when the issue was completed, and nothing for an open or unreadable one" do
+    assert %{completed_at: ~U[2026-09-01 12:30:00Z]} =
+             format_linear_issue(%{"completedAt" => "2026-09-01T12:30:00.000Z"})
+
+    assert %{completed_at: nil} = format_linear_issue(%{"completedAt" => nil})
+    assert %{completed_at: nil} = format_linear_issue(%{"completedAt" => "not a time"})
+  end
+
   test "names Linear's priority numbers, with no priority as medium" do
     assert Enum.map([1, 2, 3, 4, 0, nil], &format_linear_issue(%{"priority" => &1}).priority) ==
              [:urgent, :high, :medium, :low, :medium, :medium]
