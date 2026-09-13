@@ -7,15 +7,11 @@ defmodule RailWeb.IssueLive do
   """
   use RailWeb, :live_view
 
-  import RailWeb.Components.IssueIcons
-  import RailWeb.CoreComponents, only: [icon: 1, markdown: 1]
-
   alias Phoenix.LiveView.JS
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Users
-  alias RailWeb.Components.StageLabel
 
   def mount(_params, _session, socket) do
     if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
@@ -126,7 +122,7 @@ defmodule RailWeb.IssueLive do
                 class="flex items-center gap-2 text-slate-900 dark:text-slate-100 hover:underline"
               >
                 <.icon name="pi-git-branch" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
-                <span>{StageLabel.stage_label(@issue.task, stage_run(@issue.task))}</span>
+                <span>{stage_label(@issue.task, stage_run(@issue.task))}</span>
               </.link>
 
               <button

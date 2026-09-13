@@ -10,4 +10,7 @@ defmodule RailWeb.Helpers do
 
   defdelegate format_duration(seconds), to: Utils.FormatDuration
   defdelegate format_run_status(status), to: Utils.FormatRunStatus
+  defdelegate render_markdown(content), to: Utils.RenderMarkdown
+  defdelegate run_state_style(run), to: Utils.RunStateStyle
+  defdelegate stage_label(task, run), to: Utils.StageLabel
 end

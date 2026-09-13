@@ -2,8 +2,6 @@ defmodule RailWeb.Components.RoleRoster do
   @moduledoc false
   use RailWeb, :html
 
-  import RailWeb.CoreComponents, only: [icon: 1]
-
   attr :groups, :list, required: true
   attr :is_filtered, :boolean, default: false
 

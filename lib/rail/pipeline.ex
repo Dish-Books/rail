@@ -15,6 +15,7 @@ defmodule Rail.Pipeline do
   defdelegate enter_stage(task, stage, opts \\ []), to: Actions.EnterStage
   defdelegate start_product_run(issue), to: Actions.StartProductRun
   defdelegate approve_product_plan(run, opts \\ []), to: Actions.ApproveProductPlan
+  defdelegate read_ticket(task), to: Actions.ReadTicket
 
   defdelegate create_task(issue, stage), to: Actions.CreateTask
   defdelegate list_tasks(opts \\ []), to: Actions.ListTasks

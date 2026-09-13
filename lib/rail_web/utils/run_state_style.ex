@@ -1,4 +1,4 @@
-defmodule RailWeb.Components.RunState do
+defmodule RailWeb.Utils.RunStateStyle do
   @moduledoc """
   How a run's state looks: its icon, its colour, and the word on its pill.
 
@@ -10,34 +10,20 @@ defmodule RailWeb.Components.RunState do
   alias Rail.Pipeline.Schemas.Run
 
   @doc """
-  The Phosphor icon for `run`.
+  The look of `run`'s state: its Phosphor `icon`, Tailwind `text_class` and
+  `chip_class`, and the `pill_label` a state pill shows.
   """
-  def icon(run), do: run |> Run.state() |> icon_for()
+  def run_state_style(run) do
+    state = Run.state(run)
+    color = color_for(state)
 
-  @doc """
-  The semantic colour for `run` — `:primary`, `:amber`, `:outline` or `:error`.
-  """
-  def color(run), do: run |> Run.state() |> color_for()
-
-  @doc """
-  Tailwind classes for `run`'s colour, as text or as a chip.
-  """
-  def color_class(run, variant \\ :text), do: classes(color(run), variant)
-
-  @doc """
-  The word a state pill shows.
-  """
-  def pill_label(:running), do: "Running"
-  def pill_label(:blocked), do: "Needs you"
-  def pill_label(:failed), do: "Failed"
-  def pill_label(:done), do: "Done"
-  def pill_label(:stopped), do: "Stopped"
-  def pill_label(_queued), do: "Queued"
-
-  @doc """
-  Tailwind classes for a state pill.
-  """
-  def pill_class(state), do: state |> color_for() |> classes(:chip)
+    %{
+      icon: icon_for(state),
+      text_class: classes(color, :text),
+      chip_class: classes(color, :chip),
+      pill_label: pill_label(state)
+    }
+  end
 
   defp icon_for(:running), do: "pi-play-circle"
   defp icon_for(:queued), do: "pi-clock"
@@ -45,6 +31,13 @@ defmodule RailWeb.Components.RunState do
   defp icon_for(:failed), do: "pi-warning-circle"
   defp icon_for(:stopped), do: "pi-pause-circle"
   defp icon_for(:done), do: "pi-chat-text"
+
+  defp pill_label(:running), do: "Running"
+  defp pill_label(:blocked), do: "Needs you"
+  defp pill_label(:failed), do: "Failed"
+  defp pill_label(:done), do: "Done"
+  defp pill_label(:stopped), do: "Stopped"
+  defp pill_label(:queued), do: "Queued"
 
   defp color_for(:running), do: :primary
   defp color_for(state) when state in [:blocked, :done], do: :amber

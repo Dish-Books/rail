@@ -94,8 +94,8 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
     Tools.start_os_process(run, args)
   end
 
-  defp brief(%Task{scratch_path: scratch_path} = task) do
-    file = "#{scratch_path}/tickets/#{identifier(task)}.md"
+  defp brief(%Task{scratch_path: scratch_path, issue: %Issue{identifier: identifier}} = task) do
+    file = "#{scratch_path}/tickets/#{identifier}.md"
     %Issue{comments: comments} = Repo.preload(task.issue, comments: :replies)
 
     String.trim("""
@@ -122,7 +122,4 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
     #{format_comments(comments)}
     """)
   end
-
-  defp identifier(%Task{issue: %Issue{identifier: identifier}}), do: identifier
-  defp identifier(%Task{id: id}), do: id
 end

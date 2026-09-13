@@ -75,10 +75,6 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Run Finished Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)
 
-    # These tests exercise the question read-back, not Linear publishing.
-    {:ok, task} =
-      Pipeline.update_task(task, %{issue_id: nil, stage: :product})
-
     {:ok, run} =
       Pipeline.create_run(%{
         task_id: task.id,

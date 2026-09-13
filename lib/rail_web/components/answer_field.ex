@@ -10,8 +10,6 @@ defmodule RailWeb.Components.AnswerField do
   """
   use RailWeb, :html
 
-  import RailWeb.CoreComponents, only: [icon: 1]
-
   attr :question, :any, required: true
   attr :questions, :list, default: []
   attr :answer_text, :string, default: ""

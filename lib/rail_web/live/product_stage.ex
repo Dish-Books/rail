@@ -8,11 +8,6 @@ defmodule RailWeb.Live.ProductStage do
   """
   use RailWeb, :live_component
 
-  import Rail.Pipeline.Utils.ParseTicket
-  import RailWeb.Components.IssueIcons, only: [priority_icon: 1]
-  import RailWeb.Components.TaskLayout
-  import RailWeb.CoreComponents, only: [markdown: 1]
-
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -24,7 +19,7 @@ defmodule RailWeb.Live.ProductStage do
       |> assign(assigns)
       |> assign_new(:actions, fn -> [] end)
       |> assign_new(:sidebar, fn -> [] end)
-      |> assign(:ticket, read_ticket(assigns.task))
+      |> assign(:ticket, Pipeline.read_ticket(assigns.task))
       |> assign_new(:error, fn -> nil end)
 
     {:ok, socket}
@@ -128,25 +123,13 @@ defmodule RailWeb.Live.ProductStage do
     end
   end
 
-  defp read_ticket(%Task{scratch_path: scratch_path, issue: %{identifier: identifier}})
-       when is_binary(scratch_path) and is_binary(identifier) do
-    case [scratch_path, "tickets", "#{identifier}.md"] |> Path.join() |> File.read() do
-      {:ok, content} -> if String.trim(content) == "", do: nil, else: parse_ticket(content)
-      {:error, _unreadable} -> nil
-    end
-  end
-
-  defp read_ticket(%Task{}), do: nil
-
   # The title under review is the one the agent proposed; until it writes one,
   # the issue's own title stands.
   defp ticket_title(%{title: title}, _task) when is_binary(title) and title != "", do: title
   defp ticket_title(_no_ticket, %Task{issue: %{title: title}}), do: title
-  defp ticket_title(_no_ticket, %Task{}), do: nil
 
   defp message_for(:already_approved), do: "This ticket has already been approved."
   defp message_for(:stage_running), do: "Something is still running on this task."
-  defp message_for(:no_issue), do: "This task has no Linear issue to publish the ticket to."
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not product."
   defp message_for(reason), do: "Could not approve the ticket: #{inspect(reason)}"
 end

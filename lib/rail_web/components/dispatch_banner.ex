@@ -2,8 +2,6 @@ defmodule RailWeb.Components.DispatchBanner do
   @moduledoc false
   use RailWeb, :html
 
-  import RailWeb.CoreComponents, only: [icon: 1]
-
   attr :visible, :boolean, default: true
 
   def dispatch_banner(assigns) do

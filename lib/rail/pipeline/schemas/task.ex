@@ -59,6 +59,7 @@ defmodule Rail.Pipeline.Schemas.Task do
 
   @required_fields [
     :project_id,
+    :issue_id,
     :stage,
     :worktree_name,
     :worktree_path,

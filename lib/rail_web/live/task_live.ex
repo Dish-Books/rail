@@ -13,9 +13,6 @@ defmodule RailWeb.TaskLive do
   """
   use RailWeb, :live_view
 
-  import RailWeb.Components.TaskLayout
-  import RailWeb.CoreComponents, only: [answer_field: 1]
-
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -90,7 +87,7 @@ defmodule RailWeb.TaskLive do
           :if={@task != nil and not (@task.stage == :product and @selected_run != nil)}
           task={@task}
           run={@selected_run}
-          title={@task.issue && @task.issue.title}
+          title={@task.issue.title}
         >
           <:actions>
             <.cleanup_button cleaning_up={@cleaning_up} />
@@ -275,7 +272,7 @@ defmodule RailWeb.TaskLive do
 
     socket
     |> assign(:task, task)
-    |> assign(:page_title, task.issue && task.issue.title)
+    |> assign(:page_title, task.issue.title)
     |> assign(:current_project_id, task.project_id)
     |> assign(:roles_map, Map.new(roles, &{&1.id, &1}))
     |> assign(:selected_run, selected_run)

@@ -79,12 +79,13 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   end
 
   test "changeset validates required fields" do
-    assert %{project_id: ["can't be blank"]} = errors_on(Task.changeset(%Task{}, %{}))
+    assert %{project_id: ["can't be blank"], issue_id: ["can't be blank"]} = errors_on(Task.changeset(%Task{}, %{}))
     assert %{stage: ["can't be blank"]} = errors_on(Task.changeset(%Task{}, %{stage: nil}))
   end
 
-  test "changeset accepts valid attributes and sets defaults", %{project: project} do
+  test "changeset accepts valid attributes and sets defaults", %{project: project, issue_id: issue_id} do
     attrs = %{
+      issue_id: issue_id,
       worktree_name: "core-feature",
       worktree_path: "/tmp/repos/task-schema/.worktrees/core-feature",
       scratch_path: Path.join(System.tmp_dir!(), "rail_test_scratch_#{System.unique_integer([:positive])}")
@@ -114,8 +115,19 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     assert get_field(changeset, :project_id) == project.id
   end
 
-  test "validates foreign key on project_id" do
-    attrs = %{worktree_name: "wt", worktree_path: "/tmp/wt", scratch_path: "/tmp/scratch"}
+  test "validates foreign key on project_id", %{project: project} do
+    issue =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        external_id: "lin_task_schema_fk",
+        identifier: "TSK-2",
+        title: "Untasked Issue",
+        state: :backlog
+      })
+      |> Repo.insert!()
+
+    attrs = %{issue_id: issue.id, worktree_name: "wt", worktree_path: "/tmp/wt", scratch_path: "/tmp/scratch"}
 
     assert {:error, changeset} = %Task{} |> Task.changeset(attrs, "prj_missing") |> Repo.insert()
     assert %{project_id: ["does not exist"]} = errors_on(changeset)

@@ -5,6 +5,7 @@ defmodule Rail.Tools.FollowerTest do
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task, as: PipelineTask
@@ -57,11 +58,23 @@ defmodule Rail.Tools.FollowerTest do
     tmp_dir = Path.join(System.tmp_dir!(), "follower_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp_dir)
 
+    issue =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        external_id: "lin_follower_#{System.unique_integer([:positive])}",
+        identifier: "FOL-#{System.unique_integer([:positive])}",
+        title: "Follower Issue",
+        state: :backlog
+      })
+      |> Repo.insert!()
+
     # A run always belongs to a real task: settling one reads the task off it.
     task =
       %PipelineTask{}
       |> PipelineTask.changeset(
         %{
+          issue_id: issue.id,
           stage: :engineer,
           worktree_name: "follower-#{System.unique_integer([:positive])}",
           worktree_path: Path.join(tmp_dir, "worktree"),

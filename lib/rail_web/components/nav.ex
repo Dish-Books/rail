@@ -340,8 +340,6 @@ defmodule RailWeb.Components.Nav do
     """
   end
 
-  defdelegate icon(assigns), to: RailWeb.Components.Icon
-
   defp destination_slug(:overview), do: "overview"
   defp destination_slug(:issues), do: "issues"
   defp destination_slug(:settings), do: "settings"

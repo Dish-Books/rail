@@ -2,15 +2,6 @@ defmodule RailWeb.OverviewLive do
   @moduledoc false
   use RailWeb, :live_view
 
-  import RailWeb.CoreComponents,
-    only: [
-      dispatch_banner: 1,
-      empty_state: 1,
-      question_card: 1,
-      role_roster: 1,
-      with_agent_section: 1
-    ]
-
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
@@ -206,15 +197,12 @@ defmodule RailWeb.OverviewLive do
     subtitle =
       cond do
         is_nil(active_run) -> "Idle"
-        waiting? -> "Waiting on you · #{task_key(active_run.task)}"
-        true -> "#{task_key(active_run.task)} · running"
+        waiting? -> "Waiting on you · #{active_run.task.issue.identifier}"
+        true -> "#{active_run.task.issue.identifier} · running"
       end
 
     %{role: role, active_run: active_run, waiting?: waiting?, subtitle: subtitle}
   end
-
-  defp task_key(%{issue: %{identifier: identifier}}) when is_binary(identifier) and identifier != "", do: identifier
-  defp task_key(%{id: id}), do: id
 
   defp check_dispatch_disabled, do: Application.get_env(:rail, :no_dispatch, false)
 

@@ -88,5 +88,4 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
   # The title lives on the issue the task links to. No clause covers an unloaded
   # association: a caller that skipped the preload finds out here.
   defp task_title(%Task{issue: %Issue{title: title}}), do: title
-  defp task_title(%Task{issue: nil}), do: nil
 end

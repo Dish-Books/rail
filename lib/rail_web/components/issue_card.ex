@@ -6,12 +6,8 @@ defmodule RailWeb.Components.IssueCard do
   """
   use RailWeb, :html
 
-  import RailWeb.Components.IssueIcons
-  import RailWeb.CoreComponents, only: [icon: 1]
-
   alias Phoenix.LiveView.JS
   alias Rail.Issues.Schemas.Issue
-  alias RailWeb.Components.StageLabel
 
   attr :issue, :map, required: true
   attr :task, :map, default: nil
@@ -67,7 +63,7 @@ defmodule RailWeb.Components.IssueCard do
           class="inline-flex items-center gap-1.5 h-6 px-2 rounded-full border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
         >
           <.icon name="pi-git-branch" class="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
-          <span>{StageLabel.stage_label(@task, @run)}</span>
+          <span>{stage_label(@task, @run)}</span>
         </.link>
 
         <a
@@ -98,7 +94,7 @@ defmodule RailWeb.Components.IssueCard do
     """
   end
 
-  def priority_label(priority), do: Issue.priority_label(priority) || "Medium"
+  defp priority_label(priority), do: Issue.priority_label(priority) || "Medium"
 
-  def status_label(state), do: Issue.state_label(state) || "Triage"
+  defp status_label(state), do: Issue.state_label(state) || "Triage"
 end
