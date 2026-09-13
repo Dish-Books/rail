@@ -25,7 +25,6 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   import Rail.Pipeline.Utils.QuestionQueue
   import Rail.Pipeline.Utils.RegisterAskedQuestions
 
-  alias Rail.Domain.TaskUsage
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
@@ -67,7 +66,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
 
     attrs =
       case usage(outcome) do
-        %TaskUsage{} = usage -> Map.put(attrs, :usage, TaskUsage.add(run.usage || %TaskUsage{}, usage))
+        %Run.Usage{} = usage -> Map.put(attrs, :usage, usage)
         nil -> attrs
       end
 
@@ -89,10 +88,10 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp error(_outcome, %Run{error: error}) when is_binary(error), do: error
   defp error(_outcome, _run), do: nil
 
-  defp usage(%{usage: %TaskUsage{} = usage}), do: usage
-  defp usage(%{usage: usage}) when is_map(usage), do: struct(TaskUsage, usage)
-  defp usage(%{"usage" => %TaskUsage{} = usage}), do: usage
-  defp usage(%{"usage" => usage}) when is_map(usage), do: struct(TaskUsage, usage)
+  defp usage(%{usage: %Run.Usage{} = usage}), do: usage
+  defp usage(%{usage: usage}) when is_map(usage), do: struct(Run.Usage, usage)
+  defp usage(%{"usage" => %Run.Usage{} = usage}), do: usage
+  defp usage(%{"usage" => usage}) when is_map(usage), do: struct(Run.Usage, usage)
   defp usage(_other), do: nil
 
   defp finish(%Run{} = run, %OsProcess{} = os_process, opts) do

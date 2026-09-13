@@ -1,7 +1,7 @@
 defmodule Rail.Runs.ClaudeEventsTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Domain.TaskUsage
+  alias Rail.Runs.Schemas.Run
   alias Rail.Runs.ClaudeEvents
   alias Rail.Runs.DetectedQuestion
 
@@ -185,7 +185,6 @@ defmodule Rail.Runs.ClaudeEventsTest do
       "session_id" => "sess-final-1",
       "result" => "All done.",
       "num_turns" => 3,
-      "total_cost_usd" => 0.125,
       "usage" => %{
         "input_tokens" => 10,
         "output_tokens" => 20,
@@ -203,25 +202,23 @@ defmodule Rail.Runs.ClaudeEventsTest do
     assert state.num_turns == 3
     assert state.thinking_tokens == 7
 
-    assert %TaskUsage{} = state.usage
+    assert %Run.Usage{} = state.usage
     assert state.usage.input_tokens == 10
     assert state.usage.output_tokens == 20
     assert state.usage.cache_read_input_tokens == 1000
     assert state.usage.cache_creation_input_tokens == 500
-    assert Decimal.equal?(state.usage.total_cost, Decimal.new("0.125"))
 
     assert ClaudeEvents.success?(state)
     refute ClaudeEvents.reported_failure?(state)
     assert Enum.any?(state.logs, &(&1 =~ "[result] success"))
   end
 
-  test "result event with string cost and float turns parses correctly" do
+  test "result event with string and float token counts parses correctly" do
     state = ClaudeEvents.new()
 
     event = %{
       "type" => "result",
       "subtype" => "success",
-      "total_cost_usd" => "0.0450",
       "num_turns" => 2,
       "usage" => %{
         "input_tokens" => "100",
@@ -230,7 +227,6 @@ defmodule Rail.Runs.ClaudeEventsTest do
     }
 
     state = ClaudeEvents.handle_event(state, event)
-    assert Decimal.equal?(state.usage.total_cost, Decimal.new("0.0450"))
     assert state.usage.input_tokens == 100
     assert state.usage.output_tokens == 50
   end
@@ -299,7 +295,7 @@ defmodule Rail.Runs.ClaudeEventsTest do
     assert is_nil(state.conversation_id)
   end
 
-  test "handles result event with empty final_text on error and invalid cost string" do
+  test "handles result event with empty final_text on error and an unreadable token count" do
     state = ClaudeEvents.new()
 
     event = %{
@@ -307,7 +303,6 @@ defmodule Rail.Runs.ClaudeEventsTest do
       "subtype" => "error_empty",
       "result" => "",
       "is_error" => true,
-      "total_cost_usd" => "invalid_cost",
       "usage" => %{
         "input_tokens" => "bad_int",
         "output_tokens_details" => %{"thinking_tokens" => "15"}
@@ -317,7 +312,6 @@ defmodule Rail.Runs.ClaudeEventsTest do
     state = ClaudeEvents.handle_event(state, event)
 
     assert state.result_error == "claude reported error_empty"
-    assert is_nil(state.usage.total_cost)
     assert state.usage.input_tokens == 0
     assert state.thinking_tokens == 15
   end

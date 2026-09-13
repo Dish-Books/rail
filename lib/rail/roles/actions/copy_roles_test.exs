@@ -61,7 +61,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
     assert {:ok, [%Role{name: "Source PM"}, %Role{name: "Source Engineer"}]} =
              Roles.copy_roles(scope, target, source.id)
 
-    target_roles = Roles.list_roles(scope, target.id)
+    target_roles = Roles.list_roles(target.id)
     assert length(target_roles) == 2
     assert Enum.any?(target_roles, &(&1.name == "Source PM" && &1.stage == :product))
     assert Enum.any?(target_roles, &(&1.name == "Source Engineer" && &1.stage == :engineer))
@@ -136,7 +136,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
     assert {:ok, [%Role{name: "Copied Source Role"}]} =
              Roles.copy_roles(scope, target, source.id, replace_all: true)
 
-    roles = Roles.list_roles(scope, target.id)
+    roles = Roles.list_roles(target.id)
     assert [%Role{name: "Copied Source Role"}] = roles
   end
 

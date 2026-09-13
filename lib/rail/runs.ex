@@ -53,4 +53,8 @@ defmodule Rail.Runs do
   defdelegate list_os_processes(opts \\ []), to: Actions.ListOsProcesses
   defdelegate list_run_events(run, opts \\ []), to: Actions.ListRunEvents
   defdelegate append_run_event(run, line), to: Actions.AppendRunEvent
+
+  # Reading a run's log back as a conversation
+
+  defdelegate parse_transcript(lines), to: Actions.ParseTranscript
 end

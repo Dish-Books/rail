@@ -169,7 +169,7 @@ for role_attrs <- default_roles do
 
   if !Repo.exists?(from(r in Role, where: r.project_id == ^default_project.id and r.stage == ^stage)) do
     %Role{}
-    |> Role.changeset(role_attrs, default_project.id)
+    |> Role.changeset(Map.put(role_attrs, :project_id, default_project.id))
     |> Repo.insert!()
   end
 end

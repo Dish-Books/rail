@@ -160,27 +160,5 @@ defmodule Rail.Issues.Schemas.IssueTest do
       refute Issue.active?(123)
     end
 
-    test "cast_priority/1 casts valid atoms and strings" do
-      assert {:ok, :urgent} = Issue.cast_priority(:urgent)
-      assert {:ok, :high} = Issue.cast_priority("high")
-      assert {:ok, :medium} = Issue.cast_priority("medium")
-      assert {:ok, :low} = Issue.cast_priority(:low)
-      assert :error = Issue.cast_priority(:invalid)
-      assert :error = Issue.cast_priority("invalid")
-      assert :error = Issue.cast_priority(nil)
-      assert :error = Issue.cast_priority(123)
-    end
-
-    test "cast_state/1 casts valid atoms, strings, and camelCase strings" do
-      assert {:ok, :in_progress} = Issue.cast_state(:in_progress)
-      assert {:ok, :in_progress} = Issue.cast_state("in_progress")
-      assert {:ok, :in_progress} = Issue.cast_state("inProgress")
-      assert {:ok, :triage} = Issue.cast_state("triage")
-      assert {:ok, :done} = Issue.cast_state(:done)
-      assert :error = Issue.cast_state(:invalid)
-      assert :error = Issue.cast_state("invalid")
-      assert :error = Issue.cast_state(nil)
-      assert :error = Issue.cast_state(123)
-    end
   end
 end

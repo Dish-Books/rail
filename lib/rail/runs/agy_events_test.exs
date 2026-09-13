@@ -1,7 +1,7 @@
 defmodule Rail.Runs.AgyEventsTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Domain.TaskUsage
+  alias Rail.Runs.Schemas.Run
   alias Rail.Runs.AgyEvents
   alias Rail.Runs.DetectedQuestion
 
@@ -77,11 +77,10 @@ defmodule Rail.Runs.AgyEventsTest do
     assert state.num_turns == 2
     assert state.thinking_tokens == 10
 
-    assert %TaskUsage{} = state.usage
+    assert %Run.Usage{} = state.usage
     assert state.usage.input_tokens == 300
     assert state.usage.output_tokens == 40
     assert state.usage.cache_read_input_tokens == 2700
-    assert is_nil(state.usage.total_cost)
 
     assert AgyEvents.success?(state)
     refute AgyEvents.reported_failure?(state)

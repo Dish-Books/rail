@@ -23,7 +23,7 @@ defmodule RailWeb.IssuesLive do
       |> assign(:current_project_id, nil)
       |> assign(:current_project, nil)
       |> assign(:show_finished, false)
-      |> assign(:filter_priority, nil)
+      |> assign(:filter_priority, "all")
       |> assign(:all_issues, [])
       |> assign(:visible_issues, [])
       |> assign(:filtered_issues, [])
@@ -140,7 +140,7 @@ defmodule RailWeb.IssuesLive do
             phx-value-priority="all"
             class={[
               "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer",
-              if(is_nil(@filter_priority),
+              if(@filter_priority == "all",
                 do: "bg-blue-600 dark:bg-blue-500 text-white",
                 else:
                   "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
@@ -160,7 +160,7 @@ defmodule RailWeb.IssuesLive do
               phx-value-priority={to_string(p)}
               class={[
                 "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer",
-                if(@filter_priority == p,
+                if(@filter_priority == to_string(p),
                   do: "bg-blue-600 dark:bg-blue-500 text-white",
                   else:
                     "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
@@ -268,28 +268,8 @@ defmodule RailWeb.IssuesLive do
     """
   end
 
-  def handle_event("filter_priority", %{"priority" => priority_str}, socket) do
-    new_filter =
-      case priority_str do
-        "all" ->
-          nil
-
-        str ->
-          case Issue.cast_priority(str) do
-            {:ok, priority} ->
-              if socket.assigns.filter_priority == priority, do: nil, else: priority
-
-            :error ->
-              nil
-          end
-      end
-
-    socket =
-      socket
-      |> assign(:filter_priority, new_filter)
-      |> apply_filters()
-
-    {:noreply, socket}
+  def handle_event("filter_priority", %{"priority" => priority}, socket) do
+    {:noreply, socket |> assign(:filter_priority, priority) |> apply_filters()}
   end
 
   def handle_event("toggle_show_finished", _params, socket) do
@@ -491,13 +471,11 @@ defmodule RailWeb.IssuesLive do
 
   defp apply_filters(socket) do
     visible_issues = socket.assigns.visible_issues
-    filter_priority = socket.assigns.filter_priority
 
     filtered_issues =
-      if filter_priority do
-        Enum.filter(visible_issues, fn issue -> issue.priority == filter_priority end)
-      else
-        visible_issues
+      case socket.assigns.filter_priority do
+        "all" -> visible_issues
+        priority -> Enum.filter(visible_issues, &(to_string(&1.priority) == priority))
       end
 
     assign(socket, :filtered_issues, filtered_issues)

@@ -1,7 +1,7 @@
 defmodule Rail.Runs.Schemas.RunTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Domain.TaskUsage
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Runs.Schemas.Run
 
   test "changeset/2 with valid attributes" do
@@ -28,7 +28,7 @@ defmodule Rail.Runs.Schemas.RunTest do
     assert get_change(changeset, :conversation_id) == "conv-123"
 
     usage_changeset = get_change(changeset, :usage)
-    assert %TaskUsage{input_tokens: 100, output_tokens: 50} = apply_changes(usage_changeset)
+    assert %Run.Usage{input_tokens: 100, output_tokens: 50} = apply_changes(usage_changeset)
   end
 
   test "changeset/2 validates required fields" do
@@ -102,5 +102,108 @@ defmodule Rail.Runs.Schemas.RunTest do
 
     refute Run.has_started?(nil)
     refute Run.can_chat?(nil)
+  end
+
+  test "usage rejects negative token counts" do
+    changeset =
+      Run.changeset(%Run{}, %{
+        usage: %{
+          "input_tokens" => -1,
+          "output_tokens" => -1,
+          "cache_read_input_tokens" => -1,
+          "cache_creation_input_tokens" => -1
+        }
+      })
+
+    refute changeset.valid?
+
+    assert %{
+             input_tokens: ["must be greater than or equal to 0"],
+             output_tokens: ["must be greater than or equal to 0"],
+             cache_read_input_tokens: ["must be greater than or equal to 0"],
+             cache_creation_input_tokens: ["must be greater than or equal to 0"]
+           } = errors_on(changeset).usage
+  end
+
+  test "usage accumulates rather than replacing what a run already spent" do
+    run = %Run{usage: %Run.Usage{input_tokens: 100, output_tokens: 40}}
+
+    changeset = Run.changeset(run, %{usage: %Run.Usage{input_tokens: 10, output_tokens: 5}})
+
+    assert %Run.Usage{input_tokens: 110, output_tokens: 45} = apply_changes(changeset).usage
+  end
+
+  test "the first usage a run records is what it spent" do
+    changeset = Run.changeset(%Run{}, %{usage: %Run.Usage{input_tokens: 10}})
+
+    assert %Run.Usage{input_tokens: 10} = apply_changes(changeset).usage
+  end
+
+  test "usage serializes to JSON for its stored column" do
+    usage = %Run.Usage{
+      input_tokens: 1_000,
+      output_tokens: 500,
+      cache_read_input_tokens: 200,
+      cache_creation_input_tokens: 100
+    }
+
+    assert {:ok, json} = Jason.encode(usage)
+    assert {:ok, decoded} = Jason.decode(json)
+    assert decoded["input_tokens"] == 1_000
+    assert decoded["output_tokens"] == 500
+  end
+
+  test "usage/1 abbreviates the token count, and says nothing when there is none" do
+    assert Run.usage(%Run{usage: %Run.Usage{input_tokens: 500}}) == "500 tokens"
+    assert Run.usage(%Run{usage: %Run.Usage{input_tokens: 1_500}}) == "1.5K tokens"
+    assert Run.usage(%Run{usage: %Run.Usage{input_tokens: 2_500_000}}) == "2.5M tokens"
+
+    counted_by_kind = %Run.Usage{
+      input_tokens: 100,
+      output_tokens: 50,
+      cache_read_input_tokens: 20,
+      cache_creation_input_tokens: 10
+    }
+
+    assert Run.usage(%Run{usage: counted_by_kind}) == "180 tokens"
+
+    assert is_nil(Run.usage(%Run{usage: nil}))
+    assert is_nil(Run.usage(%Run{usage: %Run.Usage{}}))
+  end
+
+  test "a run has been waiting since it stopped" do
+    stopped = ~U[2026-01-01 10:00:00Z]
+
+    assert Run.waiting_since(%Run{completed_at: stopped}) == stopped
+  end
+
+  test "a run that has not recorded stopping has been waiting since it was last touched" do
+    touched = ~U[2026-01-01 09:00:00Z]
+    created = ~U[2026-01-01 08:00:00Z]
+
+    assert Run.waiting_since(%Run{completed_at: nil, updated_at: touched}) == touched
+    assert Run.waiting_since(%Run{completed_at: nil, updated_at: nil, inserted_at: created}) == created
+  end
+
+  test "a blocked run on an unmerged task needs a human" do
+    blocked = %Run{status: :blocked_on_input, task: %Task{stage: :engineer, merged_at: nil}}
+    assert Run.needs_attention?(blocked)
+  end
+
+  test "a run that is not blocked needs nothing" do
+    running = %Run{status: :running, task: %Task{stage: :engineer, merged_at: nil}}
+    refute Run.needs_attention?(running)
+  end
+
+  test "a merged task needs nothing, however its run ended" do
+    merged_stage = %Run{status: :blocked_on_input, task: %Task{stage: :merged, merged_at: nil}}
+    refute Run.needs_attention?(merged_stage)
+
+    merged_at = %Run{
+      status: :blocked_on_input,
+      task: %Task{stage: :engineer, merged_at: DateTime.utc_now()}
+    }
+
+    refute Run.needs_attention?(merged_at)
   end
 end

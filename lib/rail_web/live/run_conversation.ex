@@ -11,9 +11,6 @@ defmodule RailWeb.Live.RunConversation do
 
   import RailWeb.CoreComponents, only: [icon: 1, markdown: 1]
 
-  alias Rail.Domain.ChatTranscript
-  alias Rail.Domain.HandoffLine
-  alias Rail.Domain.TaskUsage
   alias Rail.Pipeline
   alias Rail.Runs
   alias Rail.Runs.Schemas.Run
@@ -136,8 +133,8 @@ defmodule RailWeb.Live.RunConversation do
             </span>
 
             <!-- 4. Usage describe -->
-            <span :if={has_usage?(@selected_run.usage)} id="metadata-run-usage">
-              {TaskUsage.describe(@selected_run.usage)}
+            <span :if={Run.usage(@selected_run)} id="metadata-run-usage">
+              {Run.usage(@selected_run)}
             </span>
 
             <!-- 5. Selectable conversation id -->
@@ -167,7 +164,7 @@ defmodule RailWeb.Live.RunConversation do
                 task={@task}
                 run={@selected_run}
                 role={selected_role(@selected_run, @roles_map)}
-                transcript={@transcript}
+                turns={@turns}
                 expanded_activities={@expanded_activities}
                 runs={@runs}
                 roles_map={@roles_map}
@@ -188,7 +185,7 @@ defmodule RailWeb.Live.RunConversation do
   attr :task, :any, required: true
   attr :run, :any, required: true
   attr :role, :any, required: true
-  attr :transcript, :any, required: true
+  attr :turns, :list, default: []
   attr :expanded_activities, :any, default: []
   attr :runs, :list, default: []
   attr :roles_map, :map, default: %{}
@@ -197,13 +194,10 @@ defmodule RailWeb.Live.RunConversation do
   attr :target, :any, required: true
 
   def chat_pane(assigns) do
-    messages =
-      if assigns.transcript, do: assigns.transcript.messages || assigns.transcript.turns || [], else: []
-
     assigns =
       assigns
-      |> assign(:messages, messages)
-      |> assign(:has_messages, messages != [])
+      |> assign(:messages, assigns.turns)
+      |> assign(:has_messages, assigns.turns != [])
 
     ~H"""
     <div id="chat-pane-root" data-qa="chat-pane" class="flex flex-col min-h-[400px]">
@@ -265,17 +259,15 @@ defmodule RailWeb.Live.RunConversation do
 
   def message_item(assigns) do
     msg = assigns.msg
-    author = msg.author || msg.role
 
     assigns =
       assigns
-      |> assign(:author, author)
-      |> assign(:text, msg.text || msg.content || "")
-      |> assign(:handoff, msg.handoff)
+      |> assign(:author, msg.author)
+      |> assign(:text, msg.content || "")
 
     ~H"""
     <%= case @author do %>
-      <% a when a in [:human, :user] -> %>
+      <% :human -> %>
         <!-- 4.8 _HumanBubble (right-aligned, plain selectable text, NOT markdown) -->
         <div
           id={"msg-#{@idx}"}
@@ -290,7 +282,7 @@ defmodule RailWeb.Live.RunConversation do
             {@text}
           </div>
         </div>
-      <% a when a in [:role, :agent] -> %>
+      <% :role -> %>
         <!-- 4.8 _RoleBubble (left-aligned, markdown body) -->
         <div
           id={"msg-#{@idx}"}
@@ -344,70 +336,25 @@ defmodule RailWeb.Live.RunConversation do
             {@text}
           </div>
         </div>
-      <% a when a in [:event, :system] -> %>
-        <%= if @handoff do %>
-          <!-- 4.8 _HandoffTile (event with handoff) -->
+      <% :event -> %>
+        <!-- 4.8 _EventTile -->
+        <%= if String.starts_with?(@text, "[rail]") do %>
           <div
             id={"msg-#{@idx}"}
-            data-qa="handoff-tile"
-            class="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/40 dark:bg-amber-400/10 space-y-1.5 my-1.5"
+            data-qa="rail-event"
+            class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 font-mono text-[11px] my-1"
           >
-            <div class="flex items-center justify-between flex-wrap gap-2">
-              <div class="flex items-center gap-2 font-mono text-xs font-bold text-amber-700 dark:text-amber-300">
-                <.icon
-                  name={
-                    if @handoff.direction == :received,
-                      do: "pi-arrow-down-left",
-                      else: "pi-arrow-up-right"
-                  }
-                  class="h-4 w-4 shrink-0"
-                />
-                <span class="select-text">{@handoff.summary}</span>
-              </div>
-
-              <!-- Button to open target role conversation if run exists -->
-              <button
-                :if={has_run_for_role?(@runs, @handoff.role_id)}
-                type="button"
-                id={"open-role-conv-#{@idx}"}
-                data-qa="open-role-conversation"
-                phx-click="select_role"
-                phx-target={@target}
-                phx-value-role_id={@handoff.role_id}
-                class="px-2 py-0.5 rounded text-[11px] font-semibold text-amber-800 dark:text-amber-200 hover:bg-amber-500/20 transition-colors cursor-pointer"
-              >
-                {"Open #{resolve_role_name(@handoff.role_id, @roles_map)} conversation"}
-              </button>
-            </div>
-
-            <!-- Optional handoff note -->
-            <div
-              :if={is_binary(@handoff.note) and @handoff.note != ""}
-              class="text-xs font-mono text-slate-600 dark:text-slate-300 whitespace-pre-wrap select-text pt-1 border-t border-amber-500/20"
-            >
-              {@handoff.note}
-            </div>
+            <.icon name="pi-info" class="h-3.5 w-3.5 shrink-0" />
+            <span class="select-text">{@text}</span>
           </div>
         <% else %>
-          <!-- 4.8 _EventTile (event without handoff) -->
-          <%= if String.starts_with?(@text, "[rail]") do %>
-            <div
-              id={"msg-#{@idx}"}
-              data-qa="rail-event"
-              class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 font-mono text-[11px] my-1"
-            >
-              <.icon name="pi-info" class="h-3.5 w-3.5 shrink-0" />
-              <span class="select-text">{@text}</span>
-            </div>
-          <% else %>
-            <div
-              id={"msg-#{@idx}"}
-              data-qa="system-event"
-              class="text-center font-mono text-[11px] text-slate-500 dark:text-slate-400 select-text my-0.5"
-            >
-              {@text}
-            </div>
-          <% end %>
+          <div
+            id={"msg-#{@idx}"}
+            data-qa="system-event"
+            class="text-center font-mono text-[11px] text-slate-500 dark:text-slate-400 select-text my-0.5"
+          >
+            {@text}
+          </div>
         <% end %>
     <% end %>
     """
@@ -611,49 +558,13 @@ defmodule RailWeb.Live.RunConversation do
         </div>
       <% else %>
         <%= for {line, idx} <- Enum.with_index(@lines) do %>
-          <% handoff = HandoffLine.parse(line) %>
-          <%= if handoff do %>
-            <!-- Handoff Line with Button to Open Other Role Log -->
-            <div
-              id={"raw-log-line-#{idx}"}
-              data-qa="raw-log-handoff"
-              class="flex items-center justify-between flex-wrap gap-2 py-1 text-amber-300 font-bold"
-            >
-              <div class="flex items-center gap-2">
-                <.icon
-                  name={
-                    if handoff.direction == :received,
-                      do: "pi-arrow-down-left",
-                      else: "pi-arrow-up-right"
-                  }
-                  class="h-3.5 w-3.5 shrink-0"
-                />
-                <span>{handoff.summary}</span>
-              </div>
-
-              <button
-                :if={has_run_for_role?(@runs, handoff.role_id)}
-                type="button"
-                id={"open-role-log-#{idx}"}
-                data-qa="open-role-log"
-                phx-click="select_role"
-                phx-target={@target}
-                phx-value-role_id={handoff.role_id}
-                class="px-2 py-0.5 rounded text-[11px] border border-amber-400/40 text-amber-200 hover:bg-amber-400/20 transition-colors cursor-pointer"
-              >
-                {"Open #{resolve_role_name(handoff.role_id, @roles_map)} log"}
-              </button>
-            </div>
-          <% else %>
-            <!-- Colored Log Line -->
-            <div
-              id={"raw-log-line-#{idx}"}
-              data-qa="raw-log-line"
-              class={["leading-relaxed whitespace-pre-wrap", raw_log_color_class(line)]}
-            >
-              {line}
-            </div>
-          <% end %>
+          <div
+            id={"raw-log-line-#{idx}"}
+            data-qa="raw-log-line"
+            class={["leading-relaxed whitespace-pre-wrap", raw_log_color_class(line)]}
+          >
+            {line}
+          </div>
         <% end %>
       <% end %>
     </div>
@@ -761,15 +672,15 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:run_events, fn -> [] end)
   end
 
-  # The log the component holds; the rendered lines and the parsed transcript are
-  # both derived from it, so an appended batch only updates one list.
+  # The log the component holds; the rendered lines and the turns read out of it
+  # are both derived from it, so an appended batch only updates one list.
   defp assign_run_events(socket, run_events) do
     lines = Enum.map(run_events, & &1.line)
 
     socket
     |> assign(:run_events, run_events)
     |> assign(:log_lines, lines)
-    |> assign(:transcript, ChatTranscript.parse(lines))
+    |> assign(:turns, Runs.parse_transcript(lines))
   end
 
   defp load_run_events(%Run{} = run), do: Runs.list_run_events(run)
@@ -809,10 +720,6 @@ defmodule RailWeb.Live.RunConversation do
     end
   end
 
-  defp resolve_role_name(role_id, roles_map) do
-    resolve_role(role_id, roles_map).name
-  end
-
   defp format_role_id(role_id) do
     role_id
     |> to_string()
@@ -834,17 +741,6 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   defp format_elapsed_run(_other), do: ""
-
-  defp has_usage?(nil), do: false
-  defp has_usage?(%TaskUsage{} = usage), do: not TaskUsage.zero?(usage)
-  defp has_usage?(_other), do: false
-
-  defp has_run_for_role?(runs, target_role_id) do
-    is_list(runs) and
-      Enum.any?(runs, fn r ->
-        r.role_id == target_role_id or to_string(r.role_id) == to_string(target_role_id)
-      end)
-  end
 
   defp count_lines(text) do
     text

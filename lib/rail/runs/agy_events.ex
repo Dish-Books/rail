@@ -7,7 +7,7 @@ defmodule Rail.Runs.AgyEvents do
   and final execution results.
   """
 
-  alias Rail.Domain.TaskUsage
+  alias Rail.Runs.Schemas.Run
   alias Rail.Runs
   alias Rail.Runs.ToolSummarizer
 
@@ -21,7 +21,7 @@ defmodule Rail.Runs.AgyEvents do
     logs: [],
     final_text: "",
     assistant_text: "",
-    usage: %TaskUsage{},
+    usage: %Run.Usage{},
     num_turns: 0,
     thinking_tokens: 0,
     saw_result: false,
@@ -42,7 +42,7 @@ defmodule Rail.Runs.AgyEvents do
       conversation_id: opts[:conversation_id],
       task_id: opts[:task_id],
       role_id: opts[:role_id],
-      usage: opts[:usage] || %TaskUsage{},
+      usage: opts[:usage] || %Run.Usage{},
       num_turns: opts[:num_turns] || 0,
       thinking_tokens: opts[:thinking_tokens] || 0
     }
@@ -194,7 +194,7 @@ defmodule Rail.Runs.AgyEvents do
 
   defp accumulate_step_usage(state, %{} = step_usage) do
     parsed_usage = parse_agy_usage(step_usage)
-    new_usage = TaskUsage.add(state.usage, parsed_usage)
+    new_usage = Run.add_usage(state.usage, parsed_usage)
     thinking = state.thinking_tokens + to_int(step_usage["thinking_tokens"])
 
     %{state | usage: new_usage, thinking_tokens: thinking}
@@ -209,7 +209,7 @@ defmodule Rail.Runs.AgyEvents do
     logs_with_denied = maybe_log_denied_actions(state.logs, result["denied_actions"])
 
     usage =
-      if TaskUsage.zero?(state.usage) and is_map(result["usage"]) do
+      if is_nil(Run.usage(state.usage)) and is_map(result["usage"]) do
         parse_agy_usage(result["usage"])
       else
         state.usage
@@ -234,7 +234,7 @@ defmodule Rail.Runs.AgyEvents do
         "#{status}"
       end
 
-    result_log = "[result] #{status_label} · #{TaskUsage.describe(usage)}"
+    result_log = "[result] #{status_label} · #{Run.usage(usage)}"
 
     %{
       state
@@ -301,13 +301,11 @@ defmodule Rail.Runs.AgyEvents do
   defp count_list(_non_list), do: 0
 
   defp parse_agy_usage(usage_map) when is_map(usage_map) do
-    %TaskUsage{
+    %Run.Usage{
       input_tokens: to_int(usage_map["input_tokens"]),
       output_tokens: to_int(usage_map["output_tokens"]),
       cache_read_input_tokens: to_int(usage_map["cache_read_tokens"]),
-      cache_creation_input_tokens: 0,
-      total_cost: nil,
-      currency: "USD"
+      cache_creation_input_tokens: 0
     }
   end
 

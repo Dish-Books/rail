@@ -95,11 +95,6 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert %Run{stage_outcome: :in_progress} = Repo.reload!(done)
   end
 
-  test "a stage no role runs records the move and stops there", %{task: task} do
-    assert {:ok, %Task{stage: :ready_to_merge}} = Pipeline.enter_stage(task, :ready_to_merge)
-    assert %Task{stage: :ready_to_merge} = Repo.reload!(task)
-  end
-
   test "a worktree Rail cannot make is recorded on the run, not swallowed", %{task: task} do
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: "/tmp/rail-no-such-worktree"})
 

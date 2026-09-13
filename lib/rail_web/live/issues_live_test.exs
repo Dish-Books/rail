@@ -290,9 +290,9 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#issue-card-#{issue_high_2.id}")
     refute has_element?(view, "#issue-card-#{issue_low.id}")
 
-    # Clicking High again toggles off
+    # Clicking High again keeps it filtered; only the All chip clears
     view |> element("#filter-priority-high") |> render_click()
-    assert has_element?(view, "#issue-card-#{issue_urgent.id}")
+    refute has_element?(view, "#issue-card-#{issue_urgent.id}")
     assert has_element?(view, "#issue-card-#{issue_high_1.id}")
 
     # Select Urgent filter
@@ -305,9 +305,10 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#issue-card-#{issue_urgent.id}")
     assert has_element?(view, "#issue-card-#{issue_high_1.id}")
 
-    # Priority with unknown string
+    # A priority nothing has matches nothing
     view |> element("#filter-priority-all") |> render_click(%{"priority" => "invalid_prio"})
-    assert has_element?(view, "#issue-card-#{issue_urgent.id}")
+    refute has_element?(view, "#issue-card-#{issue_urgent.id}")
+    refute has_element?(view, "#issue-card-#{issue_high_1.id}")
   end
 
   test "toggles Show finished filter chip", %{conn: conn} do

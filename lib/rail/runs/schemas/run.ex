@@ -8,7 +8,8 @@ defmodule Rail.Runs.Schemas.Run do
   """
   use Rail.Schema
 
-  alias Rail.Domain.TaskUsage
+  import Rail.Runs.Utils.CompactNumber
+
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
@@ -36,7 +37,15 @@ defmodule Rail.Runs.Schemas.Run do
     field :stage_fingerprint_head_sha, :string
     field :stage_fingerprint_dirty_digest, :string
 
-    embeds_one :usage, TaskUsage, on_replace: :delete
+    # What the agent has spent getting this far, by kind of token. What that
+    # costs is a question for the backend's own billing, not for a run.
+    embeds_one :usage, Usage, primary_key: false, on_replace: :delete do
+      @derive Jason.Encoder
+      field :input_tokens, :integer, default: 0
+      field :output_tokens, :integer, default: 0
+      field :cache_read_input_tokens, :integer, default: 0
+      field :cache_creation_input_tokens, :integer, default: 0
+    end
 
     belongs_to :role, Role
     belongs_to :task, Task
@@ -62,6 +71,13 @@ defmodule Rail.Runs.Schemas.Run do
     :pending_chat,
     :stage_fingerprint_head_sha,
     :stage_fingerprint_dirty_digest
+  ]
+
+  @usage_fields [
+    :input_tokens,
+    :output_tokens,
+    :cache_read_input_tokens,
+    :cache_creation_input_tokens
   ]
 
   @required_fields [
@@ -114,6 +130,60 @@ defmodule Rail.Runs.Schemas.Run do
   def running?(_other), do: false
 
   @doc """
+  What this run has spent, as a compact token count, or nil if it has spent
+  nothing yet.
+
+  Accepts a run or a usage record, since a run being followed has its running
+  total before it has a row to put it on.
+  """
+  def usage(%__MODULE__{usage: usage}), do: usage(usage)
+  def usage(nil), do: nil
+
+  def usage(%__MODULE__.Usage{} = usage) do
+    case total_tokens(usage) do
+      0 -> nil
+      total -> "#{compact_number(total)} tokens"
+    end
+  end
+
+  @doc "Every kind of token this usage record counted, added up."
+  def total_tokens(%__MODULE__.Usage{} = usage) do
+    Enum.reduce(@usage_fields, 0, fn field, total -> total + (Map.fetch!(usage, field) || 0) end)
+  end
+
+  @doc """
+  Adds what was just spent to what had been spent already.
+  """
+  def add_usage(nil, %__MODULE__.Usage{} = spent), do: spent
+
+  def add_usage(%__MODULE__.Usage{} = so_far, %__MODULE__.Usage{} = spent) do
+    Enum.reduce(@usage_fields, %__MODULE__.Usage{}, fn field, total ->
+      Map.put(total, field, (Map.fetch!(so_far, field) || 0) + (Map.fetch!(spent, field) || 0))
+    end)
+  end
+
+  @doc """
+  Returns true if this run is waiting on a human at all.
+
+  A blocked run stays blocked until its answers are sent, so it keeps its place
+  in the queue while the human works through the batch.
+  """
+  def needs_attention?(%__MODULE__{task: %Task{} = task} = run) do
+    task.stage != :merged and is_nil(task.merged_at) and state(run) == :blocked
+  end
+
+  @doc """
+  Since when this run has been waiting on a human.
+
+  A run stops before it waits, so the time it stopped is the time it started
+  waiting. The fallbacks cover the moment between a run parking on a question and
+  its OS process actually exiting, when nothing has recorded a stop yet.
+  """
+  def waiting_since(%__MODULE__{} = run) do
+    run.completed_at || run.updated_at || run.inserted_at
+  end
+
+  @doc """
   Returns true if this run has started execution previously.
   """
   def has_started?(%__MODULE__{} = run) do
@@ -160,16 +230,27 @@ defmodule Rail.Runs.Schemas.Run do
     end
   end
 
+  # Usage accumulates: a run spends across every OS process it spawns, so what
+  # arrives here is what the latest one reported, not a new total.
   defp handle_embed(changeset, field, attrs) do
     case Map.get(attrs, field) || Map.get(attrs, to_string(field)) do
-      %TaskUsage{} = struct ->
-        put_embed(changeset, field, struct)
+      %__MODULE__.Usage{} = spent ->
+        put_embed(changeset, field, add_usage(changeset.data.usage, spent))
 
       map when is_map(map) ->
-        cast_embed(changeset, field)
+        cast_embed(changeset, field, with: &usage_changeset/2)
 
       _other ->
         changeset
     end
+  end
+
+  defp usage_changeset(usage, attrs) do
+    usage
+    |> cast(attrs, @usage_fields)
+    |> validate_number(:input_tokens, greater_than_or_equal_to: 0)
+    |> validate_number(:output_tokens, greater_than_or_equal_to: 0)
+    |> validate_number(:cache_read_input_tokens, greater_than_or_equal_to: 0)
+    |> validate_number(:cache_creation_input_tokens, greater_than_or_equal_to: 0)
   end
 end

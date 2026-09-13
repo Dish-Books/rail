@@ -2,11 +2,11 @@ defmodule RailWeb.Hooks.NavHook do
   @moduledoc false
   use RailWeb, :live_view
 
-  alias Rail.Domain.OverviewQueue
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
   alias Rail.Runs
+  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
   alias Rail.Users
   alias Rail.Users.Schemas.User
@@ -226,7 +226,7 @@ defmodule RailWeb.Hooks.NavHook do
     |> Enum.flat_map(fn project ->
       Runs.list_runs(project_id: project.id, preload: [:questions, task: :issue])
     end)
-    |> Enum.count(&OverviewQueue.needs_attention?/1)
+    |> Enum.count(&Run.needs_attention?/1)
   end
 
   defp default_capture_project_id(projects, current_project_id) do
@@ -251,12 +251,7 @@ defmodule RailWeb.Hooks.NavHook do
     ask = Map.get(params, "ask", "")
     project_id = Map.get(params, "project_id")
     raw_priority = Map.get(params, "priority", "medium")
-
-    priority =
-      case Issue.cast_priority(raw_priority) do
-        {:ok, p} -> p
-        :error -> :medium
-      end
+    priority = Enum.find(Issue.priorities(), &(Atom.to_string(&1) == raw_priority)) || :medium
 
     {ask, project_id, priority}
   end

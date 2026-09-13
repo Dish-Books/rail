@@ -12,22 +12,22 @@ defmodule RailWeb.Components.QuestionCard do
   import RailWeb.CoreComponents, only: [project_badge: 1]
 
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Runs.Schemas.Run
 
-  attr :row, :any, required: true
+  attr :run, :any, required: true
   attr :submitting, :boolean, default: false
 
   def question_card(assigns) do
-    %{run: run} = row = assigns.row
+    run = assigns.run
 
     assigns =
       assigns
-      |> assign(:run, run)
       |> assign(:task, run.task)
       |> assign(:questions, Enum.sort_by(run.questions, & &1.inserted_at))
       |> assign(:pending_count, Enum.count(run.questions, &(&1.status == :pending)))
       |> assign(:header_label, "#{task_key(run.task)} · #{role_name(run)}")
-      |> assign(:elapsed_text, format_elapsed(row.waiting_since))
-      |> assign(:started_at, format_started_at(row.waiting_since))
+      |> assign(:elapsed_text, format_elapsed(Run.waiting_since(run)))
+      |> assign(:started_at, format_started_at(Run.waiting_since(run)))
 
     ~H"""
     <div

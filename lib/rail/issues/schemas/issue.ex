@@ -91,17 +91,6 @@ defmodule Rail.Issues.Schemas.Issue do
   def active?(state) when is_atom(state), do: state in [:triage, :backlog, :todo, :in_progress, :in_review]
   def active?(_other), do: false
 
-  def cast_priority(priority) when is_atom(priority) do
-    if priority in @priorities, do: {:ok, priority}, else: :error
-  end
-
-  def cast_priority(priority) when is_binary(priority) do
-    found = Enum.find(@priorities, fn p -> Atom.to_string(p) == priority end)
-    if found, do: {:ok, found}, else: :error
-  end
-
-  def cast_priority(_other), do: :error
-
   def cast_state(state) when is_atom(state) do
     if state in @states, do: {:ok, state}, else: :error
   end

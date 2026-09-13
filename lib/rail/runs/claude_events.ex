@@ -6,7 +6,7 @@ defmodule Rail.Runs.ClaudeEvents do
   and final execution results with cumulative usage accounting.
   """
 
-  alias Rail.Domain.TaskUsage
+  alias Rail.Runs.Schemas.Run
   alias Rail.Runs
   alias Rail.Runs.ToolSummarizer
 
@@ -19,7 +19,7 @@ defmodule Rail.Runs.ClaudeEvents do
     logs: [],
     final_text: "",
     assistant_text: "",
-    usage: %TaskUsage{},
+    usage: %Run.Usage{},
     num_turns: 0,
     thinking_tokens: 0,
     saw_result: false
@@ -39,7 +39,7 @@ defmodule Rail.Runs.ClaudeEvents do
       conversation_id: opts[:conversation_id],
       task_id: opts[:task_id],
       role_id: opts[:role_id],
-      usage: opts[:usage] || %TaskUsage{},
+      usage: opts[:usage] || %Run.Usage{},
       num_turns: opts[:num_turns] || 0,
       thinking_tokens: opts[:thinking_tokens] || 0
     }
@@ -145,7 +145,7 @@ defmodule Rail.Runs.ClaudeEvents do
         state.result_error
       end
 
-    result_log = "[result] #{subtype} · #{TaskUsage.describe(usage)}"
+    result_log = "[result] #{subtype} · #{Run.usage(usage)}"
 
     %{
       state
@@ -234,28 +234,11 @@ defmodule Rail.Runs.ClaudeEvents do
   defp extract_usage(event, current_usage) do
     case event["usage"] do
       %{} = u ->
-        cost =
-          case event["total_cost_usd"] do
-            num when is_number(num) ->
-              Decimal.new("#{num}")
-
-            str when is_binary(str) ->
-              case Decimal.parse(str) do
-                {d, ""} -> d
-                _parse_err -> nil
-              end
-
-            _other_cost ->
-              nil
-          end
-
-        %TaskUsage{
+        %Run.Usage{
           input_tokens: to_int(u["input_tokens"]),
           output_tokens: to_int(u["output_tokens"]),
           cache_read_input_tokens: to_int(u["cache_read_input_tokens"]),
-          cache_creation_input_tokens: to_int(u["cache_creation_input_tokens"]),
-          total_cost: cost,
-          currency: "USD"
+          cache_creation_input_tokens: to_int(u["cache_creation_input_tokens"])
         }
 
       _missing_usage ->

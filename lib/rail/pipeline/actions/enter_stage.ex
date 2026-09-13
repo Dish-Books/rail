@@ -25,9 +25,8 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   @doc """
   Enters `stage` on `task` and spawns the role that stage belongs to.
 
-  Returns `{:ok, run}` with the run left executing, or `{:ok, task}` for the
-  stages no role runs — `:ready_to_merge` and `:merged` are where a task waits
-  for a human, so entering one records the stage and stops there.
+  Returns `{:ok, run}` with the run left executing, or `{:ok, task}` when the
+  project has bound no role to that stage, which records the move and stops there.
   """
   def enter_stage(%Task{} = task, stage, _opts \\ []) when is_atom(stage) do
     {:ok, task} = claim_stage(task, stage)

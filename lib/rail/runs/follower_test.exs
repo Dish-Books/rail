@@ -4,7 +4,6 @@ defmodule Rail.Runs.FollowerTest do
   import Rail.Pipeline.Utils.QuestionQueue
 
   alias Ecto.Adapters.SQL.Sandbox
-  alias Rail.Domain.TaskUsage
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task, as: PipelineTask
@@ -232,7 +231,7 @@ defmodule Rail.Runs.FollowerTest do
     assert_receive {:os_process_finished, finished_run, outcome}, 2_000
     assert finished_run.status == :finished
     assert outcome.conversation_id == "sess-exit-1"
-    assert %TaskUsage{input_tokens: 50, output_tokens: 25} = outcome.usage
+    assert %Run.Usage{input_tokens: 50, output_tokens: 25} = outcome.usage
     assert outcome.error =~ "warning: minor deprecation"
 
     # Verify run row in DB
@@ -821,6 +820,6 @@ defmodule Rail.Runs.FollowerTest do
 
     {:ok, reloaded_rr} = Runs.get_run(run.id)
     assert reloaded_rr.status == :finished
-    assert %TaskUsage{input_tokens: 0} = reloaded_rr.usage
+    assert %Run.Usage{input_tokens: 0} = reloaded_rr.usage
   end
 end

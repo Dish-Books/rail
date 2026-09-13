@@ -25,8 +25,6 @@ defmodule Rail.Roles.Actions.ListRolesTest do
   end
 
   test "lists roles for a project ordered by position and inserted_at", %{backend: backend, project: project} do
-    scope = Scope.for_user(%{admin: true})
-
     {:ok, %Role{id: role1_id}} =
       Roles.create_role(system_scope(), project, %{
         backend_id: backend.id,
@@ -55,21 +53,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
       })
 
     assert [%Role{id: ^role2_id}, %Role{id: ^role1_id}, %Role{id: ^role3_id}] =
-             Roles.list_roles(scope, project.id)
-  end
-
-  test "lists roles with normal authenticated user scope", %{backend: backend, project: project} do
-    scope = Scope.for_user(%{admin: false})
-
-    {:ok, %Role{id: role_id}} =
-      Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
-        name: "Engineer",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are an expert agent."
-      })
-
-    assert [%Role{id: ^role_id}] = Roles.list_roles(scope, project.id)
+             Roles.list_roles(project.id)
   end
 
   test "lists roles with system scope", %{backend: backend, project: project} do
@@ -83,7 +67,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
         system_prompt: "You are an expert agent."
       })
 
-    assert [%Role{id: ^role_id}] = Roles.list_roles(scope, project.id)
+    assert [%Role{id: ^role_id}] = Roles.list_roles(project.id)
   end
 
   test "filters roles strictly to the requested project", %{backend: backend, project: project_a} do
@@ -116,19 +100,6 @@ defmodule Rail.Roles.Actions.ListRolesTest do
         system_prompt: "You are an expert agent."
       })
 
-    assert [%Role{id: ^role_a_id}] = Roles.list_roles(scope, project_a.id)
-  end
-
-  test "returns empty list for unauthenticated or nil scope", %{backend: backend, project: project} do
-    {:ok, _role} =
-      Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
-        name: "Engineer",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are an expert agent."
-      })
-
-    assert Roles.list_roles(nil, project.id) == []
-    assert Roles.list_roles(%Scope{user: nil, system: false}, project.id) == []
+    assert [%Role{id: ^role_a_id}] = Roles.list_roles(project_a.id)
   end
 end

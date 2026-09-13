@@ -4,7 +4,6 @@ defmodule Rail.Roles do
   use Rail.PermissionsDecorator
 
   alias Rail.Roles.Actions
-  alias Rail.Roles.Schemas
 
   defdelegate list_roles(project_id), to: Actions.ListRoles
 

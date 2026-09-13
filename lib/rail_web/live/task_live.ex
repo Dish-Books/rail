@@ -253,7 +253,7 @@ defmodule RailWeb.TaskLive do
   end
 
   defp apply_task(socket, %Task{} = task) do
-    roles = if task.project_id, do: Rail.Roles.list_roles(socket.assigns.current_scope, task.project_id), else: []
+    roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []
     selected_run = stage_run(task)
     pending_questions = pending_questions(selected_run)
     pending_question = select_question(pending_questions, socket.assigns.selected_question_id)

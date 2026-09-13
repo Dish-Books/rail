@@ -5,7 +5,6 @@ defmodule Rail.Roles.Actions.ListRoles do
 
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
-  alias Rail.Scope
 
   def list_roles(project_id) do
     Repo.all(

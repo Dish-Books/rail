@@ -3,7 +3,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   import Rail.Pipeline.Utils.QuestionQueue
 
-  alias Rail.Domain.TaskUsage
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -105,15 +104,15 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   end
 
   test "usage accumulates across the processes a run is carried by", %{exited: exited} do
-    {run, os_process} = exited.(:product, %{usage: %TaskUsage{input_tokens: 10, output_tokens: 5}})
+    {run, os_process} = exited.(:product, %{usage: %Run.Usage{input_tokens: 10, output_tokens: 5}})
 
     {:ok, _run} =
       Pipeline.run_finished(os_process, %{
         exit_code: 0,
-        usage: %TaskUsage{input_tokens: 1, output_tokens: 2}
+        usage: %Run.Usage{input_tokens: 1, output_tokens: 2}
       })
 
-    assert %Run{usage: %TaskUsage{input_tokens: 11, output_tokens: 7}} = Repo.reload!(run)
+    assert %Run{usage: %Run.Usage{input_tokens: 11, output_tokens: 7}} = Repo.reload!(run)
   end
 
   test "a non-zero exit records the error and concludes nothing", %{task: task, exited: exited} do

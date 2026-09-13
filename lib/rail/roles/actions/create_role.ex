@@ -10,7 +10,9 @@ defmodule Rail.Roles.Actions.CreateRole do
   def create_role(_scope, project_or_id, attrs) do
     project_id = extract_project_id(project_or_id)
 
-    case %Role{} |> Role.changeset(attrs, project_id) |> Repo.insert() do
+    attrs = Map.put(Map.new(attrs), :project_id, project_id)
+
+    case %Role{} |> Role.changeset(attrs) |> Repo.insert() do
       {:ok, role} -> {:ok, Repo.preload(role, :backend)}
       {:error, changeset} -> {:error, changeset}
     end

@@ -7,7 +7,8 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
   run.
   """
 
-  alias Rail.Domain.TicketBody
+  import Rail.Pipeline.Utils.FormatTicket
+
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Task
@@ -45,15 +46,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
     tickets_dir = Path.join(scratch_path, "tickets")
     File.mkdir_p!(tickets_dir)
 
-    content =
-      TicketBody.format(%TicketBody{
-        title: issue.title || "",
-        description: issue.description || "",
-        priority: issue.priority,
-        estimate: issue.estimate
-      })
-
-    tickets_dir |> Path.join("#{issue.identifier}.md") |> File.write!(content)
+    tickets_dir |> Path.join("#{issue.identifier}.md") |> File.write!(format_ticket(issue))
   end
 
   defp spawn_os_process(task, role, run, worktree_path) do

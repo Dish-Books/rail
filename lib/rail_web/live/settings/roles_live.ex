@@ -36,7 +36,6 @@ defmodule RailWeb.Settings.RolesLive do
   end
 
   def handle_params(params, _uri, socket) do
-    scope = socket.assigns.current_scope
     projects = socket.assigns.projects
 
     selected_project_id =
@@ -52,7 +51,7 @@ defmodule RailWeb.Settings.RolesLive do
       end
 
     current_project = Enum.find(projects, &(&1.id == selected_project_id))
-    roles = if selected_project_id, do: Roles.list_roles(scope, selected_project_id), else: []
+    roles = if selected_project_id, do: Roles.list_roles(selected_project_id), else: []
 
     socket =
       socket
@@ -705,7 +704,7 @@ defmodule RailWeb.Settings.RolesLive do
 
     if role do
       {:ok, _role} = Roles.delete_role(scope, role)
-      refreshed = Roles.list_roles(scope, socket.assigns.current_project_id)
+      refreshed = Roles.list_roles(socket.assigns.current_project_id)
 
       socket =
         socket
@@ -735,7 +734,7 @@ defmodule RailWeb.Settings.RolesLive do
 
     case Roles.copy_roles(scope, target_id, source_id, replace_all: replace_all) do
       {:ok, _roles} ->
-        refreshed = Roles.list_roles(scope, target_id)
+        refreshed = Roles.list_roles(target_id)
 
         socket =
           socket
@@ -790,7 +789,7 @@ defmodule RailWeb.Settings.RolesLive do
 
     case execute_role_save(scope, project_id, modal, existing_role, attrs) do
       {:ok, _role} ->
-        refreshed = Roles.list_roles(scope, project_id)
+        refreshed = Roles.list_roles(project_id)
 
         socket =
           socket

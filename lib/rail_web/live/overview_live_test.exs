@@ -323,6 +323,55 @@ defmodule RailWeb.OverviewLiveTest do
       refute has_element?(view, "#waiting-on-you-section")
     end
 
+    test "the runs waiting are listed longest-waiting first", %{
+      conn: conn,
+      project: project,
+      roles: roles
+    } do
+      LinearMock.mock_create_issue_success(%{
+        "id" => "lin_queue_order",
+        "identifier" => "QUE-9",
+        "title" => "Ordering"
+      })
+
+      {:ok, issue} = Issues.create_issue(project, %{description: "Ordering"})
+
+      waiting_run = fn stopped_at ->
+        {:ok, task} = Pipeline.create_task(issue, :product)
+
+        {:ok, run} =
+          Runs.create_run(%{
+            task_id: task.id,
+            role_id: roles[:product].id,
+            status: :running,
+            conversation_id: "sess_#{System.unique_integer([:positive])}",
+            started_at: DateTime.utc_now()
+          })
+
+        run = Repo.preload(run, task: :issue)
+        {:ok, _question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which one?"})
+
+        {:ok, blocked} = Runs.get_run(run.id)
+        {:ok, stopped} = Runs.update_run(blocked, %{completed_at: stopped_at})
+        stopped
+      end
+
+      recent = waiting_run.(~U[2026-01-01 11:00:00Z])
+      oldest = waiting_run.(~U[2026-01-01 09:00:00Z])
+      middle = waiting_run.(~U[2026-01-01 10:00:00Z])
+
+      assert {:ok, view, html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#waiting-on-you-section")
+
+      positions =
+        Enum.map([oldest, middle, recent], fn run ->
+          :binary.match(html, "question-card-#{run.id}") |> elem(0)
+        end)
+
+      assert positions == Enum.sort(positions)
+    end
+
     test "a blocked run shows every question it asked, and only sends once none are pending", %{
       conn: conn,
       project: project,

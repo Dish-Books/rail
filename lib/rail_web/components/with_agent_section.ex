@@ -7,38 +7,38 @@ defmodule RailWeb.Components.WithAgentSection do
   alias Rail.Runs.Schemas.Run
   alias RailWeb.Components.RunState
 
-  attr :rows, :list, required: true
+  attr :runs, :list, required: true
 
   def with_agent_section(assigns) do
     ~H"""
-    <div :if={@rows != []} id="with-agent-section" data-qa="with-agent-section" class="mt-6">
+    <div :if={@runs != []} id="with-agent-section" data-qa="with-agent-section" class="mt-6">
       <h2
         id="with-agent-header"
         data-qa="with-agent-header"
         class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2"
       >
-        WITH AN AGENT · {length(@rows)} · RECENTLY UPDATED
+        WITH AN AGENT · {length(@runs)} · RECENTLY UPDATED
       </h2>
 
       <div class="space-y-2">
         <div
-          :for={row <- @rows}
-          id={"with-agent-card-#{row.run.id}"}
+          :for={run <- @runs}
+          id={"with-agent-card-#{run.id}"}
           data-qa="with-agent-card"
           class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3.5 hover:bg-slate-100 dark:hover:bg-slate-700/30 transition-colors shadow-xs"
         >
           <div class="flex items-center justify-between gap-3">
             <div class="min-w-0 flex-1">
               <div class="flex items-center space-x-2 mb-1">
-                <.project_badge project={row.run.task.project} />
+                <.project_badge project={run.task.project} />
 
                 <.link
-                  navigate={~p"/tasks/#{row.run.task_id}"}
-                  id={"with-agent-title-#{row.run.id}"}
+                  navigate={~p"/tasks/#{run.task_id}"}
+                  id={"with-agent-title-#{run.id}"}
                   data-qa="with-agent-title"
                   class="text-sm font-semibold text-slate-900 dark:text-slate-100 hover:underline truncate"
                 >
-                  {row.run.task.issue && row.run.task.issue.title}
+                  {run.task.issue && run.task.issue.title}
                 </.link>
               </div>
 
@@ -48,27 +48,27 @@ defmodule RailWeb.Components.WithAgentSection do
                   data-qa="with-agent-state-pill"
                   class={[
                     "px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0",
-                    state_pill_class(row.run)
+                    state_pill_class(run)
                   ]}
                 >
-                  {state_pill_label(row.run)}
+                  {state_pill_label(run)}
                 </span>
 
                 <span data-qa="with-agent-role-line" class="truncate">
-                  {role_line(row.run)}
+                  {role_line(run)}
                 </span>
               </div>
             </div>
 
             <!-- Trailing: Elapsed since updated_at -->
             <span
-              id={"elapsed-with-agent-#{row.run.id}"}
+              id={"elapsed-with-agent-#{run.id}"}
               phx-hook="Elapsed"
-              data-started-at={format_started_at(row.run.started_at)}
+              data-started-at={format_started_at(run.started_at)}
               data-qa="elapsed-text"
               class="text-xs text-slate-500 dark:text-slate-400 font-mono shrink-0"
             >
-              {format_elapsed(row.run.started_at)}
+              {format_elapsed(run.started_at)}
             </span>
           </div>
         </div>

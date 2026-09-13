@@ -11,7 +11,8 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlan do
   refused rather than publishing its ticket twice.
   """
 
-  alias Rail.Domain.TicketBody
+  import Rail.Pipeline.Utils.ParseTicket
+
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -53,7 +54,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlan do
       [scratch_path, "tickets", "#{issue.identifier}.md"]
       |> Path.join()
       |> File.read!()
-      |> TicketBody.parse()
+      |> parse_ticket()
 
     case Issues.update_issue(issue, %{title: ticket.title, description: ticket.description}) do
       {:ok, _issue} -> :ok

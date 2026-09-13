@@ -3,8 +3,6 @@ defmodule Rail.Issues.Clients.Linear do
   GraphQL and HTTP client for Linear issues, comments, workflow states, and uploads.
   """
 
-  alias Rail.Domain.TicketBody
-
   @default_graphql_url "https://api.linear.app/graphql"
 
   def config do
@@ -435,17 +433,13 @@ defmodule Rail.Issues.Clients.Linear do
 
   @linear_priorities %{urgent: 1, high: 2, medium: 3, low: 4}
 
-  defp linear_priority(nil), do: nil
-  defp linear_priority(priority) when is_atom(priority), do: Map.get(@linear_priorities, priority)
-  defp linear_priority(priority) when is_integer(priority) and priority in 0..4, do: priority
+  # A priority always arrives as the Ecto.Enum atom it is stored as.
+  defp linear_priority(priority), do: Map.get(@linear_priorities, priority)
 
-  defp linear_priority(priority) when is_binary(priority) do
-    linear_priority(TicketBody.cast_priority(priority))
-  end
+  @rail_priorities Map.new(@linear_priorities, fn {name, number} -> {number, name} end)
 
-  defp linear_priority(_other), do: nil
-
-  defp rail_priority(number) when is_integer(number), do: TicketBody.cast_priority(number)
+  # Linear's 0 means "no priority set", so it maps to nothing of ours.
+  defp rail_priority(number) when is_integer(number), do: Map.get(@rail_priorities, number)
   defp rail_priority(_other), do: nil
 
   defp format_iso_time(%DateTime{} = dt), do: DateTime.to_iso8601(dt)

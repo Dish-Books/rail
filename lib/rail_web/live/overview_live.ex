@@ -11,10 +11,6 @@ defmodule RailWeb.OverviewLive do
       with_agent_section: 1
     ]
 
-  alias Rail.Domain.AttentionQueue
-  alias Rail.Domain.OverviewQueue
-  alias Rail.Domain.OverviewQueueState
-  alias Rail.Domain.RunAttentionItem
   alias Rail.Pipeline
   alias Rail.Projects
   alias Rail.Roles
@@ -28,8 +24,8 @@ defmodule RailWeb.OverviewLive do
       |> assign(:current_section, :overview)
       |> assign(:current_project_id, nil)
       |> assign(:running_count, 0)
-      |> assign(:attention_queue, AttentionQueue.new())
-      |> assign(:overview_queue, %OverviewQueueState{waiting: [], with_agent: []})
+      |> assign(:waiting, [])
+      |> assign(:with_agent, [])
       |> assign(:roster_groups, [])
       |> assign(:dispatch_disabled, check_dispatch_disabled())
       |> assign(:submitting, false)
@@ -99,29 +95,25 @@ defmodule RailWeb.OverviewLive do
           <!-- Main Queue Column -->
           <div class="flex-1 min-w-0" id="overview-main-queue">
             <!-- "WAITING ON YOU · {count}" Section -->
-            <div :if={@overview_queue.waiting != []} id="waiting-on-you-section" class="mb-6">
+            <div :if={@waiting != []} id="waiting-on-you-section" class="mb-6">
               <h2
                 id="waiting-header"
                 data-qa="waiting-header"
                 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3"
               >
-                WAITING ON YOU · {length(@overview_queue.waiting)}
+                WAITING ON YOU · {length(@waiting)}
               </h2>
 
               <div class="space-y-3" id="waiting-blocks-list">
-                <.question_card
-                  :for={row <- @overview_queue.waiting}
-                  row={row}
-                  submitting={@submitting}
-                />
+                <.question_card :for={run <- @waiting} run={run} submitting={@submitting} />
               </div>
             </div>
 
             <!-- "WITH AN AGENT · {count} · RECENTLY UPDATED" Section -->
-            <.with_agent_section rows={@overview_queue.with_agent} />
+            <.with_agent_section runs={@with_agent} />
 
             <!-- "All clear" Empty State (only when waiting and with_agent are both empty) -->
-            <.empty_state :if={@overview_queue.waiting == [] and @overview_queue.with_agent == []} />
+            <.empty_state :if={@waiting == [] and @with_agent == []} />
           </div>
 
           <!-- Role Roster Sidebar -->
@@ -184,44 +176,31 @@ defmodule RailWeb.OverviewLive do
         preload: [:role, :questions, task: [:project, :issue]]
       )
 
-    waiting_items =
-      runs
-      |> Enum.filter(&OverviewQueue.needs_attention?/1)
-      |> Enum.map(&RunAttentionItem.new/1)
-
-    {ordered_waiting_items, attention_queue} =
-      AttentionQueue.reconcile(socket.assigns.attention_queue, waiting_items)
-
-    overview_queue =
-      OverviewQueue.build_overview_queue(ordered_waiting_items, runs, fn key ->
-        AttentionQueue.waiting_since(attention_queue, key)
-      end)
-
     socket
-    |> assign(:attention_queue, attention_queue)
-    |> assign(:overview_queue, overview_queue)
+    |> assign(:waiting, runs |> Enum.filter(&Run.needs_attention?/1) |> Enum.sort_by(&Run.waiting_since/1, DateTime))
+    |> assign(:with_agent, runs |> Enum.filter(&Run.running?/1) |> Enum.sort_by(& &1.started_at, {:desc, DateTime}))
     |> assign(:running_count, Enum.count(runs, &Run.running?/1))
-    |> assign(:roster_groups, build_roster_groups(socket.assigns[:current_scope], project_id, runs))
+    |> assign(:roster_groups, build_roster_groups(project_id, runs))
     |> assign(:dispatch_disabled, check_dispatch_disabled())
   end
 
-  defp build_roster_groups(scope, project_id, runs) when is_binary(project_id) do
+  defp build_roster_groups(project_id, runs) when is_binary(project_id) do
     case Projects.get_project(project_id) do
-      {:ok, project} -> [{project, role_entries(scope, project, runs)}]
+      {:ok, project} -> [{project, role_entries(project, runs)}]
       _no_project -> []
     end
   end
 
-  defp build_roster_groups(scope, nil, runs) do
+  defp build_roster_groups(nil, runs) do
     Enum.map(Projects.list_projects(), fn project ->
       project_runs = Enum.filter(runs, &(&1.task.project_id == project.id))
-      {project, role_entries(scope, project, project_runs)}
+      {project, role_entries(project, project_runs)}
     end)
   end
 
-  defp role_entries(scope, project, runs) do
-    scope
-    |> Roles.list_roles(project.id)
+  defp role_entries(project, runs) do
+    project.id
+    |> Roles.list_roles()
     |> Enum.map(&build_role_entry(&1, runs))
   end
 

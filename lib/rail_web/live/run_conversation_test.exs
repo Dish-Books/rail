@@ -131,7 +131,6 @@ defmodule RailWeb.Live.RunConversationTest do
         "I will start by reviewing the router.",
         "[tool read_file] lib/rail_web/router.ex",
         "[tool read_file] lib/rail_web/user_auth.ex",
-        "[handoff ← #{architect.role_id}] Ready for engineer implementation",
         "Follow the schema plan closely.",
         "[rail] Automated check completed"
       ],
@@ -153,8 +152,6 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ ~s(data-qa="activity-tile")
     assert html =~ "Tool activity (2 steps)"
     refute html =~ ~s(data-qa="activity-content")
-    assert html =~ ~s(data-qa="handoff-tile")
-    assert html =~ "Ready for engineer implementation"
     assert html =~ ~s(data-qa="rail-event")
     assert html =~ ~s(data-qa="system-event")
   end

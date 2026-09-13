@@ -6,8 +6,6 @@ defmodule Rail.Tools.Schemas.Backend do
   """
   use Rail.Schema
 
-  alias Rail.Domain.Embeds.BackendModel
-
   @names [:claude, :agy, :codex]
   @statuses [:not_configured, :signed_out, :unavailable, :ready]
 
@@ -15,7 +13,12 @@ defmodule Rail.Tools.Schemas.Backend do
   schema "backends" do
     field :name, Ecto.Enum, values: @names
     field :executable_path, :string, default: ""
-    embeds_many :models, BackendModel, on_replace: :delete
+    # A model the user has made available on this backend.
+    embeds_many :models, Model, primary_key: false, on_replace: :delete do
+      @derive Jason.Encoder
+      field :id, :string
+      field :display_name, :string
+    end
 
     field :status, Ecto.Enum, values: @statuses, default: :not_configured
     field :account_label, :string
@@ -53,7 +56,7 @@ defmodule Rail.Tools.Schemas.Backend do
     |> cast(attrs, @config_fields)
     |> update_change(:executable_path, &String.trim(&1 || ""))
     |> validate_required(@config_fields)
-    |> cast_embed(:models)
+    |> cast_embed(:models, with: &model_changeset/2)
     |> unique_constraint(:name)
   end
 
@@ -67,6 +70,23 @@ defmodule Rail.Tools.Schemas.Backend do
     |> validate_required([:name, :status])
     |> cast_embed(:usage, with: &usage_group_changeset/2)
     |> unique_constraint(:name)
+  end
+
+  # A model with no display name shows as its id rather than as nothing.
+  defp model_changeset(model, attrs) do
+    model
+    |> cast(attrs, [:id, :display_name])
+    |> update_change(:id, &String.trim/1)
+    |> update_change(:display_name, &String.trim/1)
+    |> validate_required([:id])
+    |> default_display_name()
+  end
+
+  defp default_display_name(changeset) do
+    case get_field(changeset, :display_name) do
+      name when is_binary(name) and name != "" -> changeset
+      _blank -> put_change(changeset, :display_name, get_field(changeset, :id))
+    end
   end
 
   defp usage_group_changeset(usage, attrs) do
