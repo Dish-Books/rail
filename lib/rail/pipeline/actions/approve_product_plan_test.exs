@@ -4,18 +4,18 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.OsProcess
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
 
-    {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -75,7 +75,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
       Pipeline.update_task(task, %{scratch_path: scratch, worktree_path: create_temp_git_repo()})
 
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:product].id,
         status: :finished,
@@ -90,7 +90,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
     run: run,
     roles: roles
   } do
-    stub(Runs, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.approve_product_plan(run)
 
@@ -103,7 +103,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
   end
 
   test "skipping designs hands the ticket straight to the architect", %{task: task, run: run, roles: roles} do
-    stub(Runs, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
     assert {:ok, %Run{}} = Pipeline.approve_product_plan(run, skip_design: true)
 
@@ -119,7 +119,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
 
   test "nothing is approved while something on the task is still working", %{task: task, run: run, roles: roles} do
     {:ok, _running} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
         status: :running,

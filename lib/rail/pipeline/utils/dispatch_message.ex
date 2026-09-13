@@ -14,13 +14,14 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Git
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.OsProcess
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
 
   @doc """
   Dispatches `run`'s queued message.
@@ -75,9 +76,9 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
     {:ok, _task} = task |> Task.changeset(%{worktree_path: worktree_path}) |> Repo.update()
 
     argv =
-      Runs.build_args(
+      Tools.build_args(
         backend: role.backend,
-        prompt: Runs.chat_prompt(message),
+        prompt: Pipeline.chat_prompt(message),
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
         read_only: false,
@@ -86,7 +87,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
         work_dir: worktree_path
       )
 
-    case Runs.start_os_process(run, argv) do
+    case Tools.start_os_process(run, argv) do
       {:ok, %OsProcess{} = os_process} ->
         {:ok, os_process}
 
@@ -103,11 +104,12 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   # The message never reached an agent, so it goes back on the row as though it
   # had never left: still queued, still the human's to cancel or re-send.
   defp requeue(%Run{} = run, message) do
+    # coveralls-ignore-stop
     run |> Run.changeset(%{pending_chat: message}) |> Repo.update!()
   end
 
   defp fail(%Run{} = run, reason) do
-    Runs.append_run_event(run, "[rail] That message was not delivered: #{inspect(reason)}")
+    Pipeline.append_run_event(run, "[rail] That message was not delivered: #{inspect(reason)}")
     {:error, reason}
   end
 
@@ -119,6 +121,4 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   rescue
     _error -> :ok
   end
-
-  # coveralls-ignore-stop
 end

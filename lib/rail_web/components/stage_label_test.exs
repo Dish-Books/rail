@@ -3,8 +3,8 @@ defmodule RailWeb.Components.StageLabelTest do
 
   import RailWeb.Components.StageLabel
 
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Runs.Schemas.Run
 
   test "no task at all is something waiting on you" do
     assert stage_label(nil, nil) == "Waiting on you"

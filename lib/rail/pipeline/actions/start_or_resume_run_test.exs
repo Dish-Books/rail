@@ -1,0 +1,98 @@
+defmodule Rail.Pipeline.Actions.StartOrResumeRunTest do
+  use Rail.DataCase, async: true
+
+  alias Rail.Git
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
+
+  setup do
+    worktree = create_temp_git_repo(prefix: "start_or_resume_run")
+
+    %{
+      task: %{id: UXID.generate!(prefix: "tsk")},
+      role: %{id: UXID.generate!(prefix: "rol")},
+      worktree: worktree,
+      fingerprint: Git.branch_fingerprint(worktree)
+    }
+  end
+
+  test "creates the run on first start, stamped with the worktree fingerprint", %{
+    task: %{id: task_id} = task,
+    role: %{id: role_id} = role,
+    worktree: worktree,
+    fingerprint: %{head_sha: head_sha, dirty_digest: dirty_digest}
+  } do
+    assert {:ok,
+            %Run{
+              status: :running,
+              task_id: ^task_id,
+              role_id: ^role_id,
+              started_at: %DateTime{},
+              stage_fingerprint_head_sha: ^head_sha,
+              stage_fingerprint_dirty_digest: ^dirty_digest
+            }} = Pipeline.start_or_resume_run(task, role, worktree)
+
+    assert byte_size(dirty_digest) > 0
+  end
+
+  test "resumes the existing run, keeping its history and restamping the fingerprint", %{
+    task: task,
+    role: role,
+    worktree: worktree
+  } do
+    {:ok, first} = Pipeline.start_or_resume_run(task, role, worktree)
+
+    File.write!(Path.join(worktree, "tracked.txt"), "changed\n")
+    git!(worktree, ["commit", "-am", "second"])
+
+    {:ok, second} = Pipeline.start_or_resume_run(task, role, worktree)
+
+    assert second.id == first.id
+    assert second.stage_fingerprint_head_sha == Git.branch_fingerprint(worktree).head_sha
+    assert second.stage_fingerprint_head_sha != first.stage_fingerprint_head_sha
+    assert Repo.aggregate(Run, :count) == 1
+  end
+
+  test "leaves .rail/ changes out of the dirty digest", %{
+    task: task,
+    role: role,
+    worktree: worktree
+  } do
+    {:ok, before} = Pipeline.start_or_resume_run(task, role, worktree)
+
+    File.mkdir_p!(Path.join(worktree, ".rail"))
+    File.write!(Path.join([worktree, ".rail", "notes.md"]), "scratch\n")
+
+    {:ok, after_rail_write} = Pipeline.start_or_resume_run(task, role, worktree)
+
+    assert after_rail_write.stage_fingerprint_dirty_digest ==
+             before.stage_fingerprint_dirty_digest
+
+    File.write!(Path.join(worktree, "tracked.txt"), "edited\n")
+
+    {:ok, after_code_write} = Pipeline.start_or_resume_run(task, role, worktree)
+
+    refute after_code_write.stage_fingerprint_dirty_digest ==
+             before.stage_fingerprint_dirty_digest
+  end
+
+  test "leaves the fingerprint nil when git cannot answer", %{task: task, role: role} do
+    non_repo = Path.join(System.tmp_dir!(), "sorrr_missing_#{System.unique_integer([:positive])}")
+
+    assert {:ok, %Run{stage_fingerprint_head_sha: nil, stage_fingerprint_dirty_digest: nil}} =
+             Pipeline.start_or_resume_run(task, role, non_repo)
+  end
+
+  test "keeps runs of other roles on the same task separate", %{
+    task: task,
+    role: role,
+    worktree: worktree
+  } do
+    other_role = %{id: UXID.generate!(prefix: "rol")}
+
+    {:ok, first} = Pipeline.start_or_resume_run(task, role, worktree)
+    {:ok, other} = Pipeline.start_or_resume_run(task, other_role, worktree)
+
+    assert first.id != other.id
+  end
+end

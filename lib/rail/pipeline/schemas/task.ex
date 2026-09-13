@@ -11,8 +11,8 @@ defmodule Rail.Pipeline.Schemas.Task do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects.Schemas.Project
-  alias Rail.Runs.Schemas.Run
 
   # The linear pipeline, then stages a task can be parked in off that path.
   # `:debugger` has no position in the sequence: nothing advances into or out of

@@ -12,8 +12,8 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessage do
   import Rail.Pipeline.Utils.DispatchMessage
 
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
-  alias Rail.Runs.Schemas.Run
 
   @doc """
   Stops `run` and immediately sends what was queued on it.

@@ -3,12 +3,11 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.DetectedQuestion
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -66,7 +65,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:product].id,
         status: :running,
@@ -80,7 +79,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
 
   test "lists questions by project and filters by status", %{project: project, task: task, roles: roles} do
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:product].id,
         conversation_id: "sess_product",
@@ -107,7 +106,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     {:ok, task1b} = Pipeline.create_task(issue2, :product)
 
     {:ok, run1b} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task1b.id,
         role_id: roles[:product].id,
         status: :running,
@@ -155,7 +154,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
       })
 
     {:ok, run2} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task2.id,
         role_id: role2.id,
         status: :running,
@@ -191,7 +190,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
 
   test "filters a project's questions down to the pending ones", %{project: project, task: task, roles: roles} do
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:product].id,
         conversation_id: "sess_product",
@@ -218,7 +217,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
     {:ok, pending_task} = Pipeline.create_task(issue_pending, :product)
 
     {:ok, pending_run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: pending_task.id,
         role_id: roles[:product].id,
         status: :running,

@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.RunStateTest do
   use ExUnit.Case, async: true
 
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Pipeline.Schemas.Run
   alias RailWeb.Components.RunState
 
   test "each state has its own icon" do

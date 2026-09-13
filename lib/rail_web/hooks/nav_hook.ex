@@ -4,9 +4,9 @@ defmodule RailWeb.Hooks.NavHook do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
   alias Rail.Users
   alias Rail.Users.Schemas.User
@@ -224,7 +224,7 @@ defmodule RailWeb.Hooks.NavHook do
   defp count_attention(projects) do
     projects
     |> Enum.flat_map(fn project ->
-      Runs.list_runs(project_id: project.id, preload: [:questions, task: :issue])
+      Pipeline.list_runs(project_id: project.id, preload: [:questions, task: :issue])
     end)
     |> Enum.count(&Run.needs_attention?/1)
   end

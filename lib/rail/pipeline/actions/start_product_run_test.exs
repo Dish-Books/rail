@@ -6,21 +6,21 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.OsProcess
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
   alias Rail.Users.Schemas.User
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, backend} =
-      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     scope = system_scope()
 
@@ -72,7 +72,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
     issue: issue,
     task: %Task{id: task_id} = task
   } do
-    expect(Runs, :start_os_process, fn %Run{task_id: ^task_id, role_id: ^role_id, status: :running} = run, argv ->
+    expect(Tools, :start_os_process, fn %Run{task_id: ^task_id, role_id: ^role_id, status: :running} = run, argv ->
       assert ["-p", prompt, "--model", "claude-3-7-sonnet", "--effort", "high" | _flags] = argv
       assert prompt =~ "tickets/#{issue.identifier}.md"
       assert "--system-prompt" in argv
@@ -111,7 +111,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
     {:ok, %Issue{id: issue_id}} =
       issue |> Issue.changeset(%{owner_user_id: user_id}) |> Repo.update()
 
-    expect(Runs, :start_os_process, fn %Run{} = run, _argv ->
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv ->
       {:ok, %OsProcess{task_id: task.id, run: run, task: task}}
     end)
 

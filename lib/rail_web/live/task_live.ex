@@ -15,8 +15,8 @@ defmodule RailWeb.TaskLive do
   import RailWeb.CoreComponents, only: [answer_field: 1, icon: 1, project_badge: 1]
 
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Runs.Schemas.Run
   alias RailWeb.Components.RunState
   alias RailWeb.Components.StageLabel
   alias RailWeb.Live.ProductStage

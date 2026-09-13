@@ -3,17 +3,17 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessageTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.OsProcess
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
 
-    {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -53,7 +53,7 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessageTest do
 
     working = fn attrs ->
       {:ok, run} =
-        Runs.create_run(
+        Pipeline.create_run(
           Map.merge(
             %{
               task_id: task.id,
@@ -75,7 +75,7 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessageTest do
   test "the queued message goes out in place of the turn it interrupts", %{working: working} do
     run = working.(%{pending_chat: "Please add a test"})
 
-    stub(Runs, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
     assert {:ok, :sent, %Run{}} = Pipeline.stop_and_send_message(run)
   end

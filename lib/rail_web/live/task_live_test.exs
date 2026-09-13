@@ -6,16 +6,15 @@ defmodule RailWeb.TaskLiveTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.DetectedQuestion
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.DetectedQuestion
-  alias Rail.Runs.Schemas.OsProcess
-  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
   alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -72,7 +71,7 @@ defmodule RailWeb.TaskLiveTest do
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :finished,
@@ -101,7 +100,7 @@ defmodule RailWeb.TaskLiveTest do
   end
 
   test "a run that recorded an error shows it", %{conn: conn, task: task, run: run} do
-    {:ok, _failed} = Runs.update_run(run, %{error: "The agent gave up."})
+    {:ok, _failed} = Pipeline.update_run(run, %{error: "The agent gave up."})
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -121,7 +120,7 @@ defmodule RailWeb.TaskLiveTest do
     run: run
   } do
     # Approving is a one-way door, so the run has to be one that has not been through it.
-    {:ok, _open} = Runs.update_run(run, %{stage_outcome: :in_progress})
+    {:ok, _open} = Pipeline.update_run(run, %{stage_outcome: :in_progress})
 
     File.write!(
       Path.join([task.scratch_path, "tickets", "TLV-1.md"]),
@@ -151,7 +150,7 @@ defmodule RailWeb.TaskLiveTest do
     task: task,
     run: run
   } do
-    {:ok, blocked} = Runs.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+    {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
     blocked = Repo.preload(blocked, task: :issue)
 
     {:ok, _first} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
@@ -172,7 +171,7 @@ defmodule RailWeb.TaskLiveTest do
   end
 
   test "a question can be dismissed instead of answered", %{conn: conn, task: task, run: run} do
-    {:ok, blocked} = Runs.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+    {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
     blocked = Repo.preload(blocked, task: :issue)
 
     {:ok, question} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
@@ -185,7 +184,7 @@ defmodule RailWeb.TaskLiveTest do
   end
 
   test "a blank answer is not recorded", %{conn: conn, task: task, run: run} do
-    {:ok, blocked} = Runs.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+    {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
     blocked = Repo.preload(blocked, task: :issue)
 
     {:ok, question} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
@@ -226,7 +225,7 @@ defmodule RailWeb.TaskLiveTest do
         })
 
       {:ok, _other_run} =
-        Runs.create_run(%{
+        Pipeline.create_run(%{
           task_id: task.id,
           role_id: other_role.id,
           status: :finished,
@@ -235,14 +234,14 @@ defmodule RailWeb.TaskLiveTest do
         })
 
       {:ok, working} =
-        Runs.update_run(run, %{
+        Pipeline.update_run(run, %{
           status: :running,
           stage_outcome: :in_progress,
           conversation_id: "sess_product",
           started_at: ~U[2026-09-09 10:00:00Z]
         })
 
-      Runs.append_run_event(working, "[tool read_file] lib/rail.ex")
+      Pipeline.append_run_event(working, "[tool read_file] lib/rail.ex")
 
       {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
 
@@ -293,7 +292,7 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "stopping hands the undelivered message back to the composer", %{conn: conn, task: task, run: run} do
-      {:ok, _queued} = Runs.update_run(run, %{pending_chat: "Please add a test"})
+      {:ok, _queued} = Pipeline.update_run(run, %{pending_chat: "Please add a test"})
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -304,9 +303,9 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "send now cuts the turn short and delivers what was queued", %{conn: conn, task: task, run: run} do
-      {:ok, _queued} = Runs.update_run(run, %{pending_chat: "Please add a test"})
+      {:ok, _queued} = Pipeline.update_run(run, %{pending_chat: "Please add a test"})
 
-      stub(Runs, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -344,7 +343,7 @@ defmodule RailWeb.TaskLiveTest do
     test "an OS process finishing refreshes the page", %{conn: conn, task: task, run: run} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      {:ok, _failed} = Runs.update_run(run, %{status: :finished, error: "It fell over."})
+      {:ok, _failed} = Pipeline.update_run(run, %{status: :finished, error: "It fell over."})
       send(view.pid, {:os_process_finished, run, %{}})
 
       assert has_element?(view, "[data-qa='task_error_card']", "It fell over.")

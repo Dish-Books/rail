@@ -6,15 +6,14 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.DetectedQuestion
-  alias Rail.Runs.Schemas.OsProcess
-  alias Rail.Runs.Schemas.Run
-  alias Rail.Runs.Schemas.RunEvent
+  alias Rail.Tools.Schemas.OsProcess
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -70,7 +69,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
       Pipeline.update_task(task, %{issue_id: nil, stage: :product})
 
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
         conversation_id: "sess_run_finished",

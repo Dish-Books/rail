@@ -3,19 +3,19 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.DetectedQuestion
-  alias Rail.Runs.Schemas.OsProcess
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
 
-    {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -54,7 +54,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :running,
@@ -73,7 +73,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     assert {:ok, %Question{status: :answered, answer: "Postgres", answered_at: %DateTime{}}} =
              Pipeline.answer_question(question, "Postgres")
 
-    assert Runs.list_run_events(run) == []
+    assert Pipeline.list_run_events(run) == []
   end
 
   test "an empty answer is not an answer", %{run: run} do
@@ -96,14 +96,14 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     {:ok, _answered} = Pipeline.answer_question(first, "Postgres")
     {:ok, _dismissed} = Pipeline.dismiss_question(second)
 
-    stub(Runs, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
     assert {:ok, :sent, %Run{}} = Pipeline.send_answers(Repo.reload!(run))
 
     assert %Question{delivered_at: %DateTime{}} = Repo.reload!(first)
     assert %Question{delivered_at: %DateTime{}} = Repo.reload!(second)
 
-    lines = run |> Runs.list_run_events() |> Enum.map_join("\n", & &1.line)
+    lines = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
     assert lines =~ "Which database?"
     assert lines =~ "The answer is: Postgres"
     assert lines =~ "Dismissed without an answer"
@@ -127,11 +127,11 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     {:ok, only} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
     {:ok, _answered} = Pipeline.answer_question(only, "Postgres")
 
-    stub(Runs, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
     assert {:ok, :sent, %Run{}} = Pipeline.send_answers(Repo.reload!(run))
 
-    lines = run |> Runs.list_run_events() |> Enum.map_join("\n", & &1.line)
+    lines = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
     assert lines =~ "You asked: Which database?"
     refute lines =~ "questions. Answers, in order"
   end

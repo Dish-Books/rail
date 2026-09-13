@@ -5,18 +5,18 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.DetectedQuestion
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Tools
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, backend} =
-      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     scope = system_scope()
 
@@ -71,7 +71,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:product].id,
         status: :running,
@@ -102,7 +102,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
 
     assert Repo.get!(Question, q.id).delivered_at
 
-    lines = sent |> Runs.list_run_events() |> Enum.map(& &1.line)
+    lines = sent |> Pipeline.list_run_events() |> Enum.map(& &1.line)
     assert Enum.any?(lines, &(&1 =~ "Should we proceed?"))
     assert Enum.any?(lines, &(&1 =~ "Dismissed without an answer"))
   end
@@ -128,7 +128,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     {:ok, _second} =
       Pipeline.register_question(run, %DetectedQuestion{prompt: "And the migration?"})
 
-    stub(Runs, :start_os_process, fn _run, _argv -> {:error, :not_expected} end)
+    stub(Tools, :start_os_process, fn _run, _argv -> {:error, :not_expected} end)
 
     assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(q)
 
@@ -138,7 +138,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
 
   test "returns error when dismissing an answered question", %{task: task, run: run, roles: roles} do
     {:ok, _product_run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:product].id,
         conversation_id: "sess_product",

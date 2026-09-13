@@ -15,9 +15,9 @@ defmodule Rail.Pipeline.Actions.StopRun do
 
   import Rail.Pipeline.Utils.StopLiveProcess
 
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.Run
 
   @doc """
   Stops `run` and returns `{:ok, run, queued_text}`, where `queued_text` is the
@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Actions.StopRun do
   end
 
   defp clear_queue(%Run{} = run, was_running) do
-    if was_running, do: Runs.append_run_event(run, "[rail] Stopped by user.")
+    if was_running, do: Pipeline.append_run_event(run, "[rail] Stopped by user.")
 
     {:ok, stopped} =
       Run

@@ -5,19 +5,19 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.OsProcess
-  alias Rail.Runs.Schemas.Run
-  alias Rail.Runs.Schemas.RunEvent
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
 
-    {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -62,7 +62,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     exited = fn stage, run_attrs ->
       {:ok, run} =
-        Runs.create_run(
+        Pipeline.create_run(
           Map.merge(
             %{
               task_id: task.id,
@@ -137,7 +137,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     test_pid = self()
 
-    expect(Runs, :start_os_process, fn spawned, argv ->
+    expect(Tools, :start_os_process, fn spawned, argv ->
       send(test_pid, {:dispatched, argv})
       {:ok, %OsProcess{run: spawned}}
     end)
@@ -153,7 +153,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   test "a run that came back clean latches done and moves nothing", %{task: task, exited: exited} do
     {run, os_process} = exited.(:product, %{})
 
-    Runs.append_run_event(run, "The ticket is written.")
+    Pipeline.append_run_event(run, "The ticket is written.")
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
 
@@ -164,7 +164,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   test "a run that already had its say is left alone however often it exits", %{task: task, exited: exited} do
     {run, os_process} = exited.(:product, %{stage_outcome: :done})
 
-    Runs.append_run_event(run, "Still done.")
+    Pipeline.append_run_event(run, "Still done.")
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :product} = Repo.reload!(task)

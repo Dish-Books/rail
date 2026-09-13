@@ -12,8 +12,7 @@ defmodule RailWeb.Live.RunConversation do
   import RailWeb.CoreComponents, only: [icon: 1, markdown: 1]
 
   alias Rail.Pipeline
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Pipeline.Schemas.Run
 
   @doc """
   Takes the task and its runs; everything else the conversation decides itself.
@@ -650,7 +649,7 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   defp select(socket, %Run{} = run) do
-    run = run.id |> Runs.get_run() |> elem(1) |> Kernel.||(run)
+    run = run.id |> Pipeline.get_run() |> elem(1) |> Kernel.||(run)
 
     socket
     |> assign(:selected_run, run)
@@ -680,10 +679,10 @@ defmodule RailWeb.Live.RunConversation do
     socket
     |> assign(:run_events, run_events)
     |> assign(:log_lines, lines)
-    |> assign(:turns, Runs.parse_transcript(lines))
+    |> assign(:turns, Pipeline.parse_transcript(lines))
   end
 
-  defp load_run_events(%Run{} = run), do: Runs.list_run_events(run)
+  defp load_run_events(%Run{} = run), do: Pipeline.list_run_events(run)
   defp load_run_events(_no_run), do: []
 
   # The run the human was reading stays selected across a refresh; otherwise the

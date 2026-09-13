@@ -7,7 +7,6 @@ defmodule RailWeb.Live.RunConversationTest do
   alias Rail.Pipeline
   alias Rail.Projects
   alias Rail.Roles
-  alias Rail.Runs
   alias RailTest.Mocks.Linear, as: LinearMock
   alias RailWeb.Live.RunConversation
 
@@ -73,7 +72,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
   test "offers a chip per run and describes the one being read", %{task: task, roles: roles, roles_map: roles_map} do
     {:ok, architect} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:architect].id,
         status: :finished,
@@ -82,7 +81,7 @@ defmodule RailWeb.Live.RunConversationTest do
       })
 
     {:ok, engineer} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
         status: :running,
@@ -108,7 +107,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
   test "renders each kind of thing said in the conversation", %{task: task, roles: roles, roles_map: roles_map} do
     {:ok, architect} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:architect].id,
         status: :finished,
@@ -116,7 +115,7 @@ defmodule RailWeb.Live.RunConversationTest do
       })
 
     {:ok, engineer} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
         status: :running,
@@ -134,7 +133,7 @@ defmodule RailWeb.Live.RunConversationTest do
         "Follow the schema plan closely.",
         "[rail] Automated check completed"
       ],
-      &Runs.append_run_event(engineer, &1)
+      &Pipeline.append_run_event(engineer, &1)
     )
 
     html =
@@ -162,7 +161,7 @@ defmodule RailWeb.Live.RunConversationTest do
     roles_map: roles_map
   } do
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
         status: :running,
@@ -183,7 +182,7 @@ defmodule RailWeb.Live.RunConversationTest do
     roles_map: roles_map
   } do
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
         status: :running,
@@ -202,7 +201,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
   test "a run with no conversation cannot be chatted with", %{task: task, roles: roles, roles_map: roles_map} do
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
         status: :finished,

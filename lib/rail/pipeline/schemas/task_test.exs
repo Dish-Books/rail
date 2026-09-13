@@ -4,14 +4,13 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.DetectedQuestion
-  alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -108,7 +107,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     role: role
   } do
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :finished,
@@ -133,12 +132,12 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     refute Task.running?(task)
 
     {:ok, idle} =
-      Runs.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})
+      Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})
 
     refute Task.running?(%{task | runs: [idle]})
 
     {:ok, busy} =
-      Runs.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
+      Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
 
     assert Task.running?(%{task | runs: [idle, busy]})
   end

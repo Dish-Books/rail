@@ -12,7 +12,7 @@ defmodule RailWeb.Components.QuestionCard do
   import RailWeb.CoreComponents, only: [project_badge: 1]
 
   alias Rail.Pipeline.Schemas.Question
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Pipeline.Schemas.Run
 
   attr :run, :any, required: true
   attr :submitting, :boolean, default: false
