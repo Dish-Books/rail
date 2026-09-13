@@ -164,6 +164,35 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     Tools.terminate_os_process(os_process.os_pid, grace_period: 50)
   end
 
+  test "runs the child as the account in the backend's config directory", %{
+    backend: backend,
+    run: run,
+    scope: scope
+  } do
+    {:ok, backend} = Tools.update_backend(scope, backend, %{executable_path: "/bin/sh"})
+    config_dir = Backend.config_dir(backend)
+
+    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+
+    {:ok, os_process} = Tools.start_os_process(run, ["-c", ~s(printf '%s\n' "$CLAUDE_CONFIG_DIR")])
+
+    content =
+      Enum.reduce_while(1..200, "", fn _i, _acc ->
+        content = File.read!(os_process.stream_path)
+
+        if content =~ config_dir do
+          {:halt, content}
+        else
+          Process.sleep(10)
+          {:cont, content}
+        end
+      end)
+
+    assert content == config_dir <> "\n"
+
+    Tools.terminate_os_process(os_process.os_pid, grace_period: 50)
+  end
+
   test "with a missing backend binary reports error and settles the run", %{
     backend: backend,
     run: run,

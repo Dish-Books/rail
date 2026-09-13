@@ -347,10 +347,10 @@ defmodule RailWeb.Components.Nav do
 
   defp section_title(:overview), do: "Overview"
   defp section_title(:issues), do: "Issues"
-  defp section_title(:backends), do: "Backends"
-  defp section_title(:settings), do: "Settings"
-  defp section_title(:connected_accounts), do: "Settings"
-  defp section_title(:projects), do: "Settings"
+
+  defp section_title(section) when section in [:settings, :connected_accounts, :projects, :users, :roles, :backends],
+    do: "Settings"
+
   defp section_title(:tasks), do: "Task"
   defp section_title(_other), do: "Rail"
 

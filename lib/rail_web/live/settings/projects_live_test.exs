@@ -69,6 +69,10 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
 
   test "renders empty state when no projects exist", %{admin_conn: conn} do
     assert {:ok, view, html} = live(conn, ~p"/settings/projects")
+
+    # Settings is the destination lit in the rail, not the overview.
+    assert has_element?(view, "#nav-settings[data-active='true']")
+    refute has_element?(view, "#nav-overview[data-active='true']")
     assert html =~ "Projects"
     assert html =~ "Registered Projects"
     assert has_element?(view, "#new-project-button")

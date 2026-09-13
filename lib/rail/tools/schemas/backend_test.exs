@@ -18,6 +18,27 @@ defmodule Rail.Tools.Schemas.BackendTest do
     assert Ecto.Changeset.get_field(valid, :executable_path) == "/usr/bin/claude"
   end
 
+  test "changeset/2 trims the label and leaves a blank one unset" do
+    labelled = Backend.changeset(%Backend{}, %{name: :claude, executable_path: "/usr/bin/claude", label: " work "})
+    assert Ecto.Changeset.get_field(labelled, :label) == "work"
+
+    blank = Backend.changeset(%Backend{}, %{name: :claude, executable_path: "/usr/bin/claude", label: "  "})
+    assert Ecto.Changeset.get_field(blank, :label) == nil
+  end
+
+  test "config_dir/1 gives each backend its own directory under Rail's backends root" do
+    root = Application.fetch_env!(:rail, :backends_root)
+
+    assert Backend.config_dir(%Backend{id: "bkd_one"}) == Path.join(root, "bkd_one")
+    refute Backend.config_dir(%Backend{id: "bkd_one"}) == Backend.config_dir(%Backend{id: "bkd_two"})
+  end
+
+  test "env_var/1 names the variable each CLI reads its config directory from" do
+    assert Backend.env_var(:claude) == "CLAUDE_CONFIG_DIR"
+    assert Backend.env_var(:codex) == "CODEX_HOME"
+    assert Backend.env_var(:agy) == nil
+  end
+
   test "names/0 returns all supported backend atoms" do
     assert Backend.names() == [:claude, :agy, :codex]
   end
@@ -97,11 +118,10 @@ defmodule Rail.Tools.Schemas.BackendTest do
     assert %{usage: [%{count: ["must be greater than or equal to 0"]}]} = errors_on(negative_count)
   end
 
-  test "unique constraint enforced on name" do
-    attrs = %{name: :codex, executable_path: "/usr/bin/codex"}
+  test "one kind may be configured any number of times" do
+    attrs = %{name: :claude, executable_path: "/usr/bin/claude"}
     Repo.insert!(Backend.changeset(%Backend{}, attrs))
 
-    assert {:error, changeset} = Repo.insert(Backend.changeset(%Backend{}, attrs))
-    assert %{name: ["has already been taken"]} = errors_on(changeset)
+    assert {:ok, %Backend{}} = Repo.insert(Backend.changeset(%Backend{}, Map.put(attrs, :label, "work")))
   end
 end

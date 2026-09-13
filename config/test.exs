@@ -24,6 +24,7 @@ config :rail, RailWeb.Endpoint,
   server: false
 
 config :rail, :adopt_on_boot, false
+config :rail, :backends_root, Path.join(System.tmp_dir!(), "rail_test_backends")
 config :rail, :github, req_options: [plug: {Req.Test, Rail.GitHub}]
 config :rail, :linear, req_options: [plug: {Req.Test, Rail.Linear}]
 config :rail, :linear_oauth, req_options: [plug: {Req.Test, Rail.Linear}]

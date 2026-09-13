@@ -45,6 +45,31 @@ defmodule Rail.Tools.Actions.RefreshUsageTest do
     assert %Backend{executable_path: ^claude, status: :ready} = Repo.get!(Backend, claude_id)
   end
 
+  test "probes every account of a kind as the account in its own config directory" do
+    claude = System.find_executable("sh")
+
+    %Backend{id: home_id} = Repo.insert!(Backend.changeset(%Backend{}, %{name: :claude, executable_path: claude}))
+
+    %Backend{id: work_id} =
+      work = Repo.insert!(Backend.changeset(%Backend{}, %{name: :claude, executable_path: claude, label: "work"}))
+
+    work_dir = Backend.config_dir(work)
+
+    # Each CLI call answers as whichever account its environment points at.
+    stub(Tools, :run, fn _exe, _args, opts ->
+      email = if opts[:env]["CLAUDE_CONFIG_DIR"] == work_dir, do: "work@example.com", else: "home@example.com"
+      {~s({"loggedIn":true,"email":"#{email}"}), 0}
+    end)
+
+    stub(File, :read, fn _path -> {:ok, ~s({"cachedUsageUtilization":{}})} end)
+
+    assert {:ok,
+            [
+              %Backend{id: ^home_id, account_label: "home@example.com"},
+              %Backend{id: ^work_id, account_label: "work@example.com"}
+            ]} = Tools.refresh_usage()
+  end
+
   test "records that a configured backend's binary has gone missing" do
     Repo.insert!(Backend.changeset(%Backend{}, %{name: :claude, executable_path: "/non/existent/claude"}))
     Repo.insert!(Backend.changeset(%Backend{}, %{name: :agy, executable_path: "/non/existent/agy"}))
@@ -59,7 +84,10 @@ defmodule Rail.Tools.Actions.RefreshUsageTest do
             ]} = Tools.refresh_usage()
   end
 
-  test "skips a backend that has not been configured at all" do
+  test "skips a backend that has not been configured, or that nothing can probe" do
+    assert {:ok, []} = Tools.refresh_usage()
+
+    Repo.insert!(Backend.changeset(%Backend{}, %{name: :codex, executable_path: "/non/existent/codex"}))
     assert {:ok, []} = Tools.refresh_usage()
 
     Repo.insert!(Backend.changeset(%Backend{}, %{name: :claude, executable_path: "/non/existent/claude"}))

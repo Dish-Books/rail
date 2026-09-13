@@ -4,13 +4,19 @@ defmodule Rail.Tools.Claude do
   quota usage it caches, as the fields a `Rail.Tools.Schemas.Backend` records.
   """
 
+  import Rail.Tools.Utils.BackendEnv
+
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
 
   @timeout 20_000
+  # `claude -p` waits on a stdin that is not a terminal in case something is
+  # piped in, and System.cmd leaves stdin an open pipe; /dev/null says nothing is.
+  @without_stdin ~s(exec "$0" "$@" </dev/null)
 
   @doc """
-  Probes the CLI at the backend's configured path.
+  Probes the CLI at the backend's configured path, signed in to the account in
+  the backend's config directory.
 
   Returns the usage fields for `Backend.usage_changeset/2`. Every failure is
   reported as a status rather than raised, so one broken CLI cannot fail a
@@ -20,7 +26,7 @@ defmodule Rail.Tools.Claude do
     executable = backend.executable_path || ""
 
     if executable_file?(executable) do
-      check_auth(executable)
+      check_auth(backend, executable)
     else
       not_configured_result(executable)
     end
@@ -36,8 +42,8 @@ defmodule Rail.Tools.Claude do
 
   defp executable_file?(_other), do: false
 
-  defp check_auth(executable) do
-    case Tools.run(executable, ["auth", "status", "--json"], timeout: @timeout) do
+  defp check_auth(backend, executable) do
+    case Tools.run(executable, ["auth", "status", "--json"], timeout: @timeout, env: backend_env(backend)) do
       {:error, :timeout} ->
         unavailable_result("Auth status timed out after 20s")
 
@@ -48,17 +54,17 @@ defmodule Rail.Tools.Claude do
         unavailable_result("Auth status exited with code #{exit_code}")
 
       {stdout, 0} when is_binary(stdout) ->
-        handle_auth_success(executable, stdout)
+        handle_auth_success(backend, executable, stdout)
     end
   end
 
-  defp handle_auth_success(executable, auth_stdout) do
+  defp handle_auth_success(backend, executable, auth_stdout) do
     case Jason.decode(auth_stdout) do
       {:ok, %{"loggedIn" => true} = auth_data} ->
         email = auth_data["email"]
         subscription = auth_data["subscriptionType"]
-        refresh_quota_cache(executable)
-        read_config(email, subscription)
+        refresh_quota_cache(backend, executable)
+        read_config(backend, email, subscription)
 
       {:ok, auth_data} ->
         signed_out_result(auth_data["email"], auth_data["subscriptionType"])
@@ -70,47 +76,35 @@ defmodule Rail.Tools.Claude do
 
   # The CLI only writes usage into its config as a side effect of being asked
   # for it, so the cache has to be warmed before the config is worth reading.
-  defp refresh_quota_cache(executable) do
+  defp refresh_quota_cache(backend, executable) do
     temp_dir = Path.join(System.tmp_dir!(), "rail_claude_usage")
     File.mkdir_p(temp_dir)
 
     try do
-      Tools.run(executable, ["-p", "/usage", "--output-format", "json"], timeout: @timeout, cd: temp_dir)
+      Tools.run("/bin/sh", ["-c", @without_stdin, executable, "-p", "/usage", "--output-format", "json"],
+        timeout: @timeout,
+        cd: temp_dir,
+        env: backend_env(backend),
+        stderr_to_stdout: true
+      )
     rescue
       _error -> :ok
     end
   end
 
-  defp read_config(email, subscription) do
-    case config_path() do
-      {:ok, config_path} ->
-        case File.read(config_path) do
-          {:ok, config_content} ->
-            parse_config(config_content, email, subscription)
+  defp read_config(backend, email, subscription) do
+    config_path = config_path(backend)
 
-          {:error, error} ->
-            unavailable_result(
-              "Failed to read Claude config at '#{config_path}': #{inspect(error)}",
-              email,
-              subscription
-            )
-        end
+    case File.read(config_path) do
+      {:ok, config_content} ->
+        parse_config(config_content, email, subscription)
 
-      {:error, reason} ->
-        unavailable_result(reason, email, subscription)
+      {:error, error} ->
+        unavailable_result("Failed to read Claude config at '#{config_path}': #{inspect(error)}", email, subscription)
     end
   end
 
-  defp config_path do
-    claude_dir = System.get_env("CLAUDE_CONFIG_DIR")
-    home_dir = System.get_env("HOME")
-
-    cond do
-      is_binary(claude_dir) and claude_dir != "" -> {:ok, Path.join(claude_dir, ".claude.json")}
-      is_binary(home_dir) and home_dir != "" -> {:ok, Path.join(home_dir, ".claude.json")}
-      true -> {:error, "Could not determine user home or config directory"}
-    end
-  end
+  defp config_path(backend), do: Path.join(Backend.config_dir(backend), ".claude.json")
 
   defp parse_config(config_content, email, subscription) do
     case Jason.decode(config_content) do
@@ -178,7 +172,7 @@ defmodule Rail.Tools.Claude do
       cond do
         is_binary(model_display) and model_display != "" -> "Weekly · #{model_display}"
         kind == "session" -> "Session"
-        kind == "weekly_all" -> "Weekly (all models)"
+        kind == "weekly_all" -> "Weekly"
         is_binary(kind) and kind != "" -> kind
         true -> "Window"
       end

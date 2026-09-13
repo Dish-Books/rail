@@ -12,6 +12,7 @@ defmodule RailWeb.Settings.ProjectsLive do
     socket =
       socket
       |> assign(:page_title, "Projects")
+      |> assign(:current_section, :projects)
       |> assign(:projects, projects)
       |> assign(:show_modal, nil)
       |> assign(:modal_title, nil)
@@ -39,7 +40,7 @@ defmodule RailWeb.Settings.ProjectsLive do
       theme={@theme}
       show_project_switcher={@show_project_switcher}
     >
-      <div class="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="projects-settings">
+      <div class="max-w-[90rem] mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="projects-settings">
         <div>
           <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             Projects

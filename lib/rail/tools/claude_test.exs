@@ -1,7 +1,5 @@
 defmodule Rail.Tools.ClaudeTest do
-  # System env is process-global, so the config path tests cannot run alongside
-  # anything else that reads it.
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
   alias Rail.Tools
   alias Rail.Tools.Claude
@@ -12,7 +10,7 @@ defmodule Rail.Tools.ClaudeTest do
   setup do
     # A real executable, so the path check is the real one; what it would have
     # run is what gets stubbed.
-    %{backend: %Backend{name: :claude, executable_path: System.find_executable("sh")}}
+    %{backend: %Backend{id: "bkd_claude_probe", name: :claude, executable_path: System.find_executable("sh")}}
   end
 
   test "reports not_configured unless the path is a runnable file" do
@@ -81,7 +79,9 @@ defmodule Rail.Tools.ClaudeTest do
     stub(File, :read, fn _path -> {:ok, ~s({"cachedUsageUtilization":{}})} end)
 
     assert %{status: :ready} = Claude.probe(backend)
-    assert_received {:warmed, ["-p", "/usage", "--output-format", "json"]}
+    # Run with no stdin, so the CLI does not sit waiting for input first.
+    assert_received {:warmed,
+                     ["-c", ~s(exec "$0" "$@" </dev/null), "/bin/sh" <> _, "-p", "/usage", "--output-format", "json"]}
 
     # A warm up that blows up must not take the probe down with it.
     stub(Tools, :run, fn _exe, args, _opts ->
@@ -115,33 +115,23 @@ defmodule Rail.Tools.ClaudeTest do
            } = Claude.probe(backend)
   end
 
-  test "reads the config from CLAUDE_CONFIG_DIR, then HOME, and gives up without either", %{backend: backend} do
-    claude_dir = System.get_env("CLAUDE_CONFIG_DIR")
-    home = System.get_env("HOME")
+  test "asks the account in the backend's config directory, and reads its config there", %{backend: backend} do
+    config_dir = Backend.config_dir(backend)
+    config_path = Path.join(config_dir, ".claude.json")
+    test_pid = self()
 
-    on_exit(fn ->
-      if claude_dir, do: System.put_env("CLAUDE_CONFIG_DIR", claude_dir), else: System.delete_env("CLAUDE_CONFIG_DIR")
-      if home, do: System.put_env("HOME", home), else: System.delete_env("HOME")
+    stub(Tools, :run, fn _exe, args, opts ->
+      send(test_pid, {:ran, args, opts[:env]})
+      {@auth_ok, 0}
     end)
 
-    stub(Tools, :run, fn _exe, _args, _opts -> {@auth_ok, 0} end)
-    test_pid = self()
     stub(File, :read, fn path -> send(test_pid, {:read, path}) && {:ok, "{}"} end)
 
-    System.put_env("CLAUDE_CONFIG_DIR", "/cfg")
     Claude.probe(backend)
-    assert_received {:read, "/cfg/.claude.json"}
 
-    System.put_env("CLAUDE_CONFIG_DIR", "")
-    System.put_env("HOME", "/home/alice")
-    Claude.probe(backend)
-    assert_received {:read, "/home/alice/.claude.json"}
-
-    System.delete_env("CLAUDE_CONFIG_DIR")
-    System.put_env("HOME", "")
-
-    assert %{status: :unavailable, unavailable_reason: "Could not determine user home or config directory"} =
-             Claude.probe(backend)
+    assert_received {:ran, ["auth", "status", "--json"], %{"CLAUDE_CONFIG_DIR" => ^config_dir}}
+    assert_received {:ran, ["-c", _script, _claude, "-p", "/usage" | _rest], %{"CLAUDE_CONFIG_DIR" => ^config_dir}}
+    assert_received {:read, ^config_path}
   end
 
   test "reports ready with the cached usage grouped and labelled", %{backend: backend} do
@@ -176,11 +166,11 @@ defmodule Rail.Tools.ClaudeTest do
            } = session
 
     assert %{name: "Weekly", count: 2, details: %{"windows" => weekly_windows}} = weekly
-    assert [%{"label" => "Weekly (all models)"}, %{"label" => "Weekly · Sonnet 3.7"}] = weekly_windows
+    assert [%{"label" => "Weekly"}, %{"label" => "Weekly · Sonnet 3.7"}] = weekly_windows
 
     assert %{name: "Opus", details: %{"windows" => [%{"label" => "Window", "remaining_percent" => nil}]}} = opus
     assert %{name: "General", count: 2, details: %{"windows" => general_windows}} = general
-    assert [%{"label" => "custom_kind"}, %{"label" => "Weekly (all models)"}] = general_windows
+    assert [%{"label" => "custom_kind"}, %{"label" => "Weekly"}] = general_windows
   end
 
   test "falls back to now when the config records no fetch time and limits are not a list", %{backend: backend} do

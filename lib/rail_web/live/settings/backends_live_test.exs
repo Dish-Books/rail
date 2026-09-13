@@ -38,7 +38,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     assert {:error, {:redirect, %{to: "/"}}} = live(regular_conn, ~p"/settings/backends")
   end
 
-  test "renders a card per backend, unconfigured by default", %{conn: conn} do
+  test "starts empty and adds an unsaved card per kind", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_backends_live_3",
@@ -54,19 +54,26 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     assert has_element?(view, "#backends-settings")
     assert has_element?(view, "#backends-title", "Backends")
     assert has_element?(view, "#tab-backends")
+    assert has_element?(view, "#no-backends")
 
-    for name <- Backend.names() do
-      assert has_element?(view, "#backend-card-#{name}")
-      assert has_element?(view, "#executable-path-#{name}")
-      assert has_element?(view, "#no-models-#{name}")
-      assert has_element?(view, "#status-badge-#{name}", "Not Configured")
-    end
+    for name <- Backend.names(), do: assert(has_element?(view, "#add-backend-#{name}"))
 
-    assert has_element?(view, "#backend-name-claude", "Claude Code")
-    assert has_element?(view, "#backend-name-agy", "Antigravity CLI")
+    view |> element("#add-backend-claude") |> render_click()
+    view |> element("#add-backend-agy") |> render_click()
+    view |> element("#add-backend-codex") |> render_click()
+
+    refute has_element?(view, "#no-backends")
+    assert has_element?(view, "[id^='backend-name-new-']", "Claude Code")
+    assert has_element?(view, "[id^='backend-name-new-']", "Antigravity CLI")
+    assert has_element?(view, "[id^='backend-name-new-']", "Codex")
+    assert has_element?(view, "[id^='account-label-new-']", "Not saved yet")
+    refute has_element?(view, "[id^='status-badge-new-']")
+
+    # A backend is signed in once it is saved, so a draft offers no sign-in.
+    refute has_element?(view, "[id^='login-new-']")
   end
 
-  test "saves an executable path and models, then renders them back", %{conn: conn} do
+  test "saves a label, executable path and models, then renders them back", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_backends_live_4",
@@ -79,30 +86,230 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
-    view |> element("#add-model-claude") |> render_click()
-    assert has_element?(view, "#model-row-claude-0")
+    view |> element("#add-backend-claude") |> render_click()
+    view |> element("[id^='add-model-new-']") |> render_click()
+    refute has_element?(view, "[id^='no-models-new-']")
+
+    # An id is what makes a model; a row without one adds nothing.
+    view |> element("[id^='confirm-add-model-new-']") |> render_click()
+    refute has_element?(view, "[id^='model-row-new-']")
 
     view
-    |> element("#backend-form-claude")
+    |> element("[id^='backend-form-new-']")
+    |> render_change(%{"new_model" => %{"id" => " claude-opus-5 ", "display_name" => "Opus 5"}})
+
+    view |> element("[id^='confirm-add-model-new-']") |> render_click()
+    assert has_element?(view, "[id^='model-row-new-'][id$='-0']", "Opus 5")
+    refute has_element?(view, "[id^='new-model-new-']")
+
+    view
+    |> element("[id^='backend-form-new-']")
     |> render_submit(%{
-      "backend" => "claude",
+      "label" => " work ",
       "executable_path" => "  /usr/local/bin/claude  ",
       "models" => %{"0" => %{"id" => "claude-opus-5", "display_name" => "Opus 5"}}
     })
 
-    assert has_element?(view, "#saved-claude", "Saved")
+    assert [
+             %Backend{
+               id: id,
+               name: :claude,
+               label: "work",
+               executable_path: "/usr/local/bin/claude",
+               models: [%{id: "claude-opus-5", display_name: "Opus 5"}]
+             }
+           ] = Tools.list_backends()
 
-    assert {:ok,
-            %{
-              executable_path: "/usr/local/bin/claude",
-              models: [%{id: "claude-opus-5", display_name: "Opus 5"}]
-            }} = Tools.get_backend(:claude)
+    assert has_element?(view, "#saved-#{id}", "Saved")
+    refute has_element?(view, "[id^='backend-card-new-']")
 
     # The saved values are rendered back on reload
-    assert {:ok, reloaded, html} = live(authed_conn, ~p"/settings/backends")
-    assert html =~ "/usr/local/bin/claude"
-    assert has_element?(reloaded, "#model-id-claude-0")
-    refute has_element?(reloaded, "#no-models-claude")
+    assert {:ok, reloaded, _html} = live(authed_conn, ~p"/settings/backends")
+    assert has_element?(reloaded, "#backend-label-#{id}", "work")
+
+    # Saved backends start folded; their settings open from the header.
+    refute has_element?(reloaded, "#backend-body-#{id}")
+    reloaded |> element("#backend-header-#{id}") |> render_click()
+    assert has_element?(reloaded, "#executable-path-#{id}[value='/usr/local/bin/claude']")
+    assert has_element?(reloaded, "#model-id-#{id}-0")
+    refute has_element?(reloaded, "#no-models-#{id}")
+  end
+
+  test "adds a second backend of a kind, told apart by its label", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_13",
+        login: "backends_live_user_13",
+        email: "backends_live_user_13@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+
+    {:ok, _default} = Tools.create_backend(Scope.for_system(), %{name: :claude, executable_path: "/bin/claude"})
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
+
+    view |> element("#add-backend-claude") |> render_click()
+
+    view
+    |> element("[id^='backend-form-new-']")
+    |> render_submit(%{"label" => "personal", "executable_path" => "/bin/claude", "models" => %{}})
+
+    assert [%Backend{label: nil}, %Backend{id: id, name: :claude, label: "personal"}] = Tools.list_backends()
+    assert has_element?(view, "#backend-label-#{id}", "personal")
+  end
+
+  test "signs a Claude backend in from its card", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_14",
+        login: "backends_live_user_14",
+        email: "backends_live_user_14@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+
+    {:ok, backend} = Tools.create_backend(Scope.for_system(), %{name: :claude, executable_path: "/bin/claude"})
+    {:ok, agy} = Tools.create_backend(Scope.for_system(), %{name: :agy, executable_path: "/bin/agy"})
+
+    session = spawn(fn -> Process.sleep(:infinity) end)
+    url = "https://claude.com/cai/oauth/authorize?code=true&state=abc"
+    test_pid = self()
+
+    expect(Tools, :start_backend_login, fn _scope, %Backend{id: id}, owner ->
+      send(test_pid, {:owner, owner})
+      ^id = backend.id
+      {:ok, %{session: session, url: url}}
+    end)
+
+    assert {:ok, %{pid: view_pid} = view, _html} = live(authed_conn, ~p"/settings/backends")
+
+    # Only a CLI Rail can sign in gets the controls.
+    refute has_element?(view, "#login-#{agy.id}")
+
+    view |> element("#start-login-#{backend.id}") |> render_click()
+    render_async(view)
+
+    # The session belongs to the page, so leaving it ends the sign-in.
+    assert_received {:owner, ^view_pid}
+    assert has_element?(view, "#login-url-#{backend.id}[href='#{url}']")
+
+    # Signing in is followed by reading the account's usage, which is what the
+    # card then shows.
+    expect(Tools, :submit_backend_login_code, fn _scope, ^session, "the-code" -> :ok end)
+
+    expect(Tools, :refresh_usage, fn ->
+      {:ok, [Repo.update!(Backend.usage_changeset(backend, %{status: :ready, account_label: "me@example.com"}))]}
+    end)
+
+    view |> element("#login-code-form-#{backend.id}") |> render_change(%{"code" => "the-co"})
+    assert has_element?(view, "#login-code-#{backend.id}[value='the-co']")
+
+    view |> element("#login-code-form-#{backend.id}") |> render_submit(%{"code" => "the-code"})
+    assert has_element?(view, "#submit-login-code-#{backend.id}", "Signing in")
+    render_async(view)
+
+    refute has_element?(view, "#login-code-form-#{backend.id}")
+    assert has_element?(view, "#account-label-#{backend.id}", "me@example.com")
+    assert has_element?(view, "#logout-#{backend.id}")
+  end
+
+  test "says why a sign-in failed, lets it be retried, and cancels it", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_15",
+        login: "backends_live_user_15",
+        email: "backends_live_user_15@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+
+    {:ok, backend} = Tools.create_backend(Scope.for_system(), %{name: :claude, executable_path: "/bin/claude"})
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
+
+    failures = [
+      {{:error, :expired}, "Sign-in expired"},
+      {{:error, :login_exited}, "Sign-in ended before it finished"},
+      {{:error, :not_authorized}, "not allowed"},
+      {{:error, :timeout}, "Sign-in failed: :timeout"},
+      {:raise, "Sign-in crashed"}
+    ]
+
+    for {result, message} <- failures do
+      expect(Tools, :start_backend_login, fn _scope, _backend, _owner ->
+        if result == :raise, do: raise("boom"), else: result
+      end)
+
+      view |> element("#start-login-#{backend.id}") |> render_click()
+      render_async(view)
+
+      assert has_element?(view, "#login-error-#{backend.id}", message)
+    end
+
+    session = spawn(fn -> Process.sleep(:infinity) end)
+
+    stub(Tools, :start_backend_login, fn _scope, _backend, _owner ->
+      {:ok, %{session: session, url: "https://claude.com/cai/oauth/authorize?x=1"}}
+    end)
+
+    view |> element("#start-login-#{backend.id}") |> render_click()
+    render_async(view)
+    refute has_element?(view, "#login-error-#{backend.id}")
+
+    # A rejected code says so, and a fresh sign-in can be started.
+    expect(Tools, :submit_backend_login_code, fn _scope, ^session, "bad" -> {:error, "Invalid code"} end)
+    view |> element("#login-code-form-#{backend.id}") |> render_submit(%{"code" => "bad"})
+    render_async(view)
+
+    assert has_element?(view, "#login-error-#{backend.id}", "Sign-in failed: Invalid code")
+    assert has_element?(view, "#start-login-#{backend.id}")
+
+    view |> element("#start-login-#{backend.id}") |> render_click()
+    render_async(view)
+
+    expect(Tools, :cancel_backend_login, fn _scope, ^session -> :ok end)
+    view |> element("#cancel-login-#{backend.id}") |> render_click()
+
+    refute has_element?(view, "#login-code-form-#{backend.id}")
+    assert has_element?(view, "#start-login-#{backend.id}")
+  end
+
+  test "signs a Claude backend out", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_16",
+        login: "backends_live_user_16",
+        email: "backends_live_user_16@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+
+    {:ok, backend} = Tools.create_backend(Scope.for_system(), %{name: :claude, executable_path: "/bin/claude"})
+    backend = Repo.update!(Backend.usage_changeset(backend, %{status: :ready}))
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
+    view |> element("#backend-header-#{backend.id}") |> render_click()
+
+    expect(Tools, :logout_backend, fn _scope, %Backend{} -> {:error, "Not logged in"} end)
+    view |> element("#logout-#{backend.id}") |> render_click()
+    assert has_element?(view, "#login-error-#{backend.id}", "Not logged in")
+
+    # The card changes as soon as the CLI signs out, without waiting on a refresh.
+    expect(Tools, :logout_backend, fn _scope, %Backend{} ->
+      {:ok, Repo.update!(Backend.usage_changeset(backend, %{status: :signed_out}))}
+    end)
+
+    view |> element("#logout-#{backend.id}") |> render_click()
+
+    refute has_element?(view, "#login-error-#{backend.id}")
+    assert has_element?(view, "#quotas-unavailable-#{backend.id}", "Quotas unavailable until sign-in")
+    assert has_element?(view, "#account-label-#{backend.id}", "Not signed in")
+    assert has_element?(view, "#start-login-#{backend.id}")
   end
 
   test "an empty display name falls back to the model id", %{conn: conn} do
@@ -118,15 +325,16 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
+    view |> element("#add-backend-agy") |> render_click()
+
     view
-    |> element("#backend-form-agy")
+    |> element("[id^='backend-form-new-']")
     |> render_submit(%{
-      "backend" => "agy",
       "executable_path" => "/usr/local/bin/agy",
       "models" => %{"0" => %{"id" => "gemini-3.8-flash-high", "display_name" => ""}}
     })
 
-    assert {:ok, %{models: [%{display_name: "gemini-3.8-flash-high"}]}} = Tools.get_backend(:agy)
+    assert [%{name: :agy, models: [%{display_name: "gemini-3.8-flash-high"}]}] = Tools.list_backends()
   end
 
   test "updates an existing backend rather than inserting a second row", %{conn: conn} do
@@ -140,7 +348,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     authed_conn = log_in_user(conn, user)
 
-    {:ok, _backend} =
+    {:ok, backend} =
       Tools.create_backend(Scope.for_system(), %{
         name: :claude,
         executable_path: "/old/claude",
@@ -148,17 +356,17 @@ defmodule RailWeb.Settings.BackendsLiveTest do
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
+    view |> element("#backend-header-#{backend.id}") |> render_click()
 
     view
-    |> element("#backend-form-claude")
+    |> element("#backend-form-#{backend.id}")
     |> render_submit(%{
-      "backend" => "claude",
       "executable_path" => "/new/claude",
       "models" => %{"0" => %{"id" => "new-model", "display_name" => "New"}}
     })
 
     assert {:ok, %{executable_path: "/new/claude", models: [%{id: "new-model"}]}} =
-             Tools.get_backend(:claude)
+             Tools.get_backend(backend.id)
 
     assert length(Tools.list_backends()) == 1
   end
@@ -174,7 +382,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     authed_conn = log_in_user(conn, user)
 
-    {:ok, _backend} =
+    {:ok, backend} =
       Tools.create_backend(Scope.for_system(), %{
         name: :claude,
         executable_path: "/usr/local/bin/claude",
@@ -182,19 +390,19 @@ defmodule RailWeb.Settings.BackendsLiveTest do
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
+    view |> element("#backend-header-#{backend.id}") |> render_click()
 
-    view |> element("#remove-model-claude-1") |> render_click()
-    refute has_element?(view, "#model-row-claude-1")
+    view |> element("#remove-model-#{backend.id}-1") |> render_click()
+    refute has_element?(view, "#model-row-#{backend.id}-1")
 
     view
-    |> element("#backend-form-claude")
+    |> element("#backend-form-#{backend.id}")
     |> render_submit(%{
-      "backend" => "claude",
       "executable_path" => "/usr/local/bin/claude",
       "models" => %{"0" => %{"id" => "keep-me", "display_name" => "Keep"}}
     })
 
-    assert {:ok, %{models: [%{id: "keep-me"}]}} = Tools.get_backend(:claude)
+    assert {:ok, %{models: [%{id: "keep-me"}]}} = Tools.get_backend(backend.id)
   end
 
   test "surfaces a validation error when the executable path is blank", %{conn: conn} do
@@ -210,12 +418,14 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
+    view |> element("#add-backend-claude") |> render_click()
+
     view
-    |> element("#backend-form-claude")
-    |> render_submit(%{"backend" => "claude", "executable_path" => "", "models" => %{}})
+    |> element("[id^='backend-form-new-']")
+    |> render_submit(%{"executable_path" => "", "models" => %{}})
 
     assert has_element?(view, "#backends-save-error", "executable_path")
-    assert {:error, :backend_not_found} = Tools.get_backend(:claude)
+    assert [] = Tools.list_backends()
   end
 
   test "renders account status, quota windows, and banners", %{conn: conn} do
@@ -236,60 +446,64 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     reset_tomorrow =
       DateTime.to_iso8601(DateTime.new!(Date.add(DateTime.to_date(now), 1), ~T[09:00:00], "Etc/UTC"))
 
-    Repo.insert!(
-      Backend.usage_changeset(%Backend{}, %{
-        name: :claude,
-        status: :ready,
-        account_label: "alice@example.com",
-        account_detail: "max",
-        fetched_at: DateTime.shift(now, minute: -2),
-        usage: [
-          %{
-            name: "Weekly Limits",
-            count: 3,
-            details: %{
-              "windows" => [
-                %{"label" => "Claude Sonnet", "remaining_percent" => 100.0, "resets_at" => reset_today},
-                %{"label" => "Claude Haiku", "remaining_percent" => 25.5, "resets_at" => reset_tomorrow},
-                %{
-                  "label" => "Unmeasured Window",
-                  "remaining_percent" => nil,
-                  "resets_at" => nil,
-                  "unmeasured_reason" => "Limit unmeasured"
-                }
-              ]
+    claude =
+      Repo.insert!(
+        Backend.usage_changeset(%Backend{}, %{
+          name: :claude,
+          status: :ready,
+          account_label: "alice@example.com",
+          account_detail: "max",
+          fetched_at: DateTime.shift(now, minute: -2),
+          usage: [
+            %{
+              name: "Weekly Limits",
+              count: 3,
+              details: %{
+                "windows" => [
+                  %{"label" => "Claude Sonnet", "remaining_percent" => 100.0, "resets_at" => reset_today},
+                  %{"label" => "Claude Haiku", "remaining_percent" => 25.5, "resets_at" => reset_tomorrow},
+                  %{
+                    "label" => "Unmeasured Window",
+                    "remaining_percent" => nil,
+                    "resets_at" => nil,
+                    "unmeasured_reason" => "Limit unmeasured"
+                  }
+                ]
+              }
             }
-          }
-        ]
-      })
-    )
+          ]
+        })
+      )
 
-    Repo.insert!(
-      Backend.usage_changeset(%Backend{}, %{
-        name: :agy,
-        status: :not_configured,
-        unavailable_reason: "Executable not found at '/bin/agy'"
-      })
-    )
+    agy =
+      Repo.insert!(
+        Backend.usage_changeset(%Backend{}, %{
+          name: :agy,
+          status: :not_configured,
+          unavailable_reason: "Executable not found at '/bin/agy'"
+        })
+      )
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
-    assert has_element?(view, "#account-label-claude", "alice@example.com")
-    assert has_element?(view, "#account-detail-claude", "MAX")
-    assert has_element?(view, "#status-badge-claude", "Active")
-    assert has_element?(view, "#fetched-at-claude", "read 2m ago")
+    assert has_element?(view, "#account-label-#{claude.id}", "alice@example.com")
+    assert has_element?(view, "#account-detail-#{claude.id}", "max")
+    assert has_element?(view, "#status-badge-#{claude.id}", "Active")
+    assert has_element?(view, "#quotas-read-at", "quotas read 2m ago")
 
-    assert has_element?(view, "#group-name-claude-0", "Weekly Limits")
-    assert has_element?(view, "#window-remaining-claude-0-0", "100% remaining")
-    assert has_element?(view, "#window-reset-claude-0-0", "Resets today")
-    assert has_element?(view, "#progress-bar-claude-0-0")
-    assert has_element?(view, "#window-remaining-claude-0-1", "25.5% remaining")
-    assert has_element?(view, "#window-reset-claude-0-1", "Resets tomorrow")
-    assert has_element?(view, "#window-remaining-claude-0-2", "Limit unmeasured")
-    assert has_element?(view, "#window-reset-claude-0-2", "Reset time unknown")
-    refute has_element?(view, "#progress-bar-claude-0-2")
+    assert has_element?(view, "#group-name-#{claude.id}-0", "Weekly Limits")
+    assert has_element?(view, "#window-remaining-#{claude.id}-0-0", "100%")
+    assert has_element?(view, "#window-reset-#{claude.id}-0-0", "resets today")
+    assert has_element?(view, "#progress-bar-#{claude.id}-0-0")
+    assert has_element?(view, "#window-remaining-#{claude.id}-0-1", "25.5%")
+    assert has_element?(view, "#window-reset-#{claude.id}-0-1", "resets tomorrow")
+    assert has_element?(view, "#window-remaining-#{claude.id}-0-2", "—")
+    assert has_element?(view, "#window-reset-#{claude.id}-0-2", "reset time unknown")
+    refute has_element?(view, "#progress-bar-#{claude.id}-0-2")
 
-    assert has_element?(view, "#banner-agy", "Executable not found at '/bin/agy'")
+    assert has_element?(view, "#status-badge-#{agy.id}", "Not configured")
+    view |> element("#backend-header-#{agy.id}") |> render_click()
+    assert has_element?(view, "#banner-#{agy.id}", "Executable not found at '/bin/agy'")
   end
 
   test "renders signed_out, unavailable, and empty quota window states", %{conn: conn} do
@@ -303,35 +517,46 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     authed_conn = log_in_user(conn, user)
 
-    Repo.insert!(
-      Backend.usage_changeset(%Backend{}, %{
-        name: :claude,
-        status: :signed_out,
-        account_label: "signed_out@example.com",
-        unavailable_reason: "CLI is signed out."
-      })
-    )
+    claude =
+      Repo.insert!(
+        Backend.usage_changeset(%Backend{}, %{
+          name: :claude,
+          status: :signed_out,
+          account_label: "signed_out@example.com",
+          unavailable_reason: "CLI is signed out."
+        })
+      )
 
-    Repo.insert!(
-      Backend.usage_changeset(%Backend{}, %{
-        name: :agy,
-        status: :unavailable
-      })
-    )
+    agy =
+      Repo.insert!(
+        Backend.usage_changeset(%Backend{}, %{
+          name: :agy,
+          status: :unavailable
+        })
+      )
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
-    assert has_element?(view, "#status-badge-claude", "Signed Out")
-    assert has_element?(view, "#banner-claude", "CLI is signed out.")
-    assert has_element?(view, "#status-badge-agy", "Unavailable")
-    assert has_element?(view, "#banner-agy", "Failed to fetch usage data")
+    # Signed out is said in the header rather than as a badge or a banner.
+    refute has_element?(view, "#status-badge-#{claude.id}")
+    assert has_element?(view, "#quotas-unavailable-#{claude.id}")
+    view |> element("#backend-header-#{claude.id}") |> render_click()
+    refute has_element?(view, "#banner-#{claude.id}")
+
+    assert has_element?(view, "#status-badge-#{agy.id}", "Unavailable")
+    view |> element("#backend-header-#{agy.id}") |> render_click()
+    assert has_element?(view, "#banner-#{agy.id}", "Failed to fetch usage data")
+
+    # Folding a card hides its settings again.
+    view |> element("#backend-header-#{agy.id}") |> render_click()
+    refute has_element?(view, "#backend-body-#{agy.id}")
 
     # The view re-reads after a refresh, so the probe result is what lands in the row.
-    Repo.update!(Backend.usage_changeset(Repo.get_by!(Backend, name: :claude), %{status: :ready, usage: []}))
+    Repo.update!(Backend.usage_changeset(claude, %{status: :ready, usage: []}))
     expect(Tools, :refresh_usage, fn -> {:ok, []} end)
     view |> element("#refresh-quotas-button") |> render_click()
 
-    assert has_element?(view, "#no-quota-windows-claude", "No quota windows reported")
+    assert has_element?(view, "#no-quota-windows-#{claude.id}", "No quota windows reported")
   end
 
   test "handles refresh_quotas, pubsub updates, ticks, and async failure", %{conn: conn} do
@@ -352,37 +577,38 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     view |> element("#refresh-quotas-button") |> render_click()
     render_click(element(view, "#refresh-quotas-button"))
 
-    Repo.insert!(
-      Backend.usage_changeset(%Backend{}, %{
-        name: :claude,
-        status: :ready,
-        account_label: "pubsub@example.com",
-        fetched_at: now,
-        usage: [
-          %{
-            name: "Session Limits",
-            count: 1,
-            details: %{
-              "windows" => [
-                %{
-                  "label" => "Default Model",
-                  "remaining_percent" => 75.0,
-                  "resets_at" => DateTime.to_unix(DateTime.shift(now, hour: 1), :second)
-                }
-              ]
+    claude =
+      Repo.insert!(
+        Backend.usage_changeset(%Backend{}, %{
+          name: :claude,
+          status: :ready,
+          account_label: "pubsub@example.com",
+          fetched_at: now,
+          usage: [
+            %{
+              name: "Session Limits",
+              count: 1,
+              details: %{
+                "windows" => [
+                  %{
+                    "label" => "Default Model",
+                    "remaining_percent" => 75.0,
+                    "resets_at" => DateTime.to_unix(DateTime.shift(now, hour: 1), :second)
+                  }
+                ]
+              }
             }
-          }
-        ]
-      })
-    )
+          ]
+        })
+      )
 
     # Refreshing is what pulls new usage; the tick only moves the clock.
     expect(Tools, :refresh_usage, fn -> {:ok, []} end)
     view |> element("#refresh-quotas-button") |> render_click()
 
-    assert has_element?(view, "#account-label-claude", "pubsub@example.com")
-    assert has_element?(view, "#window-remaining-claude-0-0", "75% remaining")
-    assert has_element?(view, "#fetched-at-claude", "read just now")
+    assert has_element?(view, "#account-label-#{claude.id}", "pubsub@example.com")
+    assert has_element?(view, "#window-remaining-#{claude.id}-0-0", "75%")
+    assert has_element?(view, "#quotas-read-at", "quotas read just now")
 
     send(view.pid, :tick)
     assert has_element?(view, "#backends-settings")
@@ -403,29 +629,34 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     authed_conn = log_in_user(conn, user)
 
-    Repo.insert!(Backend.usage_changeset(%Backend{}, %{name: :codex, status: :signed_out}))
+    codex = Repo.insert!(Backend.usage_changeset(%Backend{}, %{name: :codex, status: :signed_out}))
+    {:ok, claude} = Tools.create_backend(Scope.for_system(), %{name: :claude, executable_path: "/bin/claude"})
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
     send(view.pid, :unrelated_pipeline_event)
-    assert has_element?(view, "#banner-codex", "CLI is signed out. Log in via the command line")
+    assert has_element?(view, "#quotas-unavailable-#{codex.id}")
+
+    # Only Claude Code can be signed in from here.
+    refute has_element?(view, "#start-login-#{codex.id}")
+
+    view |> element("#backend-header-#{claude.id}") |> render_click()
 
     view
-    |> element("#backend-form-claude")
+    |> element("#backend-form-#{claude.id}")
     |> render_change(%{
-      "backend" => "claude",
       "executable_path" => "/draft/claude",
       "models" => %{"0" => %{"id" => "draft-model"}}
     })
 
-    assert has_element?(view, "#executable-path-claude[value='/draft/claude']")
-    assert has_element?(view, "#model-id-claude-0[value='draft-model']")
+    assert has_element?(view, "#executable-path-#{claude.id}[value='/draft/claude']")
+    assert has_element?(view, "#model-id-#{claude.id}-0[value='draft-model']")
 
-    expect(Tools, :create_backend, fn _scope, _attrs -> {:error, :not_authorized} end)
+    expect(Tools, :update_backend, fn _scope, _backend, _attrs -> {:error, :not_authorized} end)
 
     view
-    |> element("#backend-form-claude")
-    |> render_submit(%{"backend" => "claude", "executable_path" => "/usr/local/bin/claude"})
+    |> element("#backend-form-#{claude.id}")
+    |> render_submit(%{"executable_path" => "/usr/local/bin/claude"})
 
     assert has_element?(view, "#backends-save-error", "You are not allowed to change backend settings.")
   end
@@ -441,31 +672,32 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     authed_conn = log_in_user(conn, user)
 
-    Repo.insert!(
-      Backend.usage_changeset(%Backend{}, %{
-        name: :claude,
-        status: :ready,
-        usage: [
-          %{
-            name: "Limits",
-            details: %{
-              "windows" => [
-                %{"label" => "Out Of Range", "remaining_percent" => 50.0, "resets_at" => 100_000_000_000_000_000_000},
-                %{"label" => "Boolean", "remaining_percent" => 50.0, "resets_at" => true}
-              ]
-            }
-          },
-          %{name: "Nil Details", details: nil}
-        ]
-      })
-    )
+    claude =
+      Repo.insert!(
+        Backend.usage_changeset(%Backend{}, %{
+          name: :claude,
+          status: :ready,
+          usage: [
+            %{
+              name: "Limits",
+              details: %{
+                "windows" => [
+                  %{"label" => "Out Of Range", "remaining_percent" => 50.0, "resets_at" => 100_000_000_000_000_000_000},
+                  %{"label" => "Boolean", "remaining_percent" => 50.0, "resets_at" => true}
+                ]
+              }
+            },
+            %{name: "Nil Details", details: nil}
+          ]
+        })
+      )
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
-    assert has_element?(view, "#window-reset-claude-0-0", "Reset time unknown")
-    assert has_element?(view, "#window-reset-claude-0-1", "Reset time unknown")
-    assert has_element?(view, "#group-name-claude-1", "Nil Details")
-    refute has_element?(view, "#window-row-claude-1-0")
+    assert has_element?(view, "#window-reset-#{claude.id}-0-0", "reset time unknown")
+    assert has_element?(view, "#window-reset-#{claude.id}-0-1", "reset time unknown")
+    assert has_element?(view, "#group-name-#{claude.id}-1", "Nil Details")
+    refute has_element?(view, "#window-row-#{claude.id}-1-0")
   end
 
   test "formats fetched ages and reset dates across units", %{conn: conn} do
@@ -491,20 +723,23 @@ defmodule RailWeb.Settings.BackendsLiveTest do
         })
       )
 
-    Repo.insert!(
-      Backend.usage_changeset(%Backend{}, %{
-        name: :agy,
-        status: :ready,
-        fetched_at: DateTime.shift(now, day: -2),
-        usage: []
-      })
-    )
+    agy =
+      Repo.insert!(
+        Backend.usage_changeset(%Backend{}, %{
+          name: :agy,
+          status: :ready,
+          fetched_at: DateTime.shift(now, day: -2),
+          usage: []
+        })
+      )
 
     expect(Tools, :refresh_usage, fn -> {:ok, []} end)
     view |> element("#refresh-quotas-button") |> render_click()
 
-    assert has_element?(view, "#fetched-at-claude", "read 2h ago")
-    assert has_element?(view, "#fetched-at-agy", "read 2d ago")
+    # The most recent read is the one the page reports.
+    assert has_element?(view, "#quotas-read-at", "quotas read 2h")
+    refute has_element?(view, "#quotas-read-at", "2d")
+    assert agy.fetched_at
 
     formats = %{
       status: :ready,
@@ -535,10 +770,166 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     expect(Tools, :refresh_usage, fn -> {:ok, []} end)
     view |> element("#refresh-quotas-button") |> render_click()
 
-    assert has_element?(view, "#window-reset-claude-0-0", "Resets today")
-    assert has_element?(view, "#window-label-claude-0-1", "Float")
-    assert has_element?(view, "#window-label-claude-0-2", "Naive String")
-    assert has_element?(view, "#window-remaining-claude-0-3", "Limit unmeasured")
-    assert has_element?(view, "#window-reset-claude-0-3", "Reset time unknown")
+    assert has_element?(view, "#window-reset-#{claude.id}-0-0", "resets today")
+    assert has_element?(view, "#window-label-#{claude.id}-0-1", "Float")
+    assert has_element?(view, "#window-label-#{claude.id}-0-2", "Naive String")
+    assert has_element?(view, "#window-remaining-#{claude.id}-0-3", "—")
+    assert has_element?(view, "#window-reset-#{claude.id}-0-3", "reset time unknown")
+  end
+
+  test "names a usage group only when its windows do not, and checks the executable path", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_17",
+        login: "backends_live_user_17",
+        email: "backends_live_user_17@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+
+    {:ok, claude} =
+      Tools.create_backend(Scope.for_system(), %{
+        name: :claude,
+        executable_path: System.find_executable("sh"),
+        models: [%{id: "claude-opus-5", display_name: "Opus 5"}]
+      })
+
+    claude =
+      Repo.update!(
+        Backend.usage_changeset(claude, %{
+          status: :ready,
+          account_label: "me@example.com",
+          usage: [
+            %{
+              name: "Weekly",
+              details: %{
+                "windows" => [
+                  %{"label" => "Weekly", "remaining_percent" => 92.0},
+                  %{"label" => "Weekly · Fable", "remaining_percent" => 100.0}
+                ]
+              }
+            },
+            %{name: "Gemini Models", details: %{"windows" => [%{"label" => "5-hour", "remaining_percent" => 100.0}]}}
+          ]
+        })
+      )
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
+
+    assert has_element?(view, "#account-label-#{claude.id}", "me@example.com")
+    refute has_element?(view, "#group-name-#{claude.id}-0")
+    assert has_element?(view, "#group-name-#{claude.id}-1", "Gemini Models")
+
+    view |> element("#backend-header-#{claude.id}") |> render_click()
+    assert has_element?(view, "#executable-found-#{claude.id}", "found")
+
+    view
+    |> element("#backend-form-#{claude.id}")
+    |> render_change(%{"label" => "work", "executable_path" => "/non/existent/claude"})
+
+    assert has_element?(view, "#executable-found-#{claude.id}", "not found")
+
+    view |> element("#remove-model-#{claude.id}-0") |> render_click()
+    assert has_element?(view, "#no-models-#{claude.id}")
+
+    # Discarding puts back what was saved.
+    view |> element("#discard-backend-#{claude.id}") |> render_click()
+    assert has_element?(view, "#executable-found-#{claude.id}", "✓ found")
+    assert has_element?(view, "#model-row-#{claude.id}-0", "Opus 5")
+    refute has_element?(view, "#backend-label-#{claude.id}")
+  end
+
+  test "discards a backend that was never saved", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_18",
+        login: "backends_live_user_18",
+        email: "backends_live_user_18@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
+
+    assert has_element?(view, "#add-backend-button", "Add backend")
+    view |> element("#add-backend-codex") |> render_click()
+    assert has_element?(view, "[id^='backend-body-new-']")
+
+    view |> element("[id^='discard-backend-new-']") |> render_click()
+    refute has_element?(view, "[id^='backend-card-new-']")
+    assert has_element?(view, "#no-backends")
+  end
+
+  test "offers sign-in for a backend whose CLI is in place but has no account yet", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_19",
+        login: "backends_live_user_19",
+        email: "backends_live_user_19@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+
+    {:ok, ready_cli} =
+      Tools.create_backend(Scope.for_system(), %{name: :claude, executable_path: System.find_executable("sh")})
+
+    {:ok, missing_cli} = Tools.create_backend(Scope.for_system(), %{name: :claude, executable_path: "/bin/claude"})
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
+
+    assert has_element?(view, "#quotas-unavailable-#{ready_cli.id}", "Quotas unavailable until sign-in")
+    assert has_element?(view, "#start-login-#{ready_cli.id}", "Sign in")
+    refute has_element?(view, "#status-badge-#{ready_cli.id}")
+
+    # A CLI that is not there is a configuration problem before it is a sign-in one.
+    refute has_element?(view, "#quotas-unavailable-#{missing_cli.id}")
+    assert has_element?(view, "#status-badge-#{missing_cli.id}", "Not configured")
+  end
+
+  test "finishes a sign-in the CLI completed through the browser it opened", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_20",
+        login: "backends_live_user_20",
+        email: "backends_live_user_20@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+
+    {:ok, backend} = Tools.create_backend(Scope.for_system(), %{name: :claude, executable_path: "/bin/claude"})
+    session = spawn(fn -> Process.sleep(:infinity) end)
+
+    stub(Tools, :start_backend_login, fn _scope, _backend, _owner ->
+      {:ok, %{session: session, url: "https://claude.com/cai/oauth/authorize?x=1"}}
+    end)
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
+
+    view |> element("#start-login-#{backend.id}") |> render_click()
+    render_async(view)
+
+    # A session this page no longer holds is none of its business.
+    send(view.pid, {:backend_login_exited, spawn(fn -> :ok end), :ok})
+    assert has_element?(view, "#login-code-form-#{backend.id}")
+
+    send(view.pid, {:backend_login_exited, session, {:error, "Login failed"}})
+    assert has_element?(view, "#login-error-#{backend.id}", "Sign-in failed: Login failed")
+
+    view |> element("#start-login-#{backend.id}") |> render_click()
+    render_async(view)
+
+    expect(Tools, :refresh_usage, fn ->
+      {:ok, [Repo.update!(Backend.usage_changeset(backend, %{status: :ready, account_label: "me@example.com"}))]}
+    end)
+
+    send(view.pid, {:backend_login_exited, session, :ok})
+    render_async(view)
+
+    refute has_element?(view, "#login-#{backend.id}")
+    assert has_element?(view, "#account-label-#{backend.id}", "me@example.com")
   end
 end
