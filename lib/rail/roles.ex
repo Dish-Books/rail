@@ -6,8 +6,7 @@ defmodule Rail.Roles do
   alias Rail.Roles.Actions
   alias Rail.Roles.Schemas
 
-  defdelegate canonical_stages(), to: Schemas.Role
-  defdelegate list_roles(scope, project_id), to: Actions.ListRoles
+  defdelegate list_roles(project_id), to: Actions.ListRoles
 
   defdelegate get_role(by), to: Actions.GetRole
 

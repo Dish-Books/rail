@@ -18,7 +18,6 @@ defmodule Rail.Roles.Schemas.Role do
     :demo,
     :debugger
   ]
-  @allowed_stages @canonical_stages ++ [:ready_to_merge, :merged]
 
   # Phosphor classes are emitted by the Tailwind plugin only for names it finds as
   # literals in scanned source, so an icon that lives solely in the database would
@@ -72,23 +71,24 @@ defmodule Rail.Roles.Schemas.Role do
     field :max_concurrent, :integer, default: 1
     field :position, :integer, default: 0
 
-    belongs_to :backend, Backend, type: UXID
-    belongs_to :project, Project, type: UXID
+    belongs_to :backend, Backend
+    belongs_to :project, Project
 
     timestamps()
   end
 
   @cast_fields [
-    :stage,
-    :name,
+    :backend_id,
     :description,
     :icon_name,
-    :backend_id,
-    :model,
-    :reasoning_effort,
-    :system_prompt,
     :max_concurrent,
-    :position
+    :model,
+    :name,
+    :position,
+    :project_id,
+    :reasoning_effort,
+    :stage,
+    :system_prompt,
   ]
 
   @required_fields [
@@ -104,18 +104,11 @@ defmodule Rail.Roles.Schemas.Role do
 
   @doc "Returns the list of canonical pipeline stages for agent roles."
   def canonical_stages, do: @canonical_stages
-  def stages, do: @allowed_stages
   def reasoning_efforts, do: @reasoning_efforts
 
-  @doc "Returns the Phosphor icon classes a role may be assigned."
-  def icon_names, do: @icon_names
-
-  def default_icon_name, do: @default_icon_name
-
-  def changeset(role, attrs, project_id \\ nil) do
+  def changeset(role, attrs) do
     role
     |> cast(attrs, @cast_fields)
-    |> maybe_put_project_id(project_id)
     |> validate_required(@required_fields)
     |> validate_inclusion(:icon_name, @icon_names)
     |> validate_number(:max_concurrent, greater_than_or_equal_to: 1)
@@ -125,6 +118,4 @@ defmodule Rail.Roles.Schemas.Role do
     |> foreign_key_constraint(:backend_id)
   end
 
-  defp maybe_put_project_id(changeset, nil), do: changeset
-  defp maybe_put_project_id(changeset, project_id), do: put_change(changeset, :project_id, project_id)
 end
