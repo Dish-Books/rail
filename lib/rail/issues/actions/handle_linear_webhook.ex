@@ -7,7 +7,9 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   """
 
   import Rail.Issues.Utils.FormatLinearIssue
+  import Rail.Issues.Utils.UpsertLinearComment
 
+  alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Repo
@@ -37,6 +39,37 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
     case Repo.get_by(Issue, external_id: external_id) do
       %Issue{} = issue -> Repo.delete(issue)
       nil -> :ok
+    end
+  end
+
+  def handle_linear_webhook(%LinearWorkspace{}, %{
+        "type" => "Comment",
+        "action" => action,
+        "data" => %{"id" => _external_id} = data
+      })
+      when action in ["create", "update"] do
+    case upsert_linear_comment(data) do
+      {:ok, comment} -> {:ok, comment}
+      # Its issue or thread has not been synced yet; the next sync brings it in.
+      {:error, reason} when reason in [:issue_not_found, :parent_not_found] -> :ok
+      {:error, changeset} -> {:error, changeset}
+    end
+  end
+
+  def handle_linear_webhook(%LinearWorkspace{}, %{
+        "type" => "Comment",
+        "action" => "remove",
+        "data" => %{"id" => external_id}
+      }) do
+    case Repo.get_by(Comment, external_id: external_id) do
+      %Comment{} = comment ->
+        with {:ok, comment} <- Repo.delete(comment) do
+          Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_comments_changed, comment.issue_id})
+          {:ok, comment}
+        end
+
+      nil ->
+        :ok
     end
   end
 

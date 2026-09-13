@@ -411,6 +411,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     |> render_submit()
 
     refute has_element?(view, "#capture-idea-dialog")
+    assert has_element?(view, "#issues-list > :first-child [data-qa='issue-title']", "Capture via LiveView")
 
     assert %Issue{project_id: ^project_id, identifier: "CAP-101", title: "Capture via LiveView", priority: :high} =
              Repo.get_by(Issue, external_id: "lin_capture_ok")

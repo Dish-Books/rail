@@ -2,6 +2,7 @@ defmodule Rail.Issues.Schemas.Issue do
   @moduledoc false
   use Rail.Schema
 
+  alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -27,6 +28,7 @@ defmodule Rail.Issues.Schemas.Issue do
     belongs_to :owner_user, User
 
     has_one :task, Task
+    has_many :comments, Comment
 
     timestamps()
   end

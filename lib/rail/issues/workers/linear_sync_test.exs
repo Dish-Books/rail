@@ -1,10 +1,11 @@
-defmodule Rail.Issues.Workers.SyncProjectIssuesTest do
+defmodule Rail.Issues.Workers.LinearSyncTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.LinearSync
   alias Rail.Issues.Workers.SyncIssue
-  alias Rail.Issues.Workers.SyncProjectIssues
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Users
@@ -84,7 +85,7 @@ defmodule Rail.Issues.Workers.SyncProjectIssuesTest do
       })
     end)
 
-    assert :ok = perform_job(SyncProjectIssues, %{project_id: project.id})
+    assert :ok = perform_job(LinearSync, %{project_id: project.id})
 
     assert %Issue{id: ^existing_id, title: "New title", state: :in_progress, priority: :medium} =
              Repo.get_by(Issue, external_id: "lin_existing")
@@ -102,10 +103,86 @@ defmodule Rail.Issues.Workers.SyncProjectIssuesTest do
              url: "https://linear.app/issue/SPI-2"
            } = Repo.get_by(Issue, external_id: "lin_new")
 
-    assert_enqueued(worker: SyncProjectIssues, args: %{project_id: project_id, cursor: "cursor_2"})
+    assert_enqueued(worker: LinearSync, args: %{project_id: project_id, cursor: "cursor_2"})
 
     # Pulling from Linear is not a change to push back to it.
     refute_enqueued(worker: SyncIssue)
+  end
+
+  test "writes each issue's comments with replies threaded by Rail id, and re-syncs in place", %{project: project} do
+    {:ok, %{id: author_id} = author} =
+      Users.register_oauth_user(%{
+        github_id: "gh_sync_commenter",
+        login: "sync_commenter",
+        email: "commenter@example.com"
+      })
+
+    author |> Ecto.Changeset.change(linear_user_id: "lin_usr_commenter") |> Repo.update!()
+
+    page = fn body ->
+      fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "issues" => %{
+              "nodes" => [
+                %{
+                  "id" => "lin_discussed",
+                  "identifier" => "SPI-9",
+                  "title" => "Discussed",
+                  "state" => %{"id" => "st_1", "name" => "Todo", "type" => "unstarted"},
+                  "comments" => %{
+                    "nodes" => [
+                      # Linear lists newest first, so the reply comes before its thread.
+                      %{
+                        "id" => "lin_reply",
+                        "body" => "yes",
+                        "createdAt" => "2026-09-09T11:00:00.000Z",
+                        "parent" => %{"id" => "lin_thread"},
+                        "user" => %{"id" => "lin_usr_commenter", "name" => "michael"}
+                      },
+                      %{
+                        "id" => "lin_thread",
+                        "body" => body,
+                        "createdAt" => "2026-09-09T10:00:00.000Z",
+                        "user" => %{
+                          "id" => "lin_usr_elsewhere",
+                          "name" => "paulo",
+                          "avatarUrl" => "https://avatars/p.png"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        })
+      end
+    end
+
+    Req.Test.expect(Rail.Linear, page.("Open question"))
+    assert :ok = perform_job(LinearSync, %{project_id: project.id})
+
+    assert %Issue{id: issue_id} = Repo.get_by(Issue, external_id: "lin_discussed")
+
+    assert %Comment{
+             id: thread_id,
+             issue_id: ^issue_id,
+             parent_id: nil,
+             body: "Open question",
+             author_user_id: nil,
+             author_name: "paulo",
+             author_avatar_url: "https://avatars/p.png",
+             inserted_at: ~U[2026-09-09 10:00:00.000000Z]
+           } = Repo.get_by(Comment, external_id: "lin_thread")
+
+    assert %Comment{parent_id: ^thread_id, author_user_id: ^author_id} = Repo.get_by(Comment, external_id: "lin_reply")
+
+    Req.Test.expect(Rail.Linear, page.("Edited question"))
+    assert :ok = perform_job(LinearSync, %{project_id: project.id})
+
+    assert %Comment{id: ^thread_id, body: "Edited question"} = Repo.get_by(Comment, external_id: "lin_thread")
+    assert 2 = Repo.aggregate(Comment, :count)
   end
 
   test "the last page announces the sync is done and queues nothing more", %{project: %{id: project_id}} do
@@ -122,10 +199,10 @@ defmodule Rail.Issues.Workers.SyncProjectIssuesTest do
       })
     end)
 
-    assert :ok = perform_job(SyncProjectIssues, %{project_id: project_id, cursor: "cursor_2"})
+    assert :ok = perform_job(LinearSync, %{project_id: project_id, cursor: "cursor_2"})
 
     assert_receive {:issues_synced, ^project_id}
-    refute_enqueued(worker: SyncProjectIssues)
+    refute_enqueued(worker: LinearSync)
   end
 
   test "maps Linear's state types onto Rail's", %{project: project} do
@@ -143,7 +220,7 @@ defmodule Rail.Issues.Workers.SyncProjectIssuesTest do
       Req.Test.json(conn, %{"data" => %{"issues" => %{"nodes" => nodes}}})
     end)
 
-    assert :ok = perform_job(SyncProjectIssues, %{project_id: project.id})
+    assert :ok = perform_job(LinearSync, %{project_id: project.id})
 
     assert %{
              "State triage" => :triage,
@@ -162,11 +239,11 @@ defmodule Rail.Issues.Workers.SyncProjectIssuesTest do
     end)
 
     assert {:error, {:linear_api_error, 500, %{"error" => "Linear Server Down"}}} =
-             perform_job(SyncProjectIssues, %{project_id: project.id})
+             perform_job(LinearSync, %{project_id: project.id})
   end
 
   test "a project that is gone needs no sync" do
     # No Linear stub is queued, so a request would raise.
-    assert :ok = perform_job(SyncProjectIssues, %{project_id: "prj_missing"})
+    assert :ok = perform_job(LinearSync, %{project_id: "prj_missing"})
   end
 end

@@ -24,7 +24,7 @@ defmodule Rail.Issues.Actions.CreateIssue do
   `attrs` carries `:title` and `:description`, and optionally `:priority` and
   `:owner_user_id`. The ticket is opened as the scope's user, or as the
   workspace when there is no user or they never linked Linear, in triage, on
-  the project's team.
+  the project's team. Broadcasts `{:issue_created, issue_id}` on `"issues"`.
   """
   def create_issue(%Scope{}, %Project{linear_team_id: nil}, %{}), do: {:error, :linear_team_not_found}
 
@@ -63,7 +63,10 @@ defmodule Rail.Issues.Actions.CreateIssue do
     # The project is what the caller already handed us: carry it on the issue so
     # nothing downstream has to fetch it again.
     case %Issue{} |> Issue.changeset(local_attrs) |> Repo.insert() do
-      {:ok, %Issue{} = issue} -> {:ok, %{issue | project: project}}
+      {:ok, %Issue{} = issue} ->
+        Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_created, issue.id})
+        {:ok, %{issue | project: project}}
+
       {:error, changeset} -> {:error, changeset}
     end
   end

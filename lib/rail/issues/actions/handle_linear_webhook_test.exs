@@ -3,6 +3,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Projects
@@ -122,7 +123,70 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     }
 
     assert :ok = Issues.handle_linear_webhook(%{workspace | project_id: nil}, event)
-    assert :ok = Issues.handle_linear_webhook(workspace, %{"type" => "Comment", "action" => "create", "data" => %{}})
+    assert :ok = Issues.handle_linear_webhook(workspace, %{"type" => "Project", "action" => "create", "data" => %{}})
     assert Repo.get_by(Issue, external_id: "lin_wh_4") == nil
+  end
+
+  test "comment creates, replies, updates and removes mirror onto the issue", %{project: project, workspace: workspace} do
+    %Issue{id: issue_id} =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_wh_5",
+        identifier: "HWH-5",
+        title: "Discussed",
+        state: :triage
+      })
+      |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
+    assert {:ok, %Comment{id: parent_id, issue_id: ^issue_id, parent_id: nil, body: "Open question"}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Comment",
+               "action" => "create",
+               "data" => %{
+                 "id" => "lin_wh_com_1",
+                 "body" => "Open question",
+                 "issueId" => "lin_wh_5",
+                 "userId" => "lin_usr_nobody",
+                 "createdAt" => "2026-09-09T10:00:00.000Z"
+               }
+             })
+
+    assert_receive {:issue_comments_changed, ^issue_id}
+
+    reply = %{
+      "type" => "Comment",
+      "action" => "create",
+      "data" => %{"id" => "lin_wh_com_2", "body" => "yes", "issueId" => "lin_wh_5", "parentId" => "lin_wh_com_1"}
+    }
+
+    assert {:ok, %Comment{parent_id: ^parent_id}} = Issues.handle_linear_webhook(workspace, reply)
+
+    assert {:ok, %Comment{id: ^parent_id, body: "Edited question"}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Comment",
+               "action" => "update",
+               "data" => %{"id" => "lin_wh_com_1", "body" => "Edited question", "issueId" => "lin_wh_5"}
+             })
+
+    remove = %{"type" => "Comment", "action" => "remove", "data" => %{"id" => "lin_wh_com_1"}}
+
+    assert {:ok, %Comment{}} = Issues.handle_linear_webhook(workspace, remove)
+    # The thread's replies go with it.
+    assert [] = Repo.all(Comment)
+    assert :ok = Issues.handle_linear_webhook(workspace, remove)
+  end
+
+  test "a comment on an issue or thread Rail has not synced yet is left for the next sync", %{workspace: workspace} do
+    assert :ok =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Comment",
+               "action" => "create",
+               "data" => %{"id" => "lin_wh_com_3", "body" => "Early", "issueId" => "lin_unsynced"}
+             })
+
+    assert [] = Repo.all(Comment)
   end
 end

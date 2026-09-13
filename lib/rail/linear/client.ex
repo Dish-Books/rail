@@ -24,7 +24,8 @@ defmodule Rail.Linear.Client do
   @default_token_url "https://api.linear.app/oauth/token"
   @graphql_url "https://api.linear.app/graphql"
   @default_scope "read,write,issues:create,comments:create"
-  @page_size 100
+  @page_size 50
+  @comments_per_issue 50
 
   @issue_fields """
   id
@@ -43,6 +44,24 @@ defmodule Rail.Linear.Client do
   }
   branchName
   url
+  """
+
+  @comment_fields """
+  id
+  body
+  createdAt
+  updatedAt
+  parent {
+    id
+  }
+  user {
+    id
+    name
+    avatarUrl
+  }
+  botActor {
+    name
+  }
   """
 
   def config do
@@ -116,8 +135,9 @@ defmodule Rail.Linear.Client do
   end
 
   @doc """
-  Fetches one page of the issues on the project's team, found by its key. Pass
-  `after:` the previous page's `pageInfo.endCursor` to continue.
+  Fetches one page of the issues on the project's team, found by its key, each
+  with its first comments. Pass `after:` the previous page's
+  `pageInfo.endCursor` to continue.
   """
   def issues(%Project{} = project, opts \\ []) do
     query = """
@@ -125,6 +145,11 @@ defmodule Rail.Linear.Client do
       issues(first: $first, after: $after, filter: {team: {key: {eq: $teamKey}}}) {
         nodes {
           #{@issue_fields}
+          comments(first: #{@comments_per_issue}) {
+            nodes {
+              #{@comment_fields}
+            }
+          }
         }
         pageInfo {
           hasNextPage
@@ -244,9 +269,10 @@ defmodule Rail.Linear.Client do
       commentCreate(input: $input) {
         success
         comment {
-          id
-          body
-          createdAt
+          #{@comment_fields}
+          issue {
+            id
+          }
         }
       }
     }

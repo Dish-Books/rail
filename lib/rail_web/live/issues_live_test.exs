@@ -6,7 +6,8 @@ defmodule RailWeb.IssuesLiveTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Issues.Workers.SyncProjectIssues
+  alias Rail.Issues.Workers.LinearSync
+  alias Rail.Pipeline
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -192,7 +193,8 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-priority-badge']", "Urgent")
     assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-status-badge']", "In Progress")
 
-    assert has_element?(view, "#start-product-run-#{issue.id}", "Start")
+    # Starting work happens on the issue's page, not from the list.
+    refute has_element?(view, "#issue-card-#{issue.id} button")
 
     # Clicking the row opens the issue's page.
     issue_path = ~p"/issues/#{issue.identifier}"
@@ -518,8 +520,6 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#issue-card-#{done_issue.id}")
     assert has_element?(view, "#filter-priority-all", "All (2)")
 
-    # Finished issue has no Bring local button and no task link
-    refute has_element?(view, "#start-product-run-#{done_issue.id}")
     refute has_element?(view, "#task-link-#{done_issue.id}")
 
     # Toggle show finished off
@@ -528,7 +528,7 @@ defmodule RailWeb.IssuesLiveTest do
     refute has_element?(view, "#issue-card-#{done_issue.id}")
   end
 
-  test "Bring local button creates task and updates card to show stage link", %{conn: conn} do
+  test "an issue with a task links to it from its row", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_issues_live_7",
@@ -581,16 +581,12 @@ defmodule RailWeb.IssuesLiveTest do
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
-    assert has_element?(view, "#start-product-run-#{issue.id}")
+    refute has_element?(view, "#task-link-#{issue.id}")
 
-    view |> element("#start-product-run-#{issue.id}") |> render_click()
+    {:ok, task} = Pipeline.create_task(issue, :product)
 
-    # Now task link is displayed instead of bring local
-    refute has_element?(view, "#start-product-run-#{issue.id}")
-    assert has_element?(view, "#task-link-#{issue.id}")
-
-    # Clicking start on a nonexistent issue does not crash
-    render_click(view, "start_product_run", %{"issue_id" => "iss_nonexistent"})
+    assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
+    assert has_element?(view, "#task-link-#{issue.id}[href='/tasks/#{task.id}']")
   end
 
   test "sync_issues button triggers sync on current project or all projects", %{conn: conn} do
@@ -631,7 +627,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues?project=#{project_id}")
 
     view |> element("#sync-issues-button") |> render_click()
-    assert_enqueued(worker: SyncProjectIssues, args: %{project_id: project_id})
+    assert_enqueued(worker: LinearSync, args: %{project_id: project_id})
     assert has_element?(view, "#sync-issues-button[disabled]", "Syncing...")
 
     # The worker saying the last page landed frees the button and shows what came in.

@@ -297,7 +297,7 @@ defmodule Rail.Linear.ClientTest do
 
       Req.Test.expect(Linear, fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"teamKey" => "TEAM", "first" => 100, "after" => nil} = Jason.decode!(body)["variables"]
+        assert %{"teamKey" => "TEAM", "first" => 50, "after" => nil} = Jason.decode!(body)["variables"]
         Req.Test.json(conn, %{"data" => page})
       end)
 

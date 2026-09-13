@@ -75,9 +75,11 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
       })
     end)
 
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
     assert {:ok,
             %Issue{
-              id: "iss_" <> _id,
+              id: "iss_" <> _id = issue_id,
               project_id: ^project_id,
               external_id: "lin_captured_1",
               identifier: "ENG-301",
@@ -94,6 +96,8 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
                description: "More details here",
                priority: :high
              })
+
+    assert_receive {:issue_created, ^issue_id}
   end
 
   test "create_issue/2 defaults to medium priority and sends Linear none", %{project: project} do

@@ -3,7 +3,7 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
   use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Issues
-  alias Rail.Issues.Workers.SyncProjectIssues
+  alias Rail.Issues.Workers.LinearSync
   alias Rail.Projects
 
   test "sync_issues/1 queues a pull of the project's issues instead of doing it inline" do
@@ -30,6 +30,6 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
     # No Linear stub is queued, so a request made here would raise.
     assert {:ok, %Oban.Job{}} = Issues.sync_issues(project)
 
-    assert_enqueued(worker: SyncProjectIssues, args: %{project_id: project.id})
+    assert_enqueued(worker: LinearSync, args: %{project_id: project.id})
   end
 end

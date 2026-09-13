@@ -70,19 +70,6 @@ defmodule RailWeb.Components.IssueCard do
           <span>{StageLabel.stage_label(@task, @run)}</span>
         </.link>
 
-        <button
-          :if={@task == nil and not Issue.finished_state?(@issue.state)}
-          type="button"
-          id={"start-product-run-#{@issue.id}"}
-          data-qa={"start_product_run_#{@issue.id}"}
-          phx-click="start_product_run"
-          phx-value-issue_id={@issue.id}
-          class="inline-flex items-center gap-1 h-6 px-2 rounded-full border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 opacity-60 group-hover:opacity-100 hover:bg-blue-600 hover:border-blue-600 hover:text-white transition cursor-pointer"
-        >
-          <.icon name="pi-play" class="h-3.5 w-3.5" />
-          <span>Start</span>
-        </button>
-
         <a
           :if={@issue.url not in [nil, ""]}
           href={@issue.url}

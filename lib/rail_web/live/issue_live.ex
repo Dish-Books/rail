@@ -1,9 +1,9 @@
 defmodule RailWeb.IssueLive do
   @moduledoc """
   One issue, laid out the way Linear lays it out: the title and description on
-  the left, its properties down the right. Only the assignee can be changed here,
-  and that change is pushed to Linear; everything else is edited in Linear and
-  arrives by sync or webhook.
+  the left with its comment threads beneath, its properties down the right. The
+  assignee can be changed and comments posted here, and both reach Linear;
+  everything else is edited in Linear and arrives by sync or webhook.
   """
   use RailWeb, :live_view
 
@@ -28,6 +28,7 @@ defmodule RailWeb.IssueLive do
       |> assign(:issue, nil)
       |> assign(:assignees, Users.list_linear_users())
       |> assign(:assignee_query, "")
+      |> assign(:comment_nonce, 0)
 
     {:ok, socket}
   end
@@ -75,6 +76,42 @@ defmodule RailWeb.IssueLive do
                 No description
               </p>
             </div>
+
+            <section
+              id="issue-comments"
+              data-qa="issue-comments"
+              class="space-y-4 pt-6 border-t border-slate-200 dark:border-slate-800"
+            >
+              <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Comments</h2>
+
+              <div
+                :for={thread <- threads(@issue.comments)}
+                id={"comment-#{thread.id}"}
+                class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+              >
+                <div class="p-4 space-y-5">
+                  <.comment comment={thread} />
+                  <div :for={reply <- by_time(thread.replies)} id={"comment-#{reply.id}"}>
+                    <.comment comment={reply} />
+                  </div>
+                </div>
+
+                <.comment_form
+                  id={"comment-reply-form-#{thread.id}"}
+                  nonce={@comment_nonce}
+                  parent_id={thread.id}
+                  placeholder="Leave a reply..."
+                />
+              </div>
+
+              <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                <.comment_form
+                  id="issue-comment-form"
+                  nonce={@comment_nonce}
+                  placeholder="Leave a comment..."
+                />
+              </div>
+            </section>
           </article>
 
           <aside id="issue-sidebar" class="lg:w-72 shrink-0 space-y-8 text-sm">
@@ -278,12 +315,85 @@ defmodule RailWeb.IssueLive do
     end
   end
 
+  # A draft lives in its textarea until it is sent.
+  def handle_event("draft_comment", _params, socket), do: {:noreply, socket}
+
+  def handle_event("comment", %{"body" => body} = params, socket) do
+    case String.trim(body) do
+      "" -> {:noreply, socket}
+      body -> {:noreply, post_comment(socket, %{body: body, parent_id: params["parent_id"]})}
+    end
+  end
+
   # A sync may have changed what Linear says about this issue.
   def handle_info({:issues_synced, project_id}, %{assigns: %{issue: %{project_id: project_id}}} = socket) do
     {:noreply, load_issue(socket, socket.assigns.issue.id)}
   end
 
   def handle_info({:issues_synced, _other_project_id}, socket), do: {:noreply, socket}
+
+  def handle_info({:issue_comments_changed, issue_id}, %{assigns: %{issue: %{id: issue_id}}} = socket) do
+    {:noreply, load_issue(socket, issue_id)}
+  end
+
+  def handle_info({:issue_comments_changed, _other_issue_id}, socket), do: {:noreply, socket}
+
+  def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, socket}
+
+  attr :comment, :map, required: true
+
+  defp comment(assigns) do
+    assigns = assign(assigns, :author, comment_author(assigns.comment))
+
+    ~H"""
+    <div class="space-y-1.5">
+      <div class="flex items-center gap-2.5 text-sm">
+        <.assignee user={@author} />
+        <span class="font-medium text-slate-900 dark:text-slate-100">{user_name(@author)}</span>
+        <span
+          class="text-xs text-slate-500 dark:text-slate-400"
+          title={DateTime.to_string(@comment.inserted_at)}
+        >
+          {time_ago(@comment.inserted_at)}
+        </span>
+      </div>
+      <.markdown content={@comment.body} class="pl-8.5 text-slate-700 dark:text-slate-300" />
+    </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :nonce, :integer, required: true
+  attr :parent_id, :string, default: nil
+  attr :placeholder, :string, required: true
+
+  # The textarea's id changes with each post, so a sent comment clears it.
+  defp comment_form(assigns) do
+    ~H"""
+    <form
+      id={@id}
+      phx-change="draft_comment"
+      phx-submit="comment"
+      class="flex items-end gap-2 px-4 py-3 border-t first:border-t-0 border-slate-200 dark:border-slate-700"
+    >
+      <input :if={@parent_id} type="hidden" name="parent_id" value={@parent_id} />
+      <textarea
+        id={"#{@id}-body-#{@nonce}"}
+        name="body"
+        rows="1"
+        placeholder={@placeholder}
+        class="flex-1 min-h-9 resize-y bg-transparent border-0 p-1.5 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-0"
+      ></textarea>
+      <button
+        type="submit"
+        title="Send"
+        class="flex items-center justify-center h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-blue-600 hover:text-white cursor-pointer"
+      >
+        <.icon name="pi-arrow-up" class="h-4 w-4" />
+      </button>
+    </form>
+    """
+  end
 
   defp assign_owner(%{assigns: %{issue: issue}} = socket, owner_user_id) do
     case Issues.update_issue(issue, %{owner_user_id: owner_user_id}) do
@@ -292,8 +402,17 @@ defmodule RailWeb.IssueLive do
     end
   end
 
+  defp post_comment(%{assigns: %{issue: issue, current_scope: scope}} = socket, attrs) do
+    case Issues.comment(scope, issue, attrs) do
+      {:ok, _comment} -> socket |> update(:comment_nonce, &(&1 + 1)) |> load_issue(issue.id)
+      {:error, _reason} -> put_flash(socket, :error, "Could not post the comment")
+    end
+  end
+
   defp load_issue(socket, id) do
-    case Issues.get_issue(id, preload: [:project, :owner_user, task: [runs: :role]]) do
+    preload = [:project, :owner_user, task: [runs: :role], comments: [:author_user, replies: :author_user]]
+
+    case Issues.get_issue(id, preload: preload) do
       {:ok, issue} ->
         socket
         |> assign(:issue, issue)
@@ -315,6 +434,30 @@ defmodule RailWeb.IssueLive do
   end
 
   defp user_name(user), do: user.name || user.login
+
+  # Threads are the comments that answer nothing; their replies hang off them.
+  defp threads(comments), do: comments |> Enum.filter(&is_nil(&1.parent_id)) |> by_time()
+
+  defp by_time(comments), do: Enum.sort_by(comments, & &1.inserted_at, DateTime)
+
+  # Someone who never joined Rail is shown as Linear names them.
+  defp comment_author(%{author_user: %{} = user}), do: user
+
+  defp comment_author(comment) do
+    name = comment.author_name || "Linear"
+    %{name: name, login: name, avatar_url: comment.author_avatar_url}
+  end
+
+  defp time_ago(%DateTime{} = at) do
+    seconds = DateTime.diff(DateTime.utc_now(), at, :second)
+
+    cond do
+      seconds < 60 -> "just now"
+      seconds < 3600 -> "#{div(seconds, 60)}m ago"
+      seconds < 86_400 -> "#{div(seconds, 3600)}h ago"
+      true -> "#{div(seconds, 86_400)}d ago"
+    end
+  end
 
   # Where the task got to is what the run for the stage it sits at says.
   defp stage_run(%{runs: runs, stage: stage}) do

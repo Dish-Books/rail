@@ -10,7 +10,6 @@ defmodule RailWeb.IssuesLive do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline
   alias Rail.Projects
   alias RailWeb.Components.CaptureIssueModal
 
@@ -348,21 +347,17 @@ defmodule RailWeb.IssuesLive do
     {:noreply, assign_syncing(socket, ids)}
   end
 
-  def handle_event("start_product_run", %{"issue_id" => issue_id}, socket) do
-    with {:ok, issue} <- Issues.get_issue(issue_id),
-         {:ok, task} <- Pipeline.create_task(issue, :product) do
-      Pipeline.start_product_run(task)
-    end
-
-    {:noreply, reload_data(socket)}
-  end
-
   def handle_info({:issues_synced, project_id}, socket) do
     ids = MapSet.delete(socket.assigns.syncing_project_ids, project_id)
 
     socket = socket |> assign_syncing(ids) |> reload_data()
     {:noreply, socket}
   end
+
+  # Newest first, so a created issue lands at the top of the first page.
+  def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, reload_data(socket)}
+
+  def handle_info({:issue_comments_changed, _issue_id}, socket), do: {:noreply, socket}
 
   # Where a task got to is what the run for the stage it sits at says, picked out
   # of the runs already loaded rather than queried per row.
