@@ -1,7 +1,7 @@
 defmodule Rail.Runs.Actions.BuildPrompt do
   @moduledoc false
 
-  alias Rail.Backends.Schemas.Backend
+  alias Rail.Tools.Schemas.Backend
 
   @doc """
   Constructs the agent prompt string passed via `-p`.

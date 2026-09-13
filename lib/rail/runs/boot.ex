@@ -11,7 +11,6 @@ defmodule Rail.Runs.Boot do
   import Rail.Runs.Utils.ParseLine
 
   alias Ecto.Adapters.SQL.Sandbox
-  alias Rail.Backends.Schemas.Backend
   alias Rail.Pipeline
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
@@ -19,6 +18,7 @@ defmodule Rail.Runs.Boot do
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Tools
+  alias Rail.Tools.Schemas.Backend
 
   @default_starting_timeout_seconds 60
 

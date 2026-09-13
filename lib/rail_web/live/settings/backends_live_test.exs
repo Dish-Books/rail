@@ -3,11 +3,10 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias Rail.Backends
-  alias Rail.Backends.Schemas.CliAccount
-  alias Rail.Domain.Embeds.CliAccountGroup
   alias Rail.Repo
   alias Rail.Scope
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.Backend
   alias Rail.Users
 
   test "redirects unauthenticated user to /auth/github", %{conn: conn} do
@@ -56,7 +55,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     assert has_element?(view, "#backends-title", "Backends")
     assert has_element?(view, "#tab-backends")
 
-    for name <- Backends.backend_names() do
+    for name <- Backend.names() do
       assert has_element?(view, "#backend-card-#{name}")
       assert has_element?(view, "#executable-path-#{name}")
       assert has_element?(view, "#no-models-#{name}")
@@ -93,10 +92,11 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     assert has_element?(view, "#saved-claude", "Saved")
 
-    assert %{
-             executable_path: "/usr/local/bin/claude",
-             models: [%{id: "claude-opus-5", display_name: "Opus 5"}]
-           } = Backends.get_backend(:claude)
+    assert {:ok,
+            %{
+              executable_path: "/usr/local/bin/claude",
+              models: [%{id: "claude-opus-5", display_name: "Opus 5"}]
+            }} = Tools.get_backend(:claude)
 
     # The saved values are rendered back on reload
     assert {:ok, reloaded, html} = live(authed_conn, ~p"/settings/backends")
@@ -126,7 +126,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
       "models" => %{"0" => %{"id" => "gemini-3.8-flash-high", "display_name" => ""}}
     })
 
-    assert %{models: [%{display_name: "gemini-3.8-flash-high"}]} = Backends.get_backend(:agy)
+    assert {:ok, %{models: [%{display_name: "gemini-3.8-flash-high"}]}} = Tools.get_backend(:agy)
   end
 
   test "updates an existing backend rather than inserting a second row", %{conn: conn} do
@@ -141,7 +141,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     authed_conn = log_in_user(conn, user)
 
     {:ok, _backend} =
-      Backends.create_backend(Scope.for_system(), %{
+      Tools.create_backend(Scope.for_system(), %{
         name: :claude,
         executable_path: "/old/claude",
         models: [%{id: "old-model", display_name: "Old"}]
@@ -157,10 +157,10 @@ defmodule RailWeb.Settings.BackendsLiveTest do
       "models" => %{"0" => %{"id" => "new-model", "display_name" => "New"}}
     })
 
-    assert %{executable_path: "/new/claude", models: [%{id: "new-model"}]} =
-             Backends.get_backend(:claude)
+    assert {:ok, %{executable_path: "/new/claude", models: [%{id: "new-model"}]}} =
+             Tools.get_backend(:claude)
 
-    assert length(Backends.list_backends()) == 1
+    assert length(Tools.list_backends()) == 1
   end
 
   test "removing a model row drops it from the saved models", %{conn: conn} do
@@ -175,7 +175,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     authed_conn = log_in_user(conn, user)
 
     {:ok, _backend} =
-      Backends.create_backend(Scope.for_system(), %{
+      Tools.create_backend(Scope.for_system(), %{
         name: :claude,
         executable_path: "/usr/local/bin/claude",
         models: [%{id: "keep-me", display_name: "Keep"}, %{id: "drop-me", display_name: "Drop"}]
@@ -194,7 +194,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
       "models" => %{"0" => %{"id" => "keep-me", "display_name" => "Keep"}}
     })
 
-    assert %{models: [%{id: "keep-me"}]} = Backends.get_backend(:claude)
+    assert {:ok, %{models: [%{id: "keep-me"}]}} = Tools.get_backend(:claude)
   end
 
   test "surfaces a validation error when the executable path is blank", %{conn: conn} do
@@ -215,7 +215,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     |> render_submit(%{"backend" => "claude", "executable_path" => "", "models" => %{}})
 
     assert has_element?(view, "#backends-save-error", "executable_path")
-    assert is_nil(Backends.get_backend(:claude))
+    assert {:error, :backend_not_found} = Tools.get_backend(:claude)
   end
 
   test "renders account status, quota windows, and banners", %{conn: conn} do
@@ -236,17 +236,14 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     reset_tomorrow =
       DateTime.to_iso8601(DateTime.new!(Date.add(DateTime.to_date(now), 1), ~T[09:00:00], "Etc/UTC"))
 
-    node = CliAccount.default_node()
-
     Repo.insert!(
-      CliAccount.changeset(%CliAccount{}, %{
-        node: node,
-        backend: :claude,
-        status: "ready",
+      Backend.usage_changeset(%Backend{}, %{
+        name: :claude,
+        status: :ready,
         account_label: "alice@example.com",
         account_detail: "max",
         fetched_at: DateTime.shift(now, minute: -2),
-        groups: [
+        usage: [
           %{
             name: "Weekly Limits",
             count: 3,
@@ -268,10 +265,9 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     )
 
     Repo.insert!(
-      CliAccount.changeset(%CliAccount{}, %{
-        node: node,
-        backend: :agy,
-        status: "not_configured",
+      Backend.usage_changeset(%Backend{}, %{
+        name: :agy,
+        status: :not_configured,
         unavailable_reason: "Executable not found at '/bin/agy'"
       })
     )
@@ -306,23 +302,20 @@ defmodule RailWeb.Settings.BackendsLiveTest do
       })
 
     authed_conn = log_in_user(conn, user)
-    node = CliAccount.default_node()
 
     Repo.insert!(
-      CliAccount.changeset(%CliAccount{}, %{
-        node: node,
-        backend: :claude,
-        status: "signed_out",
+      Backend.usage_changeset(%Backend{}, %{
+        name: :claude,
+        status: :signed_out,
         account_label: "signed_out@example.com",
         unavailable_reason: "CLI is signed out."
       })
     )
 
     Repo.insert!(
-      CliAccount.changeset(%CliAccount{}, %{
-        node: node,
-        backend: :agy,
-        status: "unavailable"
+      Backend.usage_changeset(%Backend{}, %{
+        name: :agy,
+        status: :unavailable
       })
     )
 
@@ -333,8 +326,9 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     assert has_element?(view, "#status-badge-agy", "Unavailable")
     assert has_element?(view, "#banner-agy", "Failed to fetch usage data")
 
-    ready = %CliAccount{id: "cli_ready", node: node, backend: :claude, status: "ready", groups: []}
-    expect(Backends, :refresh_usage, fn -> {:ok, [ready]} end)
+    # The view re-reads after a refresh, so the probe result is what lands in the row.
+    Repo.update!(Backend.usage_changeset(Repo.get_by!(Backend, name: :claude), %{status: :ready, usage: []}))
+    expect(Tools, :refresh_usage, fn -> {:ok, []} end)
     view |> element("#refresh-quotas-button") |> render_click()
 
     assert has_element?(view, "#no-quota-windows-claude", "No quota windows reported")
@@ -351,41 +345,39 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     authed_conn = log_in_user(conn, user)
     now = DateTime.utc_now()
-    node = CliAccount.default_node()
-
-    stub(Backends, :refresh_usage, fn -> {:ok, []} end)
+    stub(Tools, :refresh_usage, fn -> {:ok, []} end)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
     view |> element("#refresh-quotas-button") |> render_click()
     render_click(element(view, "#refresh-quotas-button"))
 
-    updated = %CliAccount{
-      id: "cli_pubsub",
-      node: node,
-      backend: :claude,
-      status: "ready",
-      account_label: "pubsub@example.com",
-      fetched_at: now,
-      groups: [
-        %CliAccountGroup{
-          name: "Session Limits",
-          count: 1,
-          details: %{
-            "windows" => [
-              %{
-                "label" => "Default Model",
-                "remaining_percent" => 75.0,
-                "resets_at" => DateTime.to_unix(DateTime.shift(now, hour: 1), :second)
-              }
-            ]
+    Repo.insert!(
+      Backend.usage_changeset(%Backend{}, %{
+        name: :claude,
+        status: :ready,
+        account_label: "pubsub@example.com",
+        fetched_at: now,
+        usage: [
+          %{
+            name: "Session Limits",
+            count: 1,
+            details: %{
+              "windows" => [
+                %{
+                  "label" => "Default Model",
+                  "remaining_percent" => 75.0,
+                  "resets_at" => DateTime.to_unix(DateTime.shift(now, hour: 1), :second)
+                }
+              ]
+            }
           }
-        }
-      ]
-    }
+        ]
+      })
+    )
 
     # Refreshing is what pulls new usage; the tick only moves the clock.
-    expect(Backends, :refresh_usage, fn -> {:ok, [updated]} end)
+    expect(Tools, :refresh_usage, fn -> {:ok, []} end)
     view |> element("#refresh-quotas-button") |> render_click()
 
     assert has_element?(view, "#account-label-claude", "pubsub@example.com")
@@ -395,7 +387,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     send(view.pid, :tick)
     assert has_element?(view, "#backends-settings")
 
-    expect(Backends, :refresh_usage, fn -> {:error, :timeout} end)
+    expect(Tools, :refresh_usage, fn -> {:error, :timeout} end)
     view |> element("#refresh-quotas-button") |> render_click()
     assert has_element?(view, "#refresh-quotas-button")
   end
@@ -411,42 +403,38 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     authed_conn = log_in_user(conn, user)
     now = DateTime.utc_now()
-    node = CliAccount.default_node()
-
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
-    hours = %CliAccount{
-      id: "cli_hours",
-      node: node,
-      backend: :claude,
-      status: "ready",
-      fetched_at: DateTime.shift(now, hour: -2),
-      groups: []
-    }
+    claude =
+      Repo.insert!(
+        Backend.usage_changeset(%Backend{}, %{
+          name: :claude,
+          status: :ready,
+          fetched_at: DateTime.shift(now, hour: -2),
+          usage: []
+        })
+      )
 
-    days = %CliAccount{
-      id: "cli_days",
-      node: node,
-      backend: :agy,
-      status: "ready",
-      fetched_at: DateTime.shift(now, day: -2),
-      groups: []
-    }
+    Repo.insert!(
+      Backend.usage_changeset(%Backend{}, %{
+        name: :agy,
+        status: :ready,
+        fetched_at: DateTime.shift(now, day: -2),
+        usage: []
+      })
+    )
 
-    expect(Backends, :refresh_usage, fn -> {:ok, [hours, days]} end)
+    expect(Tools, :refresh_usage, fn -> {:ok, []} end)
     view |> element("#refresh-quotas-button") |> render_click()
 
     assert has_element?(view, "#fetched-at-claude", "read 2h ago")
     assert has_element?(view, "#fetched-at-agy", "read 2d ago")
 
-    formats = %CliAccount{
-      id: "cli_formats",
-      node: node,
-      backend: :claude,
-      status: "ready",
+    formats = %{
+      status: :ready,
       fetched_at: now,
-      groups: [
-        %CliAccountGroup{
+      usage: [
+        %{
           name: "Limits",
           count: 4,
           details: %{
@@ -463,11 +451,12 @@ defmodule RailWeb.Settings.BackendsLiveTest do
             ]
           }
         },
-        %CliAccountGroup{name: "No Windows", count: 0, details: %{}}
+        %{name: "No Windows", count: 0, details: %{}}
       ]
     }
 
-    expect(Backends, :refresh_usage, fn -> {:ok, [formats]} end)
+    Repo.update!(Backend.usage_changeset(claude, formats))
+    expect(Tools, :refresh_usage, fn -> {:ok, []} end)
     view |> element("#refresh-quotas-button") |> render_click()
 
     assert has_element?(view, "#window-reset-claude-0-0", "Resets today")

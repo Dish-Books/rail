@@ -24,7 +24,7 @@ defmodule Rail.Runs.FollowerTest do
 
   setup do
     {:ok, backend} =
-      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     {:ok, workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{

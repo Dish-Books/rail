@@ -7,7 +7,7 @@ defmodule Rail.Roles.Actions.GetRoleTest do
 
   setup do
     {:ok, backend} =
-      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     scope = system_scope()
 

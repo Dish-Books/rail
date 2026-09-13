@@ -4,7 +4,6 @@ defmodule RailWeb.TaskLiveTest do
   import Mimic
   import Phoenix.LiveViewTest
 
-  alias Rail.Backends
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -16,6 +15,7 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Scope
+  alias Rail.Tools
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -30,7 +30,7 @@ defmodule RailWeb.TaskLiveTest do
 
     scope = Scope.for_user(user)
 
-    {:ok, backend} = Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+    {:ok, backend} = Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     {:ok, workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{

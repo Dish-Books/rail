@@ -20,7 +20,7 @@ defmodule Rail.Runs.FollowerSupervisorTest do
     # The Follower reads the stream in its backend's format, and the backend comes
     # off the run's role.
     {:ok, backend} =
-      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     project =
       %Project{}

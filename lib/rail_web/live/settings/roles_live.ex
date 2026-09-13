@@ -2,11 +2,11 @@ defmodule RailWeb.Settings.RolesLive do
   @moduledoc false
   use RailWeb, :live_view
 
-  alias Rail.Backends
-  alias Rail.Backends.Schemas.Backend
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.Backend
 
   @default_models %{
     claude: "claude-3-7-sonnet",
@@ -25,7 +25,7 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:current_project_id, nil)
       |> assign(:current_project, nil)
       |> assign(:roles, [])
-      |> assign(:backends, Backends.list_backends(scope))
+      |> assign(:backends, Tools.list_backends())
       |> assign(:canonical_stages, Role.canonical_stages())
       |> assign(:active_modal, nil)
       |> assign(:modal_role, nil)

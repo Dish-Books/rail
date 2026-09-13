@@ -4,7 +4,7 @@ defmodule Rail.Runs.Utils.ParseLineTest do
   import Rail.Runs.Utils.NewEventState
   import Rail.Runs.Utils.ParseLine
 
-  alias Rail.Backends.Schemas.Backend
+  alias Rail.Tools.Schemas.Backend
 
   test "dispatches on the state struct" do
     claude = new_event_state(%Backend{name: :claude})

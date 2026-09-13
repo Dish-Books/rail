@@ -10,7 +10,6 @@ defmodule Rail.Runs.Follower do
   import Rail.Runs.Utils.ParseLine
   import Rail.Runs.Utils.PumpStream
 
-  alias Rail.Backends.Schemas.Backend
   alias Rail.Pipeline
   alias Rail.Repo
   alias Rail.Runs.FollowerRegistry
@@ -18,6 +17,7 @@ defmodule Rail.Runs.Follower do
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
   alias Rail.Tools
+  alias Rail.Tools.Schemas.Backend
 
   @default_tail_interval 120
   @default_batch_interval 250
@@ -251,6 +251,7 @@ defmodule Rail.Runs.Follower do
   defp await_exit_code(%{exit_code: code} = state) when is_integer(code), do: state
   defp await_exit_code(%{port: nil} = state), do: state
 
+  # coveralls-ignore-stop
   defp await_exit_code(state) do
     receive do
       {_port, {:exit_status, status}} ->
@@ -260,8 +261,6 @@ defmodule Rail.Runs.Follower do
         state
     end
   end
-
-  # coveralls-ignore-stop
 
   defp compute_error(result_error, raw_stderr, exit_code) do
     cond do

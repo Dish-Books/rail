@@ -1,8 +1,8 @@
 defmodule Rail.Runs.Actions.BuildArgsTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Backends.Schemas.Backend
   alias Rail.Runs
+  alias Rail.Tools.Schemas.Backend
 
   test "builds standard Claude args in exact flag order" do
     opts = [

@@ -1,9 +1,9 @@
 defmodule Rail.Runs.Utils.NewEventState do
   @moduledoc false
 
-  alias Rail.Backends.Schemas.Backend
   alias Rail.Runs.AgyEvents
   alias Rail.Runs.ClaudeEvents
+  alias Rail.Tools.Schemas.Backend
 
   @doc """
   Initializes an event accumulator state struct for either `:claude` or `:agy`.

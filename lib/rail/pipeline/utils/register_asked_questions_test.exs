@@ -21,7 +21,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
     scope = system_scope()
 
     {:ok, backend} =
-      Rail.Backends.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+      Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
     {:ok, workspace} =
       Projects.upsert_linear_workspace(scope, %{

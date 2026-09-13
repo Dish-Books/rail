@@ -24,7 +24,7 @@ defmodule Rail.Runs.Utils.GetFollowerPidTest do
     # The Follower reads the stream format off the run's role, so the run needs a
     # real role behind it.
     {:ok, backend} =
-      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     project =
       %Project{}

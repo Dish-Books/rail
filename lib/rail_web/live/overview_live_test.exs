@@ -3,7 +3,6 @@ defmodule RailWeb.OverviewLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias Rail.Backends
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
@@ -14,6 +13,7 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Runs
   alias Rail.Runs.DetectedQuestion
   alias Rail.Scope
+  alias Rail.Tools
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -283,7 +283,7 @@ defmodule RailWeb.OverviewLiveTest do
         })
 
       {:ok, backend} =
-        Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+        Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
       roles =
         Map.new([:product, :engineer], fn stage ->

@@ -2,9 +2,8 @@ defmodule RailWeb.Settings.BackendsLive do
   @moduledoc false
   use RailWeb, :live_view
 
-  alias Rail.Backends
-  alias Rail.Backends.Schemas.Backend
-  alias Rail.Domain.Embeds.CliAccountGroup
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.Backend
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -15,12 +14,11 @@ defmodule RailWeb.Settings.BackendsLive do
       socket
       |> assign(:page_title, "Backends")
       |> assign(:current_section, :backends)
-      |> assign(:accounts, Backends.list_accounts())
       |> assign(:is_refreshing, false)
       |> assign(:now, DateTime.utc_now())
       |> assign(:saved_backend, nil)
       |> assign(:save_error, nil)
-      |> load_drafts()
+      |> load_backends()
 
     {:ok, socket}
   end
@@ -94,7 +92,7 @@ defmodule RailWeb.Settings.BackendsLive do
 
         <div class="space-y-6" id="backends-list">
           <section
-            :for={name <- Backends.backend_names()}
+            :for={name <- Backend.names()}
             id={"backend-card-#{name}"}
             data-qa={"backend_card_#{name}"}
             class="bg-slate-50 dark:bg-slate-800 shadow-xs rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-5"
@@ -113,7 +111,7 @@ defmodule RailWeb.Settings.BackendsLive do
                     {display_name(name)}
                   </span>
 
-                  <% account = account_for(@accounts, name) %>
+                  <% account = backend_for(@backends, name) %>
                   <span
                     :if={account && account.account_label not in [nil, ""]}
                     class="text-sm text-slate-500 dark:text-slate-400 truncate max-w-xs"
@@ -254,7 +252,7 @@ defmodule RailWeb.Settings.BackendsLive do
             </form>
 
             <div
-              :if={account && account.status in ["not_configured", "signed_out", "unavailable"]}
+              :if={account && account.status in [:not_configured, :signed_out, :unavailable]}
               id={"banner-#{name}"}
               data-qa={"backend_banner_#{name}"}
               class="flex items-start gap-3 p-4 rounded-lg bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs"
@@ -272,7 +270,7 @@ defmodule RailWeb.Settings.BackendsLive do
             </div>
 
             <div
-              :if={account != nil and account.status == "ready" and Enum.empty?(account.groups || [])}
+              :if={account != nil and account.status == :ready and Enum.empty?(account.usage || [])}
               id={"no-quota-windows-#{name}"}
               class="py-3 text-sm text-slate-500 dark:text-slate-400 italic"
             >
@@ -281,13 +279,13 @@ defmodule RailWeb.Settings.BackendsLive do
 
             <div
               :if={
-                account != nil and account.status == "ready" and not Enum.empty?(account.groups || [])
+                account != nil and account.status == :ready and not Enum.empty?(account.usage || [])
               }
               class="space-y-4"
               id={"groups-container-#{name}"}
             >
               <div
-                :for={{group, g_idx} <- Enum.with_index(account.groups || [])}
+                :for={{group, g_idx} <- Enum.with_index(account.usage || [])}
                 id={"group-section-#{name}-#{g_idx}"}
                 class="rounded-lg bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-700 p-4 space-y-3"
               >
@@ -385,7 +383,7 @@ defmodule RailWeb.Settings.BackendsLive do
           socket
           |> assign(:saved_backend, name)
           |> assign(:save_error, nil)
-          |> load_drafts()
+          |> load_backends()
 
         {:noreply, socket}
 
@@ -404,7 +402,7 @@ defmodule RailWeb.Settings.BackendsLive do
       socket =
         socket
         |> assign(:is_refreshing, true)
-        |> start_async(:refresh_quotas_task, fn -> Backends.refresh_usage() end)
+        |> start_async(:refresh_quotas_task, fn -> Tools.refresh_usage() end)
 
       {:noreply, socket}
     end
@@ -421,10 +419,10 @@ defmodule RailWeb.Settings.BackendsLive do
     {:noreply, socket}
   end
 
-  def handle_async(:refresh_quotas_task, {:ok, {:ok, accounts}}, socket) do
+  def handle_async(:refresh_quotas_task, {:ok, {:ok, _refreshed}}, socket) do
     socket =
       socket
-      |> assign(:accounts, accounts)
+      |> assign(:backends, Tools.list_backends())
       |> assign(:is_refreshing, false)
       |> assign(:now, DateTime.utc_now())
 
@@ -438,17 +436,20 @@ defmodule RailWeb.Settings.BackendsLive do
   defp save(scope, name, attrs) do
     attrs = Map.put(attrs, "name", name)
 
-    case Backends.get_backend(name) do
-      %Backend{} = backend -> Backends.update_backend(scope, backend, attrs)
-      nil -> Backends.create_backend(scope, attrs)
+    case Tools.get_backend(name) do
+      {:ok, %Backend{} = backend} -> Tools.update_backend(scope, backend, attrs)
+      {:error, :backend_not_found} -> Tools.create_backend(scope, attrs)
     end
   end
 
-  defp load_drafts(socket) do
-    saved = Map.new(Backends.list_backends(), &{to_string(&1.name), &1})
+  # One read feeds both the probe status the cards show and the form drafts, so
+  # the two can never disagree about what is configured.
+  defp load_backends(socket) do
+    backends = Tools.list_backends()
+    saved = Map.new(backends, &{to_string(&1.name), &1})
 
     drafts =
-      Map.new(Backends.backend_names(), fn name ->
+      Map.new(Backend.names(), fn name ->
         key = to_string(name)
 
         case Map.get(saved, key) do
@@ -463,7 +464,9 @@ defmodule RailWeb.Settings.BackendsLive do
         end
       end)
 
-    assign(socket, :drafts, drafts)
+    socket
+    |> assign(:backends, backends)
+    |> assign(:drafts, drafts)
   end
 
   defp draft(drafts, name), do: Map.get(drafts, to_string(name), %{"executable_path" => "", "models" => []})
@@ -502,7 +505,7 @@ defmodule RailWeb.Settings.BackendsLive do
     |> Enum.map_join("; ", fn {field, messages} -> "#{field} #{Enum.join(List.wrap(messages), ", ")}" end)
   end
 
-  defp account_for(accounts, name), do: Enum.find(accounts, &(&1.backend == name))
+  defp backend_for(backends, name), do: Enum.find(backends, &(&1.name == name))
 
   defp display_name(:claude), do: "Claude Code"
   defp display_name(:agy), do: "Antigravity CLI"
@@ -512,19 +515,19 @@ defmodule RailWeb.Settings.BackendsLive do
   defp backend_icon(:agy), do: "pi-rocket-launch"
   defp backend_icon(_other), do: "pi-cpu"
 
-  defp default_reason("not_configured"), do: "Executable not found or not executable. Check the path above."
-  defp default_reason("signed_out"), do: "CLI is signed out. Log in via the command line to view usage limits."
+  defp default_reason(:not_configured), do: "Executable not found or not executable. Check the path above."
+  defp default_reason(:signed_out), do: "CLI is signed out. Log in via the command line to view usage limits."
   defp default_reason(_other), do: "Failed to fetch usage data from the backend CLI."
 
-  defp status_badge("ready") do
+  defp status_badge(:ready) do
     %{label: "Active", class: "bg-emerald-100 text-emerald-900 ring-1 ring-inset ring-emerald-200"}
   end
 
-  defp status_badge("signed_out") do
+  defp status_badge(:signed_out) do
     %{label: "Signed Out", class: "bg-amber-100 text-amber-900 ring-1 ring-inset ring-amber-200"}
   end
 
-  defp status_badge("unavailable") do
+  defp status_badge(:unavailable) do
     %{label: "Unavailable", class: "bg-red-100 text-red-900 ring-1 ring-inset ring-red-200"}
   end
 
@@ -615,7 +618,7 @@ defmodule RailWeb.Settings.BackendsLive do
     end
   end
 
-  defp extract_windows(%CliAccountGroup{details: details}) when is_map(details) do
+  defp extract_windows(%Backend.Usage{details: details}) when is_map(details) do
     cond do
       is_list(details["windows"]) -> details["windows"]
       is_number(details["remaining_percent"]) -> [details]

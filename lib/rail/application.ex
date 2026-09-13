@@ -13,7 +13,6 @@ defmodule Rail.Application do
       {Phoenix.PubSub, name: Rail.PubSub},
       {Task.Supervisor, name: Rail.TaskSupervisor},
       Rail.Runs,
-      Rail.Backends,
       RailWeb.Endpoint
     ]
 

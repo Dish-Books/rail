@@ -14,7 +14,7 @@ defmodule RailWeb.Live.RunConversationTest do
   setup do
     scope = system_scope()
 
-    {:ok, backend} = Rail.Backends.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+    {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
     {:ok, workspace} =
       Projects.upsert_linear_workspace(scope, %{

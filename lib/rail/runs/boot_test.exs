@@ -22,7 +22,7 @@ defmodule Rail.Runs.BootTest do
     # Adoption hands the row to a Follower, which reads the stream format off the
     # run's role, so every run here needs a real role behind it.
     {:ok, backend} =
-      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     project =
       %Project{}

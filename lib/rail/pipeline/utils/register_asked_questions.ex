@@ -13,13 +13,13 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
   import Rail.Runs.Utils.NewEventState
   import Rail.Runs.Utils.ParseLine
 
-  alias Rail.Backends.Schemas.Backend
   alias Rail.Pipeline
   alias Rail.Repo
   alias Rail.Runs
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Runs.Schemas.RunEvent
+  alias Rail.Tools.Schemas.Backend
 
   # Everything Rail, the tools or the human contributed carries one of these
   # markers; what the agent said carries none.

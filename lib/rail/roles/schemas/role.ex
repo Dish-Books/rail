@@ -4,8 +4,8 @@ defmodule Rail.Roles.Schemas.Role do
   """
   use Rail.Schema
 
-  alias Rail.Backends.Schemas.Backend
   alias Rail.Projects.Schemas.Project
+  alias Rail.Tools.Schemas.Backend
 
   @canonical_stages [
     :product,

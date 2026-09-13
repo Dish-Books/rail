@@ -3,7 +3,6 @@ defmodule Rail.Runs.Actions.StartOsProcess do
 
   import Rail.Runs.Utils.EnsureExecutable
 
-  alias Rail.Backends.Schemas.Backend
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
@@ -11,6 +10,7 @@ defmodule Rail.Runs.Actions.StartOsProcess do
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Tools
+  alias Rail.Tools.Schemas.Backend
 
   @doc """
   Spawns a detached CLI runner for a run, records the `runs` row, starts its

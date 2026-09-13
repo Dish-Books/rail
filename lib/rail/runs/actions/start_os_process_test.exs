@@ -1,8 +1,6 @@
 defmodule Rail.Runs.Actions.StartOsProcessTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Backends
-  alias Rail.Backends.Schemas.Backend
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
@@ -12,6 +10,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Tools
+  alias Rail.Tools.Schemas.Backend
 
   # These tests are about the spawn itself, so they run real children.
   @moduletag :real_spawn
@@ -49,7 +48,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
 
     # The executable is whatever the role's backend points at, so a test that
     # wants to spawn something else repoints this row before calling start_os_process.
-    {:ok, backend} = Backends.create_backend(scope, %{name: :claude, executable_path: "/bin/sleep"})
+    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/bin/sleep"})
 
     {:ok, role} =
       Roles.create_role(scope, project, %{
@@ -127,7 +126,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
     scope: scope,
     worktree_path: worktree_path
   } do
-    {:ok, _backend} = Backends.update_backend(scope, backend, %{executable_path: "/bin/sh"})
+    {:ok, _backend} = Tools.update_backend(scope, backend, %{executable_path: "/bin/sh"})
 
     script = ~s(printf '{"cwd":"%s"}\n' "$PWD")
 
@@ -158,7 +157,7 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
     scope: scope
   } do
     missing_bin = "/path/to/nonexistent/cli_binary_xyz"
-    {:ok, _backend} = Backends.update_backend(scope, backend, %{executable_path: missing_bin})
+    {:ok, _backend} = Tools.update_backend(scope, backend, %{executable_path: missing_bin})
 
     result = Runs.start_os_process(run, ["--help"])
 

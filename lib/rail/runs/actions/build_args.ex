@@ -1,7 +1,7 @@
 defmodule Rail.Runs.Actions.BuildArgs do
   @moduledoc false
 
-  alias Rail.Backends.Schemas.Backend
+  alias Rail.Tools.Schemas.Backend
 
   @default_print_timeout "6h"
   @default_effort "high"

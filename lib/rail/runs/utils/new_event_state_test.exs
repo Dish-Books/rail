@@ -3,9 +3,9 @@ defmodule Rail.Runs.Utils.NewEventStateTest do
 
   import Rail.Runs.Utils.NewEventState
 
-  alias Rail.Backends.Schemas.Backend
   alias Rail.Runs.AgyEvents
   alias Rail.Runs.ClaudeEvents
+  alias Rail.Tools.Schemas.Backend
 
   test "picks the accumulator for the backend" do
     assert %ClaudeEvents{} = new_event_state(%Backend{name: :claude})

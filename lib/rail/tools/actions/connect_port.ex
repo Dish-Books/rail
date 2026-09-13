@@ -8,8 +8,6 @@ defmodule Rail.Tools.Actions.ConnectPort do
   Any exit status that already arrived is forwarded to the new owner. Passing
   `nil` releases the port without reassigning it.
   """
-  def connect_port(port, owner)
-
   # coveralls-ignore-start (defensive rescue if the port terminates mid-handoff)
   def connect_port(port, owner) when is_pid(owner) do
     try do

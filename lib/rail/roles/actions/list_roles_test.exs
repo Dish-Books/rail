@@ -8,7 +8,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
 
   setup do
     {:ok, backend} =
-      Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{

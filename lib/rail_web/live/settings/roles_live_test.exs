@@ -22,14 +22,14 @@ defmodule RailWeb.Settings.RolesLiveTest do
              })
 
     {:ok, claude_backend} =
-      Rail.Backends.create_backend(Rail.Scope.for_system(), %{
+      Rail.Tools.create_backend(Rail.Scope.for_system(), %{
         name: :claude,
         executable_path: "/usr/local/bin/claude",
         models: [%{id: "claude-sonnet-5", display_name: "claude-sonnet-5"}]
       })
 
     {:ok, agy_backend} =
-      Rail.Backends.create_backend(Rail.Scope.for_system(), %{
+      Rail.Tools.create_backend(Rail.Scope.for_system(), %{
         name: :agy,
         executable_path: "/usr/local/bin/agy"
       })

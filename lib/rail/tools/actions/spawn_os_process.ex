@@ -1,7 +1,7 @@
 defmodule Rail.Tools.Actions.SpawnOsProcess do
   @moduledoc false
 
-  alias Rail.Tools
+  import Rail.Tools.Utils.Env
 
   @shell "/bin/sh"
   @stdout_var "__RAIL_TOOL_STDOUT"
@@ -72,7 +72,7 @@ defmodule Rail.Tools.Actions.SpawnOsProcess do
     |> Map.new()
     |> Map.put(@stdout_var, Keyword.get(opts, :stdout_path, "/dev/null"))
     |> Map.put(@stderr_var, Keyword.get(opts, :stderr_path, "/dev/null"))
-    |> Tools.env()
+    |> env()
     |> Enum.map(fn {key, value} ->
       {String.to_charlist(to_string(key)), String.to_charlist(to_string(value))}
     end)

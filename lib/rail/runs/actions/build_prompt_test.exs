@@ -1,8 +1,8 @@
 defmodule Rail.Runs.Actions.BuildPromptTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Backends.Schemas.Backend
   alias Rail.Runs
+  alias Rail.Tools.Schemas.Backend
 
   test "sends the answer, not the task again, when resuming a session" do
     opts = [
