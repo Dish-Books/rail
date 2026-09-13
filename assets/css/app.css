@@ -5,6 +5,7 @@
 @source "../../lib/rail_web";
 
 @plugin "../vendor/phosphor-icons";
+@plugin "@tailwindcss/typography";
 
 /* Role icons are chosen at runtime (Rail.Roles.Schemas.Role.icon_names/0), so the
    plugin never sees them as literals in scanned source. */

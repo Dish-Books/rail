@@ -9,7 +9,10 @@ defmodule RailWeb.Components.Markdown do
 
   def markdown(assigns) do
     ~H"""
-    <div data-qa="markdown-body" class={["prose max-w-none text-sm leading-relaxed", @class]}>
+    <div
+      data-qa="markdown-body"
+      class={["prose prose-slate dark:prose-invert max-w-none text-sm leading-relaxed", @class]}
+    >
       {raw(render_markdown(@content))}
     </div>
     """

@@ -63,6 +63,7 @@ defmodule Rail.MixProject do
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:jose, "~> 1.11"},
+      {:mdex, "~> 0.13"},
       {:lazy_html, ">= 0.1.0", only: :test},
       {:mimic, "~> 2.0", only: :test},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
