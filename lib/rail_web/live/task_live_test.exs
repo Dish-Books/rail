@@ -32,20 +32,17 @@ defmodule RailWeb.TaskLiveTest do
 
     {:ok, backend} = Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Task Live Workspace",
-        external_id: "lin_ws_task_live",
-        token: "lin_api_token_task_live",
-        webhook_secret: "whsec_task_live"
-      })
-
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Task Live Project",
         github_repo: "org/task-live",
         github_installation_id: 46_001,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Task Live Workspace",
+          external_id: "lin_ws_task_live",
+          token: "lin_api_token_task_live",
+          webhook_secret: "whsec_task_live"
+        },
         linear_team_id: "team_task_live",
         linear_team_key: "TLV",
         default_branch: "main",

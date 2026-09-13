@@ -9,20 +9,17 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Sync Issue Workspace",
-        external_id: "lin_ws_sync_issue",
-        token: "lin_api_token_sync_issue",
-        webhook_secret: "whsec_sync_issue"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Sync Issue Project",
         github_repo: "org/sync-issue",
         github_installation_id: 5902,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Sync Issue Workspace",
+          external_id: "lin_ws_sync_issue",
+          token: "lin_api_token_sync_issue",
+          webhook_secret: "whsec_sync_issue"
+        },
         linear_team_id: "team_sync_issue",
         linear_team_key: "SYN",
         default_branch: "main",

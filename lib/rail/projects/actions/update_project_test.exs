@@ -28,30 +28,6 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
              })
   end
 
-  test "admin updates project by string id" do
-    admin_scope = Scope.for_user(%{admin: true})
-    repo = "example/update-id-repo-#{System.unique_integer([:positive])}"
-
-    assert {:ok, %Project{id: project_id}} =
-             Projects.create_project(admin_scope, %{
-               name: "Project By ID",
-               github_repo: repo,
-               github_installation_id: 55_668,
-               linear_team_id: "team_by_id",
-               linear_team_key: "PBI",
-               default_branch: "main",
-               clone_path: "/tmp/pbi"
-             })
-
-    assert {:ok, %Project{id: ^project_id, name: "Renamed Project"}} =
-             Projects.update_project(admin_scope, project_id, %{name: "Renamed Project"})
-  end
-
-  test "returns {:error, :not_found} when updating by non-existent string id" do
-    admin_scope = Scope.for_user(%{admin: true})
-    assert {:error, :not_found} = Projects.update_project(admin_scope, "prj_000000000000000000000000", %{name: "X"})
-  end
-
   test "returns validation error changeset for invalid attributes" do
     admin_scope = Scope.for_user(%{admin: true})
     repo = "example/invalid-update-repo-#{System.unique_integer([:positive])}"

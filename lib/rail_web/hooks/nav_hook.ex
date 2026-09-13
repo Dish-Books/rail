@@ -13,7 +13,7 @@ defmodule RailWeb.Hooks.NavHook do
 
   def on_mount(:default, params, _session, socket) do
     scope = socket.assigns.current_scope
-    projects = Projects.list_projects(scope)
+    projects = Projects.list_projects()
 
     attention_count =
       if projects == [] do
@@ -164,11 +164,9 @@ defmodule RailWeb.Hooks.NavHook do
     if String.trim(ask) == "" do
       {:halt, socket}
     else
-      scope = socket.assigns.current_scope
-
       project =
         Enum.find(socket.assigns.projects, &(&1.id == project_id)) ||
-          fetch_project(scope, project_id)
+          fetch_project(project_id)
 
       if is_nil(project) do
         socket =
@@ -214,8 +212,7 @@ defmodule RailWeb.Hooks.NavHook do
   end
 
   defp refresh_nav_state(socket) do
-    scope = socket.assigns.current_scope
-    projects = Projects.list_projects(scope)
+    projects = Projects.list_projects()
     attention_count = count_attention(projects)
 
     socket
@@ -264,10 +261,10 @@ defmodule RailWeb.Hooks.NavHook do
     {ask, project_id, priority}
   end
 
-  defp fetch_project(_scope, id) when id in [nil, ""], do: nil
+  defp fetch_project(id) when id in [nil, ""], do: nil
 
-  defp fetch_project(scope, project_id) do
-    case Projects.get_project(scope, project_id) do
+  defp fetch_project(project_id) do
+    case Projects.get_project(project_id) do
       {:ok, project} -> project
       _other -> nil
     end

@@ -17,20 +17,17 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
 
     scope = system_scope()
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "List Questions Workspace",
-        external_id: "lin_ws_list_questions",
-        token: "lin_api_token_list_questions",
-        webhook_secret: "whsec_list_questions"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "List Questions Project 7201",
         github_repo: "org/list-questions-7201",
         github_installation_id: 7201,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "List Questions Workspace",
+          external_id: "lin_ws_list_questions",
+          token: "lin_api_token_list_questions",
+          webhook_secret: "whsec_list_questions"
+        },
         linear_team_id: "team_list_questions_7201",
         linear_team_key: "P7201",
         default_branch: "main",
@@ -123,6 +120,12 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
 
     {:ok, project2} =
       Projects.create_project(system_scope(), %{
+        linear_workspace: %{
+          name: "List Questions Workspace",
+          external_id: "lin_ws_list_questions_x3",
+          token: "lin_api_token_list_questions",
+          webhook_secret: "whsec_list_questions"
+        },
         name: "List Questions Project Two",
         github_repo: "org/list-questions-two",
         github_installation_id: 7204,

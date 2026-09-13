@@ -24,20 +24,17 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
 
     scope = system_scope()
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Start Product Workspace",
-        external_id: "lin_ws_start_product",
-        token: "lin_api_token_start_product",
-        webhook_secret: "whsec_start_product"
-      })
-
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Start Product Project 7001",
         github_repo: "org/start-product-7001",
         github_installation_id: 7001,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Start Product Workspace",
+          external_id: "lin_ws_start_product",
+          token: "lin_api_token_start_product",
+          webhook_secret: "whsec_start_product"
+        },
         linear_team_id: "team_start_product_7001",
         linear_team_key: "P7001",
         default_branch: "main",

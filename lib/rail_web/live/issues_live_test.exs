@@ -5,7 +5,6 @@ defmodule RailWeb.IssuesLiveTest do
 
   alias Rail.Issues
   alias Rail.Projects
-  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Scope
   alias Rail.Users
@@ -57,16 +56,14 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: project_id, name: project_name}} =
              Projects.create_project(scope, %{
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13212",
+                 external_id: "lin_ws_issues_live_13212_x7",
+                 token: "lin_api_token_issues_live_13212",
+                 webhook_secret: "whsec_issues_live_13212"
+               },
                name: "Issues Project",
                github_repo: "example/issues-project",
                github_installation_id: 601,
@@ -127,16 +124,14 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13212",
+                 external_id: "lin_ws_issues_live_13212_x8",
+                 token: "lin_api_token_issues_live_13212",
+                 webhook_secret: "whsec_issues_live_13212"
+               },
                name: "Demo Project",
                github_repo: "example/demo-project",
                github_installation_id: 701,
@@ -198,16 +193,14 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13212",
+                 external_id: "lin_ws_issues_live_13212_x9",
+                 token: "lin_api_token_issues_live_13212",
+                 webhook_secret: "whsec_issues_live_13212"
+               },
                name: "Priority Project",
                github_repo: "example/priority-project",
                github_installation_id: 702,
@@ -329,16 +322,14 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13212",
+                 external_id: "lin_ws_issues_live_13212_x10",
+                 token: "lin_api_token_issues_live_13212",
+                 webhook_secret: "whsec_issues_live_13212"
+               },
                name: "Finished Project",
                github_repo: "example/finished-project",
                github_installation_id: 703,
@@ -411,28 +402,17 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace 13212",
-        external_id: "lin_ws_issues_live_13212",
-        token: "lin_api_token_issues_live_13212",
-        webhook_secret: "whsec_issues_live_13212"
-      })
-
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Bring Local Project",
                github_repo: "example/bring-local",
                github_installation_id: 704,
-               linear_workspace_id: ws_id,
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13212",
+                 external_id: "lin_ws_issues_live_13212",
+                 token: "lin_api_token_issues_live_13212",
+                 webhook_secret: "whsec_issues_live_13212"
+               },
                linear_team_id: "t_bl",
                linear_team_key: "BL",
                linear_state_ids: %{"in_progress" => "st_in_prog_bl"},
@@ -475,28 +455,17 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace 13213",
-        external_id: "lin_ws_issues_live_13213",
-        token: "lin_api_token_issues_live_13213",
-        webhook_secret: "whsec_issues_live_13213"
-      })
-
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Editor Project",
                github_repo: "example/editor-proj",
                github_installation_id: 705,
-               linear_workspace_id: ws_id,
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13213",
+                 external_id: "lin_ws_issues_live_13213",
+                 token: "lin_api_token_issues_live_13213",
+                 webhook_secret: "whsec_issues_live_13213"
+               },
                linear_team_id: "t_ed",
                linear_team_key: "ED",
                default_branch: "main",
@@ -575,28 +544,17 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace 13214",
-        external_id: "lin_ws_issues_live_13214",
-        token: "lin_api_token_issues_live_13214",
-        webhook_secret: "whsec_issues_live_13214"
-      })
-
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: _project_id} = project} =
              Projects.create_project(scope, %{
                name: "Archive Project",
                github_repo: "example/archive-proj",
                github_installation_id: 706,
-               linear_workspace_id: ws_id,
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13214",
+                 external_id: "lin_ws_issues_live_13214",
+                 token: "lin_api_token_issues_live_13214",
+                 webhook_secret: "whsec_issues_live_13214"
+               },
                linear_team_id: "t_arc",
                linear_team_key: "ARC",
                linear_state_ids: %{"canceled" => "st_canceled_arc"},
@@ -680,28 +638,17 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, %LinearWorkspace{id: ws_id}} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace 13215",
-        external_id: "lin_ws_issues_live_13215",
-        token: "lin_api_token_issues_live_13215",
-        webhook_secret: "whsec_issues_live_13215"
-      })
-
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: project_id}} =
              Projects.create_project(scope, %{
                name: "Sync Project",
                github_repo: "example/sync-proj",
                github_installation_id: 707,
-               linear_workspace_id: ws_id,
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13215",
+                 external_id: "lin_ws_issues_live_13215",
+                 token: "lin_api_token_issues_live_13215",
+                 webhook_secret: "whsec_issues_live_13215"
+               },
                linear_team_id: "t_sync",
                linear_team_key: "SYNC",
                default_branch: "main",
@@ -736,16 +683,14 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Issues Live Workspace",
-        external_id: "lin_ws_issues_live",
-        token: "lin_api_token_issues_live",
-        webhook_secret: "whsec_issues_live"
-      })
-
     assert {:ok, %Project{id: p_id, name: p_name}} =
              Projects.create_project(scope, %{
+               linear_workspace: %{
+                 name: "Issues Live Workspace 13212",
+                 external_id: "lin_ws_issues_live_13212_x11",
+                 token: "lin_api_token_issues_live_13212",
+                 webhook_secret: "whsec_issues_live_13212"
+               },
                name: "With Key Project",
                github_repo: "example/with-key",
                github_installation_id: 801,

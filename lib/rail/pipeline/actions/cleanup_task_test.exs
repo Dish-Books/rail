@@ -17,20 +17,17 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     scope = system_scope()
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Cleanup Task Workspace",
-        external_id: "lin_ws_cleanup_task",
-        token: "lin_api_token_cleanup_task",
-        webhook_secret: "whsec_cleanup_task"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Cleanup Task Project 8701",
         github_repo: "org/cleanup-task-8701",
         github_installation_id: 8701,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Cleanup Task Workspace",
+          external_id: "lin_ws_cleanup_task",
+          token: "lin_api_token_cleanup_task",
+          webhook_secret: "whsec_cleanup_task"
+        },
         linear_team_id: "team_cleanup_task_8701",
         linear_team_key: "P8701",
         default_branch: "main",
@@ -100,6 +97,12 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
+        linear_workspace: %{
+          name: "Cleanup Task Workspace",
+          external_id: "lin_ws_cleanup_task_x4",
+          token: "lin_api_token_cleanup_task",
+          webhook_secret: "whsec_cleanup_task"
+        },
         name: "Cleanup Task Project 8705",
         github_repo: "org/cleanup-task-8705",
         github_installation_id: 8705,
@@ -150,6 +153,12 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   test "handles cleanup gracefully when worktree_path is already nil", %{project: _project, task: _task} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
+        linear_workspace: %{
+          name: "Cleanup Task Workspace",
+          external_id: "lin_ws_cleanup_task_x5",
+          token: "lin_api_token_cleanup_task",
+          webhook_secret: "whsec_cleanup_task"
+        },
         name: "Cleanup Task Project 8708",
         github_repo: "org/cleanup-task-8708",
         github_installation_id: 8708,

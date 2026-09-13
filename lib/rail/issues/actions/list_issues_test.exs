@@ -11,20 +11,17 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
   test "list_issues lists issues for project with default show_finished: false" do
     scope = Scope.for_system()
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "List Issues Workspace",
-        external_id: "lin_ws_list_issues",
-        token: "lin_api_token_list_issues",
-        webhook_secret: "whsec_list_issues"
-      })
-
     {:ok, %Project{id: project_id_1} = project_1} =
       Projects.create_project(scope, %{
         name: "List Issues Project One",
         github_repo: "org/list-issues-one",
         github_installation_id: 5701,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "List Issues Workspace",
+          external_id: "lin_ws_list_issues",
+          token: "lin_api_token_list_issues",
+          webhook_secret: "whsec_list_issues"
+        },
         linear_team_id: "team_list_issues_one",
         linear_team_key: "LI1",
         default_branch: "main",
@@ -36,7 +33,12 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
         name: "List Issues Project Two",
         github_repo: "org/list-issues-two",
         github_installation_id: 5702,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "List Issues Workspace",
+          external_id: "lin_ws_list_issues_2",
+          token: "lin_api_token_list_issues",
+          webhook_secret: "whsec_list_issues"
+        },
         linear_team_id: "team_list_issues_two",
         linear_team_key: "LI2",
         default_branch: "main",

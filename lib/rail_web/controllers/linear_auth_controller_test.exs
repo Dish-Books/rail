@@ -121,20 +121,11 @@ defmodule RailWeb.LinearAuthControllerTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Linear authentication failed"
     end
 
-    test "handles linking failure when tokens cannot be linked", %{authed_conn: conn} do
-      Req.Test.expect(Rail.Linear, fn req_conn ->
-        req_conn
-        |> Plug.Conn.put_resp_content_type("application/json")
-        |> Plug.Conn.send_resp(
-          200,
-          Jason.encode!(%{
-            "access_token" => "lin_at_no_exp",
-            "refresh_token" => "lin_rt_no_exp"
-          })
-        )
-      end)
-
+    test "handles linking failure when the user cannot be updated", %{authed_conn: conn} do
+      mock_exchange_success()
       mock_viewer_success()
+
+      expect(Users, :update_user, fn _scope, _user, _attrs -> {:error, :db_error} end)
 
       conn =
         conn

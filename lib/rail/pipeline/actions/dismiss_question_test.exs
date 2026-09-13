@@ -20,20 +20,17 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
 
     scope = system_scope()
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Dismiss Question Workspace",
-        external_id: "lin_ws_dismiss_question",
-        token: "lin_api_token_dismiss_question",
-        webhook_secret: "whsec_dismiss_question"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Dismiss Question Project 6701",
         github_repo: "org/dismiss-question-6701",
         github_installation_id: 6701,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Dismiss Question Workspace",
+          external_id: "lin_ws_dismiss_question",
+          token: "lin_api_token_dismiss_question",
+          webhook_secret: "whsec_dismiss_question"
+        },
         linear_team_id: "team_dismiss_question_6701",
         linear_team_key: "P6701",
         default_branch: "main",

@@ -16,20 +16,17 @@ defmodule RailWeb.Live.RunConversationTest do
 
     {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Conversation Workspace",
-        external_id: "lin_ws_conversation",
-        token: "lin_api_token_conversation",
-        webhook_secret: "whsec_conversation"
-      })
-
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Conversation Project",
         github_repo: "org/conversation",
         github_installation_id: 22_101,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Conversation Workspace",
+          external_id: "lin_ws_conversation",
+          token: "lin_api_token_conversation",
+          webhook_secret: "whsec_conversation"
+        },
         linear_team_id: "team_conversation",
         linear_team_key: "CNV",
         default_branch: "main",

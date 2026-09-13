@@ -17,20 +17,17 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
 
     {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Approve Plan Workspace",
-        external_id: "lin_ws_approve_plan",
-        token: "lin_api_token_approve_plan",
-        webhook_secret: "whsec_approve_plan"
-      })
-
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Approve Plan Project",
         github_repo: "org/approve-plan",
         github_installation_id: 45_001,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Approve Plan Workspace",
+          external_id: "lin_ws_approve_plan",
+          token: "lin_api_token_approve_plan",
+          webhook_secret: "whsec_approve_plan"
+        },
         linear_team_id: "team_approve_plan",
         linear_team_key: "APV",
         default_branch: "main",

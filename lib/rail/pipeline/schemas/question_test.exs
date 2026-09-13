@@ -18,20 +18,17 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
 
     scope = system_scope()
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Question Schema Workspace",
-        external_id: "lin_ws_question_schema",
-        token: "lin_api_token_question_schema",
-        webhook_secret: "whsec_question_schema"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Question Schema Project 7501",
         github_repo: "org/question-schema-7501",
         github_installation_id: 7501,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Question Schema Workspace",
+          external_id: "lin_ws_question_schema",
+          token: "lin_api_token_question_schema",
+          webhook_secret: "whsec_question_schema"
+        },
         linear_team_id: "team_question_schema_7501",
         linear_team_key: "P7501",
         default_branch: "main",

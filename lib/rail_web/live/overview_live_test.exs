@@ -133,14 +133,6 @@ defmodule RailWeb.OverviewLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    {:ok, _workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Overview Live Workspace",
-        external_id: "lin_ws_overview_live",
-        token: "lin_api_token_overview_live",
-        webhook_secret: "whsec_overview_live"
-      })
-
     assert {:ok, %Project{id: project_id, name: project_name}} =
              Projects.create_project(scope, %{
                name: "Preset Project",
@@ -260,20 +252,17 @@ defmodule RailWeb.OverviewLiveTest do
 
       scope = Scope.for_user(user)
 
-      {:ok, workspace} =
-        Projects.upsert_linear_workspace(system_scope(), %{
-          name: "Overview Queue Workspace",
-          external_id: "lin_ws_overview_queue",
-          token: "lin_api_token_overview_queue",
-          webhook_secret: "whsec_overview_queue"
-        })
-
       {:ok, project} =
         Projects.create_project(scope, %{
           name: "Queue App",
           github_repo: "example/queue",
           github_installation_id: 909,
-          linear_workspace_id: workspace.id,
+          linear_workspace: %{
+            name: "Overview Queue Workspace",
+            external_id: "lin_ws_overview_queue",
+            token: "lin_api_token_overview_queue",
+            webhook_secret: "whsec_overview_queue"
+          },
           linear_team_id: "t_queue",
           linear_team_key: "QUE",
           default_branch: "main",

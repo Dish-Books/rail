@@ -26,20 +26,17 @@ defmodule Rail.Runs.FollowerTest do
     {:ok, backend} =
       Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Follower Workspace",
-        external_id: "lin_ws_follower",
-        token: "lin_api_token_follower",
-        webhook_secret: "whsec_follower"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Follower Project",
         github_repo: "org/follower",
         github_installation_id: System.unique_integer([:positive]),
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Follower Workspace",
+          external_id: "lin_ws_follower",
+          token: "lin_api_token_follower",
+          webhook_secret: "whsec_follower"
+        },
         linear_team_id: "team_follower",
         linear_team_key: "FOL",
         default_branch: "main",
@@ -108,7 +105,6 @@ defmodule Rail.Runs.FollowerTest do
     %{
       backend: backend,
       role: role,
-      workspace: workspace,
       task: task,
       run: run,
       os_process: os_process,
@@ -548,12 +544,16 @@ defmodule Rail.Runs.FollowerTest do
 
   test "detects question in stream and registers it to block task", %{
     backend: backend,
-    tmp_dir: tmp_dir,
-    workspace: workspace
+    tmp_dir: tmp_dir
   } do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Follower Workspace",
+          external_id: "lin_ws_follower_2",
+          token: "lin_api_token_follower",
+          webhook_secret: "whsec_follower"
+        },
         name: "Follower Project 12502",
         github_repo: "org/follower-12502",
         github_installation_id: 12_502,

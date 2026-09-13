@@ -45,7 +45,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
   test "project_id is cast from attrs like any other field" do
     attrs = %{
       project_id: "prj_from_attrs",
-      external_id: "lin_123",
+      external_id: "lin_123_2",
       identifier: "ENG-101",
       title: "Fix crash on login",
       state: :triage

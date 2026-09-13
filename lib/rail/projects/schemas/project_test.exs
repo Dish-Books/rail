@@ -73,48 +73,22 @@ defmodule Rail.Projects.Schemas.ProjectTest do
     assert %{github_repo: ["has already been taken"]} = errors_on(changeset)
   end
 
-  test "changeset validates foreign key on linear_workspace_id" do
-    attrs = %{
-      name: "Project FK",
-      github_repo: "example/repo-fk-#{System.unique_integer([:positive])}",
-      github_installation_id: 99_002,
-      linear_workspace_id: "lw_000000000000000000000000",
-      default_branch: "main",
-      linear_team_id: "team_fk",
-      linear_team_key: "PFK",
-      clone_path: "/tmp/pfk"
-    }
-
-    assert {:error, changeset} =
-             %Project{}
-             |> Project.changeset(attrs)
-             |> Repo.insert()
-
-    assert %{linear_workspace_id: ["does not exist"]} = errors_on(changeset)
-  end
-
-  test "belongs to linear_workspace when workspace exists" do
+  test "has one linear_workspace created through the project changeset" do
     ext_id = "lin_ext_#{System.unique_integer([:positive])}"
-
-    assert {:ok, %LinearWorkspace{id: workspace_id}} =
-             %LinearWorkspace{}
-             |> LinearWorkspace.changeset(%{
-               name: "Workspace For Project",
-               external_id: ext_id,
-               token: "tok_proj",
-               webhook_secret: "wh_proj"
-             })
-             |> Repo.insert()
-
     repo = "example/repo-ws-#{System.unique_integer([:positive])}"
 
-    assert {:ok, %Project{linear_workspace_id: ^workspace_id} = project} =
+    assert {:ok, %Project{id: project_id, linear_workspace: %LinearWorkspace{id: workspace_id}}} =
              %Project{}
              |> Project.changeset(%{
                name: "Project with WS",
                github_repo: repo,
                github_installation_id: 99_003,
-               linear_workspace_id: workspace_id,
+               linear_workspace: %{
+                 name: "Workspace For Project",
+                 external_id: ext_id,
+                 token: "tok_proj",
+                 webhook_secret: "wh_proj"
+               },
                default_branch: "main",
                linear_team_id: "team_ws",
                linear_team_key: "PWS",
@@ -122,7 +96,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
              })
              |> Repo.insert()
 
-    assert %Project{linear_workspace: %LinearWorkspace{id: ^workspace_id}} =
-             Repo.preload(project, :linear_workspace)
+    assert %LinearWorkspace{id: ^workspace_id, project_id: ^project_id} =
+             Repo.get_by(LinearWorkspace, project_id: project_id)
   end
 end

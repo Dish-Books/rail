@@ -9,20 +9,17 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Update Issue Workspace",
-        external_id: "lin_ws_update_issue",
-        token: "lin_api_token_update_issue",
-        webhook_secret: "whsec_update_issue"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Update Issue Project",
         github_repo: "org/update-issue",
         github_installation_id: 5901,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Update Issue Workspace",
+          external_id: "lin_ws_update_issue",
+          token: "lin_api_token_update_issue",
+          webhook_secret: "whsec_update_issue"
+        },
         linear_team_id: "team_update_issue",
         linear_team_key: "U01",
         default_branch: "main",
@@ -43,7 +40,7 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
 
     {:ok, issue} = Issues.create_issue(project, %{description: "Initial Title"})
 
-    %{workspace: workspace, project: project, issue: issue}
+    %{project: project, issue: issue}
   end
 
   test "writes the row and says nothing to Linear itself", %{issue: issue} do

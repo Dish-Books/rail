@@ -19,20 +19,17 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
 
     scope = system_scope()
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Settle Product Workspace",
-        external_id: "lin_ws_settle_product",
-        token: "lin_api_token_settle_product",
-        webhook_secret: "whsec_settle_product"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Settle Product Project 14601",
         github_repo: "org/settle-product-14601",
         github_installation_id: 14_601,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Settle Product Workspace",
+          external_id: "lin_ws_settle_product",
+          token: "lin_api_token_settle_product",
+          webhook_secret: "whsec_settle_product"
+        },
         linear_team_id: "team_settle_product_14601",
         linear_team_key: "P14601",
         default_branch: "main",

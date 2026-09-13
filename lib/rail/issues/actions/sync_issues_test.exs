@@ -11,27 +11,24 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
   setup do
     scope = system_scope()
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Sync Issues Workspace",
-        external_id: "lin_ws_sync_issues",
-        token: "lin_api_token_sync_issues",
-        webhook_secret: "whsec_sync_issues"
-      })
-
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Sync Issues Project",
         github_repo: "org/sync-issues",
         github_installation_id: 5501,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Sync Issues Workspace",
+          external_id: "lin_ws_sync_issues",
+          token: "lin_api_token_sync_issues",
+          webhook_secret: "whsec_sync_issues"
+        },
         linear_team_id: "team_sync_issues",
         linear_team_key: "SYN",
         default_branch: "main",
         clone_path: "/tmp/repos/sync-issues"
       })
 
-    %{project: project, workspace: workspace}
+    %{project: project}
   end
 
   test "sync_issues/2 syncs new issues and maps state types", %{project: %Project{id: project_id} = project} do

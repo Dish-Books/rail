@@ -4,6 +4,7 @@ defmodule RailWeb.LinearAuthController do
   alias Rail.Linear
   alias Rail.Scope
   alias Rail.Users
+  alias Rail.Users.Schemas.User
 
   def request(conn, _params) do
     state = 16 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
@@ -41,13 +42,13 @@ defmodule RailWeb.LinearAuthController do
 
   def unlink(conn, %{} = _params) do
     case current_user(conn) do
-      nil ->
+      %User{} = user ->
+        do_unlink(conn, user)
+
+      _no_user ->
         conn
         |> put_flash(:error, "Could not disconnect Linear account.")
         |> redirect(to: ~p"/settings/connected-accounts")
-
-      user ->
-        do_unlink(conn, user)
     end
   end
 

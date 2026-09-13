@@ -19,10 +19,6 @@ defmodule Rail.Issues do
   defdelegate update_issue(issue, attrs), to: Actions.UpdateIssue
   defdelegate archive_issue(issue), to: Actions.ArchiveIssue
   defdelegate move_state(project, issue, state_type, owner_user \\ nil), to: Actions.MoveState
-  defdelegate upload_asset(filename, content_type, data_binary), to: Actions.UploadAsset
-
-  defdelegate upload_asset(target_or_filename, filename_or_content_type, content_type_or_data, data_or_opts),
-    to: Actions.UploadAsset
-
+  defdelegate upload_asset(target, filename, content_type, data_binary), to: Actions.UploadAsset
   defdelegate comment(issue, comment_body, owner_user \\ nil), to: Actions.Comment
 end

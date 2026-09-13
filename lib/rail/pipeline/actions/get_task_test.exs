@@ -15,20 +15,17 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
 
     {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Get Task Workspace",
-        external_id: "lin_ws_get_task",
-        token: "lin_api_token_get_task",
-        webhook_secret: "whsec_get_task"
-      })
-
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Get Task Project",
         github_repo: "org/get-task",
         github_installation_id: 6401,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Get Task Workspace",
+          external_id: "lin_ws_get_task",
+          token: "lin_api_token_get_task",
+          webhook_secret: "whsec_get_task"
+        },
         linear_team_id: "team_get_task",
         linear_team_key: "GTK",
         default_branch: "main",

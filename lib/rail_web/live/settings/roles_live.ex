@@ -14,8 +14,7 @@ defmodule RailWeb.Settings.RolesLive do
   }
 
   def mount(_params, _session, socket) do
-    scope = socket.assigns.current_scope
-    projects = Projects.list_projects(scope)
+    projects = Projects.list_projects()
 
     socket =
       socket

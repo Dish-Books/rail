@@ -7,7 +7,6 @@ defmodule Rail.Issues.Utils.TokenResolverTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
-  alias Rail.Repo
   alias Rail.Scope
   alias Rail.Users
 
@@ -43,20 +42,17 @@ defmodule Rail.Issues.Utils.TokenResolverTest do
   end
 
   test "resolve_token/2 falls back to workspace token and warns when user not linked" do
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Token Resolver Workspace",
-        external_id: "lin_ws_token_resolver",
-        token: "lin_ws_tok_1",
-        webhook_secret: "whsec_token_resolver"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Token Resolver Fallback Project",
         github_repo: "org/token-resolver-fallback",
         github_installation_id: 5302,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Token Resolver Workspace",
+          external_id: "lin_ws_token_resolver",
+          token: "lin_ws_tok_1",
+          webhook_secret: "whsec_token_resolver"
+        },
         linear_team_id: "team_token_resolver_fallback",
         linear_team_key: "TKF",
         default_branch: "main",
@@ -111,23 +107,22 @@ defmodule Rail.Issues.Utils.TokenResolverTest do
     assert {:ok, "preloaded_tok"} = workspace_token(project)
   end
 
-  test "workspace_token/1 returns error when the referenced workspace is missing" do
-    assert {:error, :no_workspace_token} =
-             workspace_token(%Project{linear_workspace_id: "lw_000000000000000000000000"})
-  end
-
-  test "workspace_token/1 fallback queries default workspace from DB" do
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Token Resolver Default Workspace",
-        external_id: "lin_ws_token_default",
-        token: "db_first_tok",
-        webhook_secret: "whsec_token_default"
+  test "workspace_token/1 returns error when the project has no workspace" do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Token Resolver Missing Workspace",
+        github_repo: "org/token-resolver-missing",
+        github_installation_id: 5304,
+        linear_team_id: "team_token_resolver_missing",
+        linear_team_key: "TKM",
+        default_branch: "main",
+        clone_path: "/tmp/repos/token-resolver-missing"
       })
 
-    assert {:ok, "db_first_tok"} = workspace_token(nil)
+    assert {:error, :no_workspace_token} = workspace_token(%{project | linear_workspace: nil})
+  end
 
-    Repo.delete!(workspace)
+  test "workspace_token/1 returns error for anything else" do
     assert {:error, :no_workspace_token} = workspace_token(nil)
   end
 end

@@ -20,20 +20,17 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Run Finished Workspace",
-        external_id: "lin_ws_run_finished",
-        token: "lin_api_token_run_finished",
-        webhook_secret: "whsec_run_finished"
-      })
-
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Run Finished Project",
         github_repo: "org/run-finished",
         github_installation_id: 43_001,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Run Finished Workspace",
+          external_id: "lin_ws_run_finished",
+          token: "lin_api_token_run_finished",
+          webhook_secret: "whsec_run_finished"
+        },
         linear_team_id: "team_run_finished",
         linear_team_key: "RUN",
         default_branch: "main",

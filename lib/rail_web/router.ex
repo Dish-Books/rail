@@ -75,7 +75,6 @@ defmodule RailWeb.Router do
         NavHook
       ] do
       live "/settings/projects", Settings.ProjectsLive
-      live "/settings/linear-workspace", Settings.LinearWorkspaceLive
       live "/settings/users", Settings.UsersLive
       live "/settings/roles", Settings.RolesLive
       live "/settings/backends", Settings.BackendsLive

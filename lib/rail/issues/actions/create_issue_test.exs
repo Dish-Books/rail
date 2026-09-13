@@ -8,25 +8,18 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
-  setup do
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Create Issue Workspace",
-        external_id: "lin_ws_create_issue",
-        token: "lin_api_token_create_issue",
-        webhook_secret: "whsec_create_issue"
-      })
-
-    %{workspace: workspace}
-  end
-
-  test "create_issue/3 creates the ticket as the caller's own Linear identity", %{workspace: workspace} do
+  test "create_issue/3 creates the ticket as the caller's own Linear identity" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Create Issue Project 6101",
         github_repo: "org/create-issue-6101",
         github_installation_id: 6101,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Create Issue Workspace",
+          external_id: "lin_ws_create_issue",
+          token: "lin_api_token_create_issue",
+          webhook_secret: "whsec_create_issue"
+        },
         linear_team_id: "team_cap_1",
         linear_team_key: "CI1",
         default_branch: "main",
@@ -70,13 +63,18 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
             }} = Issues.create_issue(project, %{description: "Short ask title\nMore details here"})
   end
 
-  test "create_issue/3 returns error when Linear creation fails", %{workspace: workspace} do
+  test "create_issue/3 returns error when Linear creation fails" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Create Issue Project 6105",
         github_repo: "org/create-issue-6105",
         github_installation_id: 6105,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Create Issue Workspace",
+          external_id: "lin_ws_create_issue_2",
+          token: "lin_api_token_create_issue",
+          webhook_secret: "whsec_create_issue"
+        },
         linear_team_id: "team_capture_6105",
         linear_team_key: "CI5",
         default_branch: "main",
@@ -89,13 +87,18 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
              Issues.create_issue(project, %{description: "Failing ask"})
   end
 
-  test "create_issue/3 creates issue with specified atom priority", %{workspace: workspace} do
+  test "create_issue/3 creates issue with specified atom priority" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Create Issue Project 6107",
         github_repo: "org/create-issue-6107",
         github_installation_id: 6107,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Create Issue Workspace",
+          external_id: "lin_ws_create_issue_3",
+          token: "lin_api_token_create_issue",
+          webhook_secret: "whsec_create_issue"
+        },
         linear_team_id: "team_cap_pri",
         linear_team_key: "CI7",
         default_branch: "main",
@@ -122,13 +125,18 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
             }} = Issues.create_issue(project, %{description: "Urgent fix needed immediately", priority: :urgent})
   end
 
-  test "create_issue/3 casts a string priority", %{workspace: workspace} do
+  test "create_issue/3 casts a string priority" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Create Issue Project 6108",
         github_repo: "org/create-issue-6108",
         github_installation_id: 6108,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Create Issue Workspace",
+          external_id: "lin_ws_create_issue_4",
+          token: "lin_api_token_create_issue",
+          webhook_secret: "whsec_create_issue"
+        },
         linear_team_id: "team_cap_str",
         linear_team_key: "CI8",
         default_branch: "main",
@@ -155,13 +163,18 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
             }} = Issues.create_issue(project, %{description: "Low task details", priority: "low"})
   end
 
-  test "create_issue/3 refuses a priority that is not one of the known ones", %{workspace: workspace} do
+  test "create_issue/3 refuses a priority that is not one of the known ones" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Create Issue Project 6109",
         github_repo: "org/create-issue-6109",
         github_installation_id: 6109,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Create Issue Workspace",
+          external_id: "lin_ws_create_issue_5",
+          token: "lin_api_token_create_issue",
+          webhook_secret: "whsec_create_issue"
+        },
         linear_team_id: "team_cap_inv",
         linear_team_key: "CI9",
         default_branch: "main",
@@ -187,13 +200,18 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
     assert %{priority: ["is invalid"]} = errors_on(changeset)
   end
 
-  test "create_issue/3 falls back to medium on nil priority", %{workspace: workspace} do
+  test "create_issue/3 falls back to medium on nil priority" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Create Issue Project 6110",
         github_repo: "org/create-issue-6110",
         github_installation_id: 6110,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Create Issue Workspace",
+          external_id: "lin_ws_create_issue_6",
+          token: "lin_api_token_create_issue",
+          webhook_secret: "whsec_create_issue"
+        },
         linear_team_id: "team_cap_nil",
         linear_team_key: "CI10",
         default_branch: "main",
@@ -220,13 +238,18 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
             }} = Issues.create_issue(project, %{description: "Nil priority description", priority: nil})
   end
 
-  test "create_issue/3 titles the ticket with the first line of the description", %{workspace: workspace} do
+  test "create_issue/3 titles the ticket with the first line of the description" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Create Issue Project 6111",
         github_repo: "org/create-issue-6111",
         github_installation_id: 6111,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Create Issue Workspace",
+          external_id: "lin_ws_create_issue_7",
+          token: "lin_api_token_create_issue",
+          webhook_secret: "whsec_create_issue"
+        },
         linear_team_id: "team_cap_title",
         linear_team_key: "CI11",
         default_branch: "main",
@@ -259,13 +282,18 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
              Issues.create_issue(project, %{description: "\n  \nSecond line is the title\nand a body"})
   end
 
-  test "create_issue/3 trims a long first line at a word boundary", %{workspace: workspace} do
+  test "create_issue/3 trims a long first line at a word boundary" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Create Issue Project 6112",
         github_repo: "org/create-issue-6112",
         github_installation_id: 6112,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Create Issue Workspace",
+          external_id: "lin_ws_create_issue_8",
+          token: "lin_api_token_create_issue",
+          webhook_secret: "whsec_create_issue"
+        },
         linear_team_id: "team_cap_long",
         linear_team_key: "CI12",
         default_branch: "main",
@@ -299,13 +327,18 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
     assert String.ends_with?(title, "word…")
   end
 
-  test "create_issue/3 cuts an unbroken first line mid-word", %{workspace: workspace} do
+  test "create_issue/3 cuts an unbroken first line mid-word" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Create Issue Project 6113",
         github_repo: "org/create-issue-6113",
         github_installation_id: 6113,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Create Issue Workspace",
+          external_id: "lin_ws_create_issue_9",
+          token: "lin_api_token_create_issue",
+          webhook_secret: "whsec_create_issue"
+        },
         linear_team_id: "team_cap_unbroken",
         linear_team_key: "CI13",
         default_branch: "main",
@@ -339,13 +372,18 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
     assert {:ok, %Issue{title: ^expected}} = Issues.create_issue(project, %{description: ask})
   end
 
-  test "create_issue/3 keeps a title the caller gave and tolerates a missing description", %{workspace: workspace} do
+  test "create_issue/3 keeps a title the caller gave and tolerates a missing description" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Create Issue Project 6114",
         github_repo: "org/create-issue-6114",
         github_installation_id: 6114,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Create Issue Workspace",
+          external_id: "lin_ws_create_issue_10",
+          token: "lin_api_token_create_issue",
+          webhook_secret: "whsec_create_issue"
+        },
         linear_team_id: "team_cap_given",
         linear_team_key: "CI14",
         default_branch: "main",
@@ -376,13 +414,18 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
              Issues.create_issue(project, %{title: "An explicit title"})
   end
 
-  test "create_issue/3 refuses a description with no line to title it with", %{workspace: workspace} do
+  test "create_issue/3 refuses a description with no line to title it with" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Create Issue Project 6115",
         github_repo: "org/create-issue-6115",
         github_installation_id: 6115,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Create Issue Workspace",
+          external_id: "lin_ws_create_issue_11",
+          token: "lin_api_token_create_issue",
+          webhook_secret: "whsec_create_issue"
+        },
         linear_team_id: "team_cap_empty",
         linear_team_key: "CI15",
         default_branch: "main",
@@ -398,13 +441,18 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
     assert %{title: ["can't be blank"]} = errors_on(changeset)
   end
 
-  test "create_issue/3 refuses attrs carrying neither a title nor a description", %{workspace: workspace} do
+  test "create_issue/3 refuses attrs carrying neither a title nor a description" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Create Issue Project 6116",
         github_repo: "org/create-issue-6116",
         github_installation_id: 6116,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Create Issue Workspace",
+          external_id: "lin_ws_create_issue_12",
+          token: "lin_api_token_create_issue",
+          webhook_secret: "whsec_create_issue"
+        },
         linear_team_id: "team_cap_none",
         linear_team_key: "CI16",
         default_branch: "main",

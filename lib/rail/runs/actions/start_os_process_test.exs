@@ -26,20 +26,17 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
     File.mkdir_p!(scratch_path)
     on_exit(fn -> File.rm_rf(tmp_dir) end)
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Start Run Workspace #{unique}",
-        external_id: "lin_ws_start_run_#{unique}",
-        token: "lin_api_token_start_run_#{unique}",
-        webhook_secret: "whsec_start_run_#{unique}"
-      })
-
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Start Run Project #{unique}",
         github_repo: "org/start-run-#{unique}",
         github_installation_id: unique,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Start Run Workspace #{unique}",
+          external_id: "lin_ws_start_run_#{unique}",
+          token: "lin_api_token_start_run_#{unique}",
+          webhook_secret: "whsec_start_run_#{unique}"
+        },
         linear_team_id: "team_start_run_#{unique}",
         linear_team_key: "SR#{unique}",
         default_branch: "main",

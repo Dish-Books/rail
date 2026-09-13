@@ -206,16 +206,14 @@ defmodule RailWeb.OverviewLive do
   end
 
   defp build_roster_groups(scope, project_id, runs) when is_binary(project_id) do
-    case Projects.get_project(scope, project_id) do
+    case Projects.get_project(project_id) do
       {:ok, project} -> [{project, role_entries(scope, project, runs)}]
       _no_project -> []
     end
   end
 
   defp build_roster_groups(scope, nil, runs) do
-    scope
-    |> Projects.list_projects()
-    |> Enum.map(fn project ->
+    Enum.map(Projects.list_projects(), fn project ->
       project_runs = Enum.filter(runs, &(&1.task.project_id == project.id))
       {project, role_entries(scope, project, project_runs)}
     end)

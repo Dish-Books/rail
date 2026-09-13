@@ -15,20 +15,17 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
 
     {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Stop Run Workspace",
-        external_id: "lin_ws_stop_run",
-        token: "lin_api_token_stop_run",
-        webhook_secret: "whsec_stop_run"
-      })
-
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Stop Run Project",
         github_repo: "org/stop-run",
         github_installation_id: 42_001,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Stop Run Workspace",
+          external_id: "lin_ws_stop_run",
+          token: "lin_api_token_stop_run",
+          webhook_secret: "whsec_stop_run"
+        },
         linear_team_id: "team_stop_run",
         linear_team_key: "STP",
         default_branch: "main",

@@ -15,20 +15,17 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
 
     {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Send Message Workspace",
-        external_id: "lin_ws_send_message",
-        token: "lin_api_token_send_message",
-        webhook_secret: "whsec_send_message"
-      })
-
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Send Message Project",
         github_repo: "org/send-message",
         github_installation_id: 41_001,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Send Message Workspace",
+          external_id: "lin_ws_send_message",
+          token: "lin_api_token_send_message",
+          webhook_secret: "whsec_send_message"
+        },
         linear_team_id: "team_send_message",
         linear_team_key: "SND",
         default_branch: "main",

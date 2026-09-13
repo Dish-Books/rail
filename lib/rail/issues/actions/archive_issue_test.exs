@@ -8,21 +8,7 @@ defmodule Rail.Issues.Actions.ArchiveIssueTest do
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
-  setup do
-    scope = system_scope()
-
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Archive Issue Workspace",
-        external_id: "lin_ws_archive",
-        token: "lin_api_token_archive",
-        webhook_secret: "whsec_archive"
-      })
-
-    %{workspace: workspace}
-  end
-
-  test "archive_issue/2 cancels issue in Linear and updates local issue", %{workspace: workspace} do
+  test "archive_issue/2 cancels issue in Linear and updates local issue" do
     scope = Scope.for_system()
 
     {:ok, project} =
@@ -30,7 +16,12 @@ defmodule Rail.Issues.Actions.ArchiveIssueTest do
         name: "Archive Project",
         github_repo: "org/archive",
         github_installation_id: 5801,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Archive Issue Workspace",
+          external_id: "lin_ws_archive",
+          token: "lin_api_token_archive",
+          webhook_secret: "whsec_archive"
+        },
         linear_team_id: "team_arc_1",
         linear_team_key: "ARC",
         default_branch: "main",
@@ -70,13 +61,18 @@ defmodule Rail.Issues.Actions.ArchiveIssueTest do
              Issues.archive_issue(issue)
   end
 
-  test "archive_issue/2 works with user scope and atom keyed linear_state_ids", %{workspace: workspace} do
+  test "archive_issue/2 works with user scope and atom keyed linear_state_ids" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Archive User Project",
         github_repo: "org/archive-user",
         github_installation_id: 5802,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Archive Issue Workspace",
+          external_id: "lin_ws_archive_2",
+          token: "lin_api_token_archive",
+          webhook_secret: "whsec_archive"
+        },
         linear_team_id: "team_arc_user",
         linear_team_key: "ARU",
         default_branch: "main",
@@ -127,7 +123,7 @@ defmodule Rail.Issues.Actions.ArchiveIssueTest do
              Issues.archive_issue(issue)
   end
 
-  test "archive_issue/2 returns error on Linear mutation failure", %{workspace: workspace} do
+  test "archive_issue/2 returns error on Linear mutation failure" do
     scope = Scope.for_system()
 
     {:ok, project} =
@@ -135,7 +131,12 @@ defmodule Rail.Issues.Actions.ArchiveIssueTest do
         name: "Archive Failure Project",
         github_repo: "org/archive-failure",
         github_installation_id: 5803,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Archive Issue Workspace",
+          external_id: "lin_ws_archive_3",
+          token: "lin_api_token_archive",
+          webhook_secret: "whsec_archive"
+        },
         linear_team_id: "team_arc_2",
         linear_team_key: "ARF",
         default_branch: "main",

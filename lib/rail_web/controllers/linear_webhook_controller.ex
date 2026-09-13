@@ -4,11 +4,8 @@ defmodule RailWeb.LinearWebhookController do
   """
   use RailWeb, :controller
 
-  import Ecto.Query
-
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects.Schemas.LinearWorkspace
-  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
 
   def handle(conn, %{"workspace_id" => workspace_id} = params) do
@@ -53,12 +50,9 @@ defmodule RailWeb.LinearWebhookController do
 
   defp process_event(workspace, %{"type" => "Issue", "action" => action, "data" => data})
        when action in ["create", "update"] and is_map(data) do
-    case find_project_for_issue(workspace.id, data["teamId"]) do
-      %Project{id: project_id} ->
-        upsert_issue(project_id, data)
-
-      nil ->
-        :ok
+    case workspace.project_id do
+      project_id when is_binary(project_id) -> upsert_issue(project_id, data)
+      nil -> :ok
     end
   end
 
@@ -74,23 +68,6 @@ defmodule RailWeb.LinearWebhookController do
   end
 
   defp process_event(_workspace, _params), do: :ok
-
-  defp find_project_for_issue(workspace_id, team_id) when is_binary(team_id) do
-    query =
-      from p in Project,
-        where: p.linear_workspace_id == ^workspace_id and p.linear_team_id == ^team_id,
-        limit: 1
-
-    Repo.one(query) || find_default_project(workspace_id)
-  end
-
-  defp find_project_for_issue(workspace_id, _team_id) do
-    find_default_project(workspace_id)
-  end
-
-  defp find_default_project(workspace_id) do
-    Repo.one(from p in Project, where: p.linear_workspace_id == ^workspace_id, limit: 1)
-  end
 
   defp upsert_issue(project_id, data) do
     state_map = data["state"] || %{}

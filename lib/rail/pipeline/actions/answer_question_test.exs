@@ -17,20 +17,17 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
 
     {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Answer Question Workspace",
-        external_id: "lin_ws_answer_question",
-        token: "lin_api_token_answer_question",
-        webhook_secret: "whsec_answer_question"
-      })
-
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Answer Question Project",
         github_repo: "org/answer-question",
         github_installation_id: 46_001,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Answer Question Workspace",
+          external_id: "lin_ws_answer_question",
+          token: "lin_api_token_answer_question",
+          webhook_secret: "whsec_answer_question"
+        },
         linear_team_id: "team_answer_question",
         linear_team_key: "ANS",
         default_branch: "main",

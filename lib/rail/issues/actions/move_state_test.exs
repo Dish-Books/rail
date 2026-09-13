@@ -8,25 +8,18 @@ defmodule Rail.Issues.Actions.MoveStateTest do
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
-  setup do
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Move State Workspace",
-        external_id: "lin_ws_move_state",
-        token: "lin_api_token_move_state",
-        webhook_secret: "whsec_move_state"
-      })
-
-    %{workspace: workspace}
-  end
-
-  test "move_state/5 moves state using cached state ids", %{workspace: workspace} do
+  test "move_state/5 moves state using cached state ids" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Move State Cached",
         github_repo: "org/move-state-cached",
         github_installation_id: 6001,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Move State Workspace",
+          external_id: "lin_ws_move_state",
+          token: "lin_api_token_move_state",
+          webhook_secret: "whsec_move_state"
+        },
         linear_team_id: "team_move_state_cached",
         linear_team_key: "MV1",
         default_branch: "main",
@@ -64,15 +57,18 @@ defmodule Rail.Issues.Actions.MoveStateTest do
              Issues.move_state(project, issue, :done)
   end
 
-  test "move_state/5 resolves state from Linear when not cached for triage, backlog, done, in_progress, and fallback", %{
-    workspace: workspace
-  } do
+  test "move_state/5 resolves state from Linear when not cached for triage, backlog, done, in_progress, and fallback" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Move State Fetched",
         github_repo: "org/move-state-fetched",
         github_installation_id: 6002,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Move State Workspace",
+          external_id: "lin_ws_move_state_2",
+          token: "lin_api_token_move_state",
+          webhook_secret: "whsec_move_state"
+        },
         linear_team_id: "team_move_state_fetched",
         linear_team_key: "MV2",
         default_branch: "main",
@@ -196,13 +192,18 @@ defmodule Rail.Issues.Actions.MoveStateTest do
              Issues.move_state(project, issue, :custom)
   end
 
-  test "move_state/5 returns error when Linear update_issue mutation fails", %{workspace: workspace} do
+  test "move_state/5 returns error when Linear update_issue mutation fails" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Move State Mutation Error",
         github_repo: "org/move-state-mut-err",
         github_installation_id: 6003,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Move State Workspace",
+          external_id: "lin_ws_move_state_3",
+          token: "lin_api_token_move_state",
+          webhook_secret: "whsec_move_state"
+        },
         linear_team_id: "team_move_state_mut_err",
         linear_team_key: "MV3",
         default_branch: "main",
@@ -230,13 +231,18 @@ defmodule Rail.Issues.Actions.MoveStateTest do
              Issues.move_state(project, issue, :done)
   end
 
-  test "move_state/5 returns error when Linear workflow_states fails", %{workspace: workspace} do
+  test "move_state/5 returns error when Linear workflow_states fails" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Move State Workflow Error",
         github_repo: "org/move-state-ws-err",
         github_installation_id: 6004,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Move State Workspace",
+          external_id: "lin_ws_move_state_4",
+          token: "lin_api_token_move_state",
+          webhook_secret: "whsec_move_state"
+        },
         linear_team_id: "team_move_state_ws_err",
         linear_team_key: "MV4",
         default_branch: "main",
@@ -264,13 +270,18 @@ defmodule Rail.Issues.Actions.MoveStateTest do
              Issues.move_state(project, issue, :done)
   end
 
-  test "move_state/5 returns error when state cannot be resolved from Linear", %{workspace: workspace} do
+  test "move_state/5 returns error when state cannot be resolved from Linear" do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Move State Unresolved",
         github_repo: "org/move-state-unresolved",
         github_installation_id: 6005,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Move State Workspace",
+          external_id: "lin_ws_move_state_5",
+          token: "lin_api_token_move_state",
+          webhook_secret: "whsec_move_state"
+        },
         linear_team_id: "team_move_state_unresolved",
         linear_team_key: "MV5",
         default_branch: "main",

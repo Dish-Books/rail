@@ -159,7 +159,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     assert is_nil(reloaded.linear_access_token)
   end
 
-  test "handles disconnect error gracefully when user cannot be unlinked", %{
+  test "handles disconnect error gracefully when the user cannot be updated", %{
     authed_conn: conn,
     user: user
   } do
@@ -172,7 +172,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
 
-    Repo.delete!(user)
+    expect(Users, :update_user, fn _scope, _user, _attrs -> {:error, :db_error} end)
 
     rendered = render_click(element(view, "#disconnect-linear-button"))
     assert rendered =~ "Connected as"
@@ -182,7 +182,6 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
     assert has_element?(view, "#tab-connected-accounts")
     refute has_element?(view, "#tab-projects")
-    refute has_element?(view, "#tab-linear-workspace")
   end
 
   test "renders all settings tabs for admin user", %{conn: conn} do
@@ -208,6 +207,5 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     assert {:ok, view, _html} = live(admin_conn, ~p"/settings/connected-accounts")
     assert has_element?(view, "#tab-connected-accounts")
     assert has_element?(view, "#tab-projects")
-    assert has_element?(view, "#tab-linear-workspace")
   end
 end

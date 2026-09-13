@@ -304,7 +304,6 @@ defmodule RailWeb.IssuesLive do
   end
 
   def handle_event("sync_issues", _params, socket) do
-    scope = socket.assigns[:current_scope]
     project = socket.assigns.current_project
 
     socket = assign(socket, :is_syncing, true)
@@ -312,7 +311,7 @@ defmodule RailWeb.IssuesLive do
     if project do
       Issues.sync_issues(project)
     else
-      scope |> Projects.list_projects() |> Enum.each(&Issues.sync_issues/1)
+      Enum.each(Projects.list_projects(), &Issues.sync_issues/1)
     end
 
     socket =
@@ -441,9 +440,7 @@ defmodule RailWeb.IssuesLive do
   end
 
   defp load_project(socket, project_id) when is_binary(project_id) do
-    scope = socket.assigns[:current_scope]
-
-    case Projects.get_project(scope, project_id) do
+    case Projects.get_project(project_id) do
       {:ok, project} ->
         assign(socket, :current_project, project)
 

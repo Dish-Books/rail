@@ -22,20 +22,17 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     scope = system_scope()
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "Register Question Workspace",
-        external_id: "lin_ws_register_question",
-        token: "lin_api_token_register_question",
-        webhook_secret: "whsec_register_question"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Register Question Project 7901",
         github_repo: "org/register-question-7901",
         github_installation_id: 7901,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Register Question Workspace",
+          external_id: "lin_ws_register_question",
+          token: "lin_api_token_register_question",
+          webhook_secret: "whsec_register_question"
+        },
         linear_team_id: "team_register_question_7901",
         linear_team_key: "P7901",
         default_branch: "main",

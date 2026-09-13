@@ -179,7 +179,7 @@ defmodule Rail.Users.Actions.LinearTokenTest do
     assert {:ok, "lin_at_map_scope"} = Users.linear_token(%Scope{user: %{id: user_id}})
   end
 
-  test "returns changeset error when refresh response is missing expiration", %{
+  test "stores a nil expiry when the refresh response omits expiration", %{
     user: user,
     scope: scope
   } do
@@ -206,7 +206,10 @@ defmodule Rail.Users.Actions.LinearTokenTest do
       )
     end)
 
-    assert {:error, changeset} = Users.linear_token(scope)
-    assert %{linear_token_expires_at: ["can't be blank"]} = errors_on(changeset)
+    assert {:ok, "lin_at_no_exp"} = Users.linear_token(scope)
+
+    reloaded = Repo.get!(User, user.id)
+    assert reloaded.linear_access_token == "lin_at_no_exp"
+    assert is_nil(reloaded.linear_token_expires_at)
   end
 end

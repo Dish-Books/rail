@@ -16,20 +16,17 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
 
     {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Enter Stage Workspace",
-        external_id: "lin_ws_enter_stage",
-        token: "lin_api_token_enter_stage",
-        webhook_secret: "whsec_enter_stage"
-      })
-
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Enter Stage Project",
         github_repo: "org/enter-stage",
         github_installation_id: 44_001,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Enter Stage Workspace",
+          external_id: "lin_ws_enter_stage",
+          token: "lin_api_token_enter_stage",
+          webhook_secret: "whsec_enter_stage"
+        },
         linear_team_id: "team_enter_stage",
         linear_team_key: "ENT",
         default_branch: "main",

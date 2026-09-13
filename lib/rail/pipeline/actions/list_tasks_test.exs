@@ -13,20 +13,17 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
-        name: "List Tasks Workspace",
-        external_id: "lin_ws_list_tasks",
-        token: "lin_api_token_list_tasks",
-        webhook_secret: "whsec_list_tasks"
-      })
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "List Tasks Project 7101",
         github_repo: "org/list-tasks-7101",
         github_installation_id: 7101,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "List Tasks Workspace",
+          external_id: "lin_ws_list_tasks",
+          token: "lin_api_token_list_tasks",
+          webhook_secret: "whsec_list_tasks"
+        },
         linear_team_id: "team_list_tasks_7101",
         linear_team_key: "P7101",
         default_branch: "main",
@@ -115,6 +112,12 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   test "lists tasks across all projects when project_id is nil", %{task: task} do
     {:ok, _p1} =
       Projects.create_project(system_scope(), %{
+        linear_workspace: %{
+          name: "List Tasks Workspace",
+          external_id: "lin_ws_list_tasks_x4",
+          token: "lin_api_token_list_tasks",
+          webhook_secret: "whsec_list_tasks"
+        },
         name: "List Tasks Project 7107",
         github_repo: "org/list-tasks-7107",
         github_installation_id: 7107,
@@ -133,6 +136,12 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     {:ok, p2} =
       Projects.create_project(system_scope(), %{
+        linear_workspace: %{
+          name: "List Tasks Workspace",
+          external_id: "lin_ws_list_tasks_x5",
+          token: "lin_api_token_list_tasks",
+          webhook_secret: "whsec_list_tasks"
+        },
         name: "List Tasks Project 7108",
         github_repo: "org/list-tasks-7108",
         github_installation_id: 7108,

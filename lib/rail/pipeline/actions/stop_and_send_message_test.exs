@@ -15,20 +15,17 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessageTest do
 
     {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Stop And Send Workspace",
-        external_id: "lin_ws_stop_and_send",
-        token: "lin_api_token_stop_and_send",
-        webhook_secret: "whsec_stop_and_send"
-      })
-
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Stop And Send Project",
         github_repo: "org/stop-and-send",
         github_installation_id: 42_002,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Stop And Send Workspace",
+          external_id: "lin_ws_stop_and_send",
+          token: "lin_api_token_stop_and_send",
+          webhook_secret: "whsec_stop_and_send"
+        },
         linear_team_id: "team_stop_and_send",
         linear_team_key: "SAS",
         default_branch: "main",

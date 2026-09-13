@@ -9,27 +9,24 @@ defmodule Rail.Issues.Actions.GetIssueTest do
   setup do
     scope = system_scope()
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Get Issue Workspace",
-        external_id: "lin_ws_get_issue",
-        token: "lin_api_token_get_issue",
-        webhook_secret: "whsec_get_issue"
-      })
-
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Get Issue Project",
         github_repo: "org/get-issue",
         github_installation_id: 5101,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Get Issue Workspace",
+          external_id: "lin_ws_get_issue",
+          token: "lin_api_token_get_issue",
+          webhook_secret: "whsec_get_issue"
+        },
         linear_team_id: "team_get_issue",
         linear_team_key: "GTI",
         default_branch: "main",
         clone_path: "/tmp/repos/get-issue"
       })
 
-    %{project: project, workspace: workspace}
+    %{project: project}
   end
 
   test "get_issue/2 retrieves an existing issue by id and external_id", %{project: project} do

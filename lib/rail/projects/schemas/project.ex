@@ -16,7 +16,7 @@ defmodule Rail.Projects.Schemas.Project do
     field :clone_path, :string
     field :active, :boolean, default: true
 
-    belongs_to :linear_workspace, LinearWorkspace
+    has_one :linear_workspace, LinearWorkspace
 
     timestamps()
   end
@@ -26,7 +26,6 @@ defmodule Rail.Projects.Schemas.Project do
     :github_repo,
     :github_installation_id,
     :default_branch,
-    :linear_workspace_id,
     :linear_team_id,
     :linear_team_key,
     :linear_state_ids,
@@ -48,7 +47,7 @@ defmodule Rail.Projects.Schemas.Project do
     project
     |> cast(attrs, @fields)
     |> validate_required(@required_fields)
+    |> cast_assoc(:linear_workspace)
     |> unique_constraint(:github_repo)
-    |> foreign_key_constraint(:linear_workspace_id)
   end
 end

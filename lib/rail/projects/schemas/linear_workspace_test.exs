@@ -1,7 +1,6 @@
 defmodule Rail.Projects.Schemas.LinearWorkspaceTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Repo
 
@@ -56,12 +55,14 @@ defmodule Rail.Projects.Schemas.LinearWorkspaceTest do
 
   test "token and webhook_secret are redacted in inspect" do
     {:ok, workspace} =
-      Projects.upsert_linear_workspace(system_scope(), %{
+      %LinearWorkspace{}
+      |> LinearWorkspace.changeset(%{
         name: "Redacted Workspace",
-        external_id: "lin_ws_redacted",
-        token: "lin_api_token_redacted",
+        external_id: "lin_ext_#{System.unique_integer([:positive])}",
+        token: "tok_redacted",
         webhook_secret: "whsec_redacted"
       })
+      |> Repo.insert()
 
     inspected = inspect(workspace, limit: :infinity)
 

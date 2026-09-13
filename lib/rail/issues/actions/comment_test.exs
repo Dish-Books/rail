@@ -10,20 +10,17 @@ defmodule Rail.Issues.Actions.CommentTest do
   setup do
     scope = system_scope()
 
-    {:ok, workspace} =
-      Projects.upsert_linear_workspace(scope, %{
-        name: "Comment Workspace",
-        external_id: "lin_ws_comment",
-        token: "lin_api_token_comment",
-        webhook_secret: "whsec_comment"
-      })
-
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Comment Project",
         github_repo: "org/comment",
         github_installation_id: 5401,
-        linear_workspace_id: workspace.id,
+        linear_workspace: %{
+          name: "Comment Workspace",
+          external_id: "lin_ws_comment",
+          token: "lin_api_token_comment",
+          webhook_secret: "whsec_comment"
+        },
         linear_team_id: "team_comment",
         linear_team_key: "CMT",
         default_branch: "main",
