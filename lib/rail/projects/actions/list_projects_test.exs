@@ -14,7 +14,6 @@ defmodule Rail.Projects.Actions.ListProjectsTest do
                name: "Zeta Project",
                github_repo: "example/zeta-#{id}",
                github_installation_id: id,
-               linear_team_id: "team_z",
                linear_team_key: "ZET",
                default_branch: "main",
                clone_path: "/tmp/zeta"
@@ -25,7 +24,6 @@ defmodule Rail.Projects.Actions.ListProjectsTest do
                name: "Alpha Project",
                github_repo: "example/alpha-#{id}",
                github_installation_id: id + 1,
-               linear_team_id: "team_a",
                linear_team_key: "ALP",
                default_branch: "main",
                clone_path: "/tmp/alpha"
@@ -46,7 +44,6 @@ defmodule Rail.Projects.Actions.ListProjectsTest do
                name: "System Scope Project #{id}",
                github_repo: "example/sys-#{id}",
                github_installation_id: id,
-               linear_team_id: "team_sys",
                linear_team_key: "SYS",
                default_branch: "main",
                clone_path: "/tmp/sys"

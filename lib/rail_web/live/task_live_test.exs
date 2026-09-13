@@ -16,7 +16,6 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup %{conn: conn} do
     {:ok, user} =
@@ -31,6 +30,10 @@ defmodule RailWeb.TaskLiveTest do
 
     {:ok, backend} = Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Task Live Project",
@@ -42,7 +45,6 @@ defmodule RailWeb.TaskLiveTest do
           token: "lin_api_token_task_live",
           webhook_secret: "whsec_task_live"
         },
-        linear_team_id: "team_task_live",
         linear_team_key: "TLV",
         default_branch: "main",
         clone_path: "/tmp/repos/task-live",
@@ -59,13 +61,22 @@ defmodule RailWeb.TaskLiveTest do
         system_prompt: "You are the product agent."
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_live_1",
-      "identifier" => "TLV-1",
-      "title" => "Task Live Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_task_live_1",
+              "identifier" => "TLV-1",
+              "title" => "Task Live Issue"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Task Live Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Task Live Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)
     File.mkdir_p!(Path.join(task.scratch_path, "tickets"))
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
@@ -127,7 +138,13 @@ defmodule RailWeb.TaskLiveTest do
       "---\ntitle: A better ticket\n---\n\nThe body the agent wrote."
     )
 
-    LinearMock.mock_update_issue_success(%{"id" => "lin_task_live_1", "identifier" => "TLV-1"})
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueUpdate" => %{"success" => true, "issue" => %{"id" => "lin_task_live_1", "identifier" => "TLV-1"}}
+        }
+      })
+    end)
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
     assert has_element?(view, "[data-qa='product_ticket']", "The body the agent wrote.")

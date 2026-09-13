@@ -10,13 +10,16 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     scope = system_scope()
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
@@ -29,7 +32,6 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
           token: "lin_api_token_settle_product",
           webhook_secret: "whsec_settle_product"
         },
-        linear_team_id: "team_settle_product_14601",
         linear_team_key: "P14601",
         default_branch: "main",
         clone_path: "/tmp/repos/settle-product-14601",
@@ -56,13 +58,22 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
         {stage, role}
       end)
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_settle_product_1",
-      "identifier" => "S14601-1",
-      "title" => "Settle Product Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_settle_product_1",
+              "identifier" => "S14601-1",
+              "title" => "Settle Product Issue"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Settle Product Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Settle Product Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

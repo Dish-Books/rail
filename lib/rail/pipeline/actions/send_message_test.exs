@@ -8,12 +8,15 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -26,7 +29,6 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
           token: "lin_api_token_send_message",
           webhook_secret: "whsec_send_message"
         },
-        linear_team_id: "team_send_message",
         linear_team_key: "SND",
         default_branch: "main",
         clone_path: "/tmp/repos/send-message",
@@ -42,13 +44,22 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
         system_prompt: "You are the engineer."
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_send_message_1",
-      "identifier" => "SND-1",
-      "title" => "Send Message Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_send_message_1",
+              "identifier" => "SND-1",
+              "title" => "Send Message Issue"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Send Message Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Send Message Issue"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 
     idle = fn ->

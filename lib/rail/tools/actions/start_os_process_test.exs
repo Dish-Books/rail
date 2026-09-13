@@ -26,6 +26,10 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     File.mkdir_p!(scratch_path)
     on_exit(fn -> File.rm_rf(tmp_dir) end)
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Start Run Project #{unique}",
@@ -37,7 +41,6 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
           token: "lin_api_token_start_run_#{unique}",
           webhook_secret: "whsec_start_run_#{unique}"
         },
-        linear_team_id: "team_start_run_#{unique}",
         linear_team_key: "SR#{unique}",
         default_branch: "main",
         clone_path: Path.join(tmp_dir, "clone")

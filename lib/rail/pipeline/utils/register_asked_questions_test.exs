@@ -14,13 +14,16 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools.Schemas.OsProcess
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
 
     {:ok, backend} =
       Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -33,7 +36,6 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
           token: "lin_api_token_run_finished",
           webhook_secret: "whsec_run_finished"
         },
-        linear_team_id: "team_run_finished_3301",
         linear_team_key: "P3301",
         default_branch: "main",
         clone_path: "/tmp/repos/run-finished-3301",
@@ -55,13 +57,22 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
         system_prompt: "You are the product agent."
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_run_finished_1",
-      "identifier" => "RFN-1",
-      "title" => "Run Finished Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_run_finished_1",
+              "identifier" => "RFN-1",
+              "title" => "Run Finished Issue"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Run Finished Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Run Finished Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     # These tests exercise the question read-back, not Linear publishing.

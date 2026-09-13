@@ -37,18 +37,13 @@ defmodule RailWeb.Settings.BackendsLive do
     <Layouts.app
       flash={@flash}
       current_section={@current_section}
+      current_scope={@current_scope}
       is_rail_extended={@is_rail_extended}
       attention_count={@attention_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
-      show_new_issue_modal={@show_new_issue_modal}
-      capture_ask={@capture_ask}
-      capture_project_id={@capture_project_id}
-      capture_priority={@capture_priority}
-      capture_error={@capture_error}
-      capture_submitting={@capture_submitting}
     >
       <div class="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10" id="backends-settings">
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

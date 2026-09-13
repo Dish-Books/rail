@@ -10,9 +10,12 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "List Tasks Project 7101",
@@ -24,7 +27,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
           token: "lin_api_token_list_tasks",
           webhook_secret: "whsec_list_tasks"
         },
-        linear_team_id: "team_list_tasks_7101",
         linear_team_key: "P7101",
         default_branch: "main",
         clone_path: "/tmp/repos/list-tasks-7101",
@@ -37,13 +39,22 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         }
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_list_tasks_1",
-      "identifier" => "LTS-1",
-      "title" => "List Tasks Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_list_tasks_1",
+              "identifier" => "LTS-1",
+              "title" => "List Tasks Issue"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "List Tasks Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "List Tasks Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -56,13 +67,22 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         stage: :product
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_list_tasks_7103",
-      "identifier" => "TSK-7103",
-      "title" => "Task 7103"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_task_list_tasks_7103",
+              "identifier" => "TSK-7103",
+              "title" => "Task 7103"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue_7103} = Issues.create_issue(project, %{description: "Task 7103"})
+    {:ok, issue_7103} = Issues.create_issue(system_scope(), project, %{description: "Task 7103"})
 
     {:ok, %Task{id: eng_q_id}} = Pipeline.create_task(issue_7103, :product)
 
@@ -71,13 +91,22 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         stage: :engineer
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_list_tasks_7104",
-      "identifier" => "TSK-7104",
-      "title" => "Task 7104"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_task_list_tasks_7104",
+              "identifier" => "TSK-7104",
+              "title" => "Task 7104"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue_7104} = Issues.create_issue(project, %{description: "Task 7104"})
+    {:ok, issue_7104} = Issues.create_issue(system_scope(), project, %{description: "Task 7104"})
 
     {:ok, t_eng_other} = Pipeline.create_task(issue_7104, :product)
 
@@ -95,13 +124,22 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     {:ok, %Task{id: id1}} =
       Pipeline.update_task(task, %{})
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_list_tasks_7105",
-      "identifier" => "TSK-7105",
-      "title" => "Beta"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_task_list_tasks_7105",
+              "identifier" => "TSK-7105",
+              "title" => "Beta"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue_7105} = Issues.create_issue(project, %{description: "Beta"})
+    {:ok, issue_7105} = Issues.create_issue(system_scope(), project, %{description: "Beta"})
 
     {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7105, :product)
 
@@ -110,6 +148,10 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   end
 
   test "lists tasks across all projects when project_id is nil", %{task: task} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, _p1} =
       Projects.create_project(system_scope(), %{
         linear_workspace: %{
@@ -121,7 +163,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         name: "List Tasks Project 7107",
         github_repo: "org/list-tasks-7107",
         github_installation_id: 7107,
-        linear_team_id: "team_list_tasks_7107",
         linear_team_key: "P7107",
         default_branch: "main",
         clone_path: "/tmp/repos/list-tasks-7107",
@@ -134,6 +175,10 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         }
       })
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, p2} =
       Projects.create_project(system_scope(), %{
         linear_workspace: %{
@@ -145,7 +190,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         name: "List Tasks Project 7108",
         github_repo: "org/list-tasks-7108",
         github_installation_id: 7108,
-        linear_team_id: "team_list_tasks_7108",
         linear_team_key: "P7108",
         default_branch: "main",
         clone_path: "/tmp/repos/list-tasks-7108",
@@ -163,13 +207,22 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     {:ok, %Task{id: id1}} =
       Pipeline.update_task(task, %{})
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_list_tasks_7106",
-      "identifier" => "TSK-7106",
-      "title" => "P2 Task"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_task_list_tasks_7106",
+              "identifier" => "TSK-7106",
+              "title" => "P2 Task"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue_7106} = Issues.create_issue(p2, %{description: "P2 Task"})
+    {:ok, issue_7106} = Issues.create_issue(system_scope(), p2, %{description: "P2 Task"})
 
     {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7106, :product)
 

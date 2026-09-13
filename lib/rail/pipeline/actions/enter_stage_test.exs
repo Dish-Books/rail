@@ -9,12 +9,15 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -27,7 +30,6 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
           token: "lin_api_token_enter_stage",
           webhook_secret: "whsec_enter_stage"
         },
-        linear_team_id: "team_enter_stage",
         linear_team_key: "ENT",
         default_branch: "main",
         clone_path: "/tmp/repos/enter-stage",
@@ -48,13 +50,22 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
         {stage, role}
       end)
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_enter_stage_1",
-      "identifier" => "ENT-1",
-      "title" => "Enter Stage Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_enter_stage_1",
+              "identifier" => "ENT-1",
+              "title" => "Enter Stage Issue"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Enter Stage Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Enter Stage Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, task: task, roles: roles}

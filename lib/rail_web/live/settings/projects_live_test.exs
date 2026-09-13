@@ -4,7 +4,9 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Projects
+  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
+  alias Rail.Repo
   alias Rail.Scope
   alias Rail.Users
   alias Rail.Users.Schemas.User
@@ -82,7 +84,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Active App",
                github_repo: "example/active-#{id}",
                github_installation_id: 111,
-               linear_team_id: "team_act",
                linear_team_key: "ACT",
                default_branch: "main",
                clone_path: "/tmp/active",
@@ -94,7 +95,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Inactive App",
                github_repo: "example/inactive-#{id}",
                github_installation_id: 222,
-               linear_team_id: "team_inact",
                linear_team_key: "INACT",
                default_branch: "main",
                clone_path: "/tmp/inactive",
@@ -133,7 +133,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
         "name" => "",
         "github_repo" => "",
         "github_installation_id" => "",
-        "linear_team_id" => "",
         "linear_team_key" => "",
         "clone_path" => ""
       }
@@ -154,7 +153,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
         "github_repo" => repo,
         "github_installation_id" => "9988",
         "default_branch" => "main",
-        "linear_team_id" => "team_new",
         "linear_team_key" => "BNP",
         "clone_path" => "/tmp/bnp",
         "active" => "true"
@@ -180,7 +178,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Editable App",
                github_repo: "example/edit-#{id}",
                github_installation_id: 333,
-               linear_team_id: "team_edit",
                linear_team_key: "EDT",
                default_branch: "main",
                clone_path: "/tmp/edit",
@@ -202,7 +199,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
         "github_repo" => "example/edit-#{id}",
         "github_installation_id" => "333",
         "default_branch" => "develop",
-        "linear_team_id" => "team_edit",
         "linear_team_key" => "EDT",
         "clone_path" => "/tmp/edit",
         "active" => "false"
@@ -213,6 +209,64 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     refute has_element?(view, "#project-modal")
     assert render(view) =~ "Renamed Editable App"
     assert has_element?(view, "#project-status-#{project_id}", "Inactive")
+  end
+
+  test "editing a project's Linear workspace updates the workspace it already has", %{
+    admin_conn: conn,
+    admin_user: admin
+  } do
+    id = System.unique_integer([:positive])
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
+    assert {:ok, %Project{id: project_id, linear_workspace: %LinearWorkspace{id: workspace_id}}} =
+             Projects.create_project(Scope.for_user(admin), %{
+               name: "Workspace App",
+               github_repo: "example/workspace-#{id}",
+               github_installation_id: 334,
+               linear_team_key: "WSP",
+               default_branch: "main",
+               clone_path: "/tmp/workspace",
+               linear_workspace: %{
+                 name: "Old Workspace",
+                 external_id: "lin_org_old_#{id}",
+                 token: "lin_api_old",
+                 webhook_secret: "whsec_old"
+               }
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+
+    # A new workspace means the team id is looked up again, from the page's process.
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
+    Req.Test.allow(Rail.Linear, self(), view.pid)
+
+    view |> element("#edit-project-#{project_id}") |> render_click()
+
+    view
+    |> form("#project-form", %{
+      "project" => %{
+        "linear_workspace" => %{
+          "name" => "New Workspace",
+          "external_id" => "lin_org_new_#{id}",
+          "token" => "lin_api_new",
+          "webhook_secret" => "whsec_new"
+        }
+      }
+    })
+    |> render_submit()
+
+    refute has_element?(view, "#project-modal")
+
+    external_id = "lin_org_new_#{id}"
+
+    assert %LinearWorkspace{id: ^workspace_id, name: "New Workspace", external_id: ^external_id, token: "lin_api_new"} =
+             Repo.get_by(LinearWorkspace, project_id: project_id)
   end
 
   test "closes modal when cancel or close button is clicked", %{admin_conn: conn} do
@@ -276,7 +330,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Edit Error Test",
                github_repo: "example/edit-err-#{id}",
                github_installation_id: 444,
-               linear_team_id: "team_ee",
                linear_team_key: "EE",
                default_branch: "main",
                clone_path: "/tmp/ee"
@@ -321,7 +374,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "First Project",
                github_repo: "example/p1-#{id}",
                github_installation_id: 111,
-               linear_team_id: "t1",
                linear_team_key: "P1",
                default_branch: "main",
                clone_path: "/tmp/p1"
@@ -332,7 +384,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                name: "Second Project",
                github_repo: "example/p2-#{id}",
                github_installation_id: 222,
-               linear_team_id: "t2",
                linear_team_key: "P2",
                default_branch: "main",
                clone_path: "/tmp/p2"
@@ -349,7 +400,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
         "github_repo" => "example/p1-#{id}",
         "github_installation_id" => "111",
         "default_branch" => "main",
-        "linear_team_id" => "t1",
         "linear_team_key" => "P1",
         "clone_path" => "/tmp/p1",
         "active" => "true"

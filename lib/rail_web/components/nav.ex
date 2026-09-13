@@ -2,7 +2,7 @@ defmodule RailWeb.Components.Nav do
   @moduledoc false
   use RailWeb, :html
 
-  import RailWeb.Components.CaptureIssueModal, only: [capture_issue_modal: 1]
+  alias RailWeb.Components.CaptureIssueModal
 
   attr :current_section, :atom, required: true
   attr :is_rail_extended, :boolean, default: true
@@ -152,16 +152,11 @@ defmodule RailWeb.Components.Nav do
   end
 
   attr :current_section, :atom, required: true
+  attr :current_scope, Rail.Scope, required: true
   attr :current_project_id, :string, default: nil
   attr :projects, :list, default: []
   attr :theme, :string, default: "dark"
   attr :show_project_switcher, :boolean, default: false
-  attr :show_new_issue_modal, :boolean, default: false
-  attr :capture_ask, :string, default: ""
-  attr :capture_project_id, :string, default: nil
-  attr :capture_priority, :any, default: :medium
-  attr :capture_error, :string, default: nil
-  attr :capture_submitting, :boolean, default: false
 
   def top_app_bar(assigns) do
     active_projects = Enum.filter(assigns.projects, & &1.active)
@@ -298,7 +293,7 @@ defmodule RailWeb.Components.Nav do
           type="button"
           id="global-capture-idea-button"
           data-qa="global_capture_idea_button"
-          phx-click="open_new_issue"
+          phx-click={CaptureIssueModal.open()}
           title="New Issue (⌘N)"
           aria-label="New Issue (⌘N)"
           class="inline-flex items-center space-x-1.5 h-8 px-3 rounded-lg bg-blue-100 dark:bg-blue-900 hover:opacity-90 text-blue-800 dark:text-blue-200 text-xs font-semibold shadow-xs transition-opacity"
@@ -334,16 +329,12 @@ defmodule RailWeb.Components.Nav do
         </.link>
       </div>
 
-      <!-- Capture Issue Modal -->
-      <.capture_issue_modal
-        visible={@show_new_issue_modal}
+      <.live_component
+        module={CaptureIssueModal}
+        id={CaptureIssueModal.id()}
+        current_scope={@current_scope}
         projects={@projects}
         current_project_id={@current_project_id}
-        capture_ask={@capture_ask}
-        capture_project_id={@capture_project_id}
-        capture_priority={@capture_priority}
-        capture_error={@capture_error}
-        capture_submitting={@capture_submitting}
       />
     </header>
     """

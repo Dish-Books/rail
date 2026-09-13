@@ -8,13 +8,16 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Roles
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     scope = system_scope()
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
@@ -27,7 +30,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
           token: "lin_api_token_cleanup_task",
           webhook_secret: "whsec_cleanup_task"
         },
-        linear_team_id: "team_cleanup_task_8701",
         linear_team_key: "P8701",
         default_branch: "main",
         clone_path: "/tmp/repos/cleanup-task-8701",
@@ -54,13 +56,22 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         {stage, role}
       end)
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_cleanup_task_1",
-      "identifier" => "CLT-1",
-      "title" => "Cleanup Task Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_cleanup_task_1",
+              "identifier" => "CLT-1",
+              "title" => "Cleanup Task Issue"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Cleanup Task Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Cleanup Task Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -94,6 +105,10 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         worktree_name: "cleanup-branch"
       })
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         linear_workspace: %{
@@ -105,7 +120,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         name: "Cleanup Task Project 8705",
         github_repo: "org/cleanup-task-8705",
         github_installation_id: 8705,
-        linear_team_id: "team_cleanup_task_8705",
         linear_team_key: "P8705",
         default_branch: "main",
         clone_path: clone_path,
@@ -122,13 +136,22 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     File.mkdir_p!(scratch_dir)
     File.write!(Path.join(scratch_dir, "scratch.txt"), "temporary content")
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_cleanup_task_8707",
-      "identifier" => "TSK-8707",
-      "title" => "Task 8707"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_task_cleanup_task_8707",
+              "identifier" => "TSK-8707",
+              "title" => "Task 8707"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue_8707} = Issues.create_issue(project, %{description: "Task 8707"})
+    {:ok, issue_8707} = Issues.create_issue(system_scope(), project, %{description: "Task 8707"})
 
     {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8707, :product)
 
@@ -150,6 +173,10 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   end
 
   test "handles cleanup gracefully when worktree_path is already nil", %{project: _project, task: _task} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         linear_workspace: %{
@@ -161,7 +188,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         name: "Cleanup Task Project 8708",
         github_repo: "org/cleanup-task-8708",
         github_installation_id: 8708,
-        linear_team_id: "team_cleanup_task_8708",
         linear_team_key: "P8708",
         default_branch: "main",
         clone_path: "/tmp/repos/cleanup-task-8708",
@@ -174,13 +200,22 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         }
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_cleanup_task_8709",
-      "identifier" => "TSK-8709",
-      "title" => "Task 8709"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_task_cleanup_task_8709",
+              "identifier" => "TSK-8709",
+              "title" => "Task 8709"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue_8709} = Issues.create_issue(project, %{description: "Task 8709"})
+    {:ok, issue_8709} = Issues.create_issue(system_scope(), project, %{description: "Task 8709"})
 
     {:ok, task} = Pipeline.create_task(issue_8709, :product)
 

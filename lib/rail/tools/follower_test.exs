@@ -15,7 +15,6 @@ defmodule Rail.Tools.FollowerTest do
   alias Rail.Tools.Follower
   alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.OsProcess
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   # The Follower watches a real OS process.
   @moduletag :real_spawn
@@ -23,6 +22,10 @@ defmodule Rail.Tools.FollowerTest do
   setup do
     {:ok, backend} =
       Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
@@ -35,7 +38,6 @@ defmodule Rail.Tools.FollowerTest do
           token: "lin_api_token_follower",
           webhook_secret: "whsec_follower"
         },
-        linear_team_id: "team_follower",
         linear_team_key: "FOL",
         default_branch: "main",
         clone_path: Path.join(System.tmp_dir!(), "follower_clone")
@@ -544,6 +546,10 @@ defmodule Rail.Tools.FollowerTest do
     backend: backend,
     tmp_dir: tmp_dir
   } do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         linear_workspace: %{
@@ -555,7 +561,6 @@ defmodule Rail.Tools.FollowerTest do
         name: "Follower Project 12502",
         github_repo: "org/follower-12502",
         github_installation_id: 12_502,
-        linear_team_id: "team_follower_12502",
         linear_team_key: "P12502",
         default_branch: "main",
         clone_path: "/tmp/repos/follower-12502",
@@ -577,13 +582,22 @@ defmodule Rail.Tools.FollowerTest do
         stage: :engineer
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_follower_12505",
-      "identifier" => "TSK-12505",
-      "title" => "Task 12505"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_task_follower_12505",
+              "identifier" => "TSK-12505",
+              "title" => "Task 12505"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue_12505} = Issues.create_issue(project, %{description: "Task 12505"})
+    {:ok, issue_12505} = Issues.create_issue(system_scope(), project, %{description: "Task 12505"})
 
     {:ok, task} = Pipeline.create_task(issue_12505, :product)
 

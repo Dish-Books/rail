@@ -4,51 +4,47 @@ defmodule RailWeb.IssuesLive do
 
   import RailWeb.CoreComponents,
     only: [
-      archive_issue_modal: 1,
       icon: 1,
-      issue_card: 1,
-      issue_editor_modal: 1
+      issue_card: 1
     ]
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Pipeline
   alias Rail.Projects
+  alias RailWeb.Components.CaptureIssueModal
+
+  @page_size 50
 
   def mount(_params, _session, socket) do
+    if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
     socket =
       socket
       |> assign(:page_title, "Issues")
       |> assign(:current_section, :issues)
       |> assign(:current_project_id, nil)
       |> assign(:current_project, nil)
-      |> assign(:show_finished, false)
-      |> assign(:filter_priority, "all")
-      |> assign(:all_issues, [])
-      |> assign(:visible_issues, [])
-      |> assign(:filtered_issues, [])
-      |> assign(:priority_counts, %{})
-      |> assign(:tasks_by_issue_id, %{})
-      |> assign(:runs_by_issue_id, %{})
+      |> assign(:syncing_project_ids, MapSet.new())
       |> assign(:is_syncing, false)
-      |> assign(:editing_issue, nil)
-      |> assign(:archiving_issue, nil)
 
     {:ok, socket}
   end
 
+  # Everything the list shows is in the URL, so a search or a page can be linked
+  # to and survives a reload.
   def handle_params(params, _uri, socket) do
-    project_id =
-      case Map.get(params, "project") do
-        id when is_binary(id) and id != "" -> id
-        _other -> nil
-      end
+    project_id = present(params["project"])
 
     socket =
       socket
       |> assign(:page_title, "Issues")
       |> assign(:current_section, :issues)
       |> assign(:current_project_id, project_id)
+      |> assign(:search, params["q"] || "")
+      |> assign(:filter_priority, Enum.find(Issue.priorities(), &(to_string(&1) == params["priority"])))
+      |> assign(:show_finished, params["finished"] == "true")
+      |> assign(:mine, params["mine"] == "true")
+      |> assign(:page, page_number(params["page"]))
       |> load_project(project_id)
       |> reload_data()
 
@@ -60,18 +56,13 @@ defmodule RailWeb.IssuesLive do
     <Layouts.app
       flash={@flash}
       current_section={@current_section}
+      current_scope={@current_scope}
       is_rail_extended={@is_rail_extended}
       attention_count={@attention_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
-      show_new_issue_modal={@show_new_issue_modal}
-      capture_ask={@capture_ask}
-      capture_project_id={@capture_project_id}
-      capture_priority={@capture_priority}
-      capture_error={@capture_error}
-      capture_submitting={@capture_submitting}
     >
       <div id="issues-view" data-qa="issues-view" class="space-y-6">
         <!-- Header row: Title + Subtitle on Left, Sync and New Issue buttons on Right -->
@@ -120,7 +111,7 @@ defmodule RailWeb.IssuesLive do
               type="button"
               id="new-issue-button"
               data-qa="capture-issue-button new-issue-button"
-              phx-click="open_new_issue"
+              phx-click={CaptureIssueModal.open()}
               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
             >
               <.icon name="pi-plus-circle-fill" class="h-4 w-4" />
@@ -140,14 +131,14 @@ defmodule RailWeb.IssuesLive do
             phx-value-priority="all"
             class={[
               "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer",
-              if(@filter_priority == "all",
+              if(is_nil(@filter_priority),
                 do: "bg-blue-600 dark:bg-blue-500 text-white",
                 else:
                   "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
               )
             ]}
           >
-            All ({length(@visible_issues)})
+            All ({@all_count})
           </button>
 
           <!-- Priority Chips -->
@@ -160,7 +151,7 @@ defmodule RailWeb.IssuesLive do
               phx-value-priority={to_string(p)}
               class={[
                 "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer",
-                if(@filter_priority == to_string(p),
+                if(@filter_priority == p,
                   do: "bg-blue-600 dark:bg-blue-500 text-white",
                   else:
                     "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
@@ -172,6 +163,25 @@ defmodule RailWeb.IssuesLive do
           <% end %>
 
           <div class="h-4 w-px bg-slate-300 dark:bg-slate-600 mx-1"></div>
+
+          <button
+            type="button"
+            id="issues-mine"
+            data-qa="issues-mine"
+            phx-click="toggle_mine"
+            class={[
+              "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5",
+              if(@mine,
+                do:
+                  "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border border-blue-600 dark:border-blue-500",
+                else:
+                  "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
+              )
+            ]}
+          >
+            <.icon :if={@mine} name="pi-check" class="h-3.5 w-3.5" />
+            <span>My issues</span>
+          </button>
 
           <!-- Show finished filter chip -->
           <button
@@ -194,22 +204,31 @@ defmodule RailWeb.IssuesLive do
           </button>
 
           <!-- Search input -->
-          <div class="relative ml-auto">
+          <form
+            id="issues-search-form"
+            class="relative ml-auto"
+            phx-change="search"
+            phx-submit="search"
+          >
             <input
-              type="text"
+              type="search"
               id="issues-search"
+              name="q"
+              value={@search}
+              phx-debounce="300"
+              autocomplete="off"
               data-qa="issues-search"
               placeholder="Search issues..."
               class="px-3 py-1 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"
             />
-          </div>
+          </form>
         </div>
 
         <!-- Issues List or Empty State -->
         <div id="issues-content">
           <!-- Empty State -->
           <div
-            :if={@filtered_issues == []}
+            :if={@issues == []}
             id="issues-empty-state"
             data-qa="issues-empty-state"
             class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-12 flex flex-col items-center justify-center text-center space-y-4"
@@ -222,13 +241,13 @@ defmodule RailWeb.IssuesLive do
               class="text-base font-semibold text-slate-500 dark:text-slate-400"
               data-qa="empty-state-title"
             >
-              No issues in this view
+              {if String.trim(@search) == "", do: "No issues in this view", else: "No issues match"}
             </h2>
             <button
               type="button"
               id="add-first-issue-button"
               data-qa="empty-add-issue-button"
-              phx-click="open_new_issue"
+              phx-click={CaptureIssueModal.open()}
               class="px-4 py-2 rounded-lg bg-slate-200 dark:bg-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold text-slate-900 dark:text-slate-100 transition-colors cursor-pointer"
             >
               Add first issue
@@ -237,169 +256,116 @@ defmodule RailWeb.IssuesLive do
 
           <!-- Issues Cards List -->
           <div
-            :if={@filtered_issues != []}
+            :if={@issues != []}
             id="issues-list"
             data-qa="issues-table issues-list"
-            class="space-y-4"
+            class="rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-800 overflow-hidden"
           >
-            <div :for={issue <- @filtered_issues}>
-              <.issue_card
-                issue={issue}
-                task={Map.get(@tasks_by_issue_id, issue.id)}
-                run={Map.get(@runs_by_issue_id, issue.id)}
-              />
+            <.issue_card
+              :for={issue <- @issues}
+              issue={issue}
+              task={issue.task}
+              run={stage_run(issue.task)}
+            />
+          </div>
+
+          <div
+            :if={@total > 0}
+            id="issues-pagination"
+            data-qa="issues-pagination"
+            class="flex items-center justify-between gap-4 pt-4 text-xs text-slate-500 dark:text-slate-400"
+          >
+            <span id="issues-page-range">
+              Showing {@page_first}–{@page_last} of {@total}
+            </span>
+            <div class="flex items-center gap-2">
+              <.link
+                :if={@prev_path}
+                id="issues-page-prev"
+                patch={@prev_path}
+                class="px-3 py-1 rounded-lg border border-slate-300 dark:border-slate-600 font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
+              >
+                Previous
+              </.link>
+              <span
+                :if={!@prev_path}
+                class="px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700 font-semibold opacity-50"
+              >
+                Previous
+              </span>
+              <.link
+                :if={@next_path}
+                id="issues-page-next"
+                patch={@next_path}
+                class="px-3 py-1 rounded-lg border border-slate-300 dark:border-slate-600 font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
+              >
+                Next
+              </.link>
+              <span
+                :if={!@next_path}
+                class="px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700 font-semibold opacity-50"
+              >
+                Next
+              </span>
             </div>
           </div>
         </div>
-
-        <!-- Issue Editor Modal -->
-        <.issue_editor_modal
-          issue={@editing_issue}
-          visible={@editing_issue != nil}
-        />
-
-        <!-- Archive Confirmation Modal -->
-        <.archive_issue_modal
-          issue={@archiving_issue}
-          visible={@archiving_issue != nil}
-        />
       </div>
     </Layouts.app>
     """
   end
 
+  def handle_event("search", %{"q" => search}, socket) do
+    {:noreply, push_patch(socket, to: issues_path(socket.assigns, q: search, page: 1))}
+  end
+
   def handle_event("filter_priority", %{"priority" => priority}, socket) do
-    {:noreply, socket |> assign(:filter_priority, priority) |> apply_filters()}
+    {:noreply, push_patch(socket, to: issues_path(socket.assigns, priority: priority, page: 1))}
+  end
+
+  def handle_event("toggle_mine", _params, socket) do
+    {:noreply, push_patch(socket, to: issues_path(socket.assigns, mine: not socket.assigns.mine, page: 1))}
   end
 
   def handle_event("toggle_show_finished", _params, socket) do
-    new_show_finished = not socket.assigns.show_finished
-
-    socket =
-      socket
-      |> assign(:show_finished, new_show_finished)
-      |> reload_data()
-
-    {:noreply, socket}
+    path = issues_path(socket.assigns, finished: not socket.assigns.show_finished, page: 1)
+    {:noreply, push_patch(socket, to: path)}
   end
 
+  # The pull runs in the background a page at a time; the button stays busy
+  # until every project it started has said it is done.
   def handle_event("sync_issues", _params, socket) do
-    project = socket.assigns.current_project
+    projects =
+      if project = socket.assigns.current_project,
+        do: [project],
+        else: Projects.list_projects()
 
-    socket = assign(socket, :is_syncing, true)
+    Enum.each(projects, &Issues.sync_issues/1)
 
-    if project do
-      Issues.sync_issues(project)
-    else
-      Enum.each(Projects.list_projects(), &Issues.sync_issues/1)
-    end
+    ids = MapSet.union(socket.assigns.syncing_project_ids, MapSet.new(projects, & &1.id))
 
-    socket =
-      socket
-      |> assign(:is_syncing, false)
-      |> reload_data()
+    {:noreply, assign_syncing(socket, ids)}
+  end
 
+  def handle_info({:issues_synced, project_id}, socket) do
+    ids = MapSet.delete(socket.assigns.syncing_project_ids, project_id)
+
+    socket = socket |> assign_syncing(ids) |> reload_data()
     {:noreply, socket}
   end
 
-  def handle_event("start_product_run", %{"issue_id" => issue_id}, socket) do
-    with {:ok, issue} <- Issues.get_issue(issue_id),
-         {:ok, task} <- Pipeline.create_task(issue, :product) do
-      Pipeline.start_product_run(task)
-    end
+  # Newest first, so a created issue lands at the top of the first page.
+  def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, reload_data(socket)}
 
-    {:noreply, reload_data(socket)}
-  end
-
-  def handle_event("open_editor", %{"issue_id" => issue_id}, socket) do
-    case Issues.get_issue(issue_id) do
-      {:ok, issue} ->
-        socket = assign(socket, :editing_issue, issue)
-        {:noreply, socket}
-
-      _error ->
-        {:noreply, socket}
-    end
-  end
-
-  def handle_event("close_editor", _params, socket) do
-    socket = assign(socket, :editing_issue, nil)
-    {:noreply, socket}
-  end
-
-  def handle_event("save_issue", %{"issue_id" => issue_id, "title" => title} = params, socket) do
-    trimmed_title = String.trim(title)
-
-    if trimmed_title == "" do
-      {:noreply, socket}
-    else
-      case Issues.get_issue(issue_id) do
-        {:ok, issue} ->
-          attrs = %{
-            title: trimmed_title,
-            description: Map.get(params, "description"),
-            priority: Map.get(params, "priority"),
-            state: Map.get(params, "state")
-          }
-
-          Issues.update_issue(issue, attrs)
-
-          socket =
-            socket
-            |> assign(:editing_issue, nil)
-            |> reload_data()
-
-          {:noreply, socket}
-
-        _error ->
-          {:noreply, socket}
-      end
-    end
-  end
-
-  def handle_event("editor_change", _params, socket) do
-    {:noreply, socket}
-  end
-
-  def handle_event("open_archive", %{"issue_id" => issue_id}, socket) do
-    case Issues.get_issue(issue_id) do
-      {:ok, issue} ->
-        socket = assign(socket, :archiving_issue, issue)
-        {:noreply, socket}
-
-      _error ->
-        {:noreply, socket}
-    end
-  end
-
-  def handle_event("close_archive", _params, socket) do
-    socket = assign(socket, :archiving_issue, nil)
-    {:noreply, socket}
-  end
-
-  def handle_event("confirm_archive", %{"issue_id" => issue_id}, socket) do
-    case Issues.get_issue(issue_id) do
-      {:ok, issue} ->
-        Issues.archive_issue(issue)
-
-        socket =
-          socket
-          |> assign(:archiving_issue, nil)
-          |> assign(:editing_issue, nil)
-          |> reload_data()
-
-        {:noreply, socket}
-
-      _error ->
-        {:noreply, socket}
-    end
-  end
+  def handle_info({:issue_comments_changed, _issue_id}, socket), do: {:noreply, socket}
 
   # Where a task got to is what the run for the stage it sits at says, picked out
   # of the runs already loaded rather than queried per row.
   defp stage_run(%{runs: runs, stage: stage}) when is_list(runs) do
     Enum.find(runs, &(&1.role != nil and &1.role.stage == stage))
   end
+
+  defp stage_run(nil), do: nil
 
   defp project_subtitle(nil), do: "Linear issues across all projects"
 
@@ -430,54 +396,80 @@ defmodule RailWeb.IssuesLive do
   end
 
   defp reload_data(socket) do
-    project_id = socket.assigns.current_project_id
-    show_finished = socket.assigns.show_finished
+    assigns = socket.assigns
+    offset = (assigns.page - 1) * @page_size
 
-    opts = [preload: [:project], show_finished: show_finished]
+    %{issues: issues, total: total, priority_counts: priority_counts} =
+      Issues.list_issues(
+        project_id: assigns.current_project_id,
+        owner_user_id: if(assigns.mine, do: assigns.current_scope.user.id),
+        show_finished: assigns.show_finished,
+        search: assigns.search,
+        priority: assigns.filter_priority,
+        limit: @page_size,
+        offset: offset,
+        preload: [:project, :owner_user, task: [runs: :role]]
+      )
 
-    all_issues =
-      if project_id do
-        Issues.list_issues(Keyword.put(opts, :project_id, project_id))
-      else
-        Issues.list_issues(opts)
-      end
+    last_page = max(div(total + @page_size - 1, @page_size), 1)
 
-    tasks = Pipeline.list_tasks(project_id: project_id, preload: [runs: :role])
-    tasks_by_issue_id = Map.new(tasks, fn task -> {task.issue_id, task} end)
+    # A linked page past the end (fewer matches since) shows the last one instead.
+    if assigns.page > last_page do
+      socket |> assign(:page, last_page) |> reload_data()
+    else
+      assign_page(socket, issues, total, priority_counts, offset)
+    end
+  end
 
-    # The card shows where a task got to, which is what the run for its stage says.
-    runs_by_issue_id = Map.new(tasks, fn task -> {task.issue_id, stage_run(task)} end)
-
-    visible_issues =
-      if show_finished do
-        all_issues
-      else
-        Enum.reject(all_issues, &Issue.finished_state?(&1.state))
-      end
-
-    priority_counts =
-      Enum.reduce(visible_issues, %{}, fn issue, acc ->
-        Map.update(acc, issue.priority, 1, &(&1 + 1))
-      end)
+  defp assign_page(socket, issues, total, priority_counts, offset) do
+    assigns = socket.assigns
 
     socket
-    |> assign(:all_issues, all_issues)
-    |> assign(:visible_issues, visible_issues)
+    |> assign(:issues, issues)
+    |> assign(:total, total)
     |> assign(:priority_counts, priority_counts)
-    |> assign(:tasks_by_issue_id, tasks_by_issue_id)
-    |> assign(:runs_by_issue_id, runs_by_issue_id)
-    |> apply_filters()
+    |> assign(:all_count, priority_counts |> Map.values() |> Enum.sum())
+    |> assign(:page_first, min(offset + 1, total))
+    |> assign(:page_last, min(offset + @page_size, total))
+    |> assign(:prev_path, if(assigns.page > 1, do: issues_path(assigns, page: assigns.page - 1)))
+    |> assign(:next_path, if(offset + @page_size < total, do: issues_path(assigns, page: assigns.page + 1)))
   end
 
-  defp apply_filters(socket) do
-    visible_issues = socket.assigns.visible_issues
+  # Defaults stay out of the URL, so the plain list is still just /issues.
+  defp issues_path(assigns, changes) do
+    params =
+      [
+        project: assigns.current_project_id,
+        q: assigns.search,
+        priority: assigns.filter_priority,
+        mine: assigns.mine,
+        finished: assigns.show_finished,
+        page: assigns.page
+      ]
+      |> Keyword.merge(changes)
+      |> Enum.reject(fn {key, value} -> value in [nil, "", false, "all"] or {key, value} == {:page, 1} end)
 
-    filtered_issues =
-      case socket.assigns.filter_priority do
-        "all" -> visible_issues
-        priority -> Enum.filter(visible_issues, &(to_string(&1.priority) == priority))
-      end
-
-    assign(socket, :filtered_issues, filtered_issues)
+    case params do
+      [] -> ~p"/issues"
+      params -> ~p"/issues?#{params}"
+    end
   end
+
+  defp assign_syncing(socket, ids) do
+    socket
+    |> assign(:syncing_project_ids, ids)
+    |> assign(:is_syncing, MapSet.size(ids) > 0)
+  end
+
+  defp present(value) when is_binary(value) and value != "", do: value
+  defp present(_blank), do: nil
+
+  defp page_number(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {page, ""} when page > 0 -> page
+      _invalid -> 1
+    end
+  end
+
+  defp page_number(_missing), do: 1
 end

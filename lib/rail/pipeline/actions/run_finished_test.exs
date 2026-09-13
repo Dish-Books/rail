@@ -12,12 +12,15 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -30,7 +33,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
           token: "lin_api_token_run_finished",
           webhook_secret: "whsec_run_finished"
         },
-        linear_team_id: "team_run_finished",
         linear_team_key: "RUN",
         default_branch: "main",
         clone_path: "/tmp/repos/run-finished",
@@ -51,13 +53,22 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
         {stage, role}
       end)
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_run_finished_1",
-      "identifier" => "RUN-1",
-      "title" => "Run Finished Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_run_finished_1",
+              "identifier" => "RUN-1",
+              "title" => "Run Finished Issue"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Run Finished Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Run Finished Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     exited = fn stage, run_attrs ->

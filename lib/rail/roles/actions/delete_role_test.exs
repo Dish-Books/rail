@@ -17,7 +17,6 @@ defmodule Rail.Roles.Actions.DeleteRoleTest do
         name: "Delete Role Project",
         github_repo: "org/delete-role",
         github_installation_id: 4104,
-        linear_team_id: "team_delete_role",
         linear_team_key: "DLR",
         default_branch: "main",
         clone_path: "/tmp/repos/delete-role"

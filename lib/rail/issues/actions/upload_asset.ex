@@ -1,13 +1,16 @@
 defmodule Rail.Issues.Actions.UploadAsset do
   @moduledoc false
 
-  import Rail.Issues.Utils.TokenResolver
+  alias Rail.Linear.Client, as: Linear
 
-  alias Rail.Issues.Clients.Linear
-
+  @doc """
+  Uploads a file to Linear and returns the URL it can be linked from.
+  """
   def upload_asset(target, filename, content_type, data_binary) do
-    with {:ok, token} <- workspace_token(target) do
-      Linear.file_upload(token, filename, content_type, byte_size(data_binary), data_binary)
+    case Linear.file_upload(target, filename, content_type, data_binary) do
+      {:ok, %{"fileUpload" => %{"uploadFile" => %{"assetUrl" => asset_url}}}} -> {:ok, asset_url}
+      {:ok, _not_uploaded} -> {:error, {:linear_mutation_failed, "fileUpload"}}
+      {:error, reason} -> {:error, reason}
     end
   end
 end

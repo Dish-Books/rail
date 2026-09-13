@@ -18,7 +18,6 @@ defmodule Rail.Roles.Schemas.RoleTest do
         name: "Role Schema Project",
         github_repo: "org/role-schema",
         github_installation_id: 4503,
-        linear_team_id: "team_role_schema",
         linear_team_key: "RLS",
         default_branch: "main",
         clone_path: "/tmp/repos/role-schema"
@@ -124,13 +123,13 @@ defmodule Rail.Roles.Schemas.RoleTest do
     assert {:error, changeset} =
              %Role{}
              |> Role.changeset(%{
-                 project_id: project.id,
-                 name: "Engineer 2",
-                 stage: :engineer,
-                 model: "claude-3-7-sonnet",
-                 system_prompt: "Code 2",
-                 backend_id: backend.id
-               })
+               project_id: project.id,
+               name: "Engineer 2",
+               stage: :engineer,
+               model: "claude-3-7-sonnet",
+               system_prompt: "Code 2",
+               backend_id: backend.id
+             })
              |> Repo.insert()
 
     assert %{stage: ["has already been taken"]} = errors_on(changeset)
@@ -139,12 +138,26 @@ defmodule Rail.Roles.Schemas.RoleTest do
   test "allows multiple unbound roles with stage: nil in the same project", %{backend: backend, project: project} do
     assert {:ok, %Role{stage: nil, name: "Unbound 1"}} =
              %Role{}
-             |> Role.changeset(%{project_id: project.id, name: "Unbound 1", stage: nil, model: "m", system_prompt: "p", backend_id: backend.id})
+             |> Role.changeset(%{
+               project_id: project.id,
+               name: "Unbound 1",
+               stage: nil,
+               model: "m",
+               system_prompt: "p",
+               backend_id: backend.id
+             })
              |> Repo.insert()
 
     assert {:ok, %Role{stage: nil, name: "Unbound 2"}} =
              %Role{}
-             |> Role.changeset(%{project_id: project.id, name: "Unbound 2", stage: nil, model: "m", system_prompt: "p", backend_id: backend.id})
+             |> Role.changeset(%{
+               project_id: project.id,
+               name: "Unbound 2",
+               stage: nil,
+               model: "m",
+               system_prompt: "p",
+               backend_id: backend.id
+             })
              |> Repo.insert()
   end
 

@@ -29,18 +29,13 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
     <Layouts.app
       flash={@flash}
       current_section={@current_section}
+      current_scope={@current_scope}
       is_rail_extended={@is_rail_extended}
       attention_count={@attention_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
-      show_new_issue_modal={@show_new_issue_modal}
-      capture_ask={@capture_ask}
-      capture_project_id={@capture_project_id}
-      capture_priority={@capture_priority}
-      capture_error={@capture_error}
-      capture_submitting={@capture_submitting}
     >
       <div
         class="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10"
@@ -163,23 +158,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
   end
 
   def handle_event("disconnect", _params, socket) do
-    execute_disconnect(socket)
-  end
-
-  def handle_event("unlink", _params, socket) do
-    execute_disconnect(socket)
-  end
-
-  defp execute_disconnect(socket) do
-    current_scope = socket.assigns.current_scope
-
-    case Users.update_user(Scope.for_system(), current_scope.user, %{
-           linear_user_id: nil,
-           linear_name: nil,
-           linear_access_token: nil,
-           linear_refresh_token: nil,
-           linear_token_expires_at: nil
-         }) do
+    case Users.unlink_linear(socket.assigns.current_scope) do
       {:ok, updated_user} ->
         updated_scope = Scope.for_user(updated_user)
 

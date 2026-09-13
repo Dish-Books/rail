@@ -2,130 +2,42 @@ defmodule RailWeb.LinearAuthController do
   use RailWeb, :controller
 
   alias Rail.Linear
-  alias Rail.Scope
   alias Rail.Users
-  alias Rail.Users.Schemas.User
 
   def request(conn, _params) do
     state = 16 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
-    authorize_url = Linear.authorize_url(state: state)
 
     conn
     |> put_session(:linear_oauth_state, state)
-    |> redirect(external: authorize_url)
+    |> redirect(external: Linear.authorize_url(state: state))
   end
 
   def callback(conn, %{"code" => code, "state" => state}) do
     expected_state = get_session(conn, :linear_oauth_state)
     conn = delete_session(conn, :linear_oauth_state)
 
-    if valid_state?(expected_state, state) do
-      exchange_and_link(conn, code)
+    if is_binary(expected_state) and expected_state != "" and is_binary(state) and
+         Plug.Crypto.secure_compare(expected_state, state) do
+      case Users.link_linear(conn.assigns.current_scope, code) do
+        {:ok, _user} -> redirect_with(conn, :info, "Connected Linear account successfully.")
+        {:error, _reason} -> redirect_with(conn, :error, "Failed to connect Linear account.")
+      end
     else
-      conn
-      |> put_flash(:error, "Linear authentication failed. Please try connecting again.")
-      |> redirect(to: ~p"/settings/connected-accounts")
+      redirect_with(conn, :error, "Linear authentication failed. Please try connecting again.")
     end
   end
 
   def callback(conn, %{"error" => _error}) do
-    conn
-    |> put_flash(:error, "Linear authentication was denied or cancelled.")
-    |> redirect(to: ~p"/settings/connected-accounts")
+    redirect_with(conn, :error, "Linear authentication was denied or cancelled.")
   end
 
   def callback(conn, _params) do
+    redirect_with(conn, :error, "Linear authentication failed.")
+  end
+
+  defp redirect_with(conn, kind, message) do
     conn
-    |> put_flash(:error, "Linear authentication failed.")
+    |> put_flash(kind, message)
     |> redirect(to: ~p"/settings/connected-accounts")
-  end
-
-  def unlink(conn, %{} = _params) do
-    case current_user(conn) do
-      %User{} = user ->
-        do_unlink(conn, user)
-
-      _no_user ->
-        conn
-        |> put_flash(:error, "Could not disconnect Linear account.")
-        |> redirect(to: ~p"/settings/connected-accounts")
-    end
-  end
-
-  defp do_unlink(conn, user) do
-    case Users.update_user(Scope.for_system(), user, %{
-           linear_user_id: nil,
-           linear_name: nil,
-           linear_access_token: nil,
-           linear_refresh_token: nil,
-           linear_token_expires_at: nil
-         }) do
-      {:ok, _user} ->
-        conn
-        |> put_flash(:info, "Disconnected Linear account.")
-        |> redirect(to: ~p"/settings/connected-accounts")
-
-      {:error, _reason} ->
-        conn
-        |> put_flash(:error, "Could not disconnect Linear account.")
-        |> redirect(to: ~p"/settings/connected-accounts")
-    end
-  end
-
-  defp current_user(conn) do
-    scope = conn.assigns[:current_scope]
-    scope && scope.user
-  end
-
-  defp exchange_and_link(conn, code) do
-    case Linear.exchange_code(code) do
-      {:ok, tokens} ->
-        handle_token_exchange(conn, tokens)
-
-      {:error, _reason} ->
-        conn
-        |> put_flash(:error, "Failed to exchange Linear authorization code.")
-        |> redirect(to: ~p"/settings/connected-accounts")
-    end
-  end
-
-  defp valid_state?(expected, given) when is_binary(expected) and is_binary(given) and expected != "" do
-    Plug.Crypto.secure_compare(expected, given)
-  end
-
-  defp valid_state?(_expected, _given), do: false
-
-  defp handle_token_exchange(conn, tokens) do
-    case Linear.viewer(tokens.access_token) do
-      {:ok, viewer} ->
-        link_user(conn, tokens, viewer)
-
-      {:error, _reason} ->
-        conn
-        |> put_flash(:error, "Failed to fetch Linear user profile.")
-        |> redirect(to: ~p"/settings/connected-accounts")
-    end
-  end
-
-  defp link_user(conn, tokens, viewer) do
-    attrs = %{
-      linear_user_id: viewer.id,
-      linear_name: viewer.name,
-      linear_access_token: tokens.access_token,
-      linear_refresh_token: tokens.refresh_token,
-      linear_token_expires_at: tokens.expires_at
-    }
-
-    case Users.update_user(Scope.for_system(), current_user(conn), attrs) do
-      {:ok, _user} ->
-        conn
-        |> put_flash(:info, "Connected Linear account successfully.")
-        |> redirect(to: ~p"/settings/connected-accounts")
-
-      {:error, _changeset} ->
-        conn
-        |> put_flash(:error, "Failed to link Linear account.")
-        |> redirect(to: ~p"/settings/connected-accounts")
-    end
   end
 end

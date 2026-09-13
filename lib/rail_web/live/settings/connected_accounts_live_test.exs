@@ -137,28 +137,6 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     assert is_nil(reloaded.linear_user_id)
   end
 
-  test "supports unlink event hook directly", %{
-    authed_conn: conn,
-    user: user,
-    user_id: user_id
-  } do
-    assert {:ok, %User{}} =
-             Users.update_user(Scope.for_system(), user, %{
-               linear_access_token: "lin_at_unlink_hook",
-               linear_refresh_token: "lin_rt_unlink_hook",
-               linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
-             })
-
-    assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
-
-    rendered = render_hook(view, "unlink", %{})
-
-    assert rendered =~ "Linear is not connected."
-
-    reloaded = Repo.get!(User, user_id)
-    assert is_nil(reloaded.linear_access_token)
-  end
-
   test "handles disconnect error gracefully when the user cannot be updated", %{
     authed_conn: conn,
     user: user
@@ -172,7 +150,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
 
-    expect(Users, :update_user, fn _scope, _user, _attrs -> {:error, :db_error} end)
+    expect(Users, :unlink_linear, fn _scope -> {:error, :db_error} end)
 
     rendered = render_click(element(view, "#disconnect-linear-button"))
     assert rendered =~ "Connected as"

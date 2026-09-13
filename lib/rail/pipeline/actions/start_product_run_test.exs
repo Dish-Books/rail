@@ -16,13 +16,16 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
   alias Rail.Users.Schemas.User
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, backend} =
       Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     scope = system_scope()
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -35,7 +38,6 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
           token: "lin_api_token_start_product",
           webhook_secret: "whsec_start_product"
         },
-        linear_team_id: "team_start_product_7001",
         linear_team_key: "P7001",
         default_branch: "main",
         clone_path: create_temp_git_repo(),
@@ -54,13 +56,23 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
         system_prompt: "You are the product agent."
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_start_product_1",
-      "identifier" => "SPT-1",
-      "title" => "Attachments follow their source document"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_start_product_1",
+              "identifier" => "SPT-1",
+              "title" => "Attachments follow their source document"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Attachments follow their source document"})
+    {:ok, issue} =
+      Issues.create_issue(system_scope(), project, %{description: "Attachments follow their source document"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

@@ -8,12 +8,15 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -26,7 +29,6 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
           token: "lin_api_token_stop_run",
           webhook_secret: "whsec_stop_run"
         },
-        linear_team_id: "team_stop_run",
         linear_team_key: "STP",
         default_branch: "main",
         clone_path: "/tmp/repos/stop-run",
@@ -42,13 +44,22 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
         system_prompt: "You are the engineer."
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_stop_run_1",
-      "identifier" => "STP-1",
-      "title" => "Stop Run Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_stop_run_1",
+              "identifier" => "STP-1",
+              "title" => "Stop Run Issue"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Stop Run Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Stop Run Issue"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 
     working = fn attrs ->

@@ -7,13 +7,16 @@ defmodule RailWeb.Live.RunConversationTest do
   alias Rail.Pipeline
   alias Rail.Projects
   alias Rail.Roles
-  alias RailTest.Mocks.Linear, as: LinearMock
   alias RailWeb.Live.RunConversation
 
   setup do
     scope = system_scope()
 
     {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -26,7 +29,6 @@ defmodule RailWeb.Live.RunConversationTest do
           token: "lin_api_token_conversation",
           webhook_secret: "whsec_conversation"
         },
-        linear_team_id: "team_conversation",
         linear_team_key: "CNV",
         default_branch: "main",
         clone_path: "/tmp/repos/conversation",
@@ -48,13 +50,22 @@ defmodule RailWeb.Live.RunConversationTest do
         {stage, role}
       end)
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_conversation_1",
-      "identifier" => "CNV-1",
-      "title" => "Conversation Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_conversation_1",
+              "identifier" => "CNV-1",
+              "title" => "Conversation Issue"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Conversation Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Conversation Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 

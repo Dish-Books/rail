@@ -54,18 +54,13 @@ defmodule RailWeb.OverviewLive do
     <Layouts.app
       flash={@flash}
       current_section={@current_section}
+      current_scope={@current_scope}
       is_rail_extended={@is_rail_extended}
       attention_count={@attention_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
       show_project_switcher={@show_project_switcher}
-      show_new_issue_modal={@show_new_issue_modal}
-      capture_ask={@capture_ask}
-      capture_project_id={@capture_project_id}
-      capture_priority={@capture_priority}
-      capture_error={@capture_error}
-      capture_submitting={@capture_submitting}
     >
       <div id="overview-view" data-qa="overview-view" class="space-y-6">
         <!-- Header row: Overview in bold + running agents pill -->

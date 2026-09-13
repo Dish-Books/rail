@@ -9,13 +9,16 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     scope = system_scope()
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
@@ -28,7 +31,6 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
           token: "lin_api_token_question_schema",
           webhook_secret: "whsec_question_schema"
         },
-        linear_team_id: "team_question_schema_7501",
         linear_team_key: "P7501",
         default_branch: "main",
         clone_path: "/tmp/repos/question-schema-7501",
@@ -41,13 +43,22 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
         }
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_question_schema_1",
-      "identifier" => "QSC-1",
-      "title" => "Question Schema Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_question_schema_1",
+              "identifier" => "QSC-1",
+              "title" => "Question Schema Issue"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Question Schema Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Question Schema Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

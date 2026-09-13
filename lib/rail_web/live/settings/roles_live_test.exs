@@ -77,7 +77,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Roles Live Project 13001",
         github_repo: "org/roles-live-13001",
         github_installation_id: 13_001,
-        linear_team_id: "team_roles_live_13001",
         linear_team_key: "P13001",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13001",
@@ -93,7 +92,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     scope = Rail.Scope.for_user(admin_user)
 
     assert {:ok, %Role{id: _eng_id}} =
-             Roles.create_role(scope, project.id, %{
+             Roles.create_role(scope, project, %{
                name: "Senior Engineer",
                description: "Writes tested features",
                stage: :engineer,
@@ -120,7 +119,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Secondary Project",
         github_repo: "org/roles-live-13002",
         github_installation_id: 13_002,
-        linear_team_id: "team_roles_live_13002",
         linear_team_key: "P13002",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13002",
@@ -143,7 +141,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Roles Live Project 13003",
         github_repo: "org/roles-live-13003",
         github_installation_id: 13_003,
-        linear_team_id: "team_roles_live_13003",
         linear_team_key: "P13003",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13003",
@@ -227,7 +224,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Roles Live Project 13004",
         github_repo: "org/roles-live-13004",
         github_installation_id: 13_004,
-        linear_team_id: "team_roles_live_13004",
         linear_team_key: "P13004",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13004",
@@ -272,7 +268,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Roles Live Project 13005",
         github_repo: "org/roles-live-13005",
         github_installation_id: 13_005,
-        linear_team_id: "team_roles_live_13005",
         linear_team_key: "P13005",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13005",
@@ -288,7 +283,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     scope = Rail.Scope.for_user(admin_user)
 
     assert {:ok, %Role{id: role_id}} =
-             Roles.create_role(scope, project.id, %{
+             Roles.create_role(scope, project, %{
                name: "QA Lead",
                description: "Coordinates QA",
                stage: :qa_lead,
@@ -338,7 +333,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Roles Live Project 13006",
         github_repo: "org/roles-live-13006",
         github_installation_id: 13_006,
-        linear_team_id: "team_roles_live_13006",
         linear_team_key: "P13006",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13006",
@@ -354,7 +348,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     scope = Rail.Scope.for_user(admin_user)
 
     assert {:ok, %Role{id: role_id}} =
-             Roles.create_role(scope, project.id, %{
+             Roles.create_role(scope, project, %{
                name: "Temporary Reviewer",
                stage: :review,
                backend_id: claude_backend.id,
@@ -390,7 +384,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Source Project",
         github_repo: "org/roles-live-13007",
         github_installation_id: 13_007,
-        linear_team_id: "team_roles_live_13007",
         linear_team_key: "P13007",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13007",
@@ -404,7 +397,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       })
 
     assert {:ok, %Role{}} =
-             Roles.create_role(scope, source_project.id, %{
+             Roles.create_role(scope, source_project, %{
                name: "Demo Recorder Role",
                stage: :demo,
                backend_id: agy_backend.id,
@@ -417,7 +410,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Target Project",
         github_repo: "org/roles-live-13008",
         github_installation_id: 13_008,
-        linear_team_id: "team_roles_live_13008",
         linear_team_key: "P13008",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13008",
@@ -452,7 +444,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Roles Live Project 13012",
         github_repo: "org/roles-live-13012",
         github_installation_id: 13_012,
-        linear_team_id: "team_roles_live_13012",
         linear_team_key: "P13012",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13012",
@@ -483,7 +474,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Project One",
         github_repo: "org/roles-live-13013",
         github_installation_id: 13_013,
-        linear_team_id: "team_roles_live_13013",
         linear_team_key: "P13013",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13013",
@@ -501,7 +491,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Project Two",
         github_repo: "org/roles-live-13014",
         github_installation_id: 13_014,
-        linear_team_id: "team_roles_live_13014",
         linear_team_key: "P13014",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13014",
@@ -535,7 +524,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Roles Live Project 13015",
         github_repo: "org/roles-live-13015",
         github_installation_id: 13_015,
-        linear_team_id: "team_roles_live_13015",
         linear_team_key: "P13015",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13015",
@@ -600,7 +588,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Roles Live Project 13016",
         github_repo: "org/roles-live-13016",
         github_installation_id: 13_016,
-        linear_team_id: "team_roles_live_13016",
         linear_team_key: "P13016",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13016",
@@ -673,7 +660,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Roles Live Project 13017",
         github_repo: "org/roles-live-13017",
         github_installation_id: 13_017,
-        linear_team_id: "team_roles_live_13017",
         linear_team_key: "P13017",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13017",
@@ -704,7 +690,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Roles Live Project 13018",
         github_repo: "org/roles-live-13018",
         github_installation_id: 13_018,
-        linear_team_id: "team_roles_live_13018",
         linear_team_key: "P13018",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13018",
@@ -722,7 +707,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
         name: "Roles Live Project 13019",
         github_repo: "org/roles-live-13019",
         github_installation_id: 13_019,
-        linear_team_id: "team_roles_live_13019",
         linear_team_key: "P13019",
         default_branch: "main",
         clone_path: "/tmp/repos/roles-live-13019",

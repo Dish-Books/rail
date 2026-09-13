@@ -8,12 +8,15 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessageTest do
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -26,7 +29,6 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessageTest do
           token: "lin_api_token_stop_and_send",
           webhook_secret: "whsec_stop_and_send"
         },
-        linear_team_id: "team_stop_and_send",
         linear_team_key: "SAS",
         default_branch: "main",
         clone_path: "/tmp/repos/stop-and-send",
@@ -42,13 +44,22 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessageTest do
         system_prompt: "You are the engineer."
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_stop_and_send_1",
-      "identifier" => "SAS-1",
-      "title" => "Stop And Send Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_stop_and_send_1",
+              "identifier" => "SAS-1",
+              "title" => "Stop And Send Issue"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Stop And Send Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Stop And Send Issue"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 
     working = fn attrs ->

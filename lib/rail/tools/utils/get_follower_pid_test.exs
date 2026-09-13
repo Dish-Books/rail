@@ -32,7 +32,6 @@ defmodule Rail.Tools.Utils.GetFollowerPidTest do
         name: "Follower Pid Project",
         github_repo: "org/follower-pid-#{System.unique_integer([:positive])}",
         github_installation_id: System.unique_integer([:positive]),
-        linear_team_id: "team_follower_pid",
         linear_team_key: "FPD",
         default_branch: "main",
         clone_path: Path.join(tmp_dir, "clone")

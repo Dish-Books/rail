@@ -40,7 +40,6 @@ defmodule Rail.Pipeline.Schemas.Run do
     # What the agent has spent getting this far, by kind of token. What that
     # costs is a question for the backend's own billing, not for a run.
     embeds_one :usage, Usage, primary_key: false, on_replace: :delete do
-      @derive Jason.Encoder
       field :input_tokens, :integer, default: 0
       field :output_tokens, :integer, default: 0
       field :cache_read_input_tokens, :integer, default: 0

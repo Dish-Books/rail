@@ -10,12 +10,15 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -28,7 +31,6 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
           token: "lin_api_token_approve_plan",
           webhook_secret: "whsec_approve_plan"
         },
-        linear_team_id: "team_approve_plan",
         linear_team_key: "APV",
         default_branch: "main",
         clone_path: "/tmp/repos/approve-plan",
@@ -49,13 +51,22 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
         {stage, role}
       end)
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_approve_plan_1",
-      "identifier" => "APV-1",
-      "title" => "Approve Plan Issue"
-    })
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_approve_plan_1",
+              "identifier" => "APV-1",
+              "title" => "Approve Plan Issue"
+            }
+          }
+        }
+      })
+    end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Approve Plan Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Approve Plan Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, task: task, roles: roles}

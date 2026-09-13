@@ -2,16 +2,20 @@ defmodule Rail.Issues.Actions.CommentTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Comment
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
+  alias Rail.Repo
   alias Rail.Scope
   alias Rail.Users
-  alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
-    scope = system_scope()
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
 
     {:ok, project} =
-      Projects.create_project(scope, %{
+      Projects.create_project(system_scope(), %{
         name: "Comment Project",
         github_repo: "org/comment",
         github_installation_id: 5401,
@@ -21,82 +25,137 @@ defmodule Rail.Issues.Actions.CommentTest do
           token: "lin_api_token_comment",
           webhook_secret: "whsec_comment"
         },
-        linear_team_id: "team_comment",
         linear_team_key: "CMT",
         default_branch: "main",
         clone_path: "/tmp/repos/comment"
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_comm_1",
-      "identifier" => "ENG-801",
-      "title" => "Commentable Issue",
-      "description" => "Commentable Issue",
-      "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"},
-      "branchName" => "eng-801-comment",
-      "url" => "https://linear.app/issue/ENG-801",
-      "createdAt" => "2026-09-01T10:00:00.000Z",
-      "updatedAt" => "2026-09-01T10:00:00.000Z"
-    })
+    issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_comm_1",
+        identifier: "CMT-1",
+        title: "Commentable Issue",
+        state: :triage
+      })
+      |> Repo.insert!()
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Commentable Issue"})
-
-    %{project: project, issue: issue}
+    %{issue: issue}
   end
 
-  test "comment/4 posts comment using owner user token", %{issue: issue} do
-    {:ok, owner} =
-      Users.register_oauth_user(%{
-        github_id: "gh_comment_owner",
-        login: "comment_owner",
-        email: "comment_owner@example.com"
-      })
+  test "comment/3 posts as the scope's user and keeps the comment", %{issue: %{id: issue_id} = issue} do
+    {:ok, %{id: user_id} = user} =
+      Users.register_oauth_user(%{github_id: "gh_comment_owner", login: "comment_owner", email: "owner@example.com"})
 
-    {:ok, owner} =
-      Users.update_user(Scope.for_system(), owner, %{
+    {:ok, user} =
+      Users.update_user(Scope.for_system(), user, %{
         linear_access_token: "lin_owner_token",
         linear_refresh_token: "lin_owner_refresh",
         linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
       })
 
-    LinearMock.mock_create_comment_success(%{
-      "id" => "comment_999",
-      "body" => "Review complete. LGTM!",
-      "createdAt" => "2026-09-05T12:00:00.000Z"
-    })
+    user |> Ecto.Changeset.change(linear_user_id: "lin_usr_owner") |> Repo.update!()
 
-    assert {:ok, %{id: "comment_999", body: "Review complete. LGTM!"}} =
-             Issues.comment(issue, "Review complete. LGTM!", owner)
-  end
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
 
-  test "comment/4 works with user scope and default owner_user", %{issue: issue} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_comment_user",
-        login: "comment_user",
-        email: "comment_user@example.com"
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_owner_token"]
+      assert %{"input" => %{"issueId" => "lin_comm_1", "body" => "LGTM!"} = input} = Jason.decode!(body)["variables"]
+      refute Map.has_key?(input, "parentId")
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "commentCreate" => %{
+            "success" => true,
+            "comment" => %{
+              "id" => "comment_999",
+              "body" => "LGTM!",
+              "createdAt" => "2026-09-13T10:00:00.000Z",
+              "issue" => %{"id" => "lin_comm_1"},
+              "user" => %{"id" => "lin_usr_owner", "name" => "Comment Owner"}
+            }
+          }
+        }
       })
+    end)
 
-    Users.update_user(Scope.for_system(), user, %{
-      linear_access_token: "lin_user_token_3",
-      linear_refresh_token: "lin_user_refresh_3",
-      linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
-    })
+    assert {:ok,
+            %Comment{
+              issue_id: ^issue_id,
+              parent_id: nil,
+              external_id: "comment_999",
+              body: "LGTM!",
+              author_user_id: ^user_id,
+              author_name: "Comment Owner"
+            }} = Issues.comment(Scope.for_user(user), issue, %{body: "LGTM!"})
 
-    LinearMock.mock_create_comment_success(%{
-      "id" => "comment_user_1",
-      "body" => "Comment from user scope",
-      "createdAt" => "2026-09-05T12:00:00.000Z"
-    })
-
-    assert {:ok, %{id: "comment_user_1"}} =
-             Issues.comment(issue, "Comment from user scope")
+    assert_receive {:issue_comments_changed, ^issue_id}
   end
 
-  test "comment/4 returns error on Linear mutation failure", %{issue: issue} do
-    LinearMock.mock_mutation_failure("commentCreate")
+  test "comment/3 replies to a thread with the parent's Linear id", %{issue: issue} do
+    %Comment{id: parent_id} =
+      %Comment{}
+      |> Comment.changeset(%{issue_id: issue.id, external_id: "lin_parent", body: "Open question"})
+      |> Repo.insert!()
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"input" => %{"parentId" => "lin_parent", "body" => "yes"}} = Jason.decode!(body)["variables"]
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "commentCreate" => %{
+            "success" => true,
+            "comment" => %{
+              "id" => "lin_reply",
+              "body" => "yes",
+              "issue" => %{"id" => "lin_comm_1"},
+              "parent" => %{"id" => "lin_parent"}
+            }
+          }
+        }
+      })
+    end)
+
+    assert {:ok, %Comment{external_id: "lin_reply", parent_id: ^parent_id}} =
+             Issues.comment(Scope.for_system(), issue, %{body: "yes", parent_id: parent_id})
+  end
+
+  test "comment/3 won't reply to a comment that isn't a thread on this issue", %{issue: issue} do
+    # No Linear mock is queued, so a request would raise.
+    assert {:error, :parent_not_found} =
+             Issues.comment(Scope.for_system(), issue, %{body: "yes", parent_id: "com_missing"})
+  end
+
+  test "comment/3 posts as the workspace for the system", %{issue: issue} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_token_comment"]
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "commentCreate" => %{
+            "success" => true,
+            "comment" => %{"id" => "comment_sys", "body" => "From the pipeline", "issue" => %{"id" => "lin_comm_1"}}
+          }
+        }
+      })
+    end)
+
+    assert {:ok, %Comment{external_id: "comment_sys", author_user_id: nil}} =
+             Issues.comment(Scope.for_system(), issue, %{body: "From the pipeline"})
+  end
+
+  test "comment/3 returns an error when Linear does not create it", %{issue: issue} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"commentCreate" => %{"success" => false}}})
+    end)
 
     assert {:error, {:linear_mutation_failed, "commentCreate"}} =
-             Issues.comment(issue, "Failing comment")
+             Issues.comment(Scope.for_system(), issue, %{body: "Failing comment"})
+
+    assert [] = Repo.all(Comment)
   end
 end

@@ -31,15 +31,7 @@ default_project =
       github_repo: "Rail-AI-dev/rail",
       github_installation_id: 1,
       default_branch: "main",
-      linear_team_id: "rail-team",
       linear_team_key: "RAIL",
-      linear_state_ids: %{
-        "triage" => "state_triage",
-        "backlog" => "state_backlog",
-        "in_progress" => "state_in_progress",
-        "done" => "state_done",
-        "canceled" => "state_canceled"
-      },
       clone_path: "/var/rail/worktrees/rail",
       active: true
     })

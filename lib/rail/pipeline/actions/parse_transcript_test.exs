@@ -1,29 +1,29 @@
 defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
   use ExUnit.Case, async: true
 
-  import Rail.Pipeline.Actions.ParseTranscript
+  alias Rail.Pipeline
 
   test "a log with nothing in it has no turns" do
-    assert parse_transcript([]) == []
-    assert parse_transcript(nil) == []
-    assert parse_transcript("") == []
-    assert parse_transcript("   \n   ") == []
-    assert parse_transcript(["   ", "   "]) == []
+    assert Pipeline.parse_transcript([]) == []
+    assert Pipeline.parse_transcript(nil) == []
+    assert Pipeline.parse_transcript("") == []
+    assert Pipeline.parse_transcript("   \n   ") == []
+    assert Pipeline.parse_transcript(["   ", "   "]) == []
   end
 
   test "reads a multiline string as lines" do
-    assert length(parse_transcript("[human] Hello\n[run] claude\nAgent reply")) == 3
+    assert length(Pipeline.parse_transcript("[human] Hello\n[run] claude\nAgent reply")) == 3
   end
 
   test "reads a one-line human comment" do
-    [turn] = parse_transcript(["[human] Please change the title of this button."])
+    [turn] = Pipeline.parse_transcript(["[human] Please change the title of this button."])
 
     assert turn.author == :human
     assert turn.content == "Please change the title of this button."
   end
 
   test "a single log entry holding newlines is still one comment" do
-    [turn] = parse_transcript(["[human] Line 1 of feedback.\nLine 2 of feedback.\nLine 3 of feedback."])
+    [turn] = Pipeline.parse_transcript(["[human] Line 1 of feedback.\nLine 2 of feedback.\nLine 3 of feedback."])
 
     assert turn.author == :human
     assert turn.content == "Line 1 of feedback.\nLine 2 of feedback.\nLine 3 of feedback."
@@ -38,7 +38,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
       "I have addressed both items."
     ]
 
-    [comment, event, reply] = parse_transcript(logs)
+    [comment, event, reply] = Pipeline.parse_transcript(logs)
 
     assert comment.author == :human
     assert comment.content == "Please address these points:\n- Item 1\n- Item 2"
@@ -57,7 +57,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
       "[run] claude pid 1234 in /tmp"
     ]
 
-    [comment, event] = parse_transcript(logs)
+    [comment, event] = Pipeline.parse_transcript(logs)
 
     assert comment.author == :human
     assert comment.content == "First paragraph line 1\nFirst paragraph line 2"
@@ -75,7 +75,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
       "All changes applied successfully."
     ]
 
-    [prose, activity, more_prose, one_tool, closing] = parse_transcript(logs)
+    [prose, activity, more_prose, one_tool, closing] = Pipeline.parse_transcript(logs)
 
     assert prose.author == :role
     assert prose.content == "Starting the task now."
@@ -103,7 +103,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
       "[error] Something broke in the toolchain"
     ]
 
-    turns = parse_transcript(logs)
+    turns = Pipeline.parse_transcript(logs)
 
     assert length(turns) == 4
     assert Enum.all?(turns, &(&1.author == :event))
@@ -117,7 +117,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
       "[ ] Todo step 2"
     ]
 
-    [turn] = parse_transcript(logs)
+    [turn] = Pipeline.parse_transcript(logs)
 
     assert turn.author == :role
 
@@ -136,7 +136,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
       "[rail] System event"
     ]
 
-    turns = parse_transcript(logs)
+    turns = Pipeline.parse_transcript(logs)
 
     assert Enum.map(turns, & &1.author) == [:human, :activity, :role, :event]
 

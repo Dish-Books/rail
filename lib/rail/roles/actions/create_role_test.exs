@@ -16,7 +16,6 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
         name: "Create Role Project",
         github_repo: "org/create-role",
         github_installation_id: 4101,
-        linear_team_id: "team_create_role",
         linear_team_key: "CRR",
         default_branch: "main",
         clone_path: "/tmp/repos/create-role"
@@ -43,7 +42,7 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
              Roles.create_role(scope, project, attrs)
   end
 
-  test "creates role for project id with system scope", %{project: %Project{id: project_id}, backend: backend} do
+  test "creates role with system scope", %{project: %Project{id: project_id} = project, backend: backend} do
     scope = Scope.for_system()
 
     attrs = %{
@@ -55,7 +54,7 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
     }
 
     assert {:ok, %Role{name: "QA Agent", stage: :qa, project_id: ^project_id}} =
-             Roles.create_role(scope, project_id, attrs)
+             Roles.create_role(scope, project, attrs)
   end
 
   test "returns validation errors for missing attributes", %{project: project} do
@@ -81,7 +80,7 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
       system_prompt: "Ghost prompt"
     }
 
-    assert {:error, changeset} = Roles.create_role(scope, "prj_000000000000000000000000", attrs)
+    assert {:error, changeset} = Roles.create_role(scope, %Project{id: "prj_000000000000000000000000"}, attrs)
     assert %{project_id: ["does not exist"]} = errors_on(changeset)
   end
 
@@ -95,12 +94,5 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
   test "returns not authorized for nil scope", %{project: project} do
     attrs = %{name: "Role", model: "claude", system_prompt: "Prompt"}
     assert {:error, :not_authorized} = Roles.create_role(nil, project, attrs)
-  end
-
-  test "returns validation error when project_or_id is invalid type" do
-    scope = Scope.for_system()
-    attrs = %{name: "Role", model: "claude", system_prompt: "Prompt"}
-    assert {:error, changeset} = Roles.create_role(scope, :invalid_project, attrs)
-    assert %{project_id: ["can't be blank"]} = errors_on(changeset)
   end
 end
