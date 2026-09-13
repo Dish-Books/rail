@@ -19,8 +19,5 @@ defmodule Rail.Roles do
   defdelegate delete_role(scope, role), to: Actions.DeleteRole
 
   @decorate can?(resource: :roles, action: :manage)
-  defdelegate copy_roles(scope, target_project_or_id, source_project_id), to: Actions.CopyRoles
-
-  @decorate can?(resource: :roles, action: :manage)
-  defdelegate copy_roles(scope, target_project_or_id, source_project_id, opts), to: Actions.CopyRoles
+  defdelegate copy_roles(scope, target_project_id, source_project_id, opts \\ []), to: Actions.CopyRoles
 end

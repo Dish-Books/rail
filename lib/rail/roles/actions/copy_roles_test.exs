@@ -57,27 +57,12 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
       })
 
     assert {:ok, [%Role{name: "Source PM"}, %Role{name: "Source Engineer"}]} =
-             Roles.copy_roles(scope, target, source.id)
+             Roles.copy_roles(scope, target.id, source.id)
 
     target_roles = Roles.list_roles(target.id)
     assert length(target_roles) == 2
     assert Enum.any?(target_roles, &(&1.name == "Source PM" && &1.stage == :product))
     assert Enum.any?(target_roles, &(&1.name == "Source Engineer" && &1.stage == :engineer))
-  end
-
-  test "copies roles using target project ID string", %{backend: backend, source: source, target: target} do
-    scope = Scope.for_system()
-
-    {:ok, _source_role} =
-      Roles.create_role(scope, source, %{
-        backend_id: backend.id,
-        name: "Source Role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are an expert agent."
-      })
-
-    assert {:ok, [%Role{name: "Source Role"}]} =
-             Roles.copy_roles(scope, target.id, source.id)
   end
 
   test "unbinds existing stage in target project when copied role shares the stage", %{
@@ -106,7 +91,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
       })
 
     assert {:ok, [%Role{name: "New Copied Engineer", stage: :engineer}]} =
-             Roles.copy_roles(scope, target, source.id)
+             Roles.copy_roles(scope, target.id, source.id)
 
     assert {:ok, %Role{stage: nil}} = Roles.get_role(id: old_target_role.id)
     assert {:ok, %Role{name: "New Copied Engineer"}} = Roles.get_role(project_id: target.id, stage: :engineer)
@@ -132,22 +117,16 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
       })
 
     assert {:ok, [%Role{name: "Copied Source Role"}]} =
-             Roles.copy_roles(scope, target, source.id, replace_all: true)
+             Roles.copy_roles(scope, target.id, source.id, replace_all: true)
 
     roles = Roles.list_roles(target.id)
     assert [%Role{name: "Copied Source Role"}] = roles
   end
 
-  test "returns error when target project is nil", %{source: source} do
-    scope = Scope.for_user(%{admin: true})
-
-    assert {:error, :target_project_not_found} = Roles.copy_roles(scope, nil, source.id)
-  end
-
   test "returns not authorized for non-admin scope", %{source: source, target: target} do
     scope = Scope.for_user(%{admin: false})
 
-    assert {:error, :not_authorized} = Roles.copy_roles(scope, target, source.id)
+    assert {:error, :not_authorized} = Roles.copy_roles(scope, target.id, source.id)
   end
 
   test "rolls back when target project id does not exist in db", %{backend: backend, source: source} do
