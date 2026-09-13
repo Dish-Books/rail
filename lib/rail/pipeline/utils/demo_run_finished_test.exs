@@ -2,7 +2,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
   use Rail.DataCase, async: true
 
   import Rail.Pipeline.Utils.DemoRunFinished
-  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
+  import RailTest.Mocks.Linear, only: [mock_demo_uploads: 1]
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Demo
@@ -71,7 +71,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
       "title" => "Settle Demo Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Settle Demo Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Settle Demo Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -537,7 +537,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
         "title" => "Task 14511"
       })
 
-      {:ok, issue_14511} = Issues.capture_issue(system_scope(), project, "Task 14511")
+      {:ok, issue_14511} = Issues.create_issue(project, %{description: "Task 14511"})
 
       {:ok, task2} = Pipeline.create_task(issue_14511, :product)
 

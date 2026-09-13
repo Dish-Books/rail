@@ -68,7 +68,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       }
     ])
 
-    {:ok, [%Issue{id: id1}, %Issue{id: id2}]} = Issues.sync_issues(scope, project_1)
+    {:ok, [%Issue{id: id1}, %Issue{id: id2}]} = Issues.sync_issues(project_1)
 
     LinearMock.mock_issues_success([
       %{
@@ -84,35 +84,28 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
       }
     ])
 
-    {:ok, [_issue_3]} = Issues.sync_issues(scope, project_2)
-
-    user_scope = Scope.for_user(%{admin: false})
+    {:ok, [_issue_3]} = Issues.sync_issues(project_2)
 
     # Default show_finished: false excludes done issue id2
-    assert [%Issue{id: ^id1}] = Issues.list_issues(user_scope, project_1)
+    assert [%Issue{id: ^id1}] = Issues.list_issues(project_1)
 
     # Explicit show_finished: true includes done issue id2
     assert [%Issue{id: ^id1}, %Issue{id: ^id2}] =
-             Issues.list_issues(user_scope, project_id: project_id_1, show_finished: true)
+             Issues.list_issues(project_id: project_id_1, show_finished: true)
 
     # 3-arity list_issues with project struct and opts
     assert [%Issue{id: ^id1}, %Issue{id: ^id2}] =
-             Issues.list_issues(user_scope, project_1, show_finished: true)
+             Issues.list_issues(project_1, show_finished: true)
 
-    assert [%Issue{id: ^id1}] = Issues.list_issues(user_scope, project_id: project_id_1, state: :triage)
+    assert [%Issue{id: ^id1}] = Issues.list_issues(project_id: project_id_1, state: :triage)
 
     # Preload option preloads associations
     assert [%Issue{id: ^id1, project: %Project{id: ^project_id_1}}] =
-             Issues.list_issues(user_scope, project_id: project_id_1, preload: [:project])
+             Issues.list_issues(project_id: project_id_1, preload: [:project])
 
     assert project_id_2 != project_id_1
-    assert length(Issues.list_issues(scope, show_finished: true)) == 3
-    assert length(Issues.list_issues(scope, show_finished: false)) == 2
-    assert length(Issues.list_issues(scope)) == 2
-  end
-
-  test "list_issues returns not authorized for unauthorized scope" do
-    assert {:error, :not_authorized} = Issues.list_issues(nil, [])
-    assert {:error, :not_authorized} = Issues.list_issues(nil, %Project{id: "prj_test"}, [])
+    assert length(Issues.list_issues(show_finished: true)) == 3
+    assert length(Issues.list_issues(show_finished: false)) == 2
+    assert length(Issues.list_issues()) == 2
   end
 end

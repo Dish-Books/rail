@@ -1,5 +1,11 @@
 defmodule Rail.Issues.Utils.TokenResolver do
-  @moduledoc false
+  @moduledoc """
+  Picks the Linear token a write goes out under.
+
+  A write the pipeline can attribute to a person goes out as that person, so
+  Linear shows their name on it; everything else — and anything by a user who
+  never linked Linear — goes out as the workspace.
+  """
 
   import Ecto.Query
 
@@ -10,8 +16,8 @@ defmodule Rail.Issues.Utils.TokenResolver do
 
   require Logger
 
-  def resolve_token(user_or_scope, project) do
-    case user_token(user_or_scope) do
+  def resolve_token(user, project) do
+    case user_token(user) do
       {:ok, token} ->
         {:ok, token, :user}
 
@@ -56,5 +62,5 @@ defmodule Rail.Issues.Utils.TokenResolver do
   end
 
   defp user_token(nil), do: {:error, :not_linked}
-  defp user_token(user_or_scope), do: Users.linear_token(user_or_scope)
+  defp user_token(user), do: Users.linear_token(user)
 end

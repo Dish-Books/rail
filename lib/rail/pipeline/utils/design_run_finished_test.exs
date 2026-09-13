@@ -2,7 +2,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
   use Rail.DataCase, async: true
 
   import Rail.Pipeline.Utils.DesignRunFinished
-  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
+  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1]
 
   alias Rail.Artifacts
   alias Rail.Issues
@@ -68,7 +68,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
       "title" => "Settle Design Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Settle Design Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Settle Design Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

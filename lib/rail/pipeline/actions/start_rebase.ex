@@ -30,7 +30,6 @@ defmodule Rail.Pipeline.Actions.StartRebase do
       |> Task.changeset(%{is_rebasing: true})
       |> Repo.update()
 
-
     # The task never leaves its stage, so this re-enters the one it is parked at;
     # `is_rebasing` is what makes the brief a rebase brief.
     Pipeline.enter_stage(task, task.stage, opts)

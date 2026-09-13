@@ -7,21 +7,20 @@ defmodule Rail.Issues.Actions.MoveState do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Repo
 
-  def move_state(scope, project, %Issue{} = issue, state_type, owner_user \\ nil) do
-    user_target = owner_user || scope
-
-    with {:ok, token, _identity} <- resolve_token(user_target, project),
+  def move_state(project, %Issue{} = issue, state_type, owner_user \\ nil) do
+    with {:ok, token, _identity} <- resolve_token(owner_user, project),
          {:ok, state_id, state_name} <- resolve_state(token, project, state_type) do
       case Linear.update_issue(token, issue.external_id, %{state_id: state_id}) do
         {:ok, linear_issue} ->
           local_attrs = %{
+            project_id: project.id,
             state: state_type,
             state_name: state_name,
             linear_updated_at: parse_datetime(linear_issue.updated_at)
           }
 
           issue
-          |> Issue.changeset(local_attrs, project.id)
+          |> Issue.changeset(local_attrs)
           |> Repo.update()
 
         {:error, reason} ->

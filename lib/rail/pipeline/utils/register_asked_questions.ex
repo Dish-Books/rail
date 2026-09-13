@@ -56,7 +56,11 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
   end
 
   # The agent's own words for one OS process, oldest first.
-  defp agent_log(%OsProcess{id: os_process_id}, %Run{role: %{backend: %Backend{} = backend}}) do
+  defp agent_log(%OsProcess{}, %Run{role: nil}), do: ""
+
+  defp agent_log(%OsProcess{id: os_process_id}, %Run{role: %{backend: backend}}) do
+    backend = if is_struct(backend, Backend), do: backend, else: %Backend{name: :claude}
+
     os_process_id
     |> events_from()
     |> Enum.reduce(new_event_state(backend), fn event, state ->

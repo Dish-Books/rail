@@ -13,9 +13,9 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
   alias Rail.Repo
   alias Rail.Users.Schemas.User
 
-  def capture_qa_report(scope, target, scratch_dir_or_opts, opts \\ []) do
+  def capture_qa_report(_scope, target, scratch_dir_or_opts, opts \\ []) do
     {task, task_id, scratch_dir, combined_opts} = normalize_args(target, scratch_dir_or_opts, opts)
-    do_capture_qa_report(scope, task, task_id, scratch_dir, combined_opts)
+    do_capture_qa_report(task, task_id, scratch_dir, combined_opts)
   end
 
   defp normalize_args(target, scratch_dir, opts) when is_binary(scratch_dir) do
@@ -34,7 +34,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
   defp resolve_task_and_id(task_id) when is_binary(task_id), do: {Repo.get(Task, task_id), task_id}
   defp resolve_task_and_id(other), do: {nil, to_string(other)}
 
-  defp do_capture_qa_report(scope, task, task_id, scratch_dir, opts) do
+  defp do_capture_qa_report(task, task_id, scratch_dir, opts) do
     qa_dir = resolve_qa_dir(scratch_dir)
 
     opts =
@@ -52,7 +52,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
       end)
 
     with {:ok, qa_data} <- QaValidator.validate(qa_dir, opts),
-         {:ok, rows_with_assets} <- upload_qa_assets(scope, qa_data.rows, opts) do
+         {:ok, rows_with_assets} <- upload_qa_assets(qa_data.rows, opts) do
       run_id = Keyword.get(opts, :run_id)
       commit = Keyword.get(opts, :commit) || qa_data[:commit]
 
@@ -65,7 +65,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
       }
 
       with {:ok, report} <- %QaReport{} |> QaReport.changeset(qa_attrs) |> Repo.insert() do
-        maybe_post_comment(scope, report, task, opts)
+        maybe_post_comment(report, task, opts)
         {:ok, report}
       end
     end
@@ -73,10 +73,10 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
 
   defp resolve_qa_dir(scratch_dir), do: Path.join(scratch_dir, "qa")
 
-  defp upload_qa_assets(scope, rows, opts) do
+  defp upload_qa_assets(rows, opts) do
     rows
     |> Enum.reduce_while({:ok, []}, fn row, {:ok, acc_rows} ->
-      case upload_row_artifacts(scope, row, opts) do
+      case upload_row_artifacts(row, opts) do
         {:ok, updated_row} -> {:cont, {:ok, [updated_row | acc_rows]}}
         {:error, reason} -> {:halt, {:error, reason}}
       end
@@ -87,12 +87,12 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
     end
   end
 
-  defp upload_row_artifacts(scope, row, opts) do
+  defp upload_row_artifacts(row, opts) do
     artifacts = Map.get(row, :artifacts, [])
 
     artifacts
     |> Enum.reduce_while({:ok, []}, fn art, {:ok, acc_arts} ->
-      case populate_and_upload_artifact(scope, art, opts) do
+      case populate_and_upload_artifact(art, opts) do
         {:ok, updated_art} -> {:cont, {:ok, [updated_art | acc_arts]}}
         {:error, reason} -> {:halt, {:error, reason}}
       end
@@ -103,11 +103,11 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
     end
   end
 
-  defp populate_and_upload_artifact(scope, %{kind: :image} = art, opts) do
-    upload_artifact_if_image(scope, art, opts)
+  defp populate_and_upload_artifact(%{kind: :image} = art, opts) do
+    upload_artifact_if_image(art, opts)
   end
 
-  defp populate_and_upload_artifact(_scope, %{kind: :text, resolved_path: path} = art, _opts) when is_binary(path) do
+  defp populate_and_upload_artifact(%{kind: :text, resolved_path: path} = art, _opts) when is_binary(path) do
     updated =
       if (is_nil(art[:text]) or art[:text] == "") and File.exists?(path) do
         Map.put(art, :text, File.read!(path))
@@ -118,15 +118,15 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
     {:ok, updated}
   end
 
-  defp populate_and_upload_artifact(_scope, art, _opts), do: {:ok, art}
+  defp populate_and_upload_artifact(art, _opts), do: {:ok, art}
 
-  defp upload_artifact_if_image(scope, %{kind: :image, resolved_path: path} = art, opts) when is_binary(path) do
+  defp upload_artifact_if_image(%{kind: :image, resolved_path: path} = art, opts) when is_binary(path) do
     case File.read(path) do
       {:ok, binary} ->
         filename = art[:name] || Path.basename(path)
         content_type = mime_type(filename)
 
-        case Issues.upload_asset(scope, filename, content_type, binary, opts) do
+        case Issues.upload_asset(filename, content_type, binary, opts) do
           {:ok, %{asset_url: asset_url}} ->
             {:ok, Map.put(art, :url, asset_url)}
 
@@ -139,15 +139,15 @@ defmodule Rail.Artifacts.Actions.CaptureQaReport do
     end
   end
 
-  defp upload_artifact_if_image(_scope, art, _opts), do: {:ok, art}
+  defp upload_artifact_if_image(art, _opts), do: {:ok, art}
 
-  defp maybe_post_comment(scope, qa_report, task, opts) do
+  defp maybe_post_comment(qa_report, task, opts) do
     issue = resolve_comment_issue(task, opts)
 
     if issue do
       comment_body = format_qa_comment(qa_report)
       owner_user = resolve_comment_owner(issue, opts)
-      Issues.comment(scope, issue, comment_body, owner_user)
+      Issues.comment(issue, comment_body, owner_user)
     end
 
     :ok

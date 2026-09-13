@@ -9,8 +9,6 @@ defmodule Rail.Pipeline.Actions.LoadDiffTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
-    scope = system_scope()
-
     {:ok, workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Load Diff Workspace",
@@ -44,7 +42,7 @@ defmodule Rail.Pipeline.Actions.LoadDiffTest do
       "title" => "Load Diff Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Load Diff Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Load Diff Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

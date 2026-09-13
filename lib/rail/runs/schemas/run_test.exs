@@ -95,9 +95,10 @@ defmodule Rail.Runs.Schemas.RunTest do
     assert Run.has_started?(started_with_conv)
     assert Run.can_chat?(started_with_conv)
 
-    attempt_only_with_conv = %Run{started_at: nil, conversation_id: "sess-456"}
-    assert Run.has_started?(attempt_only_with_conv)
-    assert Run.can_chat?(attempt_only_with_conv)
+    # A conversation is not a start: a run that never ran cannot be resumed.
+    conv_without_start = %Run{started_at: nil, conversation_id: "sess-456"}
+    refute Run.has_started?(conv_without_start)
+    refute Run.can_chat?(conv_without_start)
 
     refute Run.has_started?(nil)
     refute Run.can_chat?(nil)

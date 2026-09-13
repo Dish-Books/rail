@@ -1,7 +1,7 @@
-defmodule Rail.Domain.StageVerdictTest do
+defmodule Rail.Pipeline.Schemas.StageVerdictTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Domain.StageVerdict
+  alias Rail.Pipeline.Schemas.StageVerdict
 
   test "changeset/2 validates required verdict" do
     valid_changeset = StageVerdict.changeset(%StageVerdict{}, %{verdict: :passed, explanation: "All good"})

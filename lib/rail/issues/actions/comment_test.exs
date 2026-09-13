@@ -2,9 +2,7 @@ defmodule Rail.Issues.Actions.CommentTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
-  alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
-  alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -43,7 +41,7 @@ defmodule Rail.Issues.Actions.CommentTest do
       "updatedAt" => "2026-09-01T10:00:00.000Z"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Commentable Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Commentable Issue"})
 
     %{project: project, issue: issue}
   end
@@ -69,10 +67,8 @@ defmodule Rail.Issues.Actions.CommentTest do
       "createdAt" => "2026-09-05T12:00:00.000Z"
     })
 
-    scope = Scope.for_system()
-
     assert {:ok, %{id: "comment_999", body: "Review complete. LGTM!"}} =
-             Issues.comment(scope, issue, "Review complete. LGTM!", owner)
+             Issues.comment(issue, "Review complete. LGTM!", owner)
   end
 
   test "comment/4 works with user scope and default owner_user", %{issue: issue} do
@@ -83,12 +79,11 @@ defmodule Rail.Issues.Actions.CommentTest do
         email: "comment_user@example.com"
       })
 
-    {:ok, user} =
-      Users.link_linear(user, %{
-        access_token: "lin_user_token_3",
-        refresh_token: "lin_user_refresh_3",
-        expires_in: 3600
-      })
+    Users.link_linear(user, %{
+      access_token: "lin_user_token_3",
+      refresh_token: "lin_user_refresh_3",
+      expires_in: 3600
+    })
 
     LinearMock.mock_create_comment_success(%{
       "id" => "comment_user_1",
@@ -96,22 +91,14 @@ defmodule Rail.Issues.Actions.CommentTest do
       "createdAt" => "2026-09-05T12:00:00.000Z"
     })
 
-    scope = Scope.for_user(user)
-
     assert {:ok, %{id: "comment_user_1"}} =
-             Issues.comment(scope, issue, "Comment from user scope")
+             Issues.comment(issue, "Comment from user scope")
   end
 
   test "comment/4 returns error on Linear mutation failure", %{issue: issue} do
     LinearMock.mock_mutation_failure("commentCreate")
-    scope = Scope.for_system()
 
     assert {:error, {:linear_mutation_failed, "commentCreate"}} =
-             Issues.comment(scope, issue, "Failing comment")
-  end
-
-  test "comment/4 returns :not_authorized for nil scope" do
-    issue = %Issue{project_id: "prj_1", external_id: "lin_1"}
-    assert {:error, :not_authorized} = Issues.comment(nil, issue, "comment")
+             Issues.comment(issue, "Failing comment")
   end
 end

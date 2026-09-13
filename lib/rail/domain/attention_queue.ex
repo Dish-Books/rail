@@ -6,10 +6,10 @@ defmodule Rail.Domain.RunAttentionItem do
   and the failure it hit all belong to it, and the task it carries is context for
   showing them, not the thing that waits.
   """
+  alias Rail.Runs.Schemas.Run
+
   @enforce_keys [:key, :waiting_since, :run]
   defstruct [:key, :waiting_since, :run]
-
-  alias Rail.Runs.Schemas.Run
 
   @type t :: %__MODULE__{key: String.t(), waiting_since: DateTime.t(), run: Run.t()}
 

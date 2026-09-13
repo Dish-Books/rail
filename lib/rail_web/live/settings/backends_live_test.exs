@@ -229,8 +229,13 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
     authed_conn = log_in_user(conn, user)
     now = DateTime.utc_now()
-    reset_today = DateTime.to_iso8601(DateTime.shift(now, minute: 30))
-    reset_tomorrow = DateTime.to_iso8601(DateTime.shift(now, day: 1))
+    # Anchored to the day rather than to an offset, so a run near midnight still
+    # reads as today.
+    reset_today = DateTime.to_iso8601(DateTime.new!(DateTime.to_date(now), ~T[23:00:00], "Etc/UTC"))
+
+    reset_tomorrow =
+      DateTime.to_iso8601(DateTime.new!(Date.add(DateTime.to_date(now), 1), ~T[09:00:00], "Etc/UTC"))
+
     node = CliAccount.default_node()
 
     Repo.insert!(
@@ -329,7 +334,8 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     assert has_element?(view, "#banner-agy", "Failed to fetch usage data")
 
     ready = %CliAccount{id: "cli_ready", node: node, backend: :claude, status: "ready", groups: []}
-    send(view.pid, {:usage_updated, [ready]})
+    expect(Backends, :refresh_usage, fn -> {:ok, [ready]} end)
+    view |> element("#refresh-quotas-button") |> render_click()
 
     assert has_element?(view, "#no-quota-windows-claude", "No quota windows reported")
   end
@@ -347,12 +353,11 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     now = DateTime.utc_now()
     node = CliAccount.default_node()
 
-    expect(Backends, :refresh_usage, fn -> {:ok, []} end)
+    stub(Backends, :refresh_usage, fn -> {:ok, []} end)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
 
     view |> element("#refresh-quotas-button") |> render_click()
-    # A second click while refreshing is a no-op
     render_click(element(view, "#refresh-quotas-button"))
 
     updated = %CliAccount{
@@ -379,7 +384,9 @@ defmodule RailWeb.Settings.BackendsLiveTest do
       ]
     }
 
-    send(view.pid, {:usage_updated, [updated]})
+    # Refreshing is what pulls new usage; the tick only moves the clock.
+    expect(Backends, :refresh_usage, fn -> {:ok, [updated]} end)
+    view |> element("#refresh-quotas-button") |> render_click()
 
     assert has_element?(view, "#account-label-claude", "pubsub@example.com")
     assert has_element?(view, "#window-remaining-claude-0-0", "75% remaining")
@@ -426,7 +433,8 @@ defmodule RailWeb.Settings.BackendsLiveTest do
       groups: []
     }
 
-    send(view.pid, {:usage_updated, [hours, days]})
+    expect(Backends, :refresh_usage, fn -> {:ok, [hours, days]} end)
+    view |> element("#refresh-quotas-button") |> render_click()
 
     assert has_element?(view, "#fetched-at-claude", "read 2h ago")
     assert has_element?(view, "#fetched-at-agy", "read 2d ago")
@@ -446,7 +454,8 @@ defmodule RailWeb.Settings.BackendsLiveTest do
               %{
                 "label" => "Unix MS",
                 "remaining_percent" => 50.0,
-                "resets_at" => DateTime.to_unix(DateTime.shift(now, minute: 30), :millisecond)
+                "resets_at" =>
+                  DateTime.to_unix(DateTime.new!(DateTime.to_date(now), ~T[23:00:00], "Etc/UTC"), :millisecond)
               },
               %{"label" => "Float", "remaining_percent" => 45.0, "resets_at" => 1_700_000_000.5},
               %{"label" => "Naive String", "remaining_percent" => 5.0, "resets_at" => "2026-09-10 14:30:00"},
@@ -458,7 +467,8 @@ defmodule RailWeb.Settings.BackendsLiveTest do
       ]
     }
 
-    send(view.pid, {:usage_updated, [formats]})
+    expect(Backends, :refresh_usage, fn -> {:ok, [formats]} end)
+    view |> element("#refresh-quotas-button") |> render_click()
 
     assert has_element?(view, "#window-reset-claude-0-0", "Resets today")
     assert has_element?(view, "#window-label-claude-0-1", "Float")

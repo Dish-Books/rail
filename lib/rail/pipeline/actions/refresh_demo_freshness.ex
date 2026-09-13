@@ -80,10 +80,8 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshness do
     if task.stage == :ready_to_merge and not (task |> Repo.preload(:runs) |> Task.running?()) do
       {:ok, _run} = Rail.Pipeline.enter_stage(task, :demo)
 
-
       {:ok, Repo.reload!(task)}
     else
-
       {:ok, task}
     end
   end

@@ -8,7 +8,6 @@ defmodule RailWeb.Settings.BackendsLive do
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
-      Phoenix.PubSub.subscribe(Rail.PubSub, "backends:usage_updated")
       :timer.send_interval(30_000, self(), :tick)
     end
 
@@ -411,16 +410,8 @@ defmodule RailWeb.Settings.BackendsLive do
     end
   end
 
-  def handle_info({:usage_updated, accounts}, socket) do
-    socket =
-      socket
-      |> assign(:accounts, accounts)
-      |> assign(:is_refreshing, false)
-      |> assign(:now, DateTime.utc_now())
-
-    {:noreply, socket}
-  end
-
+  # Nothing announces new usage any more, so the tick only moves the clock the
+  # ages are measured against. Refreshing is the button's job.
   def handle_info(:tick, socket) do
     {:noreply, assign(socket, :now, DateTime.utc_now())}
   end

@@ -83,21 +83,9 @@ defmodule Rail.Domain.TaskUsage do
     }
   end
 
-  @doc "Formats token and cost figures into a concise human-readable string."
+  @doc "Formats the token figures into a concise human-readable string."
   def describe(%__MODULE__{} = usage) do
-    total = total_tokens(usage)
-    compact = compact_number(total)
-    tokens_part = "#{compact} tokens"
-
-    case usage.total_cost do
-      %Decimal{} = cost ->
-        currency = usage.currency || "USD"
-        formatted_cost = format_cost(cost, currency)
-        "#{tokens_part} · #{formatted_cost}"
-
-      nil ->
-        tokens_part
-    end
+    "#{usage |> total_tokens() |> compact_number()} tokens"
   end
 
   defp to_decimal(%Decimal{} = d), do: d
@@ -129,12 +117,4 @@ defmodule Rail.Domain.TaskUsage do
   end
 
   defp compact_number(n), do: "#{n}"
-
-  defp format_cost(%Decimal{} = cost, "USD") do
-    "$#{Decimal.round(cost, 4)}"
-  end
-
-  defp format_cost(%Decimal{} = cost, currency) do
-    "#{Decimal.round(cost, 4)} #{currency}"
-  end
 end

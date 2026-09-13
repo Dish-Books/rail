@@ -54,13 +54,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReady do
     Rail.Pipeline.refresh_mergeability(updated_task, opts)
   end
 
-  # The failure belongs to whoever asked for the merge, not to the task: a task
-  # carries no error of its own any more.
-  defp handle_mark_ready_failure(%Task{}, reason) do
-    {:error, "Failed to mark pull request ready: #{format_reason(reason)}"}
-  end
-
-  defp format_reason({:github_api_error, _status, %{"message" => msg}}), do: msg
-  defp format_reason({:github_api_error, status, msg}) when is_binary(msg), do: "#{status} #{msg}"
-  defp format_reason(reason), do: inspect(reason)
+  # The failure belongs to whoever asked, not to the task: a task carries no
+  # error of its own any more.
+  defp handle_mark_ready_failure(%Task{}, reason), do: {:error, reason}
 end

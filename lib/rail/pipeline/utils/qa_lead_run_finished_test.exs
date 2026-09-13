@@ -66,7 +66,7 @@ defmodule Rail.Pipeline.Utils.QaLeadRunFinishedTest do
       "title" => "Settle QA Lead Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Settle QA Lead Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Settle QA Lead Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

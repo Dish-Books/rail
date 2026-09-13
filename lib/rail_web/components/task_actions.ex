@@ -10,8 +10,8 @@ defmodule RailWeb.Components.TaskActions do
   import RailWeb.CoreComponents, only: [icon: 1]
 
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Runs.Schemas.Run
   alias Rail.Pipeline.TaskActionRunner
+  alias Rail.Runs.Schemas.Run
 
   attr :task, :any, required: true
   attr :run, :any, default: nil
@@ -84,9 +84,9 @@ defmodule RailWeb.Components.TaskActions do
       <% end %>
     </div>
     """
-  end
 
-  # Helpers for building the exact action list per spec 05 §6.3 and §6.4
+    # Helpers for building the exact action list per spec 05 §6.3 and §6.4
+  end
 
   defp build_actions(nil, _run, _design), do: []
 
@@ -145,15 +145,6 @@ defmodule RailWeb.Components.TaskActions do
             style: :filled,
             icon: "pi-arrow-counter-clockwise",
             action: "send_back_to_engineer",
-            params: %{}
-          },
-          %{
-            id: "action-skip",
-            label: "Skip",
-            kind: :approve,
-            style: :outlined,
-            icon: "pi-skip-forward",
-            action: "skip",
             params: %{}
           }
         ]
@@ -276,15 +267,6 @@ defmodule RailWeb.Components.TaskActions do
               style: :filled,
               icon: "pi-arrow-clockwise",
               action: "rerecord_demo",
-              params: %{}
-            },
-            %{
-              id: "action-decline-demo",
-              label: "Continue without a demo",
-              kind: :approve,
-              style: :outlined,
-              icon: "pi-arrow-right",
-              action: "decline_demo",
               params: %{}
             }
           ]

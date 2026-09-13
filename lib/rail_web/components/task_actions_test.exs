@@ -13,9 +13,9 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "renders only trailing common actions for a merged task" do
     html =
       render_component(&TaskActions.task_actions/1,
+        run: %Run{status: :finished, stage_outcome: :done},
         task: %Task{
           stage: :merged,
-          run: %Run{status: :finished, stage_outcome: :done},
           worktree_path: "/tmp/worktree"
         }
       )
@@ -31,9 +31,9 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "renders ready_to_merge actions for clean, draft PR" do
     html =
       render_component(&TaskActions.task_actions/1,
+        run: %Run{status: :finished, stage_outcome: :done},
         task: %Task{
           stage: :ready_to_merge,
-          run: %Run{status: :finished, stage_outcome: :done},
           pr_number: 42,
           pr_is_draft: true,
           mergeability: :clean
@@ -53,12 +53,12 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "renders ready_to_merge actions for conflicted, draft PR" do
     html =
       render_component(&TaskActions.task_actions/1,
+        run: %Run{status: :finished, stage_outcome: :done},
         task: %Task{
           stage: :ready_to_merge,
-          run: %Run{status: :finished, stage_outcome: :done},
           pr_number: 42,
           pr_is_draft: true,
-          mergeability: :conflicts
+          mergeability: :conflicting
         }
       )
 
@@ -74,12 +74,12 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "renders ready_to_merge actions for conflicted, non-draft PR" do
     html =
       render_component(&TaskActions.task_actions/1,
+        run: %Run{status: :finished, stage_outcome: :done},
         task: %Task{
           stage: :ready_to_merge,
-          run: %Run{status: :finished, stage_outcome: :done},
           pr_number: 42,
           pr_is_draft: false,
-          mergeability: :conflicts
+          mergeability: :conflicting
         }
       )
 
@@ -95,9 +95,9 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "renders ready_to_merge actions for clean, non-draft PR" do
     html =
       render_component(&TaskActions.task_actions/1,
+        run: %Run{status: :finished, stage_outcome: :done},
         task: %Task{
           stage: :ready_to_merge,
-          run: %Run{status: :finished, stage_outcome: :done},
           pr_number: 42,
           pr_is_draft: false,
           mergeability: :clean
@@ -123,11 +123,9 @@ defmodule RailWeb.Components.TaskActionsTest do
 
     html =
       render_component(&TaskActions.task_actions/1,
-        task: %Task{
-          stage: :design,
-          run: %Run{status: :finished, stage_outcome: :done},
-          designs: [design]
-        },
+        run: %Run{status: :finished, stage_outcome: :done},
+        task: %Task{stage: :design},
+        design: design,
         design: design
       )
 
@@ -142,9 +140,9 @@ defmodule RailWeb.Components.TaskActionsTest do
     for gate_stage <- [:review, :qa, :qa_lead] do
       html =
         render_component(&TaskActions.task_actions/1,
+          run: %Run{status: :finished, stage_outcome: :done},
           task: %Task{
-            stage: gate_stage,
-            run: %Run{status: :finished, stage_outcome: :done}
+            stage: gate_stage
           }
         )
 
@@ -159,9 +157,9 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "offers no stage actions at product stage, since approving is stage-specific" do
     html =
       render_component(&TaskActions.task_actions/1,
+        run: %Run{status: :finished, stage_outcome: :done},
         task: %Task{
-          stage: :product,
-          run: %Run{status: :finished, stage_outcome: :done}
+          stage: :product
         }
       )
 
@@ -173,9 +171,9 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "offers no stage actions at engineer stage, since approving is stage-specific" do
     html =
       render_component(&TaskActions.task_actions/1,
+        run: %Run{status: :finished, stage_outcome: :done},
         task: %Task{
-          stage: :engineer,
-          run: %Run{status: :finished, stage_outcome: :done}
+          stage: :engineer
         }
       )
 
@@ -187,9 +185,9 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "renders failed demo stage with Re-record and Continue without demo" do
     html =
       render_component(&TaskActions.task_actions/1,
+        run: %Run{status: :finished, error: "boom"},
         task: %Task{
-          stage: :demo,
-          run: %Run{status: :finished, error: "boom"}
+          stage: :demo
         }
       )
 
@@ -202,9 +200,9 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "renders failed design stage with Design is done and Re-run designer (no Retry)" do
     html =
       render_component(&TaskActions.task_actions/1,
+        run: %Run{status: :finished, error: "boom"},
         task: %Task{
-          stage: :design,
-          run: %Run{status: :finished, error: "boom"}
+          stage: :design
         }
       )
 
@@ -218,9 +216,9 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "renders failed other stage with Retry" do
     html =
       render_component(&TaskActions.task_actions/1,
+        run: %Run{status: :finished, error: "boom"},
         task: %Task{
-          stage: :engineer,
-          run: %Run{status: :finished, error: "boom"}
+          stage: :engineer
         }
       )
 
@@ -231,9 +229,9 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "offers no stage actions while the run is working, and disables clean up" do
     html =
       render_component(&TaskActions.task_actions/1,
+        run: %Run{status: :running},
         task: %Task{
-          stage: :engineer,
-          run: %Run{status: :running}
+          stage: :engineer
         }
       )
 
@@ -259,9 +257,9 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "offers no stage actions while blocked, only the trailing common ones" do
     html =
       render_component(&TaskActions.task_actions/1,
+        run: %Run{status: :blocked_on_input},
         task: %Task{
-          stage: :architect,
-          run: %Run{status: :blocked_on_input}
+          stage: :architect
         }
       )
 
@@ -274,9 +272,9 @@ defmodule RailWeb.Components.TaskActionsTest do
   test "renders progress spinner when action is running and shows progress" do
     html =
       render_component(&TaskActions.task_actions/1,
+        run: %Run{status: :finished, stage_outcome: :done},
         task: %Task{
           stage: :ready_to_merge,
-          run: %Run{status: :finished, stage_outcome: :done},
           pr_number: 55,
           mergeability: :clean
         },
@@ -386,49 +384,45 @@ defmodule RailWeb.Components.TaskActionsTest do
     assert html =~ "action-chat"
   end
 
-  test "resolves design directions and picked key from task.designs fallback" do
-    task = %Task{
-      stage: :design,
-      run: %Run{status: :finished, stage_outcome: :done},
-      designs: [
-        %Design{
-          version: 1,
-          picked_key: "dir_a",
-          directions: [%DesignDirection{key: "dir_a", title: "Direction A"}]
-        }
-      ]
-    }
+  test "offers nothing to pick when no design was handed in" do
+    task = %Task{stage: :design}
 
-    html = render_component(&TaskActions.task_actions/1, task: task, design: nil)
+    html =
+      render_component(&TaskActions.task_actions/1,
+        task: task,
+        run: %Run{status: :finished, stage_outcome: :done},
+        design: nil
+      )
+
     refute html =~ "action-pick-design-dir_a"
     assert html =~ "action-chat"
   end
 
-  test "resolves design directions and unpicked key from task.designs fallback" do
-    task = %Task{
-      stage: :design,
-      run: %Run{status: :finished, stage_outcome: :done},
-      designs: [
-        %Design{
+  test "offers each direction of the design it was handed" do
+    task = %Task{stage: :design}
+
+    html =
+      render_component(&TaskActions.task_actions/1,
+        task: task,
+        run: %Run{status: :finished, stage_outcome: :done},
+        design: %Design{
           version: 1,
           picked_key: nil,
           directions: [%DesignDirection{key: "dir_b", title: "Direction B"}]
         }
-      ]
-    }
+      )
 
-    html = render_component(&TaskActions.task_actions/1, task: task, design: nil)
     assert html =~ "action-pick-design-dir_b"
   end
 
-  test "handles design with no directions or picked key gracefully" do
-    task = %Task{
-      stage: :design,
-      run: %Run{status: :finished, stage_outcome: :done},
-      designs: []
-    }
+  test "handles a design with no directions gracefully" do
+    html =
+      render_component(&TaskActions.task_actions/1,
+        task: %Task{stage: :design},
+        run: %Run{status: :finished, stage_outcome: :done},
+        design: %Design{version: 1, picked_key: nil, directions: []}
+      )
 
-    html = render_component(&TaskActions.task_actions/1, task: task, design: nil)
     refute html =~ "action-pick-design"
   end
 end

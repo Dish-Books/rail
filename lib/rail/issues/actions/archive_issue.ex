@@ -8,16 +8,16 @@ defmodule Rail.Issues.Actions.ArchiveIssue do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
 
-  def archive_issue(scope, %Issue{} = issue) do
+  def archive_issue(%Issue{} = issue) do
     project = Repo.get(Project, issue.project_id)
 
-    with {:ok, token, _identity} <- resolve_token(scope, project) do
+    with {:ok, token} <- workspace_token(project) do
       linear_attrs = build_linear_attrs(project)
 
       case Linear.update_issue(token, issue.external_id, linear_attrs) do
         {:ok, _result} ->
           issue
-          |> Issue.changeset(%{state: :canceled, state_name: "Canceled"}, issue.project_id)
+          |> Issue.changeset(%{state: :canceled, state_name: "Canceled"})
           |> Repo.update()
 
         {:error, reason} ->

@@ -69,7 +69,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
       "title" => "Register Question Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Register Question Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Register Question Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -77,8 +77,6 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
   end
 
   test "registers a detected question struct and blocks task and run", %{task: task, roles: roles} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-
     role = roles[:engineer]
 
     {:ok, %Task{id: task_id} = task} =
@@ -117,8 +115,6 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     assert %Task{} = Repo.get!(Task, task_id)
     assert Enum.map(pending_questions(task_id), & &1.id) == [q_id]
     assert %Run{status: :blocked_on_input} = Repo.get!(Run, run.id)
-
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :question_registered}}
   end
 
   test "registers question using raw string with marker", %{task: task, roles: roles} do

@@ -6,7 +6,6 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.TaskActionRunner
   alias Rail.Projects
-  alias Rail.Repo
   alias Rail.Roles
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -63,7 +62,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
       "title" => "Task Runner Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Task Runner Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Task Runner Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -74,8 +73,6 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     project: _project,
     task: _task
   } do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Task Runner Project 10302",
@@ -100,14 +97,9 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
       "title" => "Task 10303"
     })
 
-    {:ok, issue_10303} = Issues.capture_issue(system_scope(), project, "Task 10303")
+    {:ok, issue_10303} = Issues.create_issue(project, %{description: "Task 10303"})
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10303, :product)
-
-    {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(Repo.get!(Task, task_id), %{
-        error: "Existing error to be cleared"
-      })
 
     refute TaskActionRunner.is_busy?(task_id)
     assert TaskActionRunner.running_on(task_id) == nil
@@ -117,10 +109,6 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     assert TaskActionRunner.is_busy?(task_id)
     assert TaskActionRunner.running_on(task_id) == :merge
 
-    # Asserts that start_action immediately cleared old error
-    assert %Task{error: nil} = Repo.get!(Task, task_id)
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :action_started, kind: :merge}}
-
     # Single-flight: second start attempts return {:error, :busy}
     assert {:error, :busy} = TaskActionRunner.start_action(task_id, :merge)
     assert {:error, :busy} = TaskActionRunner.start_action(task_id, :rebase)
@@ -129,7 +117,6 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     assert :ok = TaskActionRunner.finish_action(task_id, :merge, {:ok, :done})
     refute TaskActionRunner.is_busy?(task_id)
     assert TaskActionRunner.running_on(task_id) == nil
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :action_finished, kind: :merge}}
   end
 
   test "finish_action with error or timeout writes error message to task", %{project: _project, task: _task} do
@@ -157,24 +144,18 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
       "title" => "Task 10305"
     })
 
-    {:ok, issue_10305} = Issues.capture_issue(system_scope(), project, "Task 10305")
+    {:ok, issue_10305} = Issues.create_issue(project, %{description: "Task 10305"})
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10305, :product)
 
-    {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(Repo.get!(Task, task_id), %{
-        error: nil
-      })
-
-    # Finish with standard error
+    # An error is the caller's to report; the runner only holds the lock.
     assert :ok = TaskActionRunner.start_action(task_id, :rebase)
     assert :ok = TaskActionRunner.finish_action(task_id, :rebase, {:error, "Rebase conflict failed"})
-    assert %Task{error: "Rebase conflict failed"} = Repo.get!(Task, task_id)
+    refute TaskActionRunner.is_busy?(task_id)
 
-    # Finish with timeout
     assert :ok = TaskActionRunner.start_action(task_id, :merge)
     assert :ok = TaskActionRunner.finish_action(task_id, :merge, {:error, :timeout})
-    assert %Task{error: "Action merge timed out"} = Repo.get!(Task, task_id)
+    refute TaskActionRunner.is_busy?(task_id)
   end
 
   test "forget/2 releases lock without writing error", %{project: _project, task: _task} do
@@ -202,21 +183,15 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
       "title" => "Task 10307"
     })
 
-    {:ok, issue_10307} = Issues.capture_issue(system_scope(), project, "Task 10307")
+    {:ok, issue_10307} = Issues.create_issue(project, %{description: "Task 10307"})
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10307, :product)
-
-    {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(Repo.get!(Task, task_id), %{
-        error: nil
-      })
 
     assert :ok = TaskActionRunner.start_action(task_id, :cleanup)
     assert TaskActionRunner.is_busy?(task_id)
 
     assert :ok = TaskActionRunner.forget(task_id)
     refute TaskActionRunner.is_busy?(task_id)
-    assert %Task{error: nil} = Repo.get!(Task, task_id)
   end
 
   test "run/5 executes work single-flight and cleans up lock", %{project: _project, task: _task} do
@@ -244,14 +219,9 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
       "title" => "Task 10309"
     })
 
-    {:ok, issue_10309} = Issues.capture_issue(system_scope(), project, "Task 10309")
+    {:ok, issue_10309} = Issues.create_issue(project, %{description: "Task 10309"})
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10309, :product)
-
-    {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(Repo.get!(Task, task_id), %{
-        error: nil
-      })
 
     assert {:ok, :success} =
              TaskActionRunner.run(task_id, :approve, fn ->
@@ -286,14 +256,9 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
       "title" => "Task 10311"
     })
 
-    {:ok, issue_10311} = Issues.capture_issue(system_scope(), project, "Task 10311")
+    {:ok, issue_10311} = Issues.create_issue(project, %{description: "Task 10311"})
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10311, :product)
-
-    {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(Repo.get!(Task, task_id), %{
-        error: nil
-      })
 
     assert :ok = TaskActionRunner.start_action(task_id, :cleanup)
 
@@ -330,14 +295,9 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
       "title" => "Task 10313"
     })
 
-    {:ok, issue_10313} = Issues.capture_issue(system_scope(), project, "Task 10313")
+    {:ok, issue_10313} = Issues.create_issue(project, %{description: "Task 10313"})
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_10313, :product)
-
-    {:ok, %Task{id: task_id}} =
-      Pipeline.update_task(Repo.get!(Task, task_id), %{
-        error: nil
-      })
 
     # Timeout
     assert {:error, :timeout} =
@@ -351,7 +311,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
                timeout: 10
              )
 
-    assert %Task{error: "Action merge timed out"} = Repo.get!(Task, task_id)
+    refute TaskActionRunner.is_busy?(task_id)
     refute TaskActionRunner.is_busy?(task_id)
 
     # Failure
@@ -360,7 +320,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
                {:error, "Network error"}
              end)
 
-    assert %Task{error: "Network error"} = Repo.get!(Task, task_id)
+    refute TaskActionRunner.is_busy?(task_id)
     refute TaskActionRunner.is_busy?(task_id)
 
     # Bare result (not wrapped in {:ok, _} or {:error, _})

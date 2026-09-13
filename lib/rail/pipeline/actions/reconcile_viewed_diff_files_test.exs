@@ -9,8 +9,6 @@ defmodule Rail.Pipeline.Actions.ReconcileViewedDiffFilesTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
-    scope = system_scope()
-
     {:ok, workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Reconcile Diff Workspace",
@@ -44,7 +42,7 @@ defmodule Rail.Pipeline.Actions.ReconcileViewedDiffFilesTest do
       "title" => "Reconcile Diff Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Reconcile Diff Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Reconcile Diff Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

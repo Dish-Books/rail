@@ -43,7 +43,7 @@ defmodule Rail.Pipeline.Utils.IssueIdentifierTest do
       "title" => "Scratch Issue 13504"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Scratch Issue 13504")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Scratch Issue 13504"})
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     assert issue_identifier(task) == "ENG-101"

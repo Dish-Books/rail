@@ -67,7 +67,6 @@ defmodule Rail.Runs.Actions.StartOsProcess do
       |> Run.changeset(%{pending_answer: nil, error: nil})
       |> Repo.update()
 
-
     {:ok, %{os_process | run: run, task: task}}
   end
 
@@ -82,7 +81,6 @@ defmodule Rail.Runs.Actions.StartOsProcess do
       else
         run |> Run.changeset(%{error: "Failed to spawn runner: #{inspect(reason)}"}) |> Repo.update!()
       end
-
 
     {:error, {:spawn_failed, reason, run}}
   end

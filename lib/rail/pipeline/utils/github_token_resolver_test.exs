@@ -66,7 +66,7 @@ defmodule Rail.Pipeline.Utils.GitHubTokenResolverTest do
       "title" => "GH Token Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "GH Token Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "GH Token Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

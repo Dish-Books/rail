@@ -3,7 +3,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
   import Ecto.Query
   import Phoenix.LiveViewTest
-  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
+  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1]
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Phoenix.LiveView.Socket
@@ -13,12 +13,14 @@ defmodule RailWeb.TaskDetailLiveTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.TaskActionRunner
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
   alias Rail.Runs.DetectedQuestion
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Scope
   alias Rail.Users
@@ -129,7 +131,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task Detail Issue 13823"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Task Detail Issue 13823")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Task Detail Issue 13823"})
 
     {:ok, issue} =
       Issues.update_issue(issue, %{
@@ -142,7 +144,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Implement Login Flow"
     })
 
-    {:ok, issue_13826} = Issues.capture_issue(system_scope(), project, "Implement Login Flow")
+    {:ok, issue_13826} = Issues.create_issue(project, %{description: "Implement Login Flow"})
 
     {:ok, task} = Pipeline.create_task(issue_13826, :product)
 
@@ -236,7 +238,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Tab Switching Task"
     })
 
-    {:ok, issue_13827} = Issues.capture_issue(system_scope(), project, "Tab Switching Task")
+    {:ok, issue_13827} = Issues.create_issue(project, %{description: "Tab Switching Task"})
 
     {:ok, task} = Pipeline.create_task(issue_13827, :product)
 
@@ -337,7 +339,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "No Plan Task"
     })
 
-    {:ok, issue_13828} = Issues.capture_issue(system_scope(), project, "No Plan Task")
+    {:ok, issue_13828} = Issues.create_issue(project, %{description: "No Plan Task"})
 
     {:ok, task} = Pipeline.create_task(issue_13828, :product)
 
@@ -388,7 +390,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "No Worktree Task"
     })
 
-    {:ok, issue_13829} = Issues.capture_issue(system_scope(), project, "No Worktree Task")
+    {:ok, issue_13829} = Issues.create_issue(project, %{description: "No Worktree Task"})
 
     {:ok, task} = Pipeline.create_task(issue_13829, :product)
 
@@ -444,7 +446,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Conflicted Task"
     })
 
-    {:ok, issue_13830} = Issues.capture_issue(system_scope(), project, "Conflicted Task")
+    {:ok, issue_13830} = Issues.create_issue(project, %{description: "Conflicted Task"})
 
     {:ok, conflicted_task} = Pipeline.create_task(issue_13830, :product)
 
@@ -483,7 +485,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Rebasing Task"
     })
 
-    {:ok, issue_13831} = Issues.capture_issue(system_scope(), project, "Rebasing Task")
+    {:ok, issue_13831} = Issues.create_issue(project, %{description: "Rebasing Task"})
 
     {:ok, rebasing_task} = Pipeline.create_task(issue_13831, :product)
 
@@ -545,7 +547,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Error Task"
     })
 
-    {:ok, issue_13832} = Issues.capture_issue(system_scope(), project, "Error Task")
+    {:ok, issue_13832} = Issues.create_issue(project, %{description: "Error Task"})
 
     {:ok, task} = Pipeline.create_task(issue_13832, :product)
 
@@ -619,7 +621,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Outcome Task"
     })
 
-    {:ok, issue_13833} = Issues.capture_issue(system_scope(), project, "Outcome Task")
+    {:ok, issue_13833} = Issues.create_issue(project, %{description: "Outcome Task"})
 
     {:ok, task} = Pipeline.create_task(issue_13833, :product)
 
@@ -681,7 +683,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Backend API Task"
     })
 
-    {:ok, issue_13834} = Issues.capture_issue(system_scope(), project, "Backend API Task")
+    {:ok, issue_13834} = Issues.create_issue(project, %{description: "Backend API Task"})
 
     {:ok, task} = Pipeline.create_task(issue_13834, :product)
 
@@ -742,7 +744,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Initial Title"
     })
 
-    {:ok, issue_13835} = Issues.capture_issue(system_scope(), project, "Initial Title")
+    {:ok, issue_13835} = Issues.create_issue(project, %{description: "Initial Title"})
 
     {:ok, %Task{id: target_id}} = Pipeline.create_task(issue_13835, :product)
 
@@ -835,7 +837,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task Detail Issue 13824"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Task Detail Issue 13824")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Task Detail Issue 13824"})
 
     {:ok, issue} =
       Issues.update_issue(issue, %{
@@ -849,7 +851,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Metadata Fallback Task"
     })
 
-    {:ok, issue_13836} = Issues.capture_issue(system_scope(), project, "Metadata Fallback Task")
+    {:ok, issue_13836} = Issues.create_issue(project, %{description: "Metadata Fallback Task"})
 
     {:ok, task} = Pipeline.create_task(issue_13836, :product)
 
@@ -908,7 +910,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task Detail Issue 13825"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Task Detail Issue 13825")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Task Detail Issue 13825"})
 
     {:ok, issue} =
       Issues.update_issue(issue, %{
@@ -921,7 +923,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Edge Case Task"
     })
 
-    {:ok, issue_13837} = Issues.capture_issue(system_scope(), project, "Edge Case Task")
+    {:ok, issue_13837} = Issues.create_issue(project, %{description: "Edge Case Task"})
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13837, :product)
 
@@ -966,9 +968,10 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert {:noreply, _socket} = RailWeb.TaskDetailLive.handle_async(:dummy, :result, dummy_socket)
     assert :ok = RailWeb.TaskDetailLive.terminate(:normal, dummy_socket)
 
+    # A task that is gone reads as cleaned up the next time the page is opened.
     Repo.delete_all(from(t in Task, where: t.id == ^task_id))
-    send(view.pid, {:pipeline_changed, %{task_id: task_id}})
-    assert render(view) =~ "This task has been cleaned up."
+    assert {:ok, gone_view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+    assert render(gone_view) =~ "This task has been cleaned up."
 
     # Minimal task without worktree, issue, or pr to test all fallback branches
     LinearMock.mock_create_issue_success(%{
@@ -977,7 +980,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Minimal Task"
     })
 
-    {:ok, issue_13838} = Issues.capture_issue(system_scope(), project, "Minimal Task")
+    {:ok, issue_13838} = Issues.create_issue(project, %{description: "Minimal Task"})
 
     {:ok, %Task{id: minimal_id}} = Pipeline.create_task(issue_13838, :product)
 
@@ -1031,7 +1034,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13839"
     })
 
-    {:ok, issue_13839} = Issues.capture_issue(system_scope(), project, "Task 13839")
+    {:ok, issue_13839} = Issues.create_issue(project, %{description: "Task 13839"})
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13839, :product)
 
@@ -1115,7 +1118,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13840"
     })
 
-    {:ok, issue_13840} = Issues.capture_issue(system_scope(), project, "Task 13840")
+    {:ok, issue_13840} = Issues.create_issue(project, %{description: "Task 13840"})
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13840, :product)
 
@@ -1168,7 +1171,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13841"
     })
 
-    {:ok, issue_13841} = Issues.capture_issue(system_scope(), project, "Task 13841")
+    {:ok, issue_13841} = Issues.create_issue(project, %{description: "Task 13841"})
 
     {:ok, %Task{id: conf_task_id}} = Pipeline.create_task(issue_13841, :product)
 
@@ -1235,7 +1238,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13842"
     })
 
-    {:ok, issue_13842} = Issues.capture_issue(system_scope(), project, "Task 13842")
+    {:ok, issue_13842} = Issues.create_issue(project, %{description: "Task 13842"})
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13842, :product)
 
@@ -1315,7 +1318,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13843"
     })
 
-    {:ok, issue_13843} = Issues.capture_issue(system_scope(), project, "Task 13843")
+    {:ok, issue_13843} = Issues.create_issue(project, %{description: "Task 13843"})
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13843, :product)
 
@@ -1363,7 +1366,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13844"
     })
 
-    {:ok, issue_13844} = Issues.capture_issue(system_scope(), project, "Task 13844")
+    {:ok, issue_13844} = Issues.create_issue(project, %{description: "Task 13844"})
 
     {:ok, %Task{id: busy_task_id}} = Pipeline.create_task(issue_13844, :product)
 
@@ -1425,7 +1428,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13846"
     })
 
-    {:ok, issue_13846} = Issues.capture_issue(system_scope(), project, "Task 13846")
+    {:ok, issue_13846} = Issues.create_issue(project, %{description: "Task 13846"})
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13846, :product)
 
@@ -1474,7 +1477,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13847"
     })
 
-    {:ok, issue_13847} = Issues.capture_issue(system_scope(), project, "Task 13847")
+    {:ok, issue_13847} = Issues.create_issue(project, %{description: "Task 13847"})
 
     {:ok, %Task{id: task_id_2}} = Pipeline.create_task(issue_13847, :product)
 
@@ -1541,7 +1544,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13848"
     })
 
-    {:ok, issue_13848} = Issues.capture_issue(system_scope(), project, "Task 13848")
+    {:ok, issue_13848} = Issues.create_issue(project, %{description: "Task 13848"})
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13848, :product)
 
@@ -1590,7 +1593,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13849"
     })
 
-    {:ok, issue_13849} = Issues.capture_issue(system_scope(), project, "Task 13849")
+    {:ok, issue_13849} = Issues.create_issue(project, %{description: "Task 13849"})
 
     {:ok, %Task{id: task_id_2}} = Pipeline.create_task(issue_13849, :product)
 
@@ -1660,7 +1663,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13852"
     })
 
-    {:ok, issue_13852} = Issues.capture_issue(system_scope(), project, "Task 13852")
+    {:ok, issue_13852} = Issues.create_issue(project, %{description: "Task 13852"})
 
     {:ok, %Task{id: qa_task_id}} = Pipeline.create_task(issue_13852, :product)
 
@@ -1691,7 +1694,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13853"
     })
 
-    {:ok, issue_13853} = Issues.capture_issue(system_scope(), project, "Task 13853")
+    {:ok, issue_13853} = Issues.create_issue(project, %{description: "Task 13853"})
 
     {:ok, %Task{id: retry_task_id}} = Pipeline.create_task(issue_13853, :product)
 
@@ -1723,7 +1726,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13854"
     })
 
-    {:ok, issue_13854} = Issues.capture_issue(system_scope(), project, "Task 13854")
+    {:ok, issue_13854} = Issues.create_issue(project, %{description: "Task 13854"})
 
     {:ok, %Task{id: running_task_id}} = Pipeline.create_task(issue_13854, :product)
 
@@ -1753,7 +1756,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13855"
     })
 
-    {:ok, issue_13855} = Issues.capture_issue(system_scope(), project, "Task 13855")
+    {:ok, issue_13855} = Issues.create_issue(project, %{description: "Task 13855"})
 
     {:ok, %Task{id: queued_task_id}} = Pipeline.create_task(issue_13855, :product)
 
@@ -1774,7 +1777,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13857"
     })
 
-    {:ok, issue_13857} = Issues.capture_issue(system_scope(), project, "Task 13857")
+    {:ok, issue_13857} = Issues.create_issue(project, %{description: "Task 13857"})
 
     {:ok, %Task{id: draft_task_id}} = Pipeline.create_task(issue_13857, :product)
 
@@ -1807,7 +1810,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13858"
     })
 
-    {:ok, issue_13858} = Issues.capture_issue(system_scope(), project, "Task 13858")
+    {:ok, issue_13858} = Issues.create_issue(project, %{description: "Task 13858"})
 
     {:ok, %Task{id: demo_task_id}} = Pipeline.create_task(issue_13858, :product)
 
@@ -1839,7 +1842,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13859"
     })
 
-    {:ok, issue_13859} = Issues.capture_issue(system_scope(), project, "Task 13859")
+    {:ok, issue_13859} = Issues.create_issue(project, %{description: "Task 13859"})
 
     {:ok, %Task{id: design_task_id}} = Pipeline.create_task(issue_13859, :product)
 
@@ -1894,7 +1897,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13860"
     })
 
-    {:ok, issue_13860} = Issues.capture_issue(system_scope(), project, "Task 13860")
+    {:ok, issue_13860} = Issues.create_issue(project, %{description: "Task 13860"})
 
     {:ok, %Task{id: design_failed_id}} = Pipeline.create_task(issue_13860, :product)
 
@@ -1920,7 +1923,7 @@ defmodule RailWeb.TaskDetailLiveTest do
     design_failed_view |> element("#action-recheck-design") |> render_click()
   end
 
-  test "single-flight action locking, spinner, error clearing, and PubSub broadcasts", %{
+  test "single-flight action locking and the spinner while one is in flight", %{
     roles: roles,
     conn: conn,
     project: project
@@ -1960,7 +1963,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13861"
     })
 
-    {:ok, issue_13861} = Issues.capture_issue(system_scope(), project, "Task 13861")
+    {:ok, issue_13861} = Issues.create_issue(project, %{description: "Task 13861"})
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13861, :product)
 
@@ -1989,30 +1992,20 @@ defmodule RailWeb.TaskDetailLiveTest do
     Req.Test.allow(Rail.GitHub, self(), view.pid)
 
     Sandbox.allow(Repo, self(), view.pid)
-    assert has_element?(view, "#task-error-card", "Previous error message")
 
-    # Broadcast task_action_started -> clears error and sets spinner
-    send(view.pid, {:task_action_started, task_id, :merge})
-    _html = render(view)
-    refute has_element?(view, "#task-error-card")
-    assert has_element?(view, "#action-merge[disabled]")
-    assert has_element?(view, "#action-merge [data-qa='action-spinner']")
-
-    # Broadcast task_action_finished -> unlocks buttons and re-enables
-    send(view.pid, {:task_action_finished, task_id, :merge})
-    _html = render(view)
-    refute has_element?(view, "#action-merge[disabled]")
-    refute has_element?(view, "#action-merge [data-qa='action-spinner']")
-
-    # Broadcast task_action_started for different task_id is ignored
-    send(view.pid, {:task_action_started, "tsk_other_999", :merge})
-    _html = render(view)
     refute has_element?(view, "#action-merge[disabled]")
 
-    # Broadcast task_action_finished for different task_id is ignored
-    send(view.pid, {:task_action_finished, "tsk_other_999", :merge})
-    _html = render(view)
-    refute has_element?(view, "#action-merge[disabled]")
+    # An action in flight locks every button and shows its own spinner.
+    :ok = TaskActionRunner.start_action(task_id, :merge)
+
+    assert {:ok, locked_view, _html} = live(authed_conn, ~p"/tasks/#{task_id}")
+    assert has_element?(locked_view, "#action-merge[disabled]")
+    assert has_element?(locked_view, "#action-merge [data-qa='action-spinner']")
+
+    # Single-flight: it refuses to start a second one while that runs.
+    assert {:error, :busy} = TaskActionRunner.start_action(task_id, :rebase)
+
+    :ok = TaskActionRunner.finish_action(task_id, :merge, {:ok, :done})
   end
 
   test "exercises TaskDetailLive action callbacks and modal error paths", %{roles: roles, conn: conn, project: project} do
@@ -2051,7 +2044,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13862"
     })
 
-    {:ok, issue_13862} = Issues.capture_issue(system_scope(), project, "Task 13862")
+    {:ok, issue_13862} = Issues.create_issue(project, %{description: "Task 13862"})
 
     {:ok, %Task{id: task_id}} = Pipeline.create_task(issue_13862, :product)
 
@@ -2110,7 +2103,8 @@ defmodule RailWeb.TaskDetailLiveTest do
     busy_socket = %Socket{
       assigns: %{
         __changed__: %{},
-        task: %{dummy_task | run: %Run{status: :running}},
+        task: dummy_task,
+        run: %Run{status: :running},
         task_id: task_id,
         current_scope: scope,
         running_action: nil,
@@ -2123,7 +2117,7 @@ defmodule RailWeb.TaskDetailLiveTest do
   end
 
   test "Overview tab renders AnswerField when blocked with pending question, handles option click, answer, and dismiss",
-       %{roles: roles, backend: backend, conn: conn, project: project} do
+       %{roles: roles, conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_detail_24",
@@ -2158,7 +2152,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13863"
     })
 
-    {:ok, issue_13863} = Issues.capture_issue(system_scope(), project, "Task 13863")
+    {:ok, issue_13863} = Issues.create_issue(project, %{description: "Task 13863"})
 
     engineer_role = roles[:engineer]
 
@@ -2220,7 +2214,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13864"
     })
 
-    {:ok, issue_13864} = Issues.capture_issue(system_scope(), project, "Task 13864")
+    {:ok, issue_13864} = Issues.create_issue(project, %{description: "Task 13864"})
 
     {:ok, task_answer_fb} = Pipeline.create_task(issue_13864, :product)
 
@@ -2247,7 +2241,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13865"
     })
 
-    {:ok, issue_13865} = Issues.capture_issue(system_scope(), project, "Task 13865")
+    {:ok, issue_13865} = Issues.create_issue(project, %{description: "Task 13865"})
 
     {:ok, task_dismiss_exp} = Pipeline.create_task(issue_13865, :product)
 
@@ -2274,7 +2268,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13866"
     })
 
-    {:ok, issue_13866} = Issues.capture_issue(system_scope(), project, "Task 13866")
+    {:ok, issue_13866} = Issues.create_issue(project, %{description: "Task 13866"})
 
     {:ok, task_dismiss_fb} = Pipeline.create_task(issue_13866, :product)
 
@@ -2301,7 +2295,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13867"
     })
 
-    {:ok, issue_13867} = Issues.capture_issue(system_scope(), project, "Task 13867")
+    {:ok, issue_13867} = Issues.create_issue(project, %{description: "Task 13867"})
 
     {:ok, bad_task} = Pipeline.create_task(issue_13867, :product)
 
@@ -2360,7 +2354,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13868"
     })
 
-    {:ok, issue_13868} = Issues.capture_issue(system_scope(), project, "Task 13868")
+    {:ok, issue_13868} = Issues.create_issue(project, %{description: "Task 13868"})
 
     {:ok, task} = Pipeline.create_task(issue_13868, :product)
 
@@ -2396,7 +2390,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13871"
     })
 
-    {:ok, issue_13871} = Issues.capture_issue(system_scope(), project, "Task 13871")
+    {:ok, issue_13871} = Issues.create_issue(project, %{description: "Task 13871"})
 
     {:ok, task} = Pipeline.create_task(issue_13871, :product)
 
@@ -2437,7 +2431,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13872"
     })
 
-    {:ok, issue_13872} = Issues.capture_issue(system_scope(), project, "Task 13872")
+    {:ok, issue_13872} = Issues.create_issue(project, %{description: "Task 13872"})
 
     {:ok, task} = Pipeline.create_task(issue_13872, :product)
 
@@ -2505,7 +2499,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13873"
     })
 
-    {:ok, issue_13873} = Issues.capture_issue(system_scope(), project, "Task 13873")
+    {:ok, issue_13873} = Issues.create_issue(project, %{description: "Task 13873"})
 
     {:ok, task} = Pipeline.create_task(issue_13873, :product)
 
@@ -2536,7 +2530,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13874"
     })
 
-    {:ok, issue_13874} = Issues.capture_issue(system_scope(), project, "Task 13874")
+    {:ok, issue_13874} = Issues.create_issue(project, %{description: "Task 13874"})
 
     {:ok, task} = Pipeline.create_task(issue_13874, :product)
 
@@ -2603,7 +2597,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13875"
     })
 
-    {:ok, issue_13875} = Issues.capture_issue(system_scope(), project, "Task 13875")
+    {:ok, issue_13875} = Issues.create_issue(project, %{description: "Task 13875"})
 
     {:ok, task} = Pipeline.create_task(issue_13875, :product)
 
@@ -2675,7 +2669,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13876"
     })
 
-    {:ok, issue_13876} = Issues.capture_issue(system_scope(), project, "Task 13876")
+    {:ok, issue_13876} = Issues.create_issue(project, %{description: "Task 13876"})
 
     {:ok, task} = Pipeline.create_task(issue_13876, :product)
 
@@ -2761,7 +2755,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13877"
     })
 
-    {:ok, issue_13877} = Issues.capture_issue(system_scope(), project, "Task 13877")
+    {:ok, issue_13877} = Issues.create_issue(project, %{description: "Task 13877"})
 
     {:ok, task} = Pipeline.create_task(issue_13877, :product)
 
@@ -2813,7 +2807,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13878"
     })
 
-    {:ok, issue_13878} = Issues.capture_issue(system_scope(), project, "Task 13878")
+    {:ok, issue_13878} = Issues.create_issue(project, %{description: "Task 13878"})
 
     {:ok, task} = Pipeline.create_task(issue_13878, :product)
 
@@ -2933,7 +2927,7 @@ defmodule RailWeb.TaskDetailLiveTest do
       "title" => "Task 13879"
     })
 
-    {:ok, issue_13879} = Issues.capture_issue(system_scope(), project, "Task 13879")
+    {:ok, issue_13879} = Issues.create_issue(project, %{description: "Task 13879"})
 
     {:ok, task} = Pipeline.create_task(issue_13879, :product)
 
@@ -3079,5 +3073,266 @@ defmodule RailWeb.TaskDetailLiveTest do
     # rerecord_demo event delegates to handle_action_click
     assert {:noreply, _socket} =
              RailWeb.TaskDetailLive.handle_event("rerecord_demo", %{}, dummy_socket)
+  end
+
+  describe "the conversation, through the page that hosts it" do
+    setup %{conn: conn, project: project, roles: roles} do
+      {:ok, user} =
+        Users.register_oauth_user(%{
+          github_id: "gh_task_detail_conversation",
+          login: "task_detail_conversation",
+          email: "task_detail_conversation@example.com",
+          admin: true
+        })
+
+      LinearMock.mock_create_issue_success(%{
+        "id" => "lin_task_detail_conversation",
+        "identifier" => "TSK-CONV",
+        "title" => "Conversation task"
+      })
+
+      {:ok, issue} = Issues.create_issue(project, %{description: "Conversation task"})
+      {:ok, task} = Pipeline.create_task(issue, :product)
+
+      {:ok, task} =
+        Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+
+      {:ok, architect} =
+        Runs.create_run(%{
+          task_id: task.id,
+          role_id: roles[:architect].id,
+          status: :finished,
+          conversation_id: "sess_architect",
+          started_at: ~U[2026-09-09 09:00:00Z]
+        })
+
+      {:ok, engineer} =
+        Runs.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :running,
+          conversation_id: "sess_engineer",
+          started_at: ~U[2026-09-09 10:00:00Z]
+        })
+
+      Runs.append_run_event(engineer, "[tool read_file] lib/rail.ex")
+
+      %{conn: log_in_user(conn, user), task: task, architect: architect, engineer: engineer}
+    end
+
+    test "reads the run for the stage, and switches to another role on request", %{
+      conn: conn,
+      task: task,
+      architect: architect
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=conversation")
+
+      assert has_element?(view, "#role-chip-#{architect.role_id}")
+
+      view |> element("#role-chip-#{architect.role_id}") |> render_click()
+
+      assert has_element?(view, "#conversation-tab-root")
+    end
+
+    test "shows the raw log on request, and the chat again after", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=conversation")
+
+      view |> element("#toggle-raw-log") |> render_click()
+      assert has_element?(view, "[data-qa='raw-log-line']")
+
+      view |> element("#toggle-raw-log") |> render_click()
+      assert has_element?(view, "[data-qa='chat-pane']")
+    end
+
+    test "opens and closes the tool activity behind a turn", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=conversation")
+
+      assert has_element?(view, "[data-qa='activity-tile']")
+      refute has_element?(view, "[data-qa='activity-content']")
+
+      view |> element("[data-qa='activity-tile'] button") |> render_click()
+      assert has_element?(view, "[data-qa='activity-content']")
+
+      view |> element("[data-qa='activity-tile'] button") |> render_click()
+      refute has_element?(view, "[data-qa='activity-content']")
+    end
+
+    test "a message typed while the agent works waits on its run", %{
+      conn: conn,
+      task: task,
+      engineer: engineer
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=conversation")
+
+      view
+      |> element("#chat-composer-form")
+      |> render_change(%{"message" => "Please add a test"})
+
+      view
+      |> element("#chat-composer-form")
+      |> render_submit(%{"message" => "Please add a test"})
+
+      assert has_element?(view, "#queued-banner", "Please add a test")
+      assert %Run{pending_chat: "Please add a test"} = Repo.reload!(engineer)
+    end
+
+    test "stopping hands the undelivered message back to the composer", %{
+      conn: conn,
+      task: task,
+      engineer: engineer
+    } do
+      {:ok, _queued} = engineer |> Run.changeset(%{pending_chat: "Please add a test"}) |> Repo.update()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=conversation")
+
+      view |> element("#cancel-queued-message") |> render_click()
+
+      assert has_element?(view, "#chat-input[value='Please add a test']")
+      assert %Run{pending_chat: nil, status: :finished} = Repo.reload!(engineer)
+    end
+
+    test "send now cuts the turn short and delivers what was queued", %{
+      conn: conn,
+      task: task,
+      engineer: engineer
+    } do
+      {:ok, _queued} = engineer |> Run.changeset(%{pending_chat: "Please add a test"}) |> Repo.update()
+
+      stub(Runs, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=conversation")
+
+      view |> element("#send-queued-now") |> render_click()
+
+      assert has_element?(view, "#conversation-tab-root")
+    end
+
+    test "an empty message is not a message", %{conn: conn, task: task, engineer: engineer} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=conversation")
+
+      view |> element("#chat-composer-form") |> render_submit(%{"message" => "   "})
+
+      assert %Run{pending_chat: nil} = Repo.reload!(engineer)
+    end
+
+    test "new log lines reach the conversation while it is open", %{conn: conn, task: task, engineer: engineer} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=conversation")
+
+      send(view.pid, {:run_events, engineer.id, [%{line: "A fresh line of output"}]})
+
+      # The page forwards to the component, which renders on its own turn.
+      _settled = render(view)
+      assert render(view) =~ "A fresh line of output"
+    end
+  end
+
+  describe "the product stage, through the page that hosts it" do
+    setup %{conn: conn, project: project, roles: roles} do
+      {:ok, user} =
+        Users.register_oauth_user(%{
+          github_id: "gh_task_detail_product",
+          login: "task_detail_product",
+          email: "task_detail_product@example.com",
+          admin: true
+        })
+
+      LinearMock.mock_create_issue_success(%{
+        "id" => "lin_task_detail_product",
+        "identifier" => "TSK-PROD",
+        "title" => "Product task"
+      })
+
+      {:ok, issue} = Issues.create_issue(project, %{description: "Product task"})
+      {:ok, task} = Pipeline.create_task(issue, :product)
+
+      scratch = Path.join(System.tmp_dir!(), "task_detail_product_#{System.unique_integer([:positive])}")
+      File.mkdir_p!(Path.join(scratch, "tickets"))
+      on_exit(fn -> File.rm_rf(scratch) end)
+
+      {:ok, task} =
+        Pipeline.update_task(task, %{scratch_path: scratch, worktree_path: create_temp_git_repo()})
+
+      {:ok, run} =
+        Runs.create_run(%{
+          task_id: task.id,
+          role_id: roles[:product].id,
+          status: :finished,
+          started_at: DateTime.utc_now()
+        })
+
+      %{conn: log_in_user(conn, user), task: task, run: run, scratch: scratch}
+    end
+
+    test "says the ticket is not written yet, and offers nothing to approve", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#product-ticket-pending")
+      refute has_element?(view, "#approve-product-plan")
+    end
+
+    test "shows the ticket the product run wrote, and approves it", %{
+      conn: conn,
+      task: task,
+      scratch: scratch,
+      roles: roles
+    } do
+      File.write!(
+        Path.join([scratch, "tickets", "TSK-PROD.md"]),
+        "---\ntitle: The approved ticket\n---\n\nWhat the product agent wrote.\n"
+      )
+
+      stub(Runs, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#product-ticket", "What the product agent wrote.")
+
+      view |> element("#approve-product-plan") |> render_click()
+
+      assert %Task{stage: :design} = Repo.reload!(task)
+      assert Repo.get_by(Run, task_id: task.id, role_id: roles[:design].id)
+    end
+
+    test "approving and skipping designs goes straight to the architect", %{
+      conn: conn,
+      task: task,
+      scratch: scratch,
+      roles: roles
+    } do
+      File.write!(
+        Path.join([scratch, "tickets", "TSK-PROD.md"]),
+        "---\ntitle: The approved ticket\n---\n\nWhat the product agent wrote.\n"
+      )
+
+      stub(Runs, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#approve-product-plan-skip-design") |> render_click()
+
+      assert %Task{stage: :architect} = Repo.reload!(task)
+      assert Repo.get_by(Run, task_id: task.id, role_id: roles[:architect].id)
+    end
+
+    test "says why an approval was refused rather than moving quietly", %{
+      conn: conn,
+      task: task,
+      run: run,
+      scratch: scratch
+    } do
+      File.write!(
+        Path.join([scratch, "tickets", "TSK-PROD.md"]),
+        "---\ntitle: The approved ticket\n---\n\nWhat the product agent wrote.\n"
+      )
+
+      {:ok, _approved} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#approve-product-plan") |> render_click()
+
+      assert has_element?(view, "#product-approve-error", "already been approved")
+      assert %Task{stage: :product} = Repo.reload!(task)
+    end
   end
 end

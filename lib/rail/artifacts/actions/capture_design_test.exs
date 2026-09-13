@@ -49,7 +49,7 @@ defmodule Rail.Artifacts.Actions.CaptureDesignTest do
       "title" => "Capture Design Issue 12104"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Capture Design Issue 12104")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Capture Design Issue 12104"})
 
     on_exit(fn -> File.rm_rf(dir) end)
     {:ok, dir: dir, project: project, issue: issue, ws: ws}

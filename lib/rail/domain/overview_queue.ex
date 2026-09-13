@@ -1,10 +1,10 @@
 defmodule Rail.Domain.WaitingRow do
   @moduledoc "A run waiting for human action in the Overview queue."
-  @enforce_keys [:item, :kind, :waiting_since, :run]
-  defstruct [:item, :kind, :waiting_since, :run]
-
   alias Rail.Domain.RunAttentionItem
   alias Rail.Runs.Schemas.Run
+
+  @enforce_keys [:item, :kind, :waiting_since, :run]
+  defstruct [:item, :kind, :waiting_since, :run]
 
   @type t :: %__MODULE__{
           item: RunAttentionItem.t(),
@@ -16,10 +16,10 @@ end
 
 defmodule Rail.Domain.AgentRow do
   @moduledoc "A row for a run an agent is working on right now."
+  alias Rail.Runs.Schemas.Run
+
   @enforce_keys [:run]
   defstruct [:run]
-
-  alias Rail.Runs.Schemas.Run
 
   @type t :: %__MODULE__{run: Run.t()}
 end
@@ -121,7 +121,7 @@ defmodule Rail.Domain.OverviewQueue do
   @doc """
   Returns true if the waiting kind renders as a compact strip row rather than a card.
   """
-  def compact_kind?(kind), do: kind in [:failed, :ready_to_merge, :conflicts]
+  def compact_kind?(kind), do: kind in [:approval, :failed, :ready_to_merge, :conflicts]
 
   defp rows(runs), do: Enum.map(runs, &%AgentRow{run: &1})
 
@@ -142,5 +142,4 @@ defmodule Rail.Domain.OverviewQueue do
 
   defp flush_compact(blocks_acc, []), do: blocks_acc
   defp flush_compact(blocks_acc, compact_acc), do: [%CompactStripBlock{rows: Enum.reverse(compact_acc)} | blocks_acc]
-
 end

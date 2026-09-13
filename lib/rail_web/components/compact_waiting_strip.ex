@@ -4,8 +4,6 @@ defmodule RailWeb.Components.CompactWaitingStrip do
 
   import RailWeb.CoreComponents, only: [project_badge: 1]
 
-  alias Rail.Domain.Formatters
-
   attr :block, :any, required: true
 
   def compact_waiting_strip(assigns) do
@@ -18,7 +16,7 @@ defmodule RailWeb.Components.CompactWaitingStrip do
     >
       <div
         :for={row <- @rows}
-        id={"compact-row-#{item_key_to_id(row.item)}"}
+        id={"compact-row-#{row.run.id}"}
         data-qa="compact-waiting-row"
         class="flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-100 dark:hover:bg-slate-700/40 transition-colors"
       >
@@ -34,23 +32,23 @@ defmodule RailWeb.Components.CompactWaitingStrip do
             {chip_label(row.kind)}
           </span>
 
-          <.project_badge project={row.task.project} />
+          <.project_badge project={row.run.task.project} />
 
           <div class="min-w-0 flex-1">
             <.link
-              navigate={~p"/tasks/#{row.task.id}"}
+              navigate={~p"/tasks/#{row.run.task.id}"}
               data-qa="compact-row-title"
               class="text-sm font-medium text-slate-900 dark:text-slate-100 hover:underline truncate block"
             >
-              {task_title_line(row.task)}
+              {task_title_line(row.run.task)}
             </.link>
 
             <p
-              :if={has_detail?(row.task)}
+              :if={has_detail?(row.run)}
               data-qa="compact-detail"
               class="text-xs text-red-600 dark:text-red-400 truncate mt-0.5"
             >
-              {task_detail(row.task)}
+              {row.run.error}
             </p>
           </div>
         </div>
@@ -58,7 +56,7 @@ defmodule RailWeb.Components.CompactWaitingStrip do
         <!-- Right: Elapsed + Action Button -->
         <div class="flex items-center space-x-3 shrink-0">
           <span
-            id={"elapsed-#{item_key_to_id(row.item)}"}
+            id={"elapsed-#{row.run.id}"}
             phx-hook="Elapsed"
             data-started-at={format_started_at(row.waiting_since)}
             data-qa="elapsed-text"
@@ -70,8 +68,8 @@ defmodule RailWeb.Components.CompactWaitingStrip do
           <div>
             <.link
               :if={row.kind == :failed}
-              navigate={~p"/tasks/#{row.task.id}"}
-              id={"action-open-log-#{row.task.id}"}
+              navigate={~p"/tasks/#{row.run.task.id}"}
+              id={"action-open-log-#{row.run.task.id}"}
               data-qa="action-open-log"
               class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 shadow-xs inline-block"
             >
@@ -81,10 +79,10 @@ defmodule RailWeb.Components.CompactWaitingStrip do
             <button
               :if={row.kind == :ready_to_merge}
               type="button"
-              id={"action-merge-#{row.task.id}"}
+              id={"action-merge-#{row.run.task.id}"}
               data-qa="action-merge"
               phx-click="open_merge"
-              phx-value-task_id={row.task.id}
+              phx-value-task_id={row.run.task.id}
               class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-700 hover:bg-emerald-600 text-white shadow-xs cursor-pointer"
             >
               Merge
@@ -93,10 +91,10 @@ defmodule RailWeb.Components.CompactWaitingStrip do
             <button
               :if={row.kind == :conflicts}
               type="button"
-              id={"action-rebase-#{row.task.id}"}
+              id={"action-rebase-#{row.run.task.id}"}
               data-qa="action-rebase"
               phx-click="open_rebase"
-              phx-value-task_id={row.task.id}
+              phx-value-task_id={row.run.task.id}
               class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-700 hover:bg-amber-600 text-white shadow-xs cursor-pointer"
             >
               Rebase
@@ -118,30 +116,20 @@ defmodule RailWeb.Components.CompactWaitingStrip do
   defp chip_class(:conflicts), do: "bg-orange-100 dark:bg-orange-950 text-orange-900 dark:text-orange-200"
   defp chip_class(_other), do: "bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200"
 
-  defp task_title_line(task) do
-    task_key = task_key(task)
-    "#{task_key} · #{task.issue && task.issue.title}"
-  end
+  defp task_title_line(task), do: "#{task_key(task)} · #{task.issue && task.issue.title}"
 
   defp task_key(%{issue: %{identifier: identifier}}) when is_binary(identifier) and identifier != "", do: identifier
-  defp task_key(%{id: id}) when is_binary(id) and id != "", do: id
+  defp task_key(%{id: id}), do: id
 
-  defp format_elapsed(%DateTime{} = dt) do
-    secs = max(0, DateTime.diff(DateTime.utc_now(), dt, :second))
-    Formatters.format_duration(secs)
+  defp format_elapsed(%DateTime{} = datetime) do
+    DateTime.utc_now() |> DateTime.diff(datetime, :second) |> max(0) |> format_duration()
   end
 
-  defp format_started_at(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
+  defp format_elapsed(_never), do: ""
 
-  defp task_detail(task), do: Formatters.overview_detail_for(task)
+  defp format_started_at(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
+  defp format_started_at(_never), do: nil
 
-  defp has_detail?(task) do
-    detail = task_detail(task)
-    is_binary(detail) and detail != ""
-  end
-
-  defp item_key_to_id(item) do
-    key = Rail.Domain.AttentionItem.key(item)
-    String.replace(key, ~r/[^a-zA-Z0-9_\-]/, "-")
-  end
+  # An error belongs to the run that hit it, so that is what a failed row shows.
+  defp has_detail?(%{error: error}), do: is_binary(error) and error != ""
 end

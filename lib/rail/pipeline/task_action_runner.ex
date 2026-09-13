@@ -2,16 +2,14 @@ defmodule Rail.Pipeline.TaskActionRunner do
   @moduledoc """
   Coordinates in-flight actions per task.
 
-  Ensures single-flight execution so repeated clicks cannot double-fire,
-  applies timeouts so hung work gives up, tracks progress state,
-  clears old errors on action start, and cleans up lock state on exit.
+  Ensures single-flight execution so repeated clicks cannot double-fire, applies
+  timeouts so hung work gives up, tracks what is in flight, and cleans up lock
+  state on exit.
   """
 
   use GenServer
 
   alias Ecto.Adapters.SQL.Sandbox
-  # Client API
-  alias Rail.Pipeline.Schemas.Task, as: TaskSchema
   alias Rail.Repo
 
   @name __MODULE__
@@ -44,8 +42,6 @@ defmodule Rail.Pipeline.TaskActionRunner do
 
   @doc """
   Attempts to acquire the single-flight action lock for the given task and kind.
-  If acquired, immediately clears `task.error` in the database and broadcasts
-  `{:task_action_started, task_id, kind}` to `Rail.PubSub`.
   Returns `:ok` or `{:error, :busy}`.
   """
   def start_action(task_id, kind) when is_binary(task_id) and is_atom(kind) do
@@ -57,9 +53,8 @@ defmodule Rail.Pipeline.TaskActionRunner do
   end
 
   @doc """
-  Releases the action lock for the task. If outcome is an error or timeout,
-  records the failure message on `task.error` in the database.
-  Broadcasts `{:task_action_finished, task_id, kind}` to `Rail.PubSub`.
+  Releases the action lock for the task. The outcome is the caller's to report:
+  an error belongs to the run that produced it, not to the task.
   """
   def finish_action(task_id, kind, outcome) when is_binary(task_id) and is_atom(kind) do
     finish_action(@name, task_id, kind, outcome)
@@ -188,48 +183,15 @@ defmodule Rail.Pipeline.TaskActionRunner do
     if Map.has_key?(state.running, task_id) do
       {:reply, {:error, :busy}, state}
     else
-      clear_task_error(task_id)
-
-      Phoenix.PubSub.broadcast(Rail.PubSub, "tasks:#{task_id}", {:task_action_started, task_id, kind})
-
-      Phoenix.PubSub.broadcast(
-        Rail.PubSub,
-        "pipeline:changed",
-        {:pipeline_changed, %{task_id: task_id, event: :action_started, kind: kind}}
-      )
-
-      new_running = Map.put(state.running, task_id, kind)
-      # Private Helpers
-      {:reply, :ok, %{state | running: new_running}}
+      {:reply, :ok, %{state | running: Map.put(state.running, task_id, kind)}}
     end
   end
 
   @impl true
-  def handle_call({:finish_action, task_id, kind, outcome}, {from_pid, _ref}, state) do
+  def handle_call({:finish_action, task_id, _kind, _outcome}, {from_pid, _ref}, state) do
     allow_sandbox(from_pid)
 
-    case outcome do
-      {:error, :timeout} ->
-        set_task_error(task_id, "Action #{kind} timed out")
-
-      {:error, reason} ->
-        err_msg = if is_binary(reason), do: reason, else: inspect(reason)
-        set_task_error(task_id, err_msg)
-
-      _ok ->
-        :ok
-    end
-
-    Phoenix.PubSub.broadcast(Rail.PubSub, "tasks:#{task_id}", {:task_action_finished, task_id, kind})
-
-    Phoenix.PubSub.broadcast(
-      Rail.PubSub,
-      "pipeline:changed",
-      {:pipeline_changed, %{task_id: task_id, event: :action_finished, kind: kind}}
-    )
-
-    new_running = Map.delete(state.running, task_id)
-    {:reply, :ok, %{state | running: new_running}}
+    {:reply, :ok, %{state | running: Map.delete(state.running, task_id)}}
   end
 
   @impl true
@@ -239,42 +201,6 @@ defmodule Rail.Pipeline.TaskActionRunner do
   end
 
   # Private Helpers
-
-  defp clear_task_error(task_id) do
-    case Repo.get(TaskSchema, task_id) do
-      %TaskSchema{} = task ->
-        task
-        |> TaskSchema.changeset(%{error: nil})
-        |> Repo.update()
-
-      nil ->
-        {:error, :not_found}
-    end
-
-    # coveralls-ignore-start (test sandbox fallback)
-  rescue
-    _error in [DBConnection.OwnershipError] ->
-      {:error, :ownership_error}
-      # coveralls-ignore-stop
-  end
-
-  defp set_task_error(task_id, error_msg) do
-    case Repo.get(TaskSchema, task_id) do
-      %TaskSchema{} = task ->
-        task
-        |> TaskSchema.changeset(%{error: error_msg})
-        |> Repo.update()
-
-      nil ->
-        {:error, :not_found}
-    end
-
-    # coveralls-ignore-start (test sandbox fallback)
-  rescue
-    _error in [DBConnection.OwnershipError] ->
-      {:error, :ownership_error}
-      # coveralls-ignore-stop
-  end
 
   # coveralls-ignore-start
   defp allow_sandbox(caller_pid) do

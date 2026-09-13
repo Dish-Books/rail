@@ -367,6 +367,7 @@ defmodule RailTest.Mocks.Linear do
       |> send_resp(status, Jason.encode!(body))
     end)
   end
+
   @doc """
   Queues `count` successful file upload responses for a design's stills.
   """
@@ -391,5 +392,4 @@ defmodule RailTest.Mocks.Linear do
       )
     end)
   end
-
 end

@@ -33,7 +33,6 @@ defmodule Rail.Pipeline.Actions.SetDiffFileViewed do
       |> Task.changeset(%{viewed_diff_files: new_viewed})
       |> Repo.update()
 
-
     {:ok, updated_task}
   end
 end

@@ -64,7 +64,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
       "title" => "Send Back Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Send Back Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Send Back Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -99,7 +99,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
       "title" => "Task 8402"
     })
 
-    {:ok, issue_8402} = Issues.capture_issue(system_scope(), project, "Task 8402")
+    {:ok, issue_8402} = Issues.create_issue(project, %{description: "Task 8402"})
 
     {:ok, t_des} = Pipeline.create_task(issue_8402, :product)
 
@@ -116,7 +116,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
       "title" => "Task 8403"
     })
 
-    {:ok, issue_8403} = Issues.capture_issue(system_scope(), project, "Task 8403")
+    {:ok, issue_8403} = Issues.create_issue(project, %{description: "Task 8403"})
 
     {:ok, t_arch} = Pipeline.create_task(issue_8403, :product)
 
@@ -149,8 +149,6 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
   end
 
   test "grants fresh budget, collects gate reports, and queues engineer with pending answer", %{task: task, roles: roles} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-
     {:ok, role_eng} =
       Roles.update_role(system_scope(), roles[:engineer], %{
         name: "Staff Engineer"
@@ -167,7 +165,7 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
         rework_cycles: 4,
         rework_budget_base: 0,
         rework_cycles_by_gate: %{role_rev.id => 3},
-        outstanding_reports: [role_rev.id],
+        outstanding_reports: [role_rev.id]
       })
 
     {:ok, rev_run} =
@@ -199,10 +197,8 @@ defmodule Rail.Pipeline.Actions.SendBackToEngineerTest do
               rework_cycles: 4,
               rework_budget_base: 4,
               rework_cycles_by_gate: ^expected_empty,
-              outstanding_reports: [],
+              outstanding_reports: []
             }} = Pipeline.send_back_to_engineer(task, comment: "Please address memory leak.")
-
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :sent_back_to_engineer}}
 
     eng_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_eng.id)
     assert eng_run.pending_answer =~ "Sent back to you by the human"

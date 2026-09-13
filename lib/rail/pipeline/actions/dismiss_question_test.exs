@@ -11,7 +11,6 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   alias Rail.Roles
   alias Rail.Runs
   alias Rail.Runs.DetectedQuestion
-  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -54,7 +53,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
       "title" => "Dismiss Question Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Dismiss Question Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Dismiss Question Issue"})
 
     LinearMock.mock_update_issue_success(%{"id" => "lin_dismiss_question_1"})
 
@@ -79,6 +78,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
         task_id: task.id,
         role_id: roles[:product].id,
         status: :running,
+        conversation_id: "sess_dismiss",
         started_at: DateTime.utc_now()
       })
 
@@ -87,7 +87,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     %{project: project, issue: issue, task: task, run: run, roles: roles}
   end
 
-  test "dismissing the only question resumes the run and says it was waved off", %{
+  test "dismissing records it and tells the agent nothing until the round is sent", %{
     task: task,
     run: %Run{id: run_id} = run
   } do
@@ -95,20 +95,19 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
 
     assert Repo.reload!(run).status == :blocked_on_input
 
-    test_pid = self()
-
-    expect(Runs, :start_os_process, fn %Run{id: ^run_id} = spawned, argv ->
-      send(test_pid, {:spawned, argv})
-      {:ok, %OsProcess{run: spawned, task: task}}
-    end)
-
+    # No spawn is expected: waving a question off says nothing to the agent.
     assert {:ok, %Question{status: :dismissed}} = Pipeline.dismiss_question(q)
 
     assert pending_questions(task.id) == []
+    refute Repo.get!(Question, q.id).delivered_at
+
+    {:ok, :sent, %Run{id: ^run_id} = sent} = Pipeline.send_answers(Repo.reload!(run))
+
     assert Repo.get!(Question, q.id).delivered_at
 
-    assert_receive {:spawned, argv}
-    assert Enum.any?(argv, &(&1 =~ "Should we proceed?" and &1 =~ "Dismissed without an answer"))
+    lines = sent |> Runs.list_run_events() |> Enum.map(& &1.line)
+    assert Enum.any?(lines, &(&1 =~ "Should we proceed?"))
+    assert Enum.any?(lines, &(&1 =~ "Dismissed without an answer"))
   end
 
   test "dismissing one of a batch leaves the rest and does not resume the run", %{task: task, run: run} do

@@ -7,6 +7,7 @@ defmodule RailWeb.Components.DemoPanelTest do
   alias Rail.Domain.Embeds.DemoFrame
   alias Rail.Domain.Embeds.DemoSegment
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Runs.Schemas.Run
   alias RailWeb.Components.DemoPanel
 
   test "renders recorded demo with fresh commit and play all button" do
@@ -133,12 +134,14 @@ defmodule RailWeb.Components.DemoPanelTest do
       segments: [seg]
     }
 
-    task = %{
-      stage: :ready_to_merge,
-      worktree_path: "/tmp/wt"
-    }
+    task = %Task{id: "tsk_stale", stage: :ready_to_merge, worktree_path: "/tmp/wt"}
 
-    html = render_component(&DemoPanel.demo_panel/1, demo: demo, task: task)
+    html =
+      render_component(&DemoPanel.demo_panel/1,
+        demo: demo,
+        task: task,
+        run: %Run{status: :finished, stage_outcome: :done}
+      )
 
     assert html =~ "Out of date (stale999)"
     assert html =~ "bg-red-100 dark:bg-red-900"

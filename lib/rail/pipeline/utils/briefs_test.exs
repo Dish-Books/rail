@@ -34,7 +34,6 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
 
         - A heredoc into #{@scratch}/plans/RAIL-200.md, never an inline string.
         - Keep the `## Implementation plan` heading on the first line.
-        - A ticket you split out is its own file, #{@scratch}/tickets/split-<n>.md, with `---` front matter carrying its `title`. Rail opens each one as a new ticket.
         """)
 
       assert plan_write_brief(scratch_path: @scratch, identifier: "RAIL-200") == expected
@@ -154,6 +153,8 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
     test "matches exact golden output" do
       expected =
         String.trim("""
+        Produce three distinct design directions on a single published canvas.
+
         Rail reads your design directions from #{@scratch}/design/. Save a still screenshot of each direction there, and never edit application code on this stage.
 
         Write the manifest to #{@scratch}/design/manifest.json with this shape:

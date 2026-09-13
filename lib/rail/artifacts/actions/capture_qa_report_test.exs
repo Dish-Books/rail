@@ -53,7 +53,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
       "title" => "Capture QA Issue 12304"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Capture QA Issue 12304")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Capture QA Issue 12304"})
 
     on_exit(fn -> File.rm_rf(dir) end)
     {:ok, dir: dir, project: project, issue: issue, ws: ws}
@@ -256,7 +256,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
         "title" => "Task 12306"
       })
 
-      {:ok, issue_12306} = Issues.capture_issue(system_scope(), project, "Task 12306")
+      {:ok, issue_12306} = Issues.create_issue(project, %{description: "Task 12306"})
 
       {:ok, %Rail.Pipeline.Schemas.Task{id: _task_id} = task} = Pipeline.create_task(issue_12306, :product)
 
@@ -312,7 +312,7 @@ defmodule Rail.Artifacts.Actions.CaptureQaReportTest do
         "title" => "Task 12307"
       })
 
-      {:ok, issue_12307} = Issues.capture_issue(system_scope(), project, "Task 12307")
+      {:ok, issue_12307} = Issues.create_issue(project, %{description: "Task 12307"})
 
       {:ok, %Rail.Pipeline.Schemas.Task{id: task_id} = task} = Pipeline.create_task(issue_12307, :product)
 

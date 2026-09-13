@@ -4,18 +4,12 @@ defmodule RailWeb.IssuesLiveTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Issues
-  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
-  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
-  alias RailWeb.Components.ArchiveIssueModal
-  alias RailWeb.Components.IssueCard
-  alias RailWeb.Components.IssueEditorModal
-  alias RailWeb.IssuesLive
 
   test "redirects unauthenticated user to /auth/github", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/auth/github"}}} = live(conn, ~p"/issues")
@@ -160,11 +154,7 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "Deduplicated title"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Deduplicated title")
-
-    LinearMock.mock_update_issue_success(%{"id" => "lin_issues_live_13201"})
-
-    LinearMock.mock_update_issue_success(%{"id" => issue.external_id})
+    {:ok, issue} = Issues.create_issue(project, %{description: "Deduplicated title"})
 
     {:ok, issue} =
       Issues.update_issue(issue, %{
@@ -235,7 +225,7 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "Urgent issue"
     })
 
-    {:ok, issue_urgent} = Issues.capture_issue(system_scope(), project, "Urgent issue")
+    {:ok, issue_urgent} = Issues.create_issue(project, %{description: "Urgent issue"})
 
     {:ok, issue_urgent} =
       Issues.update_issue(issue_urgent, %{
@@ -249,7 +239,7 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "High issue 1"
     })
 
-    {:ok, issue_high_1} = Issues.capture_issue(system_scope(), project, "High issue 1")
+    {:ok, issue_high_1} = Issues.create_issue(project, %{description: "High issue 1"})
 
     {:ok, issue_high_1} =
       Issues.update_issue(issue_high_1, %{
@@ -263,7 +253,7 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "High issue 2"
     })
 
-    {:ok, issue_high_2} = Issues.capture_issue(system_scope(), project, "High issue 2")
+    {:ok, issue_high_2} = Issues.create_issue(project, %{description: "High issue 2"})
 
     {:ok, issue_high_2} =
       Issues.update_issue(issue_high_2, %{
@@ -277,7 +267,7 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "Low issue"
     })
 
-    {:ok, issue_low} = Issues.capture_issue(system_scope(), project, "Low issue")
+    {:ok, issue_low} = Issues.create_issue(project, %{description: "Low issue"})
 
     {:ok, issue_low} =
       Issues.update_issue(issue_low, %{
@@ -366,9 +356,7 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "Active task"
     })
 
-    {:ok, active_issue} = Issues.capture_issue(system_scope(), project, "Active task")
-
-    LinearMock.mock_update_issue_success(%{"id" => active_issue.external_id})
+    {:ok, active_issue} = Issues.create_issue(project, %{description: "Active task"})
 
     {:ok, active_issue} =
       Issues.update_issue(active_issue, %{
@@ -381,7 +369,7 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "Done task"
     })
 
-    {:ok, done_issue} = Issues.capture_issue(system_scope(), project, "Done task")
+    {:ok, done_issue} = Issues.create_issue(project, %{description: "Done task"})
 
     {:ok, done_issue} =
       Issues.update_issue(done_issue, %{
@@ -455,24 +443,12 @@ defmodule RailWeb.IssuesLiveTest do
 
     LinearMock.mock_create_issue_success(%{"id" => "lin_bl_1", "identifier" => "BL-10", "title" => "Bring local feature"})
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Bring local feature")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Bring local feature"})
 
     {:ok, issue} =
       Issues.update_issue(issue, %{
         state: :backlog
       })
-
-    LinearMock.mock_update_issue_success(%{
-      "id" => "lin_bl_1",
-      "identifier" => "BL-10",
-      "title" => "Bring local feature",
-      "description" => issue.description,
-      "state" => %{"id" => "st_in_prog_bl", "name" => "In Progress", "type" => "started"},
-      "branchName" => nil,
-      "url" => issue.url,
-      "createdAt" => "2026-09-01T10:00:00.000Z",
-      "updatedAt" => "2026-09-02T12:00:00.000Z"
-    })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
     assert has_element?(view, "#start-product-run-#{issue.id}")
@@ -531,9 +507,7 @@ defmodule RailWeb.IssuesLiveTest do
 
     LinearMock.mock_create_issue_success(%{"id" => "lin_ed_1", "identifier" => "ED-50", "title" => "Initial title"})
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Initial title")
-
-    LinearMock.mock_update_issue_success(%{"id" => "lin_ed_1"})
+    {:ok, issue} = Issues.create_issue(project, %{description: "Initial title"})
 
     {:ok, issue} =
       Issues.update_issue(issue, %{
@@ -569,19 +543,6 @@ defmodule RailWeb.IssuesLiveTest do
     # Empty title submit is rejected without crash
     view |> element("#issue-editor-form") |> render_submit(%{"issue_id" => issue.id, "title" => "   "})
     assert has_element?(view, "#issue-editor-dialog")
-
-    # Mock Linear update for valid submit
-    LinearMock.mock_update_issue_success(%{
-      "id" => "lin_ed_1",
-      "identifier" => "ED-50",
-      "title" => "Updated title",
-      "description" => "Updated description",
-      "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"},
-      "branchName" => nil,
-      "url" => issue.url,
-      "createdAt" => "2026-09-01T10:00:00.000Z",
-      "updatedAt" => "2026-09-02T12:00:00.000Z"
-    })
 
     view
     |> element("#issue-editor-form")
@@ -650,7 +611,7 @@ defmodule RailWeb.IssuesLiveTest do
       "title" => "Issue to archive"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Issue to archive")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Issue to archive"})
 
     {:ok, issue} =
       Issues.update_issue(issue, %{
@@ -763,102 +724,6 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view_all, "#sync-issues-button", "Sync Issues")
   end
 
-  test "component helper functions cover all edge cases", %{conn: _conn} do
-    # card_body_for edge cases
-    assert IssueCard.card_body_for(%{title: "Test", description: ""}) == ""
-    assert IssueCard.card_body_for(%{title: "Test", description: nil}) == ""
-    assert IssueCard.card_body_for(%{title: "Test", description: "Test"}) == ""
-    assert IssueCard.card_body_for(%{title: "Test", description: "Test\nSecond line"}) == "Second line"
-    assert IssueCard.card_body_for(%{title: "Other", description: "Hello world"}) == "Hello world"
-
-    # worktree_name edge cases
-    assert IssueCard.worktree_name(%{branch_name: "custom-branch", identifier: "ENG-1", id: "1"}) == "custom-branch"
-    assert IssueCard.worktree_name(%{branch_name: nil, identifier: "ENG/FEATURE 1", id: "1"}) == "eng-feature-1"
-    assert IssueCard.worktree_name(%{branch_name: "", identifier: "", id: "99"}) == "issue-99"
-
-    # priority_label & status_label edge cases
-    assert IssueCard.priority_label(:urgent) == "Urgent"
-    assert IssueCard.priority_label(nil) == "Medium"
-    assert IssueCard.status_label(:in_progress) == "In Progress"
-    assert IssueCard.status_label(nil) == "Triage"
-
-    # render_component checks
-    rendered =
-      render_component(&IssueCard.issue_card/1,
-        issue: %{
-          id: "iss_mock_1",
-          identifier: "MOCK-1",
-          project: %{name: "P1", linear_team_key: "P1"},
-          url: nil,
-          title: "Mock Title",
-          description: "Mock Description",
-          priority: :low,
-          state: :done,
-          branch_name: nil
-        },
-        task: nil
-      )
-
-    assert rendered =~ "MOCK-1"
-    assert rendered =~ "Mock Title"
-
-    # With task
-    rendered_with_task =
-      render_component(&IssueCard.issue_card/1,
-        issue: %{
-          id: "iss_mock_2",
-          identifier: "MOCK-2",
-          project: nil,
-          url: "https://linear.app/mock-2",
-          title: "Mock Title 2",
-          description: nil,
-          priority: nil,
-          state: :in_progress,
-          branch_name: "feat-mock-2"
-        },
-        task: %Task{id: "tsk_mock_2", stage: :engineer, issue: nil},
-        run: %Run{status: :running}
-      )
-
-    assert rendered_with_task =~ "Engineer running"
-
-    # IssueEditorModal rendered directly
-    editor_rendered =
-      render_component(&IssueEditorModal.issue_editor_modal/1,
-        issue: %{
-          id: "iss_mock_3",
-          identifier: "MOCK-3",
-          url: "https://linear.app/mock-3",
-          title: "Editor test",
-          description: "Body",
-          priority: :high,
-          state: :triage
-        },
-        visible: true
-      )
-
-    assert editor_rendered =~ "Edit MOCK-3"
-    assert editor_rendered =~ "Editor test"
-
-    assert render_component(&IssueEditorModal.issue_editor_modal/1, issue: nil, visible: false) == ""
-
-    # ArchiveIssueModal rendered directly
-    archive_rendered =
-      render_component(&ArchiveIssueModal.archive_issue_modal/1,
-        issue: %{
-          id: "iss_mock_4",
-          identifier: "MOCK-4",
-          title: "To archive"
-        },
-        visible: true
-      )
-
-    assert archive_rendered =~ "Archive MOCK-4?"
-    assert archive_rendered =~ "To archive"
-
-    assert render_component(&ArchiveIssueModal.archive_issue_modal/1, issue: nil, visible: false) == ""
-  end
-
   test "handles subtitle for projects with and without team keys", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -898,13 +763,5 @@ defmodule RailWeb.IssuesLiveTest do
     # Nonexistent project ID
     assert {:ok, view_bad, _html} = live(authed_conn, ~p"/issues?project=prj_nonexistent")
     assert has_element?(view_bad, "#issues-subtitle", "Linear issues across all projects")
-
-    # Direct unit tests of subtitle_for
-    assert IssuesLive.subtitle_for(nil) == "Linear issues across all projects"
-    assert IssuesLive.subtitle_for(%{linear_team_key: "ENG", name: "Rail"}) == "Linear issues in ENG (Rail)"
-    assert IssuesLive.subtitle_for(%{linear_team_key: "", name: "Rail"}) == "Linear issues for Rail"
-    assert IssuesLive.subtitle_for(%{linear_team_key: nil, name: "Rail"}) == "Linear issues for Rail"
-    assert IssuesLive.subtitle_for(%{}) == "No target repository set • Issues live in Linear; set one in Settings"
-    assert IssuesLive.subtitle_for("other") == "No target repository set • Issues live in Linear; set one in Settings"
   end
 end

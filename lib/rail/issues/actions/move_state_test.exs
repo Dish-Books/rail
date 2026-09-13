@@ -4,8 +4,6 @@ defmodule Rail.Issues.Actions.MoveStateTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
-  alias Rail.Projects.Schemas.Project
-  alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -47,7 +45,7 @@ defmodule Rail.Issues.Actions.MoveStateTest do
       "updatedAt" => "2026-09-01T10:00:00.000Z"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Cached Move Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Cached Move Issue"})
 
     LinearMock.mock_update_issue_success(%{
       "id" => "lin_move_1",
@@ -61,10 +59,8 @@ defmodule Rail.Issues.Actions.MoveStateTest do
       "updatedAt" => "2026-09-04T10:00:00.000Z"
     })
 
-    scope = Scope.for_system()
-
     assert {:ok, %Issue{state: :done, state_name: "Done"}} =
-             Issues.move_state(scope, project, issue, :done)
+             Issues.move_state(project, issue, :done)
   end
 
   test "move_state/5 resolves state from Linear when not cached for triage, backlog, done, in_progress, and fallback", %{
@@ -95,7 +91,7 @@ defmodule Rail.Issues.Actions.MoveStateTest do
       "updatedAt" => "2026-09-01T10:00:00.000Z"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Fetched Move Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Fetched Move Issue"})
 
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -104,14 +100,11 @@ defmodule Rail.Issues.Actions.MoveStateTest do
         email: "move_state_user@example.com"
       })
 
-    {:ok, user} =
-      Users.link_linear(user, %{
-        access_token: "lin_move_user_tok",
-        refresh_token: "lin_move_user_refresh",
-        expires_in: 3600
-      })
-
-    scope = Scope.for_user(user)
+    Users.link_linear(user, %{
+      access_token: "lin_move_user_tok",
+      refresh_token: "lin_move_user_refresh",
+      expires_in: 3600
+    })
 
     # 1. :triage with invalid datetime
     LinearMock.mock_workflow_states_success([
@@ -131,7 +124,7 @@ defmodule Rail.Issues.Actions.MoveStateTest do
     })
 
     assert {:ok, %Issue{state: :triage}} =
-             Issues.move_state(scope, project, issue, :triage)
+             Issues.move_state(project, issue, :triage)
 
     # 2. :backlog
     LinearMock.mock_workflow_states_success([
@@ -151,7 +144,7 @@ defmodule Rail.Issues.Actions.MoveStateTest do
     })
 
     assert {:ok, %Issue{state: :backlog}} =
-             Issues.move_state(scope, project, issue, :backlog)
+             Issues.move_state(project, issue, :backlog)
 
     # 3. :done with nil updatedAt
     LinearMock.mock_workflow_states_success([
@@ -171,7 +164,7 @@ defmodule Rail.Issues.Actions.MoveStateTest do
     })
 
     assert {:ok, %Issue{state: :done}} =
-             Issues.move_state(scope, project, issue, :done)
+             Issues.move_state(project, issue, :done)
 
     # 4. :in_progress
     LinearMock.mock_workflow_states_success([
@@ -191,7 +184,7 @@ defmodule Rail.Issues.Actions.MoveStateTest do
     })
 
     assert {:ok, %Issue{state: :in_progress}} =
-             Issues.move_state(scope, project, issue, :in_progress)
+             Issues.move_state(project, issue, :in_progress)
 
     # 5. :custom fallback (tests linear_type_for_state(_other) returning state_not_found)
     LinearMock.mock_workflow_states_success([
@@ -199,7 +192,7 @@ defmodule Rail.Issues.Actions.MoveStateTest do
     ])
 
     assert {:error, {:state_not_found, :custom}} =
-             Issues.move_state(scope, project, issue, :custom)
+             Issues.move_state(project, issue, :custom)
   end
 
   test "move_state/5 returns error when Linear update_issue mutation fails", %{workspace: workspace} do
@@ -228,13 +221,12 @@ defmodule Rail.Issues.Actions.MoveStateTest do
       "updatedAt" => "2026-09-01T10:00:00.000Z"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Mutation Error Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Mutation Error Issue"})
 
     LinearMock.mock_mutation_failure("issueUpdate")
-    scope = Scope.for_system()
 
     assert {:error, {:linear_mutation_failed, "issueUpdate"}} =
-             Issues.move_state(scope, project, issue, :done)
+             Issues.move_state(project, issue, :done)
   end
 
   test "move_state/5 returns error when Linear workflow_states fails", %{workspace: workspace} do
@@ -263,13 +255,12 @@ defmodule Rail.Issues.Actions.MoveStateTest do
       "updatedAt" => "2026-09-01T10:00:00.000Z"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Workflow Error Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Workflow Error Issue"})
 
     LinearMock.mock_graphql_error([%{"message" => "Workflow states error"}])
-    scope = Scope.for_system()
 
     assert {:error, {:linear_graphql_error, _errors}} =
-             Issues.move_state(scope, project, issue, :done)
+             Issues.move_state(project, issue, :done)
   end
 
   test "move_state/5 returns error when state cannot be resolved from Linear", %{workspace: workspace} do
@@ -298,19 +289,11 @@ defmodule Rail.Issues.Actions.MoveStateTest do
       "updatedAt" => "2026-09-01T10:00:00.000Z"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Unresolved Move Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Unresolved Move Issue"})
 
     LinearMock.mock_workflow_states_success([])
 
-    scope = Scope.for_system()
-
     assert {:error, {:state_not_found, :canceled}} =
-             Issues.move_state(scope, project, issue, :canceled)
-  end
-
-  test "move_state/5 returns :not_authorized for nil scope" do
-    project = %Project{id: "prj_move_state_unauthorized"}
-    issue = %Issue{project_id: project.id, external_id: "lin_1"}
-    assert {:error, :not_authorized} = Issues.move_state(nil, project, issue, :done)
+             Issues.move_state(project, issue, :canceled)
   end
 end

@@ -62,7 +62,7 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
       "title" => "Start Rebase Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Start Rebase Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Start Rebase Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -87,8 +87,6 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
     project: _project,
     task: _task
   } do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Start Rebase Project 8805",
@@ -113,20 +111,18 @@ defmodule Rail.Pipeline.Actions.StartRebaseTest do
       "title" => "Task 8807"
     })
 
-    {:ok, issue_8807} = Issues.capture_issue(system_scope(), project, "Task 8807")
+    {:ok, issue_8807} = Issues.create_issue(project, %{description: "Task 8807"})
 
     {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8807, :product)
 
-    {:ok, %Task{id: task_id} = task} =
+    {:ok, %Task{} = task} =
       Pipeline.update_task(task, %{
-        stage: :qa,
+        stage: :qa
       })
 
     assert {:ok,
             %Task{
-              is_rebasing: true,
+              is_rebasing: true
             }} = Pipeline.start_rebase(task, [])
-
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :rebase_started}}
   end
 end

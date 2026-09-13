@@ -5,7 +5,7 @@ defmodule Rail.Pipeline.Actions.ParseStageVerdict do
 
   import Rail.Runs.Utils.AssistantLog
 
-  alias Rail.Domain.StageVerdict
+  alias Rail.Pipeline.Schemas.StageVerdict
   alias Rail.Runs.Schemas.Run
 
   @prefixed_pattern ~r/^verdict\s*[:\-]?\s*(approved|changes\s+requested|pass(?:ed)?|fail(?:ed)?|done)(.*)$/i

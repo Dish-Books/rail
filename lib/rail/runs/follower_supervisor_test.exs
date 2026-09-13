@@ -10,6 +10,9 @@ defmodule Rail.Runs.FollowerSupervisorTest do
   alias Rail.Runs.Schemas.Run
   alias Rail.Tools
 
+  # The supervisor hands over a real port.
+  @moduletag :real_spawn
+
   setup do
     tmp_dir = Path.join(System.tmp_dir!(), "supervisor_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp_dir)

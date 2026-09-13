@@ -67,7 +67,7 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
       "title" => "Scratch Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Scratch Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Scratch Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -85,7 +85,7 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
       "title" => "Scratch Issue 13507"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Scratch Issue 13507")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Scratch Issue 13507"})
 
     Repo.update_all(from(i in Issue, where: i.id == ^issue.id), set: [title: "Old Title", description: "Old Desc"])
 
@@ -164,7 +164,7 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
       "title" => "Scratch Issue 13508"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Scratch Issue 13508")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Scratch Issue 13508"})
 
     {:ok, task} =
       Pipeline.update_task(task, %{

@@ -8,8 +8,6 @@ defmodule Rail.Pipeline.Actions.SetDiffFileViewedTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
-    scope = system_scope()
-
     {:ok, workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Set Diff Viewed Workspace",
@@ -43,7 +41,7 @@ defmodule Rail.Pipeline.Actions.SetDiffFileViewedTest do
       "title" => "Set Diff Viewed Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Set Diff Viewed Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Set Diff Viewed Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

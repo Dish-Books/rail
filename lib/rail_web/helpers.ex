@@ -8,7 +8,6 @@ defmodule RailWeb.Helpers do
 
   alias RailWeb.Utils
 
-  defdelegate format_cost(cost, currency \\ "USD"), to: Utils.FormatCost
   defdelegate format_duration(seconds), to: Utils.FormatDuration
   defdelegate format_run_status(status), to: Utils.FormatRunStatus
   defdelegate format_tokens(count, opts \\ []), to: Utils.FormatTokens

@@ -390,8 +390,6 @@ defmodule RailWeb.Hooks.NavHookTest do
 
     authed_conn = log_in_user(conn, user)
 
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-
     LinearMock.mock_create_issue_success(%{
       "id" => "lin_nav_captured",
       "identifier" => "NAV-101",
@@ -420,7 +418,6 @@ defmodule RailWeb.Hooks.NavHookTest do
     refute has_element?(view, "#capture-idea-dialog")
 
     # PubSub broadcast received
-    assert_receive {:pipeline_changed, %{event: :issue_captured, issue_id: "iss_" <> _}}
   end
 
   test "capture_form_submit keeps modal open and preserves ask text on error", %{conn: conn} do
@@ -681,8 +678,8 @@ defmodule RailWeb.Hooks.NavHookTest do
 
     render_click(view, "open_new_issue", %{})
 
-    # String error from capture_issue
-    expect(Rail.Issues, :capture_issue, fn _scope, _project, _ask, _opts ->
+    # String error from create_issue
+    expect(Rail.Issues, :create_issue, fn _project, _attrs ->
       {:error, "Direct string failure"}
     end)
 
@@ -694,8 +691,8 @@ defmodule RailWeb.Hooks.NavHookTest do
 
     assert has_element?(view, "#capture-error-banner", "Direct string failure")
 
-    # Atom error from capture_issue
-    expect(Rail.Issues, :capture_issue, fn _scope, _project, _ask, _opts ->
+    # Atom error from create_issue
+    expect(Rail.Issues, :create_issue, fn _project, _attrs ->
       {:error, :not_authorized}
     end)
 

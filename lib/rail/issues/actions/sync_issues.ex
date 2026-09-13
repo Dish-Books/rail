@@ -9,7 +9,7 @@ defmodule Rail.Issues.Actions.SyncIssues do
   alias Rail.Repo
   alias Rail.Users.Schemas.User
 
-  def sync_issues(_scope, project) do
+  def sync_issues(project) do
     with {:ok, token} <- workspace_token(project),
          {:ok, nodes} <- fetch_linear_issues(token, project) do
       upsert_nodes(project.id, nodes)
@@ -37,6 +37,7 @@ defmodule Rail.Issues.Actions.SyncIssues do
 
   defp upsert_issue(project_id, node) do
     attrs = %{
+      project_id: project_id,
       external_id: node.id,
       identifier: node.identifier,
       title: node.title,
@@ -53,12 +54,12 @@ defmodule Rail.Issues.Actions.SyncIssues do
     case Repo.get_by(Issue, external_id: node.id) do
       %Issue{} = existing ->
         existing
-        |> Issue.changeset(attrs, project_id)
+        |> Issue.changeset(attrs)
         |> Repo.update!()
 
       nil ->
         %Issue{}
-        |> Issue.changeset(attrs, project_id)
+        |> Issue.changeset(attrs)
         |> Repo.insert!()
     end
   end

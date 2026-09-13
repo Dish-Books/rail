@@ -1,7 +1,6 @@
 defmodule Rail.Runs.BootTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Domain.RunFailure
   alias Rail.Projects.Schemas.Project
   alias Rail.Roles
   alias Rail.Runs
@@ -11,20 +10,17 @@ defmodule Rail.Runs.BootTest do
   alias Rail.Runs.Schemas.Run
   alias Rail.Tools
 
+  # Boot adopts real OS processes, so these run real children.
+  @moduletag :real_spawn
+
   setup do
     tmp_dir = Path.join(System.tmp_dir!(), "boot_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp_dir)
 
-    on_exit(fn ->
-      File.rm_rf(tmp_dir)
-    end)
+    on_exit(fn -> File.rm_rf(tmp_dir) end)
 
-    %{tmp_dir: tmp_dir}
-  end
-
-  test "adopts live child process, starts Follower and replays stream", %{tmp_dir: tmp_dir} do
     # Adoption hands the row to a Follower, which reads the stream format off the
-    # run's role, so this run needs a real role behind it.
+    # run's role, so every run here needs a real role behind it.
     {:ok, backend} =
       Rail.Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
@@ -50,14 +46,17 @@ defmodule Rail.Runs.BootTest do
         system_prompt: "You are the engineer."
       })
 
+    %{tmp_dir: tmp_dir, backend: backend, project: project, role: role}
+  end
+
+  test "adopts live child process, starts Follower and replays stream", %{tmp_dir: tmp_dir, role: role} do
     run =
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
         role_id: role.id,
         status: :running,
-        started_at: DateTime.utc_now(),
-        attempt_log_lines: 1
+        started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
@@ -95,12 +94,12 @@ defmodule Rail.Runs.BootTest do
     Tools.terminate_os_process(pid, grace_period: 50)
   end
 
-  test "settles dead child process as finished while unwatched", %{tmp_dir: tmp_dir} do
+  test "settles dead child process as finished while unwatched", %{tmp_dir: tmp_dir, role: role} do
     run =
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -141,13 +140,14 @@ defmodule Rail.Runs.BootTest do
   end
 
   test "settles dead child process with no result as failure with transient pattern", %{
-    tmp_dir: tmp_dir
+    tmp_dir: tmp_dir,
+    role: role
   } do
     run =
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -177,16 +177,14 @@ defmodule Rail.Runs.BootTest do
     assert settled_run.status == :finished
     assert settled_run.exit_code == -1
     assert settled_run.error =~ "without reporting a result"
-    # Verify failure pattern is recognized as transient by RunFailure
-    assert RunFailure.transient?(settled_run.error)
   end
 
-  test "starting run without PID times out and fails after 60s", %{tmp_dir: tmp_dir} do
+  test "starting run without PID times out and fails after 60s", %{tmp_dir: tmp_dir, role: role} do
     run =
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :starting,
         started_at: DateTime.shift(DateTime.utc_now(), second: -70)
       })
@@ -217,12 +215,12 @@ defmodule Rail.Runs.BootTest do
     assert settled_run.error =~ "Spawn timed out"
   end
 
-  test "starting run within timeout is left alone", %{tmp_dir: tmp_dir} do
+  test "starting run within timeout is left alone", %{tmp_dir: tmp_dir, role: role} do
     run =
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :starting,
         started_at: DateTime.utc_now()
       })
@@ -249,12 +247,12 @@ defmodule Rail.Runs.BootTest do
     assert [{:still_starting, %OsProcess{id: ^os_process_id}}] = results
   end
 
-  test "ignores runs from different node or already finished", %{tmp_dir: tmp_dir} do
+  test "ignores runs from different node or already finished", %{tmp_dir: tmp_dir, role: role} do
     run =
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -305,13 +303,13 @@ defmodule Rail.Runs.BootTest do
     refute Process.alive?(pid)
   end
 
-  test "settles dead run with various error and stderr combinations", %{tmp_dir: tmp_dir} do
+  test "settles dead run with various error and stderr combinations", %{tmp_dir: tmp_dir, role: role} do
     # Case 1: both result_error and stderr
     run1 =
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -344,7 +342,7 @@ defmodule Rail.Runs.BootTest do
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -373,7 +371,7 @@ defmodule Rail.Runs.BootTest do
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -402,7 +400,7 @@ defmodule Rail.Runs.BootTest do
       %Run{}
       |> Run.changeset(%{
         task_id: UXID.generate!(prefix: "tsk"),
-        role_id: UXID.generate!(prefix: "rol"),
+        role_id: role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })

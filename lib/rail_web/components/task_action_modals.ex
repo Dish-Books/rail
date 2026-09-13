@@ -237,66 +237,6 @@ defmodule RailWeb.Components.TaskActionModals do
         </form>
       </div>
 
-      <!-- 5. Prompt Decline Demo Modal -->
-      <div
-        :if={@active_modal[:type] == :prompt_decline_demo}
-        id="prompt-decline-demo-modal"
-        data-qa="prompt-decline-demo-modal"
-        class="w-full max-w-[520px] rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 shadow-2xl space-y-4"
-      >
-        <div class="space-y-1">
-          <h2
-            class="text-base font-semibold text-slate-900 dark:text-slate-100"
-            id="prompt-decline-demo-title"
-          >
-            Continue without a demo
-          </h2>
-          <p class="text-xs text-slate-500 dark:text-slate-400" id="prompt-decline-demo-subtitle">
-            A demo will not be recorded for this task. Provide a one-line reason why (e.g. non-UI change, background refactor).
-          </p>
-        </div>
-
-        <form
-          id="prompt-decline-demo-form"
-          phx-change="modal_form_change"
-          phx-submit="submit_modal"
-          class="space-y-4"
-        >
-          <input type="hidden" name="action" value="decline_demo" />
-          <div>
-            <input
-              type="text"
-              id="decline-demo-reason-input"
-              data-qa="decline-demo-reason-input"
-              name="reason"
-              autofocus
-              placeholder="One-line reason (e.g. non-UI change, verified in CLI)"
-              class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:border-blue-600 dark:focus:border-blue-500 focus:outline-hidden"
-            />
-          </div>
-
-          <div class="flex justify-end space-x-3 pt-2">
-            <button
-              type="button"
-              id="cancel-decline-demo-button"
-              data-qa="cancel-decline-demo-button"
-              phx-click="close_modal"
-              class="px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
-            >
-              Cancel
-            </button>
-
-            <button
-              type="submit"
-              id="submit-decline-demo-button"
-              data-qa="submit-decline-demo-button"
-              class="px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 hover:bg-blue-600 dark:hover:bg-blue-500/90 text-white text-xs font-semibold cursor-pointer shadow-xs"
-            >
-              Continue
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
     """
   end

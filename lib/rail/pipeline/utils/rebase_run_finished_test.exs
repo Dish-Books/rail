@@ -66,7 +66,7 @@ defmodule Rail.Pipeline.Utils.RebaseRunFinishedTest do
       "title" => "Settle Rebase Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Settle Rebase Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Settle Rebase Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

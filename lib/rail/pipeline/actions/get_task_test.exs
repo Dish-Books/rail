@@ -42,7 +42,7 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
       "title" => "Get Task Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Get Task Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Get Task Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -55,8 +55,8 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
 
   test "loads the project, the issue and the runs with their roles", %{
     backend: backend,
-    project: project,
-    issue: issue,
+    project: %{id: project_id} = project,
+    issue: %{id: issue_id},
     task: %Task{id: task_id} = task
   } do
     {:ok, role} =
@@ -70,9 +70,6 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
 
     {:ok, %Run{id: run_id}} =
       Runs.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
-
-    issue_id = issue.id
-    project_id = project.id
 
     assert {:ok,
             %Task{

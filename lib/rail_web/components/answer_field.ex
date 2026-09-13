@@ -163,11 +163,34 @@ defmodule RailWeb.Components.AnswerField do
             data-qa="answer-resume-button"
             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 transition-opacity shadow-xs cursor-pointer"
           >
-            <.icon name="pi-paper-plane-tilt" class="h-4 w-4 shrink-0" />
-            <span>Answer & resume</span>
+            <.icon name="pi-check" class="h-4 w-4 shrink-0" />
+            <span>Save answer</span>
           </button>
         </div>
       </form>
+
+      <!-- Nothing reaches the agent until the human says the round is done. -->
+      <div class="flex items-center justify-between gap-2 pt-3 mt-3 border-t border-slate-200 dark:border-slate-700">
+        <span
+          :if={@questions != []}
+          data-qa="questions-pending-note"
+          class="text-xs text-slate-500 dark:text-slate-400"
+        >
+          {length(@questions)} still to answer
+        </span>
+
+        <button
+          type="button"
+          id="send-answers-button"
+          data-qa="send-answers-button"
+          phx-click="send_answers"
+          disabled={@questions != []}
+          class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 transition-opacity shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <.icon name="pi-paper-plane-tilt" class="h-4 w-4 shrink-0" />
+          <span>Send answers</span>
+        </button>
+      </div>
     </div>
     """
   end

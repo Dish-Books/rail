@@ -7,6 +7,8 @@ config :phoenix, :plug_init_mode, :runtime
 config :phoenix_live_view,
   enable_expensive_runtime_checks: true
 
+config :rail, Oban, testing: :manual
+
 config :rail, Rail.Repo,
   username: "postgres",
   password: "postgres",
@@ -38,5 +40,4 @@ config :rail, :linear_oauth,
   redirect_uri: "http://localhost:4002/auth/linear/callback",
   req_options: [plug: {Req.Test, Rail.Linear}]
 
-config :rail, Oban, testing: :manual
 config :rail, dev_routes: true

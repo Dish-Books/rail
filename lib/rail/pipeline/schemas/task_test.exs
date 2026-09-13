@@ -2,7 +2,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   use Rail.DataCase, async: true
 
   import Rail.Pipeline.Utils.CaptureScratch
-  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
+  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1]
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Design
@@ -76,7 +76,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       "title" => "Task Schema Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Task Schema Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Task Schema Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -209,9 +209,10 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
       "title" => "Task Schema Issue 12611"
     })
 
-    {:ok, %Issue{id: issue_id} = issue} = Issues.capture_issue(system_scope(), project, "Task Schema Issue 12611")
+    {:ok, %Issue{id: issue_id} = issue} =
+      Issues.create_issue(project, %{description: "Task Schema Issue 12611"})
 
-    {:ok, _issue} = issue |> Issue.changeset(%{owner_user_id: user.id}, project.id) |> Repo.update()
+    {:ok, _issue} = issue |> Issue.changeset(%{owner_user_id: user.id}) |> Repo.update()
 
     task =
       Repo.insert!(
@@ -322,7 +323,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
         "title" => "Task 12602"
       })
 
-      {:ok, issue_12602} = Issues.capture_issue(system_scope(), project, "Task 12602")
+      {:ok, issue_12602} = Issues.create_issue(project, %{description: "Task 12602"})
 
       {:ok, task_without_run} = Pipeline.create_task(issue_12602, :product)
 
@@ -373,7 +374,7 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
         "title" => "Task 12603"
       })
 
-      {:ok, issue_12603} = Issues.capture_issue(system_scope(), project_no_designer, "Task 12603")
+      {:ok, issue_12603} = Issues.create_issue(project_no_designer, %{description: "Task 12603"})
 
       {:ok, task_no_designer} = Pipeline.create_task(issue_12603, :product)
 

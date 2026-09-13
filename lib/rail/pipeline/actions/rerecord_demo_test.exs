@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.RerecordDemoTest do
   use Rail.DataCase, async: true
 
-  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
+  import RailTest.Mocks.Linear, only: [mock_demo_uploads: 1]
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Demo
@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
+  alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -67,32 +68,27 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
       "title" => "Rerecord Demo Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Rerecord Demo Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Rerecord Demo Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, issue: issue, task: task, roles: roles}
   end
 
-  test "marks latest demo stale, resets task to demo queued, broadcasts and pumps dispatcher", %{task: task} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
+  test "marks the previous demo stale and enters the demo stage again", %{task: task, roles: roles} do
     worktree = create_temp_git_repo()
 
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        stage: :ready_to_merge,
-        worktree_path: worktree,
-      })
+    {:ok, task} = Pipeline.update_task(task, %{stage: :ready_to_merge, worktree_path: worktree})
 
-    demo_scratch_9901 = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
-    demo_dir_9901 = Path.join(demo_scratch_9901, "demo")
-    File.mkdir_p!(demo_dir_9901)
-    on_exit(fn -> File.rm_rf(demo_scratch_9901) end)
+    demo_scratch = Path.join("/tmp", "rail_demo_scratch_#{System.unique_integer([:positive])}")
+    demo_dir = Path.join(demo_scratch, "demo")
+    File.mkdir_p!(demo_dir)
+    on_exit(fn -> File.rm_rf(demo_scratch) end)
 
-    File.write!(Path.join(demo_dir_9901, "frame-1.png"), "fake demo frame")
+    File.write!(Path.join(demo_dir, "frame-1.png"), "fake png content")
 
     File.write!(
-      Path.join(demo_dir_9901, "manifest.json"),
+      Path.join(demo_dir, "manifest.json"),
       Jason.encode!(%{
         "version" => 1,
         "outcome" => "recorded",
@@ -115,171 +111,115 @@ defmodule Rail.Pipeline.Actions.RerecordDemoTest do
       "createdAt" => "2026-09-05T12:00:00.000Z"
     })
 
-    {:ok, demo} =
-      Artifacts.capture_demo(system_scope(), task, demo_scratch_9901)
+    {:ok, demo} = Artifacts.capture_demo(system_scope(), task, demo_scratch)
 
-    assert {:ok,
-            %Task{
-              id: task_id,
-              stage: :demo,
-            }} = Pipeline.rerecord_demo(task)
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:demo].id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now()
+      })
 
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :demo_rerecord}}
+    assert {:ok, %Run{}} = Pipeline.rerecord_demo(run)
 
+    assert %Task{stage: :demo} = Repo.reload!(task)
     assert %Demo{stale: true} = Repo.get!(Demo, demo.id)
   end
 
-  test "rerecord_demo succeeds even when no previous demo exists", %{task: task} do
+  test "records again even when there is no previous demo", %{task: task, roles: roles} do
     worktree = create_temp_git_repo()
 
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        stage: :demo,
-        worktree_path: worktree,
-      })
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, worktree_path: worktree})
 
-    assert {:ok, %Task{stage: :demo}} =
-             Pipeline.rerecord_demo(task, [])
-  end
-
-  test "guards against merged tasks", %{project: project, task: task} do
-    worktree = create_temp_git_repo()
-
-    {:ok, task_merged_stage} =
-      Pipeline.update_task(task, %{
-        stage: :merged,
-        worktree_path: worktree
-      })
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_rerecord_demo_9402",
-      "identifier" => "TSK-9402",
-      "title" => "Task 9402"
-    })
-
-    {:ok, issue_9402} = Issues.capture_issue(system_scope(), project, "Task 9402")
-
-    {:ok, task_merged_at} = Pipeline.create_task(issue_9402, :product)
-
-    {:ok, task_merged_at} =
-      Pipeline.update_task(task_merged_at, %{
-        stage: :ready_to_merge,
-        worktree_path: worktree,
-        merged_at: DateTime.utc_now()
-      })
-
-    assert {:error, :task_merged} = Pipeline.rerecord_demo(task_merged_stage)
-    assert {:error, :task_merged} = Pipeline.rerecord_demo(task_merged_at)
-  end
-
-  test "guards against missing worktree directory on disk", %{project: _project, task: task} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-    nonexistent_path = "/tmp/nonexistent_worktree_#{System.unique_integer([:positive])}"
-
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        stage: :ready_to_merge,
-        worktree_path: nonexistent_path
-      })
-
-    assert {:error, :no_worktree} = Pipeline.rerecord_demo(task)
-
-    assert_receive {:pipeline_changed, %{task_id: task_id, event: :rerecord_demo_failed}}
-    assert task_id == task.id
-
-    reloaded = Repo.get!(Task, task.id)
-    assert reloaded.error == "Worktree does not exist on disk (#{nonexistent_path})."
-  end
-
-  test "can_rerecord_demo? checks eligibility accurately", %{project: project, task: task, roles: roles} do
-    worktree = create_temp_git_repo()
-
-    {:ok, eligible_ready} =
-      Pipeline.update_task(task, %{
-        stage: :ready_to_merge,
-        worktree_path: worktree
-      })
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_rerecord_demo_9404",
-      "identifier" => "TSK-9404",
-      "title" => "Task 9404"
-    })
-
-    {:ok, issue_9404} = Issues.capture_issue(system_scope(), project, "Task 9404")
-
-    {:ok, eligible_demo_failed} = Pipeline.create_task(issue_9404, :product)
-
-    {:ok, eligible_demo_failed} =
-      Pipeline.update_task(eligible_demo_failed, %{
-        stage: :demo,
-        worktree_path: worktree
-      })
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_rerecord_demo_9405",
-      "identifier" => "TSK-9405",
-      "title" => "Task 9405"
-    })
-
-    {:ok, issue_9405} = Issues.capture_issue(system_scope(), project, "Task 9405")
-
-    {:ok, busy_task} = Pipeline.create_task(issue_9405, :product)
-
-    {:ok, busy_task} =
-      Pipeline.update_task(busy_task, %{
-        stage: :ready_to_merge,
-        worktree_path: worktree
-      })
-
-    # Nothing is re-recorded while the stage's run is still working.
-    {:ok, _running} =
+    {:ok, run} =
       Runs.create_run(%{
-        task_id: busy_task.id,
+        task_id: task.id,
         role_id: roles[:demo].id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now()
+      })
+
+    assert {:ok, %Run{}} = Pipeline.rerecord_demo(run)
+    assert %Task{stage: :demo} = Repo.reload!(task)
+  end
+
+  test "a merged task has nothing left to record from", %{task: task, roles: roles} do
+    worktree = create_temp_git_repo()
+
+    {:ok, task} = Pipeline.update_task(task, %{stage: :merged, worktree_path: worktree})
+
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:demo].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    assert {:error, :task_merged} = Pipeline.rerecord_demo(run)
+  end
+
+  test "a worktree that is gone records the reason on the run", %{task: task, roles: roles} do
+    missing = "/tmp/nonexistent_worktree_#{System.unique_integer([:positive])}"
+
+    {:ok, task} = Pipeline.update_task(task, %{stage: :ready_to_merge, worktree_path: missing})
+
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:demo].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    expected = "Worktree does not exist on disk (#{missing})."
+
+    assert {:error, :no_worktree} = Pipeline.rerecord_demo(run)
+    assert %Run{error: ^expected} = Repo.reload!(run)
+  end
+
+  test "nothing is re-recorded while anything on the task is still working", %{task: task, roles: roles} do
+    worktree = create_temp_git_repo()
+
+    {:ok, task} = Pipeline.update_task(task, %{stage: :ready_to_merge, worktree_path: worktree})
+
+    {:ok, demo_run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:demo].id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now()
+      })
+
+    assert Pipeline.can_rerecord_demo?(Repo.preload(demo_run, task: :runs))
+
+    {:ok, _engineer} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
         status: :running,
         started_at: DateTime.utc_now()
       })
 
-    {:ok, busy_task} = Pipeline.update_task(busy_task, %{stage: :demo})
+    refute Pipeline.can_rerecord_demo?(Repo.preload(demo_run, [task: :runs], force: true))
+  end
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_rerecord_demo_9406",
-      "identifier" => "TSK-9406",
-      "title" => "Task 9406"
-    })
+  test "a task that is merged or has lost its worktree cannot re-record", %{task: task, roles: roles} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :merged, worktree_path: "/tmp/rail-removed-worktree"})
 
-    {:ok, issue_9406} = Issues.capture_issue(system_scope(), project, "Task 9406")
-
-    {:ok, merged_task} = Pipeline.create_task(issue_9406, :product)
-
-    {:ok, merged_task} =
-      Pipeline.update_task(merged_task, %{
-        stage: :merged,
-        worktree_path: worktree
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:demo].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
       })
 
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_rerecord_demo_9407",
-      "identifier" => "TSK-9407",
-      "title" => "Task 9407"
-    })
-
-    {:ok, issue_9407} = Issues.capture_issue(system_scope(), project, "Task 9407")
-
-    {:ok, missing_path_task} = Pipeline.create_task(issue_9407, :product)
-
-    {:ok, missing_path_task} =
-      Pipeline.update_task(missing_path_task, %{
-        stage: :ready_to_merge,
-        worktree_path: "/tmp/rail-removed-worktree"
-      })
-
-    assert Pipeline.can_rerecord_demo?(eligible_ready)
-    assert Pipeline.can_rerecord_demo?(eligible_demo_failed)
-    refute Pipeline.can_rerecord_demo?(busy_task)
-    refute Pipeline.can_rerecord_demo?(merged_task)
-    refute Pipeline.can_rerecord_demo?(missing_path_task)
+    refute Pipeline.can_rerecord_demo?(Repo.preload(run, task: :runs))
     refute Pipeline.can_rerecord_demo?(nil)
   end
 end

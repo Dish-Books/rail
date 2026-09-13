@@ -34,7 +34,6 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
       remove_scratch_files(task)
     end
 
-
     {:ok, task}
   end
 

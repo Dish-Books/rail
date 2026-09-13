@@ -27,6 +27,10 @@ defmodule Rail.Artifacts do
   @decorate can?(resource: :artifacts, action: :manage)
   defdelegate capture_qa_report(scope, target, scratch_dir_or_opts, opts \\ []), to: Actions.CaptureQaReport
 
+  defdelegate latest_demo(task), to: Actions.LatestDemo
+
+  defdelegate latest_design(task), to: Actions.LatestDesign
+
   @decorate can?(resource: :artifacts, action: :manage)
   defdelegate mark_demo_stale(scope, target, opts \\ []), to: Actions.MarkDemoStale
 

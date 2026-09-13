@@ -16,9 +16,11 @@ defmodule Rail.Runs.FollowerTest do
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
-  alias Rail.Runs.Schemas.RunEvent
   alias Rail.Tools
   alias RailTest.Mocks.Linear, as: LinearMock
+
+  # The Follower watches a real OS process.
+  @moduletag :real_spawn
 
   setup do
     {:ok, backend} =
@@ -293,50 +295,6 @@ defmodule Rail.Runs.FollowerTest do
     state = :sys.get_state(follower_pid)
     assert state.event_state.assistant_text =~ "bad"
     assert state.event_state.assistant_text =~ "byte"
-
-    FollowerSupervisor.stop_follower(follower_pid)
-    Tools.terminate_os_process(pid, grace_period: 50)
-  end
-
-  test "skip_log_lines skips already recorded lines from being re-inserted", %{
-    run: run,
-    os_process: os_process,
-    stream_path: stream_path
-  } do
-    # Seed 1 event in database
-    Repo.insert!(%RunEvent{run_id: run.id, os_process_id: os_process.id, line: "already saved line"})
-
-    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["5"]])
-    {:os_pid, pid} = Port.info(port, :os_pid)
-
-    line1 = ~s({"type":"system","session_id":"sess-replay-1"})
-    line2 = ~s({"type":"assistant","message":{"content":[{"type":"text","text":"new line"}]}})
-    File.write!(stream_path, "#{line1}\n#{line2}\n")
-
-    {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
-        skip_log_lines: 1,
-        tail_interval_ms: 20,
-        batch_interval_ms: 40
-      )
-
-    # The follower runs in its own process, so lend it this test's DB connection.
-
-    Sandbox.allow(Repo, self(), follower_pid)
-
-    # Wait for the follower to flush its batch.
-    events =
-      Enum.reduce_while(1..100, [], fn _i, _acc ->
-        case Runs.list_run_events(run) do
-          [_first, _second] = events -> {:halt, events}
-          _other -> Process.sleep(10) && {:cont, []}
-        end
-      end)
-
-    # Total events: 1 pre-existing + 1 new (line1 skipped)
-    assert length(events) == 2
-    assert Enum.at(events, 0).line == "already saved line"
-    assert Enum.at(events, 1).line == line2
 
     FollowerSupervisor.stop_follower(follower_pid)
     Tools.terminate_os_process(pid, grace_period: 50)
@@ -627,7 +585,7 @@ defmodule Rail.Runs.FollowerTest do
       "title" => "Task 12505"
     })
 
-    {:ok, issue_12505} = Issues.capture_issue(system_scope(), project, "Task 12505")
+    {:ok, issue_12505} = Issues.create_issue(project, %{description: "Task 12505"})
 
     {:ok, task} = Pipeline.create_task(issue_12505, :product)
 
@@ -699,7 +657,7 @@ defmodule Rail.Runs.FollowerTest do
     assert Repo.get!(Run, run.id).status == :blocked_on_input
   end
 
-  test "chat child exit preserves run status but updates conversation_id if new", %{
+  test "a run already holding a conversation keeps it, whatever a later child reports", %{
     role: role,
     tmp_dir: tmp_dir
   } do
@@ -753,8 +711,7 @@ defmodule Rail.Runs.FollowerTest do
     assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
 
     {:ok, reloaded_rr} = Runs.get_run(run.id)
-    assert reloaded_rr.status == :running
-    assert reloaded_rr.conversation_id == "sess-updated"
+    assert reloaded_rr.conversation_id == "sess-orig"
   end
 
   test "chat child exit with same conversation_id leaves run unchanged", %{role: role, tmp_dir: tmp_dir} do

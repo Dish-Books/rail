@@ -34,12 +34,14 @@ defmodule RailWeb.Live.RunConversation do
     runs = sort_runs(assigns.runs)
     selected_run = pick_run(runs, socket.assigns.selected_run)
 
-    {:ok,
-     socket
-     |> assign(assigns)
-     |> assign(:runs, runs)
-     |> assign(:selected_run, selected_run)
-     |> assign_run_events(load_run_events(selected_run))}
+    socket =
+      socket
+      |> assign(assigns)
+      |> assign(:runs, runs)
+      |> assign(:selected_run, selected_run)
+      |> assign_run_events(load_run_events(selected_run))
+
+    {:ok, socket}
   end
 
   @impl true
@@ -700,10 +702,12 @@ defmodule RailWeb.Live.RunConversation do
       %Run{} = run ->
         {:ok, run, queued} = Pipeline.stop_run(run)
 
-        {:noreply,
-         socket
-         |> assign(:chat_input, restore_draft(queued, socket.assigns.chat_input))
-         |> select(run)}
+        socket =
+          socket
+          |> assign(:chat_input, restore_draft(queued, socket.assigns.chat_input))
+          |> select(run)
+
+        {:noreply, socket}
 
       nil ->
         {:noreply, socket}
@@ -735,7 +739,7 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   defp select(socket, %Run{} = run) do
-    run = Runs.get_run(run.id) |> elem(1) |> then(&(&1 || run))
+    run = run.id |> Runs.get_run() |> elem(1) |> Kernel.||(run)
 
     socket
     |> assign(:selected_run, run)

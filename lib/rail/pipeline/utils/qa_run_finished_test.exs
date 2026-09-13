@@ -4,7 +4,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
   import Rail.Pipeline.Utils.QaLeadRunFinished
   import Rail.Pipeline.Utils.QaRunFinished
   import Rail.Pipeline.Utils.ReviewRunFinished
-  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
+  import RailTest.Mocks.Linear, only: [mock_qa_uploads: 1]
 
   alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Issues
@@ -15,6 +15,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Runs
+  alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -72,7 +73,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
       "title" => "Settle QA Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Settle QA Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Settle QA Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -153,7 +154,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
       "title" => "Settle Run Issue 14598"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Settle Run Issue 14598")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Settle Run Issue 14598"})
 
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -729,17 +730,26 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
 
     Runs.append_run_event(run, output)
 
+    test_pid = self()
+
+    # The pending answer is carried into the prompt the next stage is started
+    # with, and consumed by that spawn.
+    stub(Runs, :start_os_process, fn spawned, argv ->
+      send(test_pid, {:spawned, spawned.pending_answer, argv})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
     assert %Run{stage_fingerprint_head_sha: head_sha} =
              qa_run_finished(Repo.preload(run, [:task, :role], force: true), [])
 
     assert %Task{stage: :qa_lead} = Repo.get!(Task, task.id)
 
-    lead_run = Repo.one(from r in Run, where: r.task_id == ^task_id and r.role_id == ^role_lead.id)
+    assert_receive {:spawned, pending_answer, _argv}
 
-    assert lead_run.pending_answer =~
+    assert pending_answer =~
              "Prior lead notes\n\nThe change has been reworked and QA has signed off on it again."
 
-    assert lead_run.pending_answer =~ "The reworked change is commit #{head_sha}."
+    assert pending_answer =~ "The reworked change is commit #{head_sha}."
 
     # Part B: QA lead pass with rework when project HAS a demo role (hits "the previous gate" label)
     {:ok, role_demo} =
@@ -753,7 +763,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
       "title" => "Task 14507"
     })
 
-    {:ok, issue_14507} = Issues.capture_issue(system_scope(), project, "Task 14507")
+    {:ok, issue_14507} = Issues.create_issue(project, %{description: "Task 14507"})
 
     {:ok, %Task{id: _task_id2} = task2} = Pipeline.create_task(issue_14507, :product)
 
@@ -827,7 +837,7 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
       "title" => "Task 14508"
     })
 
-    {:ok, issue_14508} = Issues.capture_issue(system_scope(), project_no_qa, "Task 14508")
+    {:ok, issue_14508} = Issues.create_issue(project_no_qa, %{description: "Task 14508"})
 
     {:ok, %Task{id: _task_id3} = task3} = Pipeline.create_task(issue_14508, :product)
 

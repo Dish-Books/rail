@@ -58,7 +58,7 @@ defmodule RailWeb.Live.RunConversationTest do
       "title" => "Conversation Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Conversation Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Conversation Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 
@@ -127,17 +127,19 @@ defmodule RailWeb.Live.RunConversationTest do
         started_at: ~U[2026-09-09 10:00:00Z]
       })
 
-    [
-      "[human] Please implement the OAuth callback handler",
-      "[run] Runner started execution",
-      "I will start by reviewing the router.",
-      "[tool read_file] lib/rail_web/router.ex",
-      "[tool read_file] lib/rail_web/user_auth.ex",
-      "[handoff ← #{architect.role_id}] Ready for engineer implementation",
-      "Follow the schema plan closely.",
-      "[rail] Automated check completed"
-    ]
-    |> Enum.each(&Runs.append_run_event(engineer, &1))
+    Enum.each(
+      [
+        "[human] Please implement the OAuth callback handler",
+        "[run] Runner started execution",
+        "I will start by reviewing the router.",
+        "[tool read_file] lib/rail_web/router.ex",
+        "[tool read_file] lib/rail_web/user_auth.ex",
+        "[handoff ← #{architect.role_id}] Ready for engineer implementation",
+        "Follow the schema plan closely.",
+        "[rail] Automated check completed"
+      ],
+      &Runs.append_run_event(engineer, &1)
+    )
 
     html =
       render_component(RunConversation,

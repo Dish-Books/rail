@@ -175,7 +175,7 @@ defmodule RailWeb.Hooks.NavHook do
       else
         socket = assign(socket, :capture_submitting, true)
 
-        case Issues.capture_issue(scope, project, ask, priority: priority) do
+        case Issues.create_issue(project, %{description: ask, priority: priority}) do
           {:ok, _issue} ->
             socket =
               socket

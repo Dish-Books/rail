@@ -30,19 +30,20 @@ defmodule Rail.Issues.Schemas.Issue do
   end
 
   @cast_fields [
-    :owner_user_id,
+    :branch_name,
+    :description,
+    :estimate,
     :external_id,
     :identifier,
-    :title,
-    :description,
-    :priority,
-    :estimate,
-    :state,
-    :state_name,
-    :branch_name,
-    :url,
     :linear_created_at,
-    :linear_updated_at
+    :linear_updated_at,
+    :owner_user_id,
+    :priority,
+    :project_id,
+    :state_name,
+    :state,
+    :title,
+    :url
   ]
 
   @required_fields [
@@ -53,33 +54,15 @@ defmodule Rail.Issues.Schemas.Issue do
     :state
   ]
 
-  def changeset(issue, attrs, project_id \\ nil) do
+  def changeset(issue, attrs) do
     issue
     |> cast(attrs, @cast_fields)
-    |> maybe_put_project_id(project_id)
     |> validate_required(@required_fields)
     |> unique_constraint(:external_id)
     |> foreign_key_constraint(:project_id)
     |> foreign_key_constraint(:owner_user_id)
     |> sync_to_linear()
   end
-
-  # Every write goes up to Linear, so no caller can forget to say so. This runs
-  # inside the write's own transaction, which is what makes the job and the row
-  # land together or not at all. An insert has nothing to sync back: the ticket
-  # is opened in Linear first and the row is what came back from it.
-  defp sync_to_linear(%Ecto.Changeset{data: %__MODULE__{id: id}, changes: changes} = changeset)
-       when is_binary(id) and changes != %{} do
-    prepare_changes(changeset, fn prepared ->
-      %{issue_id: id, fields: Map.keys(prepared.changes)}
-      |> SyncIssue.new()
-      |> Oban.insert!()
-
-      prepared
-    end)
-  end
-
-  defp sync_to_linear(%Ecto.Changeset{} = changeset), do: changeset
 
   def priorities, do: @priorities
   def states, do: @states
@@ -139,6 +122,20 @@ defmodule Rail.Issues.Schemas.Issue do
 
   def cast_state(_other), do: :error
 
-  defp maybe_put_project_id(changeset, nil), do: changeset
-  defp maybe_put_project_id(changeset, project_id), do: put_change(changeset, :project_id, project_id)
+  # Every write goes up to Linear, so no caller can forget to say so. This runs
+  # inside the write's own transaction, which is what makes the job and the row
+  # land together or not at all. An insert has nothing to sync back: the ticket
+  # is opened in Linear first and the row is what came back from it.
+  defp sync_to_linear(%Ecto.Changeset{data: %__MODULE__{id: id}, changes: changes} = changeset)
+       when is_binary(id) and changes != %{} do
+    prepare_changes(changeset, fn prepared ->
+      %{issue_id: id, fields: Map.keys(prepared.changes)}
+      |> SyncIssue.new()
+      |> Oban.insert!()
+
+      prepared
+    end)
+  end
+
+  defp sync_to_linear(%Ecto.Changeset{} = changeset), do: changeset
 end

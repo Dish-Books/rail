@@ -50,9 +50,9 @@ defmodule Rail.Issues.Actions.ArchiveIssueTest do
       "updatedAt" => "2026-09-01T10:00:00.000Z"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Archivable Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Archivable Issue"})
 
-    {:ok, issue} = Issues.update_issue(scope, issue, %{state: :in_progress, state_name: "In Progress"})
+    {:ok, issue} = Issues.update_issue(issue, %{state: :in_progress, state_name: "In Progress"})
 
     LinearMock.mock_update_issue_success(%{
       "id" => "lin_arc_1",
@@ -67,7 +67,7 @@ defmodule Rail.Issues.Actions.ArchiveIssueTest do
     })
 
     assert {:ok, %Issue{state: :canceled, state_name: "Canceled"}} =
-             Issues.archive_issue(scope, issue)
+             Issues.archive_issue(issue)
   end
 
   test "archive_issue/2 works with user scope and atom keyed linear_state_ids", %{workspace: workspace} do
@@ -96,7 +96,7 @@ defmodule Rail.Issues.Actions.ArchiveIssueTest do
       "updatedAt" => "2026-09-01T10:00:00.000Z"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "User Archivable Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "User Archivable Issue"})
 
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -105,12 +105,11 @@ defmodule Rail.Issues.Actions.ArchiveIssueTest do
         email: "archive_user@example.com"
       })
 
-    {:ok, user} =
-      Users.link_linear(user, %{
-        access_token: "lin_arc_user_token",
-        refresh_token: "lin_arc_user_refresh",
-        expires_in: 3600
-      })
+    Users.link_linear(user, %{
+      access_token: "lin_arc_user_token",
+      refresh_token: "lin_arc_user_refresh",
+      expires_in: 3600
+    })
 
     LinearMock.mock_update_issue_success(%{
       "id" => "lin_arc_user",
@@ -124,10 +123,8 @@ defmodule Rail.Issues.Actions.ArchiveIssueTest do
       "updatedAt" => "2026-09-02T12:00:00.000Z"
     })
 
-    scope = Scope.for_user(user)
-
     assert {:ok, %Issue{state: :canceled, state_name: "Canceled"}} =
-             Issues.archive_issue(scope, issue)
+             Issues.archive_issue(issue)
   end
 
   test "archive_issue/2 returns error on Linear mutation failure", %{workspace: workspace} do
@@ -158,16 +155,11 @@ defmodule Rail.Issues.Actions.ArchiveIssueTest do
       "updatedAt" => "2026-09-01T10:00:00.000Z"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Failing Archive Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Failing Archive Issue"})
 
     LinearMock.mock_mutation_failure("issueUpdate")
 
     assert {:error, {:linear_mutation_failed, "issueUpdate"}} =
-             Issues.archive_issue(scope, issue)
-  end
-
-  test "archive_issue/2 returns :not_authorized for nil scope" do
-    issue = %Issue{project_id: "prj_1", external_id: "lin_1"}
-    assert {:error, :not_authorized} = Issues.archive_issue(nil, issue)
+             Issues.archive_issue(issue)
   end
 end

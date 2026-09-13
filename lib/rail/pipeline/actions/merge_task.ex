@@ -53,7 +53,7 @@ defmodule Rail.Pipeline.Actions.MergeTask do
 
           case execute_merge_with_verification(project, task, token, merge_opts) do
             :ok ->
-              finalize_merge(scope, project, task, token, opts)
+              finalize_merge(project, task, token, opts)
 
             {:error, reason} ->
               handle_merge_failure(task, reason)
@@ -78,14 +78,14 @@ defmodule Rail.Pipeline.Actions.MergeTask do
     end
   end
 
-  defp finalize_merge(scope, project, task, token, opts) do
+  defp finalize_merge(project, task, token, opts) do
     _branch_res = GitHub.delete_remote_branch(project.github_repo, task.worktree_name, token, opts)
 
     if is_binary(project.clone_path) do
       _wt_res = Git.remove_worktree(project.clone_path, task.worktree_path)
     end
 
-    maybe_transition_linear_issue(scope, project, task)
+    maybe_transition_linear_issue(project, task)
 
     attrs = %{
       stage: :merged,
@@ -97,21 +97,14 @@ defmodule Rail.Pipeline.Actions.MergeTask do
     |> Repo.update()
   end
 
-  defp maybe_transition_linear_issue(scope, project, %Task{issue_id: issue_id}) when is_binary(issue_id) do
+  defp maybe_transition_linear_issue(project, %Task{issue_id: issue_id}) when is_binary(issue_id) do
     %Issue{} = issue = Repo.get!(Issue, issue_id)
     owner_user = issue.owner_user_id && Repo.get(User, issue.owner_user_id)
-    effective_scope = scope || Scope.for_system()
-    _issue_res = Issues.move_state(effective_scope, project, issue, :done, owner_user)
+    _issue_res = Issues.move_state(project, issue, :done, owner_user)
   end
 
-  defp maybe_transition_linear_issue(_scope, _project, _task), do: :ok
+  defp maybe_transition_linear_issue(_project, _task), do: :ok
 
   # The failure belongs to whoever asked for the merge, not to the task.
-  defp handle_merge_failure(%Task{}, reason) do
-    {:error, "Failed to merge pull request: #{format_reason(reason)}"}
-  end
-
-  defp format_reason({:github_api_error, _status, %{"message" => msg}}), do: msg
-  defp format_reason({:github_api_error, status, msg}) when is_binary(msg), do: "#{status} #{msg}"
-  defp format_reason(reason), do: inspect(reason)
+  defp handle_merge_failure(%Task{}, reason), do: {:error, reason}
 end

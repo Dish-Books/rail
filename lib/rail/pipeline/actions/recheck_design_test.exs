@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.RecheckDesignTest do
   use Rail.DataCase, async: true
 
-  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
+  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1]
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Design
@@ -69,7 +69,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
       "title" => "Recheck Design Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Recheck Design Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Recheck Design Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -139,9 +139,8 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     mock_design_uploads(2)
 
     assert {:ok, %Task{id: task_id, stage: :design}} =
-             Pipeline.recheck_design(task, url_probe: fn _uri -> true end)
+             Pipeline.recheck_design(run, url_probe: fn _uri -> true end)
 
-    assert is_nil(Repo.get!(Task, task_id).error)
     assert %Run{stage_outcome: :done} = Repo.reload!(run)
 
     design = Repo.one(from d in Design, where: d.task_id == ^task_id, order_by: [desc: d.version], limit: 1)
@@ -209,11 +208,19 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     mock_design_uploads(4)
 
-    assert {:ok, %Task{}} =
-             Pipeline.recheck_design(task, url_probe: fn _uri -> true end)
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:design].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
 
     assert {:ok, %Task{}} =
-             Pipeline.recheck_design(task, url_probe: fn _uri -> true end)
+             Pipeline.recheck_design(run, url_probe: fn _uri -> true end)
+
+    assert {:ok, %Task{}} =
+             Pipeline.recheck_design(run, url_probe: fn _uri -> true end)
   end
 
   test "says why a design still does not hold up, and leaves the stage failed", %{task: task, roles: roles} do
@@ -268,10 +275,9 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         started_at: DateTime.utc_now()
       })
 
-    assert {:error, reason} = Pipeline.recheck_design(task)
+    assert {:error, reason} = Pipeline.recheck_design(run)
     assert reason =~ "absolute https URL"
 
-    assert Repo.get!(Task, task.id).error =~ "absolute https URL"
     assert %Run{stage_outcome: :in_progress, error: design_error} = Repo.reload!(run)
     assert design_error =~ "absolute https URL"
 
@@ -285,7 +291,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
   test "returns error when designer is actively running", %{task: task, roles: roles} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :design})
 
-    {:ok, _running} =
+    {:ok, run} =
       Runs.create_run(%{
         task_id: task.id,
         role_id: roles[:design].id,
@@ -294,20 +300,28 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
       })
 
     assert {:error, "The Designer is still running; wait for it to finish."} =
-             Pipeline.recheck_design(task)
+             Pipeline.recheck_design(run)
   end
 
-  test "noops and returns ok when task stage is not design", %{task: task} do
+  test "noops and returns ok when task stage is not design", %{task: task, roles: roles} do
     {:ok, task} =
       Pipeline.update_task(task, %{
         stage: :engineer
       })
 
-    assert {:ok, %Task{stage: :engineer}} = Pipeline.recheck_design(task)
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:design].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    assert {:ok, %Task{stage: :engineer}} = Pipeline.recheck_design(run)
   end
 
   test "fails when manifest is missing pickedKey after a pick", %{task: task, roles: roles} do
-    {:ok, _design_run} =
+    {:ok, run} =
       Runs.create_run(%{
         task_id: task.id,
         role_id: roles[:design].id,
@@ -361,17 +375,17 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     # The human picks dir-1, so the manifest must keep that choice.
     {:ok, _picked} = design |> Design.changeset(%{picked_key: "dir-1"}) |> Repo.update()
 
-    {:ok, task} =
+    {:ok, _task} =
       Pipeline.update_task(task, %{stage: :design})
 
     mock_design_uploads(2)
 
-    assert {:error, reason} = Pipeline.recheck_design(task, url_probe: fn _uri -> true end)
+    assert {:error, reason} = Pipeline.recheck_design(run, url_probe: fn _uri -> true end)
     assert reason =~ "Design manifest is missing pickedKey (expected \"dir-1\")."
   end
 
   test "fails when manifest pickedKey does not match chosen direction", %{task: task, roles: roles} do
-    {:ok, _design_run} =
+    {:ok, run} =
       Runs.create_run(%{
         task_id: task.id,
         role_id: roles[:design].id,
@@ -425,7 +439,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     # The human picks dir-1, then the agent rewrites the manifest with a different pick.
     {:ok, _picked} = design |> Design.changeset(%{picked_key: "dir-1"}) |> Repo.update()
 
-    {:ok, task} =
+    {:ok, _task} =
       Pipeline.update_task(task, %{stage: :design})
 
     manifest_path = Path.join(design_dir, "manifest.json")
@@ -434,11 +448,11 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     mock_design_uploads(2)
 
-    assert {:error, reason} = Pipeline.recheck_design(task, url_probe: fn _uri -> true end)
+    assert {:error, reason} = Pipeline.recheck_design(run, url_probe: fn _uri -> true end)
     assert reason =~ "does not match chosen direction (dir-1)"
   end
 
-  test "fails when manifest does not contain chosen direction", %{task: task} do
+  test "fails when manifest does not contain chosen direction", %{task: task, roles: roles} do
     directions = [
       %{
         "key" => "dir-other",
@@ -479,7 +493,15 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     mock_design_uploads(2)
 
-    assert {:error, reason} = Pipeline.recheck_design(task, url_probe: fn _uri -> true end)
+    {:ok, run} =
+      Runs.create_run(%{
+        task_id: task.id,
+        role_id: roles[:design].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    assert {:error, reason} = Pipeline.recheck_design(run, url_probe: fn _uri -> true end)
     assert reason =~ "Manifest missing picked direction: dir-1"
   end
 
@@ -568,7 +590,7 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
     assert is_nil(Pipeline.design_manifest_stamp(root_dir))
   end
 
-  test "reads the manifest from the task's scratch directory and nowhere else", %{task: task} do
+  test "reads the manifest from the task's scratch directory and nowhere else", %{task: task, roles: roles} do
     {:ok, _workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Recheck Design Workspace 13706",
@@ -610,8 +632,16 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
 
     mock_design_uploads(1)
 
+    {:ok, scratch_run} =
+      Runs.create_run(%{
+        task_id: scratch_task.id,
+        role_id: roles[:design].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
     assert {:ok, %Task{}} =
-             Pipeline.recheck_design(scratch_task, url_probe: fn _uri -> true end)
+             Pipeline.recheck_design(scratch_run, url_probe: fn _uri -> true end)
 
     # A manifest written into the worktree instead is a design Rail never saw.
     {:ok, elsewhere_task} =
@@ -619,7 +649,8 @@ defmodule Rail.Pipeline.Actions.RecheckDesignTest do
         scratch_path: Path.join("/tmp", "rail_design_empty_#{System.unique_integer([:positive])}")
       })
 
-    assert {:error, err} = Pipeline.recheck_design(elsewhere_task, url_probe: fn _uri -> true end)
+    _elsewhere = elsewhere_task
+    assert {:error, err} = Pipeline.recheck_design(scratch_run, url_probe: fn _uri -> true end)
     assert err =~ "No design manifest found"
   end
 end

@@ -18,10 +18,11 @@ defmodule Rail.Issues.Schemas.IssueTest do
       branch_name: "fix/login-crash",
       url: "https://linear.app/issue/ENG-101",
       linear_created_at: ~U[2026-09-01 10:00:00.000000Z],
-      linear_updated_at: ~U[2026-09-01 11:00:00.000000Z]
+      linear_updated_at: ~U[2026-09-01 11:00:00.000000Z],
+      project_id: "prj_test_123"
     }
 
-    changeset = Issue.changeset(%Issue{}, attrs, "prj_test_123")
+    changeset = Issue.changeset(%Issue{}, attrs)
     assert changeset.valid?
     assert get_field(changeset, :project_id) == "prj_test_123"
     assert get_field(changeset, :state) == :in_progress
@@ -41,9 +42,9 @@ defmodule Rail.Issues.Schemas.IssueTest do
     assert errors[:state] == ["can't be blank"]
   end
 
-  test "project_id in attrs is not castable" do
+  test "project_id is cast from attrs like any other field" do
     attrs = %{
-      project_id: "prj_untrusted",
+      project_id: "prj_from_attrs",
       external_id: "lin_123",
       identifier: "ENG-101",
       title: "Fix crash on login",
@@ -51,8 +52,8 @@ defmodule Rail.Issues.Schemas.IssueTest do
     }
 
     changeset = Issue.changeset(%Issue{}, attrs)
-    refute changeset.valid?
-    assert errors_on(changeset)[:project_id] == ["can't be blank"]
+    assert changeset.valid?
+    assert get_field(changeset, :project_id) == "prj_from_attrs"
   end
 
   test "persists to database with valid foreign key and enforces unique external_id" do
@@ -71,15 +72,16 @@ defmodule Rail.Issues.Schemas.IssueTest do
       external_id: "lin_unique_test_1",
       identifier: "ENG-201",
       title: "Database constraint test",
-      state: :triage
+      state: :triage,
+      project_id: project_id
     }
 
-    changeset = Issue.changeset(%Issue{}, issue_attrs, project_id)
+    changeset = Issue.changeset(%Issue{}, issue_attrs)
 
     assert {:ok, %Issue{id: "iss_" <> _id, project_id: ^project_id}} =
              Repo.insert(changeset)
 
-    duplicate_changeset = Issue.changeset(%Issue{}, issue_attrs, project_id)
+    duplicate_changeset = Issue.changeset(%Issue{}, issue_attrs)
     assert {:error, failed_changeset} = Repo.insert(duplicate_changeset)
     assert errors_on(failed_changeset)[:external_id] == ["has already been taken"]
   end
@@ -90,13 +92,14 @@ defmodule Rail.Issues.Schemas.IssueTest do
       identifier: "ENG-999",
       title: "Invalid enums",
       priority: "invalid_priority",
-      state: "invalid_state"
+      state: "invalid_state",
+      project_id: "prj_123"
     }
 
     assert %{
              priority: ["is invalid"],
              state: ["is invalid"]
-           } = errors_on(Issue.changeset(%Issue{}, attrs, "prj_123"))
+           } = errors_on(Issue.changeset(%Issue{}, attrs))
   end
 
   describe "enums, labels, and helper functions" do

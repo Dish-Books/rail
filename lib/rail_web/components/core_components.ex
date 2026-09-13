@@ -9,7 +9,6 @@ defmodule RailWeb.CoreComponents do
   defdelegate dispatch_banner(assigns), to: RailWeb.Components.DispatchBanner
   defdelegate empty_state(assigns), to: RailWeb.Components.EmptyState
   defdelegate question_card(assigns), to: RailWeb.Components.QuestionCard
-  defdelegate approval_card(assigns), to: RailWeb.Components.ApprovalCard
   defdelegate compact_waiting_strip(assigns), to: RailWeb.Components.CompactWaitingStrip
   defdelegate with_agent_section(assigns), to: RailWeb.Components.WithAgentSection
   defdelegate role_roster(assigns), to: RailWeb.Components.RoleRoster
@@ -23,7 +22,6 @@ defmodule RailWeb.CoreComponents do
   defdelegate task_action_modals(assigns), to: RailWeb.Components.TaskActionModals
   defdelegate markdown(assigns), to: RailWeb.Components.Markdown
   defdelegate answer_field(assigns), to: RailWeb.Components.AnswerField
-  defdelegate conversation_tab(assigns), to: RailWeb.Components.ConversationTab
   defdelegate diff_pane(assigns), to: RailWeb.Components.DiffPane
   defdelegate diff_stat(assigns), to: RailWeb.Components.DiffStat
   defdelegate demo_panel(assigns), to: RailWeb.Components.DemoPanel

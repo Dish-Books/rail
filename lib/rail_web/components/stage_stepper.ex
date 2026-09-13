@@ -103,5 +103,4 @@ defmodule RailWeb.Components.StageStepper do
   defp stage_chip_classes(_is_current, _is_done, _task, _run) do
     "bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600"
   end
-
 end

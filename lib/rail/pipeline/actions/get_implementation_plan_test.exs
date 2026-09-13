@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Actions.GetPlanTest do
       "title" => "Get Plan Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Get Plan Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Get Plan Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

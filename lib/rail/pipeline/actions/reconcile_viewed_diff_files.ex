@@ -30,7 +30,6 @@ defmodule Rail.Pipeline.Actions.ReconcileViewedDiffFiles do
         |> Task.changeset(%{viewed_diff_files: reconciled})
         |> Repo.update()
 
-
       {:ok, updated_task}
     end
   end

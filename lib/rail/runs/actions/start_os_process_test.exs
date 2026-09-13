@@ -1,5 +1,5 @@
 defmodule Rail.Runs.Actions.StartOsProcessTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
   alias Rail.Backends
   alias Rail.Backends.Schemas.Backend
@@ -13,13 +13,8 @@ defmodule Rail.Runs.Actions.StartOsProcessTest do
   alias Rail.Runs.Schemas.Run
   alias Rail.Tools
 
-  setup do
-    # These tests are about the spawn itself, so they turn dispatch back on.
-    previous = Application.get_env(:rail, :no_dispatch)
-    Application.put_env(:rail, :no_dispatch, false)
-    on_exit(fn -> Application.put_env(:rail, :no_dispatch, previous) end)
-    :ok
-  end
+  # These tests are about the spawn itself, so they run real children.
+  @moduletag :real_spawn
 
   setup do
     scope = system_scope()

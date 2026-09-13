@@ -64,7 +64,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
       "title" => "List Questions Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "List Questions Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "List Questions Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -106,7 +106,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
       "title" => "Second Task"
     })
 
-    {:ok, issue2} = Issues.capture_issue(system_scope(), project, "Second Task")
+    {:ok, issue2} = Issues.create_issue(project, %{description: "Second Task"})
     {:ok, task1b} = Pipeline.create_task(issue2, :product)
 
     {:ok, run1b} =
@@ -139,7 +139,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
       "title" => "Other Project Task"
     })
 
-    {:ok, issue3} = Issues.capture_issue(system_scope(), project2, "Other Project Task")
+    {:ok, issue3} = Issues.create_issue(project2, %{description: "Other Project Task"})
     {:ok, task2} = Pipeline.create_task(issue3, :product)
 
     {:ok, role2} =
@@ -211,7 +211,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
       "title" => "Pending Question Task"
     })
 
-    {:ok, issue_pending} = Issues.capture_issue(system_scope(), project, "Pending Question Task")
+    {:ok, issue_pending} = Issues.create_issue(project, %{description: "Pending Question Task"})
     {:ok, pending_task} = Pipeline.create_task(issue_pending, :product)
 
     {:ok, pending_run} =

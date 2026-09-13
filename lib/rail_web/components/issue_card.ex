@@ -4,15 +4,15 @@ defmodule RailWeb.Components.IssueCard do
 
   import RailWeb.CoreComponents, only: [icon: 1, project_badge: 1]
 
-  alias Rail.Domain.Formatters
   alias Rail.Issues.Schemas.Issue
+  alias RailWeb.Components.StageLabel
 
   attr :issue, :map, required: true
   attr :task, :map, default: nil
+  attr :run, :any, default: nil
 
   def issue_card(assigns) do
-    body = card_body_for(assigns.issue)
-    assigns = assign(assigns, :body, body)
+    assigns = assign(assigns, :body, body_of(assigns.issue))
 
     ~H"""
     <div
@@ -106,7 +106,7 @@ defmodule RailWeb.Components.IssueCard do
             data-qa={"task-link-#{@issue.id}"}
             class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-200 dark:bg-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-xs font-semibold transition-colors"
           >
-            <span>{Formatters.stage_label(@task)}</span>
+            <span>{StageLabel.stage_label(@task, @run)}</span>
             <.icon name="pi-arrow-square-out" class="h-3.5 w-3.5" />
           </.link>
 
@@ -141,25 +141,6 @@ defmodule RailWeb.Components.IssueCard do
     """
   end
 
-  def card_body_for(issue) do
-    title = String.trim(Map.get(issue, :title) || "")
-    desc = Map.get(issue, :description) || ""
-
-    cond do
-      desc == "" ->
-        ""
-
-      title != "" and String.starts_with?(desc, title) ->
-        case String.split(desc, ~r/\r?\n/, parts: 2) do
-          [_first_line, rest] -> String.trim(rest)
-          [_single_line] -> ""
-        end
-
-      true ->
-        desc
-    end
-  end
-
   def worktree_name(issue) do
     cond do
       is_binary(issue.branch_name) and issue.branch_name != "" ->
@@ -188,4 +169,24 @@ defmodule RailWeb.Components.IssueCard do
   defp priority_badge_class(:medium), do: "border-blue-500 text-blue-500 bg-blue-500/10"
   defp priority_badge_class(:low), do: "border-slate-400 text-slate-400 bg-slate-400/10"
   defp priority_badge_class(_other), do: "border-blue-500 text-blue-500 bg-blue-500/10"
+
+  # The title is the first line of the ask, so a body that opens with it would
+  # read the title twice.
+  defp body_of(issue) do
+    title = String.trim(issue.title || "")
+    description = issue.description || ""
+
+    cond do
+      description == "" -> ""
+      title != "" and String.starts_with?(description, title) -> without_first_line(description)
+      true -> description
+    end
+  end
+
+  defp without_first_line(description) do
+    case String.split(description, ~r/\r?\n/, parts: 2) do
+      [_first_line, rest] -> String.trim(rest)
+      [_single_line] -> ""
+    end
+  end
 end

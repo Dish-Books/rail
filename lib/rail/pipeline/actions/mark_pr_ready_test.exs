@@ -64,7 +64,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
       "title" => "Mark PR Ready Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Mark PR Ready Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Mark PR Ready Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -72,8 +72,6 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
   end
 
   test "returns :no_pr and records error when task has no pr_number", %{project: _project, task: _task} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Mark PR Ready Project 8902",
@@ -98,11 +96,11 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
       "title" => "Task 8903"
     })
 
-    {:ok, issue_8903} = Issues.capture_issue(system_scope(), project, "Task 8903")
+    {:ok, issue_8903} = Issues.create_issue(project, %{description: "Task 8903"})
 
     {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8903, :product)
 
-    {:ok, %Task{id: task_id} = task} =
+    {:ok, %Task{} = task} =
       Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: nil,
@@ -110,16 +108,9 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
       })
 
     assert {:error, :no_pr} = Pipeline.mark_pr_ready(task)
-
-    reloaded = Repo.get!(Task, task_id)
-    assert reloaded.error == "This task has no pull request to mark ready."
-
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :mark_pr_ready_failed}}
   end
 
   test "promotes draft PR, clears error, and triggers mergeability refresh", %{project: _project, task: _task} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Mark PR Ready Project 8904",
@@ -144,11 +135,11 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
       "title" => "Task 8906"
     })
 
-    {:ok, issue_8906} = Issues.capture_issue(system_scope(), project, "Task 8906")
+    {:ok, issue_8906} = Issues.create_issue(project, %{description: "Task 8906"})
 
     {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8906, :product)
 
-    {:ok, %Task{id: task_id} = task} =
+    {:ok, %Task{} = task} =
       Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: 123,
@@ -163,14 +154,9 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
 
     assert {:ok, %Task{pr_is_draft: false, mergeability: :mergeable}} =
              Pipeline.mark_pr_ready(task)
-
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :pr_marked_ready}}
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :mergeability_refreshed}}
   end
 
   test "records error and leaves draft status true when GitHub mark ready fails", %{project: _project, task: _task} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Mark PR Ready Project 8907",
@@ -195,7 +181,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
       "title" => "Task 8908"
     })
 
-    {:ok, issue_8908} = Issues.capture_issue(system_scope(), project, "Task 8908")
+    {:ok, issue_8908} = Issues.create_issue(project, %{description: "Task 8908"})
 
     {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8908, :product)
 
@@ -213,9 +199,6 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
 
     reloaded = Repo.get!(Task, task_id)
     assert reloaded.pr_is_draft == true
-    assert reloaded.error == "Failed to mark pull request ready: Draft cannot be converted"
-
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :mark_pr_ready_failed}}
   end
 
   test "records error when GitHub returns binary error message", %{project: _project, task: _task} do
@@ -243,7 +226,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
       "title" => "Task 8910"
     })
 
-    {:ok, issue_8910} = Issues.capture_issue(system_scope(), project, "Task 8910")
+    {:ok, issue_8910} = Issues.create_issue(project, %{description: "Task 8910"})
 
     {:ok, task} = Pipeline.create_task(issue_8910, :product)
 
@@ -258,9 +241,6 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
 
     assert {:error, {:github_api_error, 404, "Repository not found"}} =
              Pipeline.mark_pr_ready(task, token: "tok_test")
-
-    reloaded = Repo.get!(Task, task.id)
-    assert reloaded.error == "Failed to mark pull request ready: 404 Repository not found"
   end
 
   test "records error when GitHub returns graphql error", %{project: _project, task: _task} do
@@ -288,7 +268,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
       "title" => "Task 8912"
     })
 
-    {:ok, issue_8912} = Issues.capture_issue(system_scope(), project, "Task 8912")
+    {:ok, issue_8912} = Issues.create_issue(project, %{description: "Task 8912"})
 
     {:ok, task} = Pipeline.create_task(issue_8912, :product)
 
@@ -303,9 +283,6 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
 
     assert {:error, {:github_graphql_error, _errors}} =
              Pipeline.mark_pr_ready(task, token: "tok_test")
-
-    reloaded = Repo.get!(Task, task.id)
-    assert reloaded.error =~ "Failed to mark pull request ready: {:github_graphql_error,"
   end
 
   test "returns error when project is not found", %{project: _project, task: _task} do
@@ -333,7 +310,7 @@ defmodule Rail.Pipeline.Actions.MarkPrReadyTest do
       "title" => "Task 8914"
     })
 
-    {:ok, issue_8914} = Issues.capture_issue(system_scope(), project, "Task 8914")
+    {:ok, issue_8914} = Issues.create_issue(project, %{description: "Task 8914"})
 
     {:ok, task} = Pipeline.create_task(issue_8914, :product)
 

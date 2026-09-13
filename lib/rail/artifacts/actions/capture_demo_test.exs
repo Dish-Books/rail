@@ -52,7 +52,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
       "title" => "Capture Demo Issue 12205"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Capture Demo Issue 12205")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Capture Demo Issue 12205"})
 
     on_exit(fn -> File.rm_rf(dir) end)
     {:ok, dir: dir, project: project, issue: issue, ws: ws}
@@ -292,7 +292,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemoTest do
         "title" => "Task 12202"
       })
 
-      {:ok, issue_12202} = Issues.capture_issue(system_scope(), project, "Task 12202")
+      {:ok, issue_12202} = Issues.create_issue(project, %{description: "Task 12202"})
 
       {:ok, task} = Pipeline.create_task(issue_12202, :product)
 

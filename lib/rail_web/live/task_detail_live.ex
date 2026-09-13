@@ -73,11 +73,6 @@ defmodule RailWeb.TaskDetailLive do
       if is_nil(socket.assigns[:task]) or socket.assigns[:task_id] != task_id do
         case Pipeline.get_task(task_id) do
           {:ok, task} ->
-            if connected?(socket) do
-              Phoenix.PubSub.subscribe(Rail.PubSub, "tasks:#{task.id}")
-              Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-            end
-
             apply_task_data(socket, task)
 
           {:error, _reason} ->
@@ -346,7 +341,9 @@ defmodule RailWeb.TaskDetailLive do
               data-qa="task_error_card"
               class="p-4 rounded-xl bg-red-100 dark:bg-red-900 border border-red-600 dark:border-red-500 text-red-800 dark:text-red-200"
             >
-              <p class="text-xs font-mono whitespace-pre-wrap leading-relaxed">{@selected_run.error}</p>
+              <p class="text-xs font-mono whitespace-pre-wrap leading-relaxed">
+                {@selected_run.error}
+              </p>
             </div>
 
             <!-- Task Actions Matrix -->
@@ -618,14 +615,6 @@ defmodule RailWeb.TaskDetailLive do
     {:noreply, socket}
   end
 
-
-
-
-
-
-
-
-
   def handle_event("refresh_diff", _params, socket) do
     {:noreply, do_load_diff(socket)}
   end
@@ -814,9 +803,6 @@ defmodule RailWeb.TaskDetailLive do
 
   def handle_event(_event, _params, socket), do: {:noreply, socket}
 
-
-
-
   # The conversation owns the log; the page only owns the subscription.
   def handle_info({:run_events, run_id, events}, socket) do
     if socket.assigns[:subscribed_run_id] == run_id do
@@ -909,15 +895,6 @@ defmodule RailWeb.TaskDetailLive do
     {:noreply, assign(socket, :active_modal, %{type: :prompt_send_back_to_engineer})}
   end
 
-  defp handle_action_click("decline_demo", _params, socket) do
-    {:noreply, assign(socket, :active_modal, %{type: :prompt_decline_demo})}
-  end
-
-  defp handle_action_click("skip", _params, socket) do
-    task = socket.assigns.task
-    execute_action(socket, :skip, fn -> Pipeline.skip_to_ready_to_merge(task) end)
-  end
-
   defp handle_action_click("rerecord_demo", _params, socket) do
     run = socket.assigns[:selected_run]
     execute_action(socket, :rerecord_demo, fn -> Pipeline.rerecord_demo(run) end)
@@ -983,18 +960,6 @@ defmodule RailWeb.TaskDetailLive do
     end)
   end
 
-  defp handle_submit_modal("decline_demo", params, socket) do
-    reason = params["reason"]
-    trimmed = if is_binary(reason) and String.trim(reason) != "", do: String.trim(reason), else: "Declined by human"
-    task = socket.assigns.task
-
-    socket
-    |> assign(:active_modal, nil)
-    |> execute_action(:decline_demo, fn ->
-      Pipeline.decline_demo(task, trimmed)
-    end)
-  end
-
   defp handle_submit_modal(_action, _params, socket), do: {:noreply, socket}
 
   defp execute_action(socket, kind, work_fn, opts \\ []) do
@@ -1015,9 +980,6 @@ defmodule RailWeb.TaskDetailLive do
       {:noreply, socket}
     end
   end
-
-
-
 
   defp task_busy?(task, running_action) do
     running_action != nil or (is_struct(task) and Task.running?(task))
@@ -1155,10 +1117,17 @@ defmodule RailWeb.TaskDetailLive do
   defp question_id(%{id: id}), do: id
   defp question_id(_none), do: nil
 
+  # The diff is read off disk, so it waits until the tab asking for it is open.
+  defp maybe_load_diff(socket, :diff) do
+    task = socket.assigns.task
 
-
-  # `run:<id>` carries the run's log lines and the finish of its OS process.
-
+    if task && Task.worktree_present?(task) && socket.assigns.file_diffs == [] &&
+         not socket.assigns.loading_diff do
+      do_load_diff(socket)
+    else
+      socket
+    end
+  end
 
   defp maybe_load_diff(socket, _other_tab), do: socket
 

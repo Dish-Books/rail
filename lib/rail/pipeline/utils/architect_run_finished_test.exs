@@ -68,7 +68,7 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinishedTest do
       "title" => "Settle Architect Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Settle Architect Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Settle Architect Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

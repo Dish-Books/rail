@@ -5,11 +5,10 @@ defmodule Rail.Backends.Actions.RefreshUsageTest do
   alias Rail.Backends.Schemas.CliAccount
   alias Rail.Scope
 
-  test "refresh_usage/2 probes backends, upserts into cli_accounts, and broadcasts on PubSub" do
+  test "refresh_usage/2 probes backends and upserts into cli_accounts" do
     test_node = "node-refresh-#{System.unique_integer([:positive])}"
 
     # Subscribe to PubSub
-    Phoenix.PubSub.subscribe(Rail.PubSub, "backends:usage_updated")
 
     runner = fn exe, _args, _opts ->
       case exe do
@@ -53,7 +52,6 @@ defmodule Rail.Backends.Actions.RefreshUsageTest do
             ]} = Backends.refresh_usage(refresh_opts)
 
     # PubSub broadcast received
-    assert_receive {:usage_updated, [%CliAccount{id: ^claude_id}, %CliAccount{id: ^agy_id}]}
 
     # Refreshing a second time updates existing records rather than creating new ones
     assert {:ok, [%CliAccount{id: ^claude_id}, %CliAccount{id: ^agy_id}]} =

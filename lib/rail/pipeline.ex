@@ -25,32 +25,29 @@ defmodule Rail.Pipeline do
   defdelegate parse_stage_verdict(run), to: Actions.ParseStageVerdict
 
   defdelegate enter_stage(task, stage, opts \\ []), to: Actions.EnterStage
-  defdelegate approve_product_task(task), to: Actions.ApproveProductTask
+  defdelegate approve_product_plan(run, opts \\ []), to: Actions.ApproveProductPlan
   defdelegate start_product_run(task), to: Actions.StartProductRun
-  defdelegate start_design_task(task), to: Actions.StartDesignTask
 
   defdelegate create_task(issue, stage), to: Actions.CreateTask
-  defdelegate list_tasks(project_id, opts \\ []), to: Actions.ListTasks
+  defdelegate list_tasks(opts \\ []), to: Actions.ListTasks
   defdelegate update_task(task, attrs), to: Actions.UpdateTask
   defdelegate get_task(id), to: Actions.GetTask
-  defdelegate get_plan(task), to: Actions.GetPlan
-  defdelegate broadcast_pipeline_changed(meta \\ %{}), to: Actions.BroadcastPipelineChanged
+  defdelegate get_implementation_plan(task), to: Actions.GetImplementationPlan
 
-  defdelegate recheck_design(task, opts \\ []), to: Actions.RecheckDesign
+  defdelegate recheck_design(run, opts \\ []), to: Actions.RecheckDesign
   defdelegate apply_design_manifest(task, opts \\ []), to: Actions.RecheckDesign
   defdelegate design_manifest_stamp(target), to: Actions.RecheckDesign
   defdelegate uses_design?(task, runs \\ []), to: Rail.Pipeline.Schemas.Task
 
-  defdelegate decline_demo(task, note \\ nil), to: Actions.DeclineDemo
-  defdelegate rerecord_demo(task, opts \\ []), to: Actions.RerecordDemo
-  defdelegate can_rerecord_demo?(task), to: Actions.RerecordDemo
+  defdelegate rerecord_demo(run, opts \\ []), to: Actions.RerecordDemo
+  defdelegate can_rerecord_demo?(run), to: Actions.RerecordDemo
   defdelegate refresh_demo_freshness(task, opts \\ []), to: Actions.RefreshDemoFreshness
 
   defdelegate send_back_to_engineer(task, opts \\ []), to: Actions.SendBackToEngineer
-  defdelegate skip_to_ready_to_merge(task), to: Actions.SkipToReadyToMerge
 
   defdelegate register_question(run, question), to: Actions.RegisterQuestion
-  defdelegate answer_questions(task, answers, opts \\ []), to: Actions.AnswerQuestions
+  defdelegate answer_question(question, answer), to: Actions.AnswerQuestion
+  defdelegate send_answers(run), to: Actions.SendAnswers
   defdelegate dismiss_question(question), to: Actions.DismissQuestion
   defdelegate get_question(id), to: Actions.GetQuestion
   defdelegate list_questions(target \\ nil, opts \\ []), to: Actions.ListQuestions

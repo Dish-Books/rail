@@ -310,10 +310,9 @@ defmodule RailWeb.IssuesLive do
     socket = assign(socket, :is_syncing, true)
 
     if project do
-      Issues.sync_issues(scope, project)
+      Issues.sync_issues(project)
     else
-      projects = Projects.list_projects(scope)
-      Enum.each(projects, fn p -> Issues.sync_issues(scope, p) end)
+      scope |> Projects.list_projects() |> Enum.each(&Issues.sync_issues/1)
     end
 
     socket =
@@ -325,9 +324,7 @@ defmodule RailWeb.IssuesLive do
   end
 
   def handle_event("start_product_run", %{"issue_id" => issue_id}, socket) do
-    scope = socket.assigns[:current_scope]
-
-    with {:ok, issue} <- Issues.get_issue(scope, issue_id),
+    with {:ok, issue} <- Issues.get_issue(issue_id),
          {:ok, task} <- Pipeline.create_task(issue, :product) do
       Pipeline.start_product_run(task)
     end
@@ -336,9 +333,7 @@ defmodule RailWeb.IssuesLive do
   end
 
   def handle_event("open_editor", %{"issue_id" => issue_id}, socket) do
-    scope = socket.assigns[:current_scope]
-
-    case Issues.get_issue(scope, issue_id) do
+    case Issues.get_issue(issue_id) do
       {:ok, issue} ->
         socket = assign(socket, :editing_issue, issue)
         {:noreply, socket}
@@ -359,9 +354,7 @@ defmodule RailWeb.IssuesLive do
     if trimmed_title == "" do
       {:noreply, socket}
     else
-      scope = socket.assigns[:current_scope]
-
-      case Issues.get_issue(scope, issue_id) do
+      case Issues.get_issue(issue_id) do
         {:ok, issue} ->
           attrs = %{
             title: trimmed_title,
@@ -390,9 +383,7 @@ defmodule RailWeb.IssuesLive do
   end
 
   def handle_event("open_archive", %{"issue_id" => issue_id}, socket) do
-    scope = socket.assigns[:current_scope]
-
-    case Issues.get_issue(scope, issue_id) do
+    case Issues.get_issue(issue_id) do
       {:ok, issue} ->
         socket = assign(socket, :archiving_issue, issue)
         {:noreply, socket}
@@ -408,11 +399,9 @@ defmodule RailWeb.IssuesLive do
   end
 
   def handle_event("confirm_archive", %{"issue_id" => issue_id}, socket) do
-    scope = socket.assigns[:current_scope]
-
-    case Issues.get_issue(scope, issue_id) do
+    case Issues.get_issue(issue_id) do
       {:ok, issue} ->
-        Issues.archive_issue(scope, issue)
+        Issues.archive_issue(issue)
 
         socket =
           socket
@@ -465,7 +454,6 @@ defmodule RailWeb.IssuesLive do
   end
 
   defp reload_data(socket) do
-    scope = socket.assigns[:current_scope]
     project_id = socket.assigns.current_project_id
     show_finished = socket.assigns.show_finished
 
@@ -473,9 +461,9 @@ defmodule RailWeb.IssuesLive do
 
     all_issues =
       if project_id do
-        Issues.list_issues(scope, Keyword.put(opts, :project_id, project_id))
+        Issues.list_issues(Keyword.put(opts, :project_id, project_id))
       else
-        Issues.list_issues(scope, opts)
+        Issues.list_issues(opts)
       end
 
     tasks = Pipeline.list_tasks(project_id: project_id, preload: [runs: :role])

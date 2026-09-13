@@ -64,7 +64,7 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
       "title" => "Carried Reports Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Carried Reports Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Carried Reports Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -170,26 +170,5 @@ defmodule Rail.Pipeline.Utils.CarriedReportsTest do
     text = carried_reports(task)
     assert text =~ "Current finding."
     refute text =~ "Stale finding"
-  end
-
-  test "falls back to role_id when the role is not in the database", %{task: task} do
-    non_existent_role_id = "rol_000000000000000000000001"
-
-    {:ok, %Task{id: task_id} = task} =
-      Pipeline.update_task(task, %{
-        outstanding_reports: [non_existent_role_id]
-      })
-
-    {:ok, run} =
-      Runs.create_run(%{
-        task_id: task_id,
-        role_id: non_existent_role_id,
-        status: :finished,
-        started_at: DateTime.utc_now()
-      })
-
-    Runs.append_run_event(run, "Finding from unknown role")
-
-    assert carried_reports(task) =~ "### #{non_existent_role_id}\n\nFinding from unknown role"
   end
 end

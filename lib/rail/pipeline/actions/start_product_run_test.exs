@@ -63,7 +63,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
       "title" => "Attachments follow their source document"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Attachments follow their source document")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Attachments follow their source document"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -75,8 +75,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
     issue: issue,
     task: %Task{id: task_id} = task
   } do
-    expect(Runs, :start_os_process, fn %Run{task_id: ^task_id, role_id: ^role_id, status: :running} = run,
-                                       argv ->
+    expect(Runs, :start_os_process, fn %Run{task_id: ^task_id, role_id: ^role_id, status: :running} = run, argv ->
       assert ["-p", prompt, "--model", "claude-3-7-sonnet", "--effort", "high" | _flags] = argv
       assert prompt =~ "tickets/#{issue.identifier}.md"
       assert "--system-prompt" in argv
@@ -113,7 +112,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
       })
 
     {:ok, %Issue{id: issue_id}} =
-      issue |> Issue.changeset(%{owner_user_id: user_id}, issue.project_id) |> Repo.update()
+      issue |> Issue.changeset(%{owner_user_id: user_id}) |> Repo.update()
 
     expect(Runs, :start_os_process, fn %Run{} = run, _argv ->
       {:ok, %OsProcess{task_id: task.id, run: run, task: task}}

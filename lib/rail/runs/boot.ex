@@ -14,6 +14,7 @@ defmodule Rail.Runs.Boot do
   alias Rail.Backends.Schemas.Backend
   alias Rail.Pipeline
   alias Rail.Repo
+  alias Rail.Roles.Schemas.Role
   alias Rail.Runs.FollowerSupervisor
   alias Rail.Runs.Schemas.OsProcess
   alias Rail.Runs.Schemas.Run
@@ -114,9 +115,7 @@ defmodule Rail.Runs.Boot do
         {:already_following, os_process, pid}
 
       [] ->
-        skip_log_lines = (os_process.run && os_process.run.attempt_log_lines) || 0
-
-        case FollowerSupervisor.start_follower(os_process, skip_log_lines: skip_log_lines) do
+        case FollowerSupervisor.start_follower(os_process) do
           {:ok, follower_pid} ->
             allow_sandbox(follower_pid)
             {:adopted_live, os_process, follower_pid}
@@ -129,13 +128,6 @@ defmodule Rail.Runs.Boot do
     end
   end
 
-  # A stream is parsed by the backend that wrote it, so adoption reads the backend off
-  # the role that produced the run rather than guessing.
-  defp backend_for(%Run{role: %{backend: %Backend{} = backend}}), do: backend
-  defp backend_for(%Run{}), do: %Backend{name: :claude}
-
-  defp backend_for(_run), do: %Backend{name: :claude}
-
   # coveralls-ignore-start (test sandbox fallback)
   defp allow_sandbox(pid) do
     if Code.ensure_loaded?(Sandbox) do
@@ -146,14 +138,15 @@ defmodule Rail.Runs.Boot do
   end
 
   defp handle_dead_os_process(os_process, now, _opts) do
-    run = os_process.run || Repo.get(Run, os_process.run_id)
-    backend = backend_for(run)
+    # A stream is parsed by the backend that wrote it, and the row arrives
+    # preloaded down to the role that produced the run.
+    %Run{role: %Role{backend: %Backend{} = backend}} = run = os_process.run
 
     event_state =
       new_event_state(backend,
         task_id: os_process.task_id,
-        role_id: (run && run.role_id) || "",
-        conversation_id: run && run.conversation_id
+        role_id: run.role_id,
+        conversation_id: run.conversation_id
       )
 
     {lines, err_lines} = read_entire_stream_and_err(os_process.stream_path)

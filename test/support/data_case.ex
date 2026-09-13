@@ -46,8 +46,11 @@ defmodule Rail.DataCase do
 
   Dispatch is on in test, the same as anywhere else, so what stops a test
   spawning `claude` is this: the spawn boundary answers with a pretend pid. A
-  test that is about spawning overrides it with its own `expect/3`.
+  test that is about spawning overrides it with its own `expect/3`, or tags
+  itself `@moduletag :real_spawn` to run a real child.
   """
+  def stub_agent_spawn(%{real_spawn: true}), do: :ok
+
   def stub_agent_spawn(_context) do
     Mimic.stub(Rail.Tools, :spawn_os_process, fn _executable, _args, _opts ->
       {:ok, nil, System.unique_integer([:positive])}

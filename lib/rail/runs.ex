@@ -46,6 +46,7 @@ defmodule Rail.Runs do
   defdelegate start_or_resume_run(task, role, worktree_path), to: Actions.StartOrResumeRun
   defdelegate create_run(attrs), to: Actions.CreateRun
   defdelegate get_run(id), to: Actions.GetRun
+  defdelegate list_runs(opts \\ []), to: Actions.ListRuns
   defdelegate update_run(run, attrs), to: Actions.UpdateRun
   defdelegate get_os_process(id), to: Actions.GetOsProcess
   defdelegate get_active_os_process(run), to: Actions.GetActiveOsProcess

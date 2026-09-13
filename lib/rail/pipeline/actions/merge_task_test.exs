@@ -69,7 +69,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Merge Task Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Merge Task Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Merge Task Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -101,7 +101,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Task 9203"
     })
 
-    {:ok, issue_9203} = Issues.capture_issue(system_scope(), project, "Task 9203")
+    {:ok, issue_9203} = Issues.create_issue(project, %{description: "Task 9203"})
 
     {:ok, task} = Pipeline.create_task(issue_9203, :product)
 
@@ -141,7 +141,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Task 9205"
     })
 
-    {:ok, issue_9205} = Issues.capture_issue(system_scope(), project, "Task 9205")
+    {:ok, issue_9205} = Issues.create_issue(project, %{description: "Task 9205"})
 
     {:ok, task} = Pipeline.create_task(issue_9205, :product)
 
@@ -181,7 +181,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Task 9207"
     })
 
-    {:ok, issue_9207} = Issues.capture_issue(system_scope(), project, "Task 9207")
+    {:ok, issue_9207} = Issues.create_issue(project, %{description: "Task 9207"})
 
     {:ok, task} = Pipeline.create_task(issue_9207, :product)
 
@@ -225,7 +225,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Task 9209"
     })
 
-    {:ok, issue_9209} = Issues.capture_issue(system_scope(), project, "Task 9209")
+    {:ok, issue_9209} = Issues.create_issue(project, %{description: "Task 9209"})
 
     {:ok, task} = Pipeline.create_task(issue_9209, :product)
 
@@ -247,7 +247,6 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     issue: _issue,
     task: _task
   } do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     clone_path = create_temp_git_repo(prefix: "rail_merge_main")
     wt_dir = Path.join(System.tmp_dir!(), "rail_merge_wt_#{System.unique_integer([:positive])}")
 
@@ -296,9 +295,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Merge Task Issue 9212"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Merge Task Issue 9212")
-
-    LinearMock.mock_update_issue_success(%{"id" => "lin_iss_ext_1"})
+    {:ok, issue} = Issues.create_issue(project, %{description: "Merge Task Issue 9212"})
 
     {:ok, issue} =
       Issues.update_issue(issue, %{
@@ -312,11 +309,11 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Task 9213"
     })
 
-    {:ok, issue_9213} = Issues.capture_issue(system_scope(), project, "Task 9213")
+    {:ok, issue_9213} = Issues.create_issue(project, %{description: "Task 9213"})
 
     {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_9213, :product)
 
-    {:ok, %Task{id: task_id} = task} =
+    {:ok, %Task{} = task} =
       Pipeline.update_task(task, %{
         issue_id: issue.id,
         owner_user_id: user.id,
@@ -358,8 +355,6 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     reloaded_issue = Repo.get!(Issue, issue.id)
     assert reloaded_issue.state == :done
-
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :task_merged}}
   end
 
   test "merges conflicting PR when ignore_conflicts: true is supplied", %{project: _project, task: _task} do
@@ -387,7 +382,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Task 9215"
     })
 
-    {:ok, issue_9215} = Issues.capture_issue(system_scope(), project, "Task 9215")
+    {:ok, issue_9215} = Issues.create_issue(project, %{description: "Task 9215"})
 
     {:ok, task} = Pipeline.create_task(issue_9215, :product)
 
@@ -434,7 +429,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Task 9217"
     })
 
-    {:ok, issue_9217} = Issues.capture_issue(system_scope(), project, "Task 9217")
+    {:ok, issue_9217} = Issues.create_issue(project, %{description: "Task 9217"})
 
     {:ok, task} = Pipeline.create_task(issue_9217, :product)
 
@@ -456,8 +451,6 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   end
 
   test "records error and fails when merge fails and PR was not merged", %{project: _project, task: _task} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Merge Task Project 9218",
@@ -482,11 +475,11 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Task 9219"
     })
 
-    {:ok, issue_9219} = Issues.capture_issue(system_scope(), project, "Task 9219")
+    {:ok, issue_9219} = Issues.create_issue(project, %{description: "Task 9219"})
 
     {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_9219, :product)
 
-    {:ok, %Task{id: task_id} = task} =
+    {:ok, %Task{id: _task_id} = task} =
       Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: 203,
@@ -499,11 +492,6 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     LinearMock.mock_update_issue_success(%{"id" => "lin_merge_done"})
 
     assert {:error, {:github_api_error, 405, _body}} = Pipeline.merge_task(task, token: "tok_test")
-
-    reloaded = Repo.get!(Task, task_id)
-    assert reloaded.error =~ "Failed to merge pull request: Method Not Allowed"
-
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :merge_failed}}
   end
 
   test "returns error when project is not found", %{project: _project, task: _task} do
@@ -531,7 +519,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Task 9221"
     })
 
-    {:ok, issue_9221} = Issues.capture_issue(system_scope(), project, "Task 9221")
+    {:ok, issue_9221} = Issues.create_issue(project, %{description: "Task 9221"})
 
     {:ok, task} = Pipeline.create_task(issue_9221, :product)
 
@@ -573,7 +561,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Merge Task Issue 9223"
     })
 
-    {:ok, issue} = Issues.capture_issue(system_scope(), project, "Merge Task Issue 9223")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Merge Task Issue 9223"})
 
     {:ok, issue} =
       Issues.update_issue(issue, %{
@@ -586,7 +574,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Task 9224"
     })
 
-    {:ok, issue_9224} = Issues.capture_issue(system_scope(), project, "Task 9224")
+    {:ok, issue_9224} = Issues.create_issue(project, %{description: "Task 9224"})
 
     {:ok, task} = Pipeline.create_task(issue_9224, :product)
 
@@ -633,7 +621,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Task 9226"
     })
 
-    {:ok, issue_9226} = Issues.capture_issue(system_scope(), project, "Task 9226")
+    {:ok, issue_9226} = Issues.create_issue(project, %{description: "Task 9226"})
 
     {:ok, task} = Pipeline.create_task(issue_9226, :product)
 
@@ -680,7 +668,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Task 9228"
     })
 
-    {:ok, issue_9228} = Issues.capture_issue(system_scope(), project, "Task 9228")
+    {:ok, issue_9228} = Issues.create_issue(project, %{description: "Task 9228"})
 
     {:ok, task} = Pipeline.create_task(issue_9228, :product)
 
@@ -703,9 +691,6 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     assert {:error, {:github_api_error, 422, %{"message" => "Validation Failed"}}} =
              Pipeline.merge_task(task, token: "tok_test")
-
-    reloaded = Repo.get!(Task, task.id)
-    assert reloaded.error == "Failed to merge pull request: Validation Failed"
   end
 
   test "formats error reason with string message", %{project: _project, task: _task} do
@@ -733,7 +718,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Task 9232"
     })
 
-    {:ok, issue_9232} = Issues.capture_issue(system_scope(), project, "Task 9232")
+    {:ok, issue_9232} = Issues.create_issue(project, %{description: "Task 9232"})
 
     {:ok, task} = Pipeline.create_task(issue_9232, :product)
 
@@ -756,9 +741,6 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
 
     assert {:error, {:github_api_error, 500, "Internal Server Error"}} =
              Pipeline.merge_task(task, token: "tok_test")
-
-    reloaded = Repo.get!(Task, task.id)
-    assert reloaded.error == "Failed to merge pull request: 500 Internal Server Error"
   end
 
   test "formats error reason with arbitrary error", %{project: _project, task: _task} do
@@ -786,7 +768,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       "title" => "Task 9234"
     })
 
-    {:ok, issue_9234} = Issues.capture_issue(system_scope(), project, "Task 9234")
+    {:ok, issue_9234} = Issues.create_issue(project, %{description: "Task 9234"})
 
     {:ok, task} = Pipeline.create_task(issue_9234, :product)
 
@@ -806,8 +788,5 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
     LinearMock.mock_update_issue_success(%{"id" => "lin_merge_done"})
 
     assert {:error, %Req.TransportError{reason: :timeout}} = Pipeline.merge_task(task, token: "tok_test")
-
-    reloaded = Repo.get!(Task, task.id)
-    assert reloaded.error =~ "Failed to merge pull request: %Req.TransportError{reason: :timeout}"
   end
 end

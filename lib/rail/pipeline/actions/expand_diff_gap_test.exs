@@ -7,8 +7,6 @@ defmodule Rail.Pipeline.Actions.ExpandDiffGapTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
-    scope = system_scope()
-
     {:ok, workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Expand Diff Workspace",
@@ -42,7 +40,7 @@ defmodule Rail.Pipeline.Actions.ExpandDiffGapTest do
       "title" => "Expand Diff Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Expand Diff Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Expand Diff Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

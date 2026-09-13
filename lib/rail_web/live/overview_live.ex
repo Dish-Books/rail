@@ -4,7 +4,6 @@ defmodule RailWeb.OverviewLive do
 
   import RailWeb.CoreComponents,
     only: [
-      approval_card: 1,
       compact_waiting_strip: 1,
       dispatch_banner: 1,
       empty_state: 1,
@@ -124,11 +123,6 @@ defmodule RailWeb.OverviewLive do
                     :if={match?(%SingleCardBlock{row: %{kind: :question}}, block)}
                     row={block.row}
                     submitting={@submitting}
-                  />
-
-                  <.approval_card
-                    :if={match?(%SingleCardBlock{row: %{kind: :approval}}, block)}
-                    row={block.row}
                   />
 
                   <.compact_waiting_strip

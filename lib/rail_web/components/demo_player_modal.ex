@@ -173,7 +173,7 @@ defmodule RailWeb.Components.DemoPlayerModal do
             <!-- Scrubber Row -->
             <div class="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
               <span id="demo-player-elapsed-text" class="w-10 font-mono">
-                {format_duration(@player.elapsed_ms)}
+                {format_millis(@player.elapsed_ms)}
               </span>
 
               <form
@@ -195,7 +195,7 @@ defmodule RailWeb.Components.DemoPlayerModal do
               </form>
 
               <span id="demo-player-total-text" class="w-10 text-right font-mono">
-                {format_duration(@total_ms)}
+                {format_millis(@total_ms)}
               </span>
             </div>
 
@@ -326,12 +326,12 @@ defmodule RailWeb.Components.DemoPlayerModal do
 
   defp segment_field(_other, _key), do: nil
 
-  defp format_duration(ms) when is_integer(ms) and ms >= 0 do
+  defp format_millis(ms) when is_integer(ms) and ms >= 0 do
     "~.1f"
     |> :io_lib.format([ms / 1000.0])
     |> IO.iodata_to_binary()
     |> Kernel.<>("s")
   end
 
-  defp format_duration(_other), do: "0.0s"
+  defp format_millis(_other), do: "0.0s"
 end

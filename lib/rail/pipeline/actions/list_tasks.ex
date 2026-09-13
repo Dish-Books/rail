@@ -25,9 +25,9 @@ defmodule Rail.Pipeline.Actions.ListTasks do
 
   defp filter_project(query, _all_projects), do: query
 
-  defp filter_stage(query, stage) when is_atom(stage) and not is_nil(stage) do
+  defp filter_stage(query, nil), do: query
+
+  defp filter_stage(query, stage) when is_atom(stage) do
     where(query, [task: t], t.stage == ^stage)
   end
-
-  defp filter_stage(query, _all_stages), do: query
 end

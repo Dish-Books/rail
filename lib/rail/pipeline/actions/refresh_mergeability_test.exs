@@ -2,7 +2,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
   use Rail.DataCase, async: true
 
   import RailTest.Mocks.GitHub
-  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
+  import RailTest.Mocks.Linear, only: [mock_demo_uploads: 1]
 
   alias Rail.Artifacts
   alias Rail.Issues
@@ -66,7 +66,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
       "title" => "Refresh Merge Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Refresh Merge Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Refresh Merge Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -98,7 +98,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
       "title" => "Task 9003"
     })
 
-    {:ok, issue_9003} = Issues.capture_issue(system_scope(), project, "Task 9003")
+    {:ok, issue_9003} = Issues.create_issue(project, %{description: "Task 9003"})
 
     {:ok, task} = Pipeline.create_task(issue_9003, :product)
 
@@ -138,7 +138,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
       "title" => "Task 9005"
     })
 
-    {:ok, issue_9005} = Issues.capture_issue(system_scope(), project, "Task 9005")
+    {:ok, issue_9005} = Issues.create_issue(project, %{description: "Task 9005"})
 
     {:ok, task} = Pipeline.create_task(issue_9005, :product)
 
@@ -154,8 +154,6 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
   end
 
   test "updates mergeability and draft status on successful poll", %{project: _project, task: _task} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Refresh Merge Project 9006",
@@ -180,11 +178,11 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
       "title" => "Task 9008"
     })
 
-    {:ok, issue_9008} = Issues.capture_issue(system_scope(), project, "Task 9008")
+    {:ok, issue_9008} = Issues.create_issue(project, %{description: "Task 9008"})
 
     {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_9008, :product)
 
-    {:ok, %Task{id: task_id} = task} =
+    {:ok, %Task{} = task} =
       Pipeline.update_task(task, %{
         stage: :ready_to_merge,
         pr_number: 42,
@@ -196,8 +194,6 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
     mock_pull_request_state_success("testorg/testrepo", 42, mergeable: true, draft: false)
 
     assert {:ok, %Task{mergeability: :mergeable, pr_is_draft: false}} = Pipeline.refresh_mergeability(task)
-
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :mergeability_refreshed}}
   end
 
   test "preserves conflicting status when GitHub returns unknown", %{project: _project, task: _task} do
@@ -225,7 +221,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
       "title" => "Task 9010"
     })
 
-    {:ok, issue_9010} = Issues.capture_issue(system_scope(), project, "Task 9010")
+    {:ok, issue_9010} = Issues.create_issue(project, %{description: "Task 9010"})
 
     {:ok, task} = Pipeline.create_task(issue_9010, :product)
 
@@ -268,7 +264,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
       "title" => "Task 9012"
     })
 
-    {:ok, issue_9012} = Issues.capture_issue(system_scope(), project, "Task 9012")
+    {:ok, issue_9012} = Issues.create_issue(project, %{description: "Task 9012"})
 
     {:ok, task} = Pipeline.create_task(issue_9012, :product)
 
@@ -311,7 +307,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
       "title" => "Task 9014"
     })
 
-    {:ok, issue_9014} = Issues.capture_issue(system_scope(), project, "Task 9014")
+    {:ok, issue_9014} = Issues.create_issue(project, %{description: "Task 9014"})
 
     {:ok, task} = Pipeline.create_task(issue_9014, :product)
 
@@ -352,7 +348,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
       "title" => "Task 9016"
     })
 
-    {:ok, issue_9016} = Issues.capture_issue(system_scope(), project, "Task 9016")
+    {:ok, issue_9016} = Issues.create_issue(project, %{description: "Task 9016"})
 
     {:ok, task} = Pipeline.create_task(issue_9016, :product)
 
@@ -389,7 +385,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
       "title" => "Task 9018"
     })
 
-    {:ok, issue_9018} = Issues.capture_issue(system_scope(), project, "Task 9018")
+    {:ok, issue_9018} = Issues.create_issue(project, %{description: "Task 9018"})
 
     {:ok, task} = Pipeline.create_task(issue_9018, :product)
 
@@ -431,7 +427,7 @@ defmodule Rail.Pipeline.Actions.RefreshMergeabilityTest do
       "title" => "Task 9020"
     })
 
-    {:ok, issue_9020} = Issues.capture_issue(system_scope(), project, "Task 9020")
+    {:ok, issue_9020} = Issues.create_issue(project, %{description: "Task 9020"})
 
     {:ok, task} = Pipeline.create_task(issue_9020, :product)
 

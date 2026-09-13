@@ -61,7 +61,6 @@ defmodule Rail.Pipeline.Actions.RefreshMergeability do
       |> Task.changeset(attrs)
       |> Repo.update()
 
-
     Rail.Pipeline.refresh_demo_freshness(updated_task, opts)
   end
 end

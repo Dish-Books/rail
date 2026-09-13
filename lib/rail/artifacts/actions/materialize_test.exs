@@ -207,7 +207,7 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
         "title" => "Task 12404"
       })
 
-      {:ok, issue_12404} = Issues.capture_issue(system_scope(), project, "Task 12404")
+      {:ok, issue_12404} = Issues.create_issue(project, %{description: "Task 12404"})
 
       {:ok, task} = Pipeline.create_task(issue_12404, :product)
 

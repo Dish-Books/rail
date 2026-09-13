@@ -4,6 +4,7 @@ defmodule RailWeb.Components.NoDemoBannerTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Runs.Schemas.Run
   alias RailWeb.Components.NoDemoBanner
 
   setup do
@@ -18,7 +19,8 @@ defmodule RailWeb.Components.NoDemoBannerTest do
       worktree_path: "/tmp/worktree"
     }
 
-    html = render_component(&NoDemoBanner.no_demo_banner/1, task: task)
+    html =
+      render_component(&NoDemoBanner.no_demo_banner/1, task: task, run: %Run{status: :finished, stage_outcome: :done})
 
     assert html =~ "id=\"no-demo-banner\""
     assert html =~ "id=\"no-demo-title\""
@@ -39,7 +41,11 @@ defmodule RailWeb.Components.NoDemoBannerTest do
       worktree_path: "/tmp/worktree"
     }
 
-    html = render_component(&NoDemoBanner.no_demo_banner/1, task: merged_task)
+    html =
+      render_component(&NoDemoBanner.no_demo_banner/1,
+        task: merged_task,
+        run: %Run{status: :finished, stage_outcome: :done}
+      )
 
     assert html =~ "id=\"no-demo-banner\""
     refute html =~ "id=\"action-record-demo\""
@@ -51,7 +57,12 @@ defmodule RailWeb.Components.NoDemoBannerTest do
       worktree_path: "/tmp/rail-removed-worktree"
     }
 
-    html_no_wt = render_component(&NoDemoBanner.no_demo_banner/1, task: no_worktree_task)
+    html_no_wt =
+      render_component(&NoDemoBanner.no_demo_banner/1,
+        task: no_worktree_task,
+        run: %Run{status: :finished, stage_outcome: :done}
+      )
+
     refute html_no_wt =~ "id=\"action-record-demo\""
 
     # Plain map task that is not eligible: already merged
@@ -61,21 +72,18 @@ defmodule RailWeb.Components.NoDemoBannerTest do
       worktree_path: "/tmp/worktree"
     }
 
-    html_plain = render_component(&NoDemoBanner.no_demo_banner/1, task: plain_map_task)
+    html_plain =
+      render_component(&NoDemoBanner.no_demo_banner/1,
+        task: plain_map_task,
+        run: %Run{status: :finished, stage_outcome: :done}
+      )
+
     refute html_plain =~ "id=\"action-record-demo\""
 
-    # Plain map task that is eligible
-    plain_map_elig = %{
-      id: "tsk_plain_elig",
-      stage: :ready_to_merge,
-      worktree_path: "/tmp/worktree"
-    }
-
-    html_plain_elig = render_component(&NoDemoBanner.no_demo_banner/1, task: plain_map_elig)
-    assert html_plain_elig =~ "id=\"action-record-demo\""
-
     # nil task
-    html_nil = render_component(&NoDemoBanner.no_demo_banner/1, task: nil)
+    html_nil =
+      render_component(&NoDemoBanner.no_demo_banner/1, task: nil, run: %Run{status: :finished, stage_outcome: :done})
+
     assert html_nil =~ "id=\"no-demo-banner\""
     refute html_nil =~ "id=\"action-record-demo\""
   end

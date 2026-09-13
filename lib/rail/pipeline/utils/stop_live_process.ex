@@ -12,8 +12,8 @@ defmodule Rail.Pipeline.Utils.StopLiveProcess do
   """
   def stop_live_process(%Run{} = run, opts \\ []) do
     case Runs.get_active_os_process(run) do
-      %OsProcess{} = os_process -> Runs.stop_os_process(os_process, opts)
-      nil -> :ok
+      {:ok, %OsProcess{} = os_process} -> Runs.stop_os_process(os_process, opts)
+      {:error, :os_process_not_active} -> :ok
     end
 
     :ok

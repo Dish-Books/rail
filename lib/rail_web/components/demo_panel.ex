@@ -10,10 +10,13 @@ defmodule RailWeb.Components.DemoPanel do
   alias Rail.Domain.Embeds.DemoSegment
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Repo
+  alias Rail.Runs.Schemas.Run
   alias RailWeb.Components.DemoPlayerState
 
   attr :demo, :any, required: true
   attr :task, :any, required: true
+  attr :run, :any, default: nil
 
   @doc "Renders the demo panel."
   def demo_panel(assigns) do
@@ -30,7 +33,7 @@ defmodule RailWeb.Components.DemoPanel do
     is_declined = outcome == "declined"
     shown_count = Enum.count(segments, fn s -> segment_outcome(s) == "recorded" end)
     criteria_count = length(segments)
-    can_rerecord = can_rerecord?(task)
+    can_rerecord = can_rerecord?(assigns.run, task)
     can_play = not is_declined and segments != []
 
     assigns =
@@ -161,7 +164,7 @@ defmodule RailWeb.Components.DemoPanel do
           <% seg_note = segment_field(segment, :note) %>
           <% frames = segment_frames(segment) %>
           <% duration_ms = segment_duration(segment) %>
-          <% duration_str = format_duration(duration_ms) %>
+          <% duration_str = format_millis(duration_ms) %>
           <% first_frame = List.first(frames) %>
           <% first_frame_url = if first_frame, do: DemoPlayerState.frame_url(first_frame), else: "" %>
 
@@ -312,23 +315,22 @@ defmodule RailWeb.Components.DemoPanel do
 
   defp segment_duration(_other), do: nil
 
-  defp format_duration(ms) when is_integer(ms) and ms >= 0 do
+  defp format_millis(ms) when is_integer(ms) and ms >= 0 do
     "~.1f"
     |> :io_lib.format([ms / 1000.0])
     |> IO.iodata_to_binary()
     |> Kernel.<>("s")
   end
 
-  defp format_duration(_other), do: "0.0s"
+  defp format_millis(_other), do: "0.0s"
 
-  defp can_rerecord?(%Task{} = task), do: Pipeline.can_rerecord_demo?(task)
-
-  defp can_rerecord?(task) when is_map(task) do
-    struct = struct(Task, task)
-    Pipeline.can_rerecord_demo?(struct)
+  # Re-recording is about the run that would do it, and it needs the task's other
+  # runs to know nothing else is working in the worktree.
+  defp can_rerecord?(%Run{} = run, %Task{} = task) do
+    Pipeline.can_rerecord_demo?(%{run | task: Repo.preload(task, :runs)})
   end
 
-  defp can_rerecord?(_other), do: false
+  defp can_rerecord?(_no_run, _task), do: false
 
   defp demo_field(demo, key) when is_map(demo) do
     Map.get(demo, key) || Map.get(demo, to_string(key))

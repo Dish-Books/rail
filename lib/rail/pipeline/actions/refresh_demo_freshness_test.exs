@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
   use Rail.DataCase, async: true
 
-  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1, mock_qa_uploads: 1]
+  import RailTest.Mocks.Linear, only: [mock_demo_uploads: 1]
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Demo
@@ -68,7 +68,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
       "title" => "Demo Freshness Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Demo Freshness Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Demo Freshness Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -92,7 +92,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
       "title" => "Task 9502"
     })
 
-    {:ok, issue_9502} = Issues.capture_issue(system_scope(), project, "Task 9502")
+    {:ok, issue_9502} = Issues.create_issue(project, %{description: "Task 9502"})
 
     {:ok, task_merged_at} = Pipeline.create_task(issue_9502, :product)
 
@@ -111,7 +111,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
       "title" => "Task 9503"
     })
 
-    {:ok, issue_9503} = Issues.capture_issue(system_scope(), project, "Task 9503")
+    {:ok, issue_9503} = Issues.create_issue(project, %{description: "Task 9503"})
 
     {:ok, task_no_demo} = Pipeline.create_task(issue_9503, :product)
 
@@ -183,7 +183,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
       "title" => "Task 9504"
     })
 
-    {:ok, issue_9504} = Issues.capture_issue(system_scope(), project, "Task 9504")
+    {:ok, issue_9504} = Issues.create_issue(project, %{description: "Task 9504"})
 
     {:ok, task_missing_dir} = Pipeline.create_task(issue_9504, :product)
 
@@ -246,7 +246,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
       "title" => "Task 9505"
     })
 
-    {:ok, issue_9505} = Issues.capture_issue(system_scope(), project, "Task 9505")
+    {:ok, issue_9505} = Issues.create_issue(project, %{description: "Task 9505"})
 
     {:ok, task_non_git} = Pipeline.create_task(issue_9505, :product)
 
@@ -305,7 +305,7 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
       "title" => "Task 9506"
     })
 
-    {:ok, issue_9506} = Issues.capture_issue(system_scope(), project, "Task 9506")
+    {:ok, issue_9506} = Issues.create_issue(project, %{description: "Task 9506"})
 
     {:ok, task_nil_worktree} = Pipeline.create_task(issue_9506, :product)
 
@@ -416,7 +416,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
   end
 
   test "re-queues ready_to_merge task to demo queued when commit changes", %{task: task} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     worktree = create_temp_git_repo()
     %{dirty_digest: current_digest} = Git.branch_fingerprint(worktree)
 
@@ -468,11 +467,9 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
 
     assert {:ok,
             %Task{
-              id: task_id,
-              stage: :demo,
+              id: _task_id,
+              stage: :demo
             }} = Pipeline.refresh_demo_freshness(task, [])
-
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :demo_stale_requeued}}
 
     assert Repo.get!(Demo, demo.id).stale
     assert Repo.get!(Task, task.id).stage == :demo
@@ -534,7 +531,6 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
   end
 
   test "marks demo stale but preserves earlier stage when commit changes", %{task: task} do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     worktree = create_temp_git_repo()
 
     {:ok, task} =
@@ -583,10 +579,8 @@ defmodule Rail.Pipeline.Actions.RefreshDemoFreshnessTest do
         dirty_digest: "previous_digest"
       )
 
-    assert {:ok, %Task{id: task_id, stage: :review}} =
+    assert {:ok, %Task{id: _task_id, stage: :review}} =
              Pipeline.refresh_demo_freshness(task)
-
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :demo_marked_stale}}
 
     assert Repo.get!(Demo, demo.id).stale
     assert Repo.get!(Task, task.id).stage == :review

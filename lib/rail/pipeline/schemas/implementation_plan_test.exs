@@ -10,8 +10,6 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
-    scope = system_scope()
-
     {:ok, workspace} =
       Projects.upsert_linear_workspace(system_scope(), %{
         name: "Plan Schema Workspace",
@@ -45,7 +43,7 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
       "title" => "Plan Schema Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Plan Schema Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Plan Schema Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

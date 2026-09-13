@@ -7,15 +7,19 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
   alias Rail.Runs.DetectedQuestion
+  alias Rail.Runs.Schemas.OsProcess
+  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
+
   test "redirects unauthenticated user to /auth/github", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/auth/github"}}} = live(conn, ~p"/")
   end
@@ -247,8 +251,6 @@ defmodule RailWeb.OverviewLiveTest do
     refute has_element?(view, "#project-switcher-dialog")
   end
 
-
-
   describe "the queue, which is a list of runs" do
     setup %{conn: conn} do
       {:ok, user} =
@@ -314,7 +316,7 @@ defmodule RailWeb.OverviewLiveTest do
         "title" => "Running work"
       })
 
-      {:ok, issue} = Issues.capture_issue(system_scope(), project, "Running work")
+      {:ok, issue} = Issues.create_issue(project, %{description: "Running work"})
       {:ok, task} = Pipeline.create_task(issue, :product)
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 
@@ -346,7 +348,7 @@ defmodule RailWeb.OverviewLiveTest do
         "title" => "Plan to read"
       })
 
-      {:ok, issue} = Issues.capture_issue(system_scope(), project, "Plan to read")
+      {:ok, issue} = Issues.create_issue(project, %{description: "Plan to read"})
       {:ok, task} = Pipeline.create_task(issue, :product)
       {:ok, task} = Pipeline.update_task(task, %{stage: :architect})
 
@@ -379,7 +381,7 @@ defmodule RailWeb.OverviewLiveTest do
         "title" => "Broken work"
       })
 
-      {:ok, issue} = Issues.capture_issue(system_scope(), project, "Broken work")
+      {:ok, issue} = Issues.create_issue(project, %{description: "Broken work"})
       {:ok, task} = Pipeline.create_task(issue, :product)
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 
@@ -411,7 +413,7 @@ defmodule RailWeb.OverviewLiveTest do
         "title" => "Needs answers"
       })
 
-      {:ok, issue} = Issues.capture_issue(system_scope(), project, "Needs answers")
+      {:ok, issue} = Issues.create_issue(project, %{description: "Needs answers"})
       {:ok, task} = Pipeline.create_task(issue, :product)
 
       {:ok, run} =
@@ -471,7 +473,7 @@ defmodule RailWeb.OverviewLiveTest do
         "title" => "Ready work"
       })
 
-      {:ok, issue} = Issues.capture_issue(system_scope(), project, "Ready work")
+      {:ok, issue} = Issues.create_issue(project, %{description: "Ready work"})
       {:ok, task} = Pipeline.create_task(issue, :product)
       {:ok, task} = Pipeline.update_task(task, %{stage: :ready_to_merge, pr_number: 7})
 
@@ -505,7 +507,7 @@ defmodule RailWeb.OverviewLiveTest do
         "title" => "Shipped work"
       })
 
-      {:ok, issue} = Issues.capture_issue(system_scope(), project, "Shipped work")
+      {:ok, issue} = Issues.create_issue(project, %{description: "Shipped work"})
       {:ok, task} = Pipeline.create_task(issue, :product)
       {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
 
@@ -532,7 +534,7 @@ defmodule RailWeb.OverviewLiveTest do
         "title" => "Roster work"
       })
 
-      {:ok, issue} = Issues.capture_issue(system_scope(), project, "Roster work")
+      {:ok, issue} = Issues.create_issue(project, %{description: "Roster work"})
       {:ok, task} = Pipeline.create_task(issue, :product)
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 
@@ -557,6 +559,175 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/")
       assert render(view) =~ "RAIL_NO_DISPATCH=1 is set"
+    end
+
+    test "the modals open, close, and carry their action through", %{
+      conn: conn,
+      project: project,
+      roles: roles
+    } do
+      LinearMock.mock_create_issue_success(%{
+        "id" => "lin_queue_modals",
+        "identifier" => "QUE-8",
+        "title" => "Modal work"
+      })
+
+      {:ok, issue} = Issues.create_issue(project, %{description: "Modal work"})
+      {:ok, task} = Pipeline.create_task(issue, :product)
+
+      {:ok, task} =
+        Pipeline.update_task(task, %{stage: :ready_to_merge, pr_number: 9, mergeability: :conflicting})
+
+      {:ok, _run} =
+        Runs.create_run(%{
+          task_id: task.id,
+          role_id: roles[:demo].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now(),
+          completed_at: DateTime.utc_now()
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      # Rebase
+      view |> element("#action-rebase-#{task.id}") |> render_click()
+      assert has_element?(view, "#rebase-confirm-modal")
+      view |> element("#cancel-rebase-button") |> render_click()
+      refute has_element?(view, "#rebase-confirm-modal")
+
+      view |> element("#action-rebase-#{task.id}") |> render_click()
+
+      stub(Runs, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      view |> element("#confirm-rebase-button") |> render_click()
+
+      assert %Task{is_rebasing: true} = Repo.reload!(task)
+    end
+
+    test "the merge modal opens, closes, and merges", %{conn: conn, project: project, roles: roles} do
+      LinearMock.mock_create_issue_success(%{
+        "id" => "lin_queue_merge_modal",
+        "identifier" => "QUE-9",
+        "title" => "Merge modal work"
+      })
+
+      {:ok, issue} = Issues.create_issue(project, %{description: "Merge modal work"})
+      {:ok, task} = Pipeline.create_task(issue, :product)
+      {:ok, task} = Pipeline.update_task(task, %{stage: :ready_to_merge, pr_number: 11})
+
+      {:ok, _run} =
+        Runs.create_run(%{
+          task_id: task.id,
+          role_id: roles[:demo].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now(),
+          completed_at: DateTime.utc_now()
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      view |> element("#action-merge-#{task.id}") |> render_click()
+      assert has_element?(view, "#merge-confirm-modal")
+
+      view |> element("#cancel-merge-button") |> render_click()
+      refute has_element?(view, "#merge-confirm-modal")
+    end
+
+    test "sending a gate's findings back to the engineer goes through a comment", %{
+      conn: conn,
+      project: project,
+      roles: roles
+    } do
+      LinearMock.mock_create_issue_success(%{
+        "id" => "lin_queue_send_back",
+        "identifier" => "QUE-10",
+        "title" => "Send back work"
+      })
+
+      {:ok, issue} = Issues.create_issue(project, %{description: "Send back work"})
+      {:ok, task} = Pipeline.create_task(issue, :product)
+      {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+
+      {:ok, _run} =
+        Runs.create_run(%{
+          task_id: task.id,
+          role_id: roles[:review].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.utc_now(),
+          completed_at: DateTime.utc_now()
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      view |> element("#send-back-button-#{Repo.get_by!(Run, task_id: task.id).id}") |> render_click()
+      assert has_element?(view, "#send-back-modal")
+
+      view |> element("#send-back-form") |> render_change(%{"comment" => "Please fix the copy"})
+      view |> element("#close-send-back-button") |> render_click()
+      refute has_element?(view, "#send-back-modal")
+    end
+
+    test "answering by picking one of the options offered", %{conn: conn, project: project, roles: roles} do
+      LinearMock.mock_create_issue_success(%{
+        "id" => "lin_queue_options",
+        "identifier" => "QUE-11",
+        "title" => "Option work"
+      })
+
+      {:ok, issue} = Issues.create_issue(project, %{description: "Option work"})
+      {:ok, task} = Pipeline.create_task(issue, :product)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          task_id: task.id,
+          role_id: roles[:product].id,
+          status: :running,
+          conversation_id: "sess_options",
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, question} =
+        Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{
+          prompt: "Which database?",
+          options: ["Postgres", "Sqlite"]
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      view |> element("#question-option-#{question.id}-0") |> render_click()
+
+      assert %Question{status: :answered, answer: "Postgres"} = Repo.reload!(question)
+    end
+
+    test "a blank answer is not recorded", %{conn: conn, project: project, roles: roles} do
+      LinearMock.mock_create_issue_success(%{
+        "id" => "lin_queue_blank",
+        "identifier" => "QUE-12",
+        "title" => "Blank work"
+      })
+
+      {:ok, issue} = Issues.create_issue(project, %{description: "Blank work"})
+      {:ok, task} = Pipeline.create_task(issue, :product)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          task_id: task.id,
+          role_id: roles[:product].id,
+          status: :running,
+          conversation_id: "sess_blank",
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, question} =
+        Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: "Which database?"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      view |> element("#answer-form-#{question.id}") |> render_submit(%{"question_id" => question.id, "answer" => "  "})
+
+      assert %Question{status: :pending} = Repo.reload!(question)
     end
   end
 end

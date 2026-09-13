@@ -42,7 +42,7 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
             %{
               asset_id: "asset_111",
               asset_url: "https://uploads.linear.app/asset_111/screenshot.png"
-            }} = Issues.upload_asset(scope, "screenshot.png", "image/png", binary_data)
+            }} = Issues.upload_asset("screenshot.png", "image/png", binary_data)
 
     LinearMock.mock_file_upload_success(
       upload_url: "https://api.linear.app/upload/asset_222",
@@ -51,7 +51,7 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
     )
 
     assert {:ok, %{asset_id: "asset_222"}} =
-             Issues.upload_asset(scope, project, "frame.png", "image/png", binary_data)
+             Issues.upload_asset(project, "frame.png", "image/png", binary_data)
 
     LinearMock.mock_file_upload_success(
       upload_url: "https://api.linear.app/upload/asset_333",
@@ -60,7 +60,7 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
     )
 
     assert {:ok, %{asset_id: "asset_333"}} =
-             Issues.upload_asset(scope, workspace, "ws.png", "image/png", binary_data)
+             Issues.upload_asset(workspace, "ws.png", "image/png", binary_data)
   end
 
   test "upload_asset/4 works with user scope" do
@@ -72,14 +72,11 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
         webhook_secret: "whsec_upload_user"
       })
 
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_upload_asset",
-        login: "upload_asset_user",
-        email: "upload_asset@example.com"
-      })
-
-    scope = Scope.for_user(user)
+    Users.register_oauth_user(%{
+      github_id: "gh_upload_asset",
+      login: "upload_asset_user",
+      email: "upload_asset@example.com"
+    })
 
     LinearMock.mock_file_upload_success(
       upload_url: "https://api.linear.app/upload/asset_user",
@@ -88,17 +85,11 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
     )
 
     assert {:ok, %{asset_id: "asset_user"}} =
-             Issues.upload_asset(scope, "file.png", "image/png", "DATA")
+             Issues.upload_asset("file.png", "image/png", "DATA")
   end
 
   test "upload_asset/4 returns error when no workspace token available" do
-    scope = Scope.for_system()
-
     assert {:error, :no_workspace_token} =
-             Issues.upload_asset(scope, "file.png", "image/png", "DATA")
-  end
-
-  test "upload_asset/4 returns :not_authorized for nil scope" do
-    assert {:error, :not_authorized} = Issues.upload_asset(nil, "file.png", "image/png", "DATA")
+             Issues.upload_asset("file.png", "image/png", "DATA")
   end
 end

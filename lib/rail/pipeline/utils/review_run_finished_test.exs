@@ -66,7 +66,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
       "title" => "Settle Review Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Settle Review Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Settle Review Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

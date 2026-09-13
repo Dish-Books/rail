@@ -13,9 +13,9 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
   alias Rail.Repo
   alias Rail.Users.Schemas.User
 
-  def capture_demo(scope, target, scratch_dir_or_opts, opts \\ []) do
+  def capture_demo(_scope, target, scratch_dir_or_opts, opts \\ []) do
     {task, task_id, scratch_dir, combined_opts} = normalize_args(target, scratch_dir_or_opts, opts)
-    do_capture_demo(scope, task, task_id, scratch_dir, combined_opts)
+    do_capture_demo(task, task_id, scratch_dir, combined_opts)
   end
 
   defp normalize_args(target, scratch_dir, opts) when is_binary(scratch_dir) do
@@ -34,11 +34,11 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
   defp resolve_task_and_id(task_id) when is_binary(task_id), do: {Repo.get(Task, task_id), task_id}
   defp resolve_task_and_id(other), do: {nil, to_string(other)}
 
-  defp do_capture_demo(scope, task, task_id, scratch_dir, opts) do
+  defp do_capture_demo(task, task_id, scratch_dir, opts) do
     demo_dir = resolve_demo_dir(scratch_dir)
 
     with {:ok, demo_data} <- DemoValidator.validate(demo_dir, opts),
-         {:ok, segments_with_assets} <- upload_demo_assets(scope, demo_data.segments, opts) do
+         {:ok, segments_with_assets} <- upload_demo_assets(demo_data.segments, opts) do
       version = next_version(task_id, demo_data[:version])
 
       {resolved_head_sha, resolved_dirty_digest} =
@@ -70,7 +70,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
 
       demo_struct = struct(Demo, demo_attrs)
 
-      with {:ok, comment_id} <- maybe_post_comment(scope, demo_struct, task, opts) do
+      with {:ok, comment_id} <- maybe_post_comment(demo_struct, task, opts) do
         final_attrs =
           if comment_id do
             Map.put(demo_attrs, :linear_comment_id, comment_id)
@@ -101,10 +101,10 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
     end
   end
 
-  defp upload_demo_assets(scope, segments, opts) do
+  defp upload_demo_assets(segments, opts) do
     segments
     |> Enum.reduce_while({:ok, []}, fn seg, {:ok, acc_segs} ->
-      case upload_segment_frames(scope, seg, opts) do
+      case upload_segment_frames(seg, opts) do
         {:ok, updated_seg} -> {:cont, {:ok, [updated_seg | acc_segs]}}
         {:error, reason} -> {:halt, {:error, reason}}
       end
@@ -115,10 +115,10 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
     end
   end
 
-  defp upload_segment_frames(scope, %{outcome: :recorded, frames: frames} = seg, opts) when is_list(frames) do
+  defp upload_segment_frames(%{outcome: :recorded, frames: frames} = seg, opts) when is_list(frames) do
     frames
     |> Enum.reduce_while({:ok, []}, fn frame, {:ok, acc_frames} ->
-      case upload_frame(scope, frame, opts) do
+      case upload_frame(frame, opts) do
         {:ok, updated_frame} -> {:cont, {:ok, [updated_frame | acc_frames]}}
         {:error, reason} -> {:halt, {:error, reason}}
       end
@@ -129,9 +129,9 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
     end
   end
 
-  defp upload_segment_frames(_scope, seg, _opts), do: {:ok, seg}
+  defp upload_segment_frames(seg, _opts), do: {:ok, seg}
 
-  defp upload_frame(scope, frame, opts) do
+  defp upload_frame(frame, opts) do
     file_path = frame[:resolved_path] || frame["resolved_path"] || frame[:path] || frame["path"]
     filename = Path.basename(file_path)
 
@@ -139,7 +139,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
       {:ok, binary} ->
         content_type = mime_type(filename)
 
-        case Issues.upload_asset(scope, filename, content_type, binary, opts) do
+        case Issues.upload_asset(filename, content_type, binary, opts) do
           {:ok, %{asset_url: asset_url, asset_id: asset_id}} ->
             updated =
               frame
@@ -157,7 +157,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
     end
   end
 
-  defp maybe_post_comment(scope, demo_struct, task, opts) do
+  defp maybe_post_comment(demo_struct, task, opts) do
     issue =
       Keyword.get(opts, :issue) ||
         (task && task.issue_id && Repo.get(Rail.Issues.Schemas.Issue, task.issue_id))
@@ -169,7 +169,7 @@ defmodule Rail.Artifacts.Actions.CaptureDemo do
         Keyword.get(opts, :owner_user) ||
           (issue.owner_user_id && Repo.get(User, issue.owner_user_id))
 
-      case Issues.comment(scope, issue, comment_body, owner_user) do
+      case Issues.comment(issue, comment_body, owner_user) do
         {:ok, %{id: comment_id}} -> {:ok, comment_id}
         {:error, reason} -> {:error, reason}
       end

@@ -64,7 +64,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
       "title" => "Cleanup Task Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Cleanup Task Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Cleanup Task Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -89,7 +89,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     project: _project,
     task: _task
   } do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline:changed")
     clone_path = create_temp_git_repo(prefix: "rail_cleanup_main")
     wt_dir = Path.join(System.tmp_dir!(), "rail_cleanup_wt_#{System.unique_integer([:positive])}")
 
@@ -127,11 +126,11 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
       "title" => "Task 8707"
     })
 
-    {:ok, issue_8707} = Issues.capture_issue(system_scope(), project, "Task 8707")
+    {:ok, issue_8707} = Issues.create_issue(project, %{description: "Task 8707"})
 
     {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8707, :product)
 
-    {:ok, %Task{id: task_id} = task} =
+    {:ok, %Task{} = task} =
       Pipeline.update_task(task, %{
         stage: :merged,
         worktree_name: "cleanup-branch",
@@ -146,8 +145,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     refute File.exists?(worktree_path)
     refute File.exists?(scratch_dir)
-
-    assert_receive {:pipeline_changed, %{task_id: ^task_id, event: :task_cleaned_up}}
   end
 
   test "handles cleanup gracefully when worktree_path is already nil", %{project: _project, task: _task} do
@@ -175,7 +172,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
       "title" => "Task 8709"
     })
 
-    {:ok, issue_8709} = Issues.capture_issue(system_scope(), project, "Task 8709")
+    {:ok, issue_8709} = Issues.create_issue(project, %{description: "Task 8709"})
 
     {:ok, task} = Pipeline.create_task(issue_8709, :product)
 

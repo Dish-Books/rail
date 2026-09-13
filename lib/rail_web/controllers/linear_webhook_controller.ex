@@ -96,6 +96,7 @@ defmodule RailWeb.LinearWebhookController do
     state_map = data["state"] || %{}
 
     attrs = %{
+      project_id: project_id,
       external_id: data["id"],
       identifier: data["identifier"],
       title: data["title"],
@@ -111,12 +112,12 @@ defmodule RailWeb.LinearWebhookController do
     case Repo.get_by(Issue, external_id: data["id"]) do
       %Issue{} = existing ->
         existing
-        |> Issue.changeset(attrs, project_id)
+        |> Issue.changeset(attrs)
         |> Repo.update()
 
       nil ->
         %Issue{}
-        |> Issue.changeset(attrs, project_id)
+        |> Issue.changeset(attrs)
         |> Repo.insert()
     end
   end

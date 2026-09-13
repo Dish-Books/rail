@@ -30,9 +30,9 @@ defmodule Rail.Runs.Actions.GetActiveOsProcessTest do
       })
       |> Repo.insert!()
 
-    assert %OsProcess{id: ^id} = Runs.get_active_os_process(run)
+    assert {:ok, %OsProcess{id: ^id}} = Runs.get_active_os_process(run)
 
-    assert %OsProcess{id: ^id} = Runs.get_active_os_process(run)
+    assert {:ok, %OsProcess{id: ^id}} = Runs.get_active_os_process(run)
   end
 
   test "returns the most recent live process, ignoring finished ones", %{run: run} do
@@ -59,10 +59,10 @@ defmodule Rail.Runs.Actions.GetActiveOsProcessTest do
       })
       |> Repo.insert!()
 
-    assert %OsProcess{id: ^newest_id} = Runs.get_active_os_process(run)
+    assert {:ok, %OsProcess{id: ^newest_id}} = Runs.get_active_os_process(run)
   end
 
-  test "returns nil when nothing is live", %{run: run} do
+  test "says so when nothing is live", %{run: run} do
     %OsProcess{}
     |> OsProcess.changeset(%{
       run_id: run.id,
@@ -74,7 +74,7 @@ defmodule Rail.Runs.Actions.GetActiveOsProcessTest do
     })
     |> Repo.insert!()
 
-    assert Runs.get_active_os_process(run) == nil
-    assert Runs.get_active_os_process(%Run{id: "run_nonexistent"}) == nil
+    assert {:error, :os_process_not_active} = Runs.get_active_os_process(run)
+    assert {:error, :os_process_not_active} = Runs.get_active_os_process(%Run{id: "run_nonexistent"})
   end
 end

@@ -16,6 +16,10 @@ config :logger, :default_formatter,
 
 config :phoenix, :json_library, Jason
 
+config :rail, Oban,
+  repo: Rail.Repo,
+  queues: [issues: 5]
+
 config :rail, Rail.Cache,
   gc_interval: to_timeout(hour: 12),
   max_size: 100_000,
@@ -25,10 +29,6 @@ config :rail, Rail.Cache,
 config :rail, Rail.Repo,
   migration_primary_key: [type: :text],
   migration_timestamps: [type: :utc_datetime_usec]
-
-config :rail, Oban,
-  repo: Rail.Repo,
-  queues: [issues: 5]
 
 config :rail, Rail.Vault,
   ciphers: [

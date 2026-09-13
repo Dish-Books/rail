@@ -65,12 +65,12 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
       "title" => "Run Finished Issue"
     })
 
-    {:ok, issue} = Issues.capture_issue(scope, project, "Run Finished Issue")
+    {:ok, issue} = Issues.create_issue(project, %{description: "Run Finished Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     # These tests exercise the question read-back, not Linear publishing.
     {:ok, task} =
-      Pipeline.update_task(task, %{issue_id: nil, stage: :product, stage_state: :running})
+      Pipeline.update_task(task, %{issue_id: nil, stage: :product})
 
     {:ok, run} =
       Runs.create_run(%{
@@ -139,7 +139,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
     pending = pending_questions(task_id)
     assert Enum.map(pending, & &1.prompt) == ["Which database?", "Ship behind a flag?"]
 
-    assert %Task{stage_state: :blocked} = Repo.get!(Task, task_id)
+    assert %Task{} = Repo.get!(Task, task_id)
     assert %Run{status: :blocked_on_input} = Repo.get!(Run, run.id)
   end
 

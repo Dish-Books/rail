@@ -56,7 +56,6 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
 
     run |> Run.changeset(%{status: :blocked_on_input}) |> Repo.update!()
 
-
     {:ok, question}
   end
 

@@ -9,13 +9,16 @@ defmodule RailWeb.Components.NoDemoBanner do
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Repo
+  alias Rail.Runs.Schemas.Run
 
   attr :task, :any, required: true
+  attr :run, :any, default: nil
 
   @doc "Renders the no-demo banner card."
   def no_demo_banner(assigns) do
     task = assigns.task
-    can_rerecord = can_rerecord?(task)
+    can_rerecord = can_rerecord?(assigns.run, task)
     assigns = assign(assigns, :can_rerecord, can_rerecord)
 
     ~H"""
@@ -63,13 +66,11 @@ defmodule RailWeb.Components.NoDemoBanner do
     """
   end
 
-  defp can_rerecord?(%Task{} = task), do: Pipeline.can_rerecord_demo?(task)
-
-  defp can_rerecord?(task) when is_map(task) do
-    # When plain map provided in tests, construct a Task struct for evaluation
-    struct = struct(Task, task)
-    Pipeline.can_rerecord_demo?(struct)
+  # Re-recording is about the run that would do it, and it needs the task's other
+  # runs to know nothing else is working in the worktree.
+  defp can_rerecord?(%Run{} = run, %Task{} = task) do
+    Pipeline.can_rerecord_demo?(%{run | task: Repo.preload(task, :runs)})
   end
 
-  defp can_rerecord?(_other), do: false
+  defp can_rerecord?(_no_run, _task), do: false
 end

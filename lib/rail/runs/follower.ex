@@ -35,8 +35,7 @@ defmodule Rail.Runs.Follower do
     :exit_code,
     file_offset: 0,
     partial_line: "",
-    pending_events: [],
-    skip_log_lines: 0
+    pending_events: []
   ]
 
   @doc """
@@ -76,8 +75,6 @@ defmodule Rail.Runs.Follower do
 
     tail_interval_ms = Keyword.get(opts, :tail_interval_ms, @default_tail_interval)
     batch_interval_ms = Keyword.get(opts, :batch_interval_ms, @default_batch_interval)
-    skip_log_lines = Keyword.get(opts, :skip_log_lines, 0)
-    file_offset = Keyword.get(opts, :file_offset, 0)
 
     event_state =
       new_event_state(backend,
@@ -95,9 +92,7 @@ defmodule Rail.Runs.Follower do
       port: Keyword.get(opts, :port),
       event_state: event_state,
       tail_interval_ms: tail_interval_ms,
-      batch_interval_ms: batch_interval_ms,
-      file_offset: file_offset,
-      skip_log_lines: skip_log_lines
+      batch_interval_ms: batch_interval_ms
     }
 
     Process.send_after(self(), :tail_tick, tail_interval_ms)
@@ -122,16 +117,14 @@ defmodule Rail.Runs.Follower do
     {lines, new_offset, new_partial} =
       pump_stream(state.stream_path, state.file_offset, state.partial_line)
 
-    {event_state, pending_events, skip_log_lines} =
-      process_incoming_lines(lines, state)
+    {event_state, pending_events} = process_incoming_lines(lines, state)
 
     updated_state = %{
       state
       | file_offset: new_offset,
         partial_line: new_partial,
         event_state: event_state,
-        pending_events: pending_events,
-        skip_log_lines: skip_log_lines
+        pending_events: pending_events
     }
 
     alive? =
@@ -168,19 +161,9 @@ defmodule Rail.Runs.Follower do
   end
 
   defp process_incoming_lines(lines, state) do
-    Enum.reduce(
-      lines,
-      {state.event_state, state.pending_events, state.skip_log_lines},
-      fn line, {ev_state, pending, skip} ->
-        new_ev_state = parse_line(ev_state, line)
-
-        if skip > 0 do
-          {new_ev_state, pending, skip - 1}
-        else
-          {new_ev_state, [line | pending], 0}
-        end
-      end
-    )
+    Enum.reduce(lines, {state.event_state, state.pending_events}, fn line, {ev_state, pending} ->
+      {parse_line(ev_state, line), [line | pending]}
+    end)
   end
 
   defp flush_pending_events([], _run_id, _os_process_id), do: []
@@ -228,7 +211,7 @@ defmodule Rail.Runs.Follower do
     {final_lines, final_offset, _remaining_partial} =
       pump_stream(state.stream_path, state.file_offset, state.partial_line, final: true)
 
-    {event_state, pending_events, _skip} =
+    {event_state, pending_events} =
       process_incoming_lines(final_lines, %{state | file_offset: final_offset})
 
     flush_pending_events(pending_events, state.run_id, state.os_process_id)
@@ -244,7 +227,7 @@ defmodule Rail.Runs.Follower do
           |> OsProcess.changeset(%{status: :finished})
           |> Repo.update()
 
-        updated_run = update_run(state.run_id, exit_code, error, event_state, os_process.is_chat)
+        updated_run = update_run(state.run_id, event_state)
         outcome = build_outcome(exit_code, error, event_state, updated_os_process, updated_run)
 
         # Everything that happens next is derived from the row, so a process whose
@@ -310,45 +293,23 @@ defmodule Rail.Runs.Follower do
     end
   end
 
-  defp update_run(run_id, exit_code, error, event_state, is_chat) do
-    case Repo.get(Run, run_id) do
-      %Run{} = run ->
-        run_attrs =
-          if is_chat do
-            conv_id = event_state.conversation_id || run.conversation_id
-
-            if conv_id == run.conversation_id do
-              %{}
-            else
-              %{conversation_id: conv_id}
-            end
-          else
-            new_status =
-              if run.status == :blocked_on_input do
-                :blocked_on_input
-              else
-                :finished
-              end
-
-            %{
-              status: new_status,
-              completed_at: DateTime.utc_now(),
-              exit_code: exit_code,
-              error: error,
-              conversation_id: event_state.conversation_id || run.conversation_id,
-              usage: event_state.usage
-            }
-          end
-
-        {:ok, updated_run} =
-          run
-          |> Run.changeset(run_attrs)
-          |> Repo.update()
-
+  # The conversation id is the one thing only the Follower saw, so it is the one
+  # thing recorded here, and only the first time: a run is one conversation, and
+  # the changeset refuses to move it to another. Everything else about the exit
+  # travels in the outcome and is settled by `run_finished/3`, which is what makes
+  # the settle identical whether the exit was seen live or found afterwards by
+  # `Rail.Runs.Boot`.
+  defp update_run(run_id, event_state) do
+    case {Repo.get(Run, run_id), event_state.conversation_id} do
+      {%Run{conversation_id: nil} = run, conversation_id} when is_binary(conversation_id) ->
+        {:ok, updated_run} = run |> Run.changeset(%{conversation_id: conversation_id}) |> Repo.update()
         updated_run
 
+      {%Run{} = run, _already_set_or_unseen} ->
+        run
+
       # coveralls-ignore-start (unreachable due to foreign key cascade delete)
-      nil ->
+      {nil, _conversation_id} ->
         nil
         # coveralls-ignore-stop
     end

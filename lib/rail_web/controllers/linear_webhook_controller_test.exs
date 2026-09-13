@@ -248,7 +248,7 @@ defmodule RailWeb.LinearWebhookControllerTest do
 
     LinearMock.mock_create_issue_success(%{"id" => "lin_wh_iss_2", "identifier" => "ENG-888", "title" => "Initial Title"})
 
-    {:ok, existing_issue} = Issues.capture_issue(system_scope(), project, "Initial Title")
+    {:ok, existing_issue} = Issues.create_issue(project, %{description: "Initial Title"})
 
     update_payload = %{
       "type" => "Issue",
