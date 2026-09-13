@@ -12,9 +12,7 @@ defmodule Rail.Pipeline.Actions.ListRunEventsTest do
         started_at: DateTime.utc_now()
       })
 
-    for line <- ["line 1", "line 2", "line 3"] do
-      Pipeline.append_run_event(run, line)
-    end
+    Pipeline.append_run_events(run.id, nil, ["line 1", "line 2", "line 3"])
 
     %{run: run}
   end

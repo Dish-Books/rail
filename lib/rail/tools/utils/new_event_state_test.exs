@@ -13,6 +13,6 @@ defmodule Rail.Tools.Utils.NewEventStateTest do
   end
 
   test "carries the opts onto the state" do
-    assert %ClaudeEvents{task_id: "tsk_1"} = new_event_state(%Backend{name: :claude}, task_id: "tsk_1")
+    assert %ClaudeEvents{conversation_id: "sess_1"} = new_event_state(%Backend{name: :claude}, conversation_id: "sess_1")
   end
 end

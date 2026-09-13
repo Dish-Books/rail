@@ -78,7 +78,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
     argv =
       Tools.build_args(
         backend: role.backend,
-        prompt: Pipeline.chat_prompt(message),
+        prompt: message,
         model: role.model,
         reasoning_effort: role.reasoning_effort || "high",
         read_only: false,
@@ -109,7 +109,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   end
 
   defp fail(%Run{} = run, reason) do
-    Pipeline.append_run_event(run, "[rail] That message was not delivered: #{inspect(reason)}")
+    Pipeline.append_run_events(run.id, nil, ["[rail] That message was not delivered: #{inspect(reason)}"])
     {:error, reason}
   end
 

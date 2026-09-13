@@ -1,12 +1,11 @@
 defmodule Rail.Tools.AgyEventsTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Tools.AgyEvents
 
   test "parses init event, updates conversation id and logs tool count" do
-    state = AgyEvents.new(task_id: "tsk_1", role_id: "rol_1")
+    state = AgyEvents.new()
 
     event = %{
       "event" => "init",
@@ -273,37 +272,6 @@ defmodule Rail.Tools.AgyEventsTest do
 
     assert Enum.any?(state.logs, &(&1 =~ "[recovered] agy reported ERROR"))
     assert Enum.any?(state.logs, &(&1 =~ "[result] ERROR (recovered)"))
-  end
-
-  test "detects questions in agent_response prose" do
-    state = AgyEvents.new()
-
-    step = %{
-      "event" => "step_update",
-      "step_update" => %{
-        "step_type" => "agent_response",
-        "state" => "ACTIVE",
-        "text_delta" => "[QUESTION: Which schema?] [OPTIONS: public, private]\nAdditional clarifying prose."
-      }
-    }
-
-    state = AgyEvents.handle_event(state, step)
-
-    assert [%DetectedQuestion{prompt: "Which schema?", options: ["public", "private"]}] =
-             state.detected_questions
-
-    # Subsequent line in later step preserves existing question
-    later_step = %{
-      "event" => "step_update",
-      "step_update" => %{
-        "step_type" => "agent_response",
-        "state" => "DONE",
-        "text_delta" => "Another prose line."
-      }
-    }
-
-    state = AgyEvents.handle_event(state, later_step)
-    assert Enum.map(state.detected_questions, & &1.prompt) == ["Which schema?"]
   end
 
   test "parse_line decodes NDJSON or logs non-JSON stdout" do

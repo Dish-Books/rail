@@ -77,8 +77,6 @@ defmodule Rail.Tools.Follower do
 
     event_state =
       new_event_state(backend,
-        task_id: os_process.task_id,
-        role_id: run.role_id,
         conversation_id: run.conversation_id
       )
 
@@ -298,7 +296,6 @@ defmodule Rail.Tools.Follower do
       error: error,
       usage: event_state.usage,
       conversation_id: event_state.conversation_id || (updated_run && updated_run.conversation_id),
-      detected_questions: event_state.detected_questions,
       os_process: updated_os_process,
       run: updated_run
     }

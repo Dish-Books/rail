@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.DetectQuestions
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -46,7 +47,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
   """
   def register_asked_questions(%OsProcess{} = os_process, %Run{} = run) do
     run = Repo.preload(run, [task: :issue, role: :backend], force: true)
-    questions = os_process |> agent_log(run) |> Pipeline.detect_questions()
+    questions = os_process |> agent_log(run) |> detect_questions()
 
     Enum.each(questions, &Pipeline.register_question(run, &1))
 

@@ -36,7 +36,7 @@ defmodule Rail.Pipeline.Actions.StopRun do
   end
 
   defp clear_queue(%Run{} = run, was_running) do
-    if was_running, do: Pipeline.append_run_event(run, "[rail] Stopped by user.")
+    if was_running, do: Pipeline.append_run_events(run.id, nil, ["[rail] Stopped by user."])
 
     {:ok, stopped} =
       Run

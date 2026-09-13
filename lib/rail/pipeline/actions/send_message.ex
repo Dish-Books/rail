@@ -62,9 +62,8 @@ defmodule Rail.Pipeline.Actions.SendMessage do
   # The human's words go into the log as they are typed, so the conversation reads
   # in order whether the agent sees them now or at the end of its turn.
   defp record_transcript(%Run{} = run, text) do
-    text
-    |> String.split("\n")
-    |> Enum.each(&Pipeline.append_run_event(run, "[human] #{&1}"))
+    lines = text |> String.split("\n") |> Enum.map(&"[human] #{&1}")
+    Pipeline.append_run_events(run.id, nil, lines)
   end
 
   defp append(nil, text), do: text

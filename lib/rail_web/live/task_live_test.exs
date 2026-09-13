@@ -167,7 +167,7 @@ defmodule RailWeb.TaskLiveTest do
 
     view |> element("#send-answers-button") |> render_click()
 
-    assert [] = Pipeline.list_questions(task.id, status: :pending)
+    assert [] = Pipeline.list_questions(task, status: :pending)
   end
 
   test "a question can be dismissed instead of answered", %{conn: conn, task: task, run: run} do
@@ -241,7 +241,7 @@ defmodule RailWeb.TaskLiveTest do
           started_at: ~U[2026-09-09 10:00:00Z]
         })
 
-      Pipeline.append_run_event(working, "[tool read_file] lib/rail.ex")
+      Pipeline.append_run_events(working.id, nil, ["[tool read_file] lib/rail.ex"])
 
       {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
 

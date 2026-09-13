@@ -255,7 +255,7 @@ defmodule RailWeb.TaskLive do
   defp apply_task(socket, %Task{} = task) do
     roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []
     selected_run = stage_run(task)
-    pending_questions = pending_questions(selected_run)
+    pending_questions = pending_questions(task, selected_run)
     pending_question = select_question(pending_questions, socket.assigns.selected_question_id)
 
     sync_run_subscription(socket, selected_run)
@@ -282,11 +282,11 @@ defmodule RailWeb.TaskLive do
 
   # A run can ask several things at once, so a blocked run shows the whole queue
   # as tabs, in the order they were asked.
-  defp pending_questions(%Run{status: :blocked_on_input, task_id: task_id}) do
-    Pipeline.list_questions(task_id, status: :pending, order_by: [asc: :inserted_at, asc: :id])
+  defp pending_questions(%Task{} = task, %Run{status: :blocked_on_input}) do
+    Pipeline.list_questions(task, status: :pending, order_by: [asc: :inserted_at, asc: :id])
   end
 
-  defp pending_questions(_not_blocked), do: []
+  defp pending_questions(%Task{}, _not_blocked), do: []
 
   # The tab the human picked stays put across refreshes; once it is answered the
   # front of the queue takes over.
