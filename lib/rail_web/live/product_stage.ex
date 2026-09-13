@@ -8,8 +8,11 @@ defmodule RailWeb.Live.ProductStage do
   """
   use RailWeb, :live_component
 
+  import Rail.Pipeline.Utils.ParseTicket
+  import RailWeb.Components.IssueIcons, only: [priority_icon: 1]
   import RailWeb.CoreComponents, only: [markdown: 1]
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
 
@@ -38,26 +41,11 @@ defmodule RailWeb.Live.ProductStage do
       </div>
 
       <div :if={@ticket != nil} class="space-y-3">
-        <h3 class="text-base font-bold text-slate-900 dark:text-slate-100">Proposed ticket</h3>
-
-        <div
-          id="product-ticket"
-          data-qa="product_ticket"
-          class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-4 select-text"
-        >
-          <.markdown content={@ticket} />
-        </div>
-
-        <p
-          :if={@error}
-          id="product-approve-error"
-          data-qa="product_approve_error"
-          class="text-xs text-red-600 dark:text-red-500"
-        >
-          {@error}
-        </p>
-
         <div class="flex flex-wrap items-center gap-2">
+          <h3 class="mr-auto text-base font-bold text-slate-900 dark:text-slate-100">
+            Proposed ticket
+          </h3>
+
           <button
             type="button"
             id="approve-product-plan"
@@ -81,6 +69,45 @@ defmodule RailWeb.Live.ProductStage do
             Approve and skip designs
           </button>
         </div>
+
+        <p
+          :if={@error}
+          id="product-approve-error"
+          data-qa="product_approve_error"
+          class="text-xs text-red-600 dark:text-red-500"
+        >
+          {@error}
+        </p>
+
+        <div
+          id="product-ticket"
+          data-qa="product_ticket"
+          class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-4 select-text"
+        >
+          <h2
+            id="product-ticket-title"
+            class="text-lg font-semibold text-slate-900 dark:text-slate-100"
+          >
+            {@ticket.title}
+          </h2>
+
+          <div
+            :if={@ticket.priority || @ticket.estimate}
+            class="flex items-center gap-4 mt-2 text-xs text-slate-500 dark:text-slate-400"
+          >
+            <span
+              :if={@ticket.priority}
+              id="product-ticket-priority"
+              class="flex items-center gap-1.5"
+            >
+              <.priority_icon priority={@ticket.priority} />
+              {Issue.priority_label(@ticket.priority)}
+            </span>
+            <span :if={@ticket.estimate} id="product-ticket-estimate">{@ticket.estimate} Points</span>
+          </div>
+
+          <.markdown content={@ticket.description} class="mt-3" />
+        </div>
       </div>
     </div>
     """
@@ -103,7 +130,7 @@ defmodule RailWeb.Live.ProductStage do
   defp read_ticket(%Task{scratch_path: scratch_path, issue: %{identifier: identifier}})
        when is_binary(scratch_path) and is_binary(identifier) do
     case [scratch_path, "tickets", "#{identifier}.md"] |> Path.join() |> File.read() do
-      {:ok, content} -> if String.trim(content) == "", do: nil, else: content
+      {:ok, content} -> if String.trim(content) == "", do: nil, else: parse_ticket(content)
       {:error, _unreadable} -> nil
     end
   end

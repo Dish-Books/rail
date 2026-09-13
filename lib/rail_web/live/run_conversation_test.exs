@@ -167,6 +167,64 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ ~s(data-qa="system-event")
   end
 
+  test "reads the agent's stream as a conversation, not as JSON", %{task: task, roles: roles, roles_map: roles_map} do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        conversation_id: "conv_stream",
+        started_at: ~U[2026-09-09 10:00:00Z],
+        completed_at: ~U[2026-09-09 10:01:05Z]
+      })
+
+    Pipeline.append_run_events(run.id, nil, [
+      ~s({"type":"system","subtype":"init","session_id":"conv_stream","tools":[]}),
+      ~s({"type":"assistant","message":{"content":[{"type":"text","text":"## Plan\\n\\n- **One** step"}]}}),
+      ~s({"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/repo/a.ex"}}]}}),
+      "[human] Looks good"
+    ])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    refute html =~ "&quot;type&quot;"
+    assert html =~ "<strong>One</strong>"
+    assert html =~ "Tool activity (1 step)"
+    assert html =~ "Looks good"
+    assert html =~ ~s(data-elapsed-seconds="65")
+    refute html =~ "data-started-at"
+  end
+
+  test "tool activity names each step, reads paths from the worktree root and flags errors", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: "/work/tree"})
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        conversation_id: "conv_tools",
+        started_at: ~U[2026-09-09 10:00:00Z]
+      })
+
+    Pipeline.append_run_events(run.id, nil, [
+      "[tool] Read /work/tree/lib/rail.ex",
+      "[tool] Bash mix test",
+      "[tool] Read /work/tree/lib/rail_web.ex",
+      "[tool error] File not found"
+    ])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert html =~ "Tool activity (4 steps)"
+    assert html =~ "Read ×2, Bash"
+    assert html =~ "pi-warning-circle"
+  end
+
   test "the composer says the agent is thinking, and offers to stop it", %{
     task: task,
     roles: roles,

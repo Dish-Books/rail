@@ -13,6 +13,8 @@ defmodule RailWeb.Live.RunConversation do
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.Backend
 
   @doc """
   Takes the task and its runs; everything else the conversation decides itself.
@@ -120,11 +122,14 @@ defmodule RailWeb.Live.RunConversation do
               {format_run_status(@selected_run.status)}
             </span>
 
-            <!-- 2. ElapsedTimeText -->
+            <!-- 2. ElapsedTimeText: ticks only while the run works -->
             <span
               id={"elapsed-run-#{@selected_run.id}"}
               phx-hook="Elapsed"
-              data-started-at={format_started_at(@selected_run.started_at)}
+              data-started-at={
+                Run.running?(@selected_run) && format_started_at(@selected_run.started_at)
+              }
+              data-elapsed-seconds={!Run.running?(@selected_run) && elapsed_seconds(@selected_run)}
               data-qa="elapsed-text"
               class="font-mono"
             >
@@ -227,6 +232,7 @@ defmodule RailWeb.Live.RunConversation do
               runs={@runs}
               roles_map={@roles_map}
               expanded_activities={@expanded_activities}
+              worktree_path={@task.worktree_path}
               target={@target}
             />
           <% end %>
@@ -254,6 +260,7 @@ defmodule RailWeb.Live.RunConversation do
   attr :runs, :list, default: []
   attr :roles_map, :map, default: %{}
   attr :expanded_activities, :any, default: []
+  attr :worktree_path, :string, default: nil
   attr :target, :any, required: true
 
   def message_item(assigns) do
@@ -299,41 +306,79 @@ defmodule RailWeb.Live.RunConversation do
       <% :activity -> %>
         <!-- 4.8 _ActivityTile (collapsible tool activity) -->
         <% expanded = activity_expanded?(@idx, @expanded_activities) %>
-        <% step_count = count_lines(@text) %>
+        <% steps = tool_steps(@text, @worktree_path) %>
+        <% error_count = Enum.count(steps, & &1.error?) %>
         <div
           id={"activity-tile-#{@idx}"}
           data-qa="activity-tile"
-          class="rounded-lg border border-slate-300 dark:border-slate-600/40 bg-slate-50 dark:bg-slate-800 overflow-hidden my-1"
+          class="max-w-[720px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden"
         >
           <button
             type="button"
             phx-click="toggle_activity"
             phx-target={@target}
             phx-value-index={@idx}
-            class="w-full flex items-center justify-between px-3 py-2 text-xs font-mono text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer text-left"
+            class="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer text-left"
           >
-            <div class="flex items-center gap-2">
-              <.icon name="pi-wrench" class="h-3.5 w-3.5 shrink-0" />
-              <span>
-                {if step_count == 1,
-                  do: "Tool activity (1 step)",
-                  else: "Tool activity (#{step_count} steps)"}
-              </span>
-            </div>
+            <.icon name="pi-wrench" class="h-3.5 w-3.5 shrink-0" />
+            <span class="font-medium text-slate-700 dark:text-slate-300 shrink-0">
+              {if length(steps) == 1,
+                do: "Tool activity (1 step)",
+                else: "Tool activity (#{length(steps)} steps)"}
+            </span>
+            <span class="truncate">{tool_names_summary(steps)}</span>
+            <span
+              :if={error_count > 0}
+              class="inline-flex items-center gap-1 shrink-0 text-red-600 dark:text-red-400"
+            >
+              <.icon name="pi-warning-circle" class="h-3.5 w-3.5" />
+              {error_count}
+            </span>
             <.icon
               name={if expanded, do: "pi-caret-up", else: "pi-caret-down"}
-              class="h-4 w-4 shrink-0"
+              class="h-4 w-4 shrink-0 ml-auto"
             />
           </button>
 
-          <div
+          <ul
             :if={expanded}
             id={"activity-content-#{@idx}"}
             data-qa="activity-content"
-            class="p-2.5 bg-black/85 text-cyan-300 font-mono text-[11px] whitespace-pre-wrap select-text border-t border-zinc-800"
+            class="border-t border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800 select-text"
           >
-            {@text}
-          </div>
+            <li
+              :for={step <- steps}
+              data-qa="activity-step"
+              class={[
+                "flex items-start gap-2 px-3 py-1.5 text-xs",
+                step.error? && "bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300"
+              ]}
+            >
+              <.icon
+                name={if step.error?, do: "pi-warning-circle", else: tool_icon(step.name)}
+                class={[
+                  "h-3.5 w-3.5 shrink-0 mt-px",
+                  !step.error? && "text-slate-400 dark:text-slate-500"
+                ]}
+              />
+              <span
+                :if={step.name}
+                class={["font-medium shrink-0", !step.error? && "text-slate-900 dark:text-slate-100"]}
+              >
+                {step.name}
+              </span>
+              <span
+                title={step.detail}
+                class={[
+                  "font-mono min-w-0",
+                  step.error? && "whitespace-pre-wrap break-words",
+                  !step.error? && "truncate text-slate-500 dark:text-slate-400"
+                ]}
+              >
+                {step.detail}
+              </span>
+            </li>
+          </ul>
         </div>
       <% :event -> %>
         <!-- 4.8 _EventTile -->
@@ -672,15 +717,26 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   # The log the component holds; the rendered lines and the turns read out of it
-  # are both derived from it, so an appended batch only updates one list.
+  # are both derived from it, so an appended batch only updates one list. The log
+  # is what the agent's CLI wrote, so its backend reads it into lines before they
+  # read as a conversation; lines Rail wrote itself pass through as they are.
   defp assign_run_events(socket, run_events) do
     lines = Enum.map(run_events, & &1.line)
 
     socket
     |> assign(:run_events, run_events)
     |> assign(:log_lines, lines)
-    |> assign(:turns, Pipeline.parse_transcript(lines))
+    |> assign(:turns, lines |> readable_lines(socket.assigns) |> Pipeline.parse_transcript())
   end
+
+  defp readable_lines(lines, %{selected_run: %Run{role_id: role_id}, roles_map: %{} = roles_map}) do
+    case roles_map do
+      %{^role_id => %{backend: %Backend{} = backend}} -> Tools.parse_stream(backend, lines).logs
+      _unknown_backend -> lines
+    end
+  end
+
+  defp readable_lines(lines, _no_run), do: lines
 
   defp load_run_events(%Run{} = run), do: Pipeline.list_run_events(run)
   defp load_run_events(_no_run), do: []
@@ -729,23 +785,93 @@ defmodule RailWeb.Live.RunConversation do
   defp format_started_at(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
   defp format_started_at(_other), do: nil
 
-  defp format_elapsed_run(%Run{started_at: %DateTime{} = dt, completed_at: %DateTime{} = completed}) do
-    secs = max(0, DateTime.diff(completed, dt, :second))
-    format_duration(secs)
-  end
-
-  defp format_elapsed_run(%Run{started_at: %DateTime{} = dt}) do
-    secs = max(0, DateTime.diff(DateTime.utc_now(), dt, :second))
-    format_duration(secs)
-  end
-
+  defp format_elapsed_run(%Run{started_at: %DateTime{}} = run), do: run |> elapsed_seconds() |> format_duration()
   defp format_elapsed_run(_other), do: ""
 
-  defp count_lines(text) do
+  # A run that stopped without a completion time has no end to measure to, so it
+  # reads as when it last changed.
+  defp elapsed_seconds(%Run{started_at: %DateTime{} = started} = run) do
+    ended = if Run.running?(run), do: DateTime.utc_now(), else: run.completed_at || run.updated_at || DateTime.utc_now()
+    max(0, DateTime.diff(ended, started, :second))
+  end
+
+  defp elapsed_seconds(_other), do: nil
+
+  # An activity turn is `[tool] Name summary` lines, as the backends write them,
+  # with `[tool error] detail` where a call failed. Older logs name the tool in
+  # the bracket instead: `[tool read_file] summary`.
+  defp tool_steps(text, worktree_path) do
     text
     |> to_string()
-    |> String.split("\n")
-    |> length()
+    |> String.split("\n", trim: true)
+    |> Enum.map(&tool_step(&1, worktree_path))
+  end
+
+  defp tool_step(line, worktree_path) do
+    case Regex.run(~r/^\[tool( error)?(?: ([^\]]+))?\]\s*(.*)$/s, line) do
+      [_line, error, "", rest] when error != "" -> %{name: nil, detail: rest, error?: true}
+      [_line, error, "", rest] -> rest |> split_tool_name() |> step(error != "", worktree_path)
+      [_line, error, name, rest] -> step({name, rest}, error != "", worktree_path)
+      nil -> %{name: nil, detail: line, error?: false}
+    end
+  end
+
+  defp split_tool_name(rest) do
+    case String.split(rest, " ", parts: 2) do
+      [name, detail] -> {name, detail}
+      [name] -> {name, ""}
+    end
+  end
+
+  defp step({name, detail}, error?, worktree_path) do
+    %{name: name, detail: relative_to(detail, worktree_path), error?: error?}
+  end
+
+  # Paths inside the task's worktree read shorter from its root.
+  defp relative_to(detail, worktree_path) when is_binary(worktree_path) and worktree_path != "" do
+    String.replace(detail, String.trim_trailing(worktree_path, "/") <> "/", "")
+  end
+
+  defp relative_to(detail, _no_worktree), do: detail
+
+  # Which tools ran, in the order they first ran, with how many times each did.
+  defp tool_names_summary(steps) do
+    names = steps |> Enum.map(& &1.name) |> Enum.reject(&is_nil/1)
+    counts = Enum.frequencies(names)
+
+    names
+    |> Enum.uniq()
+    |> Enum.map_join(", ", fn name ->
+      if counts[name] == 1, do: name, else: "#{name} ×#{counts[name]}"
+    end)
+  end
+
+  defp tool_icon(name) do
+    case name |> to_string() |> String.downcase() do
+      n when n in ["read", "read_file", "view_file"] ->
+        "pi-file-text"
+
+      n when n in ["write", "edit", "multiedit", "notebookedit", "write_to_file", "replace_file_content"] ->
+        "pi-pencil-simple"
+
+      n when n in ["bash", "run_command", "runcommand"] ->
+        "pi-terminal-window"
+
+      n when n in ["grep", "glob", "grep_search", "find_by_name"] ->
+        "pi-magnifying-glass"
+
+      n when n in ["webfetch", "websearch", "fetch_url", "read_url_content"] ->
+        "pi-globe"
+
+      n when n in ["task", "agent"] ->
+        "pi-robot"
+
+      n when n in ["todowrite"] ->
+        "pi-list-checks"
+
+      _other ->
+        "pi-wrench"
+    end
   end
 
   defp activity_expanded?(idx, %MapSet{} = set) do

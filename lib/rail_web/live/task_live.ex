@@ -52,7 +52,7 @@ defmodule RailWeb.TaskLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} {assigns}>
-      <div class="max-w-5xl mx-auto px-6 py-6 space-y-6" id="task-page" data-qa="task-page">
+      <div class="max-w-screen-2xl mx-auto px-6 py-6 space-y-6" id="task-page" data-qa="task-page">
         <div
           :if={@task == nil}
           id="task-cleaned-up"
@@ -116,50 +116,57 @@ defmodule RailWeb.TaskLive do
             </p>
           </div>
 
-          <.live_component
-            :if={@task.stage == :product and @selected_run != nil}
-            module={ProductStage}
-            id="product-stage-component"
-            task={@task}
-            run={@selected_run}
-          />
+          <!-- The conversation on the left, the ticket it is producing on the right. -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            <div id="task-conversation-column" class="min-w-0 space-y-6">
+              <.answer_field
+                :if={@pending_question != nil}
+                question={@pending_question}
+                questions={@pending_questions}
+                answer_text={@answer_text}
+              />
 
-          <.answer_field
-            :if={@pending_question != nil}
-            question={@pending_question}
-            questions={@pending_questions}
-            answer_text={@answer_text}
-          />
+              <!-- Answering only records. The round reaches the agent when the human says it is done. -->
+              <div
+                :if={@blocked? and @pending_question == nil}
+                id="send-answers-panel"
+                data-qa="send_answers_panel"
+                class="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-4"
+              >
+                <span class="text-xs text-slate-500 dark:text-slate-400">
+                  Every question is answered.
+                </span>
 
-          <!-- Answering only records. The round reaches the agent when the human says it is done. -->
-          <div
-            :if={@blocked? and @pending_question == nil}
-            id="send-answers-panel"
-            data-qa="send_answers_panel"
-            class="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-4"
-          >
-            <span class="text-xs text-slate-500 dark:text-slate-400">
-              Every question is answered.
-            </span>
+                <button
+                  type="button"
+                  id="send-answers-button"
+                  data-qa="send-answers-button"
+                  phx-click="send_answers"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs"
+                >
+                  Send answers
+                </button>
+              </div>
 
-            <button
-              type="button"
-              id="send-answers-button"
-              data-qa="send-answers-button"
-              phx-click="send_answers"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs"
-            >
-              Send answers
-            </button>
+              <.live_component
+                module={RunConversation}
+                id="run-conversation"
+                task={@task}
+                runs={@task.runs || []}
+                roles_map={@roles_map}
+              />
+            </div>
+
+            <div id="task-ticket-column" class="min-w-0 lg:sticky lg:top-6">
+              <.live_component
+                :if={@task.stage == :product and @selected_run != nil}
+                module={ProductStage}
+                id="product-stage-component"
+                task={@task}
+                run={@selected_run}
+              />
+            </div>
           </div>
-
-          <.live_component
-            module={RunConversation}
-            id="run-conversation"
-            task={@task}
-            runs={@task.runs || []}
-            roles_map={@roles_map}
-          />
         </div>
       </div>
     </Layouts.app>

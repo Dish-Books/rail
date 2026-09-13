@@ -205,13 +205,14 @@ defmodule Rail.Pipeline.Schemas.Run do
   def resumable?(_other), do: false
 
   @doc """
-  Returns true if this run can accept an interactive chat turn:
-  it must have previously started and carry a non-empty conversation ID.
+  Returns true if this run can accept an interactive chat turn: it is working, so
+  a message waits on it, or it has started and holds a conversation to resume.
+
+  A working run may not have recorded its conversation yet — the id is only
+  written when its process exits — but a queued message is not sent until then.
   """
   def can_chat?(%__MODULE__{} = run) do
-    has_started?(run) and
-      is_binary(run.conversation_id) and
-      String.trim(run.conversation_id) != ""
+    running?(run) or (has_started?(run) and resumable?(run))
   end
 
   def can_chat?(_other), do: false

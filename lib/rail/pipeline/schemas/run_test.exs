@@ -100,6 +100,10 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     refute Run.has_started?(conv_without_start)
     refute Run.can_chat?(conv_without_start)
 
+    # A working run takes a message to queue before it has recorded its conversation.
+    working_no_conv = %Run{status: :running, started_at: DateTime.utc_now(), conversation_id: nil}
+    assert Run.can_chat?(working_no_conv)
+
     refute Run.has_started?(nil)
     refute Run.can_chat?(nil)
   end

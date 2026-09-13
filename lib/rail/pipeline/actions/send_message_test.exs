@@ -108,6 +108,18 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
     assert ["[human] One line", "[human] Another line"] = Enum.map(Pipeline.list_run_events(run), & &1.line)
   end
 
+  test "a working run that has not recorded its conversation yet still queues", %{task: task, role: role} do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    assert {:ok, :queued, %Run{pending_chat: "Anyone there?"}} = Pipeline.send_message(run, "Anyone there?")
+  end
+
   test "a run holding no conversation cannot be messaged", %{task: task, role: role} do
     {:ok, run} =
       Pipeline.create_run(%{

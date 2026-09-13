@@ -135,7 +135,7 @@ defmodule RailWeb.TaskLiveTest do
 
     File.write!(
       Path.join([task.scratch_path, "tickets", "TLV-1.md"]),
-      "---\ntitle: A better ticket\n---\n\nThe body the agent wrote."
+      "---\ntitle: A better ticket\npriority: high\nestimate: 2\n---\n\nThe body the agent wrote."
     )
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -148,6 +148,10 @@ defmodule RailWeb.TaskLiveTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
     assert has_element?(view, "[data-qa='product_ticket']", "The body the agent wrote.")
+    assert has_element?(view, "#product-ticket-title", "A better ticket")
+    assert has_element?(view, "#product-ticket-priority", "High")
+    assert has_element?(view, "#product-ticket-estimate", "2 Points")
+    refute has_element?(view, "[data-qa='product_ticket']", "title:")
 
     view |> element("#approve-product-plan") |> render_click()
 
@@ -293,6 +297,8 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("[data-qa='activity-tile'] button") |> render_click()
       assert has_element?(view, "[data-qa='activity-content']")
+      assert has_element?(view, "[data-qa='activity-step']", "read_file")
+      assert has_element?(view, "[data-qa='activity-step']", "lib/rail.ex")
 
       view |> element("[data-qa='activity-tile'] button") |> render_click()
       refute has_element?(view, "[data-qa='activity-content']")

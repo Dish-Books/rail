@@ -2,22 +2,7 @@ defmodule RailWeb.TaskDetailLive do
   @moduledoc false
   use RailWeb, :live_view
 
-  import RailWeb.CoreComponents,
-    only: [
-      icon: 1,
-      project_badge: 1,
-      stage_stepper: 1,
-      stage_outcome: 1,
-      markdown: 1,
-      task_actions: 1,
-      task_action_modals: 1,
-      answer_field: 1,
-      diff_pane: 1,
-      demo_panel: 1,
-      no_demo_banner: 1,
-      demo_player_modal: 1,
-      design_panel: 1
-    ]
+  import RailWeb.CoreComponents
 
   alias Rail.Artifacts
   alias Rail.Issues.Schemas.Issue
