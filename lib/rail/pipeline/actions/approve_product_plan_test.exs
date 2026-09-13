@@ -147,11 +147,4 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
     assert {:error, {:invalid_stage, :engineer}} =
              Pipeline.approve_product_plan(Repo.preload(run, [task: [:issue, :runs]], force: true))
   end
-
-  test "a task with no issue has nowhere to publish the ticket", %{task: task, run: run} do
-    {:ok, _task} = Pipeline.update_task(task, %{issue_id: nil})
-
-    assert {:error, :no_issue} =
-             Pipeline.approve_product_plan(Repo.preload(run, [task: [:issue, :runs]], force: true))
-  end
 end

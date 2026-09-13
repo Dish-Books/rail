@@ -191,17 +191,6 @@ defmodule RailWeb.Components.NavTest do
     end
   end
 
-  test "icon component renders a Phosphor class, directly and through CoreComponents" do
-    html = render_component(&Nav.icon/1, name: "pi-squares-four-fill", class: "h-5 w-5")
-    assert html =~ "pi-squares-four-fill"
-    assert html =~ "shrink-0"
-
-    core_html =
-      render_component(&RailWeb.CoreComponents.icon/1, name: "pi-gear", class: "h-5 w-5")
-
-    assert core_html =~ "pi-gear"
-  end
-
   test "nav_destination supports custom section id falling back to to_string" do
     html =
       render_component(&Nav.nav_item/1,

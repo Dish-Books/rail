@@ -9,8 +9,6 @@ defmodule RailWeb.Live.RunConversation do
   """
   use RailWeb, :live_component
 
-  import RailWeb.CoreComponents, only: [icon: 1, markdown: 1]
-
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Tools

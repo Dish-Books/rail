@@ -2,8 +2,6 @@ defmodule RailWeb.Components.EmptyState do
   @moduledoc false
   use RailWeb, :html
 
-  import RailWeb.CoreComponents, only: [icon: 1]
-
   def empty_state(assigns) do
     ~H"""
     <div

@@ -2,12 +2,6 @@ defmodule RailWeb.IssuesLive do
   @moduledoc false
   use RailWeb, :live_view
 
-  import RailWeb.CoreComponents,
-    only: [
-      icon: 1,
-      issue_card: 1
-    ]
-
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects

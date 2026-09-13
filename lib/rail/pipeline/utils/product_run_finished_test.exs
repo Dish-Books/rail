@@ -77,9 +77,6 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
-    # These tests exercise stage transitions, not Linear publishing.
-    {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
-
     {:ok, run} =
       Pipeline.create_run(%{
         task_id: task.id,

@@ -46,8 +46,6 @@ defmodule RailWeb do
     quote do
       use Phoenix.LiveView
 
-      import RailWeb.CoreComponents
-
       unquote(html_helpers())
     end
   end
@@ -55,8 +53,6 @@ defmodule RailWeb do
   def live_component do
     quote do
       use Phoenix.LiveComponent
-
-      import RailWeb.CoreComponents
 
       unquote(html_helpers())
     end
@@ -87,6 +83,7 @@ defmodule RailWeb do
       use Gettext, backend: RailWeb.Gettext
 
       import Phoenix.HTML
+      import RailWeb.CoreComponents
       import RailWeb.Helpers
 
       alias Phoenix.LiveView.JS

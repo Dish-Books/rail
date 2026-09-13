@@ -9,11 +9,6 @@ defmodule RailWeb.Components.TaskLayout do
   """
   use RailWeb, :html
 
-  import RailWeb.CoreComponents, only: [project_badge: 1]
-
-  alias RailWeb.Components.RunState
-  alias RailWeb.Components.StageLabel
-
   attr :task, :any, required: true
   attr :run, :any, default: nil
   attr :title, :string, default: nil
@@ -48,12 +43,12 @@ defmodule RailWeb.Components.TaskLayout do
             :if={@run != nil}
             id="task-status-chip"
             data-qa="task_status_chip"
-            class={["font-semibold", RunState.color_class(@run)]}
+            class={["font-semibold", run_state_style(@run).text_class]}
           >
-            {StageLabel.stage_label(@task, @run)}
+            {stage_label(@task, @run)}
           </span>
 
-          <span :if={@task.issue} data-qa="task_issue_identifier" class="font-mono">
+          <span data-qa="task_issue_identifier" class="font-mono">
             {@task.issue.identifier}
           </span>
           <span data-qa="task_branch_name" class="font-mono">{@task.worktree_name}</span>

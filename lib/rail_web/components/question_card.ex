@@ -9,8 +9,6 @@ defmodule RailWeb.Components.QuestionCard do
   """
   use RailWeb, :html
 
-  import RailWeb.CoreComponents, only: [project_badge: 1]
-
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
 
@@ -25,7 +23,7 @@ defmodule RailWeb.Components.QuestionCard do
       |> assign(:task, run.task)
       |> assign(:questions, Enum.sort_by(run.questions, & &1.inserted_at))
       |> assign(:pending_count, Enum.count(run.questions, &(&1.status == :pending)))
-      |> assign(:header_label, "#{task_key(run.task)} · #{role_name(run)}")
+      |> assign(:header_label, "#{run.task.issue.identifier} · #{role_name(run)}")
       |> assign(:elapsed_text, format_elapsed(Run.waiting_since(run)))
       |> assign(:started_at, format_started_at(Run.waiting_since(run)))
 
@@ -191,9 +189,6 @@ defmodule RailWeb.Components.QuestionCard do
     </div>
     """
   end
-
-  defp task_key(%{issue: %{identifier: identifier}}) when is_binary(identifier) and identifier != "", do: identifier
-  defp task_key(%{id: id}), do: id
 
   defp role_name(%{role: %{name: name}}) when is_binary(name) and name != "", do: name
   defp role_name(_unnamed), do: "Agent"

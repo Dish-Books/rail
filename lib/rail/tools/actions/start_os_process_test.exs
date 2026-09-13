@@ -1,6 +1,7 @@
 defmodule Rail.Tools.Actions.StartOsProcessTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -59,10 +60,22 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
         system_prompt: "You are the engineer."
       })
 
+    issue =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        external_id: "lin_start_run_#{unique}",
+        identifier: "SR#{unique}-1",
+        title: "Start Run Issue",
+        state: :backlog
+      })
+      |> Repo.insert!()
+
     {:ok, task} =
       %Task{id: UXID.generate!(prefix: "tsk")}
       |> Task.changeset(
         %{
+          issue_id: issue.id,
           stage: :engineer,
           worktree_name: "start-run-#{unique}",
           worktree_path: worktree_path,

@@ -2,10 +2,7 @@ defmodule RailWeb.Components.WithAgentSection do
   @moduledoc false
   use RailWeb, :html
 
-  import RailWeb.CoreComponents, only: [project_badge: 1]
-
   alias Rail.Pipeline.Schemas.Run
-  alias RailWeb.Components.RunState
 
   attr :runs, :list, required: true
 
@@ -38,7 +35,7 @@ defmodule RailWeb.Components.WithAgentSection do
                   data-qa="with-agent-title"
                   class="text-sm font-semibold text-slate-900 dark:text-slate-100 hover:underline truncate"
                 >
-                  {run.task.issue && run.task.issue.title}
+                  {run.task.issue.title}
                 </.link>
               </div>
 
@@ -48,10 +45,10 @@ defmodule RailWeb.Components.WithAgentSection do
                   data-qa="with-agent-state-pill"
                   class={[
                     "px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0",
-                    state_pill_class(run)
+                    run_state_style(run).chip_class
                   ]}
                 >
-                  {state_pill_label(run)}
+                  {run_state_style(run).pill_label}
                 </span>
 
                 <span data-qa="with-agent-role-line" class="truncate">
@@ -77,14 +74,7 @@ defmodule RailWeb.Components.WithAgentSection do
     """
   end
 
-  defp state_pill_label(%Run{} = run), do: run |> Run.state() |> RunState.pill_label()
-
-  defp state_pill_class(%Run{} = run), do: run |> Run.state() |> RunState.pill_class()
-
-  defp role_line(%Run{task: task} = run), do: "#{task_key(task)} · #{role_name(run)}"
-
-  defp task_key(%{issue: %{identifier: identifier}}) when is_binary(identifier) and identifier != "", do: identifier
-  defp task_key(%{id: id}), do: id
+  defp role_line(%Run{task: task} = run), do: "#{task.issue.identifier} · #{role_name(run)}"
 
   defp role_name(%Run{role: %{name: name}}) when is_binary(name) and name != "", do: name
   defp role_name(%Run{}), do: "Agent"

@@ -7,8 +7,6 @@ defmodule RailWeb.Layouts do
   """
   use RailWeb, :html
 
-  import RailWeb.Components.Nav
-
   embed_templates "layouts/*"
 
   @doc """

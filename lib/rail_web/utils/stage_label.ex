@@ -1,4 +1,4 @@
-defmodule RailWeb.Components.StageLabel do
+defmodule RailWeb.Utils.StageLabel do
   @moduledoc """
   The one line that says where a task is and what its run is doing.
 

@@ -1,7 +1,7 @@
-defmodule RailWeb.Components.StageLabelTest do
+defmodule RailWeb.Utils.StageLabelTest do
   use ExUnit.Case, async: true
 
-  import RailWeb.Components.StageLabel
+  import RailWeb.Utils.StageLabel
 
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task

@@ -6,8 +6,6 @@ defmodule RailWeb.Components.IssueIcons do
   """
   use RailWeb, :html
 
-  import RailWeb.Components.Icon, only: [icon: 1]
-
   attr :priority, :atom, required: true
 
   # An exclamation in a filled square for urgent, otherwise three bars with one,

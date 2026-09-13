@@ -31,8 +31,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlan do
     run = Repo.preload(run, task: [:issue, :runs])
 
     with :ok <- approvable(run),
-         {:ok, %Issue{} = issue} <- issue_for(run),
-         :ok <- publish(run.task, issue) do
+         :ok <- publish(run.task) do
       enter_next(run, opts)
     end
   end
@@ -44,12 +43,9 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlan do
     if Task.running?(task), do: {:error, :stage_running}, else: :ok
   end
 
-  defp issue_for(%Run{task: %Task{issue: %Issue{} = issue}}), do: {:ok, issue}
-  defp issue_for(%Run{}), do: {:error, :no_issue}
-
   # The ticket the product agent wrote replaces the issue's title and body. Linear
   # hears about it from the sync that write enqueues.
-  defp publish(%Task{scratch_path: scratch_path}, %Issue{} = issue) do
+  defp publish(%Task{scratch_path: scratch_path, issue: %Issue{} = issue}) do
     ticket =
       [scratch_path, "tickets", "#{issue.identifier}.md"]
       |> Path.join()
