@@ -652,6 +652,10 @@ defmodule RailWeb.IssuesLiveTest do
 
     send(view_all.pid, {:issues_synced, project_id})
     assert has_element?(view_all, "#sync-issues-button", "Sync Issues")
+
+    # A comment changes nothing a row shows.
+    send(view_all.pid, {:issue_comments_changed, "iss_any"})
+    assert has_element?(view_all, "[data-qa='issue-title']", "Synced")
   end
 
   test "searches issues from the URL and pages through them", %{conn: conn} do

@@ -103,26 +103,6 @@ defmodule Rail.Issues.Schemas.Issue do
   def active?(state) when is_atom(state), do: state in [:triage, :backlog, :todo, :in_progress, :in_review]
   def active?(_other), do: false
 
-  def cast_state(state) when is_atom(state) do
-    if state in @states, do: {:ok, state}, else: :error
-  end
-
-  def cast_state(state) when is_binary(state) do
-    normalized =
-      state
-      |> Macro.underscore()
-      |> String.downcase()
-
-    found =
-      Enum.find(@states, fn s ->
-        Atom.to_string(s) == state or Atom.to_string(s) == normalized
-      end)
-
-    if found, do: {:ok, found}, else: :error
-  end
-
-  def cast_state(_other), do: :error
-
   # Every write goes up to Linear, so no caller can forget to say so. This runs
   # inside the write's own transaction, which is what makes the job and the row
   # land together or not at all. An insert has nothing to sync back: the ticket

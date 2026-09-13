@@ -23,6 +23,4 @@ defmodule Rail.Pipeline.Utils.QuestionQueue do
         order_by: [asc: q.inserted_at, asc: q.id]
     )
   end
-
-  def pending_questions(_other), do: []
 end

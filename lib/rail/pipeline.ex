@@ -39,7 +39,6 @@ defmodule Rail.Pipeline do
   defdelegate get_run(id), to: Actions.GetRun
   defdelegate list_runs(opts \\ []), to: Actions.ListRuns
   defdelegate update_run(run, attrs), to: Actions.UpdateRun
-  defdelegate append_pending_answer(run, answer, opts \\ []), to: Actions.AppendPendingAnswer
 
   defdelegate append_run_events(run_id, os_process_id, lines), to: Actions.AppendRunEvents
   defdelegate list_run_events(run, opts \\ []), to: Actions.ListRunEvents

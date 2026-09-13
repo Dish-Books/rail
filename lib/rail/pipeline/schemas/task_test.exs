@@ -192,10 +192,20 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   end
 
   test "stage_label/1 names each stage" do
-    assert Task.stage_label(:product) == "Product"
-    assert Task.stage_label(:qa_lead) == "QA Lead"
-    assert Task.stage_label(:ready_to_merge) == "Ready to merge"
-    assert Task.stage_label(:debugger) == "Debugger"
+    assert Enum.map(Task.stages(), &Task.stage_label/1) == [
+             "Product",
+             "Design",
+             "Architect",
+             "Engineer",
+             "Review",
+             "QA",
+             "QA Lead",
+             "Demo",
+             "Ready to merge",
+             "Merged",
+             "Debugger"
+           ]
+
     assert is_nil(Task.stage_label(:nonsense))
   end
 

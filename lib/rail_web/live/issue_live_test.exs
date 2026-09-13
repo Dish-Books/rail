@@ -5,6 +5,7 @@ defmodule RailWeb.IssueLiveTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Git
+  alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.SyncIssue
@@ -318,6 +319,132 @@ defmodule RailWeb.IssueLiveTest do
 
     # A blank comment sends nothing; no Linear mock is queued for it.
     view |> element("#issue-comment-form") |> render_submit(%{"body" => "   "})
+  end
+
+  test "each reason a start fails is said plainly", %{conn: conn, project: project} do
+    [issue, dispatch_issue, other_issue] =
+      for n <- [12, 13, 16] do
+        %Issue{}
+        |> Issue.linear_changeset(%{
+          project_id: project.id,
+          external_id: "lin_page_#{n}",
+          identifier: "IPG-#{n}",
+          title: "Fails to start",
+          state: :todo
+        })
+        |> Repo.insert!()
+      end
+
+    {:ok, backend} =
+      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
+    {:ok, _role} =
+      Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
+        stage: :product,
+        name: "product role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the product agent."
+      })
+
+    expect(Git, :get_or_create_worktree, fn _project, _task -> {:error, "no checkout"} end)
+    expect(Git, :get_or_create_worktree, 3, fn _project, task -> {:ok, task.worktree_path} end)
+    expect(Tools, :start_os_process, fn run, _argv -> {:error, {:spawn_failed, :enoent, run}} end)
+    expect(Tools, :start_os_process, fn _run, _argv -> {:error, :dispatch_disabled} end)
+    expect(Tools, :start_os_process, fn _run, _argv -> {:error, :unavailable} end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Git, self(), view.pid)
+    allow(Tools, self(), view.pid)
+
+    view |> element("#issue-start-product-run") |> render_click()
+    assert has_element?(view, "#flash-error", "Could not create the worktree: no checkout")
+
+    view |> element("#issue-start-product-run") |> render_click()
+    assert has_element?(view, "#flash-error", "Could not start the agent: :enoent")
+
+    assert {:ok, dispatch_view, _html} = live(conn, ~p"/issues/#{dispatch_issue.identifier}")
+    allow(Git, self(), dispatch_view.pid)
+    allow(Tools, self(), dispatch_view.pid)
+
+    dispatch_view |> element("#issue-start-product-run") |> render_click()
+    assert has_element?(dispatch_view, "#flash-error", "Dispatch is switched off, so no agent was started.")
+
+    assert {:ok, other_view, _html} = live(conn, ~p"/issues/#{other_issue.identifier}")
+    allow(Git, self(), other_view.pid)
+    allow(Tools, self(), other_view.pid)
+
+    other_view |> element("#issue-start-product-run") |> render_click()
+    assert has_element?(other_view, "#flash-error", "Could not start: :unavailable")
+  end
+
+  test "a failed assignment or comment says so", %{conn: conn, user: user, project: project} do
+    {:ok, teammate} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issue_failing",
+        login: "failing_teammate",
+        name: "Failing Teammate",
+        email: "failing_teammate@example.com"
+      })
+
+    teammate |> Ecto.Changeset.change(linear_user_id: "lin_usr_failing") |> Repo.update!()
+
+    issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_14",
+        identifier: "IPG-14",
+        title: "Stubborn",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    %Comment{}
+    |> Comment.changeset(%{issue_id: issue.id, author_user_id: user.id, external_id: "lin_own", body: "Mine"})
+    |> Repo.insert!()
+
+    expect(Issues, :update_issue, fn issue, attrs -> {:error, Issue.linear_changeset(issue, attrs)} end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Issues, self(), view.pid)
+
+    assert has_element?(view, "#issue-comments", "Issue Live")
+
+    view |> element("#issue-assign-#{teammate.id}") |> render_click()
+    assert has_element?(view, "#flash-error", "Could not change the assignee")
+
+    view |> element("#issue-comment-form") |> render_change(%{"body" => "draft"})
+
+    view
+    |> element("#issue-comment-form")
+    |> render_submit(%{"body" => "An orphan", "parent_id" => "com_missing"})
+
+    assert has_element?(view, "#flash-error", "Could not post the comment")
+  end
+
+  test "reloads when its own project syncs or its own comments change", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_15",
+        identifier: "IPG-15",
+        title: "Before sync",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    issue |> Ecto.Changeset.change(title: "After sync") |> Repo.update!()
+
+    send(view.pid, {:issues_synced, "prj_other"})
+    send(view.pid, {:issue_comments_changed, "iss_other"})
+    assert has_element?(view, "#issue-title", "Before sync")
+
+    send(view.pid, {:issues_synced, project.id})
+    assert has_element?(view, "#issue-title", "After sync")
   end
 
   test "an unknown issue goes back to the list", %{conn: conn} do

@@ -50,16 +50,15 @@ defmodule Rail.Users.Actions.LinearToken do
         _never -> nil
       end
 
-    user
-    |> User.changeset(%{
-      linear_access_token: tokens["access_token"],
-      linear_refresh_token: tokens["refresh_token"] || user.linear_refresh_token,
-      linear_token_expires_at: expires_at
-    })
-    |> Repo.update()
-    |> case do
-      {:ok, _updated_user} -> {:ok, tokens["access_token"]}
-      {:error, changeset} -> {:error, changeset}
+    changeset =
+      User.changeset(user, %{
+        linear_access_token: tokens["access_token"],
+        linear_refresh_token: tokens["refresh_token"] || user.linear_refresh_token,
+        linear_token_expires_at: expires_at
+      })
+
+    with {:ok, _updated_user} <- Repo.update(changeset) do
+      {:ok, tokens["access_token"]}
     end
   end
 end

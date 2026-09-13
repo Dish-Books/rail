@@ -610,9 +610,20 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/")
 
+      view |> element("#answer-form-#{question.id}") |> render_change(%{"answer" => "Post"})
       view |> element("#answer-form-#{question.id}") |> render_submit(%{"question_id" => question.id, "answer" => "  "})
 
       assert %Question{status: :pending} = Repo.reload!(question)
+
+      # A question already gone is left alone.
+      render_hook(view, "dismiss_question", %{"question_id" => "qst_missing"})
+      assert has_element?(view, "#answer-form-#{question.id}")
+    end
+
+    test "a project that no longer exists shows no roster", %{conn: conn, roles: roles} do
+      assert {:ok, view, _html} = live(conn, ~p"/?project=prj_missing")
+
+      refute has_element?(view, "#role-idle-#{roles[:product].id}")
     end
   end
 end

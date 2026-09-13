@@ -77,6 +77,5 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
     )
   end
 
-  defp tagged?(line) when is_binary(line), do: Enum.any?(@markers, &String.starts_with?(line, &1))
-  defp tagged?(_other), do: true
+  defp tagged?(line), do: Enum.any?(@markers, &String.starts_with?(line, &1))
 end

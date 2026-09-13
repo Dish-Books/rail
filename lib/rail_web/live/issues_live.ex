@@ -363,15 +363,7 @@ defmodule RailWeb.IssuesLive do
 
   defp project_subtitle(nil), do: "Linear issues across all projects"
 
-  defp project_subtitle(%{linear_team_key: key, name: name}) when is_binary(key) and key != "" do
-    "Linear issues in #{key} (#{name})"
-  end
-
-  defp project_subtitle(%{name: name}) when is_binary(name) and name != "" do
-    "Linear issues for #{name}"
-  end
-
-  defp project_subtitle(_other), do: "No target repository set • Issues live in Linear; set one in Settings"
+  defp project_subtitle(%{linear_team_key: key, name: name}), do: "Linear issues in #{key} (#{name})"
 
   # --- Private Helpers ---
 

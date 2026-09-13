@@ -118,8 +118,11 @@ defmodule Rail.Projects.Schemas.ProjectTest do
                     %{"id" => "st_todo_late", "type" => "unstarted", "position" => 3},
                     %{"id" => "st_triage", "type" => "triage", "position" => 0},
                     %{"id" => "st_todo", "type" => "unstarted", "position" => 2},
+                    %{"id" => "st_backlog", "type" => "backlog", "position" => 1},
                     %{"id" => "st_started", "type" => "started", "position" => 4},
-                    %{"id" => "st_done", "type" => "completed", "position" => 5}
+                    %{"id" => "st_done", "type" => "completed", "position" => 5},
+                    %{"id" => "st_canceled", "type" => "canceled", "position" => 6},
+                    %{"id" => "st_unknown", "type" => "duplicate", "position" => 7}
                   ]
                 }
               }
@@ -147,7 +150,15 @@ defmodule Rail.Projects.Schemas.ProjectTest do
 
     # Building the changeset asks Linear nothing; only writing it does.
     # A type with several states resolves to the first of them.
-    state_ids = %{"triage" => "st_triage", "todo" => "st_todo", "in_progress" => "st_started", "done" => "st_done"}
+    # A type Rail has no word for is left out.
+    state_ids = %{
+      "triage" => "st_triage",
+      "backlog" => "st_backlog",
+      "todo" => "st_todo",
+      "in_progress" => "st_started",
+      "done" => "st_done",
+      "canceled" => "st_canceled"
+    }
 
     assert {:ok, %Project{linear_team_id: "lin_team_dis", linear_state_ids: ^state_ids} = project} =
              Repo.insert(changeset)
@@ -182,6 +193,33 @@ defmodule Rail.Projects.Schemas.ProjectTest do
 
     assert %{linear_team_key: ["no Linear team has this key"]} = errors_on(changeset)
     refute Repo.get_by(Project, github_repo: "example/unknown-team")
+  end
+
+  test "a key Linear could not be asked about is an error on the key and nothing is written" do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      conn |> Plug.Conn.put_status(400) |> Req.Test.json(%{"error" => "bad request"})
+    end)
+
+    assert {:error, changeset} =
+             %Project{}
+             |> Project.changeset(%{
+               name: "Unchecked Team",
+               github_repo: "example/unchecked-team",
+               github_installation_id: 99_013,
+               default_branch: "main",
+               linear_team_key: "ERR",
+               clone_path: "/tmp/unchecked-team",
+               linear_workspace: %{
+                 name: "Unchecked Team Workspace",
+                 external_id: "lin_org_unchecked_team",
+                 token: "lin_api_unchecked_team",
+                 webhook_secret: "whsec_unchecked_team"
+               }
+             })
+             |> Repo.insert()
+
+    assert %{linear_team_key: ["could not be checked with Linear"]} = errors_on(changeset)
+    refute Repo.get_by(Project, github_repo: "example/unchecked-team")
   end
 
   test "a project with no workspace yet has no team id to look up" do

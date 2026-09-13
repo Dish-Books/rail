@@ -818,10 +818,6 @@ defmodule RailWeb.Settings.RolesLive do
     {:noreply, socket}
   end
 
-  def handle_info({:DOWN, _ref, :process, _pid, _reason}, socket) do
-    {:noreply, socket}
-  end
-
   # The navigation hook subscribes this view to pipeline events it does not use.
   def handle_info(_message, socket) do
     {:noreply, socket}
@@ -904,8 +900,7 @@ defmodule RailWeb.Settings.RolesLive do
     |> Enum.map_join(" ", &String.capitalize/1)
   end
 
-  defp stage_default_name(nil), do: ""
-  defp stage_default_name(""), do: ""
+  defp stage_default_name(stage) when stage in [nil, ""], do: ""
 
   defp stage_default_name(stage) do
     stage_str = to_string(stage)

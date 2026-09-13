@@ -269,6 +269,26 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ "Please add a test"
   end
 
+  test "a run whose role is unknown still reads, with what it spent", %{task: task, roles: roles} do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        conversation_id: "conv_unknown_role",
+        usage: %{input_tokens: 1200, output_tokens: 300},
+        started_at: ~U[2026-09-09 10:00:00Z]
+      })
+
+    Pipeline.append_run_events(run.id, nil, ["Plain words from the agent."])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: %{})
+
+    assert html =~ ~s(id="metadata-run-usage")
+    assert html =~ "Plain words from the agent."
+    assert html =~ ~s(id="role-chip-#{run.role_id}")
+  end
+
   test "a run with no conversation cannot be chatted with", %{task: task, roles: roles, roles_map: roles_map} do
     {:ok, run} =
       Pipeline.create_run(%{

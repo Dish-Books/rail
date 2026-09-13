@@ -70,6 +70,28 @@ defmodule Rail.Pipeline.Utils.ParseTicketTest do
     assert ticket.description == "Just a raw prompt without title heading."
   end
 
+  test "front matter that never closes is not front matter" do
+    ticket = parse_ticket("---\n# Unclosed\nBody.")
+
+    assert ticket.title == "Unclosed"
+    assert ticket.description == "Body."
+  end
+
+  test "a front matter line with no value is read as empty" do
+    ticket = parse_ticket("---\ntitle: T\nestimate\n---\nBody.")
+
+    assert ticket.title == "T"
+    assert is_nil(ticket.estimate)
+  end
+
+  test "front matter with no title reads its body as a heading-form ticket" do
+    ticket = parse_ticket("---\npriority: high\n---\n# From the heading\nBody.")
+
+    assert ticket.title == "From the heading"
+    assert ticket.description == "Body."
+    assert ticket.priority == :high
+  end
+
   test "an empty ticket file parses to an empty ticket" do
     assert %{title: "", description: ""} = parse_ticket(nil)
     assert %{title: "", description: ""} = parse_ticket("")

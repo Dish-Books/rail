@@ -61,7 +61,7 @@ defmodule RailWeb.Components.WithAgentSection do
             <span
               id={"elapsed-with-agent-#{run.id}"}
               phx-hook="Elapsed"
-              data-started-at={format_started_at(run.started_at)}
+              data-started-at={DateTime.to_iso8601(run.started_at)}
               data-qa="elapsed-text"
               class="text-xs text-slate-500 dark:text-slate-400 font-mono shrink-0"
             >
@@ -74,17 +74,9 @@ defmodule RailWeb.Components.WithAgentSection do
     """
   end
 
-  defp role_line(%Run{task: task} = run), do: "#{task.issue.identifier} · #{role_name(run)}"
-
-  defp role_name(%Run{role: %{name: name}}) when is_binary(name) and name != "", do: name
-  defp role_name(%Run{}), do: "Agent"
+  defp role_line(%Run{task: task, role: role}), do: "#{task.issue.identifier} · #{role.name}"
 
   defp format_elapsed(%DateTime{} = datetime) do
     DateTime.utc_now() |> DateTime.diff(datetime, :second) |> max(0) |> format_duration()
   end
-
-  defp format_elapsed(_never), do: ""
-
-  defp format_started_at(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
-  defp format_started_at(_never), do: nil
 end

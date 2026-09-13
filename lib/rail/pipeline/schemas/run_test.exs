@@ -48,6 +48,25 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     assert "is invalid" in errors_on(changeset).status
   end
 
+  test "changeset/2 refuses to move a run to another conversation" do
+    changeset = Run.changeset(%Run{conversation_id: "sess-1"}, %{conversation_id: "sess-2"})
+
+    assert "is already set and cannot be changed" in errors_on(changeset).conversation_id
+  end
+
+  test "running?/1 is false for anything that is not a run" do
+    refute Run.running?(nil)
+  end
+
+  test "state/1 reads what a run says about itself" do
+    assert Run.state(%Run{status: :running}) == :running
+    assert Run.state(%Run{status: :blocked_on_input}) == :blocked
+    assert Run.state(%Run{status: :finished, stage_outcome: :done}) == :done
+    assert Run.state(%Run{status: :finished, error: "It went wrong"}) == :failed
+    assert Run.state(%Run{status: :finished}) == :stopped
+    assert Run.state(nil) == :queued
+  end
+
   test "statuses/0 returns all allowed statuses" do
     statuses = Run.statuses()
     assert :starting in statuses

@@ -227,7 +227,8 @@ defmodule Rail.Tools.Follower do
   defp await_exit_code(%{exit_code: code} = state) when is_integer(code), do: state
   defp await_exit_code(%{port: nil} = state), do: state
 
-  # coveralls-ignore-stop
+  # The status only lands here when it races the stream's end; which one wins is
+  # not something a test can arrange.
   defp await_exit_code(state) do
     receive do
       {_port, {:exit_status, status}} ->
@@ -237,6 +238,8 @@ defmodule Rail.Tools.Follower do
         state
     end
   end
+
+  # coveralls-ignore-stop
 
   defp compute_error(result_error, raw_stderr, exit_code) do
     cond do

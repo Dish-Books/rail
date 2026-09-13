@@ -34,8 +34,6 @@ defmodule RailWeb.Components.Button do
   attr :type, :string, default: "button"
   attr :class, :any, default: nil
   attr :href, :any, default: nil
-  attr :navigate, :any, default: nil
-  attr :patch, :any, default: nil
   attr :rest, :global, include: ["disabled", "form", "name", "value", "download", "target", "rel"]
 
   slot :inner_block, required: true
@@ -44,16 +42,8 @@ defmodule RailWeb.Components.Button do
     assigns =
       assign(assigns, :styles, [@base, @sizes[assigns.size], @variants[assigns.variant], assigns.class])
 
-    case nav_attrs(assigns) do
-      attrs when is_map(attrs) -> assigns |> assign(:nav, attrs) |> nav_button()
-      nil -> plain_button(assigns)
-    end
+    if is_binary(assigns.href), do: link_button(assigns), else: plain_button(assigns)
   end
-
-  defp nav_attrs(%{navigate: to}) when is_binary(to), do: %{navigate: to}
-  defp nav_attrs(%{patch: to}) when is_binary(to), do: %{patch: to}
-  defp nav_attrs(%{href: to}) when is_binary(to), do: %{href: to}
-  defp nav_attrs(_assigns), do: nil
 
   defp plain_button(assigns) do
     ~H"""
@@ -63,9 +53,9 @@ defmodule RailWeb.Components.Button do
     """
   end
 
-  defp nav_button(assigns) do
+  defp link_button(assigns) do
     ~H"""
-    <.link class={@styles} {@nav} {@rest}>
+    <.link class={@styles} href={@href} {@rest}>
       {render_slot(@inner_block)}
     </.link>
     """

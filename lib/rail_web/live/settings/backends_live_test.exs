@@ -392,6 +392,82 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     assert has_element?(view, "#refresh-quotas-button")
   end
 
+  test "keeps drafts on change, surfaces authorization failures, and ignores unrelated messages", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_13",
+        login: "backends_live_user_13",
+        email: "backends_live_user_13@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+
+    Repo.insert!(Backend.usage_changeset(%Backend{}, %{name: :codex, status: :signed_out}))
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
+
+    send(view.pid, :unrelated_pipeline_event)
+    assert has_element?(view, "#banner-codex", "CLI is signed out. Log in via the command line")
+
+    view
+    |> element("#backend-form-claude")
+    |> render_change(%{
+      "backend" => "claude",
+      "executable_path" => "/draft/claude",
+      "models" => %{"0" => %{"id" => "draft-model"}}
+    })
+
+    assert has_element?(view, "#executable-path-claude[value='/draft/claude']")
+    assert has_element?(view, "#model-id-claude-0[value='draft-model']")
+
+    expect(Tools, :create_backend, fn _scope, _attrs -> {:error, :not_authorized} end)
+
+    view
+    |> element("#backend-form-claude")
+    |> render_submit(%{"backend" => "claude", "executable_path" => "/usr/local/bin/claude"})
+
+    assert has_element?(view, "#backends-save-error", "You are not allowed to change backend settings.")
+  end
+
+  test "renders unparseable reset times and groups without window details", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_backends_live_14",
+        login: "backends_live_user_14",
+        email: "backends_live_user_14@example.com",
+        admin: true
+      })
+
+    authed_conn = log_in_user(conn, user)
+
+    Repo.insert!(
+      Backend.usage_changeset(%Backend{}, %{
+        name: :claude,
+        status: :ready,
+        usage: [
+          %{
+            name: "Limits",
+            details: %{
+              "windows" => [
+                %{"label" => "Out Of Range", "remaining_percent" => 50.0, "resets_at" => 100_000_000_000_000_000_000},
+                %{"label" => "Boolean", "remaining_percent" => 50.0, "resets_at" => true}
+              ]
+            }
+          },
+          %{name: "Nil Details", details: nil}
+        ]
+      })
+    )
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/settings/backends")
+
+    assert has_element?(view, "#window-reset-claude-0-0", "Reset time unknown")
+    assert has_element?(view, "#window-reset-claude-0-1", "Reset time unknown")
+    assert has_element?(view, "#group-name-claude-1", "Nil Details")
+    refute has_element?(view, "#window-row-claude-1-0")
+  end
+
   test "formats fetched ages and reset dates across units", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{

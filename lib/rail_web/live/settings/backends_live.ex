@@ -630,7 +630,6 @@ defmodule RailWeb.Settings.BackendsLive do
   end
 
   defp parse_datetime(nil), do: nil
-  defp parse_datetime(%DateTime{} = dt), do: dt
   defp parse_datetime(ts) when is_float(ts), do: parse_datetime(trunc(ts))
 
   defp parse_datetime(ts) when is_integer(ts) do

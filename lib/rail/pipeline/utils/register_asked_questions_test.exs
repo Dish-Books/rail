@@ -179,4 +179,19 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
 
     assert [%Question{prompt: "Which database?"}] = pending_questions(task_id)
   end
+
+  test "a run whose role is gone has no agent to have asked anything", %{
+    task: %Task{id: task_id},
+    run: run,
+    spawn_os_process: spawn_os_process,
+    say: say
+  } do
+    os_process = spawn_os_process.()
+    say.(os_process, "[QUESTION: Which database?]")
+
+    {:ok, _deleted} = Roles.delete_role(system_scope(), Repo.preload(run, :role).role)
+
+    assert register_asked_questions(os_process, run) == []
+    assert pending_questions(task_id) == []
+  end
 end

@@ -143,14 +143,8 @@ defmodule RailWeb.TaskLive do
   end
 
   def handle_event("send_answers", _params, socket) do
-    case socket.assigns.selected_run do
-      %Run{} = run ->
-        _sent = Pipeline.send_answers(run)
-        {:noreply, refresh_task(socket)}
-
-      nil ->
-        {:noreply, socket}
-    end
+    _sent = Pipeline.send_answers(socket.assigns.selected_run)
+    {:noreply, refresh_task(socket)}
   end
 
   def handle_event("cleanup", _params, socket) do
@@ -284,11 +278,9 @@ defmodule RailWeb.TaskLive do
   end
 
   # The run for the stage this task sits at, picked out of the runs already loaded.
-  defp stage_run(%Task{stage: stage, runs: runs}) when is_list(runs) do
+  defp stage_run(%Task{stage: stage, runs: runs}) do
     Enum.find(runs, &(&1.role != nil and &1.role.stage == stage))
   end
-
-  defp stage_run(%Task{}), do: nil
 
   # A run can ask several things at once, so a blocked run shows the whole queue
   # as tabs, in the order they were asked.
@@ -320,15 +312,11 @@ defmodule RailWeb.TaskLive do
     Map.get(params, "question_id") || (socket.assigns.pending_question && socket.assigns.pending_question.id)
   end
 
-  defp answer_one(nil, _answer), do: :ok
-
   defp answer_one(question_id, answer) do
     with {:ok, question} <- Pipeline.get_question(question_id) do
       Pipeline.answer_question(question, answer)
     end
   end
-
-  defp dismiss_one(nil), do: :ok
 
   defp dismiss_one(question_id) do
     with {:ok, question} <- Pipeline.get_question(question_id) do

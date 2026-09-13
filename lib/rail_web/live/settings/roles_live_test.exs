@@ -651,6 +651,61 @@ defmodule RailWeb.Settings.RolesLiveTest do
     refute has_element?(view, "#role-editor-modal")
   end
 
+  test "handles unconfigured backends, blank model and stage, and unrelated messages", %{
+    claude_backend: claude_backend,
+    admin_conn: conn
+  } do
+    {:ok, _codex_backend} =
+      Rail.Tools.create_backend(Rail.Scope.for_system(), %{name: :codex, executable_path: "/usr/local/bin/codex"})
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13020",
+        github_repo: "org/roles-live-13020",
+        github_installation_id: 13_020,
+        linear_team_key: "P13020",
+        default_branch: "main",
+        clone_path: "/tmp/repos/roles-live-13020",
+        linear_state_ids: %{
+          "triage" => "st_triage",
+          "backlog" => "st_backlog",
+          "in_progress" => "st_in_progress",
+          "done" => "st_done",
+          "canceled" => "st_canceled"
+        }
+      })
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
+
+    send(view.pid, :unrelated_pipeline_event)
+
+    view |> element("#assign-stage-button-product") |> render_click()
+    assert has_element?(view, "#role-backend-select option", "codex")
+
+    render_hook(view, "validate_role", %{
+      "role" => %{"backend_id" => claude_backend.id, "model_choice" => "claude-sonnet-5"}
+    })
+
+    assert has_element?(view, "#role-model-select option[value='claude-sonnet-5'][selected]")
+
+    render_hook(view, "change_backend", %{"role" => %{"backend_id" => ""}})
+    refute has_element?(view, "#role-model-select option")
+
+    view
+    |> element("#role-form")
+    |> render_submit(%{
+      "role" => %{
+        "name" => "No Model",
+        "stage" => "",
+        "backend_id" => claude_backend.id,
+        "model_choice" => "",
+        "system_prompt" => "Prompt"
+      }
+    })
+
+    assert has_element?(view, "#role-model-error", "can't be blank")
+  end
+
   test "handles open_delete_modal with non-existent role and delete_role when modal_role is nil", %{
     admin_conn: conn,
     admin_user: _admin_user

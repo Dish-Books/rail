@@ -104,7 +104,6 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   # The message never reached an agent, so it goes back on the row as though it
   # had never left: still queued, still the human's to cancel or re-send.
   defp requeue(%Run{} = run, message) do
-    # coveralls-ignore-stop
     run |> Run.changeset(%{pending_chat: message}) |> Repo.update!()
   end
 
@@ -121,4 +120,6 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   rescue
     _error -> :ok
   end
+
+  # coveralls-ignore-stop
 end

@@ -358,6 +358,28 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert has_element?(view, "#project-name-error", "can't be blank")
   end
 
+  test "validating a partial Linear workspace shows an error per missing field", %{admin_conn: conn} do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#new-project-button") |> render_click()
+
+    render_hook(view, "validate", %{"project" => %{"linear_workspace" => %{"name" => "Only Name"}}})
+
+    refute has_element?(view, "#workspace-name-error")
+    assert has_element?(view, "#workspace-external-id-error", "can't be blank")
+    assert has_element?(view, "#workspace-token-error", "can't be blank")
+    assert has_element?(view, "#workspace-webhook-secret-error", "can't be blank")
+
+    render_hook(view, "validate", %{"project" => %{"linear_workspace" => %{"external_id" => "lin_org_partial"}}})
+
+    assert has_element?(view, "#workspace-name-error", "can't be blank")
+    refute has_element?(view, "#workspace-external-id-error")
+
+    render_hook(view, "validate", %{"project" => %{"name" => "No Workspace"}})
+
+    refute has_element?(view, "#workspace-name-error")
+    assert has_element?(view, "#project-name-input[value='No Workspace']")
+  end
+
   test "edit_project with unknown id is ignored gracefully", %{admin_conn: conn} do
     assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
     render_hook(view, "edit_project", %{"project_id" => "prj_000000000000000000000000"})

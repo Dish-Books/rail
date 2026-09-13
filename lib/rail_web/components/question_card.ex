@@ -23,9 +23,9 @@ defmodule RailWeb.Components.QuestionCard do
       |> assign(:task, run.task)
       |> assign(:questions, Enum.sort_by(run.questions, & &1.inserted_at))
       |> assign(:pending_count, Enum.count(run.questions, &(&1.status == :pending)))
-      |> assign(:header_label, "#{run.task.issue.identifier} · #{role_name(run)}")
+      |> assign(:header_label, "#{run.task.issue.identifier} · #{run.role.name}")
       |> assign(:elapsed_text, format_elapsed(Run.waiting_since(run)))
-      |> assign(:started_at, format_started_at(Run.waiting_since(run)))
+      |> assign(:started_at, DateTime.to_iso8601(Run.waiting_since(run)))
 
     ~H"""
     <div
@@ -190,15 +190,7 @@ defmodule RailWeb.Components.QuestionCard do
     """
   end
 
-  defp role_name(%{role: %{name: name}}) when is_binary(name) and name != "", do: name
-  defp role_name(_unnamed), do: "Agent"
-
   defp format_elapsed(%DateTime{} = datetime) do
     DateTime.utc_now() |> DateTime.diff(datetime, :second) |> max(0) |> format_duration()
   end
-
-  defp format_elapsed(_never), do: ""
-
-  defp format_started_at(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
-  defp format_started_at(_never), do: nil
 end

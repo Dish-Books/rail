@@ -39,7 +39,6 @@ defmodule Rail.Pipeline.Actions.BuildPrompt do
       |> maybe_append_context_snippet(opts[:context_snippet])
       |> append_ticket(opts)
       |> maybe_append_plan(opts[:plan])
-      |> maybe_append_answer(answer, has_answer)
     end
   end
 
@@ -85,9 +84,6 @@ defmodule Rail.Pipeline.Actions.BuildPrompt do
   end
 
   defp maybe_append_plan(buffer, _empty_plan), do: buffer
-
-  defp maybe_append_answer(buffer, answer, true), do: buffer <> "\n#{answer}\n"
-  defp maybe_append_answer(buffer, _answer, false), do: buffer
 
   defp claude?(%Backend{name: name}), do: name == :claude
   defp claude?(_other_backend), do: false

@@ -104,7 +104,6 @@ defmodule Rail.Roles.Schemas.Role do
 
   @doc "Returns the list of canonical pipeline stages for agent roles."
   def canonical_stages, do: @canonical_stages
-  def reasoning_efforts, do: @reasoning_efforts
 
   def changeset(role, attrs) do
     role

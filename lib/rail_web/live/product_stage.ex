@@ -17,8 +17,6 @@ defmodule RailWeb.Live.ProductStage do
     socket =
       socket
       |> assign(assigns)
-      |> assign_new(:actions, fn -> [] end)
-      |> assign_new(:sidebar, fn -> [] end)
       |> assign(:ticket, Pipeline.read_ticket(assigns.task))
       |> assign_new(:error, fn -> nil end)
 

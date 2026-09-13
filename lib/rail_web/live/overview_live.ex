@@ -147,10 +147,6 @@ defmodule RailWeb.OverviewLive do
     {:noreply, socket}
   end
 
-  def handle_info(_msg, socket) do
-    {:noreply, socket}
-  end
-
   # The overview is a list of runs. What each one is doing it says itself, and the
   # questions it asked hang off it, so nothing here has to work out which run a
   # task means.

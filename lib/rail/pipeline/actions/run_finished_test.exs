@@ -225,6 +225,27 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
              })
   end
 
+  test "an outcome with no exit code settles as a clean exit", %{exited: exited} do
+    {_run, os_process} = exited.(:product, %{})
+
+    assert {:ok, %Run{exit_code: 0, usage: %Run.Usage{input_tokens: 4}}} =
+             Pipeline.run_finished(os_process, %{usage: %{input_tokens: 4}})
+  end
+
+  test "a usage record under a string key is taken as it is", %{exited: exited} do
+    {_run, os_process} = exited.(:product, %{})
+
+    assert {:ok, %Run{usage: %Run.Usage{output_tokens: 6}}} =
+             Pipeline.run_finished(os_process, %{"exit_code" => 0, "usage" => %Run.Usage{output_tokens: 6}})
+  end
+
+  test "a clean exit that still recorded an error stays open", %{exited: exited} do
+    {_run, os_process} = exited.(:product, %{})
+
+    assert {:ok, %Run{error: "It went wrong", stage_outcome: :in_progress}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0, error: "It went wrong"})
+  end
+
   test "re-settling a process keeps what the run layer already wrote", %{exited: exited} do
     {_run, os_process} = exited.(:product, %{exit_code: 1, error: "Recorded earlier"})
 

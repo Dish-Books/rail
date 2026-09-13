@@ -192,7 +192,7 @@ defmodule RailWeb.Live.RunConversation do
   attr :run, :any, required: true
   attr :role, :any, required: true
   attr :turns, :list, default: []
-  attr :expanded_activities, :any, default: []
+  attr :expanded_activities, MapSet, required: true
   attr :runs, :list, default: []
   attr :roles_map, :map, default: %{}
   attr :target, :any, required: true
@@ -249,8 +249,8 @@ defmodule RailWeb.Live.RunConversation do
   attr :role, :any, required: true
   attr :runs, :list, default: []
   attr :roles_map, :map, default: %{}
-  attr :expanded_activities, :any, default: []
-  attr :worktree_path, :string, default: nil
+  attr :expanded_activities, MapSet, required: true
+  attr :worktree_path, :string, required: true
   attr :target, :any, required: true
 
   def message_item(assigns) do
@@ -291,7 +291,7 @@ defmodule RailWeb.Live.RunConversation do
         </div>
       <% :activity -> %>
         <!-- 4.8 _ActivityTile (collapsible tool activity) -->
-        <% expanded = activity_expanded?(@idx, @expanded_activities) %>
+        <% expanded = MapSet.member?(@expanded_activities, @idx) %>
         <% steps = tool_steps(@text, @worktree_path) %>
         <% error_count = Enum.count(steps, & &1.error?) %>
         <div
@@ -614,7 +614,7 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   def handle_event("toggle_activity", %{"index" => index}, socket) do
-    index = to_index(index)
+    index = String.to_integer(index)
     expanded = socket.assigns.expanded_activities
 
     expanded =
@@ -630,40 +630,26 @@ defmodule RailWeb.Live.RunConversation do
   def handle_event("send_chat", params, socket) do
     message = Map.get(params, "message") || socket.assigns.chat_input
 
-    case socket.assigns.selected_run do
-      %Run{} = run -> {:noreply, send_chat(socket, run, message)}
-      nil -> {:noreply, socket}
-    end
+    {:noreply, send_chat(socket, socket.assigns.selected_run, message)}
   end
 
   # Stopping hands back whatever had not been delivered, and the composer is where
   # it belongs: still the human's to edit, re-send or throw away.
   def handle_event("stop_run", _params, socket) do
-    case socket.assigns.selected_run do
-      %Run{} = run ->
-        {:ok, run, queued} = Pipeline.stop_run(run)
+    {:ok, run, queued} = Pipeline.stop_run(socket.assigns.selected_run)
 
-        socket =
-          socket
-          |> assign(:chat_input, restore_draft(queued, socket.assigns.chat_input))
-          |> select(run)
+    socket =
+      socket
+      |> assign(:chat_input, restore_draft(queued, socket.assigns.chat_input))
+      |> select(run)
 
-        {:noreply, socket}
-
-      nil ->
-        {:noreply, socket}
-    end
+    {:noreply, socket}
   end
 
   def handle_event("stop_and_send_message", _params, socket) do
-    case socket.assigns.selected_run do
-      %Run{} = run ->
-        _sent = Pipeline.stop_and_send_message(run)
-        {:noreply, select(socket, run)}
-
-      nil ->
-        {:noreply, socket}
-    end
+    run = socket.assigns.selected_run
+    _sent = Pipeline.stop_and_send_message(run)
+    {:noreply, select(socket, run)}
   end
 
   # --- Private Helpers ---
@@ -737,18 +723,8 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   defp selected_role(%Run{role_id: role_id}, roles_map), do: resolve_role(role_id, roles_map)
-  defp selected_role(nil, _roles_map), do: nil
 
-  defp to_index(index) when is_integer(index), do: index
-
-  defp to_index(index) do
-    case Integer.parse(to_string(index)) do
-      {parsed, _rest} -> parsed
-      :error -> index
-    end
-  end
-
-  defp restore_draft(nil, draft), do: draft || ""
+  defp restore_draft(nil, draft), do: draft
   defp restore_draft(queued, draft) when draft in [nil, ""], do: queued
   defp restore_draft(queued, draft), do: "#{queued}\n\n#{draft}"
 
@@ -769,10 +745,8 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   defp format_started_at(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
-  defp format_started_at(_other), do: nil
 
-  defp format_elapsed_run(%Run{started_at: %DateTime{}} = run), do: run |> elapsed_seconds() |> format_duration()
-  defp format_elapsed_run(_other), do: ""
+  defp format_elapsed_run(%Run{} = run), do: run |> elapsed_seconds() |> format_duration()
 
   # A run that stopped without a completion time has no end to measure to, so it
   # reads as when it last changed.
@@ -780,8 +754,6 @@ defmodule RailWeb.Live.RunConversation do
     ended = if Run.running?(run), do: DateTime.utc_now(), else: run.completed_at || run.updated_at || DateTime.utc_now()
     max(0, DateTime.diff(ended, started, :second))
   end
-
-  defp elapsed_seconds(_other), do: nil
 
   # An activity turn is `[tool] Name summary` lines, as the backends write them,
   # with `[tool error] detail` where a call failed. Older logs name the tool in
@@ -814,11 +786,9 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   # Paths inside the task's worktree read shorter from its root.
-  defp relative_to(detail, worktree_path) when is_binary(worktree_path) and worktree_path != "" do
+  defp relative_to(detail, worktree_path) do
     String.replace(detail, String.trim_trailing(worktree_path, "/") <> "/", "")
   end
-
-  defp relative_to(detail, _no_worktree), do: detail
 
   # Which tools ran, in the order they first ran, with how many times each did.
   defp tool_names_summary(steps) do
@@ -858,14 +828,6 @@ defmodule RailWeb.Live.RunConversation do
       _other ->
         "pi-wrench"
     end
-  end
-
-  defp activity_expanded?(idx, %MapSet{} = set) do
-    MapSet.member?(set, idx) or MapSet.member?(set, to_string(idx))
-  end
-
-  defp activity_expanded?(idx, expanded) do
-    is_list(expanded) and (idx in expanded or to_string(idx) in expanded)
   end
 
   defp raw_log_color_class(line) do

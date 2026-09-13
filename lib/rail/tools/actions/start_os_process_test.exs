@@ -183,6 +183,16 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     assert reloaded_run.error =~ "No such CLI binary"
   end
 
+  test "a Follower that will not start fails the run with the reason", %{run: run} do
+    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:error, :no_follower} end)
+
+    assert {:error, {:spawn_failed, :no_follower, %Run{error: "Failed to spawn runner: :no_follower"}}} =
+             Tools.start_os_process(run, ["2"])
+
+    %OsProcess{os_pid: os_pid} = Repo.get_by!(OsProcess, run_id: run.id)
+    Tools.terminate_os_process(os_pid, grace_period: 100)
+  end
+
   test "hands the spawned port and stream to a Follower", %{backend: %Backend{id: backend_id}, run: run} do
     test_pid = self()
 

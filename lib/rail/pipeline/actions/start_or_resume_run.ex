@@ -51,8 +51,6 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRun do
     {:ok, Repo.preload(run, [:task, role: :backend])}
   end
 
-  defp with_associations(other), do: other
-
   defp fingerprint(worktree_path) when is_binary(worktree_path) and worktree_path != "" do
     case Git.branch_fingerprint(worktree_path) do
       %{head_sha: sha, dirty_digest: digest} -> {sha, digest}

@@ -166,6 +166,80 @@ defmodule RailWeb.TaskLiveTest do
     refute has_element?(view, "#approve-product-plan")
   end
 
+  test "approving a ticket that was already approved says so", %{conn: conn, task: task} do
+    File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "# A ticket\n\nBody.")
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    view |> element("#approve-product-plan-skip-design") |> render_click()
+
+    assert has_element?(view, "#product-approve-error", "already been approved")
+  end
+
+  test "approving while the run is still working says so", %{conn: conn, task: task, run: run} do
+    {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+    File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "# A ticket\n\nBody.")
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    view |> element("#approve-product-plan") |> render_click()
+
+    assert has_element?(view, "#product-approve-error", "still running")
+  end
+
+  test "approving a task that has moved on says where it is", %{conn: conn, task: task, run: run} do
+    {:ok, _open} = Pipeline.update_run(run, %{stage_outcome: :in_progress})
+    File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "# A ticket\n\nBody.")
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    {:ok, _moved} = Pipeline.update_task(task, %{stage: :design})
+    view |> element("#approve-product-plan") |> render_click()
+
+    assert has_element?(view, "#product-approve-error", "at Design, not product")
+  end
+
+  test "approving a ticket with no title reports why it failed", %{conn: conn, task: task, run: run} do
+    {:ok, _open} = Pipeline.update_run(run, %{stage_outcome: :in_progress})
+    File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "Just a body, no heading.")
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    assert has_element?(view, "[data-qa='task_detail_title']", "Task Live Issue")
+
+    view |> element("#approve-product-plan") |> render_click()
+
+    assert has_element?(view, "#product-approve-error", "Could not approve the ticket")
+  end
+
+  test "a run with no conversation refuses a message", %{conn: conn, task: task, run: run} do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    view |> element("#chat-composer-form") |> render_submit(%{"message" => "Hello?"})
+
+    assert %Run{pending_chat: nil} = Repo.reload!(run)
+  end
+
+  test "a question's options, tabs and draft all feed the answer", %{conn: conn, task: task, run: run} do
+    {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+    blocked = Repo.preload(blocked, task: :issue)
+
+    {:ok, _first} =
+      Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?", options: ["Postgres", "MySQL"]})
+
+    {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which region?"})
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    view |> element("#question-option-1") |> render_click()
+    assert has_element?(view, "#answer-textarea", "MySQL")
+
+    view |> form("#answer-question-form", %{"answer" => "Half typed"}) |> render_change()
+    assert has_element?(view, "#answer-textarea", "Half typed")
+
+    view |> element("#question-tab-1") |> render_click()
+    assert has_element?(view, "#question-prompt", "Which region?")
+  end
+
   test "a blocked run's questions are answered here and sent as one round", %{
     conn: conn,
     task: task,
@@ -277,6 +351,85 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#role-chip-#{other_role.id}") |> render_click()
 
       assert has_element?(view, "#conversation-tab-root")
+    end
+
+    test "a role with no run is not selected", %{conn: conn, task: task, role: role} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#role-chip-#{role.id}") |> render_click(%{"role_id" => "rol_missing"})
+
+      assert has_element?(view, "#metadata-run-conversation-id", "sess_product")
+    end
+
+    test "stopping with nothing queued leaves the composer as it was", %{conn: conn, task: task, run: run} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#stop-run") |> render_click()
+
+      assert has_element?(view, "#chat-input[value='']")
+      assert %Run{status: :finished} = Repo.reload!(run)
+    end
+
+    test "stopping puts the undelivered message ahead of the draft", %{conn: conn, task: task, run: run} do
+      {:ok, _queued} = Pipeline.update_run(run, %{pending_chat: "Please add a test"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#chat-composer-form") |> render_change(%{"message" => "Also this"})
+      view |> element("#cancel-queued-message") |> render_click()
+
+      assert render(view) =~ "Please add a test\n\nAlso this"
+    end
+
+    test "each tool step carries an icon for its kind", %{conn: conn, task: task, run: run} do
+      Pipeline.append_run_events(run.id, nil, [
+        "[tool] Edit lib/rail.ex",
+        "[tool] Bash mix test",
+        "[tool] Grep defmodule",
+        "[tool] WebFetch https://example.com",
+        "[tool] Task explore",
+        "[tool] TodoWrite plan",
+        "[tool] Mystery thing",
+        "[tool] Read",
+        "[tool unterminated",
+        "[tool error] It broke"
+      ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("[data-qa='activity-tile'] button") |> render_click()
+
+      html = view |> element("[data-qa='activity-content']") |> render()
+
+      for icon <- [
+            "pi-file-text",
+            "pi-pencil-simple",
+            "pi-terminal-window",
+            "pi-magnifying-glass",
+            "pi-globe",
+            "pi-robot",
+            "pi-list-checks",
+            "pi-wrench",
+            "pi-warning-circle"
+          ] do
+        assert html =~ icon
+      end
+
+      assert has_element?(view, "[data-qa='activity-step']", "[tool unterminated")
+    end
+
+    test "the raw log colors each line by its source", %{conn: conn, task: task, run: run} do
+      Pipeline.append_run_events(run.id, nil, ["[error] bad", "[human] hi", "[rail] note", "plain words"])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#toggle-raw-log") |> render_click()
+
+      assert has_element?(view, "[data-qa='raw-log-line'].text-red-400", "[error] bad")
+      assert has_element?(view, "[data-qa='raw-log-line'].text-cyan-300", "[tool read_file]")
+      assert has_element?(view, "[data-qa='raw-log-line'].text-amber-300", "[human] hi")
+      assert has_element?(view, "[data-qa='raw-log-line'].text-green-400", "[rail] note")
+      assert has_element?(view, "[data-qa='raw-log-line'].text-zinc-300", "plain words")
     end
 
     test "shows the raw log on request, and the chat again after", %{conn: conn, task: task} do

@@ -353,6 +353,36 @@ defmodule Rail.Tools.FollowerTest do
     assert stopped2.status == :finished
   end
 
+  test "stop_os_process/2 with no follower still terminates the row's live process", %{os_process: os_process} do
+    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+    Process.unlink(port)
+
+    assert {:ok, %OsProcess{status: :finished}} =
+             Follower.stop_os_process(%{os_process | os_pid: pid}, grace_period: 50)
+
+    refute Tools.os_process_alive?(pid)
+  end
+
+  test "a child whose row is already gone stops the follower without settling anything", %{
+    os_process: os_process,
+    run: run
+  } do
+    Repo.delete!(os_process)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(%{os_process | os_pid: nil, run: run}, tail_interval_ms: 50)
+
+    # The follower runs in its own process, so lend it this test's DB connection.
+    Sandbox.allow(Repo, self(), follower_pid)
+
+    follower_ref = Process.monitor(follower_pid)
+
+    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
+    refute_received {:os_process_finished, _os_process, _outcome}
+  end
+
   test "child exit handles clean success without errors and passes exit_code from port", %{
     role: role,
     tmp_dir: tmp_dir

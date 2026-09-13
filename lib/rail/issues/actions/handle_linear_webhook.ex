@@ -49,10 +49,9 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
       })
       when action in ["create", "update"] do
     case upsert_linear_comment(data) do
-      {:ok, comment} -> {:ok, comment}
       # Its issue or thread has not been synced yet; the next sync brings it in.
       {:error, reason} when reason in [:issue_not_found, :parent_not_found] -> :ok
-      {:error, changeset} -> {:error, changeset}
+      result -> result
     end
   end
 

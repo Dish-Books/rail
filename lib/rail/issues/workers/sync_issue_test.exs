@@ -142,9 +142,21 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
              perform_job(SyncIssue, %{issue_id: issue.id, fields: ["title"]})
   end
 
+  test "fails the job with Linear's error when the request does not go through", %{issue: issue} do
+    {:ok, issue} = Issues.update_issue(issue, %{title: "Unreachable"})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      conn |> Plug.Conn.put_status(400) |> Req.Test.json(%{"error" => "bad request"})
+    end)
+
+    assert {:error, {:linear_api_error, 400, %{"error" => "bad request"}}} =
+             perform_job(SyncIssue, %{issue_id: issue.id, fields: ["title"]})
+  end
+
   test "says nothing to Linear when no pushable field changed", %{issue: issue} do
     # No Linear mock is queued, so a request would raise.
-    assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["url", "identifier"]})
+    assert :ok =
+             perform_job(SyncIssue, %{issue_id: issue.id, fields: ["url", "identifier", "not_a_field_rail_knows_xyz"]})
   end
 
   test "an issue that is gone needs no sync", %{issue: issue} do

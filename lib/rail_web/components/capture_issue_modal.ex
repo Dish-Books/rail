@@ -272,8 +272,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
       else: active_projects |> List.first(%{}) |> Map.get(:id)
   end
 
-  defp project_label(%{linear_team_key: key, name: name}) when is_binary(key) and key != "", do: "#{name} (#{key})"
-  defp project_label(%{name: name}), do: name
+  defp project_label(%{linear_team_key: key, name: name}), do: "#{name} (#{key})"
 
   defp error_message(%Ecto.Changeset{}), do: "Could not create the issue"
   defp error_message(reason) when is_binary(reason), do: reason

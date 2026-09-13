@@ -19,7 +19,6 @@ defmodule Rail.Pipeline.Actions.ListRuns do
     |> order_by(^Keyword.get(opts, :order_by, asc: :inserted_at))
     |> preload(^Keyword.get(opts, :preload, []))
     |> filter_project(opts[:project_id])
-    |> filter_task(opts[:task_id])
     |> Repo.all()
   end
 
@@ -30,7 +29,4 @@ defmodule Rail.Pipeline.Actions.ListRuns do
   end
 
   defp filter_project(query, _all_projects), do: query
-
-  defp filter_task(query, task_id) when is_binary(task_id), do: where(query, [run: r], r.task_id == ^task_id)
-  defp filter_task(query, _all_tasks), do: query
 end

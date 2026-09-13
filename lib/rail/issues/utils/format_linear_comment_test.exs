@@ -48,4 +48,13 @@ defmodule Rail.Issues.Utils.FormatLinearCommentTest do
     assert %{author_name: "GitHub", author_linear_id: nil, body: ""} =
              format_linear_comment(%{"id" => "lin_com_3", "botActor" => %{"name" => "GitHub"}})
   end
+
+  test "a timestamp that does not parse is taken as now" do
+    before = DateTime.utc_now()
+
+    assert %{inserted_at: %DateTime{} = inserted_at} =
+             format_linear_comment(%{"id" => "lin_com_4", "createdAt" => "not a timestamp"})
+
+    refute DateTime.before?(inserted_at, before)
+  end
 end

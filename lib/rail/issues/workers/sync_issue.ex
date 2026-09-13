@@ -60,8 +60,7 @@ defmodule Rail.Issues.Workers.SyncIssue do
   defp linear_assignee_id(%Issue{owner_user: %{linear_user_id: linear_user_id}}), do: linear_user_id
   defp linear_assignee_id(%Issue{owner_user: nil}), do: nil
 
-  defp to_existing_field(field) when is_atom(field), do: field
-
+  # Job args come back from JSON, so field names are always strings.
   defp to_existing_field(field) when is_binary(field) do
     String.to_existing_atom(field)
   rescue

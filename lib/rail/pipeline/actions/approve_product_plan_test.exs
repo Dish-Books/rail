@@ -147,4 +147,13 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
     assert {:error, {:invalid_stage, :engineer}} =
              Pipeline.approve_product_plan(Repo.preload(run, [task: [:issue, :runs]], force: true))
   end
+
+  test "a ticket the issue cannot take is not approved", %{task: task, scratch: scratch, run: run} do
+    File.write!(Path.join([scratch, "tickets", "APV-1.md"]), "No title anywhere.\n")
+
+    assert {:error, %Ecto.Changeset{}} = Pipeline.approve_product_plan(run)
+
+    assert %Task{stage: :product} = Repo.reload!(task)
+    assert %Run{stage_outcome: :in_progress} = Repo.reload!(run)
+  end
 end

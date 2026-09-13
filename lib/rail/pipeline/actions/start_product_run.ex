@@ -94,9 +94,9 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
     Tools.start_os_process(run, args)
   end
 
-  defp brief(%Task{scratch_path: scratch_path, issue: %Issue{identifier: identifier}} = task) do
-    file = "#{scratch_path}/tickets/#{identifier}.md"
-    %Issue{comments: comments} = Repo.preload(task.issue, comments: :replies)
+  defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue}) do
+    file = "#{scratch_path}/tickets/#{issue.identifier}.md"
+    %Issue{comments: comments} = Repo.preload(issue, comments: :replies)
 
     String.trim("""
     The ticket is the file #{file}. Rail publishes that file when your run completes cleanly.

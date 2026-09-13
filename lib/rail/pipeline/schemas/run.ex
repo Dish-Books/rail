@@ -100,7 +100,6 @@ defmodule Rail.Pipeline.Schemas.Run do
   end
 
   def statuses, do: @statuses
-  def stage_outcomes, do: @stage_outcomes
 
   @doc """
   What this run is doing right now, read off the run alone.
