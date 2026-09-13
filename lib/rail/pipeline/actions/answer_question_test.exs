@@ -16,6 +16,10 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Answer Question Project",
@@ -27,7 +31,6 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
           token: "lin_api_token_answer_question",
           webhook_secret: "whsec_answer_question"
         },
-        linear_team_id: "team_answer_question",
         linear_team_key: "ANS",
         default_branch: "main",
         clone_path: "/tmp/repos/answer-question",

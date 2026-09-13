@@ -12,6 +12,10 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   alias Rail.Repo
 
   setup do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "List Tasks Project 7101",
@@ -23,7 +27,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
           token: "lin_api_token_list_tasks",
           webhook_secret: "whsec_list_tasks"
         },
-        linear_team_id: "team_list_tasks_7101",
         linear_team_key: "P7101",
         default_branch: "main",
         clone_path: "/tmp/repos/list-tasks-7101",
@@ -145,6 +148,10 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   end
 
   test "lists tasks across all projects when project_id is nil", %{task: task} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, _p1} =
       Projects.create_project(system_scope(), %{
         linear_workspace: %{
@@ -156,7 +163,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         name: "List Tasks Project 7107",
         github_repo: "org/list-tasks-7107",
         github_installation_id: 7107,
-        linear_team_id: "team_list_tasks_7107",
         linear_team_key: "P7107",
         default_branch: "main",
         clone_path: "/tmp/repos/list-tasks-7107",
@@ -169,6 +175,10 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         }
       })
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, p2} =
       Projects.create_project(system_scope(), %{
         linear_workspace: %{
@@ -180,7 +190,6 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
         name: "List Tasks Project 7108",
         github_repo: "org/list-tasks-7108",
         github_installation_id: 7108,
-        linear_team_id: "team_list_tasks_7108",
         linear_team_key: "P7108",
         default_branch: "main",
         clone_path: "/tmp/repos/list-tasks-7108",

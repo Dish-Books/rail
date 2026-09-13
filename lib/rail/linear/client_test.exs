@@ -11,7 +11,7 @@ defmodule Rail.Linear.ClientTest do
   alias Rail.Users
 
   setup do
-    %{project: %Project{linear_team_id: "team_1", linear_workspace: %LinearWorkspace{token: "ws_token"}}}
+    %{project: %Project{linear_team_key: "TEAM", linear_workspace: %LinearWorkspace{token: "ws_token"}}}
   end
 
   describe "authorize_url/1" do
@@ -251,6 +251,10 @@ defmodule Rail.Linear.ClientTest do
     end
 
     test "the workspace token is looked up when the project did not bring it" do
+      Req.Test.expect(Linear, fn conn ->
+        Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+      end)
+
       {:ok, project} =
         Rail.Projects.create_project(system_scope(), %{
           name: "Client Lookup Project",
@@ -262,7 +266,6 @@ defmodule Rail.Linear.ClientTest do
             token: "looked_up_token",
             webhook_secret: "whsec_client_lookup"
           },
-          linear_team_id: "team_client_lookup",
           linear_team_key: "CLK",
           default_branch: "main",
           clone_path: "/tmp/repos/client-lookup"
@@ -270,32 +273,31 @@ defmodule Rail.Linear.ClientTest do
 
       Req.Test.expect(Linear, fn conn ->
         assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer looked_up_token"]
-        Req.Test.json(conn, %{"data" => %{"team" => nil}})
+        Req.Test.json(conn, %{"data" => %{"issues" => %{"nodes" => []}}})
       end)
 
-      assert {:ok, %{"team" => nil}} = Client.issues(%Project{id: project.id, linear_team_id: "team_client_lookup"})
+      assert {:ok, %{"issues" => %{"nodes" => []}}} =
+               Client.issues(%Project{id: project.id, linear_team_key: "CLK"})
     end
 
     test "no workspace token means no request" do
-      assert {:error, :no_workspace_token} = Client.issues(%Project{linear_team_id: "team_1"})
+      assert {:error, :no_workspace_token} = Client.issues(%Project{linear_team_key: "TEAM"})
       assert {:error, :no_workspace_token} = Client.file_upload(nil, "f.png", "image/png", "x")
     end
   end
 
   describe "issues/2" do
-    test "asks for a page of the team's issues and returns Linear's data", %{project: project} do
+    test "asks for a page of the issues on the team with the project's key", %{project: project} do
       page = %{
-        "team" => %{
-          "issues" => %{
-            "nodes" => [%{"id" => "lin_iss_1", "identifier" => "ENG-1"}],
-            "pageInfo" => %{"hasNextPage" => true, "endCursor" => "cursor_1"}
-          }
+        "issues" => %{
+          "nodes" => [%{"id" => "lin_iss_1", "identifier" => "TEAM-1"}],
+          "pageInfo" => %{"hasNextPage" => true, "endCursor" => "cursor_1"}
         }
       }
 
       Req.Test.expect(Linear, fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
-        assert %{"teamId" => "team_1", "first" => 100, "after" => nil} = Jason.decode!(body)["variables"]
+        assert %{"teamKey" => "TEAM", "first" => 100, "after" => nil} = Jason.decode!(body)["variables"]
         Req.Test.json(conn, %{"data" => page})
       end)
 
@@ -306,26 +308,38 @@ defmodule Rail.Linear.ClientTest do
       Req.Test.expect(Linear, fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
         assert %{"after" => "cursor_1"} = Jason.decode!(body)["variables"]
-        Req.Test.json(conn, %{"data" => %{"team" => %{"issues" => %{"nodes" => []}}}})
+        Req.Test.json(conn, %{"data" => %{"issues" => %{"nodes" => []}}})
       end)
 
-      assert {:ok, %{"team" => %{"issues" => %{"nodes" => []}}}} = Client.issues(project, after: "cursor_1")
+      assert {:ok, %{"issues" => %{"nodes" => []}}} = Client.issues(project, after: "cursor_1")
+    end
+  end
+
+  describe "team/2" do
+    test "looks the team up by the project's key", %{project: project} do
+      Req.Test.expect(Linear, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        assert %{"teamKey" => "TEAM"} = Jason.decode!(body)["variables"]
+        Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_uuid"}]}}})
+      end)
+
+      assert {:ok, %{"teams" => %{"nodes" => [%{"id" => "lin_team_uuid"}]}}} = Client.team(project)
     end
   end
 
   describe "create_issue/3" do
-    test "sends the input on the project's team", %{project: project} do
+    test "sends the input", %{project: project} do
       Req.Test.expect(Linear, fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
 
-        assert %{"input" => %{"teamId" => "team_1", "title" => "New Bug", "priority" => 1}} =
+        assert %{"input" => %{"teamId" => "lin_team_uuid", "title" => "New Bug", "priority" => 1}} =
                  Jason.decode!(body)["variables"]
 
         Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => false}}})
       end)
 
       assert {:ok, %{"issueCreate" => %{"success" => false}}} =
-               Client.create_issue(project, %{"title" => "New Bug", "priority" => 1})
+               Client.create_issue(project, %{"teamId" => "lin_team_uuid", "title" => "New Bug", "priority" => 1})
     end
   end
 

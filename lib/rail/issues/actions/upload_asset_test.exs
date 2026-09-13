@@ -6,6 +6,10 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
   alias Rail.Scope
 
   test "upload_asset/4 uploads to Linear and returns the asset URL, for a project or its workspace" do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(Scope.for_system(), %{
         name: "Upload Asset Project",
@@ -17,7 +21,6 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
           token: "lin_api_token_upload_asset",
           webhook_secret: "whsec_upload_asset"
         },
-        linear_team_id: "team_upload_asset",
         linear_team_key: "UPA",
         default_branch: "main",
         clone_path: "/tmp/repos/upload-asset"
@@ -50,6 +53,10 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
   end
 
   test "upload_asset/4 returns an error when Linear gives nowhere to upload to" do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(Scope.for_system(), %{
         name: "Upload Asset Refused",
@@ -61,7 +68,6 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
           token: "lin_api_token_upload_asset",
           webhook_secret: "whsec_upload_asset"
         },
-        linear_team_id: "team_upload_asset_refused",
         linear_team_key: "UPR",
         default_branch: "main",
         clone_path: "/tmp/repos/upload-asset-refused"
@@ -81,7 +87,6 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
         name: "Upload Asset No Workspace",
         github_repo: "org/upload-asset-none",
         github_installation_id: 5202,
-        linear_team_id: "team_upload_asset_none",
         linear_team_key: "UPN",
         default_branch: "main",
         clone_path: "/tmp/repos/upload-asset-none"

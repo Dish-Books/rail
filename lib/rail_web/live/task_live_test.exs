@@ -30,6 +30,10 @@ defmodule RailWeb.TaskLiveTest do
 
     {:ok, backend} = Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Task Live Project",
@@ -41,7 +45,6 @@ defmodule RailWeb.TaskLiveTest do
           token: "lin_api_token_task_live",
           webhook_secret: "whsec_task_live"
         },
-        linear_team_id: "team_task_live",
         linear_team_key: "TLV",
         default_branch: "main",
         clone_path: "/tmp/repos/task-live",

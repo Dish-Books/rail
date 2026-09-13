@@ -15,6 +15,10 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     scope = system_scope()
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Cleanup Task Project 8701",
@@ -26,7 +30,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
           token: "lin_api_token_cleanup_task",
           webhook_secret: "whsec_cleanup_task"
         },
-        linear_team_id: "team_cleanup_task_8701",
         linear_team_key: "P8701",
         default_branch: "main",
         clone_path: "/tmp/repos/cleanup-task-8701",
@@ -102,6 +105,10 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         worktree_name: "cleanup-branch"
       })
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         linear_workspace: %{
@@ -113,7 +120,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         name: "Cleanup Task Project 8705",
         github_repo: "org/cleanup-task-8705",
         github_installation_id: 8705,
-        linear_team_id: "team_cleanup_task_8705",
         linear_team_key: "P8705",
         default_branch: "main",
         clone_path: clone_path,
@@ -167,6 +173,10 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   end
 
   test "handles cleanup gracefully when worktree_path is already nil", %{project: _project, task: _task} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         linear_workspace: %{
@@ -178,7 +188,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         name: "Cleanup Task Project 8708",
         github_repo: "org/cleanup-task-8708",
         github_installation_id: 8708,
-        linear_team_id: "team_cleanup_task_8708",
         linear_team_key: "P8708",
         default_branch: "main",
         clone_path: "/tmp/repos/cleanup-task-8708",

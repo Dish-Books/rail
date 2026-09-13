@@ -21,6 +21,10 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
     {:ok, backend} =
       Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Run Finished Project 3301",
@@ -32,7 +36,6 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
           token: "lin_api_token_run_finished",
           webhook_secret: "whsec_run_finished"
         },
-        linear_team_id: "team_run_finished_3301",
         linear_team_key: "P3301",
         default_branch: "main",
         clone_path: "/tmp/repos/run-finished-3301",

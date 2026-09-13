@@ -6,6 +6,10 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
   alias Rail.Projects
 
   setup do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Create Issue Project 6101",
@@ -17,7 +21,6 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
           token: "lin_api_token_create_issue",
           webhook_secret: "whsec_create_issue"
         },
-        linear_team_id: "team_cap_1",
         linear_team_key: "CI1",
         default_branch: "main",
         clone_path: "/tmp/repos/create-issue-6101",
@@ -35,7 +38,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
 
       assert %{
                "input" => %{
-                 "teamId" => "team_cap_1",
+                 "teamId" => "lin_team_id",
                  "title" => "Short title",
                  "description" => "More details here",
                  "stateId" => "st_triage_1",
@@ -126,6 +129,21 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
 
     assert {:error, {:linear_mutation_failed, "issueCreate"}} =
              Issues.create_issue(project, %{title: "Failing", description: "Failing"})
+  end
+
+  test "create_issue/2 opens nothing for a project whose Linear team is not known yet" do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "No Team Project",
+        github_repo: "org/create-issue-no-team",
+        github_installation_id: 6120,
+        linear_team_key: "NTP",
+        default_branch: "main",
+        clone_path: "/tmp/repos/create-issue-no-team"
+      })
+
+    # No Linear stub is queued, so a request would raise.
+    assert {:error, :linear_team_not_found} = Issues.create_issue(project, %{title: "Nowhere to go"})
   end
 
   test "create_issue/2 returns Linear's error", %{project: project} do

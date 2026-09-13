@@ -14,6 +14,10 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Send Message Project",
@@ -25,7 +29,6 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
           token: "lin_api_token_send_message",
           webhook_secret: "whsec_send_message"
         },
-        linear_team_id: "team_send_message",
         linear_team_key: "SND",
         default_branch: "main",
         clone_path: "/tmp/repos/send-message",

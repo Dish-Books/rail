@@ -13,7 +13,6 @@ defmodule Rail.Issues.Actions.GetIssueTest do
         name: "Get Issue Project",
         github_repo: "org/get-issue",
         github_installation_id: 5101,
-        linear_team_id: "team_get_issue",
         linear_team_key: "GTI",
         default_branch: "main",
         clone_path: "/tmp/repos/get-issue"

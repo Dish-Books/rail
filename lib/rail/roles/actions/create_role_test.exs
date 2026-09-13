@@ -16,7 +16,6 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
         name: "Create Role Project",
         github_repo: "org/create-role",
         github_installation_id: 4101,
-        linear_team_id: "team_create_role",
         linear_team_key: "CRR",
         default_branch: "main",
         clone_path: "/tmp/repos/create-role"

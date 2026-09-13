@@ -18,6 +18,10 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Run Finished Project",
@@ -29,7 +33,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
           token: "lin_api_token_run_finished",
           webhook_secret: "whsec_run_finished"
         },
-        linear_team_id: "team_run_finished",
         linear_team_key: "RUN",
         default_branch: "main",
         clone_path: "/tmp/repos/run-finished",

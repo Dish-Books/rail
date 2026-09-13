@@ -116,27 +116,25 @@ defmodule Rail.Linear.Client do
   end
 
   @doc """
-  Fetches one page of the project's team issues. Pass `after:` the previous
-  page's `pageInfo.endCursor` to continue.
+  Fetches one page of the issues on the project's team, found by its key. Pass
+  `after:` the previous page's `pageInfo.endCursor` to continue.
   """
   def issues(%Project{} = project, opts \\ []) do
     query = """
-    query Issues($teamId: String!, $first: Int!, $after: String) {
-      team(id: $teamId) {
-        issues(first: $first, after: $after) {
-          nodes {
-            #{@issue_fields}
-          }
-          pageInfo {
-            hasNextPage
-            endCursor
-          }
+    query Issues($teamKey: String!, $first: Int!, $after: String) {
+      issues(first: $first, after: $after, filter: {team: {key: {eq: $teamKey}}}) {
+        nodes {
+          #{@issue_fields}
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
         }
       }
     }
     """
 
-    variables = %{"teamId" => project.linear_team_id, "first" => @page_size, "after" => opts[:after]}
+    variables = %{"teamKey" => project.linear_team_key, "first" => @page_size, "after" => opts[:after]}
 
     with {:ok, token} <- token(project, opts) do
       execute_query(token, query, variables, opts)
@@ -144,7 +142,26 @@ defmodule Rail.Linear.Client do
   end
 
   @doc """
-  Opens a ticket on the project's team. `input` is Linear's `IssueCreateInput`.
+  Finds the project's team by its key.
+  """
+  def team(%Project{} = project, opts \\ []) do
+    query = """
+    query Team($teamKey: String!) {
+      teams(first: 1, filter: {key: {eq: $teamKey}}) {
+        nodes {
+          id
+        }
+      }
+    }
+    """
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, %{"teamKey" => project.linear_team_key}, opts)
+    end
+  end
+
+  @doc """
+  Opens a ticket. `input` is Linear's `IssueCreateInput`, team included.
   """
   def create_issue(%Project{} = project, %{} = input, opts \\ []) do
     query = """
@@ -157,8 +174,6 @@ defmodule Rail.Linear.Client do
       }
     }
     """
-
-    input = Map.put(input, "teamId", project.linear_team_id)
 
     with {:ok, token} <- token(project, opts) do
       execute_query(token, query, %{"input" => input}, opts)

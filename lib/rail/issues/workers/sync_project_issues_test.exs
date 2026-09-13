@@ -10,6 +10,10 @@ defmodule Rail.Issues.Workers.SyncProjectIssuesTest do
   alias Rail.Users
 
   setup do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Sync Project Issues Project",
@@ -21,7 +25,6 @@ defmodule Rail.Issues.Workers.SyncProjectIssuesTest do
           token: "lin_api_token_sync_project_issues",
           webhook_secret: "whsec_sync_project_issues"
         },
-        linear_team_id: "team_sync_project_issues",
         linear_team_key: "SPI",
         default_branch: "main",
         clone_path: "/tmp/repos/sync-project-issues"
@@ -49,35 +52,33 @@ defmodule Rail.Issues.Workers.SyncProjectIssuesTest do
 
     Req.Test.expect(Rail.Linear, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
-      assert %{"teamId" => "team_sync_project_issues", "after" => nil} = Jason.decode!(body)["variables"]
+      assert %{"teamKey" => "SPI", "after" => nil} = Jason.decode!(body)["variables"]
 
       Req.Test.json(conn, %{
         "data" => %{
-          "team" => %{
-            "issues" => %{
-              "nodes" => [
-                %{
-                  "id" => "lin_existing",
-                  "identifier" => "SPI-1",
-                  "title" => "New title",
-                  "priority" => 0,
-                  "state" => %{"id" => "st_2", "name" => "In Progress", "type" => "started"}
-                },
-                %{
-                  "id" => "lin_new",
-                  "identifier" => "SPI-2",
-                  "title" => "Brand new",
-                  "description" => "From Linear",
-                  "priority" => 1,
-                  "estimate" => 5,
-                  "assignee" => %{"id" => "lin_usr_assignee"},
-                  "state" => %{"id" => "st_1", "name" => "Todo", "type" => "unstarted"},
-                  "branchName" => "spi-2-brand-new",
-                  "url" => "https://linear.app/issue/SPI-2"
-                }
-              ],
-              "pageInfo" => %{"hasNextPage" => true, "endCursor" => "cursor_2"}
-            }
+          "issues" => %{
+            "nodes" => [
+              %{
+                "id" => "lin_existing",
+                "identifier" => "SPI-1",
+                "title" => "New title",
+                "priority" => 0,
+                "state" => %{"id" => "st_2", "name" => "In Progress", "type" => "started"}
+              },
+              %{
+                "id" => "lin_new",
+                "identifier" => "SPI-2",
+                "title" => "Brand new",
+                "description" => "From Linear",
+                "priority" => 1,
+                "estimate" => 5,
+                "assignee" => %{"id" => "lin_usr_assignee"},
+                "state" => %{"id" => "st_1", "name" => "Todo", "type" => "unstarted"},
+                "branchName" => "spi-2-brand-new",
+                "url" => "https://linear.app/issue/SPI-2"
+              }
+            ],
+            "pageInfo" => %{"hasNextPage" => true, "endCursor" => "cursor_2"}
           }
         }
       })
@@ -116,7 +117,7 @@ defmodule Rail.Issues.Workers.SyncProjectIssuesTest do
 
       Req.Test.json(conn, %{
         "data" => %{
-          "team" => %{"issues" => %{"nodes" => [], "pageInfo" => %{"hasNextPage" => false, "endCursor" => nil}}}
+          "issues" => %{"nodes" => [], "pageInfo" => %{"hasNextPage" => false, "endCursor" => nil}}
         }
       })
     end)
@@ -139,7 +140,7 @@ defmodule Rail.Issues.Workers.SyncProjectIssuesTest do
           }
         end
 
-      Req.Test.json(conn, %{"data" => %{"team" => %{"issues" => %{"nodes" => nodes}}}})
+      Req.Test.json(conn, %{"data" => %{"issues" => %{"nodes" => nodes}}})
     end)
 
     assert :ok = perform_job(SyncProjectIssues, %{project_id: project.id})
@@ -162,12 +163,6 @@ defmodule Rail.Issues.Workers.SyncProjectIssuesTest do
 
     assert {:error, {:linear_api_error, 500, %{"error" => "Linear Server Down"}}} =
              perform_job(SyncProjectIssues, %{project_id: project.id})
-  end
-
-  test "a team Linear does not know fails the job", %{project: project} do
-    Req.Test.expect(Rail.Linear, fn conn -> Req.Test.json(conn, %{"data" => %{"team" => nil}}) end)
-
-    assert {:error, :linear_team_not_found} = perform_job(SyncProjectIssues, %{project_id: project.id})
   end
 
   test "a project that is gone needs no sync" do

@@ -21,6 +21,10 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     scope = system_scope()
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Register Question Project 7901",
@@ -32,7 +36,6 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
           token: "lin_api_token_register_question",
           webhook_secret: "whsec_register_question"
         },
-        linear_team_id: "team_register_question_7901",
         linear_team_key: "P7901",
         default_branch: "main",
         clone_path: "/tmp/repos/register-question-7901",

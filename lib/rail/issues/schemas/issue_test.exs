@@ -60,7 +60,6 @@ defmodule Rail.Issues.Schemas.IssueTest do
         name: "Issue Schema Project",
         github_repo: "org/issue-schema",
         github_installation_id: 5001,
-        linear_team_id: "team_issue_schema",
         linear_team_key: "ISS",
         default_branch: "main",
         clone_path: "/tmp/repos/issue-schema"

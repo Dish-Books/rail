@@ -23,6 +23,10 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
 
     scope = system_scope()
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Start Product Project 7001",
@@ -34,7 +38,6 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
           token: "lin_api_token_start_product",
           webhook_secret: "whsec_start_product"
         },
-        linear_team_id: "team_start_product_7001",
         linear_team_key: "P7001",
         default_branch: "main",
         clone_path: create_temp_git_repo(),

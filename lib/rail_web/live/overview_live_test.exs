@@ -69,7 +69,6 @@ defmodule RailWeb.OverviewLiveTest do
                name: "Project One",
                github_repo: "example/p1",
                github_installation_id: 111,
-               linear_team_id: "t1",
                linear_team_key: "P1",
                default_branch: "main",
                clone_path: "/tmp/p1",
@@ -82,7 +81,6 @@ defmodule RailWeb.OverviewLiveTest do
                name: "Project Two",
                github_repo: "example/p2",
                github_installation_id: 222,
-               linear_team_id: "t2",
                linear_team_key: "P2",
                default_branch: "main",
                clone_path: "/tmp/p2",
@@ -136,7 +134,6 @@ defmodule RailWeb.OverviewLiveTest do
                name: "Preset Project",
                github_repo: "example/preset",
                github_installation_id: 333,
-               linear_team_id: "tp",
                linear_team_key: "PRE",
                default_branch: "main",
                clone_path: "/tmp/preset",
@@ -250,6 +247,10 @@ defmodule RailWeb.OverviewLiveTest do
 
       scope = Scope.for_user(user)
 
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+      end)
+
       {:ok, project} =
         Projects.create_project(scope, %{
           name: "Queue App",
@@ -261,7 +262,6 @@ defmodule RailWeb.OverviewLiveTest do
             token: "lin_api_token_overview_queue",
             webhook_secret: "whsec_overview_queue"
           },
-          linear_team_id: "t_queue",
           linear_team_key: "QUE",
           default_branch: "main",
           clone_path: "/tmp/queue",

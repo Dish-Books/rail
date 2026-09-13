@@ -16,6 +16,10 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Task Schema Project 12601",
@@ -27,7 +31,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
           token: "lin_api_token_task_schema",
           webhook_secret: "whsec_task_schema"
         },
-        linear_team_id: "team_task_schema_12601",
         linear_team_key: "P12601",
         default_branch: "main",
         clone_path: "/tmp/repos/task-schema-12601",

@@ -9,6 +9,10 @@ defmodule Rail.Issues.Actions.CommentTest do
   alias Rail.Users
 
   setup do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Comment Project",
@@ -20,7 +24,6 @@ defmodule Rail.Issues.Actions.CommentTest do
           token: "lin_api_token_comment",
           webhook_secret: "whsec_comment"
         },
-        linear_team_id: "team_comment",
         linear_team_key: "CMT",
         default_branch: "main",
         clone_path: "/tmp/repos/comment"

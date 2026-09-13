@@ -14,6 +14,10 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Stop Run Project",
@@ -25,7 +29,6 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
           token: "lin_api_token_stop_run",
           webhook_secret: "whsec_stop_run"
         },
-        linear_team_id: "team_stop_run",
         linear_team_key: "STP",
         default_branch: "main",
         clone_path: "/tmp/repos/stop-run",

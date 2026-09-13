@@ -16,6 +16,10 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Approve Plan Project",
@@ -27,7 +31,6 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
           token: "lin_api_token_approve_plan",
           webhook_secret: "whsec_approve_plan"
         },
-        linear_team_id: "team_approve_plan",
         linear_team_key: "APV",
         default_branch: "main",
         clone_path: "/tmp/repos/approve-plan",

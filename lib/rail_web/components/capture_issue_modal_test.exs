@@ -17,12 +17,15 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
   end
 
   test "opens from the top bar with the current project filter selected", %{conn: conn} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, _project1} =
       Projects.create_project(system_scope(), %{
         name: "Project One",
         github_repo: "org/capture-13102",
         github_installation_id: 13_102,
-        linear_team_id: "team_capture_13102",
         linear_team_key: "ONE",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13102",
@@ -36,12 +39,15 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         active: true
       })
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project2} =
       Projects.create_project(system_scope(), %{
         name: "Project Two",
         github_repo: "org/capture-13103",
         github_installation_id: 13_103,
-        linear_team_id: "team_capture_13103",
         linear_team_key: "TWO",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13103",
@@ -83,12 +89,15 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
   end
 
   test "defaults to the first active project when there is no project filter", %{conn: conn} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, _inactive} =
       Projects.create_project(system_scope(), %{
         name: "Inactive Project",
         github_repo: "org/capture-13105",
         github_installation_id: 13_105,
-        linear_team_id: "team_capture_13105",
         linear_team_key: "INA",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13105",
@@ -102,12 +111,15 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         active: false
       })
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, active} =
       Projects.create_project(system_scope(), %{
         name: "Active First",
         github_repo: "org/capture-13106",
         github_installation_id: 13_106,
-        linear_team_id: "team_capture_13106",
         linear_team_key: "ACT",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13106",
@@ -180,12 +192,15 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
   end
 
   test "change keeps the typed values and enables submit", %{conn: conn} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, _project1} =
       Projects.create_project(system_scope(), %{
         name: "Prj 1",
         github_repo: "org/capture-13110",
         github_installation_id: 13_110,
-        linear_team_id: "team_capture_13110",
         linear_team_key: "P13110",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13110",
@@ -199,12 +214,15 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         active: true
       })
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project2} =
       Projects.create_project(system_scope(), %{
         name: "Prj 2",
         github_repo: "org/capture-13111",
         github_installation_id: 13_111,
-        linear_team_id: "team_capture_13111",
         linear_team_key: "P13111",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13111",
@@ -248,12 +266,15 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
   end
 
   test "submit does nothing when the title is blank", %{conn: conn} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Capture Project 13113",
         github_repo: "org/capture-13113",
         github_installation_id: 13_113,
-        linear_team_id: "team_capture_13113",
         linear_team_key: "P13113",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13113",
@@ -318,12 +339,15 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
   end
 
   test "submit creates the issue and closes", %{conn: conn} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, %{id: project_id} = project} =
       Projects.create_project(system_scope(), %{
         name: "Capture Project 13115",
         github_repo: "org/capture-13115",
         github_installation_id: 13_115,
-        linear_team_id: "team_capture_ok",
         linear_team_key: "P13115",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13115",
@@ -387,12 +411,15 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
   end
 
   test "submit keeps the dialog open with the values and shows the error when creating fails", %{conn: conn} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Capture Project 13117",
         github_repo: "org/capture-13117",
         github_installation_id: 13_117,
-        linear_team_id: "team_capture_err",
         linear_team_key: "P13117",
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13117",

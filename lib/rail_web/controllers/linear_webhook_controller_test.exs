@@ -20,12 +20,15 @@ defmodule RailWeb.LinearWebhookControllerTest do
   end
 
   test "returns 401 when signature is missing or invalid", %{conn: conn} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, %Project{linear_workspace: %LinearWorkspace{external_id: external_id}}} =
       Projects.create_project(system_scope(), %{
         name: "Webhook Project 12900",
         github_repo: "org/webhook-12900",
         github_installation_id: 12_900,
-        linear_team_id: "team_wh_401",
         linear_team_key: "P12900",
         default_branch: "main",
         clone_path: "/tmp/repos/webhook-12900",
@@ -56,12 +59,15 @@ defmodule RailWeb.LinearWebhookControllerTest do
   end
 
   test "accepts a signed Issue event and mirrors the issue locally", %{conn: conn} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, %Project{id: project_id, linear_workspace: %LinearWorkspace{external_id: external_id, webhook_secret: secret}}} =
       Projects.create_project(system_scope(), %{
         name: "Webhook Project 12903",
         github_repo: "org/webhook-12903",
         github_installation_id: 12_903,
-        linear_team_id: "team_wh_1",
         linear_team_key: "P12903",
         default_branch: "main",
         clone_path: "/tmp/repos/webhook-12903",

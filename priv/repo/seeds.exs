@@ -31,7 +31,6 @@ default_project =
       github_repo: "Rail-AI-dev/rail",
       github_installation_id: 1,
       default_branch: "main",
-      linear_team_id: "rail-team",
       linear_team_key: "RAIL",
       linear_state_ids: %{
         "triage" => "state_triage",

@@ -14,6 +14,10 @@ defmodule RailWeb.Live.RunConversationTest do
 
     {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(scope, %{
         name: "Conversation Project",
@@ -25,7 +29,6 @@ defmodule RailWeb.Live.RunConversationTest do
           token: "lin_api_token_conversation",
           webhook_secret: "whsec_conversation"
         },
-        linear_team_id: "team_conversation",
         linear_team_key: "CNV",
         default_branch: "main",
         clone_path: "/tmp/repos/conversation",

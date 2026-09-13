@@ -251,43 +251,23 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </div>
               </div>
 
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Linear Team ID</label>
-                  <input
-                    type="text"
-                    name="project[linear_team_id]"
-                    id="project-linear-team-id-input"
-                    value={Ecto.Changeset.get_field(@changeset, :linear_team_id)}
-                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                  />
-                  <span
-                    :if={@changeset.errors[:linear_team_id]}
-                    class="text-xs text-red-600"
-                    id="project-linear-team-id-error"
-                  >
-                    {elem(@changeset.errors[:linear_team_id], 0)}
-                  </span>
-                </div>
-
-                <div>
-                  <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Linear Team Key</label>
-                  <input
-                    type="text"
-                    name="project[linear_team_key]"
-                    id="project-linear-team-key-input"
-                    value={Ecto.Changeset.get_field(@changeset, :linear_team_key)}
-                    placeholder="e.g. RAIL"
-                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                  />
-                  <span
-                    :if={@changeset.errors[:linear_team_key]}
-                    class="text-xs text-red-600"
-                    id="project-linear-team-key-error"
-                  >
-                    {elem(@changeset.errors[:linear_team_key], 0)}
-                  </span>
-                </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Linear Team Key</label>
+                <input
+                  type="text"
+                  name="project[linear_team_key]"
+                  id="project-linear-team-key-input"
+                  value={Ecto.Changeset.get_field(@changeset, :linear_team_key)}
+                  placeholder="e.g. DIS"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                />
+                <span
+                  :if={@changeset.errors[:linear_team_key]}
+                  class="text-xs text-red-600"
+                  id="project-linear-team-key-error"
+                >
+                  {elem(@changeset.errors[:linear_team_key], 0)}
+                </span>
               </div>
 
               <div>

@@ -8,6 +8,10 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
   alias Rail.Projects
 
   setup do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Update Issue Project",
@@ -19,7 +23,6 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
           token: "lin_api_token_update_issue",
           webhook_secret: "whsec_update_issue"
         },
-        linear_team_id: "team_update_issue",
         linear_team_key: "U01",
         default_branch: "main",
         clone_path: "/tmp/repos/update-issue",

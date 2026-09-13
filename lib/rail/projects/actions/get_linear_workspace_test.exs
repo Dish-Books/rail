@@ -6,12 +6,15 @@ defmodule Rail.Projects.Actions.GetLinearWorkspaceTest do
   alias Rail.Projects.Schemas.Project
 
   test "finds a workspace by the given field" do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, %Project{linear_workspace: %LinearWorkspace{id: workspace_id}}} =
       Projects.create_project(system_scope(), %{
         name: "Get Workspace Project",
         github_repo: "org/get-workspace",
         github_installation_id: 12_960,
-        linear_team_id: "team_get_workspace",
         linear_team_key: "GWS",
         default_branch: "main",
         clone_path: "/tmp/repos/get-workspace",

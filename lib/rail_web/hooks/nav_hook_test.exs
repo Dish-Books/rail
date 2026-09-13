@@ -7,12 +7,15 @@ defmodule RailWeb.Hooks.NavHookTest do
   alias Rail.Users
 
   test "handles switcher, theme, and rail toggle events", %{conn: conn} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Nav Hook Project 13119",
         github_repo: "org/nav-hook-13119",
         github_installation_id: 13_119,
-        linear_team_id: "team_nav_hook_13119",
         linear_team_key: "P13119",
         default_branch: "main",
         clone_path: "/tmp/repos/nav-hook-13119",

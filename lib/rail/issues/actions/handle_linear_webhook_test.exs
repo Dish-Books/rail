@@ -10,12 +10,15 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   alias Rail.Repo
 
   setup do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, %Project{linear_workspace: workspace} = project} =
       Projects.create_project(system_scope(), %{
         name: "Handle Webhook Project",
         github_repo: "org/handle-webhook",
         github_installation_id: 12_950,
-        linear_team_id: "team_handle_webhook",
         linear_team_key: "HWH",
         default_branch: "main",
         clone_path: "/tmp/repos/handle-webhook",

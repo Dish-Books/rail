@@ -19,6 +19,10 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
 
     scope = system_scope()
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Dismiss Question Project 6701",
@@ -30,7 +34,6 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
           token: "lin_api_token_dismiss_question",
           webhook_secret: "whsec_dismiss_question"
         },
-        linear_team_id: "team_dismiss_question_6701",
         linear_team_key: "P6701",
         default_branch: "main",
         clone_path: "/tmp/repos/dismiss-question-6701",

@@ -23,6 +23,10 @@ defmodule Rail.Tools.FollowerTest do
     {:ok, backend} =
       Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Follower Project",
@@ -34,7 +38,6 @@ defmodule Rail.Tools.FollowerTest do
           token: "lin_api_token_follower",
           webhook_secret: "whsec_follower"
         },
-        linear_team_id: "team_follower",
         linear_team_key: "FOL",
         default_branch: "main",
         clone_path: Path.join(System.tmp_dir!(), "follower_clone")
@@ -543,6 +546,10 @@ defmodule Rail.Tools.FollowerTest do
     backend: backend,
     tmp_dir: tmp_dir
   } do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         linear_workspace: %{
@@ -554,7 +561,6 @@ defmodule Rail.Tools.FollowerTest do
         name: "Follower Project 12502",
         github_repo: "org/follower-12502",
         github_installation_id: 12_502,
-        linear_team_id: "team_follower_12502",
         linear_team_key: "P12502",
         default_branch: "main",
         clone_path: "/tmp/repos/follower-12502",

@@ -48,16 +48,9 @@ defmodule Rail.Issues.Workers.SyncProjectIssues do
   end
 
   defp sync_page(%Project{} = project, cursor) do
-    case Linear.issues(project, after: cursor) do
-      {:ok, %{"team" => %{"issues" => %{"nodes" => nodes} = issues}}} ->
-        upsert(project, nodes)
-        continue(project, issues["pageInfo"])
-
-      {:ok, _no_team} ->
-        {:error, :linear_team_not_found}
-
-      {:error, reason} ->
-        {:error, reason}
+    with {:ok, %{"issues" => %{"nodes" => nodes} = issues}} <- Linear.issues(project, after: cursor) do
+      upsert(project, nodes)
+      continue(project, issues["pageInfo"])
     end
   end
 

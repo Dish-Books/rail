@@ -21,12 +21,16 @@ defmodule Rail.Issues.Actions.CreateIssue do
   Creates the Linear ticket and inserts the issue it came back as.
 
   `attrs` carries `:title` and `:description`, and optionally `:priority` and
-  `:owner_user_id`. The ticket is opened as the workspace, in triage.
+  `:owner_user_id`. The ticket is opened as the workspace, in triage, on the
+  project's team.
   """
-  def create_issue(%Project{} = project, %{} = attrs) do
+  def create_issue(%Project{linear_team_id: nil}, %{}), do: {:error, :linear_team_not_found}
+
+  def create_issue(%Project{linear_team_id: team_id} = project, %{} = attrs) do
     input =
       Map.reject(
         %{
+          "teamId" => team_id,
           "title" => attrs[:title],
           "description" => attrs[:description],
           "priority" => linear_priority(attrs[:priority]),

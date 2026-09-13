@@ -7,6 +7,10 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
   alias Rail.Projects
 
   test "sync_issues/1 queues a pull of the project's issues instead of doing it inline" do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Sync Issues Project",
@@ -18,7 +22,6 @@ defmodule Rail.Issues.Actions.SyncIssuesTest do
           token: "lin_api_token_sync_issues",
           webhook_secret: "whsec_sync_issues"
         },
-        linear_team_id: "team_sync_issues",
         linear_team_key: "SYN",
         default_branch: "main",
         clone_path: "/tmp/repos/sync-issues"
