@@ -71,7 +71,7 @@ defmodule Rail.Pipeline.Actions.ListQuestionsTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "List Questions Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "List Questions Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

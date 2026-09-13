@@ -91,7 +91,7 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
 
     assert %{issues: [%Issue{id: ^triage_id}], total: 1} = Issues.list_issues(project_id: project_id)
 
-    assert %{issues: [%Issue{id: ^triage_id}, %Issue{id: ^done_id}], total: 2} =
+    assert %{issues: [%Issue{id: ^done_id}, %Issue{id: ^triage_id}], total: 2} =
              Issues.list_issues(project_id: project_id, show_finished: true)
 
     assert %{issues: [%Issue{id: ^triage_id}]} = Issues.list_issues(project_id: project_id, state: :triage)
@@ -143,9 +143,9 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     assert %{total: 3} = Issues.list_issues(search: "   ")
   end
 
-  test "list_issues pages through issues and counts past the page", %{project: project} do
-    ids =
-      for {priority, n} <- Enum.with_index([:urgent, :high, :high, :low, :medium]) do
+  test "list_issues pages through issues, most recently updated first, and counts past the page", %{project: project} do
+    issues =
+      for {priority, n} <- Enum.with_index([:medium, :low, :high, :high, :urgent]) do
         %Issue{}
         |> Issue.changeset(%{
           project_id: project.id,
@@ -156,10 +156,9 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
           state: :backlog
         })
         |> Repo.insert!()
-        |> Map.fetch!(:id)
       end
 
-    [first, second, third, fourth, fifth] = ids
+    [fifth, fourth, third, second, first] = Enum.map(issues, & &1.id)
 
     assert %{
              issues: [%Issue{id: ^first}, %Issue{id: ^second}],
@@ -176,6 +175,10 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
              total: 2,
              priority_counts: %{urgent: 1, high: 2, low: 1, medium: 1}
            } = Issues.list_issues(priority: :high)
+
+    # Updating the oldest issue brings it to the top.
+    issues |> List.first() |> Issue.changeset(%{title: "Touched"}) |> Repo.update!()
+    assert %{issues: [%Issue{id: ^fifth}]} = Issues.list_issues(limit: 1)
   end
 
   test "list_issues preloads the issue's task", %{project: project} do

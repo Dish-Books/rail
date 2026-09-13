@@ -31,6 +31,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
   def update(assigns, socket) do
     socket =
       socket
+      |> assign(:current_scope, assigns[:current_scope])
       |> assign(:projects, assigns[:projects] || [])
       |> assign(:current_project_id, assigns[:current_project_id])
 
@@ -196,7 +197,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
                     "bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer"
                 ]}
               >
-                Add to Backlog (⌘Enter)
+                Add to Triage (⌘Enter)
               </button>
             </div>
           </form>
@@ -230,7 +231,11 @@ defmodule RailWeb.Components.CaptureIssueModal do
 
     with false <- String.trim(title) == "",
          %{} = project <- Enum.find(socket.assigns.projects, &(&1.id == project_id)) do
-      case Issues.create_issue(project, %{title: title, description: description, priority: priority}) do
+      case Issues.create_issue(socket.assigns.current_scope, project, %{
+             title: title,
+             description: description,
+             priority: priority
+           }) do
         {:ok, _issue} -> {:noreply, close(socket)}
         {:error, reason} -> {:noreply, assign(socket, :error, error_message(reason))}
       end

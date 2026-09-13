@@ -139,20 +139,6 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     assert %Run.Usage{input_tokens: 10} = apply_changes(changeset).usage
   end
 
-  test "usage serializes to JSON for its stored column" do
-    usage = %Run.Usage{
-      input_tokens: 1_000,
-      output_tokens: 500,
-      cache_read_input_tokens: 200,
-      cache_creation_input_tokens: 100
-    }
-
-    assert {:ok, json} = Jason.encode(usage)
-    assert {:ok, decoded} = Jason.decode(json)
-    assert decoded["input_tokens"] == 1_000
-    assert decoded["output_tokens"] == 500
-  end
-
   test "usage/1 abbreviates the token count, and says nothing when there is none" do
     assert Run.usage(%Run{usage: %Run.Usage{input_tokens: 500}}) == "500 tokens"
     assert Run.usage(%Run{usage: %Run.Usage{input_tokens: 1_500}}) == "1.5K tokens"

@@ -71,7 +71,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Cleanup Task Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Cleanup Task Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -151,7 +151,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
       })
     end)
 
-    {:ok, issue_8707} = Issues.create_issue(project, %{description: "Task 8707"})
+    {:ok, issue_8707} = Issues.create_issue(system_scope(), project, %{description: "Task 8707"})
 
     {:ok, %Task{id: _task_id} = task} = Pipeline.create_task(issue_8707, :product)
 
@@ -215,7 +215,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
       })
     end)
 
-    {:ok, issue_8709} = Issues.create_issue(project, %{description: "Task 8709"})
+    {:ok, issue_8709} = Issues.create_issue(system_scope(), project, %{description: "Task 8709"})
 
     {:ok, task} = Pipeline.create_task(issue_8709, :product)
 

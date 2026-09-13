@@ -59,7 +59,7 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessageTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Stop And Send Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Stop And Send Issue"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 
     working = fn attrs ->

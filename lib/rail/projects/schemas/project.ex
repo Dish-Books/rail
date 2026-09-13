@@ -51,10 +51,11 @@ defmodule Rail.Projects.Schemas.Project do
     |> put_linear_team_id()
   end
 
-  # People know a Linear team by its key; Linear's API wants its id. The id is
-  # looked up as the row is written, and only when the key or the workspace it is
-  # read through changed, so a form being filled in never calls Linear. With no
-  # workspace to ask through there is nothing to look up yet.
+  # People know a Linear team by its key; Linear's API wants its id, and the ids
+  # of its workflow states. Both are looked up as the row is written, and only
+  # when the key or the workspace it is read through changed, so a form being
+  # filled in never calls Linear. With no workspace to ask through there is
+  # nothing to look up yet.
   defp put_linear_team_id(%Ecto.Changeset{valid?: true} = changeset) do
     if changed?(changeset, :linear_team_key) or changed?(changeset, :linear_workspace) do
       prepare_changes(changeset, &look_up_linear_team_id/1)
@@ -67,8 +68,10 @@ defmodule Rail.Projects.Schemas.Project do
 
   defp look_up_linear_team_id(changeset) do
     case Linear.team(apply_changes(changeset)) do
-      {:ok, %{"teams" => %{"nodes" => [%{"id" => team_id}]}}} ->
-        put_change(changeset, :linear_team_id, team_id)
+      {:ok, %{"teams" => %{"nodes" => [%{"id" => team_id} = team]}}} ->
+        changeset
+        |> put_change(:linear_team_id, team_id)
+        |> put_change(:linear_state_ids, linear_state_ids(team))
 
       {:error, :no_workspace_token} ->
         put_change(changeset, :linear_team_id, nil)
@@ -80,4 +83,26 @@ defmodule Rail.Projects.Schemas.Project do
         changeset |> add_error(:linear_team_key, "could not be checked with Linear") |> changeset.repo.rollback()
     end
   end
+
+  # A team can have several states of one type; Rail moves issues into the first,
+  # which is written last so it wins.
+  defp linear_state_ids(team) do
+    (get_in(team, ["states", "nodes"]) || [])
+    |> Enum.sort_by(& &1["position"], :desc)
+    |> Enum.flat_map(fn state ->
+      case state_key(state["type"]) do
+        key when is_binary(key) -> [{key, state["id"]}]
+        nil -> []
+      end
+    end)
+    |> Map.new()
+  end
+
+  defp state_key("triage"), do: "triage"
+  defp state_key("backlog"), do: "backlog"
+  defp state_key("unstarted"), do: "todo"
+  defp state_key("started"), do: "in_progress"
+  defp state_key("completed"), do: "done"
+  defp state_key("canceled"), do: "canceled"
+  defp state_key(_other), do: nil
 end

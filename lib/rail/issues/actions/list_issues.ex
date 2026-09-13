@@ -7,7 +7,8 @@ defmodule Rail.Issues.Actions.ListIssues do
   alias Rail.Repo
 
   @doc """
-  Lists a page of issues along with how many match in all.
+  Lists a page of issues, most recently updated first, along with how many
+  match in all.
 
   Options: `:project_id`, `:owner_user_id`, `:state`, `:show_finished`, `:search`,
   `:priority`, `:limit`, `:offset` and `:preload`.
@@ -35,7 +36,7 @@ defmodule Rail.Issues.Actions.ListIssues do
     issues =
       matching
       |> filter_priority(opts[:priority])
-      |> order_by([i], asc: i.inserted_at, asc: i.id)
+      |> order_by([i], desc: i.updated_at, desc: i.id)
       |> limit_to(opts[:limit])
       |> offset_by(opts[:offset])
       |> preload(^Keyword.get(opts, :preload, []))

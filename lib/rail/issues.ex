@@ -11,7 +11,7 @@ defmodule Rail.Issues do
 
   defdelegate list_issues(opts \\ []), to: Actions.ListIssues
   defdelegate get_issue(id, opts \\ []), to: Actions.GetIssue
-  defdelegate create_issue(project, attrs), to: Actions.CreateIssue
+  defdelegate create_issue(scope, project, attrs), to: Actions.CreateIssue
   defdelegate update_issue(issue, attrs), to: Actions.UpdateIssue
 
   defdelegate sync_issues(project), to: Actions.SyncIssues

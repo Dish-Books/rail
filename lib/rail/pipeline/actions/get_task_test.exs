@@ -49,7 +49,7 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Get Task Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Get Task Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

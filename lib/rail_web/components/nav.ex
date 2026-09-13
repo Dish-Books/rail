@@ -152,6 +152,7 @@ defmodule RailWeb.Components.Nav do
   end
 
   attr :current_section, :atom, required: true
+  attr :current_scope, Rail.Scope, required: true
   attr :current_project_id, :string, default: nil
   attr :projects, :list, default: []
   attr :theme, :string, default: "dark"
@@ -331,6 +332,7 @@ defmodule RailWeb.Components.Nav do
       <.live_component
         module={CaptureIssueModal}
         id={CaptureIssueModal.id()}
+        current_scope={@current_scope}
         projects={@projects}
         current_project_id={@current_project_id}
       />

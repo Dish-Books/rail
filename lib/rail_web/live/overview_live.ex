@@ -54,6 +54,7 @@ defmodule RailWeb.OverviewLive do
     <Layouts.app
       flash={@flash}
       current_section={@current_section}
+      current_scope={@current_scope}
       is_rail_extended={@is_rail_extended}
       attention_count={@attention_count}
       current_project_id={@current_project_id}

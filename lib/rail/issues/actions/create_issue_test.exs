@@ -7,7 +7,18 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
 
   setup do
     Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+      Req.Test.json(conn, %{
+        "data" => %{
+          "teams" => %{
+            "nodes" => [
+              %{
+                "id" => "lin_team_id",
+                "states" => %{"nodes" => [%{"id" => "st_triage_1", "type" => "triage", "position" => 0}]}
+              }
+            ]
+          }
+        }
+      })
     end)
 
     {:ok, project} =
@@ -23,8 +34,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
         },
         linear_team_key: "CI1",
         default_branch: "main",
-        clone_path: "/tmp/repos/create-issue-6101",
-        linear_state_ids: %{"triage" => "st_triage_1"}
+        clone_path: "/tmp/repos/create-issue-6101"
       })
 
     %{project: project}
@@ -79,7 +89,11 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
               branch_name: "eng-301-branch",
               url: "https://linear.app/issue/ENG-301"
             }} =
-             Issues.create_issue(project, %{title: "Short title", description: "More details here", priority: :high})
+             Issues.create_issue(system_scope(), project, %{
+               title: "Short title",
+               description: "More details here",
+               priority: :high
+             })
   end
 
   test "create_issue/2 defaults to medium priority and sends Linear none", %{project: project} do
@@ -101,7 +115,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
     end)
 
     assert {:ok, %Issue{priority: :medium, state: :triage, state_name: "Triage"}} =
-             Issues.create_issue(project, %{title: "No priority"})
+             Issues.create_issue(system_scope(), project, %{title: "No priority"})
   end
 
   test "create_issue/2 refuses a priority that is not one of the known ones", %{project: project} do
@@ -117,7 +131,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
     end)
 
     assert {:error, %Ecto.Changeset{} = changeset} =
-             Issues.create_issue(project, %{title: "Bad priority", priority: "invalid_priority"})
+             Issues.create_issue(system_scope(), project, %{title: "Bad priority", priority: "invalid_priority"})
 
     assert %{priority: ["is invalid"]} = errors_on(changeset)
   end
@@ -128,7 +142,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
     end)
 
     assert {:error, {:linear_mutation_failed, "issueCreate"}} =
-             Issues.create_issue(project, %{title: "Failing", description: "Failing"})
+             Issues.create_issue(system_scope(), project, %{title: "Failing", description: "Failing"})
   end
 
   test "create_issue/2 opens nothing for a project whose Linear team is not known yet" do
@@ -143,7 +157,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
       })
 
     # No Linear stub is queued, so a request would raise.
-    assert {:error, :linear_team_not_found} = Issues.create_issue(project, %{title: "Nowhere to go"})
+    assert {:error, :linear_team_not_found} = Issues.create_issue(system_scope(), project, %{title: "Nowhere to go"})
   end
 
   test "create_issue/2 returns Linear's error", %{project: project} do
@@ -151,6 +165,6 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
       conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{"error" => "down"})
     end)
 
-    assert {:error, {:linear_api_error, 500, _body}} = Issues.create_issue(project, %{title: "Failing"})
+    assert {:error, {:linear_api_error, 500, _body}} = Issues.create_issue(system_scope(), project, %{title: "Failing"})
   end
 end

@@ -309,7 +309,7 @@ defmodule RailWeb.OverviewLiveTest do
         })
       end)
 
-      {:ok, issue} = Issues.create_issue(project, %{description: "Running work"})
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Running work"})
       {:ok, task} = Pipeline.create_task(issue, :product)
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 
@@ -350,7 +350,7 @@ defmodule RailWeb.OverviewLiveTest do
         })
       end)
 
-      {:ok, issue} = Issues.create_issue(project, %{description: "Ordering"})
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Ordering"})
 
       waiting_run = fn stopped_at ->
         {:ok, task} = Pipeline.create_task(issue, :product)
@@ -408,7 +408,7 @@ defmodule RailWeb.OverviewLiveTest do
         })
       end)
 
-      {:ok, issue} = Issues.create_issue(project, %{description: "Needs answers"})
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Needs answers"})
       {:ok, task} = Pipeline.create_task(issue, :product)
 
       {:ok, run} =
@@ -473,7 +473,7 @@ defmodule RailWeb.OverviewLiveTest do
         })
       end)
 
-      {:ok, issue} = Issues.create_issue(project, %{description: "Shipped work"})
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Shipped work"})
       {:ok, task} = Pipeline.create_task(issue, :product)
       {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
 
@@ -509,7 +509,7 @@ defmodule RailWeb.OverviewLiveTest do
         })
       end)
 
-      {:ok, issue} = Issues.create_issue(project, %{description: "Roster work"})
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Roster work"})
       {:ok, task} = Pipeline.create_task(issue, :product)
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 
@@ -552,7 +552,7 @@ defmodule RailWeb.OverviewLiveTest do
         })
       end)
 
-      {:ok, issue} = Issues.create_issue(project, %{description: "Option work"})
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Option work"})
       {:ok, task} = Pipeline.create_task(issue, :product)
 
       {:ok, run} =
@@ -593,7 +593,7 @@ defmodule RailWeb.OverviewLiveTest do
         })
       end)
 
-      {:ok, issue} = Issues.create_issue(project, %{description: "Blank work"})
+      {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Blank work"})
       {:ok, task} = Pipeline.create_task(issue, :product)
 
       {:ok, run} =

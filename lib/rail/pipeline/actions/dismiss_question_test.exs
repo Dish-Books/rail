@@ -61,7 +61,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Dismiss Question Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Dismiss Question Issue"})
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

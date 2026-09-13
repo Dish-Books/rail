@@ -77,7 +77,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Register Question Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Register Question Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

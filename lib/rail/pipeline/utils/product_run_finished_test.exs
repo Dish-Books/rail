@@ -73,7 +73,7 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Settle Product Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Settle Product Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 

@@ -61,7 +61,7 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Answer Question Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Answer Question Issue"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 
     {:ok, run} =

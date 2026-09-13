@@ -142,7 +142,7 @@ defmodule Rail.Linear.Client do
   end
 
   @doc """
-  Finds the project's team by its key.
+  Finds the project's team by its key, with its workflow states.
   """
   def team(%Project{} = project, opts \\ []) do
     query = """
@@ -150,6 +150,13 @@ defmodule Rail.Linear.Client do
       teams(first: 1, filter: {key: {eq: $teamKey}}) {
         nodes {
           id
+          states {
+            nodes {
+              id
+              type
+              position
+            }
+          }
         }
       }
     }

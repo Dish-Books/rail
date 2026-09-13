@@ -54,7 +54,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "List Tasks Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "List Tasks Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
@@ -82,7 +82,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
       })
     end)
 
-    {:ok, issue_7103} = Issues.create_issue(project, %{description: "Task 7103"})
+    {:ok, issue_7103} = Issues.create_issue(system_scope(), project, %{description: "Task 7103"})
 
     {:ok, %Task{id: eng_q_id}} = Pipeline.create_task(issue_7103, :product)
 
@@ -106,7 +106,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
       })
     end)
 
-    {:ok, issue_7104} = Issues.create_issue(project, %{description: "Task 7104"})
+    {:ok, issue_7104} = Issues.create_issue(system_scope(), project, %{description: "Task 7104"})
 
     {:ok, t_eng_other} = Pipeline.create_task(issue_7104, :product)
 
@@ -139,7 +139,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
       })
     end)
 
-    {:ok, issue_7105} = Issues.create_issue(project, %{description: "Beta"})
+    {:ok, issue_7105} = Issues.create_issue(system_scope(), project, %{description: "Beta"})
 
     {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7105, :product)
 
@@ -222,7 +222,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
       })
     end)
 
-    {:ok, issue_7106} = Issues.create_issue(p2, %{description: "P2 Task"})
+    {:ok, issue_7106} = Issues.create_issue(system_scope(), p2, %{description: "P2 Task"})
 
     {:ok, %Task{id: id2}} = Pipeline.create_task(issue_7106, :product)
 

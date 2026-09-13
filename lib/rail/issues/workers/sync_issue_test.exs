@@ -10,7 +10,23 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
 
   setup do
     Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+      Req.Test.json(conn, %{
+        "data" => %{
+          "teams" => %{
+            "nodes" => [
+              %{
+                "id" => "lin_team_id",
+                "states" => %{
+                  "nodes" => [
+                    %{"id" => "st_triage", "type" => "triage", "position" => 0},
+                    %{"id" => "st_prog", "type" => "started", "position" => 1}
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      })
     end)
 
     {:ok, project} =
@@ -26,8 +42,7 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
         },
         linear_team_key: "SYN",
         default_branch: "main",
-        clone_path: "/tmp/repos/sync-issue",
-        linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_prog"}
+        clone_path: "/tmp/repos/sync-issue"
       })
 
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -46,7 +61,7 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Sync Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Sync Issue"})
 
     %{project: project, issue: issue}
   end

@@ -167,7 +167,7 @@ defmodule RailWeb.IssuesLiveTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(project, %{title: "Demo title"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Demo title"})
 
     {:ok, issue} =
       Issues.update_issue(issue, %{
@@ -248,7 +248,7 @@ defmodule RailWeb.IssuesLiveTest do
       })
     end)
 
-    {:ok, issue_urgent} = Issues.create_issue(project, %{title: "Urgent issue"})
+    {:ok, issue_urgent} = Issues.create_issue(system_scope(), project, %{title: "Urgent issue"})
 
     {:ok, issue_urgent} =
       Issues.update_issue(issue_urgent, %{
@@ -271,7 +271,7 @@ defmodule RailWeb.IssuesLiveTest do
       })
     end)
 
-    {:ok, issue_high_1} = Issues.create_issue(project, %{title: "High issue 1"})
+    {:ok, issue_high_1} = Issues.create_issue(system_scope(), project, %{title: "High issue 1"})
 
     {:ok, issue_high_1} =
       Issues.update_issue(issue_high_1, %{
@@ -294,7 +294,7 @@ defmodule RailWeb.IssuesLiveTest do
       })
     end)
 
-    {:ok, issue_high_2} = Issues.create_issue(project, %{title: "High issue 2"})
+    {:ok, issue_high_2} = Issues.create_issue(system_scope(), project, %{title: "High issue 2"})
 
     {:ok, issue_high_2} =
       Issues.update_issue(issue_high_2, %{
@@ -317,7 +317,7 @@ defmodule RailWeb.IssuesLiveTest do
       })
     end)
 
-    {:ok, issue_low} = Issues.create_issue(project, %{title: "Low issue"})
+    {:ok, issue_low} = Issues.create_issue(system_scope(), project, %{title: "Low issue"})
 
     {:ok, issue_low} =
       Issues.update_issue(issue_low, %{
@@ -476,7 +476,7 @@ defmodule RailWeb.IssuesLiveTest do
       })
     end)
 
-    {:ok, active_issue} = Issues.create_issue(project, %{title: "Active task"})
+    {:ok, active_issue} = Issues.create_issue(system_scope(), project, %{title: "Active task"})
 
     {:ok, active_issue} =
       Issues.update_issue(active_issue, %{
@@ -498,7 +498,7 @@ defmodule RailWeb.IssuesLiveTest do
       })
     end)
 
-    {:ok, done_issue} = Issues.create_issue(project, %{title: "Done task"})
+    {:ok, done_issue} = Issues.create_issue(system_scope(), project, %{title: "Done task"})
 
     {:ok, done_issue} =
       Issues.update_issue(done_issue, %{
@@ -573,7 +573,7 @@ defmodule RailWeb.IssuesLiveTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(project, %{title: "Bring local feature"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Bring local feature"})
 
     {:ok, issue} =
       Issues.update_issue(issue, %{
@@ -690,7 +690,7 @@ defmodule RailWeb.IssuesLiveTest do
                active: true
              })
 
-    [first | _rest] =
+    [oldest | _rest] =
       issues =
       Enum.map(1..51, fn n ->
         %Issue{}
@@ -698,40 +698,40 @@ defmodule RailWeb.IssuesLiveTest do
           project_id: project_id,
           external_id: "lin_page_#{n}",
           identifier: "PAGE-#{n}",
-          title: if(n == 51, do: "Fix login redirect", else: "Paged issue #{n}"),
+          title: if(n == 1, do: "Fix login redirect", else: "Paged issue #{n}"),
           state: :backlog
         })
         |> Repo.insert!()
       end)
 
-    last = List.last(issues)
+    newest = List.last(issues)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
     assert has_element?(view, "#filter-priority-all", "All (51)")
     assert has_element?(view, "#issues-page-range", "Showing 1–50 of 51")
-    assert has_element?(view, "#issue-card-#{first.id}")
-    refute has_element?(view, "#issue-card-#{last.id}")
+    assert has_element?(view, "#issue-card-#{newest.id}")
+    refute has_element?(view, "#issue-card-#{oldest.id}")
     refute has_element?(view, "#issues-page-prev")
 
     view |> element("#issues-page-next") |> render_click()
     assert_patched(view, ~p"/issues?page=2")
     assert has_element?(view, "#issues-page-range", "Showing 51–51 of 51")
-    assert has_element?(view, "#issue-card-#{last.id}")
-    refute has_element?(view, "#issue-card-#{first.id}")
+    assert has_element?(view, "#issue-card-#{oldest.id}")
+    refute has_element?(view, "#issue-card-#{newest.id}")
     refute has_element?(view, "#issues-page-next")
 
     # Searching goes back to the first page of what matches.
     view |> element("#issues-search-form") |> render_change(%{"q" => "LOGIN"})
     assert_patched(view, ~p"/issues?q=LOGIN")
     assert has_element?(view, "#issues-page-range", "Showing 1–1 of 1")
-    assert has_element?(view, "#issue-card-#{last.id}")
+    assert has_element?(view, "#issue-card-#{oldest.id}")
     assert has_element?(view, "#issues-search[value='LOGIN']")
 
     view |> element("#issues-search-form") |> render_submit(%{"q" => "PAGE-12"})
     assert_patched(view, ~p"/issues?q=PAGE-12")
     assert has_element?(view, "[data-qa='issue-identifier']", "PAGE-12")
-    refute has_element?(view, "#issue-card-#{last.id}")
+    refute has_element?(view, "#issue-card-#{oldest.id}")
 
     view |> element("#issues-search-form") |> render_change(%{"q" => "nothing like this"})
     assert has_element?(view, "[data-qa='empty-state-title']", "No issues match")
@@ -740,7 +740,7 @@ defmodule RailWeb.IssuesLiveTest do
     # The URL alone is enough to land on a page; one past the end shows the last,
     # and a bad page number is page one.
     assert {:ok, linked, _html} = live(authed_conn, ~p"/issues?page=2")
-    assert has_element?(linked, "#issue-card-#{last.id}")
+    assert has_element?(linked, "#issue-card-#{oldest.id}")
 
     assert {:ok, past_end, _html} = live(authed_conn, ~p"/issues?page=9&q=issue")
     assert has_element?(past_end, "#issues-page-range", "Showing 1–50 of 50")

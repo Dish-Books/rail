@@ -68,7 +68,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Run Finished Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Run Finished Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     exited = fn stage, run_attrs ->

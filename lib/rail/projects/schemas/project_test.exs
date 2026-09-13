@@ -100,14 +100,33 @@ defmodule Rail.Projects.Schemas.ProjectTest do
              Repo.get_by(LinearWorkspace, project_id: project_id)
   end
 
-  test "looks the Linear team id up from the key, through the workspace, as the row is written" do
+  test "looks the Linear team and its states up from the key, through the workspace, as the row is written" do
     Req.Test.expect(Rail.Linear, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
 
       assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_team_lookup"]
       assert %{"teamKey" => "DIS"} = Jason.decode!(body)["variables"]
 
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_dis"}]}}})
+      Req.Test.json(conn, %{
+        "data" => %{
+          "teams" => %{
+            "nodes" => [
+              %{
+                "id" => "lin_team_dis",
+                "states" => %{
+                  "nodes" => [
+                    %{"id" => "st_todo_late", "type" => "unstarted", "position" => 3},
+                    %{"id" => "st_triage", "type" => "triage", "position" => 0},
+                    %{"id" => "st_todo", "type" => "unstarted", "position" => 2},
+                    %{"id" => "st_started", "type" => "started", "position" => 4},
+                    %{"id" => "st_done", "type" => "completed", "position" => 5}
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      })
     end)
 
     changeset =
@@ -127,7 +146,11 @@ defmodule Rail.Projects.Schemas.ProjectTest do
       })
 
     # Building the changeset asks Linear nothing; only writing it does.
-    assert {:ok, %Project{linear_team_id: "lin_team_dis"} = project} = Repo.insert(changeset)
+    # A type with several states resolves to the first of them.
+    state_ids = %{"triage" => "st_triage", "todo" => "st_todo", "in_progress" => "st_started", "done" => "st_done"}
+
+    assert {:ok, %Project{linear_team_id: "lin_team_dis", linear_state_ids: ^state_ids} = project} =
+             Repo.insert(changeset)
 
     # A change that leaves the key and the workspace alone asks again for nothing.
     assert {:ok, %Project{linear_team_id: "lin_team_dis"}} =

@@ -107,6 +107,7 @@ defmodule RailWeb.Components.NavTest do
     html =
       render_component(&Nav.top_app_bar/1,
         current_section: :overview,
+        current_scope: system_scope(),
         current_project_id: nil,
         projects: [p1, p2],
         theme: "dark",
@@ -131,6 +132,7 @@ defmodule RailWeb.Components.NavTest do
     html =
       render_component(&Nav.top_app_bar/1,
         current_section: :issues,
+        current_scope: system_scope(),
         current_project_id: "prj_1",
         projects: [p1],
         theme: "light",
@@ -148,6 +150,7 @@ defmodule RailWeb.Components.NavTest do
     html =
       render_component(&Nav.top_app_bar/1,
         current_section: :backends,
+        current_scope: system_scope(),
         current_project_id: "prj_1",
         projects: [p1],
         theme: "dark",
@@ -177,6 +180,7 @@ defmodule RailWeb.Components.NavTest do
       html =
         render_component(&Nav.top_app_bar/1,
           current_section: section,
+          current_scope: system_scope(),
           current_project_id: nil,
           projects: [],
           theme: "dark",

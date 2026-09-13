@@ -84,7 +84,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     assert has_element?(view, "#capture-title-input[value='']")
     assert has_element?(view, "#capture-description-input")
     assert has_element?(view, "#capture-cancel-button")
-    assert has_element?(view, "#capture-submit-button[disabled]", "Add to Backlog (⌘Enter)")
+    assert has_element?(view, "#capture-submit-button[disabled]", "Add to Triage (⌘Enter)")
     refute has_element?(view, "#capture-error-banner")
   end
 
@@ -338,7 +338,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     assert has_element?(view, "#capture-title-input[value='Some idea']")
   end
 
-  test "submit creates the issue and closes", %{conn: conn} do
+  test "submit creates the issue as the user and closes", %{conn: conn} do
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
     end)
@@ -369,7 +369,16 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         admin: true
       })
 
+    {:ok, user} =
+      Users.update_user(system_scope(), user, %{
+        linear_access_token: "lin_capture_user_token",
+        linear_refresh_token: "lin_capture_user_refresh",
+        linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
+      })
+
     Req.Test.expect(Rail.Linear, fn conn ->
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_capture_user_token"]
+
       Req.Test.json(conn, %{
         "data" => %{
           "issueCreate" => %{
@@ -445,7 +454,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
 
     view |> element("#global-capture-idea-button") |> render_click()
 
-    expect(Rail.Issues, :create_issue, fn _project, %{title: "Critical production defect", priority: :urgent} ->
+    expect(Rail.Issues, :create_issue, fn _scope, _project, %{title: "Critical production defect", priority: :urgent} ->
       {:error, %Ecto.Changeset{}}
     end)
 
@@ -464,7 +473,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     assert has_element?(view, "#capture-priority-dropdown option[value='urgent'][selected]")
     assert has_element?(view, "#capture-error-banner", "Could not create the issue")
 
-    expect(Rail.Issues, :create_issue, fn _project, _attrs -> {:error, "Direct string failure"} end)
+    expect(Rail.Issues, :create_issue, fn _scope, _project, _attrs -> {:error, "Direct string failure"} end)
 
     render_submit(element(view, "#capture-issue-form"), %{
       "title" => "Testing string error",
@@ -474,7 +483,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
 
     assert has_element?(view, "#capture-error-banner", "Direct string failure")
 
-    expect(Rail.Issues, :create_issue, fn _project, _attrs -> {:error, :not_authorized} end)
+    expect(Rail.Issues, :create_issue, fn _scope, _project, _attrs -> {:error, :not_authorized} end)
 
     render_submit(element(view, "#capture-issue-form"), %{
       "title" => "Testing atom error",

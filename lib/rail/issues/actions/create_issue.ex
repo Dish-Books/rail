@@ -16,17 +16,19 @@ defmodule Rail.Issues.Actions.CreateIssue do
   alias Rail.Linear.Client, as: Linear
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Scope
 
   @doc """
   Creates the Linear ticket and inserts the issue it came back as.
 
   `attrs` carries `:title` and `:description`, and optionally `:priority` and
-  `:owner_user_id`. The ticket is opened as the workspace, in triage, on the
-  project's team.
+  `:owner_user_id`. The ticket is opened as the scope's user, or as the
+  workspace when there is no user or they never linked Linear, in triage, on
+  the project's team.
   """
-  def create_issue(%Project{linear_team_id: nil}, %{}), do: {:error, :linear_team_not_found}
+  def create_issue(%Scope{}, %Project{linear_team_id: nil}, %{}), do: {:error, :linear_team_not_found}
 
-  def create_issue(%Project{linear_team_id: team_id} = project, %{} = attrs) do
+  def create_issue(%Scope{} = scope, %Project{linear_team_id: team_id} = project, %{} = attrs) do
     input =
       Map.reject(
         %{
@@ -39,7 +41,7 @@ defmodule Rail.Issues.Actions.CreateIssue do
         fn {_key, value} -> is_nil(value) end
       )
 
-    case Linear.create_issue(project, input) do
+    case Linear.create_issue(project, input, as: scope) do
       {:ok, %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}} -> insert(project, linear_issue, attrs)
       {:ok, _not_created} -> {:error, {:linear_mutation_failed, "issueCreate"}}
       {:error, reason} -> {:error, reason}

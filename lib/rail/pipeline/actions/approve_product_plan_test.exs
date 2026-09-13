@@ -66,7 +66,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Approve Plan Issue"})
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Approve Plan Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     %{project: project, task: task, roles: roles}

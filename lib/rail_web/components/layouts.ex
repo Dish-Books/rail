@@ -23,6 +23,7 @@ defmodule RailWeb.Layouts do
   """
   attr :flash, :map, required: true, doc: "the map of flash messages"
   attr :current_section, :atom, required: true
+  attr :current_scope, Rail.Scope, required: true
   attr :is_rail_extended, :boolean, required: true
   attr :attention_count, :integer, required: true
   attr :current_project_id, :string, required: true
@@ -45,6 +46,7 @@ defmodule RailWeb.Layouts do
       <div class="flex flex-col flex-1 min-w-0 h-full overflow-hidden">
         <.top_app_bar
           current_section={@current_section}
+          current_scope={@current_scope}
           current_project_id={@current_project_id}
           projects={@projects}
           theme={@theme}

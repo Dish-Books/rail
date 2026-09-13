@@ -71,7 +71,8 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(project, %{description: "Attachments follow their source document"})
+    {:ok, issue} =
+      Issues.create_issue(system_scope(), project, %{description: "Attachments follow their source document"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
