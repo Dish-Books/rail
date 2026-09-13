@@ -6,16 +6,12 @@ defmodule Rail.Tools.ClaudeEvents do
   and final execution results with cumulative usage accounting.
   """
 
-  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Tools.ToolSummarizer
 
   defstruct [
     :conversation_id,
-    :task_id,
-    :role_id,
     :result_error,
-    detected_questions: [],
     logs: [],
     final_text: "",
     assistant_text: "",
@@ -37,8 +33,6 @@ defmodule Rail.Tools.ClaudeEvents do
   def new(opts) when is_map(opts) do
     %__MODULE__{
       conversation_id: opts[:conversation_id],
-      task_id: opts[:task_id],
-      role_id: opts[:role_id],
       usage: opts[:usage] || %Run.Usage{},
       num_turns: opts[:num_turns] || 0,
       thinking_tokens: opts[:thinking_tokens] || 0
@@ -151,7 +145,6 @@ defmodule Rail.Tools.ClaudeEvents do
       state
       | saw_result: true,
         final_text: final_text,
-        detected_questions: absorb_questions(state, final_text),
         usage: usage,
         thinking_tokens: thinking_tokens,
         # Private Helpers
@@ -184,8 +177,7 @@ defmodule Rail.Tools.ClaudeEvents do
       %{
         state
         | assistant_text: new_assistant_text,
-          logs: Enum.concat(state.logs, lines),
-          detected_questions: absorb_questions(state, text)
+          logs: Enum.concat(state.logs, lines)
       }
     end
   end
@@ -264,12 +256,4 @@ defmodule Rail.Tools.ClaudeEvents do
   end
 
   defp to_int(_other_val), do: 0
-
-  # Questions can surface in streamed assistant prose or only in the final result
-  # payload, so both feed the same accumulator. Order is kept and repeats collapse.
-  defp absorb_questions(%__MODULE__{} = state, text) do
-    state.detected_questions
-    |> Enum.concat(Pipeline.detect_questions(text, task_id: state.task_id, role_id: state.role_id))
-    |> Enum.uniq_by(&String.downcase(String.trim(&1.prompt || "")))
-  end
 end

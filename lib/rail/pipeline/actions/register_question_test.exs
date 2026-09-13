@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
   use Rail.DataCase, async: true
 
+  import Rail.Pipeline.Utils.DetectQuestions
   import Rail.Pipeline.Utils.QuestionQueue
 
   alias Rail.Issues
@@ -95,8 +96,6 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     detector = %DetectedQuestion{
       prompt: "Use Postgres or SQLite?",
       options: ["Postgres", "SQLite"],
-      task_id: task_id,
-      role_id: role.id,
       context_summary: "Asked during: #{task_title}"
     }
 
@@ -131,7 +130,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     run = Repo.preload(run, task: :issue)
 
-    detected = Pipeline.detect_question("[QUESTION: Which cache backend?] [OPTIONS: Redis, ETS]")
+    [detected] = detect_questions("[QUESTION: Which cache backend?] [OPTIONS: Redis, ETS]")
 
     assert {:ok, %Question{prompt: "Which cache backend?", options: ["Redis", "ETS"]}} =
              Pipeline.register_question(run, detected)
@@ -216,8 +215,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     {:ok, %Question{id: existing_id}} =
       Pipeline.register_question(run, %DetectedQuestion{
-        prompt: "Should we use PostgreSQL?",
-        role_id: role.id
+        prompt: "Should we use PostgreSQL?"
       })
 
     # Incoming question has different casing and extra spaces

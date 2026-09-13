@@ -123,7 +123,9 @@ defmodule RailWeb.Live.RunConversationTest do
         started_at: ~U[2026-09-09 10:00:00Z]
       })
 
-    Enum.each(
+    Pipeline.append_run_events(
+      engineer.id,
+      nil,
       [
         "[human] Please implement the OAuth callback handler",
         "[run] Runner started execution",
@@ -132,8 +134,7 @@ defmodule RailWeb.Live.RunConversationTest do
         "[tool read_file] lib/rail_web/user_auth.ex",
         "Follow the schema plan closely.",
         "[rail] Automated check completed"
-      ],
-      &Pipeline.append_run_event(engineer, &1)
+      ]
     )
 
     html =

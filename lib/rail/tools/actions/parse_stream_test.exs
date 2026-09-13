@@ -15,7 +15,7 @@ defmodule Rail.Tools.Actions.ParseStreamTest do
   end
 
   test "seeds the state from opts" do
-    assert %ClaudeEvents{task_id: "tsk_1", role_id: "rol_1"} =
-             Tools.parse_stream(%Backend{name: :claude}, [], task_id: "tsk_1", role_id: "rol_1")
+    assert %ClaudeEvents{conversation_id: "sess_1"} =
+             Tools.parse_stream(%Backend{name: :claude}, [], conversation_id: "sess_1")
   end
 end

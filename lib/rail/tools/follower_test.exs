@@ -602,7 +602,7 @@ defmodule Rail.Tools.FollowerTest do
 
     run = Repo.preload(run, role: :backend)
 
-    Pipeline.append_run_event(run, "Completed task implementation successfully.")
+    Pipeline.append_run_events(run.id, nil, ["Completed task implementation successfully."])
 
     stream = Path.join(tmp_dir, "question_stream.ndjson")
     File.write!(stream, "")
@@ -672,7 +672,7 @@ defmodule Rail.Tools.FollowerTest do
 
     run = Repo.preload(run, role: :backend)
 
-    Pipeline.append_run_event(run, "Completed task implementation successfully.")
+    Pipeline.append_run_events(run.id, nil, ["Completed task implementation successfully."])
 
     stream = Path.join(tmp_dir, "chat_exit.ndjson")
     File.write!(stream, ~s({"type":"system","subtype":"init","session_id":"sess-updated"}\n))
@@ -726,7 +726,7 @@ defmodule Rail.Tools.FollowerTest do
 
     run = Repo.preload(run, role: :backend)
 
-    Pipeline.append_run_event(run, "Completed task implementation successfully.")
+    Pipeline.append_run_events(run.id, nil, ["Completed task implementation successfully."])
 
     stream = Path.join(tmp_dir, "chat_same.ndjson")
     File.write!(stream, ~s({"type":"init","session_id":"sess-same"}\n))
@@ -781,7 +781,7 @@ defmodule Rail.Tools.FollowerTest do
 
     run = Repo.preload(run, role: :backend)
 
-    Pipeline.append_run_event(run, "Completed task implementation successfully.")
+    Pipeline.append_run_events(run.id, nil, ["Completed task implementation successfully."])
 
     stream = Path.join(tmp_dir, "stage_no_usage.ndjson")
     File.write!(stream, "plain non-json log line\n")

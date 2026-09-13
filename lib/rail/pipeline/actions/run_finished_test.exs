@@ -153,7 +153,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   test "a run that came back clean latches done and moves nothing", %{task: task, exited: exited} do
     {run, os_process} = exited.(:product, %{})
 
-    Pipeline.append_run_event(run, "The ticket is written.")
+    Pipeline.append_run_events(run.id, nil, ["The ticket is written."])
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
 
@@ -164,7 +164,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   test "a run that already had its say is left alone however often it exits", %{task: task, exited: exited} do
     {run, os_process} = exited.(:product, %{stage_outcome: :done})
 
-    Pipeline.append_run_event(run, "Still done.")
+    Pipeline.append_run_events(run.id, nil, ["Still done."])
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :product} = Repo.reload!(task)

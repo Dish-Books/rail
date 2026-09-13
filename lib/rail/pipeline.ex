@@ -27,7 +27,7 @@ defmodule Rail.Pipeline do
   defdelegate send_answers(run), to: Actions.SendAnswers
   defdelegate dismiss_question(question), to: Actions.DismissQuestion
   defdelegate get_question(id), to: Actions.GetQuestion
-  defdelegate list_questions(target \\ nil, opts \\ []), to: Actions.ListQuestions
+  defdelegate list_questions(task, opts \\ []), to: Actions.ListQuestions
 
   defdelegate send_message(run, text), to: Actions.SendMessage
   defdelegate stop_and_send_message(run, opts \\ []), to: Actions.StopAndSendMessage
@@ -40,13 +40,9 @@ defmodule Rail.Pipeline do
   defdelegate update_run(run, attrs), to: Actions.UpdateRun
   defdelegate append_pending_answer(run, answer, opts \\ []), to: Actions.AppendPendingAnswer
 
-  defdelegate append_run_event(run, line), to: Actions.AppendRunEvent
   defdelegate append_run_events(run_id, os_process_id, lines), to: Actions.AppendRunEvents
   defdelegate list_run_events(run, opts \\ []), to: Actions.ListRunEvents
   defdelegate parse_transcript(lines), to: Actions.ParseTranscript
 
   defdelegate build_prompt(opts), to: Actions.BuildPrompt
-  defdelegate chat_prompt(message), to: Actions.ChatPrompt
-  defdelegate detect_question(line, opts \\ []), to: Actions.DetectQuestion
-  defdelegate detect_questions(line, opts \\ []), to: Actions.DetectQuestion
 end

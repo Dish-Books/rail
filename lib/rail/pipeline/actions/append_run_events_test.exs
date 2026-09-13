@@ -36,6 +36,12 @@ defmodule Rail.Pipeline.Actions.AppendRunEventsTest do
              Pipeline.list_run_events(run)
   end
 
+  test "a line with no process belongs to the run alone", %{run: run} do
+    Pipeline.append_run_events(run.id, nil, ["[rail] between turns"])
+
+    assert [%{line: "[rail] between turns", os_process_id: nil}] = Pipeline.list_run_events(run)
+  end
+
   test "broadcasts the batch on the run topic", %{run: %Run{id: run_id}} do
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run_id}")
 

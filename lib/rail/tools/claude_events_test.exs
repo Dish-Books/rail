@@ -1,12 +1,11 @@
 defmodule Rail.Tools.ClaudeEventsTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Tools.ClaudeEvents
 
   test "parses system init event, captures session id and logs tool/server counts" do
-    state = ClaudeEvents.new(task_id: "task-1", role_id: "role-1")
+    state = ClaudeEvents.new()
 
     event = %{
       "type" => "system",
@@ -39,8 +38,8 @@ defmodule Rail.Tools.ClaudeEventsTest do
     assert state.logs == ["[init] session ? · 0 tools · 0 MCP servers"]
   end
 
-  test "parses assistant prose and extracts questions" do
-    state = ClaudeEvents.new(task_id: "tsk_1", role_id: "rol_eng")
+  test "parses assistant prose into logs" do
+    state = ClaudeEvents.new()
 
     event = %{
       "type" => "assistant",
@@ -62,42 +61,6 @@ defmodule Rail.Tools.ClaudeEventsTest do
     assert state.logs == [
              "Analyzing repository...",
              "[QUESTION: Scope to one repo?] [OPTIONS: yes, no]"
-           ]
-
-    assert [%DetectedQuestion{prompt: "Scope to one repo?", options: ["yes", "no"]}] =
-             state.detected_questions
-  end
-
-  test "assistant text ignores placeholder questions and keeps every real question" do
-    state = ClaudeEvents.new(task_id: "tsk_1", role_id: "rol_eng")
-
-    first_event = %{
-      "type" => "assistant",
-      "message" => %{
-        "content" => [
-          %{"type" => "text", "text" => "[QUESTION: <question>]"}
-        ]
-      }
-    }
-
-    state = ClaudeEvents.handle_event(state, first_event)
-    assert state.detected_questions == []
-
-    second_event = %{
-      "type" => "assistant",
-      "message" => %{
-        "content" => [
-          %{"type" => "text", "text" => "[QUESTION: First real question?]"},
-          %{"type" => "text", "text" => "[QUESTION: Second ignored question?]"}
-        ]
-      }
-    }
-
-    state = ClaudeEvents.handle_event(state, second_event)
-
-    assert Enum.map(state.detected_questions, & &1.prompt) == [
-             "First real question?",
-             "Second ignored question?"
            ]
   end
 
@@ -150,7 +113,6 @@ defmodule Rail.Tools.ClaudeEventsTest do
     state = ClaudeEvents.handle_event(state, event)
 
     assert state.logs == ["[tool error] File not found: /repo/missing.dart"]
-    assert state.detected_questions == []
   end
 
   test "rate_limit_event logs when status is not allowed" do
