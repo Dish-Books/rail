@@ -3,17 +3,17 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.OsProcess
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
 
-    {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -53,7 +53,7 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
 
     working = fn attrs ->
       {:ok, run} =
-        Runs.create_run(
+        Pipeline.create_run(
           Map.merge(
             %{
               task_id: task.id,
@@ -77,7 +77,7 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
 
     assert {:ok, %Run{status: :finished, stage_outcome: :in_progress}, nil} = Pipeline.stop_run(run)
 
-    assert ["[rail] Stopped by user."] = Enum.map(Runs.list_run_events(run), & &1.line)
+    assert ["[rail] Stopped by user."] = Enum.map(Pipeline.list_run_events(run), & &1.line)
   end
 
   test "an undelivered message comes back rather than being discarded", %{working: working} do
@@ -90,7 +90,7 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
     run = working.(%{status: :finished})
 
     assert {:ok, %Run{}, nil} = Pipeline.stop_run(run)
-    assert Runs.list_run_events(run) == []
+    assert Pipeline.list_run_events(run) == []
   end
 
   test "the live process is killed along with the run", %{working: working} do
@@ -108,7 +108,7 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
       })
       |> Repo.insert()
 
-    expect(Runs, :stop_os_process, fn %OsProcess{id: id}, _opts ->
+    expect(Tools, :stop_os_process, fn %OsProcess{id: id}, _opts ->
       assert id == os_process.id
       {:ok, os_process}
     end)

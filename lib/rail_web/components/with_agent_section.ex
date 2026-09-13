@@ -4,7 +4,7 @@ defmodule RailWeb.Components.WithAgentSection do
 
   import RailWeb.CoreComponents, only: [project_badge: 1]
 
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Pipeline.Schemas.Run
   alias RailWeb.Components.RunState
 
   attr :runs, :list, required: true

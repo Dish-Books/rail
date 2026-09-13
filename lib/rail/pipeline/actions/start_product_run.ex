@@ -11,12 +11,13 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
 
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
-  alias Rail.Runs
+  alias Rail.Tools
 
   @doc """
   Starts the product stage for `task`.
@@ -30,7 +31,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
 
     with {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :product),
          {:ok, worktree_path} <- ensure_worktree(project, task),
-         {:ok, run} <- Runs.start_or_resume_run(task, role, worktree_path) do
+         {:ok, run} <- Pipeline.start_or_resume_run(task, role, worktree_path) do
       spawn_os_process(task, role, run, worktree_path)
     end
   end
@@ -51,7 +52,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
 
   defp spawn_os_process(task, role, run, worktree_path) do
     prompt =
-      Runs.build_prompt(
+      Pipeline.build_prompt(
         task: task,
         backend: role.backend,
         role_instructions: role.system_prompt,
@@ -61,7 +62,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
       )
 
     args =
-      Runs.build_args(
+      Tools.build_args(
         backend: role.backend,
         prompt: prompt,
         model: role.model,
@@ -71,7 +72,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
         work_dir: worktree_path
       )
 
-    Runs.start_os_process(run, args)
+    Tools.start_os_process(run, args)
   end
 
   defp brief(%Task{scratch_path: scratch_path} = task) do

@@ -8,7 +8,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Roles
-  alias Rail.Runs
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -72,7 +71,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 
     {:ok, _running} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
         status: :running,

@@ -17,11 +17,11 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
   import Ecto.Query
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Runs.DetectedQuestion
-  alias Rail.Runs.Schemas.Run
 
   @doc """
   Registers the question `run` asked.

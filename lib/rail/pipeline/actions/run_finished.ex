@@ -3,7 +3,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   The one thing that happens when an OS process exits.
 
   The run layer calls this from the process's own row, so it works the same
-  whether the Follower saw the exit or `Rail.Runs.Boot` found the process already
+  whether the Follower saw the exit or `Rail.Tools.Boot` found the process already
   gone after a restart. Nothing is wired in at spawn time: the task, the run and
   the role are all on the row.
 
@@ -25,11 +25,11 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   import Rail.Pipeline.Utils.QuestionQueue
   import Rail.Pipeline.Utils.RegisterAskedQuestions
 
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
-  alias Rail.Runs.Schemas.OsProcess
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Tools.Schemas.OsProcess
 
   @doc """
   Settles the run whose OS process just exited, against `outcome`.

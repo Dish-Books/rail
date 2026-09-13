@@ -12,10 +12,9 @@ defmodule RailWeb.OverviewLive do
     ]
 
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.Run
 
   def mount(_params, _session, socket) do
     socket =
@@ -139,7 +138,7 @@ defmodule RailWeb.OverviewLive do
   end
 
   def handle_event("send_answers", %{"run_id" => run_id}, socket) do
-    with {:ok, run} <- Runs.get_run(run_id) do
+    with {:ok, run} <- Pipeline.get_run(run_id) do
       Pipeline.send_answers(run)
     end
 
@@ -171,7 +170,7 @@ defmodule RailWeb.OverviewLive do
   # task means.
   defp load_overview_state(socket, project_id) do
     runs =
-      Runs.list_runs(
+      Pipeline.list_runs(
         project_id: project_id,
         preload: [:role, :questions, task: [:project, :issue]]
       )

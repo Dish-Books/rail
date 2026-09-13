@@ -5,12 +5,11 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -71,7 +70,7 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
     {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:product].id,
         conversation_id: "sess_fixture",

@@ -6,14 +6,13 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.DetectedQuestion
-  alias Rail.Runs.Schemas.Run
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
@@ -84,7 +83,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     task_title = Repo.get!(Issue, task.issue_id).title
 
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task_id,
         role_id: role.id,
         status: :running,
@@ -123,7 +122,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
       })
 
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :running,
@@ -132,7 +131,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
     run = Repo.preload(run, task: :issue)
 
-    detected = Runs.detect_question("[QUESTION: Which cache backend?] [OPTIONS: Redis, ETS]")
+    detected = Pipeline.detect_question("[QUESTION: Which cache backend?] [OPTIONS: Redis, ETS]")
 
     assert {:ok, %Question{prompt: "Which cache backend?", options: ["Redis", "ETS"]}} =
              Pipeline.register_question(run, detected)
@@ -145,7 +144,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
       })
 
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
         status: :running,
@@ -175,7 +174,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
       })
 
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :running,
@@ -206,7 +205,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
       })
 
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :running,
@@ -237,7 +236,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     role = roles[:engineer]
 
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :running,
@@ -254,7 +253,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
     {:ok, task} = Pipeline.update_task(task, %{})
 
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :blocked_on_input,
@@ -276,7 +275,7 @@ defmodule Rail.Pipeline.Actions.RegisterQuestionTest do
 
   test "rejects a blank prompt", %{task: task, roles: roles} do
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:engineer].id,
         status: :running,

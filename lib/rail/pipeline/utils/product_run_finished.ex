@@ -7,7 +7,7 @@ defmodule Rail.Pipeline.Utils.ProductRunFinished do
   the ticket and enters the next stage.
   """
 
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Pipeline.Schemas.Run
 
   @doc "Finishes `run` as the product stage."
   def product_run_finished(%Run{} = run, _opts), do: run

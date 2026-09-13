@@ -3,18 +3,18 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.OsProcess
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
 
-    {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -67,7 +67,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
   end
 
   test "writes the stage and starts the run that belongs to it", %{task: task, roles: roles} do
-    stub(Runs, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
     %{id: review_role_id} = roles[:review]
 
@@ -80,7 +80,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     roles: roles
   } do
     {:ok, done} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: roles[:review].id,
         status: :finished,
@@ -89,7 +89,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
         started_at: DateTime.utc_now()
       })
 
-    stub(Runs, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
     assert {:ok, %Run{stage_outcome: :in_progress, error: nil}} = Pipeline.enter_stage(task, :review)
     assert %Run{stage_outcome: :in_progress} = Repo.reload!(done)
@@ -104,14 +104,14 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
   end
 
   test "a spawn that never happens still leaves the stage entered", %{task: task} do
-    stub(Runs, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
+    stub(Tools, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
 
     assert {:ok, %Run{}} = Pipeline.enter_stage(task, :review)
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
   test "a spawn that fails records the failure on the run", %{task: task} do
-    stub(Runs, :start_os_process, fn spawned, _argv ->
+    stub(Tools, :start_os_process, fn spawned, _argv ->
       {:ok, failed} = spawned |> Run.changeset(%{error: "No such CLI binary"}) |> Repo.update()
       {:error, {:spawn_failed, :missing_binary, failed}}
     end)

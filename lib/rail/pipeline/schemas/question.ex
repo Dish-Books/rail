@@ -4,8 +4,8 @@ defmodule Rail.Pipeline.Schemas.Question do
   """
   use Rail.Schema
 
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Runs.Schemas.Run
 
   @statuses [:pending, :unanswered, :answered, :dismissed]
 

@@ -14,13 +14,14 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   """
 
   alias Rail.Git
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Tools
 
   @doc """
   Enters `stage` on `task` and spawns the role that stage belongs to.
@@ -48,7 +49,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   # run, not a reason for the stage never to have been entered.
   defp start_role(%Task{} = task, %Role{} = role) do
     worktree_path = worktree(task)
-    {:ok, %Run{} = run} = Runs.start_or_resume_run(task, role, worktree_path)
+    {:ok, %Run{} = run} = Pipeline.start_or_resume_run(task, role, worktree_path)
 
     if worktree_path do
       spawn_run(task, role, run, worktree_path)
@@ -73,7 +74,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
 
   defp spawn_run(%Task{} = task, %Role{} = role, %Run{} = run, worktree_path) do
     prompt =
-      Runs.build_prompt(
+      Pipeline.build_prompt(
         task: task,
         backend: role.backend,
         role_instructions: role.system_prompt,
@@ -83,7 +84,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
       )
 
     argv =
-      Runs.build_args(
+      Tools.build_args(
         backend: role.backend,
         prompt: prompt,
         model: role.model,
@@ -93,7 +94,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
         work_dir: worktree_path
       )
 
-    case Runs.start_os_process(run, argv) do
+    case Tools.start_os_process(run, argv) do
       {:ok, os_process} -> {:ok, os_process.run}
       {:error, {:spawn_failed, _reason, %Run{} = failed}} -> {:ok, failed}
       {:error, :dispatch_disabled} -> {:ok, run}

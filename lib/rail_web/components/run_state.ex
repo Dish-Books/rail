@@ -7,7 +7,7 @@ defmodule RailWeb.Components.RunState do
   `:blocked` is.
   """
 
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Pipeline.Schemas.Run
 
   @doc """
   The Phosphor icon for `run`.

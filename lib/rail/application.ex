@@ -12,7 +12,7 @@ defmodule Rail.Application do
       {Oban, Application.fetch_env!(:rail, Oban)},
       {Phoenix.PubSub, name: Rail.PubSub},
       {Task.Supervisor, name: Rail.TaskSupervisor},
-      Rail.Runs,
+      Rail.Tools,
       RailWeb.Endpoint
     ]
 

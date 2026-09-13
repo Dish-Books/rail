@@ -16,9 +16,9 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlan do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Runs.Schemas.Run
 
   @doc """
   Approves the ticket `run` wrote and enters the stage after product.

@@ -7,8 +7,8 @@ defmodule RailWeb.Components.StageLabel do
   anyone is waiting, and `:done` does not say done with what.
   """
 
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Runs.Schemas.Run
 
   @doc """
   Labels `task` with what `run` is doing.

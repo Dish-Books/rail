@@ -3,17 +3,17 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.OsProcess
-  alias Rail.Runs.Schemas.Run
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
   alias RailTest.Mocks.Linear, as: LinearMock
 
   setup do
     scope = system_scope()
 
-    {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
     {:ok, project} =
       Projects.create_project(scope, %{
@@ -53,7 +53,7 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
 
     idle = fn ->
       {:ok, run} =
-        Runs.create_run(%{
+        Pipeline.create_run(%{
           task_id: task.id,
           role_id: role.id,
           status: :finished,
@@ -70,7 +70,7 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
   test "a message to an idle run goes out now", %{idle: idle} do
     run = idle.()
 
-    stub(Runs, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
     assert {:ok, :sent, %Run{}} = Pipeline.send_message(run, "Please add a test")
   end
@@ -94,12 +94,12 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
 
     {:ok, :queued, run} = Pipeline.send_message(run, "One line\nAnother line")
 
-    assert ["[human] One line", "[human] Another line"] = Enum.map(Runs.list_run_events(run), & &1.line)
+    assert ["[human] One line", "[human] Another line"] = Enum.map(Pipeline.list_run_events(run), & &1.line)
   end
 
   test "a run holding no conversation cannot be messaged", %{task: task, role: role} do
     {:ok, run} =
-      Runs.create_run(%{
+      Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
         status: :finished,

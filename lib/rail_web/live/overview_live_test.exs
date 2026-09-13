@@ -5,13 +5,12 @@ defmodule RailWeb.OverviewLiveTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
-  alias Rail.Runs
-  alias Rail.Runs.DetectedQuestion
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Users
@@ -307,7 +306,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 
       {:ok, _run} =
-        Runs.create_run(%{
+        Pipeline.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           status: :running,
@@ -340,7 +339,7 @@ defmodule RailWeb.OverviewLiveTest do
         {:ok, task} = Pipeline.create_task(issue, :product)
 
         {:ok, run} =
-          Runs.create_run(%{
+          Pipeline.create_run(%{
             task_id: task.id,
             role_id: roles[:product].id,
             status: :running,
@@ -351,8 +350,8 @@ defmodule RailWeb.OverviewLiveTest do
         run = Repo.preload(run, task: :issue)
         {:ok, _question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which one?"})
 
-        {:ok, blocked} = Runs.get_run(run.id)
-        {:ok, stopped} = Runs.update_run(blocked, %{completed_at: stopped_at})
+        {:ok, blocked} = Pipeline.get_run(run.id)
+        {:ok, stopped} = Pipeline.update_run(blocked, %{completed_at: stopped_at})
         stopped
       end
 
@@ -366,7 +365,7 @@ defmodule RailWeb.OverviewLiveTest do
 
       positions =
         Enum.map([oldest, middle, recent], fn run ->
-          :binary.match(html, "question-card-#{run.id}") |> elem(0)
+          html |> :binary.match("question-card-#{run.id}") |> elem(0)
         end)
 
       assert positions == Enum.sort(positions)
@@ -387,7 +386,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, task} = Pipeline.create_task(issue, :product)
 
       {:ok, run} =
-        Runs.create_run(%{
+        Pipeline.create_run(%{
           task_id: task.id,
           role_id: roles[:product].id,
           status: :running,
@@ -444,7 +443,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
 
       {:ok, _run} =
-        Runs.create_run(%{
+        Pipeline.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           status: :finished,
@@ -471,7 +470,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 
       {:ok, _run} =
-        Runs.create_run(%{
+        Pipeline.create_run(%{
           task_id: task.id,
           role_id: roles[:engineer].id,
           status: :running,
@@ -504,7 +503,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, task} = Pipeline.create_task(issue, :product)
 
       {:ok, run} =
-        Runs.create_run(%{
+        Pipeline.create_run(%{
           task_id: task.id,
           role_id: roles[:product].id,
           status: :running,
@@ -536,7 +535,7 @@ defmodule RailWeb.OverviewLiveTest do
       {:ok, task} = Pipeline.create_task(issue, :product)
 
       {:ok, run} =
-        Runs.create_run(%{
+        Pipeline.create_run(%{
           task_id: task.id,
           role_id: roles[:product].id,
           status: :running,

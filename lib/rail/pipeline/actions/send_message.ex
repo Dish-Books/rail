@@ -13,9 +13,9 @@ defmodule Rail.Pipeline.Actions.SendMessage do
 
   import Rail.Pipeline.Utils.DispatchMessage
 
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.Run
 
   @doc """
   Sends `text` to `run`.
@@ -64,7 +64,7 @@ defmodule Rail.Pipeline.Actions.SendMessage do
   defp record_transcript(%Run{} = run, text) do
     text
     |> String.split("\n")
-    |> Enum.each(&Runs.append_run_event(run, "[human] #{&1}"))
+    |> Enum.each(&Pipeline.append_run_event(run, "[human] #{&1}"))
   end
 
   defp append(nil, text), do: text

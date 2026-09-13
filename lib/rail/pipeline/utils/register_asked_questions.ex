@@ -10,16 +10,14 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
   """
 
   import Ecto.Query
-  import Rail.Runs.Utils.NewEventState
-  import Rail.Runs.Utils.ParseLine
 
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Repo
-  alias Rail.Runs
-  alias Rail.Runs.Schemas.OsProcess
-  alias Rail.Runs.Schemas.Run
-  alias Rail.Runs.Schemas.RunEvent
+  alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
+  alias Rail.Tools.Schemas.OsProcess
 
   # Everything Rail, the tools or the human contributed carries one of these
   # markers; what the agent said carries none.
@@ -48,7 +46,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
   """
   def register_asked_questions(%OsProcess{} = os_process, %Run{} = run) do
     run = Repo.preload(run, [task: :issue, role: :backend], force: true)
-    questions = os_process |> agent_log(run) |> Runs.detect_questions()
+    questions = os_process |> agent_log(run) |> Pipeline.detect_questions()
 
     Enum.each(questions, &Pipeline.register_question(run, &1))
 
@@ -61,11 +59,10 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
   defp agent_log(%OsProcess{id: os_process_id}, %Run{role: %{backend: backend}}) do
     backend = if is_struct(backend, Backend), do: backend, else: %Backend{name: :claude}
 
-    os_process_id
-    |> events_from()
-    |> Enum.reduce(new_event_state(backend), fn event, state ->
-      parse_line(state, event.line)
-    end)
+    lines = os_process_id |> events_from() |> Enum.map(& &1.line)
+
+    backend
+    |> Tools.parse_stream(lines)
     |> Map.fetch!(:logs)
     |> Enum.reject(&tagged?/1)
     |> Enum.join("\n")

@@ -15,8 +15,8 @@ defmodule Rail.Pipeline.Actions.SendAnswers do
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
-  alias Rail.Runs.Schemas.Run
 
   @doc """
   Sends `run` the round it is parked on.
