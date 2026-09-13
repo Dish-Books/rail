@@ -25,44 +25,28 @@ defmodule Rail.Users.Schemas.User do
     timestamps()
   end
 
-  def oauth_changeset(user, attrs) do
+  @updatable_fields [
+    :github_id,
+    :login,
+    :name,
+    :email,
+    :avatar_url,
+    :admin,
+    :github_token,
+    :linear_user_id,
+    :linear_name,
+    :linear_access_token,
+    :linear_refresh_token,
+    :linear_token_expires_at,
+    :last_project_filter
+  ]
+
+  def changeset(user, attrs) do
     user
-    |> cast(attrs, [:github_id, :login, :name, :email, :avatar_url, :github_token, :admin])
+    |> cast(attrs, @updatable_fields)
     |> validate_required([:github_id, :login, :email])
     |> unique_constraint(:github_id)
     |> unique_constraint(:login)
     |> unique_constraint(:email)
-  end
-
-  def admin_changeset(user, attrs) do
-    user
-    |> cast(attrs, [:admin])
-    |> validate_required([:admin])
-  end
-
-  def project_filter_changeset(user, attrs) do
-    cast(user, attrs, [:last_project_filter])
-  end
-
-  def linear_link_changeset(user, attrs) do
-    user
-    |> cast(attrs, [
-      :linear_user_id,
-      :linear_name,
-      :linear_access_token,
-      :linear_refresh_token,
-      :linear_token_expires_at
-    ])
-    |> validate_required([:linear_access_token, :linear_refresh_token, :linear_token_expires_at])
-  end
-
-  def linear_unlink_changeset(user) do
-    change(user, %{
-      linear_user_id: nil,
-      linear_name: nil,
-      linear_access_token: nil,
-      linear_refresh_token: nil,
-      linear_token_expires_at: nil
-    })
   end
 end

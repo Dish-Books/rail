@@ -3,6 +3,7 @@ defmodule Rail.Issues.Actions.CommentTest do
 
   alias Rail.Issues
   alias Rail.Projects
+  alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -55,10 +56,10 @@ defmodule Rail.Issues.Actions.CommentTest do
       })
 
     {:ok, owner} =
-      Users.link_linear(owner, %{
-        access_token: "lin_owner_token",
-        refresh_token: "lin_owner_refresh",
-        expires_in: 3600
+      Users.update_user(Scope.for_system(), owner, %{
+        linear_access_token: "lin_owner_token",
+        linear_refresh_token: "lin_owner_refresh",
+        linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
       })
 
     LinearMock.mock_create_comment_success(%{
@@ -79,10 +80,10 @@ defmodule Rail.Issues.Actions.CommentTest do
         email: "comment_user@example.com"
       })
 
-    Users.link_linear(user, %{
-      access_token: "lin_user_token_3",
-      refresh_token: "lin_user_refresh_3",
-      expires_in: 3600
+    Users.update_user(Scope.for_system(), user, %{
+      linear_access_token: "lin_user_token_3",
+      linear_refresh_token: "lin_user_refresh_3",
+      linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
     })
 
     LinearMock.mock_create_comment_success(%{

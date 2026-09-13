@@ -20,10 +20,10 @@ defmodule Rail.Issues.Utils.TokenResolverTest do
       })
 
     {:ok, user} =
-      Users.link_linear(user, %{
-        access_token: "lin_user_tok_1",
-        refresh_token: "lin_user_refresh_1",
-        expires_in: 3600
+      Users.update_user(Scope.for_system(), user, %{
+        linear_access_token: "lin_user_tok_1",
+        linear_refresh_token: "lin_user_refresh_1",
+        linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
       })
 
     scope = Scope.for_user(user)

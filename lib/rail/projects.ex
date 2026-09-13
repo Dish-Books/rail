@@ -10,7 +10,6 @@ defmodule Rail.Projects do
 
   defdelegate list_projects(scope), to: Actions.ListProjects
 
-  @decorate can?(resource: :projects, action: :view)
   defdelegate get_project(scope, id), to: Actions.GetProject
 
   defdelegate get_project!(scope, id), to: Actions.GetProject

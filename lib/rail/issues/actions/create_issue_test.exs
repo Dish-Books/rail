@@ -4,6 +4,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
+  alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -40,10 +41,10 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
         email: "create_user_6102@example.com"
       })
 
-    Users.link_linear(user, %{
-      access_token: "lin_usr_token_valid",
-      refresh_token: "lin_refresh_6102",
-      expires_in: 3600
+    Users.update_user(Scope.for_system(), user, %{
+      linear_access_token: "lin_usr_token_valid",
+      linear_refresh_token: "lin_refresh_6102",
+      linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
     })
 
     LinearMock.mock_create_issue_success(%{

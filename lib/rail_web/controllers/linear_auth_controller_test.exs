@@ -4,6 +4,7 @@ defmodule RailWeb.LinearAuthControllerTest do
   import RailTest.Mocks.Linear
 
   alias Rail.Repo
+  alias Rail.Scope
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
@@ -84,7 +85,10 @@ defmodule RailWeb.LinearAuthControllerTest do
     test "handles code exchange failure", %{authed_conn: conn} do
       mock_exchange_error(400, "invalid_grant")
 
-      conn = get(conn, ~p"/auth/linear/callback", %{"code" => "bad_code"})
+      conn =
+        conn
+        |> put_session(:linear_oauth_state, "state_exchange_fail")
+        |> get(~p"/auth/linear/callback", %{"code" => "bad_code", "state" => "state_exchange_fail"})
 
       assert redirected_to(conn) == ~p"/settings/connected-accounts"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Failed to exchange Linear authorization code"
@@ -94,7 +98,10 @@ defmodule RailWeb.LinearAuthControllerTest do
       mock_exchange_success()
       mock_viewer_error(401)
 
-      conn = get(conn, ~p"/auth/linear/callback", %{"code" => "code_viewer_fail"})
+      conn =
+        conn
+        |> put_session(:linear_oauth_state, "state_viewer_fail")
+        |> get(~p"/auth/linear/callback", %{"code" => "code_viewer_fail", "state" => "state_viewer_fail"})
 
       assert redirected_to(conn) == ~p"/settings/connected-accounts"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Failed to fetch Linear user profile"
@@ -129,14 +136,45 @@ defmodule RailWeb.LinearAuthControllerTest do
 
       mock_viewer_success()
 
-      conn = get(conn, ~p"/auth/linear/callback", %{"code" => "code_link_fail"})
+      conn =
+        conn
+        |> put_session(:linear_oauth_state, "state_link_fail")
+        |> get(~p"/auth/linear/callback", %{"code" => "code_link_fail", "state" => "state_link_fail"})
 
       assert redirected_to(conn) == ~p"/settings/connected-accounts"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Failed to link Linear account"
     end
 
+    test "rejects a callback whose state does not match the session", %{authed_conn: conn} do
+      conn =
+        conn
+        |> put_session(:linear_oauth_state, "real_state")
+        |> get(~p"/auth/linear/callback", %{"code" => "forged_code", "state" => "attacker_state"})
+
+      assert redirected_to(conn) == ~p"/settings/connected-accounts"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Linear authentication failed"
+      refute get_session(conn, :linear_oauth_state)
+    end
+
+    test "rejects a callback when the session holds no state", %{authed_conn: conn} do
+      conn = get(conn, ~p"/auth/linear/callback", %{"code" => "forged_code", "state" => "attacker_state"})
+
+      assert redirected_to(conn) == ~p"/settings/connected-accounts"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Linear authentication failed"
+    end
+
+    test "rejects a callback with a code but no state", %{authed_conn: conn} do
+      conn =
+        conn
+        |> put_session(:linear_oauth_state, "real_state")
+        |> get(~p"/auth/linear/callback", %{"code" => "forged_code"})
+
+      assert redirected_to(conn) == ~p"/settings/connected-accounts"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Linear authentication failed"
+    end
+
     test "redirects unauthenticated user to GitHub login", %{conn: conn} do
-      conn = get(conn, ~p"/auth/linear/callback", %{"code" => "any_code"})
+      conn = get(conn, ~p"/auth/linear/callback", %{"code" => "any_code", "state" => "any_state"})
 
       assert redirected_to(conn) == ~p"/auth/github"
     end
@@ -149,12 +187,12 @@ defmodule RailWeb.LinearAuthControllerTest do
       user_id: user_id
     } do
       assert {:ok, %User{}} =
-               Users.link_linear(user, %{
+               Users.update_user(Scope.for_system(), user, %{
                  linear_access_token: "unlink_at",
                  linear_refresh_token: "unlink_rt",
                  linear_user_id: "u_id",
                  linear_name: "U Name",
-                 expires_in: 3600
+                 linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
                })
 
       conn = get(conn, ~p"/auth/linear/unlink")
@@ -173,10 +211,10 @@ defmodule RailWeb.LinearAuthControllerTest do
       user_id: user_id
     } do
       assert {:ok, %User{}} =
-               Users.link_linear(user, %{
+               Users.update_user(Scope.for_system(), user, %{
                  linear_access_token: "unlink_post_at",
                  linear_refresh_token: "unlink_post_rt",
-                 expires_in: 3600
+                 linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
                })
 
       conn = post(conn, ~p"/auth/linear/unlink")
@@ -194,10 +232,10 @@ defmodule RailWeb.LinearAuthControllerTest do
       user_id: user_id
     } do
       assert {:ok, %User{}} =
-               Users.link_linear(user, %{
+               Users.update_user(Scope.for_system(), user, %{
                  linear_access_token: "unlink_del_at",
                  linear_refresh_token: "unlink_del_rt",
-                 expires_in: 3600
+                 linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
                })
 
       conn = delete(conn, ~p"/auth/linear/unlink")

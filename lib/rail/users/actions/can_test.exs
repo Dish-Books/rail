@@ -50,7 +50,7 @@ defmodule Rail.Users.Actions.CanTest do
       refute Users.can?(scope, :manage_roles)
       refute Users.can?(scope, :manage_linear_workspace)
       refute Users.can?(scope, :upsert_linear_workspace)
-      assert Users.can?(scope, :create_task)
+      refute Users.can?(scope, :create_task)
     end
   end
 
@@ -104,13 +104,13 @@ defmodule Rail.Users.Actions.CanTest do
       refute Users.can?(scope, :linear_workspace, :update)
     end
 
-    test "non-admin scope can view projects and roles and do project internal work" do
+    test "non-admin scope is denied regardless of resource or action" do
       scope = Scope.for_user(%{admin: false})
-      assert Users.can?(scope, :projects, :view)
-      assert Users.can?(scope, :roles, :view)
-      assert Users.can?(scope, :tasks, :view)
-      assert Users.can?(scope, :tasks, :create)
-      assert Users.can?(scope, :issues, :view)
+      refute Users.can?(scope, :projects, :view)
+      refute Users.can?(scope, :roles, :view)
+      refute Users.can?(scope, :tasks, :view)
+      refute Users.can?(scope, :tasks, :create)
+      refute Users.can?(scope, :issues, :view)
     end
   end
 end

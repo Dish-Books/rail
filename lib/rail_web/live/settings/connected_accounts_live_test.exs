@@ -4,6 +4,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Repo
+  alias Rail.Scope
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
@@ -89,12 +90,12 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     user: user
   } do
     assert {:ok, %User{}} =
-             Users.link_linear(user, %{
+             Users.update_user(Scope.for_system(), user, %{
                linear_user_id: "lin_123",
                linear_name: "Jane Doe Linear",
                linear_access_token: "lin_at",
                linear_refresh_token: "lin_rt",
-               expires_in: 3600
+               linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
              })
 
     assert {:ok, view, html} = live(conn, ~p"/settings/connected-accounts")
@@ -111,12 +112,12 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     user_id: user_id
   } do
     assert {:ok, %User{}} =
-             Users.link_linear(user, %{
+             Users.update_user(Scope.for_system(), user, %{
                linear_user_id: "lin_disconnect_id",
                linear_name: "Disconnect User",
                linear_access_token: "lin_at_disconnect",
                linear_refresh_token: "lin_rt_disconnect",
-               expires_in: 3600
+               linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
              })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
@@ -142,10 +143,10 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     user_id: user_id
   } do
     assert {:ok, %User{}} =
-             Users.link_linear(user, %{
+             Users.update_user(Scope.for_system(), user, %{
                linear_access_token: "lin_at_unlink_hook",
                linear_refresh_token: "lin_rt_unlink_hook",
-               expires_in: 3600
+               linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
              })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
@@ -163,10 +164,10 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     user: user
   } do
     assert {:ok, %User{}} =
-             Users.link_linear(user, %{
+             Users.update_user(Scope.for_system(), user, %{
                linear_access_token: "lin_at_err_test",
                linear_refresh_token: "lin_rt_err_test",
-               expires_in: 3600
+               linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
              })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")

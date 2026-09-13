@@ -4,6 +4,7 @@ defmodule Rail.Issues.Actions.MoveStateTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
+  alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -100,10 +101,10 @@ defmodule Rail.Issues.Actions.MoveStateTest do
         email: "move_state_user@example.com"
       })
 
-    Users.link_linear(user, %{
-      access_token: "lin_move_user_tok",
-      refresh_token: "lin_move_user_refresh",
-      expires_in: 3600
+    Users.update_user(Scope.for_system(), user, %{
+      linear_access_token: "lin_move_user_tok",
+      linear_refresh_token: "lin_move_user_refresh",
+      linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
     })
 
     # 1. :triage with invalid datetime

@@ -154,7 +154,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
   } do
     assert {:ok, view, _html} = live(conn, ~p"/settings/users")
 
-    expect(Users, :set_admin, fn _scope, _user, _val ->
+    expect(Users, :update_user, fn _scope, _user, _attrs ->
       {:error, :not_authorized}
     end)
 
@@ -166,7 +166,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
              "You are not authorized to modify user permissions."
            )
 
-    expect(Users, :set_admin, fn _scope, _user, _val ->
+    expect(Users, :update_user, fn _scope, _user, _attrs ->
       {:error, :db_error}
     end)
 

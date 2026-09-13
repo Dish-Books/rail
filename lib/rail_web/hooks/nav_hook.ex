@@ -7,6 +7,7 @@ defmodule RailWeb.Hooks.NavHook do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
   alias Rail.Runs
+  alias Rail.Scope
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
@@ -64,8 +65,12 @@ defmodule RailWeb.Hooks.NavHook do
 
     current_path = URI.parse(uri).path
 
-    if socket.assigns[:current_scope] do
-      Users.set_project_filter(socket.assigns.current_scope, project_id)
+    scope = socket.assigns[:current_scope]
+
+    # Updating a user requires :users/:manage; the session's own user is already
+    # authenticated by the router, so this self-update runs as the system.
+    if scope && scope.user do
+      Users.update_user(Scope.for_system(), scope.user, %{last_project_filter: project_id})
     end
 
     socket =

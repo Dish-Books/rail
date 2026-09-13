@@ -35,7 +35,7 @@ defmodule Rail.Users.Actions.RegisterOAuthUser do
             end
 
           user
-          |> User.oauth_changeset(update_attrs)
+          |> User.changeset(update_attrs)
           |> Repo.update()
           |> case do
             {:ok, updated_user} -> updated_user
@@ -43,12 +43,8 @@ defmodule Rail.Users.Actions.RegisterOAuthUser do
           end
 
         _none ->
-          is_first_user = not Repo.exists?(User)
-          admin = if is_first_user, do: true, else: Map.get(attrs, :admin, false)
-          insert_attrs = Map.put(attrs, :admin, admin)
-
           %User{}
-          |> User.oauth_changeset(insert_attrs)
+          |> User.changeset(attrs)
           |> Repo.insert()
           |> case do
             {:ok, new_user} -> new_user
@@ -76,16 +72,16 @@ defmodule Rail.Users.Actions.RegisterOAuthUser do
   end
 
   defp normalize_attrs(attrs) do
-    github_id = attrs[:github_id] || attrs["github_id"]
+    github_id = Attrs.get(attrs, :github_id)
 
     %{
       github_id: if(is_integer(github_id), do: to_string(github_id), else: github_id),
-      login: attrs[:login] || attrs["login"],
-      name: attrs[:name] || attrs["name"],
-      email: attrs[:email] || attrs["email"],
-      avatar_url: attrs[:avatar_url] || attrs["avatar_url"],
-      github_token: attrs[:github_token] || attrs["github_token"],
-      admin: Map.get(attrs, :admin, Map.get(attrs, "admin", nil))
+      login: Attrs.get(attrs, :login),
+      name: Attrs.get(attrs, :name),
+      email: Attrs.get(attrs, :email),
+      avatar_url: Attrs.get(attrs, :avatar_url),
+      github_token: Attrs.get(attrs, :github_token),
+      admin: Attrs.get(attrs, :admin)
     }
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
     |> Map.new()

@@ -105,10 +105,10 @@ defmodule Rail.Issues.Actions.ArchiveIssueTest do
         email: "archive_user@example.com"
       })
 
-    Users.link_linear(user, %{
-      access_token: "lin_arc_user_token",
-      refresh_token: "lin_arc_user_refresh",
-      expires_in: 3600
+    Users.update_user(Scope.for_system(), user, %{
+      linear_access_token: "lin_arc_user_token",
+      linear_refresh_token: "lin_arc_user_refresh",
+      linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
     })
 
     LinearMock.mock_update_issue_success(%{

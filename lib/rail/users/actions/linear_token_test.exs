@@ -37,7 +37,7 @@ defmodule Rail.Users.Actions.LinearTokenTest do
     one_hour_later = DateTime.shift(DateTime.utc_now(), hour: 1)
 
     assert {:ok, %User{}} =
-             Users.link_linear(user, %{
+             Users.update_user(Scope.for_system(), user, %{
                linear_access_token: "lin_at_valid_1hr",
                linear_refresh_token: "lin_rt_valid_1hr",
                linear_token_expires_at: one_hour_later
@@ -54,7 +54,7 @@ defmodule Rail.Users.Actions.LinearTokenTest do
     two_minutes_later = DateTime.shift(DateTime.utc_now(), minute: 2)
 
     assert {:ok, %User{}} =
-             Users.link_linear(user, %{
+             Users.update_user(Scope.for_system(), user, %{
                linear_access_token: "lin_at_expiring_soon",
                linear_refresh_token: "lin_rt_for_refresh",
                linear_token_expires_at: two_minutes_later
@@ -81,7 +81,7 @@ defmodule Rail.Users.Actions.LinearTokenTest do
     ten_minutes_ago = DateTime.shift(DateTime.utc_now(), minute: -10)
 
     assert {:ok, %User{}} =
-             Users.link_linear(user, %{
+             Users.update_user(Scope.for_system(), user, %{
                linear_access_token: "lin_at_expired",
                linear_refresh_token: "lin_rt_expired",
                linear_token_expires_at: ten_minutes_ago
@@ -99,14 +99,11 @@ defmodule Rail.Users.Actions.LinearTokenTest do
     assert reloaded.linear_access_token == "lin_at_renewed"
   end
 
-  test "supports custom now option and retains existing refresh token if not returned", %{
-    user: user
-  } do
-    now = ~U[2026-09-09 12:00:00Z]
-    four_min_later = ~U[2026-09-09 12:04:00Z]
+  test "retains the existing refresh token when the refresh response omits one", %{user: user} do
+    four_min_later = DateTime.shift(DateTime.utc_now(), minute: 4)
 
     assert {:ok, %User{}} =
-             Users.link_linear(user, %{
+             Users.update_user(Scope.for_system(), user, %{
                linear_access_token: "lin_at_4min",
                linear_refresh_token: "original_rt",
                linear_token_expires_at: four_min_later
@@ -127,7 +124,7 @@ defmodule Rail.Users.Actions.LinearTokenTest do
       )
     end)
 
-    assert {:ok, "lin_at_only_access"} = Users.linear_token(user, now: now)
+    assert {:ok, "lin_at_only_access"} = Users.linear_token(user)
 
     reloaded = Repo.get!(User, user.id)
     assert reloaded.linear_access_token == "lin_at_only_access"
@@ -138,7 +135,7 @@ defmodule Rail.Users.Actions.LinearTokenTest do
     one_min_later = DateTime.shift(DateTime.utc_now(), minute: 1)
 
     assert {:ok, %User{}} =
-             Users.link_linear(user, %{
+             Users.update_user(Scope.for_system(), user, %{
                linear_access_token: "lin_at_fail_refresh",
                linear_refresh_token: "lin_rt_bad",
                linear_token_expires_at: one_min_later
@@ -173,7 +170,7 @@ defmodule Rail.Users.Actions.LinearTokenTest do
     one_hour_later = DateTime.shift(DateTime.utc_now(), hour: 1)
 
     assert {:ok, %User{}} =
-             Users.link_linear(user, %{
+             Users.update_user(Scope.for_system(), user, %{
                linear_access_token: "lin_at_map_scope",
                linear_refresh_token: "lin_rt_map_scope",
                linear_token_expires_at: one_hour_later
@@ -189,7 +186,7 @@ defmodule Rail.Users.Actions.LinearTokenTest do
     expired = DateTime.shift(DateTime.utc_now(), second: -100)
 
     assert {:ok, %User{}} =
-             Users.link_linear(user, %{
+             Users.update_user(Scope.for_system(), user, %{
                linear_access_token: "lin_at_expired_test",
                linear_refresh_token: "lin_rt_test",
                linear_token_expires_at: expired

@@ -13,6 +13,7 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
 
@@ -283,10 +284,10 @@ defmodule Rail.Pipeline.Actions.MergeTaskTest do
       })
 
     {:ok, user} =
-      Users.link_linear(user, %{
-        access_token: "lin_merger_token",
-        refresh_token: "lin_refresh_9211",
-        expires_in: 3600
+      Users.update_user(Scope.for_system(), user, %{
+        linear_access_token: "lin_merger_token",
+        linear_refresh_token: "lin_refresh_9211",
+        linear_token_expires_at: DateTime.add(DateTime.utc_now(), 3600, :second)
       })
 
     LinearMock.mock_create_issue_success(%{

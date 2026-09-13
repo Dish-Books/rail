@@ -11,7 +11,8 @@ defmodule Rail.Users.Actions.ListUsersTest do
                github_id: "list_admin_gh",
                login: "list_admin",
                name: "Admin Alice",
-               email: "admin_alice@example.com"
+               email: "admin_alice@example.com",
+               admin: true
              })
 
     assert {:ok, %User{id: member_id}} =

@@ -173,7 +173,13 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
   defp execute_disconnect(socket) do
     current_scope = socket.assigns.current_scope
 
-    case Users.unlink_linear(current_scope) do
+    case Users.update_user(Scope.for_system(), current_scope.user, %{
+           linear_user_id: nil,
+           linear_name: nil,
+           linear_access_token: nil,
+           linear_refresh_token: nil,
+           linear_token_expires_at: nil
+         }) do
       {:ok, updated_user} ->
         updated_scope = Scope.for_user(updated_user)
 
