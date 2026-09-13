@@ -92,20 +92,13 @@ defmodule Rail.Domain.TaskUsageTest do
     assert Decimal.equal?(TaskUsage.add(u_str, u_int).total_cost, Decimal.new("1.25"))
   end
 
-  test "describe/1 formats tokens and cost" do
-    u_small = %TaskUsage{input_tokens: 500, total_cost: nil}
-    assert TaskUsage.describe(u_small) == "500 tokens"
+  test "describe/1 counts the tokens and says nothing about cost" do
+    assert TaskUsage.describe(%TaskUsage{input_tokens: 500}) == "500 tokens"
+    assert TaskUsage.describe(%TaskUsage{input_tokens: 1_500}) == "1.5K tokens"
+    assert TaskUsage.describe(%TaskUsage{input_tokens: 2_500_000}) == "2.5M tokens"
 
-    u_k = %TaskUsage{input_tokens: 1_500, total_cost: Decimal.new("0.0050"), currency: "USD"}
-    assert TaskUsage.describe(u_k) == "1.5K tokens · $0.0050"
-
-    u_m = %TaskUsage{
-      input_tokens: 2_500_000,
-      total_cost: Decimal.new("12.3456"),
-      currency: "EUR"
-    }
-
-    assert TaskUsage.describe(u_m) == "2.5M tokens · 12.3456 EUR"
+    priced = %TaskUsage{input_tokens: 1_500, total_cost: Decimal.new("0.0050"), currency: "USD"}
+    assert TaskUsage.describe(priced) == "1.5K tokens"
   end
 
   test "changeset/2 validates constraints" do

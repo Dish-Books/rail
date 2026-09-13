@@ -15,7 +15,6 @@ defmodule Rail.Pipeline.Actions.StopRun do
 
   import Rail.Pipeline.Utils.StopLiveProcess
 
-  alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Runs
   alias Rail.Runs.Schemas.Run
@@ -33,10 +32,7 @@ defmodule Rail.Pipeline.Actions.StopRun do
     # synchronously, and the settle would otherwise send this message out.
     stop_live_process(run, opts)
 
-    run = clear_queue(run, was_running)
-    task = unwind_rebase(run.task)
-
-    {:ok, %{run | task: task}, queued}
+    {:ok, clear_queue(run, was_running), queued}
   end
 
   defp clear_queue(%Run{} = run, was_running) do
@@ -50,12 +46,4 @@ defmodule Rail.Pipeline.Actions.StopRun do
 
     %{stopped | task: run.task}
   end
-
-  # A rebase is a detour the task is parked in, and the detour is over.
-  defp unwind_rebase(%Task{is_rebasing: true} = task) do
-    {:ok, task} = task |> Task.changeset(%{is_rebasing: false}) |> Repo.update()
-    task
-  end
-
-  defp unwind_rebase(%Task{} = task), do: task
 end

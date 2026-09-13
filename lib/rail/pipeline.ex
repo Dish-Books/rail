@@ -1,28 +1,16 @@
 defmodule Rail.Pipeline do
   @moduledoc """
   Context boundary for the Rail development pipeline.
-  Coordinates tasks, stage transitions, questions, plans, queue ordering, and dispatching.
-  """
 
-  use Supervisor
+  Only the product stage is driven today: a task is created at `:product`, its run
+  is started, the human approves the ticket it writes, and the task is handed on.
+  Everything past that hand-off — design, architect, engineer, review, QA, demo,
+  rebase and merge — lives in `old/` until it is built back.
+  """
 
   alias Rail.Pipeline.Actions
 
-  @doc """
-  Starts the processes this context owns: the runner that single-flights the
-  actions in flight on each task.
-  """
-  def start_link(opts \\ []) do
-    Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
-  end
-
-  @impl true
-  def init(_opts) do
-    Supervisor.init([Rail.Pipeline.TaskActionRunner], strategy: :one_for_one)
-  end
-
   defdelegate run_finished(os_process, outcome \\ %{}, opts \\ []), to: Actions.RunFinished
-  defdelegate parse_stage_verdict(run), to: Actions.ParseStageVerdict
 
   defdelegate enter_stage(task, stage, opts \\ []), to: Actions.EnterStage
   defdelegate approve_product_plan(run, opts \\ []), to: Actions.ApproveProductPlan
@@ -32,18 +20,7 @@ defmodule Rail.Pipeline do
   defdelegate list_tasks(opts \\ []), to: Actions.ListTasks
   defdelegate update_task(task, attrs), to: Actions.UpdateTask
   defdelegate get_task(id), to: Actions.GetTask
-  defdelegate get_implementation_plan(task), to: Actions.GetImplementationPlan
-
-  defdelegate recheck_design(run, opts \\ []), to: Actions.RecheckDesign
-  defdelegate apply_design_manifest(task, opts \\ []), to: Actions.RecheckDesign
-  defdelegate design_manifest_stamp(target), to: Actions.RecheckDesign
-  defdelegate uses_design?(task, runs \\ []), to: Rail.Pipeline.Schemas.Task
-
-  defdelegate rerecord_demo(run, opts \\ []), to: Actions.RerecordDemo
-  defdelegate can_rerecord_demo?(run), to: Actions.RerecordDemo
-  defdelegate refresh_demo_freshness(task, opts \\ []), to: Actions.RefreshDemoFreshness
-
-  defdelegate send_back_to_engineer(task, opts \\ []), to: Actions.SendBackToEngineer
+  defdelegate cleanup_task(task), to: Actions.CleanupTask
 
   defdelegate register_question(run, question), to: Actions.RegisterQuestion
   defdelegate answer_question(question, answer), to: Actions.AnswerQuestion
@@ -55,15 +32,4 @@ defmodule Rail.Pipeline do
   defdelegate send_message(run, text), to: Actions.SendMessage
   defdelegate stop_and_send_message(run, opts \\ []), to: Actions.StopAndSendMessage
   defdelegate stop_run(run, opts \\ []), to: Actions.StopRun
-
-  defdelegate refresh_mergeability(task, opts \\ []), to: Actions.RefreshMergeability
-  defdelegate mark_pr_ready(task, opts \\ []), to: Actions.MarkPrReady
-  defdelegate start_rebase(task, opts \\ []), to: Actions.StartRebase
-  defdelegate merge_task(task, opts \\ []), to: Actions.MergeTask
-  defdelegate cleanup_task(task), to: Actions.CleanupTask
-
-  defdelegate load_diff(task), to: Actions.LoadDiff
-  defdelegate reconcile_viewed_diff_files(task, parsed_files), to: Actions.ReconcileViewedDiffFiles
-  defdelegate set_diff_file_viewed(task, file_path, file_digest, viewed), to: Actions.SetDiffFileViewed
-  defdelegate expand_diff_gap(task, file_path, gap_index, start_line, end_line, diff_rev), to: Actions.ExpandDiffGap
 end

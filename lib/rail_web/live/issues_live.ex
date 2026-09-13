@@ -418,9 +418,8 @@ defmodule RailWeb.IssuesLive do
 
   # Where a task got to is what the run for the stage it sits at says, picked out
   # of the runs already loaded rather than queried per row.
-  defp stage_run(%{runs: runs, stage: stage, is_rebasing: rebasing}) when is_list(runs) do
-    wanted = if rebasing, do: :engineer, else: stage
-    Enum.find(runs, &(&1.role.stage == wanted))
+  defp stage_run(%{runs: runs, stage: stage}) when is_list(runs) do
+    Enum.find(runs, &(&1.role != nil and &1.role.stage == stage))
   end
 
   defp project_subtitle(nil), do: "Linear issues across all projects"

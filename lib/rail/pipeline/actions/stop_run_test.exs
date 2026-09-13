@@ -3,7 +3,6 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Runs
@@ -95,14 +94,6 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
 
     assert {:ok, %Run{}, nil} = Pipeline.stop_run(run)
     assert Runs.list_run_events(run) == []
-  end
-
-  test "stopping a rebase unwinds the detour", %{task: task, working: working} do
-    {:ok, task} = Pipeline.update_task(task, %{is_rebasing: true})
-    run = working.(%{})
-
-    assert {:ok, %Run{task: %Task{is_rebasing: false}}, nil} = Pipeline.stop_run(run)
-    assert %Task{is_rebasing: false} = Repo.reload!(task)
   end
 
   test "the live process is killed along with the run", %{working: working} do

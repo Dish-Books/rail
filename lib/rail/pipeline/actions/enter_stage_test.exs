@@ -111,22 +111,6 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
-  test "the design stage gets its scratch written before the agent sees it", %{task: task, roles: roles} do
-    scratch = Path.join(System.tmp_dir!(), "enter_stage_design_#{System.unique_integer([:positive])}")
-    on_exit(fn -> File.rm_rf(scratch) end)
-
-    {:ok, task} = Pipeline.update_task(task, %{scratch_path: scratch})
-
-    stub(Runs, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
-
-    %{id: design_role_id} = roles[:design]
-
-    assert {:ok, %Run{role_id: ^design_role_id}} = Pipeline.enter_stage(task, :design)
-
-    assert File.dir?(Path.join(scratch, "design"))
-    assert File.exists?(Path.join([scratch, "tickets", "ENT-1.md"]))
-  end
-
   test "a spawn that never happens still leaves the stage entered", %{task: task} do
     stub(Runs, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
 

@@ -77,10 +77,8 @@ defmodule RailWeb.Components.WithAgentSection do
     """
   end
 
-  defp state_pill_label(%Run{task: %{is_rebasing: true}}), do: "Rebasing"
   defp state_pill_label(%Run{} = run), do: run |> Run.state() |> RunState.pill_label()
 
-  defp state_pill_class(%Run{task: %{is_rebasing: true}}), do: RunState.pill_class(:running)
   defp state_pill_class(%Run{} = run), do: run |> Run.state() |> RunState.pill_class()
 
   defp role_line(%Run{task: task} = run), do: "#{task_key(task)} · #{role_name(run)}"

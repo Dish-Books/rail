@@ -10,31 +10,22 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   There is no such thing as a chat turn here. A stage's own dispatch and a message
   the human typed are the same event — a process carrying this run exited — and
   they settle identically. What separates them is not how they started but what
-  the agent said: the run is recorded, the questions it asked are filed, and only
-  a run that stated a verdict has its stage's finish applied. A run that stopped
-  half way says nothing, so nothing happens to it, and the next message picks it
-  up where it left off.
+  the agent said: the run is recorded, the questions it asked are filed, and a run
+  that came back clean with nothing outstanding has its stage's finish applied. A
+  run that stopped half way says nothing, so nothing happens to it, and the next
+  message picks it up where it left off.
 
   A run that already had its say is latched at `stage_outcome: :done` and is left
   alone however many times it is messaged afterwards. `enter_stage/3` is what
   unlatches it, which is why nothing here moves a task.
   """
 
-  import Rail.Pipeline.Utils.ArchitectRunFinished
-  import Rail.Pipeline.Utils.DemoRunFinished
-  import Rail.Pipeline.Utils.DesignRunFinished
   import Rail.Pipeline.Utils.DispatchMessage
-  import Rail.Pipeline.Utils.EngineerRunFinished
   import Rail.Pipeline.Utils.ProductRunFinished
-  import Rail.Pipeline.Utils.QaLeadRunFinished
-  import Rail.Pipeline.Utils.QaRunFinished
   import Rail.Pipeline.Utils.QuestionQueue
-  import Rail.Pipeline.Utils.RebaseRunFinished
   import Rail.Pipeline.Utils.RegisterAskedQuestions
-  import Rail.Pipeline.Utils.ReviewRunFinished
 
   alias Rail.Domain.TaskUsage
-  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
@@ -111,11 +102,6 @@ defmodule Rail.Pipeline.Actions.RunFinished do
     end
   end
 
-  # A rebase is a detour rather than a stage, so it settles on its own terms: the
-  # engineer run it borrows may well be latched `:done` from the work it did
-  # before the branch ever conflicted.
-  defp maybe_finish(%Run{task: %Task{is_rebasing: true}} = run, opts), do: rebase_run_finished(run, opts)
-
   defp maybe_finish(%Run{} = run, opts) do
     if concluded?(run) do
       run |> finish_action(run).(opts) |> latch_done()
@@ -129,28 +115,15 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp concluded?(%Run{} = run) do
     run.stage_outcome == :in_progress and
       run.exit_code == 0 and
-      pending_questions(run.task_id) == [] and
-      stated_verdict?(run)
+      pending_questions(run.task_id) == []
   end
 
-  # The roles that report a verdict have to state one before their stage moves;
-  # the rest report through an artifact, and a clean exit is all they say.
-  defp stated_verdict?(%Run{role: %Role{stage: stage}} = run) when stage in [:engineer, :review, :qa, :qa_lead] do
-    Pipeline.parse_stage_verdict(run).verdict != :unclear
-  end
-
-  defp stated_verdict?(%Run{}), do: true
-
-  # Which stage settles is the run's own role, never the task's stage: a message
-  # to a reviewer settles the review whatever the task has moved on to since.
+  # Which stage settles is the run's own role, never the task's stage. Product is
+  # the only stage with a finish of its own; a run at any other records itself and
+  # moves nothing, which is what keeps a task handed on past product from
+  # crashing on a stage whose machinery is gone.
   defp finish_action(%Run{role: %Role{stage: :product}}), do: &product_run_finished/2
-  defp finish_action(%Run{role: %Role{stage: :design}}), do: &design_run_finished/2
-  defp finish_action(%Run{role: %Role{stage: :architect}}), do: &architect_run_finished/2
-  defp finish_action(%Run{role: %Role{stage: :engineer}}), do: &engineer_run_finished/2
-  defp finish_action(%Run{role: %Role{stage: :review}}), do: &review_run_finished/2
-  defp finish_action(%Run{role: %Role{stage: :qa}}), do: &qa_run_finished/2
-  defp finish_action(%Run{role: %Role{stage: :qa_lead}}), do: &qa_lead_run_finished/2
-  defp finish_action(%Run{role: %Role{stage: :demo}}), do: &demo_run_finished/2
+  defp finish_action(%Run{}), do: fn run, _opts -> run end
 
   # A finish that recorded an error did not conclude anything, so it stays open
   # for the message that fixes it.

@@ -10,5 +10,4 @@ defmodule RailWeb.Helpers do
 
   defdelegate format_duration(seconds), to: Utils.FormatDuration
   defdelegate format_run_status(status), to: Utils.FormatRunStatus
-  defdelegate format_tokens(count, opts \\ []), to: Utils.FormatTokens
 end

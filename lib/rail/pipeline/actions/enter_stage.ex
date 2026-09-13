@@ -13,9 +13,6 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   never a side effect of a process exiting.
   """
 
-  import Rail.Pipeline.Utils.Briefs
-  import Rail.Pipeline.Utils.StartDesignRun
-
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -32,11 +29,11 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   stages no role runs — `:ready_to_merge` and `:merged` are where a task waits
   for a human, so entering one records the stage and stops there.
   """
-  def enter_stage(%Task{} = task, stage, opts \\ []) when is_atom(stage) do
+  def enter_stage(%Task{} = task, stage, _opts \\ []) when is_atom(stage) do
     {:ok, task} = claim_stage(task, stage)
 
     case Roles.get_role(project_id: task.project_id, stage: stage) do
-      {:ok, %Role{} = role} -> start_role(task, role, opts)
+      {:ok, %Role{} = role} -> start_role(task, role)
       {:error, :role_not_found} -> {:ok, task}
     end
   end
@@ -50,12 +47,12 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   # The run is started before the spawn is attempted, because starting it is what
   # unlatches the stage. A worktree Rail cannot make is a failure to record on the
   # run, not a reason for the stage never to have been entered.
-  defp start_role(%Task{} = task, %Role{} = role, opts) do
+  defp start_role(%Task{} = task, %Role{} = role) do
     worktree_path = worktree(task)
     {:ok, %Run{} = run} = Runs.start_or_resume_run(task, role, worktree_path)
 
     if worktree_path do
-      spawn_run(task, role, run, worktree_path, opts)
+      spawn_run(task, role, run, worktree_path)
     else
       {:ok, fail(run, "Could not prepare the worktree at #{task.worktree_path}.")}
     end
@@ -75,16 +72,13 @@ defmodule Rail.Pipeline.Actions.EnterStage do
     run
   end
 
-  defp spawn_run(%Task{} = task, %Role{} = role, %Run{} = run, worktree_path, opts) do
-    # The one stage with scratch of its own to prepare.
-    if role.stage == :design, do: start_design_run(task)
-
+  defp spawn_run(%Task{} = task, %Role{} = role, %Run{} = run, worktree_path) do
     prompt =
       Runs.build_prompt(
         task: task,
         backend: role.backend,
         role_instructions: role.system_prompt,
-        context_snippet: stage_brief(task, opts),
+        context_snippet: "",
         pending_answer: run.pending_answer,
         conversation_id: run.conversation_id
       )

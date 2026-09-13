@@ -7,27 +7,22 @@ defmodule RailWeb.Components.RunState do
   `:blocked` is.
   """
 
-  alias Rail.Pipeline.Schemas.Task
   alias Rail.Runs.Schemas.Run
 
   @doc """
-  The Phosphor icon for `run`, in the context of `task`.
+  The Phosphor icon for `run`.
   """
-  def icon(task, run) do
-    if Task.conflicted?(task), do: "pi-git-branch", else: icon_for(task, Run.state(run))
-  end
+  def icon(run), do: run |> Run.state() |> icon_for()
 
   @doc """
   The semantic colour for `run` — `:primary`, `:amber`, `:outline` or `:error`.
   """
-  def color(task, run) do
-    if Task.conflicted?(task), do: :amber, else: color_for(Run.state(run))
-  end
+  def color(run), do: run |> Run.state() |> color_for()
 
   @doc """
   Tailwind classes for `run`'s colour, as text or as a chip.
   """
-  def color_class(task, run, variant \\ :text), do: classes(color(task, run), variant)
+  def color_class(run, variant \\ :text), do: classes(color(run), variant)
 
   @doc """
   The word a state pill shows.
@@ -44,13 +39,12 @@ defmodule RailWeb.Components.RunState do
   """
   def pill_class(state), do: state |> color_for() |> classes(:chip)
 
-  defp icon_for(_task, :running), do: "pi-play-circle"
-  defp icon_for(_task, :queued), do: "pi-clock"
-  defp icon_for(_task, :blocked), do: "pi-question"
-  defp icon_for(_task, :failed), do: "pi-warning-circle"
-  defp icon_for(_task, :stopped), do: "pi-pause-circle"
-  defp icon_for(%Task{stage: :ready_to_merge}, :done), do: "pi-git-merge"
-  defp icon_for(_task, :done), do: "pi-chat-text"
+  defp icon_for(:running), do: "pi-play-circle"
+  defp icon_for(:queued), do: "pi-clock"
+  defp icon_for(:blocked), do: "pi-question"
+  defp icon_for(:failed), do: "pi-warning-circle"
+  defp icon_for(:stopped), do: "pi-pause-circle"
+  defp icon_for(:done), do: "pi-chat-text"
 
   defp color_for(:running), do: :primary
   defp color_for(state) when state in [:blocked, :done], do: :amber

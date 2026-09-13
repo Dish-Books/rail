@@ -14,7 +14,6 @@ defmodule Rail.Application do
       {Task.Supervisor, name: Rail.TaskSupervisor},
       Rail.Runs,
       Rail.Backends,
-      Rail.Pipeline,
       RailWeb.Endpoint
     ]
 

@@ -7,15 +7,12 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
-  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Runs
   alias Rail.Runs.DetectedQuestion
-  alias Rail.Runs.Schemas.OsProcess
-  alias Rail.Runs.Schemas.Run
   alias Rail.Scope
   alias Rail.Users
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -289,7 +286,7 @@ defmodule RailWeb.OverviewLiveTest do
         Backends.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
       roles =
-        Map.new([:product, :architect, :engineer, :review, :qa, :demo], fn stage ->
+        Map.new([:product, :engineer], fn stage ->
           {:ok, role} =
             Roles.create_role(scope, project, %{
               backend_id: backend.id,
@@ -335,71 +332,6 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "[data-qa='with-agent-state-pill']", "Running")
       assert has_element?(view, "[data-qa='with-agent-title']", "Running work")
       refute has_element?(view, "#waiting-on-you-section")
-    end
-
-    test "a run that said it was done waits on a human as an approval card", %{
-      conn: conn,
-      project: project,
-      roles: roles
-    } do
-      LinearMock.mock_create_issue_success(%{
-        "id" => "lin_queue_done",
-        "identifier" => "QUE-2",
-        "title" => "Plan to read"
-      })
-
-      {:ok, issue} = Issues.create_issue(project, %{description: "Plan to read"})
-      {:ok, task} = Pipeline.create_task(issue, :product)
-      {:ok, task} = Pipeline.update_task(task, %{stage: :architect})
-
-      {:ok, _run} =
-        Runs.create_run(%{
-          task_id: task.id,
-          role_id: roles[:architect].id,
-          status: :finished,
-          stage_outcome: :done,
-          started_at: DateTime.utc_now(),
-          completed_at: DateTime.utc_now()
-        })
-
-      assert {:ok, view, _html} = live(conn, ~p"/")
-
-      assert has_element?(view, "#waiting-on-you-section")
-      assert has_element?(view, "[data-qa='overview-card approval-card']")
-      assert has_element?(view, "[data-qa='stage-approval-chip']", "Review the plan")
-      assert has_element?(view, "[data-qa='approval-primary-action']", "Open plan")
-    end
-
-    test "a run that failed shows its own error on the compact strip", %{
-      conn: conn,
-      project: project,
-      roles: roles
-    } do
-      LinearMock.mock_create_issue_success(%{
-        "id" => "lin_queue_failed",
-        "identifier" => "QUE-3",
-        "title" => "Broken work"
-      })
-
-      {:ok, issue} = Issues.create_issue(project, %{description: "Broken work"})
-      {:ok, task} = Pipeline.create_task(issue, :product)
-      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
-
-      {:ok, _run} =
-        Runs.create_run(%{
-          task_id: task.id,
-          role_id: roles[:engineer].id,
-          status: :finished,
-          error: "Unit tests failed with exit code 1",
-          started_at: DateTime.utc_now(),
-          completed_at: DateTime.utc_now()
-        })
-
-      assert {:ok, view, _html} = live(conn, ~p"/")
-
-      assert has_element?(view, "[data-qa='compact-status-chip']", "Failed")
-      assert has_element?(view, "[data-qa='compact-detail']", "Unit tests failed with exit code 1")
-      assert has_element?(view, "[data-qa='action-open-log']", "Open log")
     end
 
     test "a blocked run shows every question it asked, and only sends once none are pending", %{
@@ -462,44 +394,6 @@ defmodule RailWeb.OverviewLiveTest do
       assert %Question{delivered_at: %DateTime{}} = Repo.get!(Question, second_id)
     end
 
-    test "a task at ready to merge offers the merge, and a conflicted one the rebase", %{
-      conn: conn,
-      project: project,
-      roles: roles
-    } do
-      LinearMock.mock_create_issue_success(%{
-        "id" => "lin_queue_merge",
-        "identifier" => "QUE-5",
-        "title" => "Ready work"
-      })
-
-      {:ok, issue} = Issues.create_issue(project, %{description: "Ready work"})
-      {:ok, task} = Pipeline.create_task(issue, :product)
-      {:ok, task} = Pipeline.update_task(task, %{stage: :ready_to_merge, pr_number: 7})
-
-      {:ok, _run} =
-        Runs.create_run(%{
-          task_id: task.id,
-          role_id: roles[:demo].id,
-          status: :finished,
-          stage_outcome: :done,
-          started_at: DateTime.utc_now(),
-          completed_at: DateTime.utc_now()
-        })
-
-      assert {:ok, view, _html} = live(conn, ~p"/")
-
-      assert has_element?(view, "[data-qa='compact-status-chip']", "Ready to merge")
-      assert has_element?(view, "[data-qa='action-merge']", "Merge")
-
-      {:ok, _task} = Pipeline.update_task(Repo.reload!(task), %{mergeability: :conflicting})
-
-      assert {:ok, view, _html} = live(conn, ~p"/")
-
-      assert has_element?(view, "[data-qa='compact-status-chip']", "Conflicts")
-      assert has_element?(view, "[data-qa='action-rebase']", "Rebase")
-    end
-
     test "a merged task waits on nobody", %{conn: conn, project: project, roles: roles} do
       LinearMock.mock_create_issue_success(%{
         "id" => "lin_queue_merged",
@@ -549,7 +443,7 @@ defmodule RailWeb.OverviewLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/?project=#{project.id}")
 
       assert has_element?(view, "#role-row-#{roles[:engineer].id}", "QUE-7 · running")
-      assert has_element?(view, "#role-idle-#{roles[:review].id}", "Idle")
+      assert has_element?(view, "#role-idle-#{roles[:product].id}", "Idle")
     end
 
     test "the dispatch banner shows while dispatch is switched off", %{conn: conn} do
@@ -559,114 +453,6 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/")
       assert render(view) =~ "RAIL_NO_DISPATCH=1 is set"
-    end
-
-    test "the modals open, close, and carry their action through", %{
-      conn: conn,
-      project: project,
-      roles: roles
-    } do
-      LinearMock.mock_create_issue_success(%{
-        "id" => "lin_queue_modals",
-        "identifier" => "QUE-8",
-        "title" => "Modal work"
-      })
-
-      {:ok, issue} = Issues.create_issue(project, %{description: "Modal work"})
-      {:ok, task} = Pipeline.create_task(issue, :product)
-
-      {:ok, task} =
-        Pipeline.update_task(task, %{stage: :ready_to_merge, pr_number: 9, mergeability: :conflicting})
-
-      {:ok, _run} =
-        Runs.create_run(%{
-          task_id: task.id,
-          role_id: roles[:demo].id,
-          status: :finished,
-          stage_outcome: :done,
-          started_at: DateTime.utc_now(),
-          completed_at: DateTime.utc_now()
-        })
-
-      assert {:ok, view, _html} = live(conn, ~p"/")
-
-      # Rebase
-      view |> element("#action-rebase-#{task.id}") |> render_click()
-      assert has_element?(view, "#rebase-confirm-modal")
-      view |> element("#cancel-rebase-button") |> render_click()
-      refute has_element?(view, "#rebase-confirm-modal")
-
-      view |> element("#action-rebase-#{task.id}") |> render_click()
-
-      stub(Runs, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-      view |> element("#confirm-rebase-button") |> render_click()
-
-      assert %Task{is_rebasing: true} = Repo.reload!(task)
-    end
-
-    test "the merge modal opens, closes, and merges", %{conn: conn, project: project, roles: roles} do
-      LinearMock.mock_create_issue_success(%{
-        "id" => "lin_queue_merge_modal",
-        "identifier" => "QUE-9",
-        "title" => "Merge modal work"
-      })
-
-      {:ok, issue} = Issues.create_issue(project, %{description: "Merge modal work"})
-      {:ok, task} = Pipeline.create_task(issue, :product)
-      {:ok, task} = Pipeline.update_task(task, %{stage: :ready_to_merge, pr_number: 11})
-
-      {:ok, _run} =
-        Runs.create_run(%{
-          task_id: task.id,
-          role_id: roles[:demo].id,
-          status: :finished,
-          stage_outcome: :done,
-          started_at: DateTime.utc_now(),
-          completed_at: DateTime.utc_now()
-        })
-
-      assert {:ok, view, _html} = live(conn, ~p"/")
-
-      view |> element("#action-merge-#{task.id}") |> render_click()
-      assert has_element?(view, "#merge-confirm-modal")
-
-      view |> element("#cancel-merge-button") |> render_click()
-      refute has_element?(view, "#merge-confirm-modal")
-    end
-
-    test "sending a gate's findings back to the engineer goes through a comment", %{
-      conn: conn,
-      project: project,
-      roles: roles
-    } do
-      LinearMock.mock_create_issue_success(%{
-        "id" => "lin_queue_send_back",
-        "identifier" => "QUE-10",
-        "title" => "Send back work"
-      })
-
-      {:ok, issue} = Issues.create_issue(project, %{description: "Send back work"})
-      {:ok, task} = Pipeline.create_task(issue, :product)
-      {:ok, task} = Pipeline.update_task(task, %{stage: :review})
-
-      {:ok, _run} =
-        Runs.create_run(%{
-          task_id: task.id,
-          role_id: roles[:review].id,
-          status: :finished,
-          stage_outcome: :done,
-          started_at: DateTime.utc_now(),
-          completed_at: DateTime.utc_now()
-        })
-
-      assert {:ok, view, _html} = live(conn, ~p"/")
-
-      view |> element("#send-back-button-#{Repo.get_by!(Run, task_id: task.id).id}") |> render_click()
-      assert has_element?(view, "#send-back-modal")
-
-      view |> element("#send-back-form") |> render_change(%{"comment" => "Please fix the copy"})
-      view |> element("#close-send-back-button") |> render_click()
-      refute has_element?(view, "#send-back-modal")
     end
 
     test "answering by picking one of the options offered", %{conn: conn, project: project, roles: roles} do
