@@ -10,7 +10,7 @@ defmodule Rail.Issues do
   alias Rail.Issues.Actions
 
   defdelegate list_issues(opts \\ []), to: Actions.ListIssues
-  defdelegate get_issue(id), to: Actions.GetIssue
+  defdelegate get_issue(id, opts \\ []), to: Actions.GetIssue
   defdelegate create_issue(project, attrs), to: Actions.CreateIssue
   defdelegate update_issue(issue, attrs), to: Actions.UpdateIssue
 

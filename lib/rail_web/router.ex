@@ -63,6 +63,7 @@ defmodule RailWeb.Router do
       ] do
       live "/", OverviewLive
       live "/issues", IssuesLive
+      live "/issues/:id", IssueLive
       live "/tasks/:id", TaskLive
       live "/settings/connected-accounts", Settings.ConnectedAccountsLive
     end

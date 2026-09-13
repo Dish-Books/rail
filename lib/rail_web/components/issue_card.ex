@@ -2,12 +2,14 @@ defmodule RailWeb.Components.IssueCard do
   @moduledoc """
   One issue as a single row of the issues list: priority, identifier, status and
   title on the left; where its work stands, its points and who owns it on the
-  right.
+  right. Clicking the row opens the issue's page.
   """
   use RailWeb, :html
 
+  import RailWeb.Components.IssueIcons
   import RailWeb.CoreComponents, only: [icon: 1]
 
+  alias Phoenix.LiveView.JS
   alias Rail.Issues.Schemas.Issue
   alias RailWeb.Components.StageLabel
 
@@ -21,8 +23,7 @@ defmodule RailWeb.Components.IssueCard do
       id={"issue-card-#{@issue.id}"}
       data-qa={"issue-row issue-card-#{@issue.id}"}
       class="group flex items-center gap-3 h-11 px-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
-      phx-click="open_editor"
-      phx-value-issue_id={@issue.id}
+      phx-click={JS.navigate(~p"/issues/#{@issue.identifier}")}
     >
       <span
         data-qa="issue-priority-badge"
@@ -45,7 +46,7 @@ defmodule RailWeb.Components.IssueCard do
         title={status_label(@issue.state)}
         class="flex items-center justify-center w-4 shrink-0"
       >
-        <.icon name={status_icon(@issue.state)} class={["h-4 w-4", status_color(@issue.state)]} />
+        <.status_icon state={@issue.state} />
         <span class="sr-only">{status_label(@issue.state)}</span>
       </span>
 
@@ -113,99 +114,4 @@ defmodule RailWeb.Components.IssueCard do
   def priority_label(priority), do: Issue.priority_label(priority) || "Medium"
 
   def status_label(state), do: Issue.state_label(state) || "Triage"
-
-  attr :user, :any, required: true
-
-  # Who the issue belongs to, as their avatar or initials; an empty circle when
-  # nobody does, so the column still lines up.
-  defp assignee(%{user: %{avatar_url: url}} = assigns) when is_binary(url) and url != "" do
-    ~H"""
-    <img
-      data-qa="issue-assignee"
-      src={@user.avatar_url}
-      alt={@user.name || @user.login}
-      title={@user.name || @user.login}
-      class="h-6 w-6 rounded-full shrink-0"
-    />
-    """
-  end
-
-  defp assignee(%{user: %{login: _login}} = assigns) do
-    ~H"""
-    <span
-      data-qa="issue-assignee"
-      title={@user.name || @user.login}
-      class="flex items-center justify-center h-6 w-6 rounded-full shrink-0 bg-indigo-500 text-white text-[10px] font-semibold uppercase"
-    >
-      {initials(@user.name || @user.login)}
-    </span>
-    """
-  end
-
-  defp assignee(assigns) do
-    ~H"""
-    <span
-      data-qa="issue-unassigned"
-      title="Unassigned"
-      class="h-6 w-6 rounded-full shrink-0 border border-dashed border-slate-300 dark:border-slate-600"
-    />
-    """
-  end
-
-  defp initials(name) do
-    name
-    |> String.split(~r/[\s._-]+/, trim: true)
-    |> Enum.take(2)
-    |> Enum.map_join(&String.first/1)
-  end
-
-  attr :priority, :atom, required: true
-
-  # Drawn the way Linear draws it: an exclamation in a filled square for urgent,
-  # otherwise three bars with one, two or three lit for low, medium and high.
-  defp priority_icon(%{priority: :urgent} = assigns) do
-    ~H"""
-    <svg viewBox="0 0 16 16" class="h-4 w-4 text-orange-500" aria-hidden="true">
-      <rect x="1" y="1" width="14" height="14" rx="3" fill="currentColor" />
-      <rect x="7" y="4" width="2" height="5" rx="1" class="fill-white dark:fill-slate-900" />
-      <rect x="7" y="10.5" width="2" height="2" rx="1" class="fill-white dark:fill-slate-900" />
-    </svg>
-    """
-  end
-
-  defp priority_icon(assigns) do
-    assigns = assign(assigns, :lit, lit_bars(assigns.priority))
-
-    ~H"""
-    <svg viewBox="0 0 16 16" class="h-4 w-4 text-slate-500 dark:text-slate-400" aria-hidden="true">
-      <rect
-        :for={{x, height, bar} <- [{1.5, 5, 1}, {6.5, 8, 2}, {11.5, 11, 3}]}
-        x={x}
-        y={13.5 - height}
-        width="3"
-        height={height}
-        rx="1"
-        fill="currentColor"
-        opacity={if bar <= @lit, do: "1", else: "0.3"}
-      />
-    </svg>
-    """
-  end
-
-  defp lit_bars(:high), do: 3
-  defp lit_bars(:low), do: 1
-  defp lit_bars(_medium), do: 2
-
-  defp status_icon(:triage), do: "pi-tray"
-  defp status_icon(:backlog), do: "pi-circle-dashed"
-  defp status_icon(:todo), do: "pi-circle"
-  defp status_icon(:in_progress), do: "pi-circle-half-fill"
-  defp status_icon(:in_review), do: "pi-circle-half-tilt-fill"
-  defp status_icon(:done), do: "pi-check-circle-fill"
-  defp status_icon(:canceled), do: "pi-x-circle-fill"
-  defp status_icon(_other), do: "pi-circle-dashed"
-
-  defp status_color(state) when state in [:in_progress, :in_review], do: "text-amber-500"
-  defp status_color(:done), do: "text-indigo-500"
-  defp status_color(_other), do: "text-slate-500 dark:text-slate-400"
 end

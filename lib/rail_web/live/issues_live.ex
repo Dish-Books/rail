@@ -5,8 +5,7 @@ defmodule RailWeb.IssuesLive do
   import RailWeb.CoreComponents,
     only: [
       icon: 1,
-      issue_card: 1,
-      issue_editor_modal: 1
+      issue_card: 1
     ]
 
   alias Rail.Issues
@@ -28,7 +27,6 @@ defmodule RailWeb.IssuesLive do
       |> assign(:current_project, nil)
       |> assign(:syncing_project_ids, MapSet.new())
       |> assign(:is_syncing, false)
-      |> assign(:editing_issue, nil)
 
     {:ok, socket}
   end
@@ -312,12 +310,6 @@ defmodule RailWeb.IssuesLive do
             </div>
           </div>
         </div>
-
-        <!-- Issue Editor Modal -->
-        <.issue_editor_modal
-          issue={@editing_issue}
-          visible={@editing_issue != nil}
-        />
       </div>
     </Layouts.app>
     """
@@ -362,56 +354,6 @@ defmodule RailWeb.IssuesLive do
     end
 
     {:noreply, reload_data(socket)}
-  end
-
-  def handle_event("open_editor", %{"issue_id" => issue_id}, socket) do
-    case Issues.get_issue(issue_id) do
-      {:ok, issue} ->
-        socket = assign(socket, :editing_issue, issue)
-        {:noreply, socket}
-
-      _error ->
-        {:noreply, socket}
-    end
-  end
-
-  def handle_event("close_editor", _params, socket) do
-    socket = assign(socket, :editing_issue, nil)
-    {:noreply, socket}
-  end
-
-  def handle_event("save_issue", %{"issue_id" => issue_id, "title" => title} = params, socket) do
-    trimmed_title = String.trim(title)
-
-    if trimmed_title == "" do
-      {:noreply, socket}
-    else
-      case Issues.get_issue(issue_id) do
-        {:ok, issue} ->
-          attrs = %{
-            title: trimmed_title,
-            description: Map.get(params, "description"),
-            priority: Map.get(params, "priority"),
-            state: Map.get(params, "state")
-          }
-
-          Issues.update_issue(issue, attrs)
-
-          socket =
-            socket
-            |> assign(:editing_issue, nil)
-            |> reload_data()
-
-          {:noreply, socket}
-
-        _error ->
-          {:noreply, socket}
-      end
-    end
-  end
-
-  def handle_event("editor_change", _params, socket) do
-    {:noreply, socket}
   end
 
   def handle_info({:issues_synced, project_id}, socket) do

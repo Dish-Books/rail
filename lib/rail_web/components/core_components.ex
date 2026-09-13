@@ -12,7 +12,6 @@ defmodule RailWeb.CoreComponents do
   defdelegate with_agent_section(assigns), to: RailWeb.Components.WithAgentSection
   defdelegate role_roster(assigns), to: RailWeb.Components.RoleRoster
   defdelegate issue_card(assigns), to: RailWeb.Components.IssueCard
-  defdelegate issue_editor_modal(assigns), to: RailWeb.Components.IssueEditorModal
   defdelegate markdown(assigns), to: RailWeb.Components.Markdown
   defdelegate answer_field(assigns), to: RailWeb.Components.AnswerField
 end

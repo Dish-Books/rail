@@ -16,7 +16,7 @@ defmodule Rail.Issues.Workers.SyncIssue do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
 
-  @pushable [:title, :description, :priority, :estimate, :state]
+  @pushable [:title, :description, :priority, :estimate, :state, :owner_user_id]
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"issue_id" => issue_id, "fields" => fields}}) do
@@ -42,7 +42,8 @@ defmodule Rail.Issues.Workers.SyncIssue do
   end
 
   # Linear names things its own way: a workflow state by its id, a priority by
-  # its number.
+  # its number, an assignee by their Linear user id. Unassigning is the one
+  # change sent as a null.
   defp linear_attrs(%Issue{} = issue, %Project{} = project, fields) do
     fields
     |> Enum.map(&to_existing_field/1)
@@ -50,10 +51,14 @@ defmodule Rail.Issues.Workers.SyncIssue do
     |> Map.new(fn
       :state -> {"stateId", project.linear_state_ids[to_string(issue.state)]}
       :priority -> {"priority", linear_priority(issue.priority)}
+      :owner_user_id -> {"assigneeId", issue |> Repo.preload(:owner_user) |> linear_assignee_id()}
       field -> {to_string(field), Map.fetch!(issue, field)}
     end)
-    |> Map.reject(fn {_field, value} -> is_nil(value) end)
+    |> Map.reject(fn {field, value} -> is_nil(value) and field != "assigneeId" end)
   end
+
+  defp linear_assignee_id(%Issue{owner_user: %{linear_user_id: linear_user_id}}), do: linear_user_id
+  defp linear_assignee_id(%Issue{owner_user: nil}), do: nil
 
   defp to_existing_field(field) when is_atom(field), do: field
 

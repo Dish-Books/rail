@@ -6,6 +6,7 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Users
 
   setup do
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -86,6 +87,33 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
     end)
 
     assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["state", "priority"]})
+  end
+
+  test "sends Linear the assignee's Linear user id, and null when unassigned", %{issue: issue} do
+    {:ok, user} =
+      Users.register_oauth_user(%{github_id: "gh_sync_assign", login: "sync_assign", email: "sync_assign@example.com"})
+
+    user |> Ecto.Changeset.change(linear_user_id: "lin_usr_assign") |> Repo.update!()
+
+    {:ok, issue} = Issues.update_issue(issue, %{owner_user_id: user.id})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"input" => %{"assigneeId" => "lin_usr_assign"}} = Jason.decode!(body)["variables"]
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+    end)
+
+    assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["owner_user_id"]})
+
+    {:ok, issue} = Issues.update_issue(issue, %{owner_user_id: nil})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"input" => %{"assigneeId" => nil}} = Jason.decode!(body)["variables"]
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+    end)
+
+    assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["owner_user_id"]})
   end
 
   test "fails the job when Linear does not take the update", %{issue: issue} do

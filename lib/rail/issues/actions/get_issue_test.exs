@@ -31,6 +31,9 @@ defmodule Rail.Issues.Actions.GetIssueTest do
 
     assert {:ok, %Issue{id: ^issue_id, project: %Project{id: ^project_id}}} = Issues.get_issue(issue_id)
     assert {:ok, %Issue{id: ^issue_id}} = Issues.get_issue("lin_get_1")
+    assert {:ok, %Issue{id: ^issue_id}} = Issues.get_issue("GTI-1")
+
+    assert {:ok, %Issue{task: nil, owner_user: nil}} = Issues.get_issue(issue_id, preload: [:task, :owner_user])
   end
 
   test "get_issue/1 returns {:error, :not_found} when issue does not exist" do

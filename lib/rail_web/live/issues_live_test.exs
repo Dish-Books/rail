@@ -193,6 +193,10 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-status-badge']", "In Progress")
 
     assert has_element?(view, "#start-product-run-#{issue.id}", "Start")
+
+    # Clicking the row opens the issue's page.
+    issue_path = ~p"/issues/#{issue.identifier}"
+    assert {:error, {:live_redirect, %{to: ^issue_path}}} = view |> element("#issue-card-#{issue.id}") |> render_click()
   end
 
   test "filters by priority chips and updates chip counts", %{conn: conn} do
@@ -587,107 +591,6 @@ defmodule RailWeb.IssuesLiveTest do
 
     # Clicking start on a nonexistent issue does not crash
     render_click(view, "start_product_run", %{"issue_id" => "iss_nonexistent"})
-  end
-
-  test "opens issue editor modal, updates attributes, and saves changes", %{conn: conn} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_issues_live_8",
-        login: "issues_live_user_8",
-        email: "issues_live_user_8@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-    scope = Scope.for_user(user)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    assert {:ok, %Project{id: _project_id} = project} =
-             Projects.create_project(scope, %{
-               name: "Editor Project",
-               github_repo: "example/editor-proj",
-               github_installation_id: 705,
-               linear_workspace: %{
-                 name: "Issues Live Workspace 13213",
-                 external_id: "lin_ws_issues_live_13213",
-                 token: "lin_api_token_issues_live_13213",
-                 webhook_secret: "whsec_issues_live_13213"
-               },
-               linear_team_key: "ED",
-               default_branch: "main",
-               clone_path: "/tmp/editor-proj",
-               active: true,
-               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
-             })
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_ed_1", "identifier" => "ED-50", "title" => "Initial title"}
-          }
-        }
-      })
-    end)
-
-    {:ok, issue} = Issues.create_issue(project, %{title: "Initial title"})
-
-    {:ok, issue} =
-      Issues.update_issue(issue, %{
-        description: "Initial description",
-        priority: :low
-      })
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
-
-    refute has_element?(view, "#issue-editor-dialog")
-
-    # Click card to open editor
-    view |> element("#issue-card-#{issue.id}") |> render_click()
-    assert has_element?(view, "#issue-editor-dialog")
-    assert has_element?(view, "#editor-dialog-title", "Edit ED-50")
-
-    # Form change event (noop)
-    view |> element("#issue-editor-form") |> render_change(%{"title" => "Typing..."})
-
-    # Close and reopen editor
-    view |> element("#close-editor-button") |> render_click()
-    refute has_element?(view, "#issue-editor-dialog")
-
-    view |> element("#issue-card-#{issue.id}") |> render_click()
-    assert has_element?(view, "#issue-editor-dialog")
-
-    view |> element("#editor-cancel-button") |> render_click()
-    refute has_element?(view, "#issue-editor-dialog")
-
-    # Open again to submit
-    view |> element("#issue-card-#{issue.id}") |> render_click()
-
-    # Empty title submit is rejected without crash
-    view |> element("#issue-editor-form") |> render_submit(%{"issue_id" => issue.id, "title" => "   "})
-    assert has_element?(view, "#issue-editor-dialog")
-
-    view
-    |> element("#issue-editor-form")
-    |> render_submit(%{
-      "issue_id" => issue.id,
-      "title" => "Updated title",
-      "description" => "Updated description",
-      "priority" => "urgent",
-      "state" => "backlog"
-    })
-
-    refute has_element?(view, "#issue-editor-dialog")
-    assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-title']", "Updated title")
-    assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-priority-badge']", "Urgent")
-
-    # Submitting for nonexistent issue does not crash
-    render_submit(view, "save_issue", %{"issue_id" => "iss_nonexistent", "title" => "Test"})
-    render_click(view, "open_editor", %{"issue_id" => "iss_nonexistent"})
   end
 
   test "sync_issues button triggers sync on current project or all projects", %{conn: conn} do

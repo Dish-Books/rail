@@ -7,13 +7,15 @@ defmodule Rail.Issues.Actions.GetIssue do
   alias Rail.Repo
 
   @doc """
-  Finds an issue by Rail's id or Linear's, with its project.
+  Finds an issue by Rail's id, Linear's id or its identifier, such as `DIS-123`.
+
+  Options: `:preload`, which defaults to the project.
   """
-  def get_issue(id) when is_binary(id) do
+  def get_issue(id, opts \\ []) when is_binary(id) and is_list(opts) do
     query =
       from i in Issue,
-        where: i.id == ^id or i.external_id == ^id,
-        preload: [:project]
+        where: i.id == ^id or i.external_id == ^id or i.identifier == ^id,
+        preload: ^Keyword.get(opts, :preload, [:project])
 
     case Repo.one(query) do
       %Issue{} = issue -> {:ok, issue}
