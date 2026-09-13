@@ -19,8 +19,14 @@ defmodule Rail.Linear.ClientTest do
       url = Client.authorize_url()
 
       assert String.starts_with?(url, "https://linear.app/oauth/authorize?")
-      assert String.contains?(url, "client_id=test_linear_client_id")
-      assert String.contains?(url, "redirect_uri=http%3A%2F%2Flocalhost%3A4002%2Fauth%2Flinear%2Fcallback")
+      config = Application.fetch_env!(:rail, :linear_oauth)
+      assert String.contains?(url, "client_id=#{config[:client_id]}")
+
+      assert String.contains?(
+               url,
+               "redirect_uri=#{URI.encode_www_form(RailWeb.Endpoint.url() <> "/auth/linear/callback")}"
+             )
+
       assert String.contains?(url, "response_type=code")
       assert String.contains?(url, "actor=user")
       assert String.contains?(url, "scope=read%2Cwrite%2Cissues%3Acreate%2Ccomments%3Acreate")
@@ -31,13 +37,11 @@ defmodule Rail.Linear.ClientTest do
       url =
         Client.authorize_url(
           client_id: "custom_client",
-          redirect_uri: "https://example.com/callback",
           state: "csrf_state_123",
           scope: "read"
         )
 
       assert String.contains?(url, "client_id=custom_client")
-      assert String.contains?(url, "redirect_uri=https%3A%2F%2Fexample.com%2Fcallback")
       assert String.contains?(url, "state=csrf_state_123")
       assert String.contains?(url, "scope=read")
     end

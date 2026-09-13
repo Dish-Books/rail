@@ -38,7 +38,7 @@ defmodule RailWeb.LinearAuthControllerTest do
       assert String.contains?(redirect_url, "response_type=code")
       assert String.contains?(redirect_url, "actor=user")
       assert String.contains?(redirect_url, "scope=read%2Cwrite%2Cissues%3Acreate%2Ccomments%3Acreate")
-      assert String.contains?(redirect_url, "client_id=test_linear_client_id")
+      assert String.contains?(redirect_url, "client_id=#{Application.fetch_env!(:rail, :linear_oauth)[:client_id]}")
       assert get_session(conn, :linear_oauth_state)
     end
 

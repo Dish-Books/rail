@@ -88,7 +88,7 @@ defmodule Rail.Roles.Schemas.Role do
     :project_id,
     :reasoning_effort,
     :stage,
-    :system_prompt,
+    :system_prompt
   ]
 
   @required_fields [
@@ -117,5 +117,4 @@ defmodule Rail.Roles.Schemas.Role do
     |> foreign_key_constraint(:project_id)
     |> foreign_key_constraint(:backend_id)
   end
-
 end

@@ -22,7 +22,7 @@ defmodule Rail.Linear.Client do
 
   @default_authorize_url "https://linear.app/oauth/authorize"
   @default_token_url "https://api.linear.app/oauth/token"
-  @default_graphql_url "https://api.linear.app/graphql"
+  @graphql_url "https://api.linear.app/graphql"
   @default_scope "read,write,issues:create,comments:create"
   @page_size 100
 
@@ -56,7 +56,7 @@ defmodule Rail.Linear.Client do
       [
         {"response_type", "code"},
         {"client_id", Keyword.get(opts, :client_id, cfg[:client_id])},
-        {"redirect_uri", Keyword.get(opts, :redirect_uri, cfg[:redirect_uri])},
+        {"redirect_uri", redirect_uri()},
         {"actor", "user"},
         {"scope", Keyword.get(opts, :scope, @default_scope)}
       ]
@@ -74,7 +74,7 @@ defmodule Rail.Linear.Client do
       code: code,
       client_id: Keyword.get(opts, :client_id, cfg[:client_id]),
       client_secret: Keyword.get(opts, :client_secret, cfg[:client_secret]),
-      redirect_uri: Keyword.get(opts, :redirect_uri, cfg[:redirect_uri])
+      redirect_uri: redirect_uri()
     ]
 
     case Req.post(build_req(opts), url: @default_token_url, form: form) do
@@ -247,6 +247,8 @@ defmodule Rail.Linear.Client do
 
   defp oauth_config, do: Application.get_env(:rail, :linear_oauth, [])
 
+  defp redirect_uri, do: RailWeb.Endpoint.url() <> "/auth/linear/callback"
+
   defp token(target, opts) do
     case opts[:as] do
       %Scope{user: %{}} = scope -> user_token(scope, target)
@@ -286,10 +288,8 @@ defmodule Rail.Linear.Client do
   defp workspace_token(_fallback), do: {:error, :no_workspace_token}
 
   defp execute_query(token, query, variables, opts) do
-    graphql_url = Keyword.get(opts, :graphql_url, Keyword.get(config(), :graphql_url, @default_graphql_url))
-
     case Req.post(build_req(opts),
-           url: graphql_url,
+           url: @graphql_url,
            auth: {:bearer, token},
            json: %{query: query, variables: variables}
          ) do
