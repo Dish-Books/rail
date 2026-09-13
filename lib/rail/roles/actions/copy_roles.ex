@@ -3,24 +3,11 @@ defmodule Rail.Roles.Actions.CopyRoles do
 
   import Ecto.Query
 
-  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
 
-  def copy_roles(scope, target_project_or_id, source_project_id, opts \\ []) when is_binary(source_project_id) do
-    target_project_id = extract_project_id(target_project_or_id)
-    execute_copy(scope, target_project_id, source_project_id, opts)
-  end
-
-  defp extract_project_id(%Project{id: id}), do: id
-  defp extract_project_id(id) when is_binary(id), do: id
-  defp extract_project_id(_other), do: nil
-
-  defp execute_copy(_scope, nil, _source_project_id, _opts) do
-    {:error, :target_project_not_found}
-  end
-
-  defp execute_copy(_scope, target_project_id, source_project_id, opts) do
+  def copy_roles(_scope, target_project_id, source_project_id, opts)
+      when is_binary(target_project_id) and is_binary(source_project_id) do
     source_roles = Rail.Roles.list_roles(source_project_id)
     replace_all = Keyword.get(opts, :replace_all, false)
 
