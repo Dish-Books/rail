@@ -10,8 +10,6 @@ defmodule Rail.Tools.Actions.TerminateOsProcess do
   Terminates an OS process with SIGTERM, waiting up to `:grace_period`
   milliseconds, and escalates to SIGKILL if it is still alive.
   """
-  def terminate_os_process(pid, opts \\ [])
-
   def terminate_os_process(pid, opts) when is_integer(pid) and pid > 0 do
     kill(pid, "TERM")
 
