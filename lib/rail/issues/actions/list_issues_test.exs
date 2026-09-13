@@ -195,4 +195,34 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     assert %{issues: [%Issue{task: %Task{id: ^task_id, runs: []}}]} =
              Issues.list_issues(preload: [task: :runs])
   end
+
+  test "list_issues narrows to the issues a user owns", %{project: project} do
+    {:ok, %{id: owner_id}} =
+      Rail.Users.register_oauth_user(%{github_id: "gh_list_owner", login: "list_owner", email: "list_owner@example.com"})
+
+    %Issue{id: mine_id} =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        external_id: "lin_o1",
+        identifier: "LI1-50",
+        title: "Mine",
+        state: :backlog,
+        owner_user_id: owner_id
+      })
+      |> Repo.insert!()
+
+    %Issue{}
+    |> Issue.changeset(%{
+      project_id: project.id,
+      external_id: "lin_o2",
+      identifier: "LI1-51",
+      title: "Not mine",
+      state: :backlog
+    })
+    |> Repo.insert!()
+
+    assert %{issues: [%Issue{id: ^mine_id}], total: 1} = Issues.list_issues(owner_user_id: owner_id)
+    assert %{total: 2} = Issues.list_issues()
+  end
 end

@@ -9,8 +9,8 @@ defmodule Rail.Issues.Actions.ListIssues do
   @doc """
   Lists a page of issues along with how many match in all.
 
-  Options: `:project_id`, `:state`, `:show_finished`, `:search`, `:priority`,
-  `:limit`, `:offset` and `:preload`.
+  Options: `:project_id`, `:owner_user_id`, `:state`, `:show_finished`, `:search`,
+  `:priority`, `:limit`, `:offset` and `:preload`.
 
   Returns `%{issues: [...], total: n, priority_counts: %{priority => n}}`.
   `total` is every issue the filters match, not just the page. The priority
@@ -20,6 +20,7 @@ defmodule Rail.Issues.Actions.ListIssues do
     matching =
       Issue
       |> filter_project(opts[:project_id])
+      |> filter_owner(opts[:owner_user_id])
       |> filter_state(opts[:state])
       |> filter_finished(Keyword.get(opts, :show_finished, false))
       |> filter_search(opts[:search])
@@ -45,6 +46,9 @@ defmodule Rail.Issues.Actions.ListIssues do
 
   defp filter_project(query, nil), do: query
   defp filter_project(query, project_id), do: where(query, [i], i.project_id == ^project_id)
+
+  defp filter_owner(query, nil), do: query
+  defp filter_owner(query, user_id), do: where(query, [i], i.owner_user_id == ^user_id)
 
   defp filter_state(query, nil), do: query
   defp filter_state(query, state), do: where(query, [i], i.state == ^state)

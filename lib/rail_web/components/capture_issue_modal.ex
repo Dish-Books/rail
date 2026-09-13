@@ -24,7 +24,8 @@ defmodule RailWeb.Components.CaptureIssueModal do
   def open(js \\ %JS{}), do: JS.push(js, "open", target: "##{@id}")
 
   def mount(socket) do
-    {:ok, socket |> assign(:open, false) |> reset_form(nil)}
+    socket = socket |> assign(:open, false) |> reset_form(nil)
+    {:ok, socket}
   end
 
   def update(assigns, socket) do
@@ -43,7 +44,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
       |> assign(:can_submit, String.trim(assigns.title) != "")
 
     ~H"""
-    <div id={id()}>
+    <div id={id()} class="contents">
       <div
         :if={@open}
         id="capture-idea-dialog"
@@ -215,7 +216,8 @@ defmodule RailWeb.Components.CaptureIssueModal do
   end
 
   def handle_event("close", _params, socket) do
-    {:noreply, socket |> assign(:open, false) |> reset_form(nil)}
+    socket = socket |> assign(:open, false) |> reset_form(nil)
+    {:noreply, socket}
   end
 
   def handle_event("change", params, socket) do
@@ -229,7 +231,7 @@ defmodule RailWeb.Components.CaptureIssueModal do
     with false <- String.trim(title) == "",
          %{} = project <- Enum.find(socket.assigns.projects, &(&1.id == project_id)) do
       case Issues.create_issue(project, %{title: title, description: description, priority: priority}) do
-        {:ok, _issue} -> {:noreply, socket |> assign(:open, false) |> reset_form(nil)}
+        {:ok, _issue} -> {:noreply, close(socket)}
         {:error, reason} -> {:noreply, assign(socket, :error, error_message(reason))}
       end
     else
@@ -237,6 +239,8 @@ defmodule RailWeb.Components.CaptureIssueModal do
       nil -> {:noreply, assign(socket, :error, "Project not found")}
     end
   end
+
+  defp close(socket), do: socket |> assign(:open, false) |> reset_form(nil)
 
   defp assign_form(socket, params) do
     socket

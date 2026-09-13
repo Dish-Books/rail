@@ -116,7 +116,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#new-issue-modal")
   end
 
-  test "renders issue cards with all attributes, badges, full body, and worktree", %{
+  test "renders an issue as a row with its identifier, title, priority, status, points, assignee and links", %{
     conn: conn
   } do
     {:ok, user} =
@@ -175,30 +175,22 @@ defmodule RailWeb.IssuesLiveTest do
         priority: :urgent,
         state: :in_progress,
         branch_name: "feat-demo-101",
-        url: "https://linear.app/demo/issue/DEMO-101"
+        url: "https://linear.app/demo/issue/DEMO-101",
+        estimate: 3,
+        owner_user_id: user.id
       })
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
     assert has_element?(view, "#issue-card-#{issue.id}")
     assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-identifier']", "DEMO-101")
-    assert has_element?(view, "#issue-card-#{issue.id} [data-qa='project-badge']", "DEMO")
+    assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-estimate']", "3")
+    assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-assignee'][title='issues_live_user_4']")
+    refute has_element?(view, "#issue-card-#{issue.id} [data-qa='project-badge']")
     assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-external-link']")
     assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-title']", "Demo title")
     assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-priority-badge']", "Urgent")
     assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-status-badge']", "In Progress")
-
-    assert has_element?(
-             view,
-             "#issue-card-#{issue.id} [data-qa='issue-body']",
-             ~r/Demo title\s+Detailed explanation of the issue\./
-           )
-
-    assert has_element?(
-             view,
-             "#issue-card-#{issue.id} [data-qa='issue-worktree']",
-             "Dedicated Worktree: .worktrees/feat-demo-101"
-           )
 
     assert has_element?(view, "#start-product-run-#{issue.id}", "Start")
   end
@@ -372,6 +364,63 @@ defmodule RailWeb.IssuesLiveTest do
     view |> element("#filter-priority-all") |> render_click(%{"priority" => "invalid_prio"})
     assert has_element?(view, "#issue-card-#{issue_urgent.id}")
     assert has_element?(view, "#issue-card-#{issue_high_1.id}")
+  end
+
+  test "My issues shows only the issues the signed-in user owns", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_mine",
+        login: "issues_live_user_mine",
+        email: "issues_live_user_mine@example.com",
+        admin: true
+      })
+
+    {:ok, project} =
+      Projects.create_project(Scope.for_user(user), %{
+        name: "Mine Project",
+        github_repo: "example/mine-project",
+        github_installation_id: 709,
+        linear_team_key: "MIN",
+        default_branch: "main",
+        clone_path: "/tmp/mine-project",
+        active: true
+      })
+
+    mine =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        external_id: "lin_mine_1",
+        identifier: "MIN-1",
+        title: "Mine",
+        state: :backlog,
+        owner_user_id: user.id
+      })
+      |> Repo.insert!()
+
+    theirs =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project.id,
+        external_id: "lin_mine_2",
+        identifier: "MIN-2",
+        title: "Theirs",
+        state: :backlog
+      })
+      |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
+    assert has_element?(view, "#issue-card-#{theirs.id}")
+
+    view |> element("#issues-mine") |> render_click()
+    assert_patched(view, ~p"/issues?mine=true")
+    assert has_element?(view, "#issue-card-#{mine.id}")
+    refute has_element?(view, "#issue-card-#{theirs.id}")
+    assert has_element?(view, "#filter-priority-all", "All (1)")
+
+    view |> element("#issues-mine") |> render_click()
+    assert_patched(view, ~p"/issues")
+    assert has_element?(view, "#issue-card-#{theirs.id}")
   end
 
   test "toggles Show finished filter chip", %{conn: conn} do

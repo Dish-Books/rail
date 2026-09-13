@@ -46,6 +46,7 @@ defmodule RailWeb.IssuesLive do
       |> assign(:search, params["q"] || "")
       |> assign(:filter_priority, Enum.find(Issue.priorities(), &(to_string(&1) == params["priority"])))
       |> assign(:show_finished, params["finished"] == "true")
+      |> assign(:mine, params["mine"] == "true")
       |> assign(:page, page_number(params["page"]))
       |> load_project(project_id)
       |> reload_data()
@@ -165,6 +166,25 @@ defmodule RailWeb.IssuesLive do
 
           <div class="h-4 w-px bg-slate-300 dark:bg-slate-600 mx-1"></div>
 
+          <button
+            type="button"
+            id="issues-mine"
+            data-qa="issues-mine"
+            phx-click="toggle_mine"
+            class={[
+              "px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5",
+              if(@mine,
+                do:
+                  "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border border-blue-600 dark:border-blue-500",
+                else:
+                  "bg-slate-200 dark:bg-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700"
+              )
+            ]}
+          >
+            <.icon :if={@mine} name="pi-check" class="h-3.5 w-3.5" />
+            <span>My issues</span>
+          </button>
+
           <!-- Show finished filter chip -->
           <button
             type="button"
@@ -241,11 +261,14 @@ defmodule RailWeb.IssuesLive do
             :if={@issues != []}
             id="issues-list"
             data-qa="issues-table issues-list"
-            class="space-y-4"
+            class="rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-800 overflow-hidden"
           >
-            <div :for={issue <- @issues}>
-              <.issue_card issue={issue} task={issue.task} run={stage_run(issue.task)} />
-            </div>
+            <.issue_card
+              :for={issue <- @issues}
+              issue={issue}
+              task={issue.task}
+              run={stage_run(issue.task)}
+            />
           </div>
 
           <div
@@ -306,6 +329,10 @@ defmodule RailWeb.IssuesLive do
 
   def handle_event("filter_priority", %{"priority" => priority}, socket) do
     {:noreply, push_patch(socket, to: issues_path(socket.assigns, priority: priority, page: 1))}
+  end
+
+  def handle_event("toggle_mine", _params, socket) do
+    {:noreply, push_patch(socket, to: issues_path(socket.assigns, mine: not socket.assigns.mine, page: 1))}
   end
 
   def handle_event("toggle_show_finished", _params, socket) do
@@ -437,12 +464,13 @@ defmodule RailWeb.IssuesLive do
     %{issues: issues, total: total, priority_counts: priority_counts} =
       Issues.list_issues(
         project_id: assigns.current_project_id,
+        owner_user_id: if(assigns.mine, do: assigns.current_scope.user.id),
         show_finished: assigns.show_finished,
         search: assigns.search,
         priority: assigns.filter_priority,
         limit: @page_size,
         offset: offset,
-        preload: [:project, task: [runs: :role]]
+        preload: [:project, :owner_user, task: [runs: :role]]
       )
 
     last_page = max(div(total + @page_size - 1, @page_size), 1)
@@ -476,6 +504,7 @@ defmodule RailWeb.IssuesLive do
         project: assigns.current_project_id,
         q: assigns.search,
         priority: assigns.filter_priority,
+        mine: assigns.mine,
         finished: assigns.show_finished,
         page: assigns.page
       ]
