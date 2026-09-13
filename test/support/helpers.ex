@@ -15,24 +15,4 @@ defmodule RailTest.Helpers do
     |> Plug.Test.init_test_session(%{})
     |> Plug.Conn.put_session(:user_token, token)
   end
-
-  def wait_until_ticks_clear(server, timeout_ms \\ 1000) do
-    deadline = System.monotonic_time(:millisecond) + timeout_ms
-    do_wait_ticks_clear(server, deadline)
-  end
-
-  defp do_wait_ticks_clear(server, deadline) do
-    case GenServer.call(server, :running_ticks) do
-      [] ->
-        :ok
-
-      _other ->
-        if System.monotonic_time(:millisecond) < deadline do
-          Process.sleep(10)
-          do_wait_ticks_clear(server, deadline)
-        else
-          :timeout
-        end
-    end
-  end
 end

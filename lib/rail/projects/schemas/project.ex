@@ -2,6 +2,7 @@ defmodule Rail.Projects.Schemas.Project do
   @moduledoc false
   use Rail.Schema
 
+  alias Rail.Git
   alias Rail.Linear.Client, as: Linear
   alias Rail.Projects.Schemas.LinearWorkspace
 
@@ -46,9 +47,15 @@ defmodule Rail.Projects.Schemas.Project do
     project
     |> cast(attrs, @fields)
     |> validate_required(@required_fields)
+    |> validate_change(:clone_path, &validate_clone_path/2)
     |> cast_assoc(:linear_workspace)
     |> unique_constraint(:github_repo)
     |> put_linear_team_id()
+  end
+
+  # Every worktree is added from this checkout, so it has to be the root of one.
+  defp validate_clone_path(:clone_path, path) do
+    if Git.git_repo?(path), do: [], else: [clone_path: "is not a git repository"]
   end
 
   # People know a Linear team by its key; Linear's API wants its id, and the ids

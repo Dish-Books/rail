@@ -22,6 +22,7 @@ defmodule Rail.DataCase do
 
       setup :verify_on_exit!
       setup :stub_agent_spawn
+      setup :stub_git_repo_check
     end
   end
 
@@ -58,6 +59,19 @@ defmodule Rail.DataCase do
 
     Mimic.stub(Rail.Tools, :os_process_alive?, fn _os_pid -> false end)
     Mimic.stub(Rail.Tools, :terminate_os_process, fn _os_pid, _opts -> :ok end)
+
+    :ok
+  end
+
+  @doc """
+  Lets a project be saved with any `clone_path`.
+
+  A project's checkout is only read when a worktree is made from it, so a test
+  that never makes one has no reason to put a repository on disk. A test about
+  the check overrides it with its own `expect/3`.
+  """
+  def stub_git_repo_check(_context) do
+    Mimic.stub(Rail.Git, :git_repo?, fn _path -> true end)
 
     :ok
   end

@@ -13,8 +13,8 @@ defmodule Rail.Pipeline do
   defdelegate run_finished(os_process, outcome \\ %{}, opts \\ []), to: Actions.RunFinished
 
   defdelegate enter_stage(task, stage, opts \\ []), to: Actions.EnterStage
+  defdelegate start_product_run(issue), to: Actions.StartProductRun
   defdelegate approve_product_plan(run, opts \\ []), to: Actions.ApproveProductPlan
-  defdelegate start_product_run(task), to: Actions.StartProductRun
 
   defdelegate create_task(issue, stage), to: Actions.CreateTask
   defdelegate list_tasks(opts \\ []), to: Actions.ListTasks

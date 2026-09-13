@@ -1,10 +1,10 @@
 defmodule Rail.Pipeline.Actions.StartProductRun do
   @moduledoc """
-  Starts the product stage for a task, end to end.
+  Starts the product stage for an issue, end to end.
 
-  Everything the product stage needs lives here: the worktree, the scratch ticket
-  file the agent reads and writes, the brief describing that file, and the spawned
-  run.
+  Everything the product stage needs lives here: the task, the worktree, the
+  scratch ticket file the agent reads and writes, the brief describing that file,
+  and the spawned run.
   """
 
   import Rail.Pipeline.Utils.FormatTicket
@@ -20,20 +20,38 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
   alias Rail.Tools
 
   @doc """
-  Starts the product stage for `task`.
+  Creates the task for `issue` and starts its product stage.
+
+  The task is only kept once its run is recorded: a project with no product role,
+  or a checkout no worktree can be made in, leaves the issue without a task so it
+  can be started again. A run that is recorded but fails to spawn keeps its task,
+  with the failure on the run.
 
   Returns `{:ok, os_process}` with its `:run` and `:task` loaded.
   """
-  def start_product_run(%Task{} = task) do
-    %Task{project: %Project{} = project} = task = Repo.preload(task, [:project, :issue])
-
-    write_scratch(task)
+  def start_product_run(%Issue{} = issue) do
+    %Issue{project: %Project{} = project} = issue = Repo.preload(issue, :project)
 
     with {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :product),
-         {:ok, worktree_path} <- ensure_worktree(project, task),
-         {:ok, run} <- Pipeline.start_or_resume_run(task, role, worktree_path) do
+         {:ok, {task, run, worktree_path}} <- record_run(issue, project, role) do
+      write_scratch(task)
       spawn_os_process(task, role, run, worktree_path)
     end
+  end
+
+  # The spawn reads the run from another process, so it has to wait for the
+  # commit; everything before it rolls back together.
+  defp record_run(%Issue{} = issue, %Project{} = project, %Role{} = role) do
+    Repo.transaction(fn ->
+      with {:ok, task} <- Pipeline.create_task(issue, :product),
+           task = Repo.preload(task, [:project, :issue]),
+           {:ok, worktree_path} <- ensure_worktree(project, task),
+           {:ok, run} <- Pipeline.start_or_resume_run(task, role, worktree_path) do
+        {task, run, worktree_path}
+      else
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
   end
 
   defp ensure_worktree(%Project{} = project, %Task{} = task) do

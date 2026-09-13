@@ -142,6 +142,14 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert has_element?(view, "#project-name-error", "can't be blank")
     assert has_element?(view, "#project-github-repo-error", "can't be blank")
 
+    expect(Rail.Git, :git_repo?, fn "/tmp/not-a-checkout" -> false end)
+
+    view
+    |> form("#project-form", %{"project" => %{"clone_path" => "/tmp/not-a-checkout"}})
+    |> render_change()
+
+    assert render(view) =~ "is not a git repository"
+
     # Submit with valid inputs
     id = System.unique_integer([:positive])
     repo = "example/created-#{id}"

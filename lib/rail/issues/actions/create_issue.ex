@@ -67,7 +67,8 @@ defmodule Rail.Issues.Actions.CreateIssue do
         Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_created, issue.id})
         {:ok, %{issue | project: project}}
 
-      {:error, changeset} -> {:error, changeset}
+      {:error, changeset} ->
+        {:error, changeset}
     end
   end
 end

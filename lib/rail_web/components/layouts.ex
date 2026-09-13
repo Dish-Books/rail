@@ -57,6 +57,24 @@ defmodule RailWeb.Layouts do
           {render_slot(@inner_block)}
         </main>
       </div>
+
+      <div class="fixed top-16 right-5 z-50 space-y-2 max-w-sm">
+        <div
+          :for={{kind, message} <- @flash}
+          id={"flash-#{kind}"}
+          role="alert"
+          phx-click={Phoenix.LiveView.JS.push("lv:clear-flash", value: %{key: kind})}
+          class={[
+            "px-4 py-3 rounded-xl border text-sm shadow-lg cursor-pointer",
+            kind == "error" &&
+              "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 text-red-800 dark:text-red-200",
+            kind != "error" &&
+              "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+          ]}
+        >
+          {message}
+        </div>
+      </div>
     </div>
     """
   end

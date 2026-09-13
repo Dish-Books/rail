@@ -4,11 +4,17 @@ defmodule RailWeb.IssueLiveTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Git
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.SyncIssue
+  alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Roles
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
   setup %{conn: conn} do
@@ -123,7 +129,27 @@ defmodule RailWeb.IssueLiveTest do
       })
       |> Repo.insert!()
 
+    {:ok, backend} =
+      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
+    {:ok, _role} =
+      Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
+        stage: :product,
+        name: "product role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the product agent."
+      })
+
+    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv ->
+      {:ok, %OsProcess{task_id: run.task_id, run: run}}
+    end)
+
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Git, self(), view.pid)
+    allow(Tools, self(), view.pid)
 
     assert has_element?(view, "#issue-description", "No description")
     assert has_element?(view, "#issue-owner", "Unassigned")
@@ -132,7 +158,29 @@ defmodule RailWeb.IssueLiveTest do
     view |> element("#issue-start-product-run") |> render_click()
 
     refute has_element?(view, "#issue-start-product-run")
-    assert has_element?(view, "#issue-task-link")
+    assert has_element?(view, "#issue-task-link", "Product running")
+  end
+
+  test "an issue that cannot be started says why and keeps no task", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_6",
+        identifier: "IPG-11",
+        title: "No product role",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    view |> element("#issue-start-product-run") |> render_click()
+
+    assert has_element?(view, "#flash-error", "This project has no product role.")
+    assert has_element?(view, "#issue-start-product-run")
+    refute has_element?(view, "#issue-task-link")
+    refute Repo.get_by(Task, issue_id: issue.id)
   end
 
   test "shows comment threads with their replies, and refreshes when a comment arrives", %{

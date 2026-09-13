@@ -9,6 +9,7 @@ defmodule Rail.Git do
 
   alias Rail.Git.Actions
 
+  defdelegate git_repo?(path), to: Actions.GitRepo
   defdelegate ensure_clone(clone_url, clone_path), to: Actions.EnsureClone
   defdelegate get_or_create_worktree(project, task), to: Actions.GetOrCreateWorktree
   defdelegate remove_worktree(repo_path, worktree_path, opts \\ []), to: Actions.RemoveWorktree

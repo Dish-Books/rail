@@ -74,34 +74,31 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
     {:ok, issue} =
       Issues.create_issue(system_scope(), project, %{description: "Attachments follow their source document"})
 
-    {:ok, task} = Pipeline.create_task(issue, :product)
-
-    %{scope: scope, project: project, role: role, issue: issue, task: task}
+    %{scope: scope, project: project, role: role, issue: issue}
   end
 
-  test "starts the product run for a task", %{
+  test "creates the task for an issue and starts its product run", %{
     role: %Role{id: role_id},
-    issue: issue,
-    task: %Task{id: task_id} = task
+    issue: %Issue{id: issue_id} = issue
   } do
-    expect(Tools, :start_os_process, fn %Run{task_id: ^task_id, role_id: ^role_id, status: :running} = run, argv ->
+    expect(Tools, :start_os_process, fn %Run{role_id: ^role_id, status: :running} = run, argv ->
       assert ["-p", prompt, "--model", "claude-3-7-sonnet", "--effort", "high" | _flags] = argv
       assert prompt =~ "tickets/#{issue.identifier}.md"
       assert "--system-prompt" in argv
 
-      {:ok, %OsProcess{task_id: task_id, run: run, task: task}}
+      {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
     end)
 
     assert {:ok,
             %OsProcess{
-              task_id: ^task_id,
-              task: %Task{id: ^task_id},
-              run: %Run{task_id: ^task_id, role_id: ^role_id}
+              task_id: task_id,
+              task: %Task{id: task_id, issue_id: ^issue_id},
+              run: %Run{task_id: task_id, role_id: ^role_id}
             }} =
-             Pipeline.start_product_run(task)
+             Pipeline.start_product_run(issue)
 
-    assert %Task{worktree_path: worktree_path} = Repo.get!(Task, task_id)
-    assert byte_size(worktree_path) > 0
+    assert %Task{worktree_path: worktree_path} = task = Repo.get!(Task, task_id)
+    assert File.dir?(worktree_path)
 
     content =
       task.scratch_path
@@ -112,7 +109,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
     assert content =~ "priority: medium"
   end
 
-  test "leaves the owner on the issue the task links to", %{issue: issue, task: task} do
+  test "leaves the owner on the issue the task links to", %{issue: issue} do
     {:ok, %User{id: user_id}} =
       Users.register_oauth_user(%{
         github_id: "gh_start_product_1",
@@ -120,39 +117,35 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
         email: "start_product_user@example.com"
       })
 
-    {:ok, %Issue{id: issue_id}} =
+    {:ok, %Issue{id: issue_id} = issue} =
       issue |> Issue.changeset(%{owner_user_id: user_id}) |> Repo.update()
 
     expect(Tools, :start_os_process, fn %Run{} = run, _argv ->
-      {:ok, %OsProcess{task_id: task.id, run: run, task: task}}
+      {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
     end)
 
     assert {:ok, %OsProcess{task: %Task{issue_id: ^issue_id, stage: :product} = task}} =
-             Pipeline.start_product_run(task)
+             Pipeline.start_product_run(issue)
 
     # The owner lives on the issue; the task only links to it.
     assert %Issue{owner_user_id: ^user_id} = Repo.get!(Issue, task.issue_id)
   end
 
-  test "returns role_not_found when the project has no product role", %{role: role, task: task} do
+  test "keeps no task when the project has no product role", %{role: role, issue: issue} do
     {:ok, _deleted} = Roles.delete_role(system_scope(), role)
 
-    assert {:error, :role_not_found} = Pipeline.start_product_run(task)
+    assert {:error, :role_not_found} = Pipeline.start_product_run(issue)
+
+    refute Repo.exists?(from t in Task, where: t.issue_id == ^issue.id)
   end
 
-  test "returns worktree_failed when the worktree cannot be created", %{
-    project: project,
-    task: %Task{id: task_id} = task
-  } do
-    not_a_repo = Path.join("/tmp", "not_a_repo_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(not_a_repo)
-    on_exit(fn -> File.rm_rf(not_a_repo) end)
+  test "keeps no task when the worktree cannot be created", %{project: project, issue: issue} do
+    # The checkout stops being one after the project was saved.
+    File.rm_rf!(Path.join(project.clone_path, ".git"))
 
-    {:ok, _broken_project} = Projects.update_project(system_scope(), project, %{clone_path: not_a_repo})
+    assert {:error, {:worktree_failed, _reason}} = Pipeline.start_product_run(issue)
 
-    assert {:error, {:worktree_failed, _reason}} = Pipeline.start_product_run(task)
-
-    assert %Task{} = Repo.get!(Task, task_id)
-    refute Repo.exists?(from r in Run, where: r.task_id == ^task_id)
+    refute Repo.exists?(from t in Task, where: t.issue_id == ^issue.id)
+    refute Repo.exists?(Run)
   end
 end

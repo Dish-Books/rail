@@ -290,9 +290,11 @@ defmodule RailWeb.IssueLive do
   end
 
   def handle_event("start_product_run", _params, socket) do
-    with {:ok, task} <- Pipeline.create_task(socket.assigns.issue, :product) do
-      Pipeline.start_product_run(task)
-    end
+    socket =
+      case Pipeline.start_product_run(socket.assigns.issue) do
+        {:ok, _os_process} -> socket
+        {:error, reason} -> put_flash(socket, :error, start_error(reason))
+      end
 
     {:noreply, load_issue(socket, socket.assigns.issue.id)}
   end
@@ -458,6 +460,12 @@ defmodule RailWeb.IssueLive do
       true -> "#{div(seconds, 86_400)}d ago"
     end
   end
+
+  defp start_error(:role_not_found), do: "This project has no product role."
+  defp start_error({:worktree_failed, reason}), do: "Could not create the worktree: #{reason}"
+  defp start_error({:spawn_failed, reason, _run}), do: "Could not start the agent: #{inspect(reason)}"
+  defp start_error(:dispatch_disabled), do: "Dispatch is switched off, so no agent was started."
+  defp start_error(reason), do: "Could not start: #{inspect(reason)}"
 
   # Where the task got to is what the run for the stage it sits at says.
   defp stage_run(%{runs: runs, stage: stage}) do

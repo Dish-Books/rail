@@ -53,6 +53,24 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
            } = errors_on(changeset)
   end
 
+  test "rejects a clone_path that is not a git repository" do
+    scope = Scope.for_user(%{admin: true})
+
+    expect(Rail.Git, :git_repo?, fn "/tmp/not-a-checkout" -> false end)
+
+    attrs = %{
+      name: "Not A Checkout",
+      github_repo: "example/not-a-checkout-#{System.unique_integer([:positive])}",
+      github_installation_id: 44_444,
+      linear_team_key: "NAC",
+      default_branch: "main",
+      clone_path: "/tmp/not-a-checkout"
+    }
+
+    assert {:error, changeset} = Projects.create_project(scope, attrs)
+    assert %{clone_path: ["is not a git repository"]} = errors_on(changeset)
+  end
+
   test "returns error changeset on duplicate github_repo" do
     scope = Scope.for_user(%{admin: true})
     repo = "example/dupe-repo-#{System.unique_integer([:positive])}"
