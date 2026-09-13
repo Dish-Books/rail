@@ -1,6 +1,7 @@
 defmodule RailWeb.TaskLive do
   @moduledoc """
-  One task: the ticket its product run wrote, and the conversation with it.
+  One task: the ticket its product run wrote, and the conversation with it in a
+  sidebar.
 
   Only the product stage is driven today, so the page is the product stage and
   the chat, and nothing else. The run each of them works on is the run for the
@@ -12,13 +13,12 @@ defmodule RailWeb.TaskLive do
   """
   use RailWeb, :live_view
 
-  import RailWeb.CoreComponents, only: [answer_field: 1, icon: 1, project_badge: 1]
+  import RailWeb.Components.TaskLayout
+  import RailWeb.CoreComponents, only: [answer_field: 1]
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias RailWeb.Components.RunState
-  alias RailWeb.Components.StageLabel
   alias RailWeb.Live.ProductStage
   alias RailWeb.Live.RunConversation
 
@@ -52,7 +52,7 @@ defmodule RailWeb.TaskLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} {assigns}>
-      <div class="max-w-screen-2xl mx-auto px-6 py-6 space-y-6" id="task-page" data-qa="task-page">
+      <div id="task-page" data-qa="task-page" class="contents">
         <div
           :if={@task == nil}
           id="task-cleaned-up"
@@ -64,110 +64,48 @@ defmodule RailWeb.TaskLive do
           </p>
         </div>
 
-        <div :if={@task != nil} class="space-y-6">
-          <div id="task-header" data-qa="task-header" class="space-y-3">
-            <div class="flex items-center gap-3">
-              <.project_badge project={@task.project} />
-              <h1
-                class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 truncate"
-                id="task-detail-title"
-                data-qa="task_detail_title"
-              >
-                {@task.issue && @task.issue.title}
-              </h1>
-            </div>
+        <.live_component
+          :if={@task != nil and @task.stage == :product and @selected_run != nil}
+          module={ProductStage}
+          id="product-stage-component"
+          task={@task}
+          run={@selected_run}
+        >
+          <:actions>
+            <.cleanup_button cleaning_up={@cleaning_up} />
+          </:actions>
+          <:sidebar>
+            <.conversation_sidebar
+              task={@task}
+              roles_map={@roles_map}
+              blocked?={@blocked?}
+              pending_question={@pending_question}
+              pending_questions={@pending_questions}
+              answer_text={@answer_text}
+            />
+          </:sidebar>
+        </.live_component>
 
-            <div class="flex items-center flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
-              <span
-                :if={@selected_run != nil}
-                id="task-status-chip"
-                data-qa="task_status_chip"
-                class={[
-                  "inline-flex items-center gap-1.5 font-semibold",
-                  RunState.color_class(@selected_run)
-                ]}
-              >
-                <.icon name={RunState.icon(@selected_run)} />
-                {StageLabel.stage_label(@task, @selected_run)}
-              </span>
-
-              <span :if={@task.issue} data-qa="task_issue_identifier">{@task.issue.identifier}</span>
-              <span data-qa="task_branch_name" class="font-mono">{@task.worktree_name}</span>
-
-              <button
-                type="button"
-                id="cleanup-task"
-                data-qa="cleanup_task"
-                phx-click="cleanup"
-                disabled={@cleaning_up}
-                class="ml-auto px-3 py-1 rounded-full border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
-              >
-                {if @cleaning_up, do: "Cleaning up…", else: "Clean up"}
-              </button>
-            </div>
-
-            <p
-              :if={@selected_run != nil and is_binary(@selected_run.error)}
-              id="task-error-card"
-              data-qa="task_error_card"
-              class="rounded-xl border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950 p-3 text-xs text-red-700 dark:text-red-300"
-            >
-              {@selected_run.error}
-            </p>
-          </div>
-
-          <!-- The conversation on the left, the ticket it is producing on the right. -->
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-            <div id="task-conversation-column" class="min-w-0 space-y-6">
-              <.answer_field
-                :if={@pending_question != nil}
-                question={@pending_question}
-                questions={@pending_questions}
-                answer_text={@answer_text}
-              />
-
-              <!-- Answering only records. The round reaches the agent when the human says it is done. -->
-              <div
-                :if={@blocked? and @pending_question == nil}
-                id="send-answers-panel"
-                data-qa="send_answers_panel"
-                class="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-4"
-              >
-                <span class="text-xs text-slate-500 dark:text-slate-400">
-                  Every question is answered.
-                </span>
-
-                <button
-                  type="button"
-                  id="send-answers-button"
-                  data-qa="send-answers-button"
-                  phx-click="send_answers"
-                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs"
-                >
-                  Send answers
-                </button>
-              </div>
-
-              <.live_component
-                module={RunConversation}
-                id="run-conversation"
-                task={@task}
-                runs={@task.runs || []}
-                roles_map={@roles_map}
-              />
-            </div>
-
-            <div id="task-ticket-column" class="min-w-0 lg:sticky lg:top-6">
-              <.live_component
-                :if={@task.stage == :product and @selected_run != nil}
-                module={ProductStage}
-                id="product-stage-component"
-                task={@task}
-                run={@selected_run}
-              />
-            </div>
-          </div>
-        </div>
+        <.task_layout
+          :if={@task != nil and not (@task.stage == :product and @selected_run != nil)}
+          task={@task}
+          run={@selected_run}
+          title={@task.issue && @task.issue.title}
+        >
+          <:actions>
+            <.cleanup_button cleaning_up={@cleaning_up} />
+          </:actions>
+          <:sidebar>
+            <.conversation_sidebar
+              task={@task}
+              roles_map={@roles_map}
+              blocked?={@blocked?}
+              pending_question={@pending_question}
+              pending_questions={@pending_questions}
+              answer_text={@answer_text}
+            />
+          </:sidebar>
+        </.task_layout>
       </div>
     </Layouts.app>
     """
@@ -250,6 +188,74 @@ defmodule RailWeb.TaskLive do
     socket = socket |> assign(:cleaning_up, false) |> refresh_task()
 
     {:noreply, socket}
+  end
+
+  attr :cleaning_up, :boolean, required: true
+
+  defp cleanup_button(assigns) do
+    ~H"""
+    <button
+      type="button"
+      id="cleanup-task"
+      data-qa="cleanup_task"
+      phx-click="cleanup"
+      data-confirm="Clean up this task? Its worktree and scratch files will be deleted."
+      disabled={@cleaning_up}
+      class="px-4 py-2 rounded-lg border border-red-300 dark:border-red-800 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 cursor-pointer disabled:opacity-50"
+    >
+      {if @cleaning_up, do: "Cleaning up…", else: "Clean up"}
+    </button>
+    """
+  end
+
+  attr :task, :any, required: true
+  attr :roles_map, :map, required: true
+  attr :blocked?, :boolean, required: true
+  attr :pending_question, :any, required: true
+  attr :pending_questions, :list, required: true
+  attr :answer_text, :string, required: true
+
+  # Questions sit above the conversation they came out of.
+  defp conversation_sidebar(assigns) do
+    ~H"""
+    <div :if={@pending_question != nil} class="p-4 border-b border-slate-200 dark:border-slate-700">
+      <.answer_field
+        question={@pending_question}
+        questions={@pending_questions}
+        answer_text={@answer_text}
+      />
+    </div>
+
+    <!-- Answering only records. The round reaches the agent when the human says it is done. -->
+    <div
+      :if={@blocked? and @pending_question == nil}
+      id="send-answers-panel"
+      data-qa="send_answers_panel"
+      class="flex items-center justify-between gap-2 p-4 border-b border-slate-200 dark:border-slate-700"
+    >
+      <span class="text-xs text-slate-500 dark:text-slate-400">
+        Every question is answered.
+      </span>
+
+      <button
+        type="button"
+        id="send-answers-button"
+        data-qa="send-answers-button"
+        phx-click="send_answers"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs"
+      >
+        Send answers
+      </button>
+    </div>
+
+    <.live_component
+      module={RunConversation}
+      id="run-conversation"
+      task={@task}
+      runs={@task.runs || []}
+      roles_map={@roles_map}
+    />
+    """
   end
 
   defp refresh_task(socket) do

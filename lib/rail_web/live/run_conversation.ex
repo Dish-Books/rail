@@ -47,83 +47,58 @@ defmodule RailWeb.Live.RunConversation do
     assigns = assign(assigns, :has_runs, assigns.runs != [])
 
     ~H"""
-    <div id="conversation-tab-root" data-qa="conversation-tab" class="space-y-4">
+    <div
+      id="conversation-tab-root"
+      data-qa="conversation-tab"
+      class="flex flex-col flex-1 min-h-0"
+    >
       <%= if not @has_runs do %>
         <!-- 4.1 Empty State: No role has run this task yet -->
         <div
           id="conversation-empty-state"
           data-qa="conversation_empty_state"
-          class="flex items-center justify-center min-h-[300px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
+          class="flex flex-1 items-center justify-center min-h-[300px] text-center p-8"
         >
           <p class="text-sm font-medium text-slate-500 dark:text-slate-400">
             No role has run this task yet.
           </p>
         </div>
       <% else %>
-        <div class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 overflow-hidden divide-y divide-slate-200 dark:divide-slate-700">
-          <!-- 4.3 Role Selector Row -->
+        <div class="flex flex-col flex-1 min-h-0">
+          <!-- 4.3 Role Selector Row: the run being read, with the others beside it -->
           <div
             id="role-selector-row"
             data-qa="role-selector-row"
-            class="flex items-center justify-between flex-wrap gap-2 px-6 pt-4 pb-3"
+            class="flex items-center flex-wrap gap-x-3 gap-y-2 px-5 py-4 border-b border-slate-200 dark:border-slate-700"
           >
-            <!-- Choice Chips of Ordered Runs -->
-            <div class="flex items-center flex-wrap gap-2">
-              <%= for run <- @runs do %>
-                <% role = resolve_role(run.role_id, @roles_map) %>
-                <% is_selected = @selected_run != nil and @selected_run.id == run.id %>
-                <button
-                  type="button"
-                  id={"role-chip-#{run.role_id}"}
-                  data-qa={"role-chip-#{run.role_id}"}
-                  phx-click="select_role"
-                  phx-target={@myself}
-                  phx-value-role_id={run.role_id}
-                  class={[
-                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer border",
-                    is_selected &&
-                      "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border-blue-600 dark:border-blue-500 shadow-xs",
-                    not is_selected &&
-                      "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600"
-                  ]}
-                >
-                  <.icon name={role.icon_name} class="h-4 w-4 shrink-0" />
-                  <span>{role.name}</span>
-                </button>
-              <% end %>
-            </div>
+            <%= for run <- @runs do %>
+              <% role = resolve_role(run.role_id, @roles_map) %>
+              <% is_selected = @selected_run != nil and @selected_run.id == run.id %>
+              <button
+                type="button"
+                id={"role-chip-#{run.role_id}"}
+                data-qa={"role-chip-#{run.role_id}"}
+                phx-click="select_role"
+                phx-target={@myself}
+                phx-value-role_id={run.role_id}
+                class={[
+                  "inline-flex items-center gap-2 text-sm font-semibold transition-colors cursor-pointer",
+                  is_selected && "text-slate-900 dark:text-slate-100",
+                  not is_selected &&
+                    "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+                ]}
+              >
+                <span class={[
+                  "h-2 w-2 rounded-full shrink-0",
+                  Run.running?(run) && "bg-green-500",
+                  not Run.running?(run) && "bg-slate-400 dark:bg-slate-500"
+                ]} />
+                <span>{role.name}</span>
+              </button>
+            <% end %>
 
-            <!-- Trailing Toggle Button: Raw Log vs Show Chat -->
-            <button
-              type="button"
-              id="toggle-raw-log"
-              data-qa="toggle-raw-log"
-              phx-click="toggle_raw_log"
-              phx-target={@myself}
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-500 dark:border-slate-400 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer shrink-0 ml-auto"
-            >
-              <.icon
-                name={if @show_raw_log, do: "pi-chat-circle", else: "pi-terminal-window"}
-                class="h-4 w-4 shrink-0"
-              />
-              <span>{if @show_raw_log, do: "Show chat", else: "Raw log"}</span>
-            </button>
-          </div>
-
-          <!-- 4.4 Run Metadata Row -->
-          <div
-            :if={@selected_run}
-            id="run-metadata-row"
-            data-qa="run-metadata-row"
-            class="flex items-center flex-wrap gap-4 px-6 py-2.5 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800"
-          >
-            <!-- 1. selected.status name in lowerCamel -->
-            <span id="metadata-run-status" class="font-mono font-semibold">
-              {format_run_status(@selected_run.status)}
-            </span>
-
-            <!-- 2. ElapsedTimeText: ticks only while the run works -->
             <span
+              :if={@selected_run}
               id={"elapsed-run-#{@selected_run.id}"}
               phx-hook="Elapsed"
               data-started-at={
@@ -131,28 +106,14 @@ defmodule RailWeb.Live.RunConversation do
               }
               data-elapsed-seconds={!Run.running?(@selected_run) && elapsed_seconds(@selected_run)}
               data-qa="elapsed-text"
-              class="font-mono"
+              class="ml-auto font-mono text-xs text-slate-500 dark:text-slate-400"
             >
               {format_elapsed_run(@selected_run)}
-            </span>
-
-            <!-- 4. Usage describe -->
-            <span :if={Run.usage(@selected_run)} id="metadata-run-usage">
-              {Run.usage(@selected_run)}
-            </span>
-
-            <!-- 5. Selectable conversation id -->
-            <span
-              :if={is_binary(@selected_run.conversation_id) and @selected_run.conversation_id != ""}
-              id="metadata-run-conversation-id"
-              class="font-mono select-text"
-            >
-              {"conversation #{@selected_run.conversation_id}"}
             </span>
           </div>
 
           <!-- Transcript Area: Raw Log vs ChatPane -->
-          <div>
+          <div class="flex flex-col flex-1 min-h-0">
             <%= if @show_raw_log do %>
               <!-- 4.13 Raw Log View -->
               <.raw_log_view
@@ -172,12 +133,55 @@ defmodule RailWeb.Live.RunConversation do
                 expanded_activities={@expanded_activities}
                 runs={@runs}
                 roles_map={@roles_map}
-                chat_input={@chat_input}
-                chat_sending={@chat_sending}
                 target={@myself}
               />
             <% end %>
           </div>
+
+          <!-- 4.4 Run Metadata Row -->
+          <div
+            id="run-metadata-row"
+            data-qa="run-metadata-row"
+            class="flex items-center flex-wrap gap-x-1.5 gap-y-1 px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400"
+          >
+            <span :if={@selected_run} id="metadata-run-status">
+              {format_run_status(@selected_run.status)} ·
+            </span>
+
+            <span :if={@selected_run && Run.usage(@selected_run)} id="metadata-run-usage">
+              {Run.usage(@selected_run)} ·
+            </span>
+
+            <span
+              :if={@selected_run && @selected_run.conversation_id not in [nil, ""]}
+              id="metadata-run-conversation-id"
+              title={@selected_run.conversation_id}
+              class="select-text truncate max-w-[10rem]"
+            >
+              {"conversation #{@selected_run.conversation_id}"} ·
+            </span>
+
+            <button
+              type="button"
+              id="toggle-raw-log"
+              data-qa="toggle-raw-log"
+              phx-click="toggle_raw_log"
+              phx-target={@myself}
+              class="font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+            >
+              {if @show_raw_log, do: "Show chat", else: "Raw log"}
+            </button>
+          </div>
+
+          <.composer
+            :if={not @show_raw_log}
+            task={@task}
+            run={@selected_run}
+            role={selected_role(@selected_run, @roles_map)}
+            chat_input={@chat_input}
+            chat_sending={@chat_sending}
+            target={@myself}
+          />
         </div>
       <% end %>
     </div>
@@ -193,8 +197,6 @@ defmodule RailWeb.Live.RunConversation do
   attr :expanded_activities, :any, default: []
   attr :runs, :list, default: []
   attr :roles_map, :map, default: %{}
-  attr :chat_input, :string, default: ""
-  attr :chat_sending, :boolean, default: false
   attr :target, :any, required: true
 
   def chat_pane(assigns) do
@@ -204,13 +206,13 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(:has_messages, assigns.turns != [])
 
     ~H"""
-    <div id="chat-pane-root" data-qa="chat-pane" class="flex flex-col min-h-[400px]">
+    <div id="chat-pane-root" data-qa="chat-pane" class="flex flex-col flex-1 min-h-[400px]">
       <!-- Messages List / Empty State with Autoscroll Hook -->
       <div
         id="chat-messages"
         data-qa="chat-messages"
         phx-hook="ChatAutoscroll"
-        class="flex-1 overflow-y-auto p-4 space-y-3 max-h-[560px]"
+        class="flex-1 overflow-y-auto px-5 py-5 space-y-4"
       >
         <%= if not @has_messages do %>
           <!-- Empty State -->
@@ -238,16 +240,6 @@ defmodule RailWeb.Live.RunConversation do
           <% end %>
         <% end %>
       </div>
-
-      <!-- Pinned Composer at Bottom -->
-      <.composer
-        task={@task}
-        run={@run}
-        role={@role}
-        chat_input={@chat_input}
-        chat_sending={@chat_sending}
-        target={@target}
-      />
     </div>
     """
   end
@@ -289,16 +281,12 @@ defmodule RailWeb.Live.RunConversation do
           </div>
         </div>
       <% :role -> %>
-        <!-- 4.8 _RoleBubble (left-aligned, markdown body) -->
+        <!-- 4.8 _RoleBubble (unframed markdown: the sidebar already says who is talking) -->
         <div
           id={"msg-#{@idx}"}
           data-qa="role-bubble"
-          class="max-w-[720px] mr-auto p-3 rounded-tl-xl rounded-tr-xl rounded-br-xl rounded-bl-xs bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600/50 space-y-2 shadow-xs"
+          class="text-slate-900 dark:text-slate-100"
         >
-          <div class="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-500">
-            <.icon name={@role.icon_name} class="h-3.5 w-3.5 shrink-0" />
-            <span>{@role.name}</span>
-          </div>
           <div class="select-text prose dark:prose-invert max-w-none text-[13px] leading-relaxed">
             <.markdown content={@text} />
           </div>
@@ -445,7 +433,7 @@ defmodule RailWeb.Live.RunConversation do
     <div
       id="composer-root"
       data-qa="composer chat-composer"
-      class="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700"
+      class="p-4 border-t border-slate-200 dark:border-slate-700"
     >
       <!-- Thinking and queued stack: a message typed mid-turn waits behind it. -->
       <div
@@ -594,7 +582,7 @@ defmodule RailWeb.Live.RunConversation do
       id="raw-log-container"
       data-qa="raw_log_container"
       phx-hook="ChatAutoscroll"
-      class="w-full p-4 bg-zinc-950 text-zinc-300 font-mono text-xs overflow-y-auto max-h-[560px] rounded-b-xl select-text"
+      class="w-full flex-1 min-h-[400px] p-4 bg-zinc-950 text-zinc-300 font-mono text-xs overflow-y-auto select-text"
     >
       <%= if not @has_lines do %>
         <div id="raw-log-empty-state" class="flex items-center justify-center h-48 text-zinc-500">

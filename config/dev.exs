@@ -1,5 +1,8 @@
 import Config
 
+# Anchors live reload patterns to this checkout so edits in .claude/worktrees don't reload.
+root = Regex.escape(Path.expand("..", __DIR__))
+
 config :logger, :default_formatter, format: "[$level] $message\n"
 
 config :phoenix, :plug_init_mode, :runtime
@@ -20,9 +23,6 @@ config :rail, Rail.Repo,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
-
-# Anchors live reload patterns to this checkout so edits in .claude/worktrees don't reload.
-root = Regex.escape(Path.expand("..", __DIR__))
 
 config :rail, RailWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT", "4000"))],
