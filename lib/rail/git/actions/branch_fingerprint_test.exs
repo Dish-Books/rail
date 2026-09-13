@@ -2,12 +2,11 @@ defmodule Rail.Git.Actions.BranchFingerprintTest do
   use Rail.DataCase, async: true
 
   alias Rail.Git
-  alias Rail.Git.BranchFingerprint
 
   test "returns fingerprint for clean repository" do
     repo = create_temp_git_repo()
 
-    assert %BranchFingerprint{head_sha: head_sha, dirty_digest: digest} =
+    assert %{head_sha: head_sha, dirty_digest: digest} =
              Git.branch_fingerprint(repo)
 
     assert byte_size(head_sha) == 40

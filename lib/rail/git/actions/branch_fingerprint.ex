@@ -1,7 +1,6 @@
 defmodule Rail.Git.Actions.BranchFingerprint do
   @moduledoc false
 
-  alias Rail.Git.BranchFingerprint
   alias Rail.Tools
 
   @doc """
@@ -26,7 +25,7 @@ defmodule Rail.Git.Actions.BranchFingerprint do
         |> :crypto.hash(filter_rail_status(status_out))
         |> Base.encode16(case: :lower)
 
-      %BranchFingerprint{
+      %{
         head_sha: head_sha,
         dirty_digest: dirty_digest
       }
