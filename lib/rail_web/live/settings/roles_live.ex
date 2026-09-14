@@ -31,8 +31,12 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:active_modal, nil)
       |> assign(:modal_role, nil)
       |> assign(:modal_form, nil)
+      |> assign(:modal_original, nil)
       |> assign(:modal_errors, %{})
       |> assign(:available_models, [])
+      |> assign(:role_tab, :configuration)
+      |> assign(:prompt_preview, false)
+      |> assign(:expanded_mcp_servers, MapSet.new())
 
     {:ok, socket}
   end
@@ -299,20 +303,32 @@ defmodule RailWeb.Settings.RolesLive do
         <!-- Create / Edit Role Modal -->
         <div
           :if={@active_modal in [:create_role, :edit_role]}
-          class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/60 p-4"
           id="role-editor-modal"
           data-qa="role-editor"
         >
-          <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-6">
-            <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-4">
-              <h2
-                class="text-lg font-semibold text-slate-900 dark:text-slate-100"
-                id="role-modal-title"
-              >
-                {if @active_modal == :create_role,
-                  do: "Create New Role",
-                  else: "Edit Role: #{@modal_role.name}"}
-              </h2>
+          <form
+            phx-change="validate_role"
+            phx-submit="save_role"
+            id="role-form"
+            class="flex h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-900 shadow-2xl"
+          >
+            <div class="flex items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-700/70 px-8 py-5">
+              <div class="flex min-w-0 items-center gap-3">
+                <h2
+                  class="truncate text-xl font-semibold text-slate-900 dark:text-slate-100"
+                  id="role-modal-title"
+                >
+                  {modal_title(@active_modal, @modal_form)}
+                </h2>
+                <span
+                  :if={@modal_form["stage"] not in [nil, ""]}
+                  id="role-stage-pill"
+                  class="shrink-0 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-0.5 font-mono text-xs text-slate-600 dark:text-slate-300"
+                >
+                  stage: {@modal_form["stage"]}
+                </span>
+              </div>
               <.button
                 variant="ghost"
                 size="icon"
@@ -324,223 +340,322 @@ defmodule RailWeb.Settings.RolesLive do
               </.button>
             </div>
 
-            <form phx-change="validate_role" phx-submit="save_role" id="role-form" class="space-y-4">
-              <!-- Identifier -->
-              <div>
-                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Role Identifier</label>
-                <input
-                  type="text"
-                  name="role[role_id]"
-                  id="role-identifier-input"
-                  value={@modal_form["role_id"]}
-                  disabled={@active_modal == :edit_role}
-                  placeholder="e.g. security_auditor"
-                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs disabled:bg-slate-100 dark:disabled:bg-slate-700 disabled:text-slate-500 dark:disabled:text-slate-400"
-                />
-              </div>
-
-              <!-- Name -->
-              <div>
-                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Role Display Name *</label>
-                <input
-                  type="text"
-                  name="role[name]"
-                  id="role-name-input"
-                  value={@modal_form["name"]}
-                  required
-                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
-                />
-                <span :if={@modal_errors[:name]} class="text-xs text-red-600" id="role-name-error">
-                  {@modal_errors[:name]}
-                </span>
-              </div>
-
-              <!-- Description -->
-              <div>
-                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Description</label>
-                <input
-                  type="text"
-                  name="role[description]"
-                  id="role-description-input"
-                  value={@modal_form["description"]}
-                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
-                />
-              </div>
-
-              <div class="grid grid-cols-2 gap-4">
-                <!-- Stage Binding -->
-                <div>
-                  <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Stage Binding</label>
-                  <select
-                    name="role[stage]"
-                    id="role-stage-select"
-                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs capitalize"
+            <div class="flex min-h-0 flex-1">
+              <aside class="flex w-64 shrink-0 flex-col justify-between gap-4 border-r border-slate-200 dark:border-slate-700/70 p-4">
+                <nav class="space-y-1" id="role-editor-tabs">
+                  <button
+                    :for={tab <- [:configuration, :prompt, :mcp_tools]}
+                    type="button"
+                    phx-click="select_role_tab"
+                    phx-value-tab={tab}
+                    id={"role-tab-#{tab}"}
+                    aria-current={if @role_tab == tab, do: "page"}
+                    class={[
+                      "block w-full rounded-lg px-4 py-3 text-left transition-colors",
+                      @role_tab == tab && "bg-slate-100 dark:bg-slate-800",
+                      @role_tab != tab && "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                    ]}
                   >
-                    <option
-                      :for={stage <- @canonical_stages}
-                      value={to_string(stage)}
-                      selected={to_string(@modal_form["stage"]) == to_string(stage)}
+                    <span class="block text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      {tab_title(tab)}
+                    </span>
+                    <span
+                      class="mt-0.5 block truncate text-xs text-slate-500 dark:text-slate-400"
+                      id={"role-tab-summary-#{tab}"}
                     >
-                      {stage_display_name(stage)}
-                    </option>
-                  </select>
-                </div>
+                      {tab_summary(tab, @modal_form, @available_models, @mcp_servers)}
+                    </span>
+                  </button>
+                </nav>
 
-                <!-- CLI Backend -->
-                <div>
-                  <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">CLI Backend</label>
-                  <select
-                    name="role[backend_id]"
-                    id="role-backend-select"
-                    phx-change="change_backend"
-                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
-                  >
-                    <option :if={@backends == []} value="">No backend configured</option>
-                    <option
-                      :for={backend <- @backends}
-                      value={backend.id}
-                      selected={@modal_form["backend_id"] == backend.id}
-                    >
-                      {backend_label(backend)}
-                    </option>
-                  </select>
-                </div>
-              </div>
-
-              <!-- Model Dropdown + Custom Field -->
-              <div class="space-y-2">
-                <div class="flex items-center justify-between">
-                  <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Model *</label>
-                  <.link
-                    navigate={~p"/settings/backends"}
-                    id="manage-models-link"
-                    class="text-[11px] text-indigo-600 hover:text-indigo-800"
-                  >
-                    Manage models
-                  </.link>
-                </div>
-
-                <select
-                  name="role[model_choice]"
-                  id="role-model-select"
-                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                <div
+                  :if={@modal_role}
+                  id="role-identifier-card"
+                  class="rounded-lg border border-slate-200 dark:border-slate-700/70 bg-slate-50 dark:bg-slate-800/40 px-4 py-3"
                 >
-                  <option
-                    :for={model <- model_options(@available_models, @modal_form["model"])}
-                    value={model.id}
-                    selected={@modal_form["model"] == model.id}
+                  <p
+                    class="truncate font-mono text-xs text-slate-600 dark:text-slate-300"
+                    title={@modal_role.id}
                   >
-                    {model.display_name}
-                  </option>
-                </select>
-                <span :if={@modal_errors[:model]} class="text-xs text-red-600" id="role-model-error">
-                  {@modal_errors[:model]}
-                </span>
-              </div>
-
-              <div class="grid grid-cols-2 gap-4">
-                <!-- Reasoning Effort -->
-                <div>
-                  <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Reasoning Effort</label>
-                  <select
-                    name="role[reasoning_effort]"
-                    id="role-effort-select"
-                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
+                    {short_id(@modal_role.id)}
+                  </p>
+                  <button
+                    type="button"
+                    id="copy-role-identifier"
+                    phx-hook="CopyText"
+                    data-copy-text={@modal_role.id}
+                    class="group mt-1 text-xs font-medium text-indigo-600 dark:text-indigo-300 hover:underline"
                   >
-                    <option value="max" selected={@modal_form["reasoning_effort"] == "max"}>
-                      Max (Correctness over cost)
-                    </option>
-                    <option value="xhigh" selected={@modal_form["reasoning_effort"] == "xhigh"}>
-                      X-High (Best for agentic work)
-                    </option>
-                    <option
-                      value="high"
-                      selected={@modal_form["reasoning_effort"] in ["high", nil, ""]}
-                    >
-                      High (Deep reasoning)
-                    </option>
-                    <option value="medium" selected={@modal_form["reasoning_effort"] == "medium"}>
-                      Medium
-                    </option>
-                    <option value="low" selected={@modal_form["reasoning_effort"] == "low"}>
-                      Low (Fast)
-                    </option>
-                  </select>
+                    <span class="group-data-[copied]:hidden">Copy identifier</span>
+                    <span class="hidden group-data-[copied]:inline">Copied</span>
+                  </button>
                 </div>
+              </aside>
 
-                <!-- Max Concurrent -->
-                <div>
-                  <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">Max Concurrent</label>
-                  <input
-                    type="number"
-                    min="1"
-                    name="role[max_concurrent]"
-                    id="role-max-concurrent-input"
-                    value={@modal_form["max_concurrent"] || 1}
-                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs"
-                  />
-                </div>
-              </div>
-
-              <!-- System Prompt Textarea -->
-              <div>
-                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">
-                  System Prompt Instructions & Guidelines *
-                </label>
-                <textarea
-                  name="role[system_prompt]"
-                  id="role-prompt-input"
-                  rows="12"
-                  required
-                  class="mt-1 block w-full font-mono text-xs rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500"
-                >{@modal_form["system_prompt"]}</textarea>
-                <span
-                  :if={@modal_errors[:system_prompt]}
-                  class="text-xs text-red-600"
-                  id="role-prompt-error"
+              <div class="min-h-0 flex-1 overflow-y-auto px-8 py-6">
+                <!-- Configuration -->
+                <div
+                  id="role-panel-configuration"
+                  class={["space-y-8", @role_tab != :configuration && "hidden"]}
                 >
-                  {@modal_errors[:system_prompt]}
-                </span>
-              </div>
+                  <section class="space-y-5">
+                    <h3 class="font-mono text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                      Identity
+                    </h3>
 
-              <!-- MCP Tools -->
-              <div :if={@mcp_servers != []} id="role-mcp-tools">
-                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">
-                  MCP Tools
-                </label>
-                <p class="text-xs text-slate-500 dark:text-slate-400">
-                  Called through Rail's proxy on the issue assignee's connection.
-                </p>
-                <input type="hidden" name="role[mcp_tools][]" value="" />
-                <div class="mt-2 space-y-3">
-                  <fieldset
+                    <.input
+                      label="Display name"
+                      name="role[name]"
+                      id="role-name-input"
+                      value={@modal_form["name"]}
+                      errors={List.wrap(@modal_errors[:name])}
+                      required
+                    />
+
+                    <div>
+                      <.input
+                        type="textarea"
+                        label="Description"
+                        name="role[description]"
+                        id="role-description-input"
+                        rows="2"
+                        value={@modal_form["description"]}
+                        class="resize-none"
+                      />
+                      <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+                        Shown on the issue card when this role is assigned.
+                      </p>
+                    </div>
+
+                    <.input
+                      type="select"
+                      label="Stage binding"
+                      name="role[stage]"
+                      id="role-stage-select"
+                      value={to_string(@modal_form["stage"])}
+                      options={Enum.map(@canonical_stages, &{stage_display_name(&1), to_string(&1)})}
+                    />
+                  </section>
+
+                  <div class="border-t border-slate-200 dark:border-slate-700/70"></div>
+
+                  <section class="space-y-5">
+                    <h3 class="font-mono text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                      Runtime
+                    </h3>
+
+                    <.input
+                      type="select"
+                      label="CLI backend"
+                      name="role[backend_id]"
+                      id="role-backend-select"
+                      phx-change="change_backend"
+                      value={@modal_form["backend_id"]}
+                      prompt={if @backends == [], do: "No backend configured"}
+                      options={Enum.map(@backends, &{backend_label(&1), &1.id})}
+                    />
+
+                    <div>
+                      <div class="mb-1.5 flex items-center justify-between">
+                        <label
+                          for="role-model-select"
+                          class="block text-sm font-medium text-slate-700 dark:text-slate-200"
+                        >
+                          Model
+                        </label>
+                        <.link
+                          navigate={~p"/settings/backends"}
+                          id="manage-models-link"
+                          class="text-sm font-medium text-indigo-600 dark:text-indigo-300 hover:underline"
+                        >
+                          Manage models
+                        </.link>
+                      </div>
+                      <.input
+                        type="select"
+                        name="role[model_choice]"
+                        id="role-model-select"
+                        value={@modal_form["model"]}
+                        options={
+                          Enum.map(
+                            model_options(@available_models, @modal_form["model"]),
+                            &{&1.display_name, &1.id}
+                          )
+                        }
+                        errors={List.wrap(@modal_errors[:model])}
+                      />
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-5 sm:grid-cols-[1fr_11rem]">
+                      <fieldset>
+                        <legend class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                          Reasoning effort
+                        </legend>
+                        <div
+                          class="flex gap-1 rounded-lg border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-950/60 p-1"
+                          id="role-effort-options"
+                        >
+                          <label
+                            :for={effort <- ["low", "medium", "high"]}
+                            class="flex-1 cursor-pointer"
+                          >
+                            <input
+                              type="radio"
+                              name="role[reasoning_effort]"
+                              value={effort}
+                              id={"role-effort-#{effort}"}
+                              checked={effort_value(@modal_form["reasoning_effort"]) == effort}
+                              class="peer sr-only"
+                            />
+                            <span class="block rounded-md py-1 text-center text-[15px] leading-6 text-slate-600 dark:text-slate-300 peer-checked:bg-slate-100 peer-checked:font-medium peer-checked:text-slate-900 dark:peer-checked:bg-slate-700 dark:peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-500">
+                              {String.capitalize(effort)}
+                            </span>
+                          </label>
+                        </div>
+                      </fieldset>
+
+                      <.input
+                        type="number"
+                        label="Max concurrent"
+                        min="1"
+                        name="role[max_concurrent]"
+                        id="role-max-concurrent-input"
+                        value={@modal_form["max_concurrent"] || 1}
+                      />
+                    </div>
+                  </section>
+                </div>
+
+                <!-- System prompt -->
+                <div
+                  id="role-panel-prompt"
+                  class={["flex h-full flex-col gap-4", @role_tab != :prompt && "hidden"]}
+                >
+                  <div class="flex items-center justify-between gap-4">
+                    <h3 class="text-base font-semibold text-slate-900 dark:text-slate-100">
+                      System prompt
+                    </h3>
+                    <div class="flex items-center gap-3">
+                      <span
+                        class="font-mono text-xs text-slate-500 dark:text-slate-400"
+                        id="role-prompt-chars"
+                      >
+                        {prompt_chars(@modal_form)} chars
+                      </span>
+                      <.button
+                        size="sm"
+                        phx-click="toggle_prompt_preview"
+                        id="role-prompt-preview-button"
+                      >
+                        {if @prompt_preview, do: "Edit", else: "Preview"}
+                      </.button>
+                    </div>
+                  </div>
+                  <textarea
+                    name="role[system_prompt]"
+                    id="role-prompt-input"
+                    phx-debounce="300"
+                    class={[
+                      "min-h-[24rem] w-full flex-1 resize-none rounded-lg border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-950/60 px-5 py-4 font-mono text-sm leading-7 text-slate-900 dark:text-slate-100 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500",
+                      @prompt_preview && "hidden"
+                    ]}
+                  >{@modal_form["system_prompt"]}</textarea>
+                  <div
+                    :if={@prompt_preview}
+                    id="role-prompt-preview"
+                    class="min-h-[24rem] flex-1 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-950/60 px-6 py-5"
+                  >
+                    <.markdown content={@modal_form["system_prompt"]} />
+                  </div>
+                  <span
+                    :if={@modal_errors[:system_prompt]}
+                    class="text-xs text-red-600"
+                    id="role-prompt-error"
+                  >
+                    {@modal_errors[:system_prompt]}
+                  </span>
+                </div>
+
+                <!-- MCP tools -->
+                <div
+                  id="role-panel-mcp_tools"
+                  class={["space-y-4", @role_tab != :mcp_tools && "hidden"]}
+                >
+                  <input type="hidden" name="role[mcp_tools][]" value="" />
+
+                  <p
+                    :if={@mcp_servers == []}
+                    id="role-mcp-empty"
+                    class="text-sm text-slate-500 dark:text-slate-400"
+                  >
+                    No MCP servers registered. Add one in <.link
+                      navigate={~p"/settings/mcp-servers"}
+                      class="font-medium text-indigo-600 dark:text-indigo-300 hover:underline"
+                    >
+                      MCP Servers settings
+                    </.link>.
+                  </p>
+
+                  <div
                     :for={server <- @mcp_servers}
                     id={"role-mcp-server-#{server.name}"}
-                    class="rounded-md border border-slate-200 dark:border-slate-700 p-3"
+                    class="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700/70"
                   >
                     <% all_tools = "#{server.name}__*" in (@modal_form["mcp_tools"] || []) %>
-                    <label class="flex items-center gap-2 text-xs font-semibold text-slate-900 dark:text-slate-100">
+                    <% expanded = MapSet.member?(@expanded_mcp_servers, server.name) %>
+                    <div class="flex items-center gap-4 px-5 py-4">
                       <input
                         type="checkbox"
                         name="role[mcp_tools][]"
                         value={"#{server.name}__*"}
                         id={"role-mcp-all-#{server.name}"}
                         checked={all_tools}
+                        class="h-5 w-5 rounded border-slate-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500"
                       />
-                      {server.name} — all tools
-                    </label>
+                      <label
+                        for={"role-mcp-all-#{server.name}"}
+                        class="font-semibold text-slate-900 dark:text-slate-100"
+                      >
+                        {server.name}
+                      </label>
+                      <span
+                        class="text-sm text-slate-500 dark:text-slate-400"
+                        id={"role-mcp-summary-#{server.name}"}
+                      >
+                        {server_tools_summary(server, @modal_form["mcp_tools"])}
+                      </span>
+                      <button
+                        :if={server.tools != []}
+                        type="button"
+                        phx-click="toggle_mcp_server"
+                        phx-value-server={server.name}
+                        id={"role-mcp-toggle-#{server.name}"}
+                        class="ml-auto text-sm font-medium text-indigo-600 dark:text-indigo-300 hover:underline"
+                      >
+                        {if expanded, do: "Hide list", else: "Show list"}
+                      </button>
+                    </div>
+
                     <p
                       :if={server.tools == []}
-                      class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                      class="border-t border-slate-200 dark:border-slate-700/70 px-5 py-3 text-xs text-slate-500 dark:text-slate-400"
                     >
                       No tools cached yet. Refresh them in MCP Servers settings.
                     </p>
-                    <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1">
+
+                    <div
+                      :if={server.tools != []}
+                      id={"role-mcp-tools-#{server.name}"}
+                      class={[
+                        "grid grid-cols-1 gap-x-8 gap-y-3 border-t border-slate-200 dark:border-slate-700/70 px-5 py-4 sm:grid-cols-2",
+                        !expanded && "hidden"
+                      ]}
+                    >
                       <label
                         :for={tool <- server.tools}
                         class={[
-                          "flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300",
-                          all_tools && "opacity-60"
+                          "flex items-center gap-3 font-mono text-sm text-slate-700 dark:text-slate-300",
+                          all_tools && "opacity-70"
                         ]}
                         title={tool["description"]}
                       >
@@ -554,25 +669,37 @@ defmodule RailWeb.Settings.RolesLive do
                               "#{server.name}__#{tool["name"]}" in (@modal_form["mcp_tools"] || [])
                           }
                           disabled={all_tools}
+                          class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500"
                         />
-                        <span class="font-mono">{tool["name"]}</span>
+                        <span class="truncate">{tool["name"]}</span>
                       </label>
                     </div>
-                  </fieldset>
+                  </div>
+
+                  <p :if={@mcp_servers != []} class="text-sm text-slate-500 dark:text-slate-400">
+                    Called through Rail's proxy on the issue assignee's connection.
+                  </p>
                 </div>
               </div>
+            </div>
 
-              <!-- Modal Footer -->
-              <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                <.button phx-click="close_modal" id="cancel-role-button">
-                  Cancel
-                </.button>
+            <div class="flex items-center justify-between gap-4 border-t border-slate-200 dark:border-slate-700/70 px-8 py-4">
+              <% changes = unsaved_changes(@modal_original, @modal_form) %>
+              <p
+                id="role-unsaved-changes"
+                class="flex min-w-0 items-center gap-2 truncate text-sm text-slate-500 dark:text-slate-400"
+              >
+                <span :if={changes != []} class="h-2 w-2 shrink-0 rounded-full bg-amber-400"></span>
+                {unsaved_summary(changes)}
+              </p>
+              <div class="flex shrink-0 items-center gap-3">
+                <.button phx-click="close_modal" id="cancel-role-button">Discard</.button>
                 <.button variant="primary" type="submit" id="save-role-button">
-                  Save Role Config
+                  {if @active_modal == :create_role, do: "Create role", else: "Save role"}
                 </.button>
               </div>
-            </form>
-          </div>
+            </div>
+          </form>
         </div>
 
         <!-- Delete Role Modal -->
@@ -702,8 +829,12 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:active_modal, :create_role)
       |> assign(:modal_role, nil)
       |> assign(:modal_form, form_data)
+      |> assign(:modal_original, form_data)
       |> assign(:modal_errors, %{})
       |> assign(:available_models, models)
+      |> assign(:role_tab, :configuration)
+      |> assign(:prompt_preview, false)
+      |> assign(:expanded_mcp_servers, MapSet.new())
 
     {:noreply, socket}
   end
@@ -732,8 +863,12 @@ defmodule RailWeb.Settings.RolesLive do
         |> assign(:active_modal, :edit_role)
         |> assign(:modal_role, role)
         |> assign(:modal_form, form_data)
+        |> assign(:modal_original, form_data)
         |> assign(:modal_errors, %{})
         |> assign(:available_models, models)
+        |> assign(:role_tab, :configuration)
+        |> assign(:prompt_preview, false)
+        |> assign(:expanded_mcp_servers, MapSet.new())
 
       {:noreply, socket}
     else
@@ -865,9 +1000,32 @@ defmodule RailWeb.Settings.RolesLive do
             {k, msg}
           end)
 
-        socket = assign(socket, :modal_errors, errors)
+        socket =
+          socket
+          |> assign(:modal_errors, errors)
+          |> assign(:role_tab, error_tab(errors))
+
         {:noreply, socket}
     end
+  end
+
+  def handle_event("select_role_tab", %{"tab" => tab}, socket) when tab in ["configuration", "prompt", "mcp_tools"] do
+    {:noreply, assign(socket, :role_tab, String.to_existing_atom(tab))}
+  end
+
+  def handle_event("toggle_prompt_preview", _params, socket) do
+    {:noreply, assign(socket, :prompt_preview, !socket.assigns.prompt_preview)}
+  end
+
+  def handle_event("toggle_mcp_server", %{"server" => server_name}, socket) do
+    expanded = socket.assigns.expanded_mcp_servers
+
+    expanded =
+      if MapSet.member?(expanded, server_name),
+        do: MapSet.delete(expanded, server_name),
+        else: MapSet.put(expanded, server_name)
+
+    {:noreply, assign(socket, :expanded_mcp_servers, expanded)}
   end
 
   def handle_event("close_modal", _params, socket) do
@@ -1037,6 +1195,101 @@ defmodule RailWeb.Settings.RolesLive do
       [server_name, tool_name] = String.split(tool, "__", parts: 2)
       tool_name != "*" and server_name in all_tools_servers
     end)
+  end
+
+  @unsaved_fields [
+    {"name", "name"},
+    {"description", "description"},
+    {"stage", "stage"},
+    {"backend_id", "backend"},
+    {"model", "model"},
+    {"reasoning_effort", "reasoning effort"},
+    {"system_prompt", "prompt"},
+    {"max_concurrent", "max concurrent"},
+    {"mcp_tools", "MCP tools"}
+  ]
+
+  defp modal_title(:create_role, _form), do: "New role"
+
+  defp modal_title(_edit, form) do
+    case String.trim(to_string(form["name"])) do
+      "" -> "Untitled role"
+      name -> name
+    end
+  end
+
+  defp tab_title(:configuration), do: "Configuration"
+  defp tab_title(:prompt), do: "System prompt"
+  defp tab_title(:mcp_tools), do: "MCP tools"
+
+  defp tab_summary(:configuration, form, models, _servers) do
+    model = Enum.find_value(models, form["model"], &(&1.id == form["model"] && &1.display_name))
+
+    ["Identity", model, effort_value(form["reasoning_effort"])]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.join(" · ")
+  end
+
+  defp tab_summary(:prompt, form, _models, _servers), do: "#{prompt_chars(form)} chars"
+
+  defp tab_summary(:mcp_tools, form, _models, servers) do
+    enabled =
+      Enum.flat_map(servers, fn server ->
+        case server_tool_counts(server, form["mcp_tools"]) do
+          {0, _total} -> []
+          {:all, _total} -> ["#{server.name} · all"]
+          {count, total} -> ["#{server.name} · #{count} of #{total}"]
+        end
+      end)
+
+    if enabled == [], do: "None enabled", else: Enum.join(enabled, ", ")
+  end
+
+  # `:all` for a server whose tools are all allowed (even before any are cached),
+  # otherwise how many of its cached tools are allowed one by one.
+  defp server_tool_counts(server, mcp_tools) do
+    mcp_tools = mcp_tools || []
+    total = length(server.tools)
+
+    cond do
+      "#{server.name}__*" in mcp_tools and total == 0 -> {:all, 0}
+      "#{server.name}__*" in mcp_tools -> {total, total}
+      true -> {Enum.count(server.tools, &("#{server.name}__#{&1["name"]}" in mcp_tools)), total}
+    end
+  end
+
+  defp server_tools_summary(server, mcp_tools) do
+    case server_tool_counts(server, mcp_tools) do
+      {:all, _total} -> "all tools enabled"
+      {0, _total} -> "No tools enabled"
+      {total, total} -> "all #{total} tools enabled"
+      {count, total} -> "#{count} of #{total} tools enabled"
+    end
+  end
+
+  defp effort_value(effort) when effort in ["low", "medium"], do: effort
+  defp effort_value(_high), do: "high"
+
+  defp prompt_chars(form), do: String.length(form["system_prompt"] || "")
+
+  defp short_id(id), do: String.slice(id, 0, 11) <> "…" <> String.slice(id, -6, 6)
+
+  defp unsaved_changes(original, form) do
+    for {field, label} <- @unsaved_fields,
+        normalize_field(field, original[field]) != normalize_field(field, form[field]),
+        do: label
+  end
+
+  defp normalize_field("mcp_tools", tools), do: tools |> parse_mcp_tools() |> Enum.sort()
+  defp normalize_field("reasoning_effort", effort), do: effort_value(effort)
+  defp normalize_field(_field, value), do: value |> to_string() |> String.replace("\r\n", "\n") |> String.trim()
+
+  defp unsaved_summary([]), do: "No unsaved changes"
+  defp unsaved_summary([change]), do: "1 unsaved change · #{change}"
+  defp unsaved_summary(changes), do: "#{length(changes)} unsaved changes · #{Enum.join(changes, ", ")}"
+
+  defp error_tab(errors) do
+    if Map.keys(errors) == [:system_prompt], do: :prompt, else: :configuration
   end
 
   defp execute_role_save(scope, project, :create_role, _existing_role, attrs) do

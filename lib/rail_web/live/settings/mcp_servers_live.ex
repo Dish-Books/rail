@@ -196,51 +196,30 @@ defmodule RailWeb.Settings.McpServersLive do
               class="space-y-4"
             >
               <div>
-                <label
-                  class="block text-sm font-medium text-slate-900 dark:text-slate-100"
-                  for="mcp-server-name"
-                >
-                  Name
-                </label>
-                <input
-                  type="text"
+                <.input
+                  label="Name"
                   name="server[name]"
                   id="mcp-server-name"
                   value={@form["name"]}
                   placeholder="linear"
-                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-mono sm:text-sm"
+                  class="font-mono"
+                  errors={List.wrap(@form_errors[:name])}
                 />
-                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
                   Also the prefix agents see on its tools, e.g. <span class="font-mono">linear__get_issue</span>.
                 </p>
-                <span
-                  :if={@form_errors[:name]}
-                  class="text-xs text-red-600"
-                  id="mcp-server-name-error"
-                >
-                  {@form_errors[:name]}
-                </span>
               </div>
 
-              <div>
-                <label
-                  class="block text-sm font-medium text-slate-900 dark:text-slate-100"
-                  for="mcp-server-url"
-                >
-                  URL
-                </label>
-                <input
-                  type="text"
-                  name="server[url]"
-                  id="mcp-server-url"
-                  value={@form["url"]}
-                  placeholder="https://mcp.linear.app/mcp"
-                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-mono sm:text-sm"
-                />
-                <span :if={@form_errors[:url]} class="text-xs text-red-600" id="mcp-server-url-error">
-                  {@form_errors[:url]}
-                </span>
-              </div>
+              <.input
+                type="url"
+                label="URL"
+                name="server[url]"
+                id="mcp-server-url"
+                value={@form["url"]}
+                placeholder="https://mcp.linear.app/mcp"
+                class="font-mono"
+                errors={List.wrap(@form_errors[:url])}
+              />
 
               <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <.button type="button" phx-click="close_modal" id="cancel-server-button">
