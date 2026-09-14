@@ -67,18 +67,6 @@ default_roles = [
     position: 0
   },
   %{
-    stage: :architect,
-    name: "Software Architect",
-    description: "Designs technical architecture, file changes, and implementation plans",
-    icon_name: "pi-cube",
-    backend_id: claude_backend.id,
-    model: "claude-3-7-sonnet",
-    reasoning_effort: :high,
-    system_prompt: File.read!("prompts/architect.md"),
-    max_concurrent: 1,
-    position: 1
-  },
-  %{
     stage: :design,
     name: "Product Designer",
     description: "Designs user interfaces, layout specs, and UX flows",
@@ -87,6 +75,18 @@ default_roles = [
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
     system_prompt: File.read!("prompts/design.md"),
+    max_concurrent: 1,
+    position: 1
+  },
+  %{
+    stage: :architect,
+    name: "Software Architect",
+    description: "Designs technical architecture, file changes, and implementation plans",
+    icon_name: "pi-cube",
+    backend_id: claude_backend.id,
+    model: "claude-3-7-sonnet",
+    reasoning_effort: :high,
+    system_prompt: File.read!("prompts/architect.md"),
     max_concurrent: 1,
     position: 2
   },

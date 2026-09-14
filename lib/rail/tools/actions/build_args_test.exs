@@ -22,6 +22,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
              "--effort",
              "high",
              "--dangerously-skip-permissions",
+             "--strict-mcp-config",
              "--output-format",
              "stream-json",
              "--verbose"
@@ -83,7 +84,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
 
     read_only = Tools.build_args(backend: %Backend{name: :claude}, prompt: "Go", model: "m", mcp: true, read_only: true)
 
-    assert ["--tools", "", "--strict-mcp-config", "--mcp-config", ^config, "--allowedTools", "mcp__rail"] =
+    assert ["--tools", "", "--mcp-config", ^config, "--strict-mcp-config", "--allowedTools", "mcp__rail"] =
              Enum.slice(read_only, 6, 7)
   end
 
