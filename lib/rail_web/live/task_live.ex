@@ -171,8 +171,16 @@ defmodule RailWeb.TaskLive do
     {:noreply, refresh_task(socket)}
   end
 
+  # A finished turn may have rewritten the ticket on disk without changing a row,
+  # so the product stage is told to read it again rather than left to notice.
   def handle_info({:os_process_finished, _run, _outcome}, socket) do
-    {:noreply, refresh_task(socket)}
+    socket = refresh_task(socket)
+
+    if match?(%{task: %Task{stage: :product}, selected_run: %Run{}}, socket.assigns) do
+      send_update(ProductStage, id: "product-stage-component", task: socket.assigns.task)
+    end
+
+    {:noreply, socket}
   end
 
   # The product stage sends this once the human approves its ticket.

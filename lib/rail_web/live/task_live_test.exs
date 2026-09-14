@@ -552,5 +552,20 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-qa='task_error_card']", "It fell over.")
     end
+
+    test "a turn finishing re-reads the ticket the agent may have changed", %{conn: conn, task: task, run: run} do
+      ticket_path = Path.join([task.scratch_path, "tickets", "TLV-1.md"])
+      File.write!(ticket_path, "# A ticket\n\nThe first draft.")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "[data-qa='product_ticket']", "The first draft.")
+
+      File.write!(ticket_path, "# A ticket\n\nThe revised draft.")
+      send(view.pid, {:os_process_finished, run, %{}})
+
+      # The page forwards to the component, which renders on its own turn.
+      _settled = render(view)
+      assert has_element?(view, "[data-qa='product_ticket']", "The revised draft.")
+    end
   end
 end
