@@ -2,38 +2,7 @@ defmodule Rail.Artifacts.Utils.CommentFormatter do
   @moduledoc false
 
   alias Rail.Artifacts.Schemas.Demo
-  alias Rail.Artifacts.Schemas.Design
   alias Rail.Artifacts.Schemas.QaReport
-
-  @doc "Formats a Linear comment for a design artifact."
-  def format_design_comment(%Design{} = design, direction \\ nil) do
-    chosen =
-      direction ||
-        find_direction(design.directions, design.picked_key) ||
-        List.first(design.directions || [])
-
-    if chosen do
-      title = get_val(chosen, :title)
-      notes = get_val(chosen, :notes)
-      still_url = get_val(chosen, :still_url)
-
-      """
-      ## Design: #{title}
-
-      #{notes}
-
-      ![#{title}](#{still_url})
-
-      [View live canvas](#{design.canvas_url})
-      """
-    else
-      """
-      ## Design (v#{design.version})
-
-      [View live canvas](#{design.canvas_url})
-      """
-    end
-  end
 
   @doc "Formats a Linear comment for a demo artifact."
   def format_demo_comment(%Demo{outcome: outcome} = demo) when outcome in ["declined", "failed"] do
@@ -104,14 +73,6 @@ defmodule Rail.Artifacts.Utils.CommentFormatter do
 
     header <> table_rows
   end
-
-  defp find_direction(directions, picked_key) when is_list(directions) and is_binary(picked_key) do
-    Enum.find(directions, fn dir ->
-      get_val(dir, :key) == picked_key
-    end)
-  end
-
-  defp find_direction(_directions, _picked_key), do: nil
 
   defp format_demo_segment(seg) do
     idx = get_val(seg, :criterion_index)

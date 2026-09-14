@@ -125,14 +125,7 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "#role-chip-#{role.id}")
   end
 
-  test "the product stage renders the ticket and approving hands the task on", %{
-    conn: conn,
-    task: task,
-    run: run
-  } do
-    # Approving is a one-way door, so the run has to be one that has not been through it.
-    {:ok, _open} = Pipeline.update_run(run, %{stage_outcome: :in_progress})
-
+  test "the product stage renders the ticket and approving hands the task on", %{conn: conn, task: task} do
     File.write!(
       Path.join([task.scratch_path, "tickets", "TLV-1.md"]),
       "---\ntitle: A better ticket\npriority: high\nestimate: 2\n---\n\nThe body the agent wrote."
@@ -166,16 +159,6 @@ defmodule RailWeb.TaskLiveTest do
     refute has_element?(view, "#approve-product-plan")
   end
 
-  test "approving a ticket that was already approved says so", %{conn: conn, task: task} do
-    File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "# A ticket\n\nBody.")
-
-    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-    view |> element("#approve-product-plan-skip-design") |> render_click()
-
-    assert has_element?(view, "#product-approve-error", "already been approved")
-  end
-
   test "approving while the run is still working says so", %{conn: conn, task: task, run: run} do
     {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
     File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "# A ticket\n\nBody.")
@@ -187,8 +170,7 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "#product-approve-error", "still running")
   end
 
-  test "approving a task that has moved on says where it is", %{conn: conn, task: task, run: run} do
-    {:ok, _open} = Pipeline.update_run(run, %{stage_outcome: :in_progress})
+  test "approving a task that has moved on says where it is", %{conn: conn, task: task} do
     File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "# A ticket\n\nBody.")
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
@@ -199,8 +181,7 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "#product-approve-error", "at Design, not product")
   end
 
-  test "approving a ticket with no title reports why it failed", %{conn: conn, task: task, run: run} do
-    {:ok, _open} = Pipeline.update_run(run, %{stage_outcome: :in_progress})
+  test "approving a ticket with no title reports why it failed", %{conn: conn, task: task} do
     File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "Just a body, no heading.")
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
@@ -309,6 +290,185 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "#task-cleaned-up")
   end
 
+  describe "the design stage" do
+    setup %{backend: backend, project: project, task: task} do
+      {:ok, design_role} =
+        Roles.create_role(system_scope(), project, %{
+          backend_id: backend.id,
+          stage: :design,
+          name: "design role",
+          model: "claude-3-7-sonnet",
+          system_prompt: "You are the design agent."
+        })
+
+      {:ok, task} = Pipeline.update_task(task, %{stage: :design, worktree_path: create_temp_git_repo()})
+
+      {:ok, design_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: design_role.id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "sess_design_stage",
+          started_at: DateTime.utc_now()
+        })
+
+      design_dir = Path.join(task.scratch_path, "design")
+      File.mkdir_p!(design_dir)
+
+      File.write!(
+        Path.join(design_dir, "manifest.json"),
+        Jason.encode!(%{
+          "options" => [
+            %{
+              "key" => "cards",
+              "title" => "Cards",
+              "summary" => "Big tiles.",
+              "good_at" => ["Easy to scan"],
+              "costs" => ["Few per screen"],
+              "assumptions" => "Twelve per page."
+            },
+            %{"key" => "table", "title" => "Table", "summary" => "Dense rows."},
+            %{"key" => "timeline", "title" => "Timeline"}
+          ]
+        })
+      )
+
+      for key <- ["cards", "table", "timeline"], do: File.write!(Path.join(design_dir, "#{key}.html"), "<h1>#{key}</h1>")
+
+      %{task: task, design_run: design_run, design_dir: design_dir}
+    end
+
+    test "says so when the designer has written nothing", %{conn: conn, task: task, design_dir: dir} do
+      File.rm!(Path.join(dir, "manifest.json"))
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='design_pending']")
+      assert has_element?(view, "#design-pending-title", "No design options yet")
+      refute has_element?(view, "#approve-design")
+    end
+
+    test "says the designer is at work while it is", %{
+      conn: conn,
+      task: task,
+      design_run: design_run,
+      design_dir: dir
+    } do
+      File.rm!(Path.join(dir, "manifest.json"))
+      {:ok, _working} = Pipeline.update_run(design_run, %{status: :running})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#design-pending-title", "Designing three options")
+    end
+
+    test "shows one option at a time, with its tradeoffs, and picking one tells the designer", %{
+      conn: conn,
+      task: task,
+      design_dir: dir
+    } do
+      File.write!(Path.join(dir, "cards.png"), "png")
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='task_status_chip']", "Review the designs")
+      assert has_element?(view, "#design-tab-cards[aria-selected='true'] img")
+      assert has_element?(view, "#design-tab-table[aria-selected='false']")
+      assert has_element?(view, "#design-tab-timeline")
+
+      assert has_element?(view, "#design-option-title", "Cards")
+      assert has_element?(view, "#design-option-cards", "Big tiles.")
+      assert has_element?(view, "#design-good-at", "Easy to scan")
+      assert has_element?(view, "#design-costs", "Few per screen")
+      assert has_element?(view, "#design-assumptions", "Twelve per page.")
+      assert has_element?(view, "#open-design-cards[href='/tasks/#{task.id}/design/cards']")
+      refute has_element?(view, "#approve-design")
+
+      view |> element("#design-tab-table") |> render_click()
+
+      assert has_element?(view, "#design-option-table iframe[srcdoc='<h1>table</h1>']")
+      refute has_element?(view, "#design-option-cards")
+      refute has_element?(view, "#design-good-at")
+
+      view |> element("#pick-design-table") |> render_click()
+
+      assert File.read!(Path.join(dir, "picked")) == "table"
+      assert has_element?(view, "#design-option-title", "Table")
+      refute has_element?(view, "[data-qa='design_tab']")
+      assert has_element?(view, "#approve-design")
+    end
+
+    test "a turn finishing re-reads the design the agent may have changed", %{
+      conn: conn,
+      task: task,
+      design_run: design_run,
+      design_dir: dir
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#design-option-cards", "Big tiles.")
+
+      File.write!(
+        Path.join(dir, "manifest.json"),
+        ~s({"options": [{"key": "cards", "title": "Cards", "summary": "Bigger tiles."}]})
+      )
+
+      send(view.pid, {:os_process_finished, design_run, %{}})
+
+      # The page forwards to the component, which renders on its own turn.
+      _settled = render(view)
+      assert has_element?(view, "#design-option-cards", "Bigger tiles.")
+    end
+
+    test "approving the picked design hands the task to the architect", %{conn: conn, task: task, design_dir: dir} do
+      File.write!(Path.join(dir, "picked"), "cards")
+      File.write!(Path.join(dir, "cards.png"), "png bytes")
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "fileUpload" => %{
+              "success" => true,
+              "uploadFile" => %{
+                "uploadUrl" => "https://uploads.linear.app/put/tlv-1",
+                "assetUrl" => "https://uploads.linear.app/assets/tlv-1-cards.png",
+                "headers" => []
+              }
+            }
+          }
+        })
+      end)
+
+      Req.Test.expect(Rail.Linear, fn conn -> Plug.Conn.send_resp(conn, 200, "") end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#approve-design") |> render_click()
+
+      assert %Task{stage: :architect} = Repo.reload!(task)
+    end
+
+    test "a design that cannot be approved says why", %{conn: conn, task: task, design_dir: dir} do
+      File.write!(Path.join(dir, "picked"), "cards")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#approve-design") |> render_click()
+
+      assert has_element?(view, "#design-error", "no screenshot yet")
+    end
+
+    test "picking while the designer works says so", %{conn: conn, task: task, design_run: design_run} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      {:ok, _working} = Pipeline.update_run(design_run, %{status: :running})
+      view |> element("#pick-design-cards") |> render_click()
+
+      assert has_element?(view, "#design-error", "still running")
+    end
+  end
+
   describe "the conversation, which the page hosts and feeds" do
     setup %{backend: backend, project: project, task: task, run: run} do
       {:ok, other_role} =
@@ -320,7 +480,7 @@ defmodule RailWeb.TaskLiveTest do
           system_prompt: "You are the design agent."
         })
 
-      {:ok, _other_run} =
+      {:ok, other_run} =
         Pipeline.create_run(%{
           task_id: task.id,
           role_id: other_role.id,
@@ -341,17 +501,47 @@ defmodule RailWeb.TaskLiveTest do
 
       {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
 
-      %{task: task, run: working, other_role: other_role}
+      %{task: task, run: working, other_role: other_role, other_run: other_run}
     end
 
-    test "switches to another role on request", %{conn: conn, task: task, other_role: other_role} do
+    test "switches to another role on request, and stays there while the stage does", %{
+      conn: conn,
+      task: task,
+      other_role: other_role
+    } do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#role-chip-#{other_role.id}")
 
       view |> element("#role-chip-#{other_role.id}") |> render_click()
+      assert has_element?(view, "#metadata-run-conversation-id", "sess_design")
 
-      assert has_element?(view, "#conversation-tab-root")
+      send(view.pid, :task_changed)
+      assert has_element?(view, "#metadata-run-conversation-id", "sess_design")
+    end
+
+    test "moving to the next stage moves the conversation to that stage's run", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#metadata-run-conversation-id", "sess_product")
+
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :design})
+      send(view.pid, :task_changed)
+
+      assert has_element?(view, "#metadata-run-conversation-id", "sess_design")
+    end
+
+    test "log lines for another run on the task stay out of the one being read", %{
+      conn: conn,
+      task: task,
+      other_run: other_run
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      send(view.pid, {:run_events, other_run.id, [%{id: "evt_designer", line: "The designer's line"}]})
+
+      _settled = render(view)
+      refute render(view) =~ "The designer&#39;s line"
+      refute render(view) =~ "The designer's line"
     end
 
     test "a role with no run is not selected", %{conn: conn, task: task, role: role} do

@@ -86,6 +86,17 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
+  test "design is spawned with its own brief", %{task: task, roles: roles} do
+    %{id: design_role_id} = roles[:design]
+
+    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "#{task.scratch_path}/design/manifest.json"
+      {:ok, %OsProcess{run: spawned, task: task}}
+    end)
+
+    assert {:ok, %Run{role_id: ^design_role_id, status: :running}} = Pipeline.enter_stage(task, :design)
+  end
+
   test "unlatches a run that had already concluded, so the stage can conclude again", %{
     task: task,
     roles: roles

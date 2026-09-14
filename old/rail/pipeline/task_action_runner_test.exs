@@ -316,7 +316,7 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
 
     # Failure
     assert {:error, "Network error"} =
-             TaskActionRunner.run(task_id, :recheck_design, fn ->
+             TaskActionRunner.run(task_id, :rebase, fn ->
                {:error, "Network error"}
              end)
 
@@ -344,11 +344,10 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
              end)
   end
 
-  test "shows_progress? returns true only for merge, cleanup, mark_ready, and recheck_design" do
+  test "shows_progress? returns true only for merge, cleanup, and mark_ready" do
     assert TaskActionRunner.shows_progress?(:merge)
     assert TaskActionRunner.shows_progress?(:cleanup)
     assert TaskActionRunner.shows_progress?(:mark_ready)
-    assert TaskActionRunner.shows_progress?(:recheck_design)
 
     refute TaskActionRunner.shows_progress?(:rebase)
     refute TaskActionRunner.shows_progress?(:comment)
@@ -366,7 +365,6 @@ defmodule Rail.Pipeline.TaskActionRunnerTest do
     assert TaskActionRunner.timeout_for(:merge) == 180_000
     assert TaskActionRunner.timeout_for(:cleanup) == 120_000
     assert TaskActionRunner.timeout_for(:mark_ready) == 60_000
-    assert TaskActionRunner.timeout_for(:recheck_design) == 60_000
     assert TaskActionRunner.timeout_for(:rebase) == 60_000
     assert TaskActionRunner.timeout_for(:approve) == 60_000
 

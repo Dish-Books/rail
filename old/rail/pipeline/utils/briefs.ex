@@ -21,41 +21,13 @@ defmodule Rail.Pipeline.Utils.Briefs do
   end
 
   @doc """
-  Stage brief for the Design role.
-  """
-  def design_brief(opts \\ []) do
-    String.trim("""
-    #{design_ticket_line(opts)}Produce three distinct design directions on a single published canvas.
-
-    Rail reads your design directions from #{scratch(opts)}/design/. Save a still screenshot of each direction there, and never edit application code on this stage.
-
-    Write the manifest to #{scratch(opts)}/design/manifest.json with this shape:
-    {
-      "canvasUrl": "<absolute https URL to the published canvas>",
-      "version": 1,
-      "directions": [
-        {
-          "key": "<unique-key>",
-          "title": "<title of direction>",
-          "notes": "<notes on what it does differently>",
-          "stillPath": "#{scratch(opts)}/design/<still>.png"
-        }
-      ],
-      "pickedKey": null
-    }
-    """)
-  end
-
-  @doc """
   Stage brief for the Architect role.
   """
   def architect_brief(opts \\ []) do
-    design_section = architect_design_brief(opts)
-    design_prefix = if design_section == "", do: "", else: "#{design_section}\n\n"
     plan_section = plan_write_brief(opts)
 
     String.trim("""
-    #{design_prefix}#{plan_section}
+    #{plan_section}
     Review comments come back as further turns of this same conversation. When that happens, write the plan file again.
     """)
   end
@@ -80,71 +52,6 @@ defmodule Rail.Pipeline.Utils.Briefs do
 
     - A heredoc into #{file}, never an inline string.
     - Keep the `## Implementation plan` heading on the first line.
-    """)
-  end
-
-  @doc """
-  Summarizes the approved design direction for the Architect.
-  """
-  def architect_design_brief(nil), do: ""
-  def architect_design_brief([]), do: ""
-
-  def architect_design_brief(design_or_opts) do
-    design = extract_design(design_or_opts)
-
-    case find_picked_direction(design) do
-      {direction, canvas_url} ->
-        title = get_field(direction, :title) || ""
-        notes = get_field(direction, :notes) || ""
-        still_path = get_field(direction, :still_path) || ""
-
-        String.trim("""
-        The approved design direction for this ticket:
-        - Title: #{title}
-        - Notes: #{notes}
-        - Canvas URL: #{canvas_url}
-        - Still screenshot: #{still_path}
-        """)
-
-      nil ->
-        ""
-    end
-  end
-
-  @doc """
-  Brief handed to the Designer when the human picks a direction.
-  """
-  def design_pick_brief(key_or_opts, opts \\ [])
-
-  def design_pick_brief(key, opts) when is_binary(key) do
-    title = get_opt(opts, :title) || resolve_direction_title(opts, key) || key
-
-    String.trim("""
-    The human picked direction "#{title}" (key: "#{key}").
-
-    Re-shoot its still under #{scratch(opts)}/design/ with a new versioned filename (e.g. #{key}-v2.png), and rewrite #{scratch(opts)}/design/manifest.json with an incremented `version`, the same `canvasUrl`, `pickedKey` set to "#{key}", and this direction as the only entry in `directions`, carrying the updated `stillPath` and `notes`.
-    """)
-  end
-
-  def design_pick_brief(design_or_task, key) when is_binary(key) do
-    design_pick_brief(key, design: design_or_task)
-  end
-
-  def design_pick_brief(opts, []) when is_list(opts) do
-    key = get_opt(opts, :key) || "picked-direction"
-    design_pick_brief(key, opts)
-  end
-
-  @doc """
-  Brief handed to the Designer when revisions are requested on the picked design.
-  """
-  def design_revise_brief(comment, opts \\ []) when is_binary(comment) do
-    String.trim("""
-    The human requested revisions to the picked design:
-
-    #{comment}
-
-    Re-shoot the still under #{scratch(opts)}/design/ with a new versioned filename (e.g. <key>-v<version>.png), and rewrite #{scratch(opts)}/design/manifest.json with an incremented `version`, the same `canvasUrl`, and the updated `stillPath` and `notes` for this direction.
     """)
   end
 
@@ -382,23 +289,10 @@ defmodule Rail.Pipeline.Utils.Briefs do
     end
   end
 
-  # The ticket the designer is designing for, when there is one. It is not theirs
-  # to edit.
-  defp design_ticket_line(opts) do
-    case resolve_identifier(opts) do
-      identifier when is_binary(identifier) and identifier != "" ->
-        "The ticket you are designing for is the file #{scratch(opts)}/tickets/#{identifier}.md. It is not yours to edit.\n\n"
-
-      _unidentified ->
-        ""
-    end
-  end
-
   defp resolve_identifier(opts) do
     get_opt(opts, :identifier) || get_opt(opts, :issue_identifier) || get_opt(opts, :issue_number)
   end
 
-  defp dispatch_stage_brief(:design, opts), do: design_brief(opts)
   defp dispatch_stage_brief(:architect, opts), do: architect_brief(opts)
   defp dispatch_stage_brief(:engineer, opts), do: engineer_brief(opts)
   defp dispatch_stage_brief(:review, opts), do: review_brief(opts)
@@ -408,46 +302,6 @@ defmodule Rail.Pipeline.Utils.Briefs do
   defp dispatch_stage_brief(:ready_to_merge, _opts), do: ""
   defp dispatch_stage_brief(:merged, _opts), do: ""
   defp dispatch_stage_brief(_unknown, _opts), do: ""
-
-  defp extract_design(opts) when is_list(opts), do: Keyword.get(opts, :design)
-  defp extract_design(%{design: design}), do: design
-  defp extract_design(%{"design" => design}), do: design
-  defp extract_design(design), do: design
-
-  defp find_picked_direction(design) when is_map(design) do
-    canvas_url = get_field(design, :canvas_url) || ""
-    picked_key = get_field(design, :picked_key)
-    directions = get_field(design, :directions) || []
-
-    direction =
-      cond do
-        picked_key != nil and picked_key != "" ->
-          Enum.find(directions, fn d -> get_field(d, :key) == picked_key end)
-
-        length(directions) == 1 ->
-          hd(directions)
-
-        true ->
-          nil
-      end
-
-    if direction, do: {direction, canvas_url}
-  end
-
-  defp find_picked_direction(_other), do: nil
-
-  defp resolve_direction_title(opts, key) do
-    design = extract_design(opts)
-
-    if is_map(design) do
-      directions = get_field(design, :directions) || []
-
-      case Enum.find(directions, fn d -> get_field(d, :key) == key end) do
-        dir when is_map(dir) -> get_field(dir, :title)
-        _nil -> nil
-      end
-    end
-  end
 
   defp resolve_criteria(opts) do
     cond do
@@ -494,7 +348,6 @@ defmodule Rail.Pipeline.Utils.Briefs do
       branch: get_field(task, :worktree_name) || get_field(task, :branch_name),
       is_rebasing: get_field(task, :is_rebasing),
       scratch_path: get_field(task, :scratch_path),
-      design: get_field(task, :design),
       ticket: get_field(task, :ticket) || get_field(task, :description) || issue_field(task, :description),
       pr_number: get_field(task, :pr_number),
       title: get_field(task, :title) || issue_field(task, :title)

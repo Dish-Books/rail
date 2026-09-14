@@ -46,31 +46,6 @@ defmodule RailTest.Support.ArtifactHelpers do
     manifest_file
   end
 
-  @doc "Writes a valid design manifest in the design directory."
-  def write_design_manifest(design_dir, attrs \\ %{}) do
-    still_filename = "still_a.png"
-    write_dummy_image(Path.join(design_dir, still_filename))
-
-    default_data = %{
-      "version" => 1,
-      "canvasUrl" => "https://canvas.example.com/project/abc",
-      "pickedKey" => "dir_a",
-      "directions" => [
-        %{
-          "key" => "dir_a",
-          "title" => "Direction A",
-          "notes" => "Minimalist card layout",
-          "still_path" => still_filename
-        }
-      ]
-    }
-
-    data = Map.merge(default_data, attrs)
-    manifest_file = Path.join(design_dir, "manifest.json")
-    File.write!(manifest_file, Jason.encode!(data))
-    manifest_file
-  end
-
   @doc "Writes a valid QA manifest in the qa directory."
   def write_qa_manifest(qa_dir, attrs \\ %{}) do
     screenshot_path = Path.join(qa_dir, "screenshot.png")

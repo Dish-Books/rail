@@ -16,13 +16,12 @@ defmodule RailWeb.Components.TaskActions do
   attr :task, :any, required: true
   attr :run, :any, default: nil
   attr :running_action, :atom, default: nil
-  attr :design, :any, default: nil
   attr :on_action, :string, default: "action_click"
   attr :id, :string, default: "task-actions"
   attr :class, :string, default: nil
 
   def task_actions(assigns) do
-    assigns = assign(assigns, :actions, build_actions(assigns.task, assigns.run, assigns.design))
+    assigns = assign(assigns, :actions, build_actions(assigns.task, assigns.run))
 
     ~H"""
     <div
@@ -34,23 +33,15 @@ defmodule RailWeb.Components.TaskActions do
         <% is_disabled = action_disabled?(@run, action.kind, @running_action)
 
         show_spinner =
-          @running_action == action.kind and TaskActionRunner.shows_progress?(action.kind)
-
-        data_qa =
-          if String.starts_with?(action.id, "action-pick-design-") do
-            "#{action.id} pick-direction-button"
-          else
-            action.id
-          end %>
+          @running_action == action.kind and TaskActionRunner.shows_progress?(action.kind) %>
         <button
           type="button"
           id={action.id}
-          data-qa={data_qa}
+          data-qa={action.id}
           disabled={is_disabled}
           phx-click={@on_action}
           phx-value-action={action.action}
           phx-value-kind={action.kind}
-          phx-value-direction_key={Map.get(action.params, :direction_key)}
           phx-value-ignore_conflicts={
             if Map.get(action.params, :ignore_conflicts), do: "true", else: "false"
           }
@@ -88,9 +79,9 @@ defmodule RailWeb.Components.TaskActions do
     # Helpers for building the exact action list per spec 05 §6.3 and §6.4
   end
 
-  defp build_actions(nil, _run, _design), do: []
+  defp build_actions(nil, _run), do: []
 
-  defp build_actions(task, run, design) do
+  defp build_actions(task, run) do
     is_merged = merged?(task)
     conflicted = Task.conflicted?(task) and not is_merged
 
@@ -98,16 +89,16 @@ defmodule RailWeb.Components.TaskActions do
       if is_merged do
         {[], false}
       else
-        build_stage_actions(task, run, design, conflicted)
+        build_stage_actions(task, run, conflicted)
       end
 
     stage_actions ++ build_trailing_actions(task, run, conflicted, rebase_offered)
   end
 
-  defp build_stage_actions(task, run, design, conflicted) do
+  defp build_stage_actions(task, run, conflicted) do
     case Run.state(run) do
       :done ->
-        build_awaiting_approval_actions(task, run, design, conflicted)
+        build_awaiting_approval_actions(task, run, conflicted)
 
       :failed ->
         {build_failed_actions(task), false}
@@ -128,13 +119,10 @@ defmodule RailWeb.Components.TaskActions do
     end
   end
 
-  defp build_awaiting_approval_actions(task, _run, design, conflicted) do
+  defp build_awaiting_approval_actions(task, _run, conflicted) do
     cond do
       task.stage == :ready_to_merge ->
         build_ready_to_merge_actions(task, conflicted)
-
-      task.stage == :design and is_nil(picked_key(design)) ->
-        build_design_pick_actions(design)
 
       Task.gate?(task.stage) ->
         actions = [
@@ -236,25 +224,6 @@ defmodule RailWeb.Components.TaskActions do
     end
   end
 
-  defp build_design_pick_actions(design) do
-    pickable = directions(design)
-
-    direction_actions =
-      Enum.map(pickable, fn dir ->
-        %{
-          id: "action-pick-design-#{dir.key}",
-          label: "Use #{dir.title}",
-          kind: :approve,
-          style: :filled,
-          icon: "pi-check",
-          action: "pick_design_direction",
-          params: %{direction_key: dir.key}
-        }
-      end)
-
-    {direction_actions, false}
-  end
-
   defp build_failed_actions(task) do
     stage_specific =
       case task.stage do
@@ -267,28 +236,6 @@ defmodule RailWeb.Components.TaskActions do
               style: :filled,
               icon: "pi-arrow-clockwise",
               action: "rerecord_demo",
-              params: %{}
-            }
-          ]
-
-        :design ->
-          [
-            %{
-              id: "action-recheck-design",
-              label: "Design is done",
-              kind: :recheck_design,
-              style: :filled,
-              icon: "pi-check-square",
-              action: "recheck_design",
-              params: %{}
-            },
-            %{
-              id: "action-retry",
-              label: "Re-run designer",
-              kind: :retry,
-              style: :outlined,
-              icon: "pi-arrow-clockwise",
-              action: "retry",
               params: %{}
             }
           ]
@@ -390,11 +337,4 @@ defmodule RailWeb.Components.TaskActions do
   defp merged?(task) do
     task.stage == :merged or is_struct(task.merged_at, DateTime)
   end
-
-  # The design is handed in by whoever is drawing this; a task carries no copy.
-  defp picked_key(%{picked_key: picked_key}), do: picked_key
-  defp picked_key(_no_design), do: nil
-
-  defp directions(%{directions: directions}) when is_list(directions), do: directions
-  defp directions(_no_design), do: []
 end

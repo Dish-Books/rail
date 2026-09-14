@@ -133,7 +133,7 @@ defmodule Rail.Pipeline.TaskActionRunner do
   # Server Callbacks
 
   def shows_progress?(kind) when is_atom(kind) do
-    kind in [:merge, :cleanup, :mark_ready, :recheck_design]
+    kind in [:merge, :cleanup, :mark_ready]
   end
 
   def shows_progress?(_other), do: false
@@ -153,7 +153,6 @@ defmodule Rail.Pipeline.TaskActionRunner do
           :merge -> 180_000
           :cleanup -> 120_000
           :mark_ready -> 60_000
-          :recheck_design -> 60_000
           _other -> 60_000
         end
     end

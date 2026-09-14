@@ -126,7 +126,6 @@ defmodule RailWeb.Live.ProductStage do
   defp ticket_title(%{title: title}, _task) when is_binary(title) and title != "", do: title
   defp ticket_title(_no_ticket, %Task{issue: %{title: title}}), do: title
 
-  defp message_for(:already_approved), do: "This ticket has already been approved."
   defp message_for(:stage_running), do: "Something is still running on this task."
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not product."
   defp message_for(reason), do: "Could not approve the ticket: #{inspect(reason)}"

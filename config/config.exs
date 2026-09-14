@@ -18,7 +18,10 @@ config :phoenix, :json_library, Jason
 
 config :rail, Oban,
   repo: Rail.Repo,
-  queues: [issues: 5]
+  queues: [issues: 5, tools: 1],
+  plugins: [
+    {Oban.Plugins.Cron, crontab: [{"* * * * *", Rail.Tools.Workers.ReconcileOsProcesses}]}
+  ]
 
 config :rail, Rail.Cache,
   gc_interval: to_timeout(hour: 12),

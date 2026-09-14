@@ -3,7 +3,6 @@ defmodule Rail.ArtifactsTest do
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Demo
-  alias Rail.Artifacts.Schemas.Design
   alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Projects
   alias Rail.Scope
@@ -14,7 +13,7 @@ defmodule Rail.ArtifactsTest do
 
   setup do
     dir = Path.join(@tmp_base, "facade_#{System.unique_integer([:positive])}")
-    Enum.each(["design", "demo", "qa"], &File.mkdir_p!(Path.join(dir, &1)))
+    Enum.each(["demo", "qa"], &File.mkdir_p!(Path.join(dir, &1)))
 
     {:ok, ws} =
       Projects.upsert_linear_workspace(system_scope(), %{
@@ -41,25 +40,6 @@ defmodule Rail.ArtifactsTest do
   end
 
   describe "Rail.Artifacts facade" do
-    test "delegates read and capture actions for design", %{dir: dir, project: project} do
-      scope = Scope.for_system()
-      ArtifactHelpers.write_design_manifest(Path.join(dir, "design"))
-
-      assert {:ok, %{}} = Artifacts.read_design(scope, dir, url_probe: fn _url -> true end)
-
-      LinearMock.mock_file_upload_success(
-        upload_url: "https://api.linear.app/upload/facade_dsg",
-        asset_url: "https://uploads.linear.app/facade_dsg/still_a.png",
-        asset_id: "ast_facade_dsg"
-      )
-
-      assert {:ok, %Design{version: 1}} =
-               Artifacts.capture_design(scope, "tsk_facade_1", dir,
-                 project: project,
-                 url_probe: fn _url -> true end
-               )
-    end
-
     test "delegates demo actions including mark_demo_stale", %{dir: dir, project: project} do
       scope = Scope.for_system()
       ArtifactHelpers.write_demo_manifest(Path.join(dir, "demo"))

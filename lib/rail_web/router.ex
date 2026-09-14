@@ -74,6 +74,8 @@ defmodule RailWeb.Router do
     pipe_through [:browser, :require_authenticated_user]
 
     get "/settings", SettingsRedirectController, :index
+    get "/tasks/:task_id/design/:key", DesignController, :show
+    get "/tasks/:task_id/design/:key/screenshot", DesignController, :screenshot
 
     live_session :require_authenticated_user,
       on_mount: [

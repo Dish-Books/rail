@@ -1,6 +1,12 @@
 defmodule Rail.Tools.Boot do
   @moduledoc """
-  Reconciles in-flight runs at application boot.
+  Reconciles in-flight runs: at application boot, and every minute after through
+  `Rail.Tools.Workers.ReconcileOsProcesses`.
+
+  A process still alive with nobody following it gets a Follower, which resumes
+  from what was already logged. A process that died unfollowed is settled here,
+  its unlogged lines written to the run's log first. A process that has a
+  Follower is left to it, alive or not: the Follower sees its own exit.
   """
   use Task, restart: :transient
 
@@ -67,7 +73,13 @@ defmodule Rail.Tools.Boot do
   end
 
   defp adopt_single_os_process(os_process, now, timeout_seconds, opts) do
+    follower = Registry.lookup(Rail.Tools.FollowerRegistry, os_process.id)
+
     cond do
+      match?([{_pid, _value}], follower) ->
+        [{pid, _value}] = follower
+        {:already_following, os_process, pid}
+
       os_process.status == :starting and is_nil(os_process.os_pid) ->
         handle_starting_os_process(os_process, now, timeout_seconds)
 
@@ -108,21 +120,15 @@ defmodule Rail.Tools.Boot do
   end
 
   defp handle_live_os_process(os_process, _opts) do
-    case Registry.lookup(Rail.Tools.FollowerRegistry, os_process.id) do
-      [{pid, _val}] ->
-        {:already_following, os_process, pid}
+    case FollowerSupervisor.start_follower(os_process) do
+      {:ok, follower_pid} ->
+        allow_sandbox(follower_pid)
+        {:adopted_live, os_process, follower_pid}
 
-      [] ->
-        case FollowerSupervisor.start_follower(os_process) do
-          {:ok, follower_pid} ->
-            allow_sandbox(follower_pid)
-            {:adopted_live, os_process, follower_pid}
-
-          # coveralls-ignore-start (follower supervisor start failure)
-          {:error, reason} ->
-            {:error, os_process, reason}
-            # coveralls-ignore-stop
-        end
+      # coveralls-ignore-start (follower supervisor start failure)
+      {:error, reason} ->
+        {:error, os_process, reason}
+        # coveralls-ignore-stop
     end
   end
 
@@ -145,7 +151,11 @@ defmodule Rail.Tools.Boot do
         conversation_id: run.conversation_id
       )
 
-    {lines, err_lines} = read_entire_stream_and_err(os_process.stream_path)
+    {lines, unlogged_lines, err_lines} = read_entire_stream_and_err(os_process.stream_path, os_process.stream_offset)
+
+    # Nobody wrote these to the run's log while the process was alive, so the
+    # conversation would otherwise end wherever its last Follower stopped.
+    if run, do: Pipeline.append_run_events(run.id, os_process.id, unlogged_lines)
 
     updated_event_state =
       Enum.reduce(lines, event_state, fn line, acc ->
@@ -233,26 +243,25 @@ defmodule Rail.Tools.Boot do
     end
   end
 
-  defp read_entire_stream_and_err(stream_path) do
-    lines =
-      if File.exists?(stream_path) do
-        case File.read(stream_path) do
-          {:ok, binary} ->
-            binary
-            |> decode_utf8_lenient()
-            |> String.split("\n")
-            |> Enum.reject(&(&1 == ""))
-
-          # coveralls-ignore-start (defensive read failure)
-          _error ->
-            []
-            # coveralls-ignore-stop
-        end
-      else
-        []
+  # Every line, for the event state, and the lines past what was already logged.
+  defp read_entire_stream_and_err(stream_path, logged_offset) do
+    binary =
+      case File.read(stream_path) do
+        {:ok, binary} -> binary
+        {:error, _missing} -> ""
       end
 
+    logged_offset = min(logged_offset || 0, byte_size(binary))
+    unlogged = binary_part(binary, logged_offset, byte_size(binary) - logged_offset)
+
     err_lines = drain_err_file("#{stream_path}.err")
-    {lines, err_lines}
+    {stream_lines(binary), stream_lines(unlogged), err_lines}
+  end
+
+  defp stream_lines(binary) do
+    binary
+    |> decode_utf8_lenient()
+    |> String.split("\n")
+    |> Enum.reject(&(&1 == ""))
   end
 end

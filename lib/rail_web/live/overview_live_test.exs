@@ -535,7 +535,7 @@ defmodule RailWeb.OverviewLiveTest do
           completed_at: DateTime.shift(now, hour: -3)
         })
 
-      moved_on = task_for.("Moved on work", %{stage: :design})
+      moved_on = task_for.("Moved on work", %{stage: :architect})
 
       {:ok, finished} =
         Pipeline.create_run(%{

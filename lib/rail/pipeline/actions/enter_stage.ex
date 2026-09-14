@@ -52,7 +52,11 @@ defmodule Rail.Pipeline.Actions.EnterStage do
     {:ok, %Run{} = run} = Pipeline.start_or_resume_run(task, role, worktree_path)
 
     if worktree_path do
-      spawn_run(task, role, run, worktree_path)
+      case start_process(task, role, run, worktree_path) do
+        {:ok, os_process} -> {:ok, os_process.run}
+        {:error, {:spawn_failed, _reason, %Run{} = failed}} -> {:ok, failed}
+        {:error, :dispatch_disabled} -> {:ok, run}
+      end
     else
       {:ok, fail(run, "Could not prepare the worktree at #{task.worktree_path}.")}
     end
@@ -72,7 +76,12 @@ defmodule Rail.Pipeline.Actions.EnterStage do
     run
   end
 
-  defp spawn_run(%Task{} = task, %Role{} = role, %Run{} = run, worktree_path) do
+  # A stage with a brief of its own spawns itself; the rest have nothing to add.
+  defp start_process(%Task{} = task, %Role{stage: :design} = role, %Run{} = run, worktree_path) do
+    Pipeline.start_design_run(task, role, run, worktree_path)
+  end
+
+  defp start_process(%Task{} = task, %Role{} = role, %Run{} = run, worktree_path) do
     prompt =
       Pipeline.build_prompt(
         task: task,
@@ -95,10 +104,6 @@ defmodule Rail.Pipeline.Actions.EnterStage do
         mcp: role.mcp_tools != []
       )
 
-    case Tools.start_os_process(run, argv) do
-      {:ok, os_process} -> {:ok, os_process.run}
-      {:error, {:spawn_failed, _reason, %Run{} = failed}} -> {:ok, failed}
-      {:error, :dispatch_disabled} -> {:ok, run}
-    end
+    Tools.start_os_process(run, argv)
   end
 end

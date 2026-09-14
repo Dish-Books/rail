@@ -1,11 +1,11 @@
 defmodule RailWeb.TaskLive do
   @moduledoc """
-  One task: the ticket its product run wrote, and the conversation with it in a
+  One task: the work of the stage it sits at, and the conversation with it in a
   sidebar.
 
-  Only the product stage is driven today, so the page is the product stage and
-  the chat, and nothing else. The run each of them works on is the run for the
-  stage the task sits at.
+  Only product and design are driven today, so the page is one of those stages
+  and the chat, and nothing else. The run each of them works on is the run for
+  the stage the task sits at.
 
   The page owns one thing the components cannot: the `run:<id>` subscription. A
   LiveComponent may not subscribe, so log lines arrive here and are forwarded to
@@ -16,6 +16,7 @@ defmodule RailWeb.TaskLive do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias RailWeb.Live.DesignStage
   alias RailWeb.Live.ProductStage
   alias RailWeb.Live.RunConversation
 
@@ -28,7 +29,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:current_section, :tasks)
       |> assign(:current_project_id, nil)
       |> assign(:selected_run, nil)
-      |> assign(:subscribed_run_id, nil)
+      |> assign(:subscribed_run_ids, MapSet.new())
       |> assign(:roles_map, %{})
       |> assign(:pending_question, nil)
       |> assign(:pending_questions, [])
@@ -79,12 +80,36 @@ defmodule RailWeb.TaskLive do
               pending_question={@pending_question}
               pending_questions={@pending_questions}
               answer_text={@answer_text}
+              stage_run={@selected_run}
+            />
+          </:sidebar>
+        </.live_component>
+
+        <.live_component
+          :if={@task != nil and @task.stage == :design and @selected_run != nil}
+          module={DesignStage}
+          id="design-stage-component"
+          task={@task}
+          run={@selected_run}
+        >
+          <:actions>
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+          </:actions>
+          <:sidebar>
+            <.conversation_sidebar
+              task={@task}
+              roles_map={@roles_map}
+              blocked?={@blocked?}
+              pending_question={@pending_question}
+              pending_questions={@pending_questions}
+              answer_text={@answer_text}
+              stage_run={@selected_run}
             />
           </:sidebar>
         </.live_component>
 
         <.task_layout
-          :if={@task != nil and not (@task.stage == :product and @selected_run != nil)}
+          :if={@task != nil and not (@task.stage in [:product, :design] and @selected_run != nil)}
           task={@task}
           run={@selected_run}
           title={@task.issue.title}
@@ -100,6 +125,7 @@ defmodule RailWeb.TaskLive do
               pending_question={@pending_question}
               pending_questions={@pending_questions}
               answer_text={@answer_text}
+              stage_run={@selected_run}
             />
           </:sidebar>
         </.task_layout>
@@ -159,8 +185,8 @@ defmodule RailWeb.TaskLive do
   end
 
   def handle_info({:run_events, run_id, events}, socket) do
-    if socket.assigns.subscribed_run_id == run_id do
-      send_update(RunConversation, id: "run-conversation", appended_events: events)
+    if MapSet.member?(socket.assigns.subscribed_run_ids, run_id) do
+      send_update(RunConversation, id: "run-conversation", run_id: run_id, appended_events: events)
     end
 
     {:noreply, socket}
@@ -171,19 +197,26 @@ defmodule RailWeb.TaskLive do
     {:noreply, refresh_task(socket)}
   end
 
-  # A finished turn may have rewritten the ticket on disk without changing a row,
-  # so the product stage is told to read it again rather than left to notice.
+  # A finished turn may have rewritten the ticket or the design on disk without
+  # changing a row, so the stage is told to read it again rather than left to notice.
   def handle_info({:os_process_finished, _run, _outcome}, socket) do
     socket = refresh_task(socket)
 
-    if match?(%{task: %Task{stage: :product}, selected_run: %Run{}}, socket.assigns) do
-      send_update(ProductStage, id: "product-stage-component", task: socket.assigns.task)
+    case socket.assigns do
+      %{task: %Task{stage: :product} = task, selected_run: %Run{}} ->
+        send_update(ProductStage, id: "product-stage-component", task: task)
+
+      %{task: %Task{stage: :design} = task, selected_run: %Run{}} ->
+        send_update(DesignStage, id: "design-stage-component", task: task)
+
+      _no_stage_on_disk ->
+        :ok
     end
 
     {:noreply, socket}
   end
 
-  # The product stage sends this once the human approves its ticket.
+  # A stage sends this once the human picks or approves something on it.
   def handle_info(:task_changed, socket) do
     {:noreply, refresh_task(socket)}
   end
@@ -240,6 +273,7 @@ defmodule RailWeb.TaskLive do
   attr :pending_question, :any, required: true
   attr :pending_questions, :list, required: true
   attr :answer_text, :string, required: true
+  attr :stage_run, :any, required: true
 
   # Questions sit above the conversation they came out of.
   defp conversation_sidebar(assigns) do
@@ -279,6 +313,7 @@ defmodule RailWeb.TaskLive do
       id="run-conversation"
       task={@task}
       runs={@task.runs || []}
+      stage_run={@stage_run}
       roles_map={@roles_map}
     />
     """
@@ -297,7 +332,7 @@ defmodule RailWeb.TaskLive do
     pending_questions = pending_questions(task, selected_run)
     pending_question = select_question(pending_questions, socket.assigns.selected_question_id)
 
-    sync_run_subscription(socket, selected_run)
+    subscribed_run_ids = sync_run_subscriptions(socket, task.runs)
 
     socket
     |> assign(:task, task)
@@ -306,7 +341,7 @@ defmodule RailWeb.TaskLive do
     |> assign(:roles_map, Map.new(roles, &{&1.id, &1}))
     |> assign(:selected_run, selected_run)
     |> assign(:blocked?, match?(%Run{status: :blocked_on_input}, selected_run))
-    |> assign(:subscribed_run_id, selected_run && selected_run.id)
+    |> assign(:subscribed_run_ids, subscribed_run_ids)
     |> assign(:pending_questions, pending_questions)
     |> assign(:pending_question, pending_question)
     |> assign(:selected_question_id, pending_question && pending_question.id)
@@ -332,15 +367,19 @@ defmodule RailWeb.TaskLive do
   end
 
   # `run:<id>` carries the run's log lines and the finish of its OS process. A
-  # LiveComponent cannot subscribe, so the page holds this and forwards.
-  defp sync_run_subscription(socket, run) do
-    previous = socket.assigns.subscribed_run_id
-    current = run && run.id
+  # LiveComponent cannot subscribe, so the page holds this and forwards. Every run
+  # on the task is followed, not just the stage's: the conversation can be reading
+  # any of them, so the lines are tagged with their run on the way in.
+  defp sync_run_subscriptions(socket, runs) do
+    previous = socket.assigns.subscribed_run_ids
+    current = MapSet.new(runs || [], & &1.id)
 
-    if connected?(socket) and current != previous do
-      if previous, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "run:#{previous}")
-      if current, do: Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{current}")
+    if connected?(socket) do
+      for id <- MapSet.difference(previous, current), do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "run:#{id}")
+      for id <- MapSet.difference(current, previous), do: Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{id}")
     end
+
+    current
   end
 
   defp question_id(socket, params) do

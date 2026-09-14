@@ -19,6 +19,8 @@ if [[ -z "$STAGE" ]]; then
     STAGE="engineer"
   elif [[ "$ALL_ARGS" =~ "stage architect" || "$ALL_ARGS" =~ "Plan the implementation" || "$ALL_ARGS" =~ "plans/" || "$ALL_ARGS" =~ "planWriteBrief" ]]; then
     STAGE="architect"
+  elif [[ "$ALL_ARGS" =~ "stage design" || "$ALL_ARGS" =~ "design/manifest.json" ]]; then
+    STAGE="design"
   elif [[ "$ALL_ARGS" =~ "stage product" || "$ALL_ARGS" =~ "Turn this backlog idea" || "$ALL_ARGS" =~ "tickets/" ]]; then
     STAGE="product"
   else
@@ -63,6 +65,23 @@ Implement complete integration flow, verify stage progression, and enforce quali
 - Feature works end-to-end
 - Verification succeeds
 TICKET_EOF
+      ;;
+
+    design)
+      mkdir -p "$RAIL_SCRATCH/design"
+      cat <<'MANIFEST_EOF' > "$RAIL_SCRATCH/design/manifest.json"
+{
+  "options": [
+    {"key": "cards", "title": "Cards", "summary": "Each item as a large tile.", "good_at": ["Easy to scan"], "costs": ["Few items per screen"], "assumptions": ""},
+    {"key": "table", "title": "Table", "summary": "Dense rows with inline actions.", "good_at": ["Many items at once"], "costs": ["Busy on small screens"], "assumptions": ""},
+    {"key": "timeline", "title": "Timeline", "summary": "Items grouped by date.", "good_at": ["Shows order"], "costs": ["Hides items without a date"], "assumptions": ""}
+  ]
+}
+MANIFEST_EOF
+      for KEY in cards table timeline; do
+        echo "<!doctype html><title>${KEY}</title><h1>${KEY}</h1>" > "$RAIL_SCRATCH/design/${KEY}.html"
+        echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > "$RAIL_SCRATCH/design/${KEY}.png"
+      done
       ;;
 
     architect)

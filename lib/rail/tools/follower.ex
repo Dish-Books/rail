@@ -1,9 +1,18 @@
 defmodule Rail.Tools.Follower do
   @moduledoc """
   Follows a live CLI agent child process by tailing its stream file and monitoring OS PID liveness.
-  """
-  use GenServer, restart: :temporary
 
+  A Follower that crashes is restarted, and one can be started again for a process
+  that lost its Follower some other way. Either picks up where the last left off:
+  every batch written to the run's log records how far into the stream it reached,
+  in the same transaction, and a Follower starting on a stream already partly
+  written replays the lines before that point into its event state without logging
+  them again.
+  """
+  use GenServer, restart: :transient
+
+  import Ecto.Query
+  import Rail.Tools.Utils.DecodeUtf8Lenient
   import Rail.Tools.Utils.DrainErrFile
   import Rail.Tools.Utils.GetFollowerPid
   import Rail.Tools.Utils.NewEventState
@@ -33,6 +42,9 @@ defmodule Rail.Tools.Follower do
     :batch_interval_ms,
     :exit_code,
     file_offset: 0,
+    logged_offset: 0,
+    saved_offset: 0,
+    resumed?: false,
     partial_line: "",
     pending_events: []
   ]
@@ -109,7 +121,14 @@ defmodule Rail.Tools.Follower do
     {:stop, :normal, {:ok, updated_os_process}, final_state}
   end
 
+  # The resume waits for the first tick rather than running in `init/1`: it reads
+  # the row, and the process starting a Follower lends it the database only once
+  # it has its pid.
   @impl true
+  def handle_info(:tail_tick, %__MODULE__{resumed?: false} = state) do
+    handle_info(:tail_tick, resume(state))
+  end
+
   def handle_info(:tail_tick, state) do
     {lines, new_offset, new_partial} =
       pump_stream(state.stream_path, state.file_offset, state.partial_line)
@@ -119,6 +138,7 @@ defmodule Rail.Tools.Follower do
     updated_state = %{
       state
       | file_offset: new_offset,
+        logged_offset: new_offset - byte_size(new_partial),
         partial_line: new_partial,
         event_state: event_state,
         pending_events: pending_events
@@ -142,9 +162,9 @@ defmodule Rail.Tools.Follower do
 
   @impl true
   def handle_info(:batch_tick, state) do
-    flush_pending_events(state.pending_events, state.run_id, state.os_process_id)
+    state = flush_pending_events(state)
     Process.send_after(self(), :batch_tick, state.batch_interval_ms)
-    {:noreply, %{state | pending_events: []}}
+    {:noreply, state}
   end
 
   @impl true
@@ -164,8 +184,70 @@ defmodule Rail.Tools.Follower do
   end
 
   # Pending lines are held newest first, so they are put back in order for the log.
-  defp flush_pending_events(pending_events, run_id, os_process_id) do
-    Pipeline.append_run_events(run_id, os_process_id, Enum.reverse(pending_events))
+  # The lines and how far they reach are written together: a Follower that dies
+  # between the two would otherwise log the same lines again when it comes back.
+  defp flush_pending_events(%__MODULE__{pending_events: [], logged_offset: offset, saved_offset: offset} = state) do
+    state
+  end
+
+  defp flush_pending_events(%__MODULE__{} = state) do
+    {:ok, _entries} =
+      Repo.transaction(fn ->
+        entries = Pipeline.append_run_events(state.run_id, state.os_process_id, Enum.reverse(state.pending_events))
+
+        Repo.update_all(from(o in OsProcess, where: o.id == ^state.os_process_id),
+          set: [stream_offset: state.logged_offset]
+        )
+
+        entries
+      end)
+
+    %{state | pending_events: [], saved_offset: state.logged_offset}
+  end
+
+  # Picks up from what the row says was already logged. The lines before that
+  # point are replayed into the event state, so what the exit reports (usage, the
+  # conversation, a result) covers the whole process, not just what this Follower
+  # saw.
+  defp resume(%__MODULE__{} = state) do
+    offset =
+      case Repo.one(from o in OsProcess, where: o.id == ^state.os_process_id, select: o.stream_offset) do
+        offset when is_integer(offset) -> offset
+        nil -> 0
+      end
+
+    event_state =
+      state.stream_path
+      |> read_logged_lines(offset)
+      |> Enum.reduce(state.event_state, &parse_line(&2, &1))
+
+    %{
+      state
+      | resumed?: true,
+        file_offset: offset,
+        logged_offset: offset,
+        saved_offset: offset,
+        event_state: event_state
+    }
+  end
+
+  defp read_logged_lines(_stream_path, 0), do: []
+
+  defp read_logged_lines(stream_path, offset) do
+    with {:ok, handle} <- File.open(stream_path, [:read, :binary]),
+         {:ok, bytes} <- :file.pread(handle, 0, offset) do
+      File.close(handle)
+
+      bytes
+      |> :binary.split("\n", [:global])
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.map(&decode_utf8_lenient/1)
+    else
+      # coveralls-ignore-start (a stream the row points at that cannot be read)
+      _unreadable ->
+        []
+        # coveralls-ignore-stop
+    end
   end
 
   defp fallback_stop_os_process(os_process, opts) do
@@ -182,7 +264,7 @@ defmodule Rail.Tools.Follower do
   end
 
   defp do_child_exit(state) do
-    state = await_exit_code(state)
+    state = state |> ensure_resumed() |> await_exit_code()
 
     {final_lines, final_offset, _remaining_partial} =
       pump_stream(state.stream_path, state.file_offset, state.partial_line, final: true)
@@ -190,7 +272,7 @@ defmodule Rail.Tools.Follower do
     {event_state, pending_events} =
       process_incoming_lines(final_lines, %{state | file_offset: final_offset})
 
-    flush_pending_events(pending_events, state.run_id, state.os_process_id)
+    flush_pending_events(%{state | pending_events: pending_events, logged_offset: final_offset})
 
     raw_stderr = state.err_path |> drain_err_file() |> Enum.join("\n")
     error = compute_error(event_state.result_error, raw_stderr, state.exit_code)
@@ -222,6 +304,10 @@ defmodule Rail.Tools.Follower do
         {nil, %{state | file_offset: final_offset, pending_events: [], event_state: event_state}}
     end
   end
+
+  # A stop can arrive before the first tick has resumed anything.
+  defp ensure_resumed(%__MODULE__{resumed?: false} = state), do: resume(state)
+  defp ensure_resumed(%__MODULE__{} = state), do: state
 
   # coveralls-ignore-start (defensive exit status collection for fast-exiting processes)
   defp await_exit_code(%{exit_code: code} = state) when is_integer(code), do: state

@@ -122,10 +122,15 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
     assert Repo.get_by(Run, task_id: task.id, role_id: roles[:architect].id)
   end
 
-  test "a ticket already approved is not approved twice", %{run: run} do
-    {:ok, approved} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
+  test "a run that finished cleanly is approved, and only once", %{task: task, run: run} do
+    # RunFinished latches a clean product run done; that is the run waiting on a human.
+    {:ok, finished} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
-    assert {:error, :already_approved} = Pipeline.approve_product_plan(Repo.preload(approved, task: [:issue, :runs]))
+    assert {:ok, %Run{}} = Pipeline.approve_product_plan(Repo.preload(finished, task: [:issue, :runs]))
+
+    assert {:error, {:invalid_stage, :design}} =
+             Pipeline.approve_product_plan(Repo.preload(finished, [task: [:issue, :runs]], force: true))
   end
 
   test "nothing is approved while something on the task is still working", %{task: task, run: run, roles: roles} do

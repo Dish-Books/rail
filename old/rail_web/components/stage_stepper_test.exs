@@ -7,7 +7,7 @@ defmodule RailWeb.Components.StageStepperTest do
   alias Rail.Runs.Schemas.Run
   alias RailWeb.Components.StageStepper
 
-  test "renders all canonical stages when task uses design" do
+  test "renders all canonical stages" do
     task = %Task{stage: :product}
     html = render_component(&StageStepper.stage_stepper/1, task: task)
 
@@ -22,15 +22,6 @@ defmodule RailWeb.Components.StageStepperTest do
     assert html =~ "id=\"stage-chip-demo\""
     assert html =~ "id=\"stage-chip-ready_to_merge\""
     refute html =~ "id=\"stage-chip-merged\""
-  end
-
-  test "skips design stage when task does not use design" do
-    task = %Task{stage: :architect}
-    html = render_component(&StageStepper.stage_stepper/1, task: task)
-
-    assert html =~ "id=\"stage-chip-product\""
-    assert html =~ "id=\"stage-chip-architect\""
-    refute html =~ "id=\"stage-chip-design\""
   end
 
   test "shows checkmark for done stages and current icon for current stage" do
