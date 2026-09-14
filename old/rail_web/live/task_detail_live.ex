@@ -29,7 +29,6 @@ defmodule RailWeb.TaskDetailLive do
       |> assign(:runs, [])
       |> assign(:running_action, nil)
       |> assign(:active_modal, nil)
-      |> assign(:design, nil)
       |> assign(:demo, nil)
       |> assign(:demo_player, nil)
       |> assign(:ticket_content, "")
@@ -69,7 +68,6 @@ defmodule RailWeb.TaskDetailLive do
             |> assign(:runs, [])
             |> assign(:running_action, nil)
             |> assign(:active_modal, nil)
-            |> assign(:design, nil)
             |> assign(:demo, nil)
             |> assign(:demo_player, nil)
             |> assign(:ticket_content, "")
@@ -336,7 +334,6 @@ defmodule RailWeb.TaskDetailLive do
               task={@task}
               run={@selected_run}
               running_action={@running_action}
-              design={@design}
               on_action="action_click"
             />
 
@@ -355,9 +352,6 @@ defmodule RailWeb.TaskDetailLive do
               questions={@pending_questions}
               answer_text={@answer_text}
             />
-
-            <!-- Design Panel (spec 05 §2.7 / §10) -->
-            <.design_panel :if={@design != nil} design={@design} />
 
             <!-- Demo Panel / No-Demo Banner (spec 05 §2.8 / §9) -->
             <%= if @demo != nil do %>
@@ -885,11 +879,6 @@ defmodule RailWeb.TaskDetailLive do
     execute_action(socket, :rerecord_demo, fn -> Pipeline.rerecord_demo(run) end)
   end
 
-  defp handle_action_click("recheck_design", _params, socket) do
-    run = socket.assigns[:selected_run]
-    execute_action(socket, :recheck_design, fn -> Pipeline.recheck_design(run) end)
-  end
-
   defp handle_action_click("mark_ready", _params, socket) do
     task = socket.assigns.task
     execute_action(socket, :mark_ready, fn -> Pipeline.mark_pr_ready(task) end)
@@ -1036,7 +1025,6 @@ defmodule RailWeb.TaskDetailLive do
     |> assign(:current_role_name, role_name(selected_run, roles_map))
     |> assign(:runs, task.runs || [])
     |> assign(:running_action, socket.assigns[:running_action] || TaskActionRunner.running_on(task.id))
-    |> assign(:design, Artifacts.latest_design(task))
     |> assign(:demo, Artifacts.latest_demo(task))
     |> assign(:ticket_content, ticket_content(task))
     |> assign(:plan_content, plan_content(task))

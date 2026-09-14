@@ -3,8 +3,6 @@ defmodule RailWeb.Components.TaskActionsTest do
 
   import Phoenix.LiveViewTest
 
-  alias Rail.Artifacts.Schemas.Design
-  alias Rail.Domain.Embeds.DesignDirection
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Runs.Schemas.Run
   alias RailWeb.Components.TaskActionModals
@@ -112,30 +110,6 @@ defmodule RailWeb.Components.TaskActionsTest do
     refute html =~ "action-rebase"
   end
 
-  test "renders direction buttons and no generic approve at design stage when unpicked" do
-    design = %Design{
-      picked_key: nil,
-      directions: [
-        %DesignDirection{key: "dir_a", title: "Minimalist"},
-        %DesignDirection{key: "dir_b", title: "Compact"}
-      ]
-    }
-
-    html =
-      render_component(&TaskActions.task_actions/1,
-        run: %Run{status: :finished, stage_outcome: :done},
-        task: %Task{stage: :design},
-        design: design,
-        design: design
-      )
-
-    assert html =~ "Use Minimalist"
-    assert html =~ "action-pick-design-dir_a"
-    assert html =~ "Use Compact"
-    assert html =~ "action-pick-design-dir_b"
-    refute html =~ "action-approve"
-  end
-
   test "renders Send back to Engineer and Skip at gate stages with strictly NO approve" do
     for gate_stage <- [:review, :qa, :qa_lead] do
       html =
@@ -195,22 +169,6 @@ defmodule RailWeb.Components.TaskActionsTest do
     assert html =~ "action-rerecord-demo"
     assert html =~ "Continue without a demo"
     assert html =~ "action-decline-demo"
-  end
-
-  test "renders failed design stage with Design is done and Re-run designer (no Retry)" do
-    html =
-      render_component(&TaskActions.task_actions/1,
-        run: %Run{status: :finished, error: "boom"},
-        task: %Task{
-          stage: :design
-        }
-      )
-
-    assert html =~ "Design is done"
-    assert html =~ "action-recheck-design"
-    assert html =~ "Re-run designer"
-    assert html =~ "action-retry"
-    refute html =~ ">Retry<"
   end
 
   test "renders failed other stage with Retry" do
@@ -382,47 +340,5 @@ defmodule RailWeb.Components.TaskActionsTest do
 
     refute html =~ "action-approve"
     assert html =~ "action-chat"
-  end
-
-  test "offers nothing to pick when no design was handed in" do
-    task = %Task{stage: :design}
-
-    html =
-      render_component(&TaskActions.task_actions/1,
-        task: task,
-        run: %Run{status: :finished, stage_outcome: :done},
-        design: nil
-      )
-
-    refute html =~ "action-pick-design-dir_a"
-    assert html =~ "action-chat"
-  end
-
-  test "offers each direction of the design it was handed" do
-    task = %Task{stage: :design}
-
-    html =
-      render_component(&TaskActions.task_actions/1,
-        task: task,
-        run: %Run{status: :finished, stage_outcome: :done},
-        design: %Design{
-          version: 1,
-          picked_key: nil,
-          directions: [%DesignDirection{key: "dir_b", title: "Direction B"}]
-        }
-      )
-
-    assert html =~ "action-pick-design-dir_b"
-  end
-
-  test "handles a design with no directions gracefully" do
-    html =
-      render_component(&TaskActions.task_actions/1,
-        task: %Task{stage: :design},
-        run: %Run{status: :finished, stage_outcome: :done},
-        design: %Design{version: 1, picked_key: nil, directions: []}
-      )
-
-    refute html =~ "action-pick-design"
   end
 end

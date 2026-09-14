@@ -1,7 +1,7 @@
 defmodule Rail.Artifacts do
   @moduledoc """
   Context for visual and test artifacts produced by agent roles, including
-  design directions, demo walkthroughs, QA reports, manifest validation,
+  demo walkthroughs, QA reports, manifest validation,
   Linear storage, scratch materialization, and asset proxying.
   """
 
@@ -13,23 +13,15 @@ defmodule Rail.Artifacts do
   defdelegate read_demo(scope, target, opts \\ []), to: Actions.ReadDemo
 
   @decorate can?(resource: :artifacts, action: :view)
-  defdelegate read_design(scope, target, opts \\ []), to: Actions.ReadDesign
-
-  @decorate can?(resource: :artifacts, action: :view)
   defdelegate read_qa_report(scope, target, opts \\ []), to: Actions.ReadQaReport
 
   @decorate can?(resource: :artifacts, action: :manage)
   defdelegate capture_demo(scope, target, scratch_dir_or_opts, opts \\ []), to: Actions.CaptureDemo
 
   @decorate can?(resource: :artifacts, action: :manage)
-  defdelegate capture_design(scope, target, scratch_dir_or_opts, opts \\ []), to: Actions.CaptureDesign
-
-  @decorate can?(resource: :artifacts, action: :manage)
   defdelegate capture_qa_report(scope, target, scratch_dir_or_opts, opts \\ []), to: Actions.CaptureQaReport
 
   defdelegate latest_demo(task), to: Actions.LatestDemo
-
-  defdelegate latest_design(task), to: Actions.LatestDesign
 
   @decorate can?(resource: :artifacts, action: :manage)
   defdelegate mark_demo_stale(scope, target, opts \\ []), to: Actions.MarkDemoStale

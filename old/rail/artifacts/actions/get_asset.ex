@@ -5,29 +5,11 @@ defmodule Rail.Artifacts.Actions.GetAsset do
   import Rail.Artifacts.Utils.MimeType
 
   alias Rail.Artifacts.Schemas.Demo
-  alias Rail.Artifacts.Schemas.Design
   alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Repo
 
   def get_asset(_scope, kind, id) do
     do_get_asset(to_string(kind), to_string(id))
-  end
-
-  defp do_get_asset("design", id) do
-    query =
-      from d in Design,
-        where: fragment("?::text LIKE ?", d.directions, ^("%" <> id <> "%")),
-        order_by: [desc: d.inserted_at]
-
-    matching_direction =
-      query
-      |> Repo.all()
-      |> Enum.find_value(&find_direction_in_design(&1, id))
-
-    case matching_direction do
-      %{} = asset -> {:ok, asset}
-      nil -> {:error, :not_found}
-    end
   end
 
   defp do_get_asset("demo", id) do
@@ -65,14 +47,6 @@ defmodule Rail.Artifacts.Actions.GetAsset do
   end
 
   defp do_get_asset(_kind, _id), do: {:error, :not_found}
-
-  defp find_direction_in_design(design, id) do
-    Enum.find_value(design.directions || [], fn dir ->
-      if dir.linear_asset_id == id or dir.key == id do
-        %{url: dir.still_url, task_id: design.task_id, content_type: mime_type(dir.still_url)}
-      end
-    end)
-  end
 
   defp find_frame_in_demo(demo, id) do
     Enum.find_value(demo.segments || [], fn seg ->

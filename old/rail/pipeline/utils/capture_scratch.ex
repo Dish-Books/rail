@@ -28,10 +28,6 @@ defmodule Rail.Pipeline.Utils.CaptureScratch do
           if s == :architect, do: capture_plan(task_after_ticket, identifier, scratch_dir)
           task_after_ticket
 
-        :design ->
-          maybe_capture_design(scope, task, scratch_dir)
-          task
-
         :qa ->
           maybe_capture_qa(scope, task, scratch_dir)
           task
@@ -87,14 +83,6 @@ defmodule Rail.Pipeline.Utils.CaptureScratch do
         |> ImplementationPlan.changeset(%{content: content, captured_at: DateTime.utc_now()}, task.id)
         |> Repo.insert_or_update!()
       end
-    end
-  end
-
-  defp maybe_capture_design(scope, task, scratch_dir) do
-    manifest_path = Path.join([scratch_dir, "design", "manifest.json"])
-
-    if File.exists?(manifest_path) do
-      Artifacts.capture_design(scope, task, scratch_dir)
     end
   end
 

@@ -3,7 +3,7 @@ defmodule RailWeb.TaskDetailLiveTest do
 
   import Ecto.Query
   import Phoenix.LiveViewTest
-  import RailTest.Mocks.Linear, only: [mock_design_uploads: 1, mock_demo_uploads: 1]
+  import RailTest.Mocks.Linear, only: [mock_demo_uploads: 1]
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Phoenix.LiveView.Socket
@@ -650,67 +650,6 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert has_element?(view, "#stage-outcome")
     assert has_element?(view, "#stage-failure-section")
     assert has_element?(view, "#stage-failure-box", "Unit tests failed with exit code 1")
-  end
-
-  test "skips design stage when project/task does not use design", %{roles: roles, conn: conn, project: project} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_task_detail_9",
-        login: "task_detail_user_9",
-        email: "task_detail_user_9@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-    scope = Scope.for_user(user)
-
-    assert {:ok, %Project{id: _project_id}} =
-             Projects.create_project(scope, %{
-               name: "No Design Project",
-               github_repo: "example/no-design",
-               github_installation_id: 611,
-               linear_team_id: "t_nd",
-               linear_team_key: "ND",
-               default_branch: "main",
-               clone_path: "/tmp/no-design",
-               active: true,
-               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
-             })
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_task_detail_13834",
-      "identifier" => "TSK-13834",
-      "title" => "Backend API Task"
-    })
-
-    {:ok, issue_13834} = Issues.create_issue(project, %{description: "Backend API Task"})
-
-    {:ok, task} = Pipeline.create_task(issue_13834, :product)
-
-    Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id),
-      set: [description: "Pure backend work"]
-    )
-
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        stage: :engineer
-      })
-
-    Repo.delete_all(from r in Run, where: r.task_id == ^task.id)
-
-    {:ok, _staged} =
-      Runs.create_run(%{
-        task_id: task.id,
-        role_id: (roles[Repo.reload!(task).stage] || roles[:demo]).id,
-        started_at: DateTime.utc_now(),
-        status: :running,
-        stage_outcome: :in_progress
-      })
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
-    assert has_element?(view, "#stage-stepper")
-    assert has_element?(view, "#stage-chip-engineer")
-    refute has_element?(view, "#stage-chip-design")
   end
 
   test "ignores messages it has no use for", %{conn: conn, project: project} do
@@ -1834,93 +1773,6 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert {:ok, demo_view, _html} = live(authed_conn, ~p"/tasks/#{demo_task_id}")
     assert has_element?(demo_view, "#action-rerecord-demo", "Re-record demo")
     demo_view |> element("#action-rerecord-demo") |> render_click()
-
-    # 7. Design direction pick and recheck
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_task_detail_13859",
-      "identifier" => "TSK-13859",
-      "title" => "Task 13859"
-    })
-
-    {:ok, issue_13859} = Issues.create_issue(project, %{description: "Task 13859"})
-
-    {:ok, %Task{id: design_task_id}} = Pipeline.create_task(issue_13859, :product)
-
-    {:ok, %Task{id: design_task_id}} =
-      Pipeline.update_task(Repo.get!(Task, design_task_id), %{
-        stage: :design
-      })
-
-    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, design_task_id).id)
-
-    {:ok, _staged} =
-      Runs.create_run(%{
-        task_id: Repo.get!(Task, design_task_id).id,
-        role_id: (roles[Repo.reload!(Repo.get!(Task, design_task_id)).stage] || roles[:demo]).id,
-        started_at: DateTime.utc_now(),
-        status: :finished,
-        stage_outcome: :done
-      })
-
-    design_scratch_14302 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
-    design_dir_14302 = Path.join(design_scratch_14302, "design")
-    File.mkdir_p!(design_dir_14302)
-    on_exit(fn -> File.rm_rf(design_scratch_14302) end)
-
-    File.write!(Path.join(design_dir_14302, "dir-a.png"), "fake png content")
-
-    File.write!(
-      Path.join(design_dir_14302, "manifest.json"),
-      Jason.encode!(%{
-        "canvasUrl" => "https://canvas.example.com/design-14302",
-        "version" => 1,
-        "pickedKey" => nil,
-        "directions" => [
-          %{"key" => "dir-a", "title" => "Direction Alpha", "notes" => "Notes", "stillPath" => "dir-a.png"}
-        ]
-      })
-    )
-
-    mock_design_uploads(1)
-
-    {:ok, _design} =
-      Artifacts.capture_design(system_scope(), design_task_id, design_scratch_14302, url_probe: fn _url -> true end)
-
-    assert {:ok, design_view, _html} = live(authed_conn, ~p"/tasks/#{design_task_id}")
-    assert has_element?(design_view, "#action-pick-design-dir-a", "Use Direction Alpha")
-    design_view |> element("#action-pick-design-dir-a") |> render_click()
-
-    # Design recheck
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_task_detail_13860",
-      "identifier" => "TSK-13860",
-      "title" => "Task 13860"
-    })
-
-    {:ok, issue_13860} = Issues.create_issue(project, %{description: "Task 13860"})
-
-    {:ok, %Task{id: design_failed_id}} = Pipeline.create_task(issue_13860, :product)
-
-    {:ok, %Task{id: design_failed_id}} =
-      Pipeline.update_task(Repo.get!(Task, design_failed_id), %{
-        stage: :design
-      })
-
-    Repo.delete_all(from r in Run, where: r.task_id == ^Repo.get!(Task, design_failed_id).id)
-
-    {:ok, _staged} =
-      Runs.create_run(%{
-        task_id: Repo.get!(Task, design_failed_id).id,
-        role_id: (roles[Repo.reload!(Repo.get!(Task, design_failed_id)).stage] || roles[:demo]).id,
-        started_at: DateTime.utc_now(),
-        status: :finished,
-        stage_outcome: :in_progress,
-        error: "Run failed."
-      })
-
-    assert {:ok, design_failed_view, _html} = live(authed_conn, ~p"/tasks/#{design_failed_id}")
-    assert has_element?(design_failed_view, "#action-recheck-design", "Design is done")
-    design_failed_view |> element("#action-recheck-design") |> render_click()
   end
 
   test "single-flight action locking and the spinner while one is in flight", %{
@@ -2578,78 +2430,6 @@ defmodule RailWeb.TaskDetailLiveTest do
                %{"path" => "test.ex", "gap_index" => "0", "start_line" => "1", "end_line" => "5"},
                dummy_socket
              )
-  end
-
-  test "renders design panel when task has design attached", %{roles: roles, conn: conn, project: project} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_task_detail_31",
-        login: "task_detail_user_31",
-        email: "task_detail_user_31@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_task_detail_13875",
-      "identifier" => "TSK-13875",
-      "title" => "Task 13875"
-    })
-
-    {:ok, issue_13875} = Issues.create_issue(project, %{description: "Task 13875"})
-
-    {:ok, task} = Pipeline.create_task(issue_13875, :product)
-
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        owner_user_id: user.id,
-        stage: :engineer
-      })
-
-    Repo.delete_all(from r in Run, where: r.task_id == ^task.id)
-
-    {:ok, _staged} =
-      Runs.create_run(%{
-        task_id: task.id,
-        role_id: (roles[Repo.reload!(task).stage] || roles[:demo]).id,
-        started_at: DateTime.utc_now(),
-        status: :running,
-        stage_outcome: :in_progress
-      })
-
-    design_scratch_14303 = Path.join("/tmp", "rail_design_scratch_#{System.unique_integer([:positive])}")
-    design_dir_14303 = Path.join(design_scratch_14303, "design")
-    File.mkdir_p!(design_dir_14303)
-    on_exit(fn -> File.rm_rf(design_scratch_14303) end)
-
-    File.write!(Path.join(design_dir_14303, "dir-a.png"), "fake png content")
-
-    File.write!(
-      Path.join(design_dir_14303, "manifest.json"),
-      Jason.encode!(%{
-        "canvasUrl" => "https://canvas.example.com/design-14303",
-        "version" => 2,
-        "pickedKey" => nil,
-        "directions" => [
-          %{"key" => "dir-a", "title" => "Direction Alpha", "notes" => "Notes", "stillPath" => "dir-a.png"}
-        ]
-      })
-    )
-
-    mock_design_uploads(1)
-
-    {:ok, _design} =
-      Artifacts.capture_design(system_scope(), task, design_scratch_14303, url_probe: fn _url -> true end)
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
-
-    assert has_element?(view, "#design-panel")
-    assert has_element?(view, "#design-panel-title", "Design directions")
-    assert has_element?(view, "#design-version-pill", "v2")
-    assert has_element?(view, "#design-direction-card-dir-a")
-    assert has_element?(view, "#design-direction-title-dir-a", "Direction Alpha")
-    assert has_element?(view, "#design-canvas-link")
   end
 
   test "renders demo panel when task has demo attached", %{roles: roles, conn: conn, project: project} do

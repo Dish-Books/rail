@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.StageStepper do
   @moduledoc """
   Horizontal stepper displaying the sequence of pipeline stages for a task.
-  Excludes :merged, and excludes :design when uses_design? is false.
+  Excludes :merged.
   """
   use RailWeb, :html
 
@@ -30,7 +30,7 @@ defmodule RailWeb.Components.StageStepper do
   def stage_stepper(assigns) do
     assigns =
       assigns
-      |> assign(:stages, stages_for_task(assigns.task, assigns.runs))
+      |> assign(:stages, @canonical_stages)
       |> assign(:current_stage, assigns.task.stage)
 
     ~H"""
@@ -70,10 +70,6 @@ defmodule RailWeb.Components.StageStepper do
       <% end %>
     </div>
     """
-  end
-
-  defp stages_for_task(task, runs) do
-    if Task.uses_design?(task, runs), do: @canonical_stages, else: List.delete(@canonical_stages, :design)
   end
 
   defp stage_icon(true = _is_current, _is_done, task, run), do: RunState.icon(task, run)

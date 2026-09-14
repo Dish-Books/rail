@@ -184,17 +184,11 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
     assert %ImplementationPlan{content: "## Implementation plan\nFrom subfolder"} = plan
   end
 
-  test "capture_scratch delegates to artifacts for design, qa, demo when manifests exist", %{task: task} do
+  test "capture_scratch delegates to artifacts for qa, demo when manifests exist", %{task: task} do
     # Artifact capture only posts to Linear when the task has an issue.
     {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
     scratch_dir = create_temp_git_repo()
-
-    design_dir = Path.join(scratch_dir, "design")
-    File.mkdir_p!(design_dir)
-    File.write!(Path.join(design_dir, "manifest.json"), ~s({"version": 1, "canvasUrl": "https://example.com"}))
-
-    assert {:ok, %Task{}} = capture_scratch(:design, %{task | scratch_path: scratch_dir})
 
     qa_dir = Path.join(scratch_dir, "qa")
     File.mkdir_p!(qa_dir)
@@ -222,7 +216,6 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
 
     assert {:ok, %Task{}} = capture_scratch(:engineer, %{task | scratch_path: scratch_dir})
     assert {:ok, %Task{}} = capture_scratch(:review, %{task | scratch_path: scratch_dir})
-    assert {:ok, %Task{}} = capture_scratch(:design, %{task | scratch_path: scratch_dir})
     assert {:ok, %Task{}} = capture_scratch(:qa, %{task | scratch_path: scratch_dir})
     assert {:ok, %Task{}} = capture_scratch(:demo, %{task | scratch_path: scratch_dir})
   end

@@ -4,11 +4,9 @@ defmodule Rail.Artifacts.Actions.Materialize do
   import Ecto.Query
 
   alias Rail.Artifacts.Schemas.Demo
-  alias Rail.Artifacts.Schemas.Design
   alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Domain.Embeds.DemoFrame
   alias Rail.Domain.Embeds.DemoSegment
-  alias Rail.Domain.Embeds.DesignDirection
   alias Rail.Domain.Embeds.QaArtifact
   alias Rail.Domain.Embeds.QaRow
   alias Rail.Pipeline.Schemas.Task
@@ -22,10 +20,6 @@ defmodule Rail.Artifacts.Actions.Materialize do
 
   defp do_materialize(%Demo{} = demo, dest_scratch_dir, opts) do
     materialize_demo(demo, dest_scratch_dir, opts)
-  end
-
-  defp do_materialize(%Design{} = design, dest_scratch_dir, opts) do
-    materialize_design(design, dest_scratch_dir, opts)
   end
 
   defp do_materialize(%QaReport{} = report, dest_scratch_dir, opts) do
@@ -43,12 +37,6 @@ defmodule Rail.Artifacts.Actions.Materialize do
         case get_latest_demo(task_id) do
           %Demo{} = demo -> materialize_demo(demo, dest_scratch_dir, opts)
           nil -> {:error, :demo_not_found}
-        end
-
-      :design ->
-        case get_latest_design(task_id) do
-          %Design{} = design -> materialize_design(design, dest_scratch_dir, opts)
-          nil -> {:error, :design_not_found}
         end
 
       :qa ->
@@ -70,26 +58,12 @@ defmodule Rail.Artifacts.Actions.Materialize do
     Repo.one(from(d in Demo, where: d.task_id == ^task_id, order_by: [desc: d.version], limit: 1))
   end
 
-  defp get_latest_design(task_id) do
-    Repo.one(from(d in Design, where: d.task_id == ^task_id, order_by: [desc: d.version], limit: 1))
-  end
-
   defp get_latest_qa_report(task_id) do
     Repo.one(from(q in QaReport, where: q.task_id == ^task_id, order_by: [desc: q.inserted_at], limit: 1))
   end
 
   defp materialize_all(task_id, dest_scratch_dir, opts) do
     results = %{}
-
-    results =
-      case get_latest_design(task_id) do
-        %Design{} = design ->
-          {:ok, path} = materialize_design(design, dest_scratch_dir, opts)
-          Map.put(results, :design, path)
-
-        nil ->
-          results
-      end
 
     results =
       case get_latest_demo(task_id) do
@@ -112,67 +86,6 @@ defmodule Rail.Artifacts.Actions.Materialize do
       end
 
     {:ok, results}
-  end
-
-  defp materialize_design(%Design{} = design, dest_scratch_dir, opts) do
-    design_dir =
-      if String.ends_with?(dest_scratch_dir, "design") do
-        dest_scratch_dir
-      else
-        Path.join(dest_scratch_dir, "design")
-      end
-
-    File.mkdir_p!(design_dir)
-    directions_to_materialize = filter_directions_for_materialize(design.directions || [], design, opts)
-
-    with {:ok, token} <- resolve_token(opts),
-         {:ok, directions_data} <- download_design_directions(directions_to_materialize, design_dir, token, opts) do
-      manifest = %{
-        "version" => design.version,
-        "canvasUrl" => design.canvas_url,
-        "pickedKey" => design.picked_key,
-        "directions" => directions_data
-      }
-
-      manifest_path = Path.join(design_dir, "manifest.json")
-      File.write!(manifest_path, Jason.encode!(manifest, pretty: true))
-      {:ok, design_dir}
-    end
-  end
-
-  defp filter_directions_for_materialize(directions, design, opts) do
-    if (Keyword.get(opts, :only_picked, false) or Keyword.get(opts, :stage) == :architect) and design.picked_key do
-      Enum.filter(directions || [], fn d -> d.key == design.picked_key end)
-    else
-      directions || []
-    end
-  end
-
-  defp download_design_directions(directions, design_dir, token, opts) do
-    directions
-    |> Enum.reduce_while({:ok, []}, fn %DesignDirection{} = dir, {:ok, acc} ->
-      filename = "still_#{dir.key}.png"
-      dest_path = Path.join(design_dir, filename)
-
-      case maybe_download_file(dir.still_url, dest_path, token, opts) do
-        :ok ->
-          entry = %{
-            "key" => dir.key,
-            "title" => dir.title,
-            "notes" => dir.notes,
-            "still_path" => dest_path
-          }
-
-          {:cont, {:ok, [entry | acc]}}
-
-        {:error, reason} ->
-          {:halt, {:error, reason}}
-      end
-    end)
-    |> case do
-      {:ok, rev_entries} -> {:ok, Enum.reverse(rev_entries)}
-      {:error, reason} -> {:error, reason}
-    end
   end
 
   defp materialize_demo(%Demo{} = demo, dest_scratch_dir, opts) do

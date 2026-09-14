@@ -3,11 +3,9 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Demo
-  alias Rail.Artifacts.Schemas.Design
   alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Domain.Embeds.DemoFrame
   alias Rail.Domain.Embeds.DemoSegment
-  alias Rail.Domain.Embeds.DesignDirection
   alias Rail.Domain.Embeds.QaArtifact
   alias Rail.Domain.Embeds.QaRow
   alias Rail.Issues
@@ -41,38 +39,6 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
     test "rejects unauthorized scope", %{dest_dir: dest_dir} do
       scope = %Scope{user: nil, system: false}
       assert {:error, :not_authorized} = Artifacts.materialize(scope, "tsk_1", dest_dir)
-    end
-
-    test "materializes %Design{} downloading stills and writing manifest", %{dest_dir: dest_dir} do
-      scope = Scope.for_system()
-
-      design = %Design{
-        version: 1,
-        canvas_url: "https://canvas.example.com/1",
-        picked_key: "dir_1",
-        directions: [
-          %DesignDirection{
-            key: "dir_1",
-            title: "Direction 1",
-            notes: "Notes 1",
-            still_url: "https://uploads.linear.app/asset/still_1.png"
-          }
-        ]
-      }
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        assert conn.request_path == "/asset/still_1.png"
-        Plug.Conn.send_resp(conn, 200, "DOWNLOADED_STILL_BINARY")
-      end)
-
-      assert {:ok, design_dir} = Artifacts.materialize(scope, design, dest_dir)
-      assert File.exists?(Path.join(design_dir, "manifest.json"))
-      assert File.exists?(Path.join(design_dir, "still_dir_1.png"))
-      assert File.read!(Path.join(design_dir, "still_dir_1.png")) == "DOWNLOADED_STILL_BINARY"
-
-      manifest = Jason.decode!(File.read!(Path.join(design_dir, "manifest.json")))
-      assert manifest["canvasUrl"] == "https://canvas.example.com/1"
-      assert [%{"key" => "dir_1"}] = manifest["directions"]
     end
 
     test "materializes %Demo{} downloading frames and writing manifest", %{dest_dir: dest_dir} do
@@ -250,15 +216,6 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
     test "materializes by task_id for all kinds", %{dest_dir: dest_dir} do
       scope = Scope.for_system()
 
-      {:ok, _design} =
-        %Design{}
-        |> Design.changeset(%{
-          task_id: "tsk_mat_all",
-          canvas_url: "https://canvas.example.com",
-          directions: []
-        })
-        |> Repo.insert()
-
       {:ok, _demo} =
         %Demo{}
         |> Demo.changeset(%{
@@ -280,17 +237,14 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
         |> Repo.insert()
 
       assert {:ok, results} = Artifacts.materialize(scope, "tsk_mat_all", dest_dir, kind: :all)
-      assert byte_size(results[:design]) > 0
       assert byte_size(results[:demo]) > 0
       assert byte_size(results[:qa]) > 0
 
       # Individual kind lookups
-      assert {:ok, _dsg_dir} = Artifacts.materialize(scope, "tsk_mat_all", dest_dir, kind: :design)
       assert {:ok, _dmo_dir} = Artifacts.materialize(scope, "tsk_mat_all", dest_dir, kind: :demo)
       assert {:ok, _qa_dir} = Artifacts.materialize(scope, "tsk_mat_all", dest_dir, kind: :qa)
 
       # Missing artifact errors
-      assert {:error, :design_not_found} = Artifacts.materialize(scope, "tsk_none", dest_dir, kind: :design)
       assert {:error, :demo_not_found} = Artifacts.materialize(scope, "tsk_none", dest_dir, kind: :demo)
       assert {:error, :qa_report_not_found} = Artifacts.materialize(scope, "tsk_none", dest_dir, kind: :qa)
 
@@ -304,23 +258,6 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
 
     test "handles dest directories already ending in kind suffix", %{dest_dir: dest_dir, ws: ws} do
       scope = Scope.for_system()
-
-      design = %Design{
-        version: 1,
-        canvas_url: "https://canvas.example.com",
-        directions: [
-          %DesignDirection{
-            key: "d_sub",
-            title: "T",
-            notes: "N",
-            still_url: nil
-          }
-        ]
-      }
-
-      dest_design = Path.join(dest_dir, "design")
-      File.mkdir_p!(dest_design)
-      assert {:ok, ^dest_design} = Artifacts.materialize(scope, design, dest_design, token: "custom_tok")
 
       demo = %Demo{
         version: 1,
@@ -407,7 +344,7 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
       assert {:error, :no_workspace_token} = Artifacts.materialize(scope, demo, dest_dir, project: project_with_id)
     end
 
-    test "handles download failures across design, demo, and QA", %{dest_dir: dest_dir} do
+    test "handles download failures across demo and QA", %{dest_dir: dest_dir} do
       scope = Scope.for_system()
 
       {:ok, _ws} =
@@ -417,25 +354,6 @@ defmodule Rail.Artifacts.Actions.MaterializeTest do
           token: "lin_api_token_materialize_12406",
           webhook_secret: "whsec_materialize_12406"
         })
-
-      design = %Design{
-        version: 1,
-        canvas_url: "https://canvas.example.com",
-        directions: [
-          %DesignDirection{
-            key: "fail_dir",
-            title: "F",
-            notes: "N",
-            still_url: "https://uploads.linear.app/asset/fail_still.png"
-          }
-        ]
-      }
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Plug.Conn.send_resp(conn, 500, "Server Error")
-      end)
-
-      assert {:error, {:download_failed, 500, _url}} = Artifacts.materialize(scope, design, dest_dir)
 
       demo = %Demo{
         version: 1,

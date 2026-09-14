@@ -51,177 +51,6 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       refute brief =~ "acceptance criteria"
       refute brief =~ "Linear"
     end
-
-    test "includes design direction section when design is present" do
-      design = %{
-        canvas_url: "https://claude.ai/canvas/123",
-        picked_key: "dir-1",
-        directions: [
-          %{
-            key: "dir-1",
-            title: "Direction One",
-            notes: "Clean minimal layout",
-            still_path: "#{@scratch}/design/dir-1.png"
-          }
-        ]
-      }
-
-      brief = architect_brief(scratch_path: @scratch, identifier: "RAIL-50", design: design)
-
-      assert brief =~ "The approved design direction for this ticket:"
-      assert brief =~ "- Title: Direction One"
-      assert brief =~ "- Notes: Clean minimal layout"
-      assert brief =~ "- Canvas URL: https://claude.ai/canvas/123"
-      assert brief =~ "- Still screenshot: #{@scratch}/design/dir-1.png"
-      assert brief =~ "#{@scratch}/plans/RAIL-50.md"
-    end
-  end
-
-  describe "architect_design_brief/1" do
-    test "returns empty string when design is nil or empty" do
-      assert architect_design_brief(nil) == ""
-      assert architect_design_brief([]) == ""
-      assert architect_design_brief(%{}) == ""
-      assert architect_design_brief(design: nil) == ""
-      assert architect_design_brief(%{"design" => nil}) == ""
-    end
-
-    test "returns formatted brief for picked direction matching picked_key" do
-      design = %{
-        canvas_url: "https://example.com/canvas/abc",
-        picked_key: "key-b",
-        directions: [
-          %{key: "key-a", title: "Option A", notes: "Notes A", still_path: "#{@scratch}/design/a.png"},
-          %{key: "key-b", title: "Option B", notes: "Notes B", still_path: "#{@scratch}/design/b.png"}
-        ]
-      }
-
-      expected =
-        String.trim("""
-        The approved design direction for this ticket:
-        - Title: Option B
-        - Notes: Notes B
-        - Canvas URL: https://example.com/canvas/abc
-        - Still screenshot: #{@scratch}/design/b.png
-        """)
-
-      assert architect_design_brief(design) == expected
-      assert architect_design_brief(design: design) == expected
-    end
-
-    test "falls back to single direction when picked_key is nil" do
-      design = %{
-        canvas_url: "https://example.com/canvas/single",
-        picked_key: nil,
-        directions: [
-          %{key: "solo", title: "Solo Direction", notes: "Only choice", still_path: "#{@scratch}/design/solo.png"}
-        ]
-      }
-
-      brief = architect_design_brief(design)
-      assert brief =~ "- Title: Solo Direction"
-      assert brief =~ "- Notes: Only choice"
-    end
-
-    test "returns empty string when multiple directions exist but none is picked" do
-      design = %{
-        canvas_url: "https://example.com/canvas/multiple",
-        picked_key: nil,
-        directions: [
-          %{key: "a", title: "A", notes: "A", still_path: "a.png"},
-          %{key: "b", title: "B", notes: "B", still_path: "b.png"}
-        ]
-      }
-
-      assert architect_design_brief(design) == ""
-    end
-  end
-
-  describe "design_brief/1" do
-    test "contains expected instructions and updated scratch paths" do
-      brief = design_brief(scratch_path: @scratch)
-
-      assert brief =~ "Rail reads your design directions from #{@scratch}/design/."
-      assert brief =~ "Write the manifest to #{@scratch}/design/manifest.json"
-      assert brief =~ ~s("stillPath": "#{@scratch}/design/<still>.png")
-      assert brief =~ ~s("pickedKey": null)
-      refute brief =~ "design` skill"
-      refute brief =~ "headless"
-      refute brief =~ ".rail/design"
-    end
-
-    test "matches exact golden output" do
-      expected =
-        String.trim("""
-        Produce three distinct design directions on a single published canvas.
-
-        Rail reads your design directions from #{@scratch}/design/. Save a still screenshot of each direction there, and never edit application code on this stage.
-
-        Write the manifest to #{@scratch}/design/manifest.json with this shape:
-        {
-          "canvasUrl": "<absolute https URL to the published canvas>",
-          "version": 1,
-          "directions": [
-            {
-              "key": "<unique-key>",
-              "title": "<title of direction>",
-              "notes": "<notes on what it does differently>",
-              "stillPath": "#{@scratch}/design/<still>.png"
-            }
-          ],
-          "pickedKey": null
-        }
-        """)
-
-      assert design_brief(scratch_path: @scratch) == expected
-    end
-  end
-
-  describe "design_pick_brief/2" do
-    test "contains expected instructions and updated scratch paths" do
-      brief = design_pick_brief("dir-1", scratch_path: @scratch, title: "Direction One")
-
-      assert brief =~ ~s{The human picked direction "Direction One" (key: "dir-1").}
-      assert brief =~ "Re-shoot its still under #{@scratch}/design/ with a new versioned filename"
-      assert brief =~ "(e.g. dir-1-v2.png)"
-      assert brief =~ "rewrite #{@scratch}/design/manifest.json with an incremented `version`"
-      assert brief =~ "`pickedKey` set to \"dir-1\""
-      refute brief =~ ".rail/design"
-    end
-
-    test "resolves title from design directions when design struct provided" do
-      design = %{
-        directions: [
-          %{key: "dir-a", title: "Modern Dark"}
-        ]
-      }
-
-      brief = design_pick_brief(design, "dir-a")
-      assert brief =~ ~s{The human picked direction "Modern Dark" (key: "dir-a").}
-    end
-
-    test "falls back to key when title is unavailable" do
-      brief = design_pick_brief("dir-xyz")
-      assert brief =~ ~s{The human picked direction "dir-xyz" (key: "dir-xyz").}
-
-      opts_brief = design_pick_brief(scratch_path: @scratch, key: "custom-key", title: "Custom Title")
-      assert opts_brief =~ ~s{The human picked direction "Custom Title" (key: "custom-key").}
-    end
-  end
-
-  describe "design_revise_brief/1" do
-    test "contains comment, expected instructions, and updated scratch paths" do
-      brief = design_revise_brief("Make buttons rounded and use primary blue for headers", scratch_path: @scratch)
-
-      assert brief =~ "The human requested revisions to the picked design:"
-      assert brief =~ "Make buttons rounded and use primary blue for headers"
-
-      assert brief =~
-               "Re-shoot the still under #{@scratch}/design/ with a new versioned filename (e.g. <key>-v<version>.png)"
-
-      assert brief =~ "rewrite #{@scratch}/design/manifest.json with an incremented `version`"
-      refute brief =~ ".rail/design"
-    end
   end
 
   describe "engineer_brief/1" do
@@ -435,7 +264,6 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
 
     test "dispatches based on stage atom" do
       assert stage_brief(:product, scratch_path: @scratch, identifier: "RAIL-1") == ""
-      assert stage_brief(:design, scratch_path: @scratch) =~ "#{@scratch}/design/manifest.json"
       assert stage_brief(:architect, scratch_path: @scratch, identifier: "RAIL-1") =~ "#{@scratch}/plans/RAIL-1.md"
       assert stage_brief(:engineer, scratch_path: @scratch) =~ "Never put anything under #{@scratch}"
       assert stage_brief(:review, scratch_path: @scratch) =~ "`VERDICT: APPROVED` or `VERDICT: CHANGES REQUESTED`"
@@ -446,7 +274,6 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
 
     test "dispatches based on stage string" do
       assert stage_brief("product", scratch_path: @scratch, identifier: "RAIL-2") == ""
-      assert stage_brief("design", scratch_path: @scratch) =~ "#{@scratch}/design/manifest.json"
       assert stage_brief("architect", scratch_path: @scratch, identifier: "RAIL-2") =~ "#{@scratch}/plans/RAIL-2.md"
       assert stage_brief("engineer", scratch_path: @scratch) =~ "Never put anything under #{@scratch}"
       assert stage_brief("review", scratch_path: @scratch) =~ "`VERDICT: APPROVED` or `VERDICT: CHANGES REQUESTED`"
@@ -491,14 +318,6 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       brief_criteria = demo_rerecord_brief(scratch_path: @scratch, criteria: ["Step 1", "Step 2"])
       assert brief_criteria =~ "1. Step 1\n2. Step 2"
 
-      # opts as map with design where key is not found
-      map_opts_miss = design_pick_brief("dir-miss", %{design: %{directions: [%{key: "other", title: "Other"}]}})
-      assert map_opts_miss =~ ~s{The human picked direction "dir-miss" (key: "dir-miss").}
-
-      # opts as map without design key
-      map_opts_no_design = design_pick_brief("dir-none", %{})
-      assert map_opts_no_design =~ ~s{The human picked direction "dir-none" (key: "dir-none").}
-
       # non-map stage
       assert stage_brief(12_345) == ""
 
@@ -508,9 +327,6 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
       # struct input to stage_brief
       struct_task = %Rail.Domain.TicketBody{title: "Test Task", description: "Body"}
       assert stage_brief(struct_task) == ""
-
-      # non-map design inside architect_design_brief
-      assert architect_design_brief(%{design: "invalid_design_type"}) == ""
     end
   end
 end
