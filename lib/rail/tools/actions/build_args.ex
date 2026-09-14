@@ -49,7 +49,7 @@ defmodule Rail.Tools.Actions.BuildArgs do
 
     permission_flags =
       if read_only do
-        ["--tools", "", "--strict-mcp-config"]
+        ["--tools", ""]
       else
         ["--dangerously-skip-permissions"]
       end
@@ -70,7 +70,7 @@ defmodule Rail.Tools.Actions.BuildArgs do
 
     ["-p", prompt, "--model", model, "--effort", effort] ++
       permission_flags ++
-      claude_mcp_flags(Map.get(opts, :mcp, false), read_only) ++
+      claude_mcp_flags(Map.get(opts, :mcp, false)) ++
       ["--output-format", "stream-json", "--verbose"] ++
       system_prompt_flags ++
       resume_flags
@@ -78,8 +78,9 @@ defmodule Rail.Tools.Actions.BuildArgs do
 
   # The token stays out of argv, where `ps` would show it: Claude expands
   # `${RAIL_MCP_TOKEN}` from its own environment when it reads the config.
-  # `--strict-mcp-config` keeps the user's own MCP servers out of the run.
-  defp claude_mcp_flags(true, read_only) do
+  # `--strict-mcp-config` keeps the user's own MCP servers out of the run, and goes
+  # on every run: a role allowed no MCP tools gets no servers, not the user's own.
+  defp claude_mcp_flags(true) do
     config = %{
       "mcpServers" => %{
         "rail" => %{
@@ -90,12 +91,10 @@ defmodule Rail.Tools.Actions.BuildArgs do
       }
     }
 
-    strict = if read_only, do: [], else: ["--strict-mcp-config"]
-
-    ["--mcp-config", Jason.encode!(config)] ++ strict ++ ["--allowedTools", "mcp__rail"]
+    ["--mcp-config", Jason.encode!(config), "--strict-mcp-config", "--allowedTools", "mcp__rail"]
   end
 
-  defp claude_mcp_flags(_mcp, _read_only), do: []
+  defp claude_mcp_flags(_mcp), do: ["--strict-mcp-config"]
 
   defp build_agy_args(opts) do
     prompt = opts[:prompt] || ""
