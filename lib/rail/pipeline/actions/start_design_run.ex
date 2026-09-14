@@ -18,11 +18,13 @@ defmodule Rail.Pipeline.Actions.StartDesignRun do
   alias Rail.Tools
 
   @doc """
-  Spawns `role` on `run` to design `task` in `worktree_path`.
+  Spawns `run`'s role to design its task.
 
-  Returns whatever `Tools.start_os_process/2` does.
+  The run is the whole handle: it carries the task to design, the worktree to do
+  it in, and the role that does it. Returns whatever `Tools.start_os_process/2`
+  does.
   """
-  def start_design_run(%Task{} = task, %Role{} = role, %Run{} = run, worktree_path) do
+  def start_design_run(%Run{task: %Task{} = task, role: %Role{} = role} = run) do
     task = Repo.preload(task, issue: [comments: :replies])
     File.mkdir_p!(Path.join(task.scratch_path, "design"))
 
@@ -44,7 +46,7 @@ defmodule Rail.Pipeline.Actions.StartDesignRun do
         reasoning_effort: role.reasoning_effort || "high",
         system_prompt: role.system_prompt,
         conversation_id: run.conversation_id,
-        work_dir: worktree_path,
+        work_dir: task.worktree_path,
         mcp: role.mcp_tools != []
       )
 

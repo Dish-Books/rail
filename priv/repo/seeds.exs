@@ -49,6 +49,10 @@ claude_backend =
     |> Repo.insert!()
 
 # 4. Default Roles for Project
+# A stage Rail drives has its real prompt in prompts/<stage>.md, which is the copy
+# that gets edited; the stages still to be built back carry a one-liner until they
+# have one. The path is relative to the repo, which is the only place seeds are run
+# from: prompts/ is not shipped in a release.
 default_roles = [
   %{
     stage: :product,
@@ -58,8 +62,7 @@ default_roles = [
     backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
-    system_prompt:
-      "You are an expert Product Manager. Clarify requirements, define scope, and prepare detailed acceptance criteria for the engineering team.",
+    system_prompt: File.read!("prompts/product.md"),
     max_concurrent: 1,
     position: 0
   },
@@ -71,8 +74,7 @@ default_roles = [
     backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
-    system_prompt:
-      "You are a Principal Software Architect. Design clean, modular architecture, specify precise component interfaces, and write actionable technical implementation plans.",
+    system_prompt: File.read!("prompts/architect.md"),
     max_concurrent: 1,
     position: 1
   },
@@ -84,8 +86,7 @@ default_roles = [
     backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
-    system_prompt:
-      "You are a Senior Product Designer. Create intuitive user experiences, responsive layouts, and accessible UI specifications.",
+    system_prompt: File.read!("prompts/design.md"),
     max_concurrent: 1,
     position: 2
   },

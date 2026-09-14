@@ -21,41 +21,6 @@ defmodule Rail.Pipeline.Utils.Briefs do
   end
 
   @doc """
-  Stage brief for the Architect role.
-  """
-  def architect_brief(opts \\ []) do
-    plan_section = plan_write_brief(opts)
-
-    String.trim("""
-    #{plan_section}
-    Review comments come back as further turns of this same conversation. When that happens, write the plan file again.
-    """)
-  end
-
-  @doc """
-  How the Architect writes its implementation plan into scratch.
-  """
-  def plan_write_brief(opts \\ []) do
-    file = "#{scratch(opts)}/plans/#{resolve_identifier(opts)}.md"
-
-    String.trim("""
-    The plan is the file #{file}. Rail captures it when your run completes cleanly. The ticket itself is not yours to write.
-
-    Write it from your worktree with a heredoc, the body and its closing PLAN line at column zero:
-
-    mkdir -p #{scratch(opts)}/plans
-    cat > #{file} <<'PLAN'
-    ## Implementation plan
-
-    <the implementation plan>
-    PLAN
-
-    - A heredoc into #{file}, never an inline string.
-    - Keep the `## Implementation plan` heading on the first line.
-    """)
-  end
-
-  @doc """
   Stage brief for the Engineer role.
   """
   def engineer_brief(opts \\ []) do
@@ -289,11 +254,6 @@ defmodule Rail.Pipeline.Utils.Briefs do
     end
   end
 
-  defp resolve_identifier(opts) do
-    get_opt(opts, :identifier) || get_opt(opts, :issue_identifier) || get_opt(opts, :issue_number)
-  end
-
-  defp dispatch_stage_brief(:architect, opts), do: architect_brief(opts)
   defp dispatch_stage_brief(:engineer, opts), do: engineer_brief(opts)
   defp dispatch_stage_brief(:review, opts), do: review_brief(opts)
   defp dispatch_stage_brief(:qa, opts), do: qa_brief(opts)
@@ -325,7 +285,6 @@ defmodule Rail.Pipeline.Utils.Briefs do
       case stage_str do
         "product" -> :product
         "design" -> :design
-        "architect" -> :architect
         "engineer" -> :engineer
         "review" -> :review
         "qa" -> :qa

@@ -175,7 +175,7 @@ defmodule Rail.Pipeline.Schemas.Run do
   """
   def needs_attention?(%__MODULE__{role: %Role{} = role, task: %Task{} = task} = run) do
     task.stage != :merged and is_nil(task.merged_at) and role.stage == task.stage and
-      (state(run) == :blocked or (task.stage in [:product, :design] and state(run) == :done))
+      (state(run) == :blocked or (task.stage in [:product, :design, :architect] and state(run) == :done))
   end
 
   @doc """

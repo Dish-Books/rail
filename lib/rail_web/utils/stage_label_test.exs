@@ -35,6 +35,7 @@ defmodule RailWeb.Utils.StageLabelTest do
 
     assert stage_label(%Task{stage: :product}, done) == "Review the ticket"
     assert stage_label(%Task{stage: :design}, done) == "Review the designs"
-    assert stage_label(%Task{stage: :architect}, done) == "Waiting on you"
+    assert stage_label(%Task{stage: :architect}, done) == "Review the plan"
+    assert stage_label(%Task{stage: :engineer}, done) == "Waiting on you"
   end
 end

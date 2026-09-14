@@ -188,10 +188,12 @@ defmodule RailWeb.OverviewLive do
     Enum.reject([entry.("started", run.started_at, "started on #{key}"), ended], &is_nil/1)
   end
 
-  # A product or design run that is done has handed its work over, whether or not
-  # the human has since reviewed it and moved the task on.
+  # A run at a stage a human signs off has handed its work over when it is done,
+  # whether or not the human has since reviewed it and moved the task on.
   defp done_text(run, key) do
-    if run.role.stage in [:product, :design], do: "says #{key} is ready for review", else: "finished on #{key}"
+    if run.role.stage in [:product, :design, :architect],
+      do: "says #{key} is ready for review",
+      else: "finished on #{key}"
   end
 
   defp questions(%Run{questions: [_one]}), do: "a question"

@@ -70,14 +70,12 @@ defmodule Rail.Pipeline.Actions.StartDesignRunTest do
 
     {:ok, run} = Pipeline.start_or_resume_run(task, role, worktree_path)
 
-    %{task: task, role: role, run: run, worktree_path: worktree_path}
+    %{task: task, run: run}
   end
 
   test "briefs the designer on the three options it writes into scratch", %{
     task: task,
-    role: role,
-    run: run,
-    worktree_path: worktree_path
+    run: run
   } do
     design_dir = Path.join(task.scratch_path, "design")
 
@@ -92,7 +90,7 @@ defmodule Rail.Pipeline.Actions.StartDesignRunTest do
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_design_run(task, role, run, worktree_path)
+    assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_design_run(run)
     assert File.dir?(design_dir)
   end
 end

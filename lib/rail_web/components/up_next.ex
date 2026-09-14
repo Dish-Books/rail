@@ -88,8 +88,8 @@ defmodule RailWeb.Components.UpNext do
   end
 
   # A done run waiting here has produced the work of its stage — a ticket in
-  # product, a design in design — and is waiting on that being reviewed; anything
-  # else waiting is parked on its questions.
+  # product, a design in design, a plan in architect — and is waiting on that being
+  # reviewed; anything else waiting is parked on its questions.
   defp chip(run), do: if(done?(run), do: "Ready for review", else: "Needs an answer")
 
   defp action(run), do: if(done?(run), do: "Review #{work(run)}", else: "Answer questions")
@@ -109,6 +109,7 @@ defmodule RailWeb.Components.UpNext do
   end
 
   defp work(%Run{task: %Task{stage: :design}}), do: "design"
+  defp work(%Run{task: %Task{stage: :architect}}), do: "plan"
   defp work(%Run{}), do: "ticket"
 
   defp questions(%Run{questions: [_one]}), do: "a question"

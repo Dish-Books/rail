@@ -392,11 +392,39 @@ defmodule Rail.Linear.ClientTest do
       Req.Test.expect(Linear, fn conn ->
         assert conn.method == "PUT"
         assert Plug.Conn.get_req_header(conn, "x-goog-meta") == ["1"]
+
+        # The store signs over content-type, so a PUT without it is refused.
+        assert Plug.Conn.get_req_header(conn, "content-type") == ["image/png"]
         Plug.Conn.send_resp(conn, 200, "")
       end)
 
       assert {:ok,
               %{"fileUpload" => %{"uploadFile" => %{"assetUrl" => "https://uploads.linear.app/asset_999/diagram.png"}}}} =
+               Client.file_upload(project, "diagram.png", "image/png", "DATA")
+    end
+
+    test "leaves a content type Linear handed back as it is", %{project: project} do
+      Req.Test.expect(Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{
+            "fileUpload" => %{
+              "success" => true,
+              "uploadFile" => %{
+                "uploadUrl" => "https://api.linear.app/upload/asset_999",
+                "assetUrl" => "https://uploads.linear.app/asset_999/diagram.png",
+                "headers" => [%{"key" => "Content-Type", "value" => "image/png; charset=binary"}]
+              }
+            }
+          }
+        })
+      end)
+
+      Req.Test.expect(Linear, fn conn ->
+        assert Plug.Conn.get_req_header(conn, "content-type") == ["image/png; charset=binary"]
+        Plug.Conn.send_resp(conn, 200, "")
+      end)
+
+      assert {:ok, %{"fileUpload" => %{"success" => true}}} =
                Client.file_upload(project, "diagram.png", "image/png", "DATA")
     end
 

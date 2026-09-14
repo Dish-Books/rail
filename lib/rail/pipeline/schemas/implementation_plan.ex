@@ -1,9 +1,10 @@
 defmodule Rail.Pipeline.Schemas.ImplementationPlan do
   @moduledoc """
-  The plan the architect wrote for a task.
+  The plan the architect wrote for a task, once a human approved it.
 
   One per task: a second architect pass replaces what the first one said rather
-  than leaving two plans for a reader to choose between.
+  than leaving two plans for a reader to choose between. The plan lives in scratch
+  while it is being written and argued over; a row here means it was approved.
   """
   use Rail.Schema
 
@@ -34,15 +35,11 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
   @doc """
   Builds a changeset for an implementation plan.
   """
-  def changeset(implementation_plan, attrs, task_id \\ nil) do
+  def changeset(implementation_plan, attrs) do
     implementation_plan
     |> cast(attrs, @cast_fields)
-    |> maybe_put_task_id(task_id)
     |> validate_required(@required_fields)
     |> foreign_key_constraint(:task_id)
     |> unique_constraint(:task_id)
   end
-
-  defp maybe_put_task_id(changeset, nil), do: changeset
-  defp maybe_put_task_id(changeset, task_id), do: put_change(changeset, :task_id, task_id)
 end

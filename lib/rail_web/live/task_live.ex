@@ -3,9 +3,9 @@ defmodule RailWeb.TaskLive do
   One task: the work of the stage it sits at, and the conversation with it in a
   sidebar.
 
-  Only product and design are driven today, so the page is one of those stages
-  and the chat, and nothing else. The run each of them works on is the run for
-  the stage the task sits at.
+  Product, design and architect are driven today, so the page is one of those
+  stages and the chat, and nothing else. The run each of them works on is the run
+  for the stage the task sits at.
 
   The page owns one thing the components cannot: the `run:<id>` subscription. A
   LiveComponent may not subscribe, so log lines arrive here and are forwarded to
@@ -16,6 +16,7 @@ defmodule RailWeb.TaskLive do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias RailWeb.Live.ArchitectStage
   alias RailWeb.Live.DesignStage
   alias RailWeb.Live.ProductStage
   alias RailWeb.Live.RunConversation
@@ -108,8 +109,34 @@ defmodule RailWeb.TaskLive do
           </:sidebar>
         </.live_component>
 
+        <.live_component
+          :if={@task != nil and @task.stage == :architect and @selected_run != nil}
+          module={ArchitectStage}
+          id="architect-stage-component"
+          task={@task}
+          run={@selected_run}
+        >
+          <:actions>
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+          </:actions>
+          <:sidebar>
+            <.conversation_sidebar
+              task={@task}
+              roles_map={@roles_map}
+              blocked?={@blocked?}
+              pending_question={@pending_question}
+              pending_questions={@pending_questions}
+              answer_text={@answer_text}
+              stage_run={@selected_run}
+            />
+          </:sidebar>
+        </.live_component>
+
         <.task_layout
-          :if={@task != nil and not (@task.stage in [:product, :design] and @selected_run != nil)}
+          :if={
+            @task != nil and
+              not (@task.stage in [:product, :design, :architect] and @selected_run != nil)
+          }
           task={@task}
           run={@selected_run}
           title={@task.issue.title}
@@ -197,8 +224,9 @@ defmodule RailWeb.TaskLive do
     {:noreply, refresh_task(socket)}
   end
 
-  # A finished turn may have rewritten the ticket or the design on disk without
-  # changing a row, so the stage is told to read it again rather than left to notice.
+  # A finished turn may have rewritten the ticket, the design or the plan on disk
+  # without changing a row, so the stage is told to read it again rather than left
+  # to notice.
   def handle_info({:os_process_finished, _run, _outcome}, socket) do
     socket = refresh_task(socket)
 
@@ -208,6 +236,9 @@ defmodule RailWeb.TaskLive do
 
       %{task: %Task{stage: :design} = task, selected_run: %Run{}} ->
         send_update(DesignStage, id: "design-stage-component", task: task)
+
+      %{task: %Task{stage: :architect} = task, selected_run: %Run{}} ->
+        send_update(ArchitectStage, id: "architect-stage-component", task: task)
 
       _no_stage_on_disk ->
         :ok

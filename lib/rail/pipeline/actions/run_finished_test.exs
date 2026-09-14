@@ -40,7 +40,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       })
 
     roles =
-      Map.new([:product, :design, :architect], fn stage ->
+      Map.new([:product, :design, :architect, :engineer], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
             backend_id: backend.id,
@@ -70,6 +70,12 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Run Finished Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    # Product and architect both check that their agent left its file behind, so a
+    # run meant to read as clean needs one there.
+    File.mkdir_p!(Path.join(task.scratch_path, "tickets"))
+    File.write!(Path.join([task.scratch_path, "tickets", "RUN-1.md"]), "---\ntitle: Run Finished Issue\n---\n\nBody.\n")
 
     exited = fn stage, run_attrs ->
       {:ok, run} =
@@ -207,11 +213,48 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     task: task,
     exited: exited
   } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+    {_run, os_process} = exited.(:engineer, %{})
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :engineer} = Repo.reload!(task)
+  end
+
+  test "an architect run that left no plan stays open for the message that fixes it", %{
+    task: task,
+    exited: exited
+  } do
     {:ok, task} = Pipeline.update_task(task, %{stage: :architect})
     {_run, os_process} = exited.(:architect, %{})
 
-    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert {:ok, %Run{stage_outcome: :in_progress, error: "The architect did not write plans/RUN-1.md."}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+
     assert %Task{stage: :architect} = Repo.reload!(task)
+  end
+
+  test "an architect run that wrote its plan latches done", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :architect})
+    File.mkdir_p!(Path.join(task.scratch_path, "plans"))
+    File.write!(Path.join([task.scratch_path, "plans", "RUN-1.md"]), "## Implementation plan\n\nExtend the module.\n")
+
+    {_run, os_process} = exited.(:architect, %{})
+
+    assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :architect} = Repo.reload!(task)
+  end
+
+  test "a product run that left no ticket stays open for the message that fixes it", %{
+    task: task,
+    exited: exited
+  } do
+    File.rm!(Path.join([task.scratch_path, "tickets", "RUN-1.md"]))
+    {_run, os_process} = exited.(:product, %{})
+
+    assert {:ok, %Run{stage_outcome: :in_progress, error: "The product agent did not write tickets/RUN-1.md."}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+
+    assert %Task{stage: :product} = Repo.reload!(task)
   end
 
   test "a design run that left its options incomplete stays open for the message that fixes it", %{

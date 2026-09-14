@@ -474,6 +474,117 @@ defmodule RailWeb.TaskLiveTest do
     end
   end
 
+  describe "the architect stage" do
+    setup %{backend: backend, project: project, task: task} do
+      roles =
+        Map.new([:architect, :engineer], fn stage ->
+          {:ok, role} =
+            Roles.create_role(system_scope(), project, %{
+              backend_id: backend.id,
+              stage: stage,
+              name: "#{stage} role",
+              model: "claude-3-7-sonnet",
+              system_prompt: "You are the #{stage} agent."
+            })
+
+          {stage, role}
+        end)
+
+      {:ok, task} = Pipeline.update_task(task, %{stage: :architect, worktree_path: create_temp_git_repo()})
+
+      {:ok, architect_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:architect].id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "sess_architect_stage",
+          started_at: DateTime.utc_now()
+        })
+
+      plans_dir = Path.join(task.scratch_path, "plans")
+      File.mkdir_p!(plans_dir)
+      plan_path = Path.join(plans_dir, "TLV-1.md")
+      File.write!(plan_path, "## Implementation plan\n\n### Approach\nExtend the invoices module.\n")
+
+      %{task: task, roles: roles, architect_run: architect_run, plan_path: plan_path}
+    end
+
+    test "renders the plan the architect wrote", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#architect-plan", "Extend the invoices module.")
+      assert has_element?(view, "#approve-plan")
+    end
+
+    test "says so when the architect has written nothing", %{conn: conn, task: task, plan_path: path} do
+      File.rm!(path)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='architect_plan_pending']")
+      assert has_element?(view, "#architect-plan-pending-title", "No plan yet")
+      refute has_element?(view, "#approve-plan")
+    end
+
+    test "says the architect is at work while it is", %{
+      conn: conn,
+      task: task,
+      architect_run: architect_run,
+      plan_path: path
+    } do
+      File.rm!(path)
+      {:ok, _working} = Pipeline.update_run(architect_run, %{status: :running})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#architect-plan-pending-title", "Planning the implementation")
+    end
+
+    # The architect rewrites the file in place, so a finished turn changes no row.
+    test "re-reads the plan when a turn finishes", %{
+      conn: conn,
+      task: task,
+      architect_run: architect_run,
+      plan_path: path
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#architect-plan", "Extend the invoices module.")
+
+      File.write!(path, "## Implementation plan\n\n### Approach\nExtend the payments module instead.\n")
+      send(view.pid, {:os_process_finished, architect_run, %{}})
+
+      # The page forwards to the component, which renders on its own turn.
+      _settled = render(view)
+      assert has_element?(view, "#architect-plan", "Extend the payments module instead.")
+    end
+
+    test "approving the plan hands the task to the engineer", %{conn: conn, task: task, roles: roles} do
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#approve-plan") |> render_click()
+
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+      assert Repo.get_by(Run, task_id: task.id, role_id: roles[:engineer].id)
+    end
+
+    test "approving while the architect works says why it did not", %{
+      conn: conn,
+      task: task,
+      architect_run: architect_run
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      {:ok, _working} = Pipeline.update_run(architect_run, %{status: :running})
+      view |> element("#approve-plan") |> render_click()
+
+      assert has_element?(view, "#architect-error", "still running")
+      assert %Task{stage: :architect} = Repo.reload!(task)
+    end
+  end
+
   describe "the conversation, which the page hosts and feeds" do
     setup %{backend: backend, project: project, task: task, run: run} do
       {:ok, other_role} =

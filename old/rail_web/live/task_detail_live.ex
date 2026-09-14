@@ -32,7 +32,6 @@ defmodule RailWeb.TaskDetailLive do
       |> assign(:demo, nil)
       |> assign(:demo_player, nil)
       |> assign(:ticket_content, "")
-      |> assign(:plan_content, nil)
       |> assign(:pending_question, nil)
       |> assign(:pending_questions, [])
       |> assign(:selected_question_id, nil)
@@ -71,8 +70,7 @@ defmodule RailWeb.TaskDetailLive do
             |> assign(:demo, nil)
             |> assign(:demo_player, nil)
             |> assign(:ticket_content, "")
-            |> assign(:plan_content, nil)
-            |> assign(:pending_question, nil)
+                  |> assign(:pending_question, nil)
             |> assign(:pending_questions, [])
             |> assign(:selected_question_id, nil)
             |> assign(:answer_text, "")
@@ -153,7 +151,7 @@ defmodule RailWeb.TaskDetailLive do
               </h1>
             </div>
 
-            <!-- Tabs (Overview, Plan, Conversation, Diff) -->
+            <!-- Tabs (Overview, Conversation, Diff) -->
             <nav
               id="task-tabs"
               data-qa="task-tabs"
@@ -173,22 +171,6 @@ defmodule RailWeb.TaskDetailLive do
                 ]}
               >
                 Overview
-              </.link>
-
-              <.link
-                patch={~p"/tasks/#{@task.id}?tab=plan"}
-                id="tab-plan"
-                data-qa="tab-plan tab_plan"
-                data-active={if @active_tab == :plan, do: "true", else: "false"}
-                class={[
-                  "pb-3 border-b-2 transition-colors cursor-pointer",
-                  @active_tab == :plan &&
-                    "border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500 font-bold",
-                  @active_tab != :plan &&
-                    "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:border-slate-300 dark:hover:border-slate-600"
-                ]}
-              >
-                Plan
               </.link>
 
               <.link
@@ -378,32 +360,7 @@ defmodule RailWeb.TaskDetailLive do
             </div>
           </div>
 
-          <!-- Tab 2: Plan Pane -->
-          <div
-            id="tab-plan-pane"
-            data-qa="tab-plan-pane"
-            class={[@active_tab != :plan && "hidden"]}
-          >
-            <%= if is_nil(@plan_content) or @plan_content == "" do %>
-              <div
-                id="plan-empty-state"
-                data-qa="plan_empty_state"
-                class="flex items-center justify-center min-h-[300px] text-center p-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs"
-              >
-                <p class="text-sm font-medium text-slate-500 dark:text-slate-400">
-                  No plan has been written yet.
-                </p>
-              </div>
-            <% else %>
-              <div id="plan-content" data-qa="plan_content" class="space-y-4">
-                <div class="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-6 select-text">
-                  <.markdown content={@plan_content} />
-                </div>
-              </div>
-            <% end %>
-          </div>
-
-          <!-- Tab 3: Conversation Pane -->
+          <!-- Tab 2: Conversation Pane -->
           <div
             id="tab-conversation-pane"
             data-qa="tab-conversation-pane"
@@ -418,7 +375,7 @@ defmodule RailWeb.TaskDetailLive do
             />
           </div>
 
-          <!-- Tab 4: Diff Pane -->
+          <!-- Tab 3: Diff Pane -->
           <div
             id="tab-diff-pane"
             data-qa="tab-diff-pane"
@@ -840,7 +797,6 @@ defmodule RailWeb.TaskDetailLive do
   def terminate(_reason, _socket), do: :ok
 
   defp parse_tab("overview"), do: :overview
-  defp parse_tab("plan"), do: :plan
   defp parse_tab("conversation"), do: :conversation
   defp parse_tab("diff"), do: :diff
   defp parse_tab(_other), do: :overview
@@ -982,19 +938,12 @@ defmodule RailWeb.TaskDetailLive do
     Issue.priority_label(priority || :medium) || "Medium"
   end
 
-  # The ticket is the issue's own body; the plan is the architect's file.
+  # The ticket is the issue's own body.
   defp ticket_content(%Task{issue: %Issue{description: description}}) when is_binary(description) do
     if String.trim(description) == "", do: "_No ticket body yet._", else: description
   end
 
   defp ticket_content(%Task{}), do: "_No ticket body yet._"
-
-  defp plan_content(%Task{} = task) do
-    case Pipeline.get_implementation_plan(task) do
-      {:ok, %{content: content}} -> if String.trim(content) == "", do: nil, else: content
-      {:error, :not_found} -> nil
-    end
-  end
 
   defp refresh_task(socket) do
     case Pipeline.get_task(socket.assigns.task_id) do
@@ -1027,7 +976,6 @@ defmodule RailWeb.TaskDetailLive do
     |> assign(:running_action, socket.assigns[:running_action] || TaskActionRunner.running_on(task.id))
     |> assign(:demo, Artifacts.latest_demo(task))
     |> assign(:ticket_content, ticket_content(task))
-    |> assign(:plan_content, plan_content(task))
     |> assign(:pending_question, pending_question)
     |> assign(:pending_questions, pending_questions)
     |> assign(:selected_question_id, question_id(pending_question))

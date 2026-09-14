@@ -256,7 +256,7 @@ defmodule Rail.Linear.Client do
     with {:ok, token} <- token(target, opts),
          {:ok, %{"fileUpload" => %{"success" => true, "uploadFile" => upload_file}} = data} <-
            execute_query(token, query, variables, opts),
-         :ok <- put_file(upload_file, data_binary, opts) do
+         :ok <- put_file(upload_file, content_type, data_binary, opts) do
       {:ok, data}
     end
   end
@@ -284,8 +284,16 @@ defmodule Rail.Linear.Client do
     end
   end
 
-  defp put_file(%{"uploadUrl" => url} = upload_file, data_binary, opts) do
-    headers = Enum.map(upload_file["headers"] || [], &{&1["key"], &1["value"]})
+  # The store signs the upload URL over `content-type` but Linear does not hand it
+  # back among the headers, so the PUT has to carry the type the mutation declared
+  # or the signature it is checked against is for a request nobody made.
+  defp put_file(%{"uploadUrl" => url} = upload_file, content_type, data_binary, opts) do
+    returned = Enum.map(upload_file["headers"] || [], &{&1["key"], &1["value"]})
+
+    headers =
+      if Enum.any?(returned, fn {key, _value} -> String.downcase(key) == "content-type" end),
+        do: returned,
+        else: [{"content-type", content_type} | returned]
 
     case Req.put(build_req(opts), url: url, body: data_binary, headers: headers) do
       {:ok, %{status: status}} when status in 200..299 -> :ok
