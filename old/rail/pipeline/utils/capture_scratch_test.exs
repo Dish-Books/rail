@@ -7,7 +7,6 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
@@ -48,7 +47,7 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
       })
 
     roles =
-      Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
+      Map.new([:product, :design, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
             backend_id: backend.id,
@@ -135,53 +134,6 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
 
     assert %Issue{title: "Updated Title", description: "Updated Description Body"} =
              Repo.get!(Issue, task.issue_id)
-  end
-
-  test "capture_scratch for architect captures plan from plan.md", %{task: task} do
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        stage: :architect
-      })
-
-    scratch_dir = create_temp_git_repo()
-
-    File.write!(Path.join(scratch_dir, "plan.md"), "## Implementation plan\nStep A\nStep B")
-
-    assert {:ok, %Task{id: task_id}} = capture_scratch(:architect, %{task | scratch_path: scratch_dir})
-
-    plan = Repo.one(from p in ImplementationPlan, where: p.task_id == ^task_id)
-    assert %ImplementationPlan{content: "## Implementation plan\nStep A\nStep B"} = plan
-  end
-
-  test "capture_scratch for architect captures plan from plans/identifier.md if plan.md missing", %{
-    project: project,
-    issue: _issue,
-    task: task
-  } do
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_scratch_13508",
-      "identifier" => "ENG-106",
-      "title" => "Scratch Issue 13508"
-    })
-
-    {:ok, issue} = Issues.create_issue(project, %{description: "Scratch Issue 13508"})
-
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        issue_id: issue.id,
-        stage: :architect
-      })
-
-    scratch_dir = create_temp_git_repo()
-    plans_dir = Path.join(scratch_dir, "plans")
-    File.mkdir_p!(plans_dir)
-
-    File.write!(Path.join(plans_dir, "ENG-106.md"), "## Implementation plan\nFrom subfolder")
-
-    assert {:ok, %Task{id: task_id}} = capture_scratch(:architect, %{task | scratch_path: scratch_dir})
-
-    plan = Repo.one(from p in ImplementationPlan, where: p.task_id == ^task_id)
-    assert %ImplementationPlan{content: "## Implementation plan\nFrom subfolder"} = plan
   end
 
   test "capture_scratch delegates to artifacts for qa, demo when manifests exist", %{task: task} do

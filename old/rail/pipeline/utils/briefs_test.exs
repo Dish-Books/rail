@@ -6,53 +6,6 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
   # Briefs name scratch paths absolutely; the task supplies the directory.
   @scratch "/tmp/rail/prj_briefs/scratch/tsk_briefs"
 
-  describe "plan_write_brief/1" do
-    test "names the plan file and the heading Rail parses" do
-      brief = plan_write_brief(scratch_path: @scratch, identifier: "30")
-
-      assert brief =~ "#{@scratch}/plans/30.md"
-      assert brief =~ "The ticket itself is not yours to write"
-      assert brief =~ "mkdir -p #{@scratch}/plans"
-      assert brief =~ "cat > #{@scratch}/plans/30.md <<'PLAN'"
-      assert brief =~ "## Implementation plan"
-      refute brief =~ "Linear"
-    end
-
-    test "matches exact golden heredoc formatting for plan write brief" do
-      expected =
-        String.trim("""
-        The plan is the file #{@scratch}/plans/RAIL-200.md. Rail captures it when your run completes cleanly. The ticket itself is not yours to write.
-
-        Write it from your worktree with a heredoc, the body and its closing PLAN line at column zero:
-
-        mkdir -p #{@scratch}/plans
-        cat > #{@scratch}/plans/RAIL-200.md <<'PLAN'
-        ## Implementation plan
-
-        <the implementation plan>
-        PLAN
-
-        - A heredoc into #{@scratch}/plans/RAIL-200.md, never an inline string.
-        - Keep the `## Implementation plan` heading on the first line.
-        """)
-
-      assert plan_write_brief(scratch_path: @scratch, identifier: "RAIL-200") == expected
-      assert plan_write_brief(%{issue_number: "RAIL-200", scratch_path: @scratch}) == expected
-    end
-  end
-
-  describe "architect_brief/1" do
-    test "uses plan_write_brief and points at plan file" do
-      brief = architect_brief(scratch_path: @scratch, identifier: "30")
-
-      assert brief =~ "#{@scratch}/plans/30.md"
-      assert brief =~ "cat > #{@scratch}/plans/30.md <<'PLAN'"
-      assert brief =~ "Review comments come back as further turns of this same conversation."
-      refute brief =~ "acceptance criteria"
-      refute brief =~ "Linear"
-    end
-  end
-
   describe "engineer_brief/1" do
     test "matches exact golden output" do
       expected =
@@ -225,7 +178,7 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
           branch: "task-1-feat",
           base_branch: "main",
           identifier: "RAIL-77",
-          role: "architect"
+          role: "review"
         )
 
       assert brief =~ "Workspace for this task:"
@@ -264,7 +217,6 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
 
     test "dispatches based on stage atom" do
       assert stage_brief(:product, scratch_path: @scratch, identifier: "RAIL-1") == ""
-      assert stage_brief(:architect, scratch_path: @scratch, identifier: "RAIL-1") =~ "#{@scratch}/plans/RAIL-1.md"
       assert stage_brief(:engineer, scratch_path: @scratch) =~ "Never put anything under #{@scratch}"
       assert stage_brief(:review, scratch_path: @scratch) =~ "`VERDICT: APPROVED` or `VERDICT: CHANGES REQUESTED`"
       assert stage_brief(:qa, scratch_path: @scratch) =~ "#{@scratch}/qa/"
@@ -274,7 +226,6 @@ defmodule Rail.Pipeline.Utils.BriefsTest do
 
     test "dispatches based on stage string" do
       assert stage_brief("product", scratch_path: @scratch, identifier: "RAIL-2") == ""
-      assert stage_brief("architect", scratch_path: @scratch, identifier: "RAIL-2") =~ "#{@scratch}/plans/RAIL-2.md"
       assert stage_brief("engineer", scratch_path: @scratch) =~ "Never put anything under #{@scratch}"
       assert stage_brief("review", scratch_path: @scratch) =~ "`VERDICT: APPROVED` or `VERDICT: CHANGES REQUESTED`"
       assert stage_brief("qa", scratch_path: @scratch) =~ "#{@scratch}/qa/"

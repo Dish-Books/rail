@@ -11,7 +11,6 @@ defmodule RailWeb.TaskDetailLiveTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Pipeline.TaskActionRunner
   alias Rail.Projects
@@ -179,9 +178,8 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert has_element?(view, "#task-detail-title", "Implement Login Flow")
     assert has_element?(view, "[data-qa='project-badge']", "DET")
 
-    # 4 Tabs in exact order
+    # 3 Tabs in exact order
     assert has_element?(view, "#tab-overview", "Overview")
-    assert has_element?(view, "#tab-plan", "Plan")
     assert has_element?(view, "#tab-conversation", "Conversation")
     assert has_element?(view, "#tab-diff", "Diff")
     assert has_element?(view, "#tab-overview[data-active='true']")
@@ -265,23 +263,7 @@ defmodule RailWeb.TaskDetailLiveTest do
         stage_outcome: :in_progress
       })
 
-    %ImplementationPlan{}
-    |> ImplementationPlan.changeset(
-      %{content: "## Architectural Plan\n1. Step one\n2. Step two", captured_at: DateTime.utc_now()},
-      task.id
-    )
-    |> Repo.insert!()
-
-    {:ok, _plan} = Pipeline.get_implementation_plan(task)
-
     assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}")
-
-    # Switch to Plan tab via patch
-    assert view |> element("#tab-plan") |> render_click() =~ "Architectural Plan"
-    assert_patched(view, ~p"/tasks/#{task.id}?tab=plan")
-    assert has_element?(view, "#tab-plan[data-active='true']")
-    assert has_element?(view, "#plan-content")
-    assert has_element?(view, "#plan-content", "Architectural Plan")
 
     # Switch to Conversation tab
     view |> element("#tab-conversation") |> render_click()
@@ -304,59 +286,8 @@ defmodule RailWeb.TaskDetailLiveTest do
     assert has_element?(view, "#ticket-section")
 
     # Trigger switch_tab handle_event directly
-    render_hook(view, "switch_tab", %{"tab" => "plan"})
-    assert_patched(view, ~p"/tasks/#{task.id}?tab=plan")
-  end
-
-  test "renders plan empty state when no plan exists", %{conn: conn, project: project} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_task_detail_4",
-        login: "task_detail_user_4",
-        email: "task_detail_user_4@example.com",
-        admin: true
-      })
-
-    authed_conn = log_in_user(conn, user)
-    scope = Scope.for_user(user)
-
-    assert {:ok, %Project{id: _project_id}} =
-             Projects.create_project(scope, %{
-               name: "No Plan Project",
-               github_repo: "example/no-plan",
-               github_installation_id: 606,
-               linear_team_id: "t_np",
-               linear_team_key: "NP",
-               default_branch: "main",
-               clone_path: "/tmp/no-plan",
-               active: true,
-               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
-             })
-
-    LinearMock.mock_create_issue_success(%{
-      "id" => "lin_task_task_detail_13828",
-      "identifier" => "TSK-13828",
-      "title" => "No Plan Task"
-    })
-
-    {:ok, issue_13828} = Issues.create_issue(project, %{description: "No Plan Task"})
-
-    {:ok, task} = Pipeline.create_task(issue_13828, :product)
-
-    Repo.update_all(from(i in Issue, where: i.id == ^Repo.get!(Task, task.id).issue_id),
-      set: [description: "Task without plan"]
-    )
-
-    {:ok, task} =
-      Pipeline.update_task(task, %{
-        stage: :product
-      })
-
-    Repo.delete_all(from r in Run, where: r.task_id == ^task.id)
-
-    assert {:ok, view, _html} = live(authed_conn, ~p"/tasks/#{task.id}?tab=plan")
-    assert has_element?(view, "#plan-empty-state")
-    assert has_element?(view, "#plan-empty-state", "No plan has been written yet.")
+    render_hook(view, "switch_tab", %{"tab" => "conversation"})
+    assert_patched(view, ~p"/tasks/#{task.id}?tab=conversation")
   end
 
   test "renders diff empty state when worktree_path is nil", %{conn: conn, project: project} do
@@ -902,7 +833,8 @@ defmodule RailWeb.TaskDetailLiveTest do
     render_hook(view, "nonexistent_event", %{})
 
     dummy_socket = %Socket{assigns: %{task: nil}}
-    assert {:noreply, _socket} = RailWeb.TaskDetailLive.handle_event("switch_tab", %{"tab" => "plan"}, dummy_socket)
+    assert {:noreply, _socket} =
+             RailWeb.TaskDetailLive.handle_event("switch_tab", %{"tab" => "conversation"}, dummy_socket)
     assert {:noreply, _socket} = RailWeb.TaskDetailLive.handle_event("random", %{}, dummy_socket)
     assert {:noreply, _socket} = RailWeb.TaskDetailLive.handle_async(:dummy, :result, dummy_socket)
     assert :ok = RailWeb.TaskDetailLive.terminate(:normal, dummy_socket)
