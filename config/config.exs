@@ -20,7 +20,11 @@ config :rail, Oban,
   repo: Rail.Repo,
   queues: [issues: 5, tools: 1],
   plugins: [
-    {Oban.Plugins.Cron, crontab: [{"* * * * *", Rail.Tools.Workers.ReconcileOsProcesses}]}
+    {Oban.Plugins.Cron,
+     crontab: [
+       {"* * * * *", Rail.Tools.Workers.ReconcileOsProcesses},
+       {"*/5 * * * *", Rail.Tools.Workers.RefreshUsage}
+     ]}
   ]
 
 config :rail, Rail.Cache,
