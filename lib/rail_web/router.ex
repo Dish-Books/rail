@@ -65,6 +65,7 @@ defmodule RailWeb.Router do
 
     get "/logout", AuthController, :delete
     delete "/logout", AuthController, :delete
+    get "/denied", AuthController, :denied
     get "/:provider", AuthController, :request
     get "/:provider/callback", AuthController, :callback
     post "/:provider/callback", AuthController, :callback
