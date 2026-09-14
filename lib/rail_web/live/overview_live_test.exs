@@ -272,7 +272,7 @@ defmodule RailWeb.OverviewLiveTest do
         Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
       roles =
-        Map.new([:product, :architect, :engineer, :qa], fn stage ->
+        Map.new([:product, :design, :architect, :engineer, :qa], fn stage ->
           {:ok, role} =
             Roles.create_role(scope, project, %{
               backend_id: backend.id,
@@ -324,7 +324,7 @@ defmodule RailWeb.OverviewLiveTest do
       refute has_element?(view, "#stat-oldest-waiting")
       assert has_element?(view, "#up-next-empty", "Nothing is waiting on you.")
       assert has_element?(view, "#activity-feed-empty")
-      assert has_element?(view, "#roster-running-count", "0 / 4 running")
+      assert has_element?(view, "#roster-running-count", "0 / 5 running")
       assert has_element?(view, "#role-row-#{roles[:qa].id}[data-tone='idle']", "Idle · no work assigned")
       assert has_element?(view, "#throughput-total", "0 total")
       refute has_element?(view, "[data-qa='roster-project-header']")
@@ -438,9 +438,49 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#role-row-#{roles[:product].id}[data-tone='waiting']", "Handed off")
       assert has_element?(view, "#role-row-#{roles[:architect].id}[data-tone='waiting']", "Blocked")
 
-      assert has_element?(view, "#activity-ended-#{review_run.id}", "back for review")
+      assert has_element?(view, "#activity-ended-#{review_run.id}", "is ready for review")
       assert has_element?(view, "#activity-asked-#{one_question.id}", "asked a question")
       assert has_element?(view, "#activity-asked-#{two_questions.id}", "asked 2 questions")
+    end
+
+    test "a task in design waits once, on its design, and the stage it left is done with it", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      task = task_for.("Warn on duplicate bills", %{stage: :design})
+
+      {:ok, product_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:product].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.shift(now, hour: -5),
+          completed_at: DateTime.shift(now, hour: -4)
+        })
+
+      {:ok, design_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:design].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.shift(now, hour: -2),
+          completed_at: DateTime.shift(now, hour: -1)
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#up-next-featured-#{design_run.id}", "Review design")
+      assert has_element?(view, "#up-next-featured-#{design_run.id} [data-qa='up-next-summary']", "The design is ready")
+      refute has_element?(view, "#up-next-featured-#{product_run.id}")
+      refute has_element?(view, "#up-next-row-#{product_run.id}")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+
+      assert has_element?(view, "#role-row-#{roles[:design].id}[data-tone='waiting']", "Handed off")
+      refute has_element?(view, "#role-row-#{roles[:product].id}[data-tone='waiting']")
     end
 
     test "a run whose questions are all answered leads as ready to send", %{
@@ -567,7 +607,9 @@ defmodule RailWeb.OverviewLiveTest do
       refute has_element?(view, "#activity-ended-#{running.id}")
       assert has_element?(view, "#activity-ended-#{failed.id}", "failed on")
       assert has_element?(view, "#activity-ended-#{stopped.id}", "stopped on")
-      assert has_element?(view, "#activity-ended-#{finished.id}", "finished on")
+      # A product run reads as the handoff it was, whether or not the ticket has
+      # since been approved and the task moved on.
+      assert has_element?(view, "#activity-ended-#{finished.id}", "is ready for review")
       assert has_element?(view, "#activity-shipped-#{shipped.issue.id}", "#{shipped.issue.identifier} shipped")
       refute has_element?(view, "#activity-started-#{old.id}")
 
@@ -581,7 +623,7 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert positions == Enum.sort(positions)
 
-      assert has_element?(view, "#roster-running-count", "1 / 4 running")
+      assert has_element?(view, "#roster-running-count", "1 / 5 running")
       assert has_element?(view, "#role-row-#{roles[:engineer].id}[data-tone='running']", "Running")
       assert has_element?(view, "#role-row-#{roles[:qa].id}[data-tone='failed']", "Failed 4h 0m ago")
       assert has_element?(view, "#role-row-#{roles[:architect].id}[data-tone='idle']", "Last ran 3h 0m ago")

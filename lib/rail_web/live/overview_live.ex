@@ -104,7 +104,13 @@ defmodule RailWeb.OverviewLive do
 
     runs = Pipeline.list_runs(project_id: project_id, preload: [:role, :questions, task: [:project, :issue]])
     tasks = Pipeline.list_tasks(project_id: project_id, preload: [:issue])
-    waiting = runs |> Enum.filter(&Run.needs_attention?/1) |> Enum.sort_by(&Run.waiting_since/1, DateTime)
+    # A task waits on a human once, whatever its stage: the run of the stage it is
+    # in is the one thing to do about it.
+    waiting =
+      runs
+      |> Enum.filter(&Run.needs_attention?/1)
+      |> Enum.sort_by(&Run.waiting_since/1, DateTime)
+      |> Enum.uniq_by(& &1.task_id)
 
     # Shipped means Linear completed the issue. Sixty days covers this month's
     # count and the month it is compared with.
@@ -182,8 +188,10 @@ defmodule RailWeb.OverviewLive do
     Enum.reject([entry.("started", run.started_at, "started on #{key}"), ended], &is_nil/1)
   end
 
+  # A product or design run that is done has handed its work over, whether or not
+  # the human has since reviewed it and moved the task on.
   defp done_text(run, key) do
-    if Run.needs_attention?(run), do: "handed #{key} back for review", else: "finished on #{key}"
+    if run.role.stage in [:product, :design], do: "says #{key} is ready for review", else: "finished on #{key}"
   end
 
   defp questions(%Run{questions: [_one]}), do: "a question"

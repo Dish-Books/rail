@@ -115,12 +115,15 @@ defmodule RailWeb.Hooks.NavHook do
     {:cont, socket}
   end
 
-  # What needs a human is counted in runs, the same as the overview lists them.
+  # What needs a human is counted in tasks, the same as the overview lists them:
+  # one task waiting is one thing to do, however many runs it has behind it.
   defp count_attention(projects) do
     projects
     |> Enum.flat_map(fn project ->
-      Pipeline.list_runs(project_id: project.id, preload: [:questions, task: :issue])
+      Pipeline.list_runs(project_id: project.id, preload: [:role, :questions, task: :issue])
     end)
-    |> Enum.count(&Run.needs_attention?/1)
+    |> Enum.filter(&Run.needs_attention?/1)
+    |> Enum.uniq_by(& &1.task_id)
+    |> length()
   end
 end

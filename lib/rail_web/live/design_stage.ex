@@ -7,7 +7,8 @@ defmodule RailWeb.Live.DesignStage do
   selected option's live page at full width below them, and under it what the
   option is good at, what it costs and what it assumed. The page is what the
   designer wrote, updated as the conversation changes it. Once an option is
-  picked the tabs go, and the same view holds the pick and its approval.
+  picked the tabs go, what is left is the pick alone, and approving it moves to
+  the header alongside every other action on the task.
   """
   use RailWeb, :live_component
 
@@ -36,7 +37,32 @@ defmodule RailWeb.Live.DesignStage do
     ~H"""
     <div id="design-stage" data-qa="design-stage" class="contents">
       <.task_layout task={@task} run={@run} title={@task.issue.title}>
-        <:actions>{render_slot(@actions)}</:actions>
+        <:actions>
+          {render_slot(@actions)}
+
+          <a
+            :if={@design != nil and @design.picked != nil and @option != nil and @option.html != nil}
+            id={"open-design-#{@option.key}"}
+            href={~p"/tasks/#{@task.id}/design/#{@option.key}"}
+            target="_blank"
+            rel="noopener"
+            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
+          >
+            Open <.icon name="pi-arrow-up-right" class="size-4" />
+          </a>
+
+          <button
+            :if={@design != nil and @design.picked != nil and @option != nil}
+            type="button"
+            id="approve-design"
+            data-qa="approve_design"
+            phx-click="approve"
+            phx-target={@myself}
+            class="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs"
+          >
+            Approve design
+          </button>
+        </:actions>
 
         <:alerts :if={@error}>
           <p id="design-error" data-qa="design_error" class="text-xs text-red-600 dark:text-red-500">
@@ -50,7 +76,11 @@ defmodule RailWeb.Live.DesignStage do
           :if={@option != nil}
           id="design-options"
           data-qa="design_options"
-          class="@container flex flex-col gap-6 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 p-4 sm:p-6"
+          class={[
+            "@container flex flex-col gap-6",
+            @design.picked == nil &&
+              "rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 p-4 sm:p-6"
+          ]}
         >
           <div
             :if={@design.picked == nil}
@@ -161,9 +191,8 @@ defmodule RailWeb.Live.DesignStage do
                 </p>
               </div>
 
-              <div class="flex items-stretch gap-3">
+              <div :if={@design.picked == nil} class="flex items-stretch gap-3">
                 <button
-                  :if={@design.picked == nil}
                   type="button"
                   id={"pick-design-#{@option.key}"}
                   data-qa="pick_design"
@@ -173,18 +202,6 @@ defmodule RailWeb.Live.DesignStage do
                   class="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs"
                 >
                   Use this design
-                </button>
-
-                <button
-                  :if={@design.picked != nil}
-                  type="button"
-                  id="approve-design"
-                  data-qa="approve_design"
-                  phx-click="approve"
-                  phx-target={@myself}
-                  class="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs"
-                >
-                  Approve design
                 </button>
 
                 <a

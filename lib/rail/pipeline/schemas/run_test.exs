@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
 
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Roles.Schemas.Role
 
   test "changeset/2 with valid attributes" do
     task_id = UXID.generate!(prefix: "tsk")
@@ -195,36 +196,76 @@ defmodule Rail.Pipeline.Schemas.RunTest do
   end
 
   test "a blocked run on an unmerged task needs a human" do
-    blocked = %Run{status: :blocked_on_input, task: %Task{stage: :engineer, merged_at: nil}}
+    blocked = %Run{
+      status: :blocked_on_input,
+      role: %Role{stage: :engineer},
+      task: %Task{stage: :engineer, merged_at: nil}
+    }
+
     assert Run.needs_attention?(blocked)
   end
 
   test "a run that is not blocked needs nothing" do
-    running = %Run{status: :running, task: %Task{stage: :engineer, merged_at: nil}}
+    running = %Run{status: :running, role: %Role{stage: :engineer}, task: %Task{stage: :engineer, merged_at: nil}}
     refute Run.needs_attention?(running)
   end
 
   test "a done product run is waiting on its ticket to be approved" do
-    done = %Run{status: :finished, stage_outcome: :done, task: %Task{stage: :product, merged_at: nil}}
+    done = %Run{
+      status: :finished,
+      stage_outcome: :done,
+      role: %Role{stage: :product},
+      task: %Task{stage: :product, merged_at: nil}
+    }
+
     assert Run.needs_attention?(done)
   end
 
   test "a done design run is waiting on its design to be approved" do
-    done = %Run{status: :finished, stage_outcome: :done, task: %Task{stage: :design, merged_at: nil}}
+    done = %Run{
+      status: :finished,
+      stage_outcome: :done,
+      role: %Role{stage: :design},
+      task: %Task{stage: :design, merged_at: nil}
+    }
+
     assert Run.needs_attention?(done)
   end
 
+  test "a done run of a stage the task has already left needs nothing" do
+    approved = %Run{
+      status: :finished,
+      stage_outcome: :done,
+      role: %Role{stage: :product},
+      task: %Task{stage: :design, merged_at: nil}
+    }
+
+    refute Run.needs_attention?(approved)
+  end
+
   test "a done run past design needs nothing" do
-    done = %Run{status: :finished, stage_outcome: :done, task: %Task{stage: :architect, merged_at: nil}}
+    done = %Run{
+      status: :finished,
+      stage_outcome: :done,
+      role: %Role{stage: :architect},
+      task: %Task{stage: :architect, merged_at: nil}
+    }
+
     refute Run.needs_attention?(done)
   end
 
   test "a merged task needs nothing, however its run ended" do
-    merged_stage = %Run{status: :blocked_on_input, task: %Task{stage: :merged, merged_at: nil}}
+    merged_stage = %Run{
+      status: :blocked_on_input,
+      role: %Role{stage: :merged},
+      task: %Task{stage: :merged, merged_at: nil}
+    }
+
     refute Run.needs_attention?(merged_stage)
 
     merged_at = %Run{
       status: :blocked_on_input,
+      role: %Role{stage: :engineer},
       task: %Task{stage: :engineer, merged_at: DateTime.utc_now()}
     }
 

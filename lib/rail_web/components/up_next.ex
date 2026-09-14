@@ -9,6 +9,7 @@ defmodule RailWeb.Components.UpNext do
   use RailWeb, :html
 
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
 
   attr :runs, :list, required: true
 
@@ -86,25 +87,29 @@ defmodule RailWeb.Components.UpNext do
     """
   end
 
-  # A done run waiting here is a product run whose ticket is written; anything
+  # A done run waiting here has produced the work of its stage — a ticket in
+  # product, a design in design — and is waiting on that being reviewed; anything
   # else waiting is parked on its questions.
   defp chip(run), do: if(done?(run), do: "Ready for review", else: "Needs an answer")
 
-  defp action(run), do: if(done?(run), do: "Review ticket", else: "Answer questions")
+  defp action(run), do: if(done?(run), do: "Review #{work(run)}", else: "Answer questions")
 
   defp verb(run), do: if(done?(run), do: "Review", else: "Answer")
 
   defp summary(run) do
     cond do
-      done?(run) -> "The ticket is written and ready for you to review."
+      done?(run) -> "The #{work(run)} is ready for you to review."
       question = Enum.find(run.questions, &(&1.status == :pending)) -> question.prompt
       true -> "Every question is answered and ready to send."
     end
   end
 
   defp detail(run) do
-    if done?(run), do: "ticket ready for review", else: "#{run.role.name} asked #{questions(run)}"
+    if done?(run), do: "#{work(run)} ready for review", else: "#{run.role.name} asked #{questions(run)}"
   end
+
+  defp work(%Run{task: %Task{stage: :design}}), do: "design"
+  defp work(%Run{}), do: "ticket"
 
   defp questions(%Run{questions: [_one]}), do: "a question"
   defp questions(%Run{questions: questions}), do: "#{length(questions)} questions"

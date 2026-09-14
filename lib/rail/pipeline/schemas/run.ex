@@ -163,13 +163,18 @@ defmodule Rail.Pipeline.Schemas.Run do
   @doc """
   Returns true if this run is waiting on a human at all.
 
+  Only the run of the stage the task is in can be waiting: a stage latches its
+  run to `:done` and leaves it that way, so the product run of a task already in
+  design is a finished verdict, not an outstanding one. Requires `role` and
+  `task` to be preloaded.
+
   A blocked run stays blocked until its answers are sent, so it keeps its place
   in the queue while the human works through the batch. A product or design run
   that is done is waiting on its ticket or design to be approved, which moves the
   task on.
   """
-  def needs_attention?(%__MODULE__{task: %Task{} = task} = run) do
-    task.stage != :merged and is_nil(task.merged_at) and
+  def needs_attention?(%__MODULE__{role: %Role{} = role, task: %Task{} = task} = run) do
+    task.stage != :merged and is_nil(task.merged_at) and role.stage == task.stage and
       (state(run) == :blocked or (task.stage in [:product, :design] and state(run) == :done))
   end
 

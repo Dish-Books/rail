@@ -397,7 +397,12 @@ defmodule RailWeb.TaskLiveTest do
       assert File.read!(Path.join(dir, "picked")) == "table"
       assert has_element?(view, "#design-option-title", "Table")
       refute has_element?(view, "[data-qa='design_tab']")
-      assert has_element?(view, "#approve-design")
+
+      # Once there is a pick, acting on it sits in the header with every other
+      # action on the task, the way approving a ticket does.
+      assert has_element?(view, "#task-header #approve-design")
+      assert has_element?(view, "#task-header #open-design-table[href='/tasks/#{task.id}/design/table']")
+      refute has_element?(view, "[data-qa='pick_design']")
     end
 
     test "a turn finishing re-reads the design the agent may have changed", %{
