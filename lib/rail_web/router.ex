@@ -28,10 +28,22 @@ defmodule RailWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :mcp do
+    plug :accepts, ["json"]
+    plug RailWeb.Plugs.McpRunAuth
+  end
+
   scope "/webhooks", RailWeb do
     pipe_through :api
 
     post "/linear", LinearWebhookController, :handle
+  end
+
+  scope "/mcp", RailWeb do
+    pipe_through :mcp
+
+    post "/", McpController, :handle
+    get "/", McpController, :stream
   end
 
   scope "/auth/linear", RailWeb do
@@ -39,6 +51,13 @@ defmodule RailWeb.Router do
 
     get "/", LinearAuthController, :request
     get "/callback", LinearAuthController, :callback
+  end
+
+  scope "/auth/mcp", RailWeb do
+    pipe_through [:browser, :require_authenticated_user]
+
+    get "/callback", McpAuthController, :callback
+    get "/:server_id", McpAuthController, :request
   end
 
   scope "/auth", RailWeb do
@@ -78,6 +97,7 @@ defmodule RailWeb.Router do
       live "/settings/users", Settings.UsersLive
       live "/settings/roles", Settings.RolesLive
       live "/settings/backends", Settings.BackendsLive
+      live "/settings/mcp-servers", Settings.McpServersLive
     end
   end
 

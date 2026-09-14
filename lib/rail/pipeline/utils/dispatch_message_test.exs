@@ -85,15 +85,23 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
       {:ok, %OsProcess{run: spawned}}
     end)
 
+    run_id = run.id
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run_id}")
+
     assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
     assert %Run{pending_chat: nil, status: :running} = Repo.reload!(run)
+    assert_received {:run_changed, ^run_id}
   end
 
   test "a message that fails to spawn goes back on the run", %{run: run} do
     expect(Tools, :start_os_process, fn spawned, _argv -> {:error, {:spawn_failed, :enoent, spawned}} end)
 
+    run_id = run.id
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run_id}")
+
     assert {:error, {:spawn_failed, :enoent}} = dispatch_message(run, async: false)
     assert %Run{pending_chat: "Please also add a test"} = Repo.reload!(run)
+    assert_received {:run_changed, ^run_id}
     assert [%RunEvent{line: "[rail] That message was not delivered: " <> _reason}] = Repo.all(RunEvent)
   end
 

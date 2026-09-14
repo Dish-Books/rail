@@ -118,6 +118,43 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     Tools.terminate_os_process(os_process.os_pid, grace_period: 100)
   end
 
+  test "gives a role with MCP tools a run token in its environment, and records only its hash", %{
+    run: run,
+    scope: scope
+  } do
+    {:ok, role} = Roles.get_role(id: run.role_id)
+    {:ok, _role} = Roles.update_role(scope, role, %{mcp_tools: ["linear__*"]})
+    test_pid = self()
+
+    expect(Tools, :spawn_os_process, fn _executable, _args, opts ->
+      send(test_pid, {:env, Keyword.fetch!(opts, :env)})
+      {:ok, nil, 4242}
+    end)
+
+    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+
+    assert {:ok, %OsProcess{id: os_process_id}} = Tools.start_os_process(run, ["2"])
+    assert_received {:env, %{"RAIL_MCP_TOKEN" => token}}
+
+    hash = :crypto.hash(:sha256, token)
+    assert %OsProcess{mcp_token_hash: ^hash} = Repo.get!(OsProcess, os_process_id)
+  end
+
+  test "spawns a role without MCP tools with no token", %{run: run} do
+    test_pid = self()
+
+    expect(Tools, :spawn_os_process, fn _executable, _args, opts ->
+      send(test_pid, {:env, Keyword.fetch!(opts, :env)})
+      {:ok, nil, 4243}
+    end)
+
+    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+
+    assert {:ok, %OsProcess{mcp_token_hash: nil}} = Tools.start_os_process(run, ["2"])
+    assert_received {:env, env}
+    refute Map.has_key?(env, "RAIL_MCP_TOKEN")
+  end
+
   test "writes the stream under the task's scratch directory, one file per run", %{
     run: run,
     scratch_path: scratch_path

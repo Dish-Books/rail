@@ -73,6 +73,8 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
       |> Run.changeset(%{pending_chat: nil, status: :running, started_at: run.started_at || DateTime.utc_now()})
       |> Repo.update()
 
+    broadcast_changed(run)
+
     {:ok, _task} = task |> Task.changeset(%{worktree_path: worktree_path}) |> Repo.update()
 
     argv =
@@ -84,7 +86,8 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
         read_only: false,
         system_prompt: role.system_prompt,
         conversation_id: run.conversation_id,
-        work_dir: worktree_path
+        work_dir: worktree_path,
+        mcp: role.mcp_tools != []
       )
 
     case Tools.start_os_process(run, argv) do
@@ -104,7 +107,13 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   # The message never reached an agent, so it goes back on the row as though it
   # had never left: still queued, still the human's to cancel or re-send.
   defp requeue(%Run{} = run, message) do
-    run |> Run.changeset(%{pending_chat: message}) |> Repo.update!()
+    run |> Run.changeset(%{pending_chat: message}) |> Repo.update!() |> broadcast_changed()
+  end
+
+  # The dispatch runs in the background, so whoever queued the message only learns
+  # it went out, or came back, from the run's topic.
+  defp broadcast_changed(%Run{id: id}) do
+    Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{id}", {:run_changed, id})
   end
 
   defp fail(%Run{} = run, reason) do

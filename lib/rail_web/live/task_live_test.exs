@@ -297,9 +297,10 @@ defmodule RailWeb.TaskLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
     view |> element("#cleanup-task") |> render_click()
-    _settled = render_async(view)
 
+    assert_redirect(view, ~p"/issues/#{task.issue_id}", 1_000)
     refute File.dir?(task.scratch_path)
+    assert {:ok, %Task{cleaned_up_at: %DateTime{}}} = Pipeline.get_task(task.id)
   end
 
   test "a task that is already gone reads as cleaned up", %{conn: conn} do
@@ -416,6 +417,21 @@ defmodule RailWeb.TaskLiveTest do
       end
 
       assert has_element?(view, "[data-qa='activity-step']", "[tool unterminated")
+      assert html =~ ">It broke</p>"
+    end
+
+    test "a line already loaded is not appended again when its broadcast arrives", %{
+      conn: conn,
+      task: task,
+      run: run
+    } do
+      entries = Pipeline.append_run_events(run.id, nil, ["[human] it is connected now"])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      send(view.pid, {:run_events, run.id, entries})
+
+      bubble = view |> element("[data-qa='human-bubble']") |> render()
+      assert length(String.split(bubble, "it is connected now")) == 2
     end
 
     test "the raw log colors each line by its source", %{conn: conn, task: task, run: run} do
@@ -501,7 +517,7 @@ defmodule RailWeb.TaskLiveTest do
     test "new log lines reach the conversation while it is open", %{conn: conn, task: task, run: run} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      send(view.pid, {:run_events, run.id, [%{line: "A fresh line of output"}]})
+      send(view.pid, {:run_events, run.id, [%{id: UXID.generate!(), line: "A fresh line of output"}]})
 
       # The page forwards to the component, which renders on its own turn.
       _settled = render(view)
@@ -514,6 +530,18 @@ defmodule RailWeb.TaskLiveTest do
       send(view.pid, {:run_events, "run_somebody_else", [%{line: "Not for this page"}]})
 
       refute render(view) =~ "Not for this page"
+    end
+
+    test "a queued message going out shows the run working", %{conn: conn, task: task, run: run} do
+      {:ok, queued} = Pipeline.update_run(run, %{status: :finished, pending_chat: "One more thing"})
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#queued-banner")
+
+      {:ok, _running} = Pipeline.update_run(queued, %{status: :running, pending_chat: nil})
+      send(view.pid, {:run_changed, run.id})
+
+      refute has_element?(view, "#queued-banner")
+      assert has_element?(view, "#thinking-banner")
     end
 
     test "an OS process finishing refreshes the page", %{conn: conn, task: task, run: run} do

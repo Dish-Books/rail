@@ -70,6 +70,7 @@ defmodule Rail.Roles.Schemas.Role do
     field :system_prompt, :string
     field :max_concurrent, :integer, default: 1
     field :position, :integer, default: 0
+    field :mcp_tools, {:array, :string}, default: []
 
     belongs_to :backend, Backend
     belongs_to :project, Project
@@ -82,6 +83,7 @@ defmodule Rail.Roles.Schemas.Role do
     :description,
     :icon_name,
     :max_concurrent,
+    :mcp_tools,
     :model,
     :name,
     :position,

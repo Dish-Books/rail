@@ -5,9 +5,11 @@ defmodule Rail.Pipeline.Actions.CreateTask do
   The task carries only its own pipeline state: the title, description and
   owner stay on the issue it links to. The issue's own state is left alone —
   the engineer stage is what moves it to `:in_progress`. Returns the existing
-  task when the issue already has one.
+  task when the issue already has one. A cleaned-up task does not count: it is
+  kept as history and the issue gets a fresh one.
   """
 
+  import Ecto.Query
   import Rail.Pipeline.Utils.ScratchPath
 
   alias Rail.Issues.Schemas.Issue
@@ -19,7 +21,7 @@ defmodule Rail.Pipeline.Actions.CreateTask do
   Creates or returns the task for `issue`, starting it at `stage`.
   """
   def create_task(%Issue{project: %Project{} = project} = issue, stage) do
-    case Repo.get_by(Task, issue_id: issue.id) do
+    case Repo.one(from(t in Task, where: t.issue_id == ^issue.id and is_nil(t.cleaned_up_at))) do
       %Task{} = task -> {:ok, task}
       nil -> do_create(project, issue, stage)
     end

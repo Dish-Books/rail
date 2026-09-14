@@ -2,6 +2,7 @@ defmodule RailWeb.Settings.RolesLive do
   @moduledoc false
   use RailWeb, :live_view
 
+  alias Rail.Mcp
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
@@ -25,6 +26,7 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:current_project, nil)
       |> assign(:roles, [])
       |> assign(:backends, Tools.list_backends())
+      |> assign(:mcp_servers, Mcp.list_servers())
       |> assign(:canonical_stages, Role.canonical_stages())
       |> assign(:active_modal, nil)
       |> assign(:modal_role, nil)
@@ -501,6 +503,65 @@ defmodule RailWeb.Settings.RolesLive do
                 </span>
               </div>
 
+              <!-- MCP Tools -->
+              <div :if={@mcp_servers != []} id="role-mcp-tools">
+                <label class="block text-xs font-medium text-slate-900 dark:text-slate-100">
+                  MCP Tools
+                </label>
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                  Called through Rail's proxy on the issue assignee's connection.
+                </p>
+                <input type="hidden" name="role[mcp_tools][]" value="" />
+                <div class="mt-2 space-y-3">
+                  <fieldset
+                    :for={server <- @mcp_servers}
+                    id={"role-mcp-server-#{server.name}"}
+                    class="rounded-md border border-slate-200 dark:border-slate-700 p-3"
+                  >
+                    <% all_tools = "#{server.name}__*" in (@modal_form["mcp_tools"] || []) %>
+                    <label class="flex items-center gap-2 text-xs font-semibold text-slate-900 dark:text-slate-100">
+                      <input
+                        type="checkbox"
+                        name="role[mcp_tools][]"
+                        value={"#{server.name}__*"}
+                        id={"role-mcp-all-#{server.name}"}
+                        checked={all_tools}
+                      />
+                      {server.name} — all tools
+                    </label>
+                    <p
+                      :if={server.tools == []}
+                      class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                    >
+                      No tools cached yet. Refresh them in MCP Servers settings.
+                    </p>
+                    <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1">
+                      <label
+                        :for={tool <- server.tools}
+                        class={[
+                          "flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300",
+                          all_tools && "opacity-60"
+                        ]}
+                        title={tool["description"]}
+                      >
+                        <input
+                          type="checkbox"
+                          name="role[mcp_tools][]"
+                          value={"#{server.name}__#{tool["name"]}"}
+                          id={"role-mcp-tool-#{server.name}__#{tool["name"]}"}
+                          checked={
+                            all_tools or
+                              "#{server.name}__#{tool["name"]}" in (@modal_form["mcp_tools"] || [])
+                          }
+                          disabled={all_tools}
+                        />
+                        <span class="font-mono">{tool["name"]}</span>
+                      </label>
+                    </div>
+                  </fieldset>
+                </div>
+              </div>
+
               <!-- Modal Footer -->
               <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <.button phx-click="close_modal" id="cancel-role-button">
@@ -632,7 +693,8 @@ defmodule RailWeb.Settings.RolesLive do
       "model" => default_model,
       "reasoning_effort" => "high",
       "system_prompt" => "You are an agent persona.",
-      "max_concurrent" => 1
+      "max_concurrent" => 1,
+      "mcp_tools" => []
     }
 
     socket =
@@ -661,7 +723,8 @@ defmodule RailWeb.Settings.RolesLive do
         "model" => role.model,
         "reasoning_effort" => if(role.reasoning_effort, do: to_string(role.reasoning_effort), else: "high"),
         "system_prompt" => role.system_prompt,
-        "max_concurrent" => role.max_concurrent
+        "max_concurrent" => role.max_concurrent,
+        "mcp_tools" => role.mcp_tools
       }
 
       socket =
@@ -959,8 +1022,21 @@ defmodule RailWeb.Settings.RolesLive do
       reasoning_effort: parse_effort(role_params["reasoning_effort"]),
       system_prompt: String.trim(role_params["system_prompt"] || ""),
       max_concurrent: parse_int(role_params["max_concurrent"], 1),
+      mcp_tools: parse_mcp_tools(role_params["mcp_tools"]),
       position: if(existing_role, do: existing_role.position, else: roles_count)
     }
+  end
+
+  # A server's "all tools" entry already covers each of its tools, so any it
+  # makes redundant are dropped rather than stored alongside it.
+  defp parse_mcp_tools(values) do
+    tools = values |> List.wrap() |> Enum.reject(&(&1 == ""))
+    all_tools_servers = for tool <- tools, String.ends_with?(tool, "__*"), do: String.trim_trailing(tool, "__*")
+
+    Enum.reject(tools, fn tool ->
+      [server_name, tool_name] = String.split(tool, "__", parts: 2)
+      tool_name != "*" and server_name in all_tools_servers
+    end)
   end
 
   defp execute_role_save(scope, project, :create_role, _existing_role, attrs) do

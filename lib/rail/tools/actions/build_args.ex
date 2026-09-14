@@ -17,7 +17,11 @@ defmodule Rail.Tools.Actions.BuildArgs do
   - `:model`: model name string
   - `:reasoning_effort` or `:effort`: `"high" | "medium" | "low"` (default `"high"`)
   - `:read_only`: boolean (default `false`)
-  - `:system_prompt`: string (Claude only, included when non-empty)
+  - `:system_prompt`: string (Claude only, included when non-empty) — appended to
+    Claude Code's own system prompt rather than replacing it, which is what teaches
+    the agent its tools (deferred MCP tools included)
+  - `:mcp`: boolean (Claude only, default `false`) — connect the agent to Rail's MCP
+    proxy, authenticated by the `RAIL_MCP_TOKEN` the spawn puts in its environment
   - `:conversation_id`, `:conversation`, or `:resume`: session id for resumption
   - `:print_timeout`: string timeout for Agy (default `"6h"`)
   - `:work_dir` or `:working_directory`: directory for `--add-dir` (Agy only)
@@ -52,7 +56,7 @@ defmodule Rail.Tools.Actions.BuildArgs do
 
     system_prompt_flags =
       if is_binary(system_prompt) and String.trim(system_prompt) != "" do
-        ["--system-prompt", system_prompt]
+        ["--append-system-prompt", system_prompt]
       else
         []
       end
@@ -66,10 +70,32 @@ defmodule Rail.Tools.Actions.BuildArgs do
 
     ["-p", prompt, "--model", model, "--effort", effort] ++
       permission_flags ++
+      claude_mcp_flags(Map.get(opts, :mcp, false), read_only) ++
       ["--output-format", "stream-json", "--verbose"] ++
       system_prompt_flags ++
       resume_flags
   end
+
+  # The token stays out of argv, where `ps` would show it: Claude expands
+  # `${RAIL_MCP_TOKEN}` from its own environment when it reads the config.
+  # `--strict-mcp-config` keeps the user's own MCP servers out of the run.
+  defp claude_mcp_flags(true, read_only) do
+    config = %{
+      "mcpServers" => %{
+        "rail" => %{
+          "type" => "http",
+          "url" => RailWeb.Endpoint.url() <> "/mcp",
+          "headers" => %{"Authorization" => "Bearer ${RAIL_MCP_TOKEN}"}
+        }
+      }
+    }
+
+    strict = if read_only, do: [], else: ["--strict-mcp-config"]
+
+    ["--mcp-config", Jason.encode!(config)] ++ strict ++ ["--allowedTools", "mcp__rail"]
+  end
+
+  defp claude_mcp_flags(_mcp, _read_only), do: []
 
   defp build_agy_args(opts) do
     prompt = opts[:prompt] || ""

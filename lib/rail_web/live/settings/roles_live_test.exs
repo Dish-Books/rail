@@ -332,6 +332,74 @@ defmodule RailWeb.Settings.RolesLiveTest do
     refute has_element?(view, "#role-editor-modal")
   end
 
+  test "allows MCP tools on a role", %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
+    {:ok, _linear} =
+      Rail.Mcp.create_server(system_scope(), %{
+        name: "rl_linear",
+        url: "https://mcp.linear.app/mcp",
+        tools: [%{"name" => "get_issue", "description" => "Reads an issue"}]
+      })
+
+    {:ok, _sentry} =
+      Rail.Mcp.create_server(system_scope(), %{name: "rl_sentry", url: "https://mcp.sentry.dev/mcp"})
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13050",
+        github_repo: "org/roles-live-13050",
+        github_installation_id: 13_050,
+        linear_team_key: "P13050",
+        default_branch: "main",
+        clone_path: "/tmp/repos/roles-live-13050"
+      })
+
+    assert {:ok, %Role{id: role_id}} =
+             Roles.create_role(Rail.Scope.for_user(admin_user), project, %{
+               name: "Engineer",
+               stage: :engineer,
+               backend_id: claude_backend.id,
+               model: "claude-3-7-sonnet",
+               system_prompt: "You are an engineer."
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
+
+    view |> element("#edit-role-button-#{role_id}") |> render_click()
+    assert has_element?(view, "#role-mcp-server-rl_sentry", "No tools cached yet")
+    refute has_element?(view, "#role-mcp-tool-rl_linear__get_issue[checked]")
+    refute has_element?(view, "#role-mcp-tool-rl_linear__get_issue[disabled]")
+
+    # Checking a server's "all tools" checks and locks each of its tools.
+    view |> element("#role-form") |> render_change(%{"role" => %{"mcp_tools" => ["", "rl_linear__*"]}})
+    assert has_element?(view, "#role-mcp-tool-rl_linear__get_issue[checked][disabled]")
+
+    view |> element("#role-form") |> render_change(%{"role" => %{"mcp_tools" => [""]}})
+    refute has_element?(view, "#role-mcp-tool-rl_linear__get_issue[checked]")
+    refute has_element?(view, "#role-mcp-tool-rl_linear__get_issue[disabled]")
+
+    view
+    |> element("#role-form")
+    |> render_submit(%{
+      "role" => %{
+        "name" => "Engineer",
+        "stage" => "engineer",
+        "backend_id" => claude_backend.id,
+        "model_choice" => "claude-3-7-sonnet",
+        "reasoning_effort" => "high",
+        "system_prompt" => "You are an engineer.",
+        "max_concurrent" => "1",
+        "mcp_tools" => ["", "rl_linear__get_issue", "rl_sentry__*", "rl_sentry__covered"]
+      }
+    })
+
+    assert {:ok, %Role{mcp_tools: ["rl_linear__get_issue", "rl_sentry__*"]}} = Roles.get_role(id: role_id)
+
+    view |> element("#edit-role-button-#{role_id}") |> render_click()
+    assert has_element?(view, "#role-mcp-tool-rl_linear__get_issue[checked]")
+    refute has_element?(view, "#role-mcp-tool-rl_linear__get_issue[disabled]")
+    assert has_element?(view, "#role-mcp-all-rl_sentry[checked]")
+  end
+
   test "deletes a role", %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{

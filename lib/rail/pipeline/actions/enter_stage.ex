@@ -91,7 +91,8 @@ defmodule Rail.Pipeline.Actions.EnterStage do
         reasoning_effort: role.reasoning_effort || "high",
         system_prompt: role.system_prompt,
         conversation_id: run.conversation_id,
-        work_dir: worktree_path
+        work_dir: worktree_path,
+        mcp: role.mcp_tools != []
       )
 
     case Tools.start_os_process(run, argv) do

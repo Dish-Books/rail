@@ -69,7 +69,7 @@ defmodule RailWeb.TaskLive do
           run={@selected_run}
         >
           <:actions>
-            <.cleanup_button cleaning_up={@cleaning_up} />
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
             <.conversation_sidebar
@@ -90,7 +90,7 @@ defmodule RailWeb.TaskLive do
           title={@task.issue.title}
         >
           <:actions>
-            <.cleanup_button cleaning_up={@cleaning_up} />
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
             <.conversation_sidebar
@@ -166,6 +166,11 @@ defmodule RailWeb.TaskLive do
     {:noreply, socket}
   end
 
+  # A queued message went out, or came back, on its own time.
+  def handle_info({:run_changed, _run_id}, socket) do
+    {:noreply, refresh_task(socket)}
+  end
+
   def handle_info({:os_process_finished, _run, _outcome}, socket) do
     {:noreply, refresh_task(socket)}
   end
@@ -175,17 +180,39 @@ defmodule RailWeb.TaskLive do
     {:noreply, refresh_task(socket)}
   end
 
-  def handle_async(:cleanup, _result, socket) do
-    socket = socket |> assign(:cleaning_up, false) |> refresh_task()
+  # A cleaned-up task is gone, so the issue is where it can be started again.
+  def handle_async(:cleanup, {:ok, {:ok, %Task{issue_id: issue_id}}}, socket) do
+    {:noreply, push_navigate(socket, to: ~p"/issues/#{issue_id}")}
+  end
+
+  def handle_async(:cleanup, {:ok, {:error, :task_busy}}, socket) do
+    socket =
+      socket
+      |> assign(:cleaning_up, false)
+      |> put_flash(:error, "Stop the task's run before cleaning it up")
+      |> refresh_task()
 
     {:noreply, socket}
   end
 
+  def handle_async(:cleanup, _result, socket) do
+    socket =
+      socket
+      |> assign(:cleaning_up, false)
+      |> put_flash(:error, "Could not clean up the task")
+      |> refresh_task()
+
+    {:noreply, socket}
+  end
+
+  attr :task, :any, required: true
   attr :cleaning_up, :boolean, required: true
 
+  # A cleaned-up task is history: there is nothing left on disk to clean.
   defp cleanup_button(assigns) do
     ~H"""
     <button
+      :if={@task.cleaned_up_at == nil}
       type="button"
       id="cleanup-task"
       data-qa="cleanup_task"

@@ -8,6 +8,8 @@ defmodule Rail.Pipeline.Actions.ListTasks do
 
   @doc """
   Lists tasks, filtered and preloaded as `opts` asks.
+
+  Cleaned-up tasks are left out unless `include_cleaned_up: true`.
   """
   def list_tasks(opts \\ []) do
     Task
@@ -16,8 +18,12 @@ defmodule Rail.Pipeline.Actions.ListTasks do
     |> preload(^Keyword.get(opts, :preload, []))
     |> filter_project(opts[:project_id])
     |> filter_stage(opts[:stage])
+    |> filter_cleaned_up(opts[:include_cleaned_up])
     |> Repo.all()
   end
+
+  defp filter_cleaned_up(query, true), do: query
+  defp filter_cleaned_up(query, _live_only), do: where(query, [task: t], is_nil(t.cleaned_up_at))
 
   defp filter_project(query, project_id) when is_binary(project_id) do
     where(query, [task: t], t.project_id == ^project_id)

@@ -61,6 +61,13 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     %{project: project, issue: issue, task: task}
   end
 
+  test "leaves out cleaned-up tasks unless asked", %{project: project, task: %Task{id: task_id} = task} do
+    {:ok, _cleaned} = Pipeline.update_task(task, %{cleaned_up_at: DateTime.utc_now()})
+
+    assert [] = Pipeline.list_tasks(project_id: project.id)
+    assert [%Task{id: ^task_id}] = Pipeline.list_tasks(project_id: project.id, include_cleaned_up: true)
+  end
+
   test "filters tasks by stage", %{project: project, task: task} do
     {:ok, %Task{id: prod_id}} =
       Pipeline.update_task(task, %{

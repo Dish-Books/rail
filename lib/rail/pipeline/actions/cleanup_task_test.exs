@@ -172,6 +172,15 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     refute File.exists?(scratch_dir)
   end
 
+  test "keeps the task as history but frees its issue to be started again", %{task: task, issue: issue} do
+    assert {:ok, %Task{cleaned_up_at: %DateTime{}}} = Pipeline.cleanup_task(task)
+
+    assert {:ok, %Task{cleaned_up_at: %DateTime{}}} = Pipeline.get_task(task.id)
+    assert {:ok, %Task{id: new_id, cleaned_up_at: nil}} = Pipeline.create_task(issue, :product)
+    refute new_id == task.id
+    assert %{task: %Task{id: ^new_id}} = Repo.preload(issue, :task, force: true)
+  end
+
   test "handles cleanup gracefully when worktree_path is already nil", %{project: _project, task: _task} do
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})

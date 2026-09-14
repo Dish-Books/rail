@@ -20,6 +20,7 @@ defmodule Rail.Tools.Schemas.OsProcess do
     field :node, :string
     field :status, Ecto.Enum, values: @statuses
     field :started_at, :utc_datetime_usec
+    field :mcp_token_hash, :binary, redact: true
 
     belongs_to :task, Task
     belongs_to :run, Run
@@ -34,7 +35,8 @@ defmodule Rail.Tools.Schemas.OsProcess do
     :stream_path,
     :node,
     :status,
-    :started_at
+    :started_at,
+    :mcp_token_hash
   ]
 
   @required_fields [

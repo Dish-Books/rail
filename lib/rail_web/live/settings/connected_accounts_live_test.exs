@@ -160,6 +160,40 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     assert rendered =~ "Connected as"
   end
 
+  test "lists enabled OAuth MCP servers to connect and disconnect", %{authed_conn: conn, user: user} do
+    {:ok, linear} =
+      Rail.Mcp.create_server(system_scope(), %{name: "ca_linear", url: "https://mcp.linear.app/mcp"})
+
+    {:ok, %{id: sentry_id}} =
+      Rail.Mcp.create_server(system_scope(), %{name: "ca_sentry", url: "https://mcp.sentry.dev/mcp"})
+
+    {:ok, _open} =
+      Rail.Mcp.create_server(system_scope(), %{name: "ca_open", url: "https://o.example.com", auth: :none})
+
+    {:ok, _off} =
+      Rail.Mcp.create_server(system_scope(), %{
+        name: "ca_off",
+        url: "https://off.example.com",
+        enabled: false
+      })
+
+    Repo.insert!(%Rail.Mcp.Schemas.McpConnection{user_id: user.id, mcp_server_id: linear.id, access_token: "at"})
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+
+    assert has_element?(view, "#disconnect-mcp-ca_linear")
+    assert has_element?(view, "#connect-mcp-ca_sentry[href='/auth/mcp/#{sentry_id}']")
+    refute has_element?(view, "#mcp-server-section-ca_open")
+    refute has_element?(view, "#mcp-server-section-ca_off")
+
+    view |> element("#disconnect-mcp-ca_linear") |> render_click()
+    assert has_element?(view, "#connect-mcp-ca_linear")
+    assert [] = Rail.Mcp.list_connections(Scope.for_user(user))
+
+    render_click(view, "disconnect_mcp", %{"id" => "mcs_missing"})
+    assert has_element?(view, "#connect-mcp-ca_linear")
+  end
+
   test "renders only connected accounts tab for non-admin user", %{authed_conn: conn} do
     assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
     assert has_element?(view, "#tab-connected-accounts")

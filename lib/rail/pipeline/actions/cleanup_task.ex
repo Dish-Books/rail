@@ -10,7 +10,9 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
   alias Rail.Repo
 
   @doc """
-  Cleans up worktree, branch, and scratch artifacts for a task.
+  Cleans up worktree, branch, and scratch artifacts for a task, then stamps it
+  `cleaned_up_at` so its issue can be started again. The row, its runs and its
+  questions are kept as history.
 
   Every run on the task has to be stopped, not just the one for the stage it sits
   at: the worktree this deletes is the one all of them are working in.
@@ -34,8 +36,14 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
       remove_scratch_files(task)
     end
 
-    {:ok, task}
+    mark_cleaned_up(task)
   end
+
+  defp mark_cleaned_up(%Task{cleaned_up_at: nil} = task) do
+    task |> Task.changeset(%{cleaned_up_at: DateTime.utc_now()}) |> Repo.update()
+  end
+
+  defp mark_cleaned_up(%Task{} = task), do: {:ok, task}
 
   defp remove_worktree_if_present(project, task) do
     if is_binary(task.worktree_path) and task.worktree_path != "" and is_binary(project.clone_path) do
