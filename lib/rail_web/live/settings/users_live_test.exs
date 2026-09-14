@@ -3,7 +3,10 @@ defmodule RailWeb.Settings.UsersLiveTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Repo
+  alias Rail.Scope
   alias Rail.Users
+  alias Rail.Users.Schemas.Invite
   alias Rail.Users.Schemas.User
 
   setup %{conn: conn} do
@@ -37,6 +40,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
       conn: conn,
       admin_conn: admin_conn,
       admin_user: admin_user,
+      admin_scope: Scope.for_user(admin_user),
       regular_conn: regular_conn,
       regular_user: regular_user
     }
@@ -135,7 +139,7 @@ defmodule RailWeb.Settings.UsersLiveTest do
 
     # Add linear_user_id without linear_name and clear name/login
     {:ok, %User{id: updated_user_id} = updated_user} =
-      Rail.Repo.update(Ecto.Changeset.change(user, linear_user_id: "lin_#{id}", linear_name: nil, name: nil, login: ""))
+      Repo.update(Ecto.Changeset.change(user, linear_user_id: "lin_#{id}", linear_name: nil, name: nil, login: ""))
 
     user_conn = log_in_user(conn, updated_user)
 
@@ -177,5 +181,108 @@ defmodule RailWeb.Settings.UsersLiveTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/users")
     assert has_element?(view, "#users-settings")
+  end
+
+  test "invites an email and lists it as pending", %{admin_conn: conn, admin_user: admin_user} do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+
+    assert has_element?(view, "#invites-empty")
+
+    view
+    |> form("#invite-form", %{"email" => "invited@example.com", "admin" => "on"})
+    |> render_submit()
+
+    assert %Invite{} = invite = Repo.get_by(Invite, email: "invited@example.com")
+    assert invite.admin
+    assert invite.invited_by_id == admin_user.id
+
+    assert has_element?(view, "#invite-email-#{invite.id}", "invited@example.com")
+    assert has_element?(view, "#invite-status-#{invite.id}", "Pending")
+    assert has_element?(view, "#invite-admin-badge-#{invite.id}")
+    refute has_element?(view, "#invites-empty")
+  end
+
+  test "revokes a pending invite", %{admin_conn: conn, admin_scope: scope} do
+    assert {:ok, %Invite{id: invite_id}} = Users.invite_user(scope, %{email: "revokeme@example.com"})
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+    assert has_element?(view, "#invite-row-#{invite_id}")
+
+    view |> element("#revoke-invite-button-#{invite_id}") |> render_click()
+
+    refute has_element?(view, "#invite-row-#{invite_id}")
+    assert Repo.get(Invite, invite_id) == nil
+  end
+
+  test "an accepted invite cannot be revoked from the list", %{admin_conn: conn, admin_scope: scope} do
+    assert {:ok, %Invite{id: invite_id} = invite} = Users.invite_user(scope, %{email: "accepted@example.com"})
+    assert {:ok, _updated} = invite |> Invite.changeset(%{accepted_at: DateTime.utc_now()}) |> Repo.update()
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+
+    assert has_element?(view, "#invite-status-#{invite_id}", "Accepted")
+    refute has_element?(view, "#revoke-invite-button-#{invite_id}")
+
+    render_click(view, "revoke_invite", %{"invite_id" => invite_id})
+    assert has_element?(view, "#users-error-text", "That invite has already been accepted.")
+  end
+
+  test "surfaces a bad email address", %{admin_conn: conn} do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+
+    view |> form("#invite-form", %{"email" => "not-an-email"}) |> render_submit()
+
+    assert has_element?(view, "#users-error-text", "must be a valid email address")
+  end
+
+  test "keeps the typed invite in the form while the admin types", %{admin_conn: conn} do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+
+    view |> form("#invite-form", %{"email" => "typing@example.com", "admin" => "on"}) |> render_change()
+
+    assert has_element?(view, "#invite-email-input[value='typing@example.com']")
+    assert has_element?(view, "#invite-admin-checkbox[checked]")
+  end
+
+  test "surfaces invite and revoke failures", %{admin_conn: conn, admin_scope: scope} do
+    assert {:ok, %Invite{id: invite_id}} = Users.invite_user(scope, %{email: "failure@example.com"})
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+
+    expect(Users, :invite_user, fn _scope, _attrs -> {:error, :not_authorized} end)
+    view |> form("#invite-form", %{"email" => "nope@example.com"}) |> render_submit()
+    assert has_element?(view, "#users-error-text", "You are not authorized to invite users.")
+
+    expect(Users, :invite_user, fn _scope, _attrs -> {:error, :already_accepted} end)
+    view |> form("#invite-form", %{"email" => "nope@example.com"}) |> render_submit()
+    assert has_element?(view, "#users-error-text", "That email has already signed up.")
+
+    expect(Users, :invite_user, fn _scope, _attrs -> {:error, :db_error} end)
+    view |> form("#invite-form", %{"email" => "nope@example.com"}) |> render_submit()
+    assert has_element?(view, "#users-error-text", "Failed to send the invite.")
+
+    # A changeset that failed on something other than the address has no email error
+    # to quote back.
+    expect(Users, :invite_user, fn _scope, _attrs ->
+      {:error, Ecto.Changeset.add_error(Invite.changeset(%Invite{}, %{email: "ok@example.com"}), :admin, "is bad")}
+    end)
+
+    view |> form("#invite-form", %{"email" => "nope@example.com"}) |> render_submit()
+    assert has_element?(view, "#users-error-text", "Failed to send the invite.")
+
+    expect(Users, :revoke_invite, fn _scope, _id -> {:error, :not_authorized} end)
+    view |> element("#revoke-invite-button-#{invite_id}") |> render_click()
+    assert has_element?(view, "#users-error-text", "You are not authorized to revoke invites.")
+
+    expect(Users, :revoke_invite, fn _scope, _id -> {:error, :db_error} end)
+    view |> element("#revoke-invite-button-#{invite_id}") |> render_click()
+    assert has_element?(view, "#users-error-text", "Failed to revoke the invite.")
+  end
+
+  test "handles list_invites error on mount", %{admin_conn: conn} do
+    stub(Users, :list_invites, fn _scope -> {:error, :network_timeout} end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/users")
+    assert has_element?(view, "#invites-empty")
   end
 end

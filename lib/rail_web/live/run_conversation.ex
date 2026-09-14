@@ -556,6 +556,7 @@ defmodule RailWeb.Live.RunConversation do
           placeholder={@hint_text}
           disabled={@is_unavailable or @chat_sending}
           autocomplete="off"
+          phx-debounce="300"
           class="flex-1 px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
         />
 
@@ -563,7 +564,7 @@ defmodule RailWeb.Live.RunConversation do
           type="submit"
           id="chat-send-button"
           data-qa="chat-submit chat-send-button"
-          disabled={@is_unavailable or @chat_sending or String.trim(@chat_input) == ""}
+          disabled={@is_unavailable or @chat_sending}
           class="inline-flex items-center justify-center h-9 w-9 rounded-lg bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity shrink-0 cursor-pointer shadow-xs"
         >
           <%= if @chat_sending do %>

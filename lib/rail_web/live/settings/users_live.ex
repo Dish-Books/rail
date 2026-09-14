@@ -7,18 +7,14 @@ defmodule RailWeb.Settings.UsersLive do
   def mount(_params, _session, socket) do
     scope = socket.assigns.current_scope
 
-    users =
-      case Users.list_users(scope) do
-        {:ok, list} -> list
-        {:error, _reason} -> []
-      end
-
     socket =
       socket
       |> assign(:page_title, "Users")
       |> assign(:current_section, :users)
-      |> assign(:users, users)
+      |> assign(:invite_email, "")
+      |> assign(:invite_admin, false)
       |> assign(:error_message, nil)
+      |> load_directory(scope)
 
     {:ok, socket}
   end
@@ -75,6 +71,122 @@ defmodule RailWeb.Settings.UsersLive do
             ✕
           </button>
         </div>
+
+        <!-- Invites Card -->
+        <section
+          class="bg-slate-50 dark:bg-slate-800 shadow rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
+          id="invites-section"
+        >
+          <div class="p-6 border-b border-slate-200 dark:border-slate-700">
+            <h2
+              class="text-base font-semibold text-slate-900 dark:text-slate-100"
+              id="invites-card-header"
+            >
+              Invites
+            </h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Rail is invite only. Sign-in matches the GitHub account's email against an open invite.
+            </p>
+
+            <form
+              id="invite-form"
+              phx-submit="invite"
+              phx-change="invite_form_change"
+              class="mt-4 flex flex-wrap items-end gap-3"
+            >
+              <.input
+                id="invite-email-input"
+                name="email"
+                type="email"
+                label="Email address"
+                value={@invite_email}
+                placeholder="teammate@example.com"
+                phx-debounce="300"
+                container_class="flex-1 min-w-[16rem]"
+                data-qa="invite_email_input"
+              />
+
+              <label class="flex items-center gap-2 text-sm text-slate-900 dark:text-slate-100 pb-2">
+                <input
+                  type="checkbox"
+                  name="admin"
+                  id="invite-admin-checkbox"
+                  checked={@invite_admin}
+                  class="rounded border-slate-300 dark:border-slate-600"
+                /> Admin
+              </label>
+
+              <.button
+                type="submit"
+                variant="primary"
+                id="send-invite-button"
+                data-qa="send_invite_button"
+                class="mb-2"
+              >
+                <.icon name="pi-envelope-simple" class="h-4 w-4" /> Invite
+              </.button>
+            </form>
+          </div>
+
+          <p
+            :if={@invites == []}
+            class="p-6 text-sm text-slate-500 dark:text-slate-400"
+            id="invites-empty"
+          >
+            No invites yet.
+          </p>
+
+          <ul role="list" class="divide-y divide-slate-200 dark:divide-slate-700" id="invites-list">
+            <li
+              :for={invite <- @invites}
+              id={"invite-row-#{invite.id}"}
+              class="px-6 py-4 flex items-center justify-between"
+            >
+              <div>
+                <p
+                  class="text-sm font-medium text-slate-900 dark:text-slate-100"
+                  id={"invite-email-#{invite.id}"}
+                >
+                  {invite.email}
+                </p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Invited by {(invite.invited_by &&
+                                 (invite.invited_by.name || invite.invited_by.login)) ||
+                    "the system"}
+                </p>
+              </div>
+
+              <div class="flex items-center space-x-3">
+                <span
+                  :if={invite.admin}
+                  id={"invite-admin-badge-#{invite.id}"}
+                  class="inline-flex items-center rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-600/20"
+                >
+                  Admin
+                </span>
+
+                <span
+                  id={"invite-status-#{invite.id}"}
+                  class="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-700 px-2.5 py-1 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-inset ring-zinc-500/20"
+                >
+                  {if invite.accepted_at, do: "Accepted", else: "Pending"}
+                </span>
+
+                <.button
+                  :if={is_nil(invite.accepted_at)}
+                  size="sm"
+                  variant="danger"
+                  id={"revoke-invite-button-#{invite.id}"}
+                  data-qa={"revoke_invite_button_#{invite.id}"}
+                  phx-click="revoke_invite"
+                  phx-value-invite_id={invite.id}
+                >
+                  <.icon name="pi-trash" class="h-3.5 w-3.5" /> Revoke
+                </.button>
+              </div>
+            </li>
+          </ul>
+        </section>
 
         <!-- Users List Card -->
         <section
@@ -218,6 +330,67 @@ defmodule RailWeb.Settings.UsersLive do
     end
   end
 
+  def handle_event("invite_form_change", params, socket) do
+    socket =
+      socket
+      |> assign(:invite_email, Map.get(params, "email") || "")
+      |> assign(:invite_admin, Map.get(params, "admin") == "on")
+
+    {:noreply, socket}
+  end
+
+  def handle_event("invite", params, socket) do
+    scope = socket.assigns.current_scope
+    attrs = %{email: Map.get(params, "email") || "", admin: Map.get(params, "admin") == "on"}
+
+    case Users.invite_user(scope, attrs) do
+      {:ok, _invite} ->
+        socket =
+          socket
+          |> assign(:invite_email, "")
+          |> assign(:invite_admin, false)
+          |> assign(:error_message, nil)
+          |> load_directory(scope)
+
+        {:noreply, socket}
+
+      {:error, :already_accepted} ->
+        {:noreply, assign(socket, :error_message, "That email has already signed up.")}
+
+      {:error, :not_authorized} ->
+        {:noreply, assign(socket, :error_message, "You are not authorized to invite users.")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, :error_message, invite_error(changeset))}
+
+      {:error, _other} ->
+        {:noreply, assign(socket, :error_message, "Failed to send the invite.")}
+    end
+  end
+
+  def handle_event("revoke_invite", %{"invite_id" => invite_id}, socket) do
+    scope = socket.assigns.current_scope
+
+    case Users.revoke_invite(scope, invite_id) do
+      {:ok, _invite} ->
+        socket =
+          socket
+          |> assign(:error_message, nil)
+          |> load_directory(scope)
+
+        {:noreply, socket}
+
+      {:error, :already_accepted} ->
+        {:noreply, assign(socket, :error_message, "That invite has already been accepted.")}
+
+      {:error, :not_authorized} ->
+        {:noreply, assign(socket, :error_message, "You are not authorized to revoke invites.")}
+
+      {:error, _other} ->
+        {:noreply, assign(socket, :error_message, "Failed to revoke the invite.")}
+    end
+  end
+
   def handle_event("clear_error", _params, socket) do
     socket = assign(socket, :error_message, nil)
     {:noreply, socket}
@@ -244,6 +417,31 @@ defmodule RailWeb.Settings.UsersLive do
         socket = assign(socket, :error_message, "Failed to update user permissions.")
 
         {:noreply, socket}
+    end
+  end
+
+  defp load_directory(socket, scope) do
+    users =
+      case Users.list_users(scope) do
+        {:ok, list} -> list
+        {:error, _reason} -> []
+      end
+
+    invites =
+      case Users.list_invites(scope) do
+        {:ok, list} -> list
+        {:error, _reason} -> []
+      end
+
+    socket
+    |> assign(:users, users)
+    |> assign(:invites, invites)
+  end
+
+  defp invite_error(%Ecto.Changeset{} = changeset) do
+    case changeset.errors[:email] do
+      {message, _opts} -> "Email #{message}."
+      nil -> "Failed to send the invite."
     end
   end
 

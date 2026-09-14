@@ -6,6 +6,7 @@ defmodule Rail.Users do
   alias Rail.Users.Actions
 
   defdelegate register_oauth_user(attrs), to: Actions.RegisterOAuthUser
+  defdelegate sign_in_oauth_user(auth), to: Actions.SignInOAuthUser
   defdelegate get_user_by_session_token(token), to: Actions.GetUserBySessionToken
   defdelegate generate_user_session_token(user), to: Actions.GenerateUserSessionToken
   defdelegate delete_user_session_token(token), to: Actions.DeleteUserSessionToken
@@ -18,6 +19,15 @@ defmodule Rail.Users do
 
   @decorate can?(resource: :users, action: :manage)
   defdelegate update_user(scope, user, attrs), to: Actions.UpdateUser
+
+  @decorate can?(resource: :users, action: :list)
+  defdelegate list_invites(scope), to: Actions.ListInvites
+
+  @decorate can?(resource: :users, action: :manage)
+  defdelegate invite_user(scope, attrs), to: Actions.InviteUser
+
+  @decorate can?(resource: :users, action: :manage)
+  defdelegate revoke_invite(scope, invite_id), to: Actions.RevokeInvite
 
   defdelegate linear_token(scope), to: Actions.LinearToken
   defdelegate link_linear(scope, code), to: Actions.LinkLinear
