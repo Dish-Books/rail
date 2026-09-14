@@ -7,7 +7,7 @@ defmodule Rail.Pipeline.Actions.BuildPrompt do
   Constructs the agent prompt string passed via `-p`.
 
   Handles:
-  - System prompt split: Claude receives role instructions via `--system-prompt`
+  - System prompt split: Claude receives role instructions via `--append-system-prompt`
     (omitted from the prompt body), while Agy receives `<role-instructions>...</role-instructions>`
     on the first turn only - a resumed conversation already carries them, so re-sending
     would stack a copy into the transcript every turn.

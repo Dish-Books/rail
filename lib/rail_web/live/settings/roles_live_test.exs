@@ -159,7 +159,8 @@ defmodule RailWeb.Settings.RolesLiveTest do
     # Open create modal for product stage
     view |> element("#assign-stage-button-product") |> render_click()
     assert has_element?(view, "#role-editor-modal")
-    assert has_element?(view, "#role-modal-title", "Create New Role")
+    assert has_element?(view, "#role-modal-title", "New role")
+    refute has_element?(view, "#role-identifier-card")
 
     # Two backends of one kind are told apart by their label.
     assert has_element?(view, "#role-backend-select option", "Claude Code (claude -p) · work")
@@ -301,7 +302,63 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
     view |> element("#edit-role-button-#{role_id}") |> render_click()
-    assert has_element?(view, "#role-modal-title", "Edit Role: QA Lead")
+    assert has_element?(view, "#role-modal-title", "QA Lead")
+    assert has_element?(view, "#role-stage-pill", "stage: qa_lead")
+    assert has_element?(view, "#copy-role-identifier[data-copy-text='#{role_id}']")
+    assert has_element?(view, "#role-unsaved-changes", "No unsaved changes")
+
+    # Tabs switch panels, and each tab summarises what it holds.
+    assert has_element?(view, "#role-tab-summary-configuration", "Identity · claude-3-7-sonnet · high")
+    assert has_element?(view, "#role-tab-summary-prompt", "19 chars")
+    assert has_element?(view, "#role-tab-summary-mcp_tools", "None enabled")
+    assert has_element?(view, "#role-panel-prompt.hidden")
+
+    view |> element("#role-tab-prompt") |> render_click()
+    refute has_element?(view, "#role-panel-prompt.hidden")
+    assert has_element?(view, "#role-panel-configuration.hidden")
+
+    view |> element("#role-prompt-preview-button") |> render_click()
+    assert has_element?(view, "#role-prompt-preview", "You verify quality.")
+    assert has_element?(view, "#role-prompt-input.hidden")
+    view |> element("#role-prompt-preview-button") |> render_click()
+    refute has_element?(view, "#role-prompt-preview")
+
+    # Edits are counted as unsaved changes until saved or discarded.
+    view
+    |> element("#role-form")
+    |> render_change(%{"role" => %{"system_prompt" => "You verify quality twice.", "reasoning_effort" => "low"}})
+
+    assert has_element?(view, "#role-unsaved-changes", "2 unsaved changes · reasoning effort, prompt")
+
+    view
+    |> element("#role-form")
+    |> render_change(%{"role" => %{"system_prompt" => "You verify quality.", "reasoning_effort" => "high"}})
+
+    assert has_element?(view, "#role-unsaved-changes", "No unsaved changes")
+
+    view |> element("#role-form") |> render_change(%{"role" => %{"reasoning_effort" => "medium"}})
+    assert has_element?(view, "#role-unsaved-changes", "1 unsaved change · reasoning effort")
+
+    view |> element("#role-form") |> render_change(%{"role" => %{"name" => "  "}})
+    assert has_element?(view, "#role-modal-title", "Untitled role")
+
+    # A save that fails on the prompt alone opens the prompt tab.
+    view |> element("#role-tab-configuration") |> render_click()
+
+    view
+    |> element("#role-form")
+    |> render_submit(%{
+      "role" => %{
+        "name" => "QA Lead",
+        "stage" => "qa_lead",
+        "backend_id" => claude_backend.id,
+        "model_choice" => "claude-3-7-sonnet",
+        "system_prompt" => ""
+      }
+    })
+
+    assert has_element?(view, "#role-prompt-error")
+    refute has_element?(view, "#role-panel-prompt.hidden")
 
     # A stored model outside the backend's configured list stays selected
     assert has_element?(view, "#role-model-select option[value='claude-3-7-sonnet']")
@@ -330,6 +387,91 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#role-editor-modal")
     view |> element("#cancel-role-button") |> render_click()
     refute has_element?(view, "#role-editor-modal")
+  end
+
+  test "allows MCP tools on a role", %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
+    {:ok, _linear} =
+      Rail.Mcp.create_server(system_scope(), %{
+        name: "rl_linear",
+        url: "https://mcp.linear.app/mcp",
+        tools: [%{"name" => "get_issue", "description" => "Reads an issue"}, %{"name" => "list_issues"}]
+      })
+
+    {:ok, _sentry} =
+      Rail.Mcp.create_server(system_scope(), %{name: "rl_sentry", url: "https://mcp.sentry.dev/mcp"})
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13050",
+        github_repo: "org/roles-live-13050",
+        github_installation_id: 13_050,
+        linear_team_key: "P13050",
+        default_branch: "main",
+        clone_path: "/tmp/repos/roles-live-13050"
+      })
+
+    assert {:ok, %Role{id: role_id}} =
+             Roles.create_role(Rail.Scope.for_user(admin_user), project, %{
+               name: "Engineer",
+               stage: :engineer,
+               backend_id: claude_backend.id,
+               model: "claude-3-7-sonnet",
+               system_prompt: "You are an engineer."
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
+
+    view |> element("#edit-role-button-#{role_id}") |> render_click()
+    assert has_element?(view, "#role-mcp-server-rl_sentry", "No tools cached yet")
+    assert has_element?(view, "#role-mcp-summary-rl_linear", "No tools enabled")
+
+    # Each server's tool list starts collapsed.
+    assert has_element?(view, "#role-mcp-tools-rl_linear.hidden")
+    view |> element("#role-mcp-toggle-rl_linear") |> render_click()
+    refute has_element?(view, "#role-mcp-tools-rl_linear.hidden")
+    assert has_element?(view, "#role-mcp-toggle-rl_linear", "Hide list")
+    view |> element("#role-mcp-toggle-rl_linear") |> render_click()
+    assert has_element?(view, "#role-mcp-tools-rl_linear.hidden")
+    refute has_element?(view, "#role-mcp-tool-rl_linear__get_issue[checked]")
+    refute has_element?(view, "#role-mcp-tool-rl_linear__get_issue[disabled]")
+
+    # Checking a server's "all tools" checks and locks each of its tools.
+    view |> element("#role-form") |> render_change(%{"role" => %{"mcp_tools" => ["", "rl_linear__get_issue"]}})
+    assert has_element?(view, "#role-mcp-summary-rl_linear", "1 of 2 tools enabled")
+
+    view |> element("#role-form") |> render_change(%{"role" => %{"mcp_tools" => ["", "rl_sentry__*"]}})
+    assert has_element?(view, "#role-mcp-summary-rl_sentry", "all tools enabled")
+    assert has_element?(view, "#role-tab-summary-mcp_tools", "rl_sentry · all")
+
+    view |> element("#role-form") |> render_change(%{"role" => %{"mcp_tools" => ["", "rl_linear__*"]}})
+    assert has_element?(view, "#role-mcp-tool-rl_linear__get_issue[checked][disabled]")
+    assert has_element?(view, "#role-tab-summary-mcp_tools", "rl_linear · 2 of 2")
+
+    view |> element("#role-form") |> render_change(%{"role" => %{"mcp_tools" => [""]}})
+    refute has_element?(view, "#role-mcp-tool-rl_linear__get_issue[checked]")
+    refute has_element?(view, "#role-mcp-tool-rl_linear__get_issue[disabled]")
+
+    view
+    |> element("#role-form")
+    |> render_submit(%{
+      "role" => %{
+        "name" => "Engineer",
+        "stage" => "engineer",
+        "backend_id" => claude_backend.id,
+        "model_choice" => "claude-3-7-sonnet",
+        "reasoning_effort" => "high",
+        "system_prompt" => "You are an engineer.",
+        "max_concurrent" => "1",
+        "mcp_tools" => ["", "rl_linear__get_issue", "rl_sentry__*", "rl_sentry__covered"]
+      }
+    })
+
+    assert {:ok, %Role{mcp_tools: ["rl_linear__get_issue", "rl_sentry__*"]}} = Roles.get_role(id: role_id)
+
+    view |> element("#edit-role-button-#{role_id}") |> render_click()
+    assert has_element?(view, "#role-mcp-tool-rl_linear__get_issue[checked]")
+    refute has_element?(view, "#role-mcp-tool-rl_linear__get_issue[disabled]")
+    assert has_element?(view, "#role-mcp-all-rl_sentry[checked]")
   end
 
   test "deletes a role", %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
@@ -568,7 +710,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     })
     |> render_submit()
 
-    assert has_element?(view, "#role-name-error", "can't be blank")
+    assert has_element?(view, "#role-name-input-error", "can't be blank")
 
     # Validate with model_choice: nil
     render_hook(view, "validate_role", %{
@@ -708,7 +850,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       }
     })
 
-    assert has_element?(view, "#role-model-error", "can't be blank")
+    assert has_element?(view, "#role-model-select-error", "can't be blank")
   end
 
   test "handles open_delete_modal with non-existent role and delete_role when modal_role is nil", %{

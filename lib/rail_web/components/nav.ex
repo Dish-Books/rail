@@ -69,7 +69,8 @@ defmodule RailWeb.Components.Nav do
                 :projects,
                 :users,
                 :roles,
-                :backends
+                :backends,
+                :mcp_servers
               ]
             }
             is_extended={@is_rail_extended}
@@ -348,8 +349,9 @@ defmodule RailWeb.Components.Nav do
   defp section_title(:overview), do: "Overview"
   defp section_title(:issues), do: "Issues"
 
-  defp section_title(section) when section in [:settings, :connected_accounts, :projects, :users, :roles, :backends],
-    do: "Settings"
+  defp section_title(section)
+       when section in [:settings, :connected_accounts, :projects, :users, :roles, :backends, :mcp_servers],
+       do: "Settings"
 
   defp section_title(:tasks), do: "Task"
   defp section_title(_other), do: "Rail"

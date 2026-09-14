@@ -15,6 +15,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate button(assigns), to: Components.Button
   defdelegate dispatch_banner(assigns), to: Components.DispatchBanner
   defdelegate icon(assigns), to: Components.Icon
+  defdelegate input(assigns), to: Components.Input
   defdelegate issue_card(assigns), to: Components.IssueCard
   defdelegate markdown(assigns), to: Components.Markdown
   defdelegate nav(assigns), to: Components.Nav

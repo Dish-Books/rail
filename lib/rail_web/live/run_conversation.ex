@@ -20,9 +20,14 @@ defmodule RailWeb.Live.RunConversation do
   `run_events` may arrive on its own from the page's `run:<id>` subscription, in
   which case only the log is replaced.
   """
+  # A send reloads the log from the database, and the broadcast for the lines it
+  # just wrote can land after that, so lines already held are dropped.
   @impl true
   def update(%{appended_events: events}, socket) do
-    {:ok, assign_run_events(socket, socket.assigns.run_events ++ events)}
+    held = MapSet.new(socket.assigns.run_events, & &1.id)
+    fresh = Enum.reject(events, &MapSet.member?(held, &1.id))
+
+    {:ok, assign_run_events(socket, socket.assigns.run_events ++ fresh)}
   end
 
   def update(assigns, socket) do
@@ -268,15 +273,17 @@ defmodule RailWeb.Live.RunConversation do
         <div
           id={"msg-#{@idx}"}
           data-qa="human-bubble"
-          class="max-w-[600px] ml-auto p-3 rounded-tl-xl rounded-tr-xl rounded-bl-xl rounded-br-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 space-y-1.5 shadow-xs"
+          class="w-fit max-w-[85%] ml-auto mt-3.5 px-3 py-2 rounded-xl rounded-br-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 space-y-1"
         >
-          <div class="flex items-center gap-1.5 text-xs font-bold">
-            <.icon name="pi-user" class="h-3.5 w-3.5 shrink-0" />
+          <div class="flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+            <.icon name="pi-user" class="h-3 w-3 shrink-0" />
             <span>You</span>
           </div>
-          <div class="text-[13px] whitespace-pre-wrap select-text leading-relaxed">
-            {@text}
-          </div>
+          <%!-- Kept on one line: pre-wrap would render the template's own indentation. --%>
+          <div
+            phx-no-format
+            class="text-[13px] whitespace-pre-wrap wrap-break-word select-text leading-relaxed"
+          >{String.trim(@text)}</div>
         </div>
       <% :role -> %>
         <!-- 4.8 _RoleBubble (unframed markdown: the sidebar already says who is talking) -->
@@ -337,32 +344,36 @@ defmodule RailWeb.Live.RunConversation do
               data-qa="activity-step"
               class={[
                 "flex items-start gap-2 px-3 py-1.5 text-xs",
-                step.error? && "bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300"
+                step.error? &&
+                  "border-l-2 border-l-red-500 text-red-700 dark:text-red-300"
               ]}
             >
-              <.icon
-                name={if step.error?, do: "pi-warning-circle", else: tool_icon(step.name)}
-                class={[
-                  "h-3.5 w-3.5 shrink-0 mt-px",
-                  !step.error? && "text-slate-400 dark:text-slate-500"
-                ]}
-              />
-              <span
-                :if={step.name}
-                class={["font-medium shrink-0", !step.error? && "text-slate-900 dark:text-slate-100"]}
-              >
-                {step.name}
-              </span>
-              <span
-                title={step.detail}
-                class={[
-                  "font-mono min-w-0",
-                  step.error? && "whitespace-pre-wrap break-words",
-                  !step.error? && "truncate text-slate-500 dark:text-slate-400"
-                ]}
-              >
-                {step.detail}
-              </span>
+              <%= if step.error? do %>
+                <.icon name="pi-warning-circle" class="h-3.5 w-3.5 shrink-0 mt-px" />
+                <div class="min-w-0 flex-1 space-y-0.5">
+                  <div :if={step.name} class="font-medium">{step.name}</div>
+                  <%!-- Kept on one line: pre-wrap would render the template's own indentation. --%>
+                  <p
+                    phx-no-format
+                    title={step.detail}
+                    class="font-mono text-[11px] whitespace-pre-wrap wrap-break-word line-clamp-6 text-red-600/90 dark:text-red-300/90"
+                  >{String.trim(step.detail)}</p>
+                </div>
+              <% else %>
+                <.icon
+                  name={tool_icon(step.name)}
+                  class="h-3.5 w-3.5 shrink-0 mt-px text-slate-400 dark:text-slate-500"
+                />
+                <span :if={step.name} class="font-medium shrink-0 text-slate-900 dark:text-slate-100">
+                  {step.name}
+                </span>
+                <span
+                  title={step.detail}
+                  class="font-mono min-w-0 truncate text-slate-500 dark:text-slate-400"
+                >
+                  {step.detail}
+                </span>
+              <% end %>
             </li>
           </ul>
         </div>
@@ -414,7 +425,7 @@ defmodule RailWeb.Live.RunConversation do
       cond do
         is_unavailable -> "Chat unavailable"
         is_queued -> "Add to queued message..."
-        is_thinking -> "Message #{role_name} (sends when it is done)..."
+        is_thinking -> "Message #{role_name}..."
         true -> "Message #{role_name}..."
       end
 

@@ -38,6 +38,7 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :worktree_path, :string
     field :scratch_path, :string
     field :merged_at, :utc_datetime_usec
+    field :cleaned_up_at, :utc_datetime_usec
 
     belongs_to :project, Project
     belongs_to :issue, Issue
@@ -54,7 +55,8 @@ defmodule Rail.Pipeline.Schemas.Task do
     :worktree_name,
     :worktree_path,
     :scratch_path,
-    :merged_at
+    :merged_at,
+    :cleaned_up_at
   ]
 
   @required_fields [

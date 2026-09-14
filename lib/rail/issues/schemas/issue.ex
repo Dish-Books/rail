@@ -28,7 +28,8 @@ defmodule Rail.Issues.Schemas.Issue do
     belongs_to :project, Project
     belongs_to :owner_user, User
 
-    has_one :task, Task
+    # The live task. Cleaned-up tasks stay in the table as history.
+    has_one :task, Task, where: [cleaned_up_at: nil]
     has_many :comments, Comment
 
     timestamps()

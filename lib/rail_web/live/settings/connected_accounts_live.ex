@@ -2,6 +2,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
   @moduledoc false
   use RailWeb, :live_view
 
+  alias Rail.Mcp
   alias Rail.Scope
   alias Rail.Users
 
@@ -16,6 +17,8 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
       |> assign(:current_user, user)
       |> assign(:linear_connected, linear_connected?(user))
       |> assign(:linear_name, user && user.linear_name)
+      |> assign(:mcp_servers, Enum.filter(Mcp.list_servers(), &(&1.enabled and &1.auth == :oauth)))
+      |> assign(:mcp_connected_ids, mcp_connected_ids(current_scope))
 
     {:ok, socket}
   end
@@ -153,6 +156,46 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
             </div>
           </div>
         </section>
+
+        <section
+          :for={server <- @mcp_servers}
+          class="bg-slate-50 dark:bg-slate-800 shadow rounded-lg p-6 border border-slate-200 dark:border-slate-700"
+          id={"mcp-server-section-#{server.name}"}
+        >
+          <% connected = MapSet.member?(@mcp_connected_ids, server.id) %>
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-lg font-medium text-slate-900 dark:text-slate-100">{server.name}</h2>
+              <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                {if connected, do: "Connected.", else: "Not connected."}
+              </p>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                MCP server. Agents working your assigned issues use this connection.
+              </p>
+            </div>
+
+            <div>
+              <.button
+                :if={connected}
+                variant="danger"
+                phx-click="disconnect_mcp"
+                phx-value-id={server.id}
+                id={"disconnect-mcp-#{server.name}"}
+              >
+                Disconnect
+              </.button>
+
+              <.button
+                :if={!connected}
+                variant="primary"
+                href={~p"/auth/mcp/#{server.id}"}
+                id={"connect-mcp-#{server.name}"}
+              >
+                Connect
+              </.button>
+            </div>
+          </div>
+        </section>
       </div>
     </Layouts.app>
     """
@@ -175,6 +218,20 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
       {:error, _reason} ->
         {:noreply, socket}
     end
+  end
+
+  def handle_event("disconnect_mcp", %{"id" => server_id}, socket) do
+    scope = socket.assigns.current_scope
+
+    with {:ok, server} <- Mcp.get_server(id: server_id) do
+      :ok = Mcp.disconnect_server(scope, server)
+    end
+
+    {:noreply, assign(socket, :mcp_connected_ids, mcp_connected_ids(scope))}
+  end
+
+  defp mcp_connected_ids(scope) do
+    scope |> Mcp.list_connections() |> MapSet.new(& &1.mcp_server_id)
   end
 
   defp linear_connected?(user) do

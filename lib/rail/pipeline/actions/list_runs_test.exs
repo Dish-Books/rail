@@ -61,7 +61,14 @@ defmodule Rail.Pipeline.Actions.ListRunsTest do
     {:ok, run} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
 
-    %{project: project, run: run}
+    %{project: project, task: task, run: run}
+  end
+
+  test "leaves out runs on cleaned-up tasks unless asked", %{project: project, task: task, run: %Run{id: run_id}} do
+    {:ok, _cleaned} = Pipeline.update_task(task, %{cleaned_up_at: DateTime.utc_now()})
+
+    assert [] = Pipeline.list_runs(project_id: project.id)
+    assert [%Run{id: ^run_id}] = Pipeline.list_runs(project_id: project.id, include_cleaned_up: true)
   end
 
   test "lists every run, preloaded as asked", %{run: %Run{id: run_id}} do

@@ -94,7 +94,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
       assert prompt =~ "tickets/#{issue.identifier}.md"
       assert prompt =~ ~s(<comment author="Ana")
       assert prompt =~ "It only happens on Sysco bills."
-      assert "--system-prompt" in argv
+      assert "--append-system-prompt" in argv
 
       {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
     end)

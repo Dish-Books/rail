@@ -57,7 +57,37 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
     refute "--dangerously-skip-permissions" in args
   end
 
-  test "attaches --system-prompt and --resume to Claude args when present" do
+  test "connects Claude to Rail's MCP proxy with the token left to its environment" do
+    config =
+      Jason.encode!(%{
+        "mcpServers" => %{
+          "rail" => %{
+            "type" => "http",
+            "url" => RailWeb.Endpoint.url() <> "/mcp",
+            "headers" => %{"Authorization" => "Bearer ${RAIL_MCP_TOKEN}"}
+          }
+        }
+      })
+
+    args = Tools.build_args(backend: %Backend{name: :claude}, prompt: "Go", model: "m", mcp: true)
+
+    assert [
+             "--dangerously-skip-permissions",
+             "--mcp-config",
+             ^config,
+             "--strict-mcp-config",
+             "--allowedTools",
+             "mcp__rail",
+             "--output-format"
+           ] = Enum.slice(args, 6, 7)
+
+    read_only = Tools.build_args(backend: %Backend{name: :claude}, prompt: "Go", model: "m", mcp: true, read_only: true)
+
+    assert ["--tools", "", "--strict-mcp-config", "--mcp-config", ^config, "--allowedTools", "mcp__rail"] =
+             Enum.slice(read_only, 6, 7)
+  end
+
+  test "appends the role prompt to Claude's own and attaches --resume when present" do
     opts = [
       backend: %Backend{name: :claude},
       prompt: "Do work",
@@ -68,8 +98,10 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
 
     args = Tools.build_args(opts)
 
+    refute "--system-prompt" in args
+
     assert Enum.take(args, -4) == [
-             "--system-prompt",
+             "--append-system-prompt",
              "Act as QA engineer.",
              "--resume",
              "sess-abc-123"
@@ -87,7 +119,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
 
     args = Tools.build_args(opts)
 
-    refute "--system-prompt" in args
+    refute "--append-system-prompt" in args
     refute "--resume" in args
   end
 
@@ -168,7 +200,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
 
     assert Enum.take(args, -2) == ["--conversation", "conv-xyz-789"]
     refute "--resume" in args
-    refute "--system-prompt" in args
+    refute "--append-system-prompt" in args
     refute "--verbose" in args
   end
 
