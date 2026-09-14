@@ -2,10 +2,10 @@ defmodule RailWeb.Live.RunConversation do
   @moduledoc """
   One task's conversation with its agents, and the composer that talks to them.
 
-  Which run is being read, what is typed into the box, whether the raw log is
-  showing — none of it means anything outside this view, so it lives here rather
-  than on the page. What the page still owns is the subscription: a LiveComponent
-  cannot subscribe, so new log lines arrive through `send_update/3`.
+  Which run is being read is the page's tab; what is typed into the box and
+  whether the raw log is showing mean nothing outside this view, so they live
+  here. What the page also owns is the subscription: a LiveComponent cannot
+  subscribe, so new log lines arrive through `send_update/3`.
   """
   use RailWeb, :live_component
 
@@ -17,9 +17,9 @@ defmodule RailWeb.Live.RunConversation do
   @doc """
   Takes the task and its runs; everything else the conversation decides itself.
 
-  `stage_run` is the run for the stage the task sits at. The conversation opens
-  on it, and follows it when the task moves to another stage; in between, the
-  human's own pick of a run stays put.
+  `stage_run` is the run the page's tab picked out, and it is what is read here;
+  a tab whose role has not run passes `nil`. Rendered without the key at all, the
+  most recent run is read.
 
   `appended_events` may arrive on their own from the page's `run:<id>`
   subscriptions, tagged with the run they belong to, in which case only the log
@@ -43,19 +43,12 @@ defmodule RailWeb.Live.RunConversation do
   def update(assigns, socket) do
     socket = assign_defaults(socket)
     runs = sort_runs(assigns.runs)
-    stage_run = assigns[:stage_run]
-    stage_run_id = stage_run && stage_run.id
-
-    selected_run =
-      if stage_run_id == socket.assigns.stage_run_id,
-        do: pick_run(runs, socket.assigns.selected_run),
-        else: pick_run(runs, stage_run)
+    selected_run = pick_run(runs, Map.fetch(assigns, :stage_run))
 
     socket =
       socket
       |> assign(assigns)
       |> assign(:runs, runs)
-      |> assign(:stage_run_id, stage_run_id)
       |> assign(:selected_run, selected_run)
       |> assign_run_events(load_run_events(selected_run))
 
@@ -64,7 +57,7 @@ defmodule RailWeb.Live.RunConversation do
 
   @impl true
   def render(assigns) do
-    assigns = assign(assigns, :has_runs, assigns.runs != [])
+    assigns = assign(assigns, :has_runs, assigns.selected_run != nil)
 
     ~H"""
     <div
@@ -73,52 +66,39 @@ defmodule RailWeb.Live.RunConversation do
       class="flex flex-col flex-1 min-h-0"
     >
       <%= if not @has_runs do %>
-        <!-- 4.1 Empty State: No role has run this task yet -->
+        <!-- 4.1 Empty State: the role on the tab has not run this task -->
         <div
           id="conversation-empty-state"
           data-qa="conversation_empty_state"
           class="flex flex-1 items-center justify-center min-h-[300px] text-center p-8"
         >
           <p class="text-sm font-medium text-slate-500 dark:text-slate-400">
-            No role has run this task yet.
+            This role has not run on the task yet.
           </p>
         </div>
       <% else %>
         <div class="flex flex-col flex-1 min-h-0">
-          <!-- 4.3 Role Selector Row: the run being read, with the others beside it -->
+          <!-- 4.3 Role Row: who is being read, and for how long -->
           <div
             id="role-selector-row"
             data-qa="role-selector-row"
-            class="flex items-center flex-wrap gap-x-3 gap-y-2 px-5 py-4 border-b border-slate-200 dark:border-slate-700"
+            class="flex items-center gap-x-3 gap-y-2 px-5 py-4 border-b border-slate-200 dark:border-slate-700"
           >
-            <%= for run <- @runs do %>
-              <% role = resolve_role(run.role_id, @roles_map) %>
-              <% is_selected = @selected_run != nil and @selected_run.id == run.id %>
-              <button
-                type="button"
-                id={"role-chip-#{run.role_id}"}
-                data-qa={"role-chip-#{run.role_id}"}
-                phx-click="select_role"
-                phx-target={@myself}
-                phx-value-role_id={run.role_id}
-                class={[
-                  "inline-flex items-center gap-2 text-sm font-semibold transition-colors cursor-pointer",
-                  is_selected && "text-slate-900 dark:text-slate-100",
-                  not is_selected &&
-                    "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
-                ]}
-              >
-                <span class={[
-                  "h-2 w-2 rounded-full shrink-0",
-                  Run.running?(run) && "bg-green-500",
-                  not Run.running?(run) && "bg-slate-400 dark:bg-slate-500"
-                ]} />
-                <span>{role.name}</span>
-              </button>
-            <% end %>
+            <% role = selected_role(@selected_run, @roles_map) %>
+            <span class={[
+              "h-2 w-2 rounded-full shrink-0",
+              Run.running?(@selected_run) && "bg-green-500",
+              not Run.running?(@selected_run) && "bg-slate-400 dark:bg-slate-500"
+            ]} />
+            <span
+              id={"conversation-role-#{role.id}"}
+              data-qa="conversation-role"
+              class="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate"
+            >
+              {role.name}
+            </span>
 
             <span
-              :if={@selected_run}
               id={"elapsed-run-#{@selected_run.id}"}
               phx-hook="Elapsed"
               data-started-at={
@@ -631,13 +611,6 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   @impl true
-  def handle_event("select_role", %{"role_id" => role_id}, socket) do
-    case Enum.find(socket.assigns.runs, &(&1.role_id == role_id)) do
-      %Run{} = run -> {:noreply, select(socket, run)}
-      nil -> {:noreply, socket}
-    end
-  end
-
   def handle_event("toggle_raw_log", _params, socket) do
     {:noreply, assign(socket, :show_raw_log, not socket.assigns.show_raw_log)}
   end
@@ -710,7 +683,6 @@ defmodule RailWeb.Live.RunConversation do
   defp assign_defaults(socket) do
     socket
     |> assign_new(:selected_run, fn -> nil end)
-    |> assign_new(:stage_run_id, fn -> nil end)
     |> assign_new(:show_raw_log, fn -> false end)
     |> assign_new(:expanded_activities, fn -> MapSet.new() end)
     |> assign_new(:chat_input, fn -> "" end)
@@ -743,10 +715,11 @@ defmodule RailWeb.Live.RunConversation do
   defp load_run_events(%Run{} = run), do: Pipeline.list_run_events(run)
   defp load_run_events(_no_run), do: []
 
-  # The run the human was reading stays selected across a refresh; otherwise the
-  # most recent one is what they want to see.
-  defp pick_run(runs, %Run{id: id}), do: Enum.find(runs, &(&1.id == id)) || List.last(runs)
-  defp pick_run(runs, nil), do: List.last(runs)
+  # The page's tab says which run is being read, and a role with no run yet reads
+  # as nothing. Rendered without one, the most recent run is what to show.
+  defp pick_run(runs, {:ok, %Run{id: id}}), do: Enum.find(runs, &(&1.id == id))
+  defp pick_run(_runs, {:ok, nil}), do: nil
+  defp pick_run(runs, :error), do: List.last(runs)
 
   defp sort_runs(runs) do
     Enum.sort_by(runs, &{&1.started_at || &1.inserted_at, &1.inserted_at, &1.id})

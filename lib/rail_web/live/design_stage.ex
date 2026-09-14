@@ -37,6 +37,8 @@ defmodule RailWeb.Live.DesignStage do
     ~H"""
     <div id="design-stage" data-qa="design-stage" class="contents">
       <.task_layout task={@task} run={@run} title={@task.issue.title}>
+        <:tabs>{render_slot(@tabs)}</:tabs>
+
         <:actions>
           {render_slot(@actions)}
 
@@ -52,7 +54,7 @@ defmodule RailWeb.Live.DesignStage do
           </a>
 
           <button
-            :if={@design != nil and @design.picked != nil and @option != nil}
+            :if={@approvable and @design != nil and @design.picked != nil and @option != nil}
             type="button"
             id="approve-design"
             data-qa="approve_design"
@@ -193,6 +195,7 @@ defmodule RailWeb.Live.DesignStage do
 
               <div :if={@design.picked == nil} class="flex items-stretch gap-3">
                 <button
+                  :if={@approvable}
                   type="button"
                   id={"pick-design-#{@option.key}"}
                   data-qa="pick_design"

@@ -1,11 +1,13 @@
 defmodule RailWeb.TaskLive do
   @moduledoc """
-  One task: the work of the stage it sits at, and the conversation with it in a
-  sidebar.
+  One task, read a tab at a time: the issue it came from, then a tab per role
+  with that role's work on the left and its conversation on the right.
 
-  Product, design and architect are driven today, so the page is one of those
-  stages and the chat, and nothing else. The run each of them works on is the run
-  for the stage the task sits at.
+  A tab is the whole page - the work and the conversation move together - and it
+  is in the URL, so a refresh comes back to it. The role a human picks stays
+  picked until the task moves to another stage, when the role for the new stage
+  takes the page over. A role that has not run has nothing to read, so it has no
+  tab until it does.
 
   The page owns one thing the components cannot: the `run:<id>` subscription. A
   LiveComponent may not subscribe, so log lines arrive here and are forwarded to
@@ -13,13 +15,18 @@ defmodule RailWeb.TaskLive do
   """
   use RailWeb, :live_view
 
+  alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Roles.Schemas.Role
+  alias Rail.Users
   alias RailWeb.Live.ArchitectStage
   alias RailWeb.Live.DesignStage
   alias RailWeb.Live.ProductStage
   alias RailWeb.Live.RunConversation
+
+  @issue_tab "issue"
 
   def mount(_params, _session, socket) do
     socket =
@@ -29,7 +36,19 @@ defmodule RailWeb.TaskLive do
       |> assign(:page_title, "Task")
       |> assign(:current_section, :tasks)
       |> assign(:current_project_id, nil)
+      |> assign(:selected_tab, nil)
+      |> assign(:url_tab, nil)
+      |> assign(:tab_stage, nil)
+      |> assign(:selected_role, nil)
       |> assign(:selected_run, nil)
+      |> assign(:conversation_run, nil)
+      |> assign(:pane, :issue)
+      |> assign(:approvable, false)
+      |> assign(:tabs, [])
+      |> assign(:issue, nil)
+      |> assign(:assignees, Users.list_linear_users())
+      |> assign(:assignee_query, "")
+      |> assign(:comment_nonce, 0)
       |> assign(:subscribed_run_ids, MapSet.new())
       |> assign(:roles_map, %{})
       |> assign(:pending_question, nil)
@@ -42,8 +61,13 @@ defmodule RailWeb.TaskLive do
     {:ok, socket}
   end
 
-  def handle_params(%{"id" => task_id}, _uri, socket) do
-    socket = socket |> assign(:task_id, task_id) |> refresh_task()
+  def handle_params(%{"id" => task_id} = params, _uri, socket) do
+    socket =
+      socket
+      |> assign(:task_id, task_id)
+      |> assign(:url_tab, params["tab"])
+      |> assign(:selected_tab, params["tab"])
+      |> refresh_task()
 
     {:noreply, socket}
   end
@@ -64,12 +88,14 @@ defmodule RailWeb.TaskLive do
         </div>
 
         <.live_component
-          :if={@task != nil and @task.stage == :product and @selected_run != nil}
+          :if={@task != nil and @pane == :product}
           module={ProductStage}
-          id="product-stage-component"
+          id={stage_component_id(@selected_role)}
           task={@task}
           run={@selected_run}
+          approvable={@approvable}
         >
+          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
@@ -81,18 +107,20 @@ defmodule RailWeb.TaskLive do
               pending_question={@pending_question}
               pending_questions={@pending_questions}
               answer_text={@answer_text}
-              stage_run={@selected_run}
+              conversation_run={@conversation_run}
             />
           </:sidebar>
         </.live_component>
 
         <.live_component
-          :if={@task != nil and @task.stage == :design and @selected_run != nil}
+          :if={@task != nil and @pane == :design}
           module={DesignStage}
-          id="design-stage-component"
+          id={stage_component_id(@selected_role)}
           task={@task}
           run={@selected_run}
+          approvable={@approvable}
         >
+          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
@@ -104,18 +132,20 @@ defmodule RailWeb.TaskLive do
               pending_question={@pending_question}
               pending_questions={@pending_questions}
               answer_text={@answer_text}
-              stage_run={@selected_run}
+              conversation_run={@conversation_run}
             />
           </:sidebar>
         </.live_component>
 
         <.live_component
-          :if={@task != nil and @task.stage == :architect and @selected_run != nil}
+          :if={@task != nil and @pane == :architect}
           module={ArchitectStage}
-          id="architect-stage-component"
+          id={stage_component_id(@selected_role)}
           task={@task}
           run={@selected_run}
+          approvable={@approvable}
         >
+          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
@@ -127,23 +157,48 @@ defmodule RailWeb.TaskLive do
               pending_question={@pending_question}
               pending_questions={@pending_questions}
               answer_text={@answer_text}
-              stage_run={@selected_run}
+              conversation_run={@conversation_run}
             />
           </:sidebar>
         </.live_component>
+
+        <!-- The issue is the same view the issue page shows, and it is read on its
+        own: there is no one role whose conversation belongs beside it. -->
+        <.task_layout
+          :if={@task != nil and @pane == :issue and @issue != nil}
+          task={@task}
+          title={@task.issue.title}
+        >
+          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
+          <:actions>
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+          </:actions>
+          <.issue_view
+            issue={@issue}
+            assignees={@assignees}
+            assignee_query={@assignee_query}
+            comment_nonce={@comment_nonce}
+            show_task={false}
+          />
+        </.task_layout>
 
         <.task_layout
-          :if={
-            @task != nil and
-              not (@task.stage in [:product, :design, :architect] and @selected_run != nil)
-          }
+          :if={@task != nil and @pane == :none}
           task={@task}
           run={@selected_run}
           title={@task.issue.title}
         >
+          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
+          <div
+            id="role-no-work"
+            data-qa="role_no_work"
+            class="max-w-3xl mx-auto text-sm text-slate-500 dark:text-slate-400"
+          >
+            This role has nothing to show here. Its conversation is on the right.
+          </div>
           <:sidebar>
             <.conversation_sidebar
               task={@task}
@@ -152,13 +207,22 @@ defmodule RailWeb.TaskLive do
               pending_question={@pending_question}
               pending_questions={@pending_questions}
               answer_text={@answer_text}
-              stage_run={@selected_run}
+              conversation_run={@conversation_run}
             />
           </:sidebar>
         </.task_layout>
       </div>
     </Layouts.app>
     """
+  end
+
+  def handle_event("select_tab", %{"tab" => tab}, socket) do
+    socket =
+      socket
+      |> assign(:selected_question_id, nil)
+      |> push_patch(to: ~p"/tasks/#{socket.assigns.task_id}?tab=#{tab}")
+
+    {:noreply, socket}
   end
 
   def handle_event("select_option", %{"option" => option}, socket) do
@@ -196,7 +260,7 @@ defmodule RailWeb.TaskLive do
   end
 
   def handle_event("send_answers", _params, socket) do
-    _sent = Pipeline.send_answers(socket.assigns.selected_run)
+    _sent = Pipeline.send_answers(socket.assigns.conversation_run)
     {:noreply, refresh_task(socket)}
   end
 
@@ -231,14 +295,14 @@ defmodule RailWeb.TaskLive do
     socket = refresh_task(socket)
 
     case socket.assigns do
-      %{task: %Task{stage: :product} = task, selected_run: %Run{}} ->
-        send_update(ProductStage, id: "product-stage-component", task: task)
+      %{pane: :product, task: task, selected_role: role} ->
+        send_update(ProductStage, id: stage_component_id(role), task: task)
 
-      %{task: %Task{stage: :design} = task, selected_run: %Run{}} ->
-        send_update(DesignStage, id: "design-stage-component", task: task)
+      %{pane: :design, task: task, selected_role: role} ->
+        send_update(DesignStage, id: stage_component_id(role), task: task)
 
-      %{task: %Task{stage: :architect} = task, selected_run: %Run{}} ->
-        send_update(ArchitectStage, id: "architect-stage-component", task: task)
+      %{pane: :architect, task: task, selected_role: role} ->
+        send_update(ArchitectStage, id: stage_component_id(role), task: task)
 
       _no_stage_on_disk ->
         :ok
@@ -304,7 +368,7 @@ defmodule RailWeb.TaskLive do
   attr :pending_question, :any, required: true
   attr :pending_questions, :list, required: true
   attr :answer_text, :string, required: true
-  attr :stage_run, :any, required: true
+  attr :conversation_run, :any, required: true
 
   # Questions sit above the conversation they came out of.
   defp conversation_sidebar(assigns) do
@@ -344,7 +408,7 @@ defmodule RailWeb.TaskLive do
       id="run-conversation"
       task={@task}
       runs={@task.runs || []}
-      stage_run={@stage_run}
+      stage_run={@conversation_run}
       roles_map={@roles_map}
     />
     """
@@ -352,44 +416,142 @@ defmodule RailWeb.TaskLive do
 
   defp refresh_task(socket) do
     case Pipeline.get_task(socket.assigns.task_id) do
-      {:ok, task} -> apply_task(socket, task)
+      {:ok, task} -> socket |> apply_task(task) |> sync_tab_url()
       {:error, _reason} -> assign(socket, :task, nil)
     end
   end
 
   defp apply_task(socket, %Task{} = task) do
     roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []
-    selected_run = stage_run(task)
-    pending_questions = pending_questions(task, selected_run)
-    pending_question = select_question(pending_questions, socket.assigns.selected_question_id)
+    started = started_roles(roles, task.runs)
+    {role, selected_run} = select_tab(started, task, socket.assigns.selected_tab, socket.assigns.tab_stage)
 
-    subscribed_run_ids = sync_run_subscriptions(socket, task.runs)
+    questions = Pipeline.list_questions(task, status: :pending, order_by: [asc: :inserted_at, asc: :id])
+    pending_questions = questions_for(questions, selected_run)
+    pending_question = select_question(pending_questions, socket.assigns.selected_question_id)
 
     socket
     |> assign(:task, task)
     |> assign(:page_title, task.issue.title)
     |> assign(:current_project_id, task.project_id)
     |> assign(:roles_map, Map.new(roles, &{&1.id, &1}))
+    |> assign(:selected_tab, (role && role.id) || @issue_tab)
+    |> assign(:tab_stage, task.stage)
+    |> assign(:selected_role, role)
     |> assign(:selected_run, selected_run)
+    |> assign(:conversation_run, selected_run)
+    |> assign(:pane, pane(role))
+    |> assign(:approvable, role != nil and role.stage == task.stage and selected_run != nil)
+    |> assign(:tabs, build_tabs(task, started, role, questions))
     |> assign(:blocked?, match?(%Run{status: :blocked_on_input}, selected_run))
-    |> assign(:subscribed_run_ids, subscribed_run_ids)
+    |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
     |> assign(:pending_questions, pending_questions)
     |> assign(:pending_question, pending_question)
     |> assign(:selected_question_id, pending_question && pending_question.id)
+    |> load_issue(task)
   end
 
-  # The run for the stage this task sits at, picked out of the runs already loaded.
-  defp stage_run(%Task{stage: stage, runs: runs}) do
-    Enum.find(runs, &(&1.role != nil and &1.role.stage == stage))
+  # The issue is a tab of its own and costs a query of its own, so it is read
+  # only while it is the one being looked at.
+  defp load_issue(socket, %Task{} = task) do
+    preload = [:project, :owner_user, task: [runs: :role], comments: [:author_user, replies: :author_user]]
+
+    case socket.assigns.pane do
+      :issue -> assign(socket, :issue, read_issue(task.issue_id, preload))
+      _other_tab -> assign(socket, :issue, nil)
+    end
   end
+
+  defp read_issue(issue_id, preload) do
+    {:ok, issue} = Issues.get_issue(issue_id, preload: preload)
+    issue
+  end
+
+  # A role with no run has nothing to read, so it is not a tab yet.
+  defp started_roles(roles, runs) do
+    roles
+    |> Enum.map(&{&1, role_run(runs, &1)})
+    |> Enum.reject(fn {_role, run} -> run == nil end)
+  end
+
+  # The tab in the URL is the one to open. Without one, it is the role for the
+  # stage the task sits at; and once the task moves on, that role takes over from
+  # whatever the human was reading.
+  defp select_tab(started, %Task{} = task, tab, tab_stage) do
+    stage_entry = Enum.find(started, fn {role, _run} -> role.stage == task.stage end)
+    picked = Enum.find(started, fn {role, _run} -> role.id == tab end)
+    default = stage_entry || List.last(started)
+
+    cond do
+      tab_stage != nil and tab_stage != task.stage and stage_entry != nil -> stage_entry
+      tab == @issue_tab -> {nil, nil}
+      picked != nil -> picked
+      default != nil -> default
+      true -> {nil, nil}
+    end
+  end
+
+  # Once the URL names a tab it keeps naming the one that is open, so a refresh
+  # comes back here even after the task has moved the page on. A URL that names
+  # none is left alone: it already means "wherever the task is now".
+  defp sync_tab_url(%{assigns: %{url_tab: url_tab, selected_tab: selected}} = socket) when url_tab in [nil, selected] do
+    socket
+  end
+
+  defp sync_tab_url(%{assigns: %{selected_tab: tab, task_id: task_id}} = socket) do
+    push_patch(socket, to: ~p"/tasks/#{task_id}?tab=#{tab}")
+  end
+
+  defp pane(nil), do: :issue
+  defp pane(%Role{stage: stage}) when stage in [:product, :design, :architect], do: stage
+  defp pane(%Role{}), do: :none
+
+  defp stage_component_id(%Role{id: id}), do: "stage-#{id}"
+
+  # A role is read through its latest run: an earlier one is the same conversation
+  # before the stage sent the work back.
+  defp role_run(runs, %Role{id: role_id}) do
+    runs
+    |> Enum.filter(&(&1.role_id == role_id))
+    |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
+  end
+
+  defp build_tabs(%Task{} = task, started, selected, questions) do
+    counts = Enum.frequencies_by(questions, & &1.run_id)
+
+    issue_tab = %{
+      id: @issue_tab,
+      label: "Linear Issue",
+      sublabel: task.issue.identifier,
+      tone: :issue,
+      badge: 0,
+      selected?: selected == nil
+    }
+
+    role_tabs =
+      Enum.map(started, fn {role, run} ->
+        %{
+          id: role.id,
+          label: role.name,
+          sublabel: role_status_label(role, run, task),
+          tone: tab_tone(run),
+          badge: Map.get(counts, run.id, 0),
+          selected?: selected != nil and selected.id == role.id
+        }
+      end)
+
+    [issue_tab | role_tabs]
+  end
+
+  defp tab_tone(%Run{} = run), do: Run.state(run)
 
   # A run can ask several things at once, so a blocked run shows the whole queue
   # as tabs, in the order they were asked.
-  defp pending_questions(%Task{} = task, %Run{status: :blocked_on_input}) do
-    Pipeline.list_questions(task, status: :pending, order_by: [asc: :inserted_at, asc: :id])
+  defp questions_for(questions, %Run{status: :blocked_on_input, id: run_id}) do
+    Enum.filter(questions, &(&1.run_id == run_id))
   end
 
-  defp pending_questions(%Task{}, _not_blocked), do: []
+  defp questions_for(_questions, _not_blocked), do: []
 
   # The tab the human picked stays put across refreshes; once it is answered the
   # front of the queue takes over.
@@ -399,8 +561,8 @@ defmodule RailWeb.TaskLive do
 
   # `run:<id>` carries the run's log lines and the finish of its OS process. A
   # LiveComponent cannot subscribe, so the page holds this and forwards. Every run
-  # on the task is followed, not just the stage's: the conversation can be reading
-  # any of them, so the lines are tagged with their run on the way in.
+  # on the task is followed, not just the one being read: the conversation can be
+  # reading any of them, so the lines are tagged with their run on the way in.
   defp sync_run_subscriptions(socket, runs) do
     previous = socket.assigns.subscribed_run_ids
     current = MapSet.new(runs || [], & &1.id)

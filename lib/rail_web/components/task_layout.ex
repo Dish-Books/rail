@@ -14,6 +14,7 @@ defmodule RailWeb.Components.TaskLayout do
   attr :title, :string, default: nil
 
   slot :meta
+  slot :tabs
   slot :actions
   slot :alerts
   slot :inner_block
@@ -25,7 +26,11 @@ defmodule RailWeb.Components.TaskLayout do
       <div
         id="task-header"
         data-qa="task-header"
-        class="px-6 py-5 space-y-3 border-b border-slate-200 dark:border-slate-700"
+        class={[
+          "px-6 pt-5 space-y-3 border-b border-slate-200 dark:border-slate-700",
+          @tabs == [] && "pb-5",
+          @tabs != [] && "bg-slate-50 dark:bg-slate-800/30"
+        ]}
       >
         <div class="flex items-center gap-3 min-w-0">
           <.project_badge project={@task.project} />
@@ -70,6 +75,8 @@ defmodule RailWeb.Components.TaskLayout do
         >
           {@run.error}
         </p>
+
+        {render_slot(@tabs)}
       </div>
 
       <div class="flex flex-col lg:flex-row flex-1 min-h-0">
@@ -77,7 +84,9 @@ defmodule RailWeb.Components.TaskLayout do
           {render_slot(@inner_block)}
         </div>
 
+        <!-- A pane read on its own leaves no column behind: it has the width. -->
         <aside
+          :if={@sidebar != []}
           id="task-conversation-column"
           class="w-full lg:w-[440px] shrink-0 flex flex-col min-h-0 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-700"
         >

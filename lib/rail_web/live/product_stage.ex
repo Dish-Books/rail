@@ -28,6 +28,8 @@ defmodule RailWeb.Live.ProductStage do
     ~H"""
     <div id="product-stage" data-qa="product-stage" class="contents">
       <.task_layout task={@task} run={@run} title={ticket_title(@ticket, @task)}>
+        <:tabs>{render_slot(@tabs)}</:tabs>
+
         <:meta :if={@ticket != nil and (@ticket.priority || @ticket.estimate)}>
           <span class="inline-flex items-center gap-1.5">
             <span
@@ -47,7 +49,7 @@ defmodule RailWeb.Live.ProductStage do
           {render_slot(@actions)}
 
           <button
-            :if={@ticket != nil}
+            :if={@approvable and @ticket != nil}
             type="button"
             id="approve-product-plan-skip-design"
             data-qa="approve_product_plan_skip_design"
@@ -60,7 +62,7 @@ defmodule RailWeb.Live.ProductStage do
           </button>
 
           <button
-            :if={@ticket != nil}
+            :if={@approvable and @ticket != nil}
             type="button"
             id="approve-product-plan"
             data-qa="approve_product_plan"
