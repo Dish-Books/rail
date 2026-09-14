@@ -400,6 +400,27 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#approve-design")
     end
 
+    test "a turn finishing re-reads the design the agent may have changed", %{
+      conn: conn,
+      task: task,
+      design_run: design_run,
+      design_dir: dir
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#design-option-cards", "Big tiles.")
+
+      File.write!(
+        Path.join(dir, "manifest.json"),
+        ~s({"options": [{"key": "cards", "title": "Cards", "summary": "Bigger tiles."}]})
+      )
+
+      send(view.pid, {:os_process_finished, design_run, %{}})
+
+      # The page forwards to the component, which renders on its own turn.
+      _settled = render(view)
+      assert has_element?(view, "#design-option-cards", "Bigger tiles.")
+    end
+
     test "approving the picked design hands the task to the architect", %{conn: conn, task: task, design_dir: dir} do
       File.write!(Path.join(dir, "picked"), "cards")
       File.write!(Path.join(dir, "cards.png"), "png bytes")
