@@ -2,14 +2,15 @@ defmodule Rail.Pipeline.Schemas.Task do
   @moduledoc """
   Schema for a task moving through the development pipeline.
 
-  Only the product stage is driven today. The stage enum keeps every value it
-  ever had so a row written before the cut still reads back, and the columns the
+  Product, design and architect are driven today. The stage enum keeps every value
+  it ever had so a row written before the cut still reads back, and the columns the
   retired stages wrote — the PR, mergeability, rework and diff bookkeeping — stay
   in the table unmapped rather than being migrated away.
   """
   use Rail.Schema
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects.Schemas.Project
@@ -42,6 +43,8 @@ defmodule Rail.Pipeline.Schemas.Task do
 
     belongs_to :project, Project
     belongs_to :issue, Issue
+
+    has_one :implementation_plan, ImplementationPlan
 
     has_many :questions, Question
     has_many :runs, Run

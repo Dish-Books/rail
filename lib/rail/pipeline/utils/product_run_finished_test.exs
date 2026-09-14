@@ -76,6 +76,12 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Settle Product Issue"})
 
     {:ok, task} = Pipeline.create_task(issue, :product)
+    tickets_dir = Path.join(task.scratch_path, "tickets")
+    File.mkdir_p!(tickets_dir)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    ticket_path = Path.join(tickets_dir, "S14601-1.md")
+    File.write!(ticket_path, "---\ntitle: Settle Product Issue\n---\n\nThe ticket body.\n")
 
     {:ok, run} =
       Pipeline.create_run(%{
@@ -88,11 +94,29 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
 
     run = Repo.preload(run, [:task, :role])
 
-    %{backend: backend, project: project, issue: issue, task: task, roles: roles, run: run}
+    %{backend: backend, project: project, issue: issue, task: task, roles: roles, run: run, ticket_path: ticket_path}
   end
 
   test "leaves the task where it is: a human approves the ticket", %{task: task, run: run} do
-    assert %Run{} = product_run_finished(run, [])
+    assert %Run{error: nil} = product_run_finished(run, [])
     assert %Task{stage: :product} = Repo.get!(Task, task.id)
+  end
+
+  test "a run that exited without a ticket records that rather than parking a human in front of nothing", %{
+    task: task,
+    run: run,
+    ticket_path: path
+  } do
+    File.rm!(path)
+
+    assert %Run{error: "The product agent did not write tickets/S14601-1.md."} = product_run_finished(run, [])
+    assert %Task{stage: :product} = Repo.get!(Task, task.id)
+  end
+
+  test "a ticket that is only whitespace is no ticket", %{run: run, ticket_path: path} do
+    File.write!(path, "\n  \n")
+
+    assert %Run{error: "The product agent did not write tickets/S14601-1.md."} =
+             product_run_finished(run, [])
   end
 end

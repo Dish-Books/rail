@@ -86,7 +86,7 @@ MANIFEST_EOF
 
     architect)
       mkdir -p "$RAIL_SCRATCH/plans"
-      cat <<'PLAN_EOF' > "$RAIL_SCRATCH/plan.md"
+      cat <<'PLAN_EOF' > "$RAIL_SCRATCH/plans/${IDENTIFIER}.md"
 ## Implementation plan
 
 ### Approach
@@ -96,11 +96,10 @@ Implement the ticket lifecycle end-to-end adhering to standards and quality gate
 - `lib/rail/e2e/ticket_lifecycle_test.exs`: End-to-end integration test
 - `test/PARITY.md`: Behavior inventory parity matrix
 
-### Acceptance Criteria Verification
+### Verification
 1. Feature works end-to-end
 2. Verification succeeds
 PLAN_EOF
-      cp "$RAIL_SCRATCH/plan.md" "$RAIL_SCRATCH/plans/${IDENTIFIER}.md"
       ;;
 
     engineer)

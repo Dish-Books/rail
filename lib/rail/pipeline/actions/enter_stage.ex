@@ -52,7 +52,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
     {:ok, %Run{} = run} = Pipeline.start_or_resume_run(task, role, worktree_path)
 
     if worktree_path do
-      case start_process(task, role, run, worktree_path) do
+      case start_process(run) do
         {:ok, os_process} -> {:ok, os_process.run}
         {:error, {:spawn_failed, _reason, %Run{} = failed}} -> {:ok, failed}
         {:error, :dispatch_disabled} -> {:ok, run}
@@ -77,11 +77,12 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   end
 
   # A stage with a brief of its own spawns itself; the rest have nothing to add.
-  defp start_process(%Task{} = task, %Role{stage: :design} = role, %Run{} = run, worktree_path) do
-    Pipeline.start_design_run(task, role, run, worktree_path)
-  end
+  # The run carries its task and its role, so it is the whole of what a spawn needs.
+  defp start_process(%Run{role: %Role{stage: :design}} = run), do: Pipeline.start_design_run(run)
 
-  defp start_process(%Task{} = task, %Role{} = role, %Run{} = run, worktree_path) do
+  defp start_process(%Run{role: %Role{stage: :architect}} = run), do: Pipeline.start_architect_run(run)
+
+  defp start_process(%Run{task: %Task{} = task, role: %Role{} = role} = run) do
     prompt =
       Pipeline.build_prompt(
         task: task,
@@ -100,7 +101,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
         reasoning_effort: role.reasoning_effort || "high",
         system_prompt: role.system_prompt,
         conversation_id: run.conversation_id,
-        work_dir: worktree_path,
+        work_dir: task.worktree_path,
         mcp: role.mcp_tools != []
       )
 
