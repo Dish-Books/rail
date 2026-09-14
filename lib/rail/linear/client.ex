@@ -23,6 +23,7 @@ defmodule Rail.Linear.Client do
   @default_authorize_url "https://linear.app/oauth/authorize"
   @default_token_url "https://api.linear.app/oauth/token"
   @graphql_url "https://api.linear.app/graphql"
+  @asset_url "https://uploads.linear.app"
   @default_scope "read,write,issues:create,comments:create"
   @page_size 50
   @comments_per_issue 50
@@ -262,6 +263,22 @@ defmodule Rail.Linear.Client do
   end
 
   @doc """
+  Fetches one of Linear's uploaded files, which are served only to a token.
+
+  `path` is what follows the host, so nothing else can be asked for.
+  """
+  def get_asset(target, path, opts \\ []) when is_binary(path) do
+    with {:ok, token} <- token(target, opts),
+         {:ok, %{status: 200} = response} <-
+           Req.get(build_req(opts), url: "#{@asset_url}/#{path}", auth: {:bearer, token}, decode_body: false) do
+      {:ok, content_type(response), response.body}
+    else
+      {:ok, %{status: status, body: body}} -> {:error, {:linear_api_error, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
   Comments on a ticket. `input` is Linear's `CommentCreateInput`.
   """
   def create_comment(%Project{} = project, %{} = input, opts \\ []) do
@@ -301,6 +318,9 @@ defmodule Rail.Linear.Client do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  defp content_type(%{headers: %{"content-type" => [type | _rest]}}), do: type
+  defp content_type(_unsaid), do: "application/octet-stream"
 
   defp oauth_config, do: Application.get_env(:rail, :linear_oauth, [])
 

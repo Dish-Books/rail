@@ -29,11 +29,13 @@ defmodule RailWeb.Live.ArchitectStage do
     ~H"""
     <div id="architect-stage" data-qa="architect-stage" class="contents">
       <.task_layout task={@task} run={@run} title={@task.issue.title}>
+        <:tabs>{render_slot(@tabs)}</:tabs>
+
         <:actions>
           {render_slot(@actions)}
 
           <button
-            :if={@plan != nil}
+            :if={@approvable and @plan != nil}
             type="button"
             id="approve-plan"
             data-qa="approve_plan"

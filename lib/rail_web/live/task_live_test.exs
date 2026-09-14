@@ -118,11 +118,11 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "[data-qa='task_error_card']", "The agent gave up.")
   end
 
-  test "the page hosts the conversation for the runs the task has", %{conn: conn, task: task, role: role} do
+  test "the page hosts the conversation for the role on the tab", %{conn: conn, task: task, role: role} do
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
     assert has_element?(view, "[data-qa='conversation-tab']")
-    assert has_element?(view, "#role-chip-#{role.id}")
+    assert has_element?(view, "#conversation-role-#{role.id}")
   end
 
   test "the product stage renders the ticket and approving hands the task on", %{conn: conn, task: task} do
@@ -288,6 +288,178 @@ defmodule RailWeb.TaskLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/tasks/tsk_missing")
 
     assert has_element?(view, "#task-cleaned-up")
+  end
+
+  describe "the tabs across the header" do
+    test "the issue comes first and the stage's role is the one open", %{conn: conn, task: task, role: role} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#task-tab-issue", "Linear Issue")
+      assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']", "review the ticket")
+      assert has_element?(view, "[data-qa='product-stage']")
+    end
+
+    test "the issue tab reads the ticket Linear has", %{conn: conn, task: task, issue: issue} do
+      {:ok, _described} =
+        Issues.update_issue(issue, %{
+          description: "What the human asked for.\n\n![a shot](https://uploads.linear.app/ws/shot.png)",
+          url: "https://linear.app/tlv/issue/TLV-1"
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#task-tab-issue") |> render_click()
+
+      assert has_element?(view, "[data-qa='issue-description']", "What the human asked for.")
+
+      # Linear serves its own images only to a token, so they come back through Rail.
+      assert render(view) =~ ~s(src="/issues/#{issue.id}/assets/ws/shot.png")
+      assert has_element?(view, "#issue-linear-link[href='https://linear.app/tlv/issue/TLV-1']")
+
+      # The issue is read on its own, and the task it is already on is not a link.
+      refute has_element?(view, "[data-qa='product-stage']")
+      refute has_element?(view, "[data-qa='conversation-tab']")
+      refute has_element?(view, "#task-conversation-column")
+      refute has_element?(view, "[data-qa='issue-task-link']")
+    end
+
+    test "a role the task has moved past is read without its approval", %{
+      conn: conn,
+      task: task,
+      role: role,
+      project: project,
+      backend: backend
+    } do
+      File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "The ticket as approved.")
+
+      {:ok, architect} =
+        Roles.create_role(system_scope(), project, %{
+          backend_id: backend.id,
+          stage: :architect,
+          name: "architect role",
+          model: "claude-3-7-sonnet",
+          system_prompt: "You are the architect agent."
+        })
+
+      {:ok, task} = Pipeline.update_task(task, %{stage: :architect})
+
+      {:ok, _planning} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: architect.id,
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#task-tab-#{role.id}") |> render_click()
+
+      assert has_element?(view, "[data-qa='product_ticket']", "The ticket as approved.")
+      refute has_element?(view, "[data-qa='approve_product_plan']")
+    end
+
+    test "a role with no stage of its own has only its conversation", %{
+      conn: conn,
+      task: task,
+      project: project,
+      backend: backend
+    } do
+      {:ok, qa} =
+        Roles.create_role(system_scope(), project, %{
+          backend_id: backend.id,
+          stage: :qa,
+          name: "qa role",
+          model: "claude-3-7-sonnet",
+          system_prompt: "You are the QA agent."
+        })
+
+      {:ok, _testing} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: qa.id,
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#task-tab-#{qa.id}") |> render_click()
+
+      assert has_element?(view, "[data-qa='role_no_work']")
+      assert has_element?(view, "[data-qa='conversation-tab']")
+    end
+
+    test "a role that has not run has no tab yet", %{conn: conn, task: task, project: project, backend: backend} do
+      {:ok, architect} =
+        Roles.create_role(system_scope(), project, %{
+          backend_id: backend.id,
+          stage: :architect,
+          name: "architect role",
+          model: "claude-3-7-sonnet",
+          system_prompt: "You are the architect agent."
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      refute has_element?(view, "#task-tab-#{architect.id}")
+    end
+
+    test "a blocked role counts what it is waiting on", %{conn: conn, task: task, role: role, run: run} do
+      {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+      blocked = Repo.preload(blocked, task: :issue)
+
+      {:ok, _first} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which flow?"})
+      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "How many?"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-badge']", "2")
+      assert has_element?(view, "#task-tab-#{role.id}", "needs an answer")
+    end
+
+    test "a task nothing has run on yet opens on the issue", %{conn: conn, task: task, run: run} do
+      {:ok, _gone} = Repo.delete(run)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#task-tab-issue[aria-selected='true']")
+      assert has_element?(view, "[data-qa='issue-page']")
+    end
+
+    test "the tab the URL names is the one that opens, and a move puts the new stage there", %{
+      conn: conn,
+      task: task,
+      role: role,
+      project: project,
+      backend: backend
+    } do
+      {:ok, architect} =
+        Roles.create_role(system_scope(), project, %{
+          backend_id: backend.id,
+          stage: :architect,
+          name: "architect role",
+          model: "claude-3-7-sonnet",
+          system_prompt: "You are the architect agent."
+        })
+
+      {:ok, _planning} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: architect.id,
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
+      assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']")
+
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :architect})
+      send(view.pid, :task_changed)
+
+      assert has_element?(view, "#task-tab-#{architect.id}[aria-selected='true']")
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{architect.id}")
+    end
   end
 
   describe "the design stage" do
@@ -627,9 +799,9 @@ defmodule RailWeb.TaskLiveTest do
     } do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#role-chip-#{other_role.id}")
+      assert has_element?(view, "#task-tab-#{other_role.id}")
 
-      view |> element("#role-chip-#{other_role.id}") |> render_click()
+      view |> element("#task-tab-#{other_role.id}") |> render_click()
       assert has_element?(view, "#metadata-run-conversation-id", "sess_design")
 
       send(view.pid, :task_changed)
@@ -658,14 +830,6 @@ defmodule RailWeb.TaskLiveTest do
       _settled = render(view)
       refute render(view) =~ "The designer&#39;s line"
       refute render(view) =~ "The designer's line"
-    end
-
-    test "a role with no run is not selected", %{conn: conn, task: task, role: role} do
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#role-chip-#{role.id}") |> render_click(%{"role_id" => "rol_missing"})
-
-      assert has_element?(view, "#metadata-run-conversation-id", "sess_product")
     end
 
     test "stopping with nothing queued leaves the composer as it was", %{conn: conn, task: task, run: run} do
@@ -857,6 +1021,18 @@ defmodule RailWeb.TaskLiveTest do
       send(view.pid, {:os_process_finished, run, %{}})
 
       assert has_element?(view, "[data-qa='task_error_card']", "It fell over.")
+    end
+
+    test "a turn finishing refreshes the issue tab too", %{conn: conn, task: task, run: run} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#task-tab-issue") |> render_click()
+
+      {:ok, _failed} = Pipeline.update_run(run, %{status: :finished, error: "It fell over."})
+      send(view.pid, {:os_process_finished, run, %{}})
+
+      assert has_element?(view, "[data-qa='issue-page']")
+      assert has_element?(view, "#task-tab-#{run.role_id}", "failed")
     end
 
     test "a turn finishing re-reads the ticket the agent may have changed", %{conn: conn, task: task, run: run} do

@@ -74,14 +74,14 @@ defmodule RailWeb.Live.RunConversationTest do
     %{project: project, task: task, roles: roles, roles_map: roles_map}
   end
 
-  test "says so when no role has run the task", %{task: task, roles_map: roles_map} do
+  test "says so when the role on the tab has not run the task", %{task: task, roles_map: roles_map} do
     html = render_component(RunConversation, id: "conv", task: task, runs: [], roles_map: roles_map)
 
     assert html =~ ~s(data-qa="conversation_empty_state")
-    assert html =~ "No role has run this task yet."
+    assert html =~ "This role has not run on the task yet."
   end
 
-  test "offers a chip per run and describes the one being read", %{task: task, roles: roles, roles_map: roles_map} do
+  test "names the role being read and describes its run", %{task: task, roles: roles, roles_map: roles_map} do
     {:ok, architect} =
       Pipeline.create_run(%{
         task_id: task.id,
@@ -108,10 +108,9 @@ defmodule RailWeb.Live.RunConversationTest do
         roles_map: roles_map
       )
 
-    assert html =~ ~s(id="role-chip-#{architect.role_id}")
-    assert html =~ ~s(id="role-chip-#{engineer.role_id}")
-
     # The most recent run is the one being read.
+    assert html =~ ~s(id="conversation-role-#{engineer.role_id}")
+    refute html =~ ~s(id="conversation-role-#{architect.role_id}")
     assert html =~ "running"
     assert html =~ "conversation conv_engineer"
   end
@@ -286,7 +285,7 @@ defmodule RailWeb.Live.RunConversationTest do
 
     assert html =~ ~s(id="metadata-run-usage")
     assert html =~ "Plain words from the agent."
-    assert html =~ ~s(id="role-chip-#{run.role_id}")
+    assert html =~ ~s(id="conversation-role-#{run.role_id}")
   end
 
   test "a run with no conversation cannot be chatted with", %{task: task, roles: roles, roles_map: roles_map} do
