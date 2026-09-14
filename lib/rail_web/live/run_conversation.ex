@@ -17,28 +17,45 @@ defmodule RailWeb.Live.RunConversation do
   @doc """
   Takes the task and its runs; everything else the conversation decides itself.
 
-  `run_events` may arrive on its own from the page's `run:<id>` subscription, in
-  which case only the log is replaced.
+  `stage_run` is the run for the stage the task sits at. The conversation opens
+  on it, and follows it when the task moves to another stage; in between, the
+  human's own pick of a run stays put.
+
+  `appended_events` may arrive on their own from the page's `run:<id>`
+  subscriptions, tagged with the run they belong to, in which case only the log
+  of that run is extended, and only if it is the one being read.
   """
   # A send reloads the log from the database, and the broadcast for the lines it
   # just wrote can land after that, so lines already held are dropped.
   @impl true
-  def update(%{appended_events: events}, socket) do
-    held = MapSet.new(socket.assigns.run_events, & &1.id)
-    fresh = Enum.reject(events, &MapSet.member?(held, &1.id))
+  def update(%{appended_events: events, run_id: run_id}, socket) do
+    case socket.assigns.selected_run do
+      %Run{id: ^run_id} ->
+        held = MapSet.new(socket.assigns.run_events, & &1.id)
+        fresh = Enum.reject(events, &MapSet.member?(held, &1.id))
+        {:ok, assign_run_events(socket, socket.assigns.run_events ++ fresh)}
 
-    {:ok, assign_run_events(socket, socket.assigns.run_events ++ fresh)}
+      _other_run ->
+        {:ok, socket}
+    end
   end
 
   def update(assigns, socket) do
     socket = assign_defaults(socket)
     runs = sort_runs(assigns.runs)
-    selected_run = pick_run(runs, socket.assigns.selected_run)
+    stage_run = assigns[:stage_run]
+    stage_run_id = stage_run && stage_run.id
+
+    selected_run =
+      if stage_run_id == socket.assigns.stage_run_id,
+        do: pick_run(runs, socket.assigns.selected_run),
+        else: pick_run(runs, stage_run)
 
     socket =
       socket
       |> assign(assigns)
       |> assign(:runs, runs)
+      |> assign(:stage_run_id, stage_run_id)
       |> assign(:selected_run, selected_run)
       |> assign_run_events(load_run_events(selected_run))
 
@@ -692,6 +709,7 @@ defmodule RailWeb.Live.RunConversation do
   defp assign_defaults(socket) do
     socket
     |> assign_new(:selected_run, fn -> nil end)
+    |> assign_new(:stage_run_id, fn -> nil end)
     |> assign_new(:show_raw_log, fn -> false end)
     |> assign_new(:expanded_activities, fn -> MapSet.new() end)
     |> assign_new(:chat_input, fn -> "" end)

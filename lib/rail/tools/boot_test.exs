@@ -93,6 +93,86 @@ defmodule Rail.Tools.BootTest do
     Tools.terminate_os_process(pid, grace_period: 50)
   end
 
+  test "a live process adopted again resumes past what its last Follower logged", %{tmp_dir: tmp_dir, role: role} do
+    run =
+      %Run{}
+      |> Run.changeset(%{
+        task_id: UXID.generate!(prefix: "tsk"),
+        role_id: role.id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+    stream_path = Path.join(tmp_dir, "resume_live.ndjson")
+    line1 = ~s({"type":"system","subtype":"init","session_id":"sess-resume-live"})
+    line2 = ~s({"type":"assistant","message":{"content":[{"type":"text","text":"not logged yet"}]}})
+    File.write!(stream_path, "#{line1}\n#{line2}\n")
+    File.write!("#{stream_path}.err", "")
+
+    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    %OsProcess{}
+    |> OsProcess.changeset(%{
+      run_id: run.id,
+      task_id: run.task_id,
+      stream_path: stream_path,
+      node: to_string(Node.self()),
+      status: :running,
+      os_pid: pid,
+      stream_offset: byte_size(line1) + 1,
+      started_at: DateTime.utc_now()
+    })
+    |> Repo.insert!()
+
+    assert [{:adopted_live, %OsProcess{}, follower_pid}] = Boot.reconcile(node: to_string(Node.self()))
+
+    assert_receive {:run_events, _run_id, [%{line: ^line2}]}, 2_000
+    assert [^line2] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+
+    FollowerSupervisor.stop_follower(follower_pid)
+    Tools.terminate_os_process(pid, grace_period: 50)
+  end
+
+  test "a dead process has the lines nobody logged written before it settles", %{tmp_dir: tmp_dir, role: role} do
+    run =
+      %Run{}
+      |> Run.changeset(%{
+        task_id: UXID.generate!(prefix: "tsk"),
+        role_id: role.id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    stream_path = Path.join(tmp_dir, "resume_dead.ndjson")
+    line1 = ~s({"type":"system","subtype":"init","session_id":"sess-resume-dead"})
+    line2 = ~s({"type":"result","subtype":"success","session_id":"sess-resume-dead","usage":{"input_tokens":1}})
+    File.write!(stream_path, "#{line1}\n#{line2}\n")
+    File.write!("#{stream_path}.err", "")
+
+    %OsProcess{}
+    |> OsProcess.changeset(%{
+      run_id: run.id,
+      task_id: run.task_id,
+      stream_path: stream_path,
+      node: to_string(Node.self()),
+      status: :running,
+      os_pid: 999_997,
+      stream_offset: byte_size(line1) + 1,
+      started_at: DateTime.utc_now()
+    })
+    |> Repo.insert!()
+
+    assert [{:adopted_dead, %OsProcess{}}] = Boot.reconcile(node: to_string(Node.self()))
+
+    assert [^line2] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+    assert {:ok, %Run{status: :finished, conversation_id: "sess-resume-dead"}} = Pipeline.get_run(run.id)
+  end
+
   test "settles dead child process as finished while unwatched", %{tmp_dir: tmp_dir, role: role} do
     run =
       %Run{}

@@ -212,6 +212,62 @@ defmodule Rail.Tools.FollowerTest do
     Tools.terminate_os_process(pid, grace_period: 50)
   end
 
+  test "a Follower that crashes comes back where it left off and logs nothing twice", %{
+    run: run,
+    os_process: os_process,
+    stream_path: stream_path
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    # Ticks slow enough that the restarted Follower can be lent the connection first.
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
+        tail_interval_ms: 300,
+        batch_interval_ms: 400
+      )
+
+    Sandbox.allow(Repo, self(), follower_pid)
+
+    line1 = ~s({"type":"system","subtype":"init","session_id":"sess-crash-1"})
+    File.write!(stream_path, "#{line1}\n")
+
+    assert_receive {:run_events, _run_id, [%{line: ^line1}]}, 2_000
+    logged = byte_size(line1) + 1
+    assert %OsProcess{stream_offset: ^logged} = Repo.reload!(os_process)
+
+    # Asking again for a process already followed hands back the same Follower.
+    assert {:ok, ^follower_pid} = FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run})
+
+    Process.exit(follower_pid, :kill)
+
+    restarted_pid =
+      Enum.find_value(1..100, fn _attempt ->
+        Process.sleep(5)
+
+        case Registry.lookup(Rail.Tools.FollowerRegistry, os_process.id) do
+          [{pid, _value}] when pid != follower_pid -> pid
+          _not_yet -> nil
+        end
+      end)
+
+    Sandbox.allow(Repo, self(), restarted_pid)
+
+    line2 = ~s({"type":"assistant","message":{"content":[{"type":"text","text":"after the crash"}]}})
+    File.write!(stream_path, "#{line2}\n", [:append])
+
+    assert_receive {:run_events, _run_id, [%{line: ^line2}]}, 2_000
+    assert [^line1, ^line2] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+
+    # The replay brought back what the first Follower had seen.
+    assert %{event_state: %{conversation_id: "sess-crash-1"}} = :sys.get_state(restarted_pid)
+
+    FollowerSupervisor.stop_follower(restarted_pid)
+    Tools.terminate_os_process(pid, grace_period: 50)
+  end
+
   test "child exit drains stderr, marks run finished, computes outcome and broadcasts", %{
     run: run,
     os_process: os_process,

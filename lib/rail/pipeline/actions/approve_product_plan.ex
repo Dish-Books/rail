@@ -7,8 +7,10 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlan do
   The UI only offers this once it has the file to show, so the file is there by
   the time this runs.
 
-  Approving is a one-way door: the run latches `:done`, and a run already there is
-  refused rather than publishing its ticket twice.
+  Approving is a one-way door: the task leaves product, and a task no longer there
+  is refused rather than publishing its ticket twice. The run's own `:done` says
+  nothing about approval: a product run that finished cleanly is latched there
+  already, and that is exactly the run waiting to be approved.
   """
 
   import Rail.Pipeline.Utils.ParseTicket
@@ -36,7 +38,6 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlan do
     end
   end
 
-  defp approvable(%Run{stage_outcome: :done}), do: {:error, :already_approved}
   defp approvable(%Run{task: %Task{stage: stage}}) when stage != :product, do: {:error, {:invalid_stage, stage}}
 
   defp approvable(%Run{task: %Task{} = task}) do

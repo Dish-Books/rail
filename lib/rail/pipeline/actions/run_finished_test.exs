@@ -40,7 +40,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       })
 
     roles =
-      Map.new([:product, :design], fn stage ->
+      Map.new([:product, :design, :architect], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
             backend_id: backend.id,
@@ -207,11 +207,45 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     task: task,
     exited: exited
   } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :architect})
+    {_run, os_process} = exited.(:architect, %{})
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :architect} = Repo.reload!(task)
+  end
+
+  test "a design run that left its options incomplete stays open for the message that fixes it", %{
+    task: task,
+    exited: exited
+  } do
     {:ok, task} = Pipeline.update_task(task, %{stage: :design})
     {_run, os_process} = exited.(:design, %{})
 
-    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert {:ok, %Run{stage_outcome: :in_progress, error: "The designer did not write design/manifest.json."}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+
     assert %Task{stage: :design} = Repo.reload!(task)
+  end
+
+  test "a design run that wrote three complete options latches done", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :design})
+    design_dir = Path.join(task.scratch_path, "design")
+    File.mkdir_p!(design_dir)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    File.write!(
+      Path.join(design_dir, "manifest.json"),
+      ~s({"options": [{"key": "a", "title": "A"}, {"key": "b", "title": "B"}, {"key": "c", "title": "C"}]})
+    )
+
+    for key <- ["a", "b", "c"] do
+      File.write!(Path.join(design_dir, "#{key}.html"), "<p>#{key}</p>")
+      File.write!(Path.join(design_dir, "#{key}.png"), "png")
+    end
+
+    {_run, os_process} = exited.(:design, %{})
+
+    assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
   test "an outcome that arrives with string keys settles the same way", %{exited: exited} do

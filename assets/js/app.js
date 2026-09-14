@@ -10,8 +10,10 @@ import { DiffHighlight } from "./hooks/diff_highlight";
 import { DemoPlayer } from "./hooks/demo_player";
 import { CopyText } from "./hooks/copy_text";
 import { LocalTime } from "./hooks/local_time";
+import { DesignFrame } from "./hooks/design_frame";
 
 const Hooks = {
+  DesignFrame,
   Theme,
   Shortcuts,
   Elapsed,

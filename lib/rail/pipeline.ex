@@ -2,10 +2,11 @@ defmodule Rail.Pipeline do
   @moduledoc """
   Context boundary for the Rail development pipeline.
 
-  Only the product stage is driven today: a task is created at `:product`, its run
-  is started, the human approves the ticket it writes, and the task is handed on.
-  Everything past that hand-off — design, architect, engineer, review, QA, demo,
-  rebase and merge — lives in `old/` until it is built back.
+  Product and design are driven today: a task is created at `:product`, its run
+  is started, the human approves the ticket it writes, and the task is handed to
+  design, where the human picks one of three options, refines it in chat and
+  approves it. Everything past that hand-off (architect, engineer, review, QA,
+  demo, rebase and merge) lives in `old/` until it is built back.
   """
 
   alias Rail.Pipeline.Actions
@@ -13,9 +14,15 @@ defmodule Rail.Pipeline do
   defdelegate run_finished(os_process, outcome \\ %{}, opts \\ []), to: Actions.RunFinished
 
   defdelegate enter_stage(task, stage, opts \\ []), to: Actions.EnterStage
+
   defdelegate start_product_run(issue), to: Actions.StartProductRun
   defdelegate approve_product_plan(run, opts \\ []), to: Actions.ApproveProductPlan
   defdelegate read_ticket(task), to: Actions.ReadTicket
+
+  defdelegate start_design_run(task, role, run, worktree_path), to: Actions.StartDesignRun
+  defdelegate read_design(task), to: Actions.ReadDesign
+  defdelegate pick_design_option(run, key), to: Actions.PickDesignOption
+  defdelegate approve_design(run), to: Actions.ApproveDesign
 
   defdelegate create_task(issue, stage), to: Actions.CreateTask
   defdelegate list_tasks(opts \\ []), to: Actions.ListTasks

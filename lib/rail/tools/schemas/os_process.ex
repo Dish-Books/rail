@@ -22,6 +22,10 @@ defmodule Rail.Tools.Schemas.OsProcess do
     field :started_at, :utc_datetime_usec
     field :mcp_token_hash, :binary, redact: true
 
+    # How far into the stream the run's log has been written, in bytes, always on
+    # a line boundary. Whatever follows this process next starts reading here.
+    field :stream_offset, :integer, default: 0
+
     belongs_to :task, Task
     belongs_to :run, Run
 
@@ -36,7 +40,8 @@ defmodule Rail.Tools.Schemas.OsProcess do
     :node,
     :status,
     :started_at,
-    :mcp_token_hash
+    :mcp_token_hash,
+    :stream_offset
   ]
 
   @required_fields [

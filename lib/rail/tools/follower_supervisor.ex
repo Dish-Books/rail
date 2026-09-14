@@ -28,14 +28,14 @@ defmodule Rail.Tools.FollowerSupervisor do
   When `opts` carries the `:port`, the port is handed to the Follower before this
   returns, so the spawning process can exit without taking the child down.
   """
+  # A process can be followed already: the reconciler may have found it between the
+  # spawn recording its pid and asking for a Follower. That Follower is the one,
+  # and it gets the port.
   def start_follower(%OsProcess{} = os_process, opts \\ []) when is_list(opts) do
-    with {:ok, follower_pid} <- DynamicSupervisor.start_child(__MODULE__, {Follower, {os_process, opts}}) do
-      case Keyword.get(opts, :port) do
-        port when is_port(port) -> Tools.connect_port(port, follower_pid)
-        _none -> :ok
-      end
-
-      {:ok, follower_pid}
+    case DynamicSupervisor.start_child(__MODULE__, {Follower, {os_process, opts}}) do
+      {:ok, follower_pid} -> {:ok, connect(follower_pid, opts)}
+      {:error, {:already_started, follower_pid}} -> {:ok, connect(follower_pid, opts)}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -44,5 +44,14 @@ defmodule Rail.Tools.FollowerSupervisor do
   """
   def stop_follower(pid) when is_pid(pid) do
     DynamicSupervisor.terminate_child(__MODULE__, pid)
+  end
+
+  defp connect(follower_pid, opts) do
+    case Keyword.get(opts, :port) do
+      port when is_port(port) -> Tools.connect_port(port, follower_pid)
+      _none -> :ok
+    end
+
+    follower_pid
   end
 end
