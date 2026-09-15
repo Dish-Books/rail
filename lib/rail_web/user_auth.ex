@@ -46,7 +46,7 @@ defmodule RailWeb.UserAuth do
 
     conn
     |> renew_session(nil)
-    |> redirect(to: ~p"/")
+    |> redirect(to: ~p"/sign-in")
   end
 
   def fetch_current_user(conn, _opts) do
@@ -69,7 +69,7 @@ defmodule RailWeb.UserAuth do
     else
       conn
       |> maybe_store_return_to()
-      |> redirect(to: ~p"/auth/github")
+      |> redirect(to: ~p"/sign-in")
       |> halt()
     end
   end
@@ -101,7 +101,7 @@ defmodule RailWeb.UserAuth do
     if socket.assigns[:current_scope] && socket.assigns.current_scope.user do
       {:cont, socket}
     else
-      {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/auth/github")}
+      {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/sign-in")}
     end
   end
 

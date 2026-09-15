@@ -328,6 +328,18 @@ defmodule RailWeb.Components.Nav do
         >
           <.icon name="pi-user-circle" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
         </.link>
+
+        <!-- Sign Out Button. Ends the Rail session; the GitHub account it was signed in with is untouched. -->
+        <.link
+          href={~p"/auth/logout"}
+          id="sign-out-button"
+          data-qa="sign_out"
+          title="Sign out of Rail"
+          aria-label="Sign out of Rail"
+          class="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 transition-colors"
+        >
+          <.icon name="pi-sign-out" class="h-4 w-4 text-slate-500 dark:text-slate-400" />
+        </.link>
       </div>
 
       <.live_component

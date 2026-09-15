@@ -12,6 +12,7 @@ defmodule RailWeb.Components.TaskLayout do
   attr :task, :any, required: true
   attr :run, :any, default: nil
   attr :title, :string, default: nil
+  attr :flush, :boolean, default: false
 
   slot :meta
   slot :tabs
@@ -80,7 +81,15 @@ defmodule RailWeb.Components.TaskLayout do
       </div>
 
       <div class="flex flex-col lg:flex-row flex-1 min-h-0">
-        <div id="task-main-column" class="flex-1 min-w-0 overflow-y-auto px-6 py-8">
+        <!-- A pane that scrolls its own panels wants the column, not a gutter. -->
+        <div
+          id="task-main-column"
+          class={[
+            "flex-1 min-w-0 min-h-0",
+            @flush && "overflow-hidden",
+            not @flush && "overflow-y-auto px-6 py-8"
+          ]}
+        >
           {render_slot(@inner_block)}
         </div>
 

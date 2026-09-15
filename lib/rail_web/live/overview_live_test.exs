@@ -15,8 +15,8 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Tools
   alias Rail.Users
 
-  test "redirects unauthenticated user to /auth/github", %{conn: conn} do
-    assert {:error, {:redirect, %{to: "/auth/github"}}} = live(conn, ~p"/")
+  test "redirects an unauthenticated user to the sign-in page", %{conn: conn} do
+    assert {:error, {:redirect, %{to: "/sign-in"}}} = live(conn, ~p"/")
   end
 
   test "renders Overview view and navigation rail with active Overview destination", %{conn: conn} do
@@ -564,6 +564,19 @@ defmodule RailWeb.OverviewLiveTest do
           completed_at: DateTime.shift(now, hour: -4)
         })
 
+      # A stage no human signs off just finished; it did not hand anything over.
+      gate_task = task_for.("Gate work", %{stage: :qa})
+
+      {:ok, gate} =
+        Pipeline.create_run(%{
+          task_id: gate_task.id,
+          role_id: roles[:qa].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.shift(now, hour: -5),
+          completed_at: DateTime.shift(now, hour: -4)
+        })
+
       stopped_task = task_for.("Stopped work", %{stage: :architect})
 
       {:ok, stopped} =
@@ -607,6 +620,7 @@ defmodule RailWeb.OverviewLiveTest do
       refute has_element?(view, "#activity-ended-#{running.id}")
       assert has_element?(view, "#activity-ended-#{failed.id}", "failed on")
       assert has_element?(view, "#activity-ended-#{stopped.id}", "stopped on")
+      assert has_element?(view, "#activity-ended-#{gate.id}", "finished on")
       # A product run reads as the handoff it was, whether or not the ticket has
       # since been approved and the task moved on.
       assert has_element?(view, "#activity-ended-#{finished.id}", "is ready for review")
@@ -626,7 +640,7 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#roster-running-count", "1 / 5 running")
       assert has_element?(view, "#role-row-#{roles[:engineer].id}[data-tone='running']", "Running")
       assert has_element?(view, "#role-row-#{roles[:qa].id}[data-tone='failed']", "Failed 4h 0m ago")
-      assert has_element?(view, "#role-row-#{roles[:architect].id}[data-tone='idle']", "Last ran 3h 0m ago")
+      assert has_element?(view, "#role-row-#{roles[:architect].id}[data-tone='failed']", "Stopped 3h 0m ago")
       assert has_element?(view, "#role-row-#{roles[:product].id}[href='/tasks/#{moved_on.id}']", "Last ran 2h 0m ago")
     end
 

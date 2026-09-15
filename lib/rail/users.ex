@@ -29,6 +29,9 @@ defmodule Rail.Users do
   @decorate can?(resource: :users, action: :manage)
   defdelegate revoke_invite(scope, invite_id), to: Actions.RevokeInvite
 
+  defdelegate create_signing_key(scope), to: Actions.CreateSigningKey
+  defdelegate delete_signing_key(scope), to: Actions.DeleteSigningKey
+
   defdelegate linear_token(scope), to: Actions.LinearToken
   defdelegate link_linear(scope, code), to: Actions.LinkLinear
   defdelegate unlink_linear(scope), to: Actions.UnlinkLinear

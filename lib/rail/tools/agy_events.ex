@@ -17,6 +17,8 @@ defmodule Rail.Tools.AgyEvents do
     logs: [],
     final_text: "",
     assistant_text: "",
+    response_text: "",
+    response_line_count: 0,
     usage: %Run.Usage{},
     num_turns: 0,
     thinking_tokens: 0,
@@ -133,25 +135,35 @@ defmodule Rail.Tools.AgyEvents do
   @doc "Returns true if the run had a non-SUCCESS status but recovered because an answer reached DONE."
   def recovered?(%__MODULE__{recovered_status: status}), do: is_binary(status)
 
+  # Agy streams a response in chunks that break anywhere, mid-word included, so
+  # each chunk re-reads the lines of the whole response so far in place of the
+  # lines logged for it last time. A finished step, or anything else logged, ends
+  # the response.
   defp handle_agent_response(state, text_delta, step_state) do
-    trimmed_text = String.trim_trailing(text_delta)
     response_complete = step_state == "DONE"
+    response_text = state.response_text <> text_delta
+    lines = response_lines(response_text)
 
-    state = %{state | response_complete: response_complete}
-
-    if trimmed_text == "" do
+    state = %{
       state
-    else
-      new_assistant_text = state.assistant_text <> trimmed_text <> "\n"
-      lines = String.split(trimmed_text, "\n")
+      | response_complete: response_complete,
+        assistant_text: state.assistant_text <> text_delta,
+        logs: Enum.drop(state.logs, -state.response_line_count) ++ lines,
+        response_text: response_text,
+        response_line_count: length(lines)
+    }
 
-      %{
-        state
-        | assistant_text: new_assistant_text,
-          logs: Enum.concat(state.logs, lines)
-      }
+    if response_complete, do: end_response(state), else: state
+  end
+
+  defp response_lines(text) do
+    case String.trim(text) do
+      "" -> []
+      trimmed -> String.split(trimmed, "\n")
     end
   end
+
+  defp end_response(state), do: %{state | response_text: "", response_line_count: 0}
 
   defp handle_tool_step(state, step, _text_delta, "ACTIVE") do
     name = step["tool_name"] || "tool"
@@ -227,7 +239,11 @@ defmodule Rail.Tools.AgyEvents do
         "#{status}"
       end
 
-    result_log = "[result] #{status_label} · #{Run.usage(usage)}"
+    result_log = Enum.join(["[result] #{status_label}" | List.wrap(Run.usage(usage))], " · ")
+
+    # The error is what the human has to read to know what to do next, so it is
+    # said in the conversation and not only on the run.
+    error_logs = if result_error, do: ["[error] #{result_error}"], else: []
 
     %{
       state
@@ -237,7 +253,7 @@ defmodule Rail.Tools.AgyEvents do
         num_turns: num_turns,
         result_error: result_error,
         recovered_status: recovered_status,
-        logs: Enum.concat(final_logs, [result_log])
+        logs: Enum.concat([final_logs, error_logs, [result_log]])
     }
   end
 
@@ -286,7 +302,7 @@ defmodule Rail.Tools.AgyEvents do
   defp maybe_update_conversation_id(state, _invalid_conv_id), do: state
 
   defp append_log(state, line) do
-    %{state | logs: Enum.concat(state.logs, [line])}
+    %{end_response(state) | logs: Enum.concat(state.logs, [line])}
   end
 
   defp count_list(list) when is_list(list), do: length(list)

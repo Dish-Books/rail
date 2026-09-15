@@ -14,9 +14,13 @@ config :rail, Rail.Vault,
     aes_gcm: {Cloak.Ciphers.AES.GCM, tag: "AES.GCM.V1", key: Base.decode64!(cloak_key), iv_length: 12}
   ]
 
+config :rail, :git,
+  bot_name: "Rail",
+  bot_email: "rail[bot]@railai.dev"
+
 config :rail, :github,
   app_id: System.get_env("GITHUB_APP_ID", "test_app_id"),
-  private_key: System.get_env("GITHUB_APP_PRIVATE_KEY")
+  private_key: System.get_env("GITHUB_APP_PRIVATE_KEY", "test/support/fixtures/github_app.pem")
 
 config :rail, :linear_oauth,
   client_id: System.get_env("LINEAR_CLIENT_ID", "linear_client_id"),

@@ -1,6 +1,0 @@
-{"type":"system","subtype":"init","session_id":"sess-demo-001","tools":["run_command","write_to_file"],"mcp_servers":[]}
-{"type":"assistant","message":{"content":[{"type":"text","text":"Driving the browser to record live demonstration of acceptance criteria..."}]}}
-{"type":"assistant","message":{"content":[{"type":"tool_use","id":"call_demo_1","name":"write_to_file","input":{"path":"demo/manifest.json"}}]}}
-{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"call_demo_1","content":"Demo manifest written"}]}}
-{"type":"assistant","message":{"content":[{"type":"text","text":"Demo recording frames saved and manifest successfully generated."}]}}
-{"type":"result","subtype":"success","session_id":"sess-demo-001","result":"Demo recording complete with valid manifest and frame captures.","num_turns":2,"usage":{"input_tokens":240,"output_tokens":110,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cost_usd":0.005}}

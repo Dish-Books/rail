@@ -23,6 +23,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   import Rail.Pipeline.Utils.ArchitectRunFinished
   import Rail.Pipeline.Utils.DesignRunFinished
   import Rail.Pipeline.Utils.DispatchMessage
+  import Rail.Pipeline.Utils.EngineerRunFinished
   import Rail.Pipeline.Utils.ProductRunFinished
   import Rail.Pipeline.Utils.QuestionQueue
   import Rail.Pipeline.Utils.RegisterAskedQuestions
@@ -120,12 +121,12 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   end
 
   # Which stage settles is the run's own role, never the task's stage. Product,
-  # design and architect have a finish of their own; a run at any other records
-  # itself and moves nothing, which is what keeps a task handed on past them from
-  # crashing on a stage whose machinery is gone.
+  # design, architect and engineer have a finish of their own; a run at any other
+  # records itself and moves nothing.
   defp finish_action(%Run{role: %Role{stage: :product}}), do: &product_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :design}}), do: &design_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :architect}}), do: &architect_run_finished/2
+  defp finish_action(%Run{role: %Role{stage: :engineer}}), do: &engineer_run_finished/2
   defp finish_action(%Run{}), do: fn run, _opts -> run end
 
   # A finish that recorded an error did not conclude anything, so it stays open

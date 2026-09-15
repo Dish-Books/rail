@@ -40,7 +40,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       })
 
     roles =
-      Map.new([:product, :design, :architect, :engineer], fn stage ->
+      Map.new([:product, :design, :architect, :engineer, :review], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
             backend_id: backend.id,
@@ -213,10 +213,35 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     task: task,
     exited: exited
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
-    {_run, os_process} = exited.(:engineer, %{})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+    {_run, os_process} = exited.(:review, %{})
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :review} = Repo.reload!(task)
+  end
+
+  test "an engineer run that left no commit message stays open for the message that fixes it", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:engineer, %{})
+
+    assert {:ok, %Run{stage_outcome: :in_progress, error: "The engineer did not write commits/RUN-1.md."}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+
+    assert %Task{stage: :engineer} = Repo.reload!(task)
+  end
+
+  # One commit per round, not one per turn: a latched run says nothing more, so the
+  # chat turns a human has with it after it finished never commit again.
+  test "an engineer run that already had its say does not commit a second time", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
+
+    reject(&Rail.Git.commit_worktree/3)
+
+    assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 

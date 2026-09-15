@@ -209,6 +209,11 @@ defmodule Rail.Tools.ClaudeEventsTest do
     assert ClaudeEvents.reported_failure?(state)
     refute ClaudeEvents.success?(state)
     assert state.result_error == "claude reported error_max_turns: Ran out of turns"
+
+    assert Enum.take(state.logs, -2) == [
+             "[error] claude reported error_max_turns: Ran out of turns",
+             "[result] error_max_turns · 100 tokens"
+           ]
   end
 
   test "parse_line decodes NDJSON or logs non-JSON stdout" do

@@ -59,8 +59,8 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     }
   end
 
-  test "redirects unauthenticated user to /auth/github", %{conn: conn} do
-    assert {:error, {:redirect, %{to: "/auth/github"}}} = live(conn, ~p"/settings/projects")
+  test "redirects an unauthenticated user to the sign-in page", %{conn: conn} do
+    assert {:error, {:redirect, %{to: "/sign-in"}}} = live(conn, ~p"/settings/projects")
   end
 
   test "redirects non-admin user to /", %{regular_conn: conn} do

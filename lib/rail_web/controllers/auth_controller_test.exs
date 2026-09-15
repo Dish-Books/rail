@@ -182,7 +182,7 @@ defmodule RailWeb.AuthControllerTest do
         |> put_session(:user_token, token)
         |> delete(~p"/auth/logout")
 
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == ~p"/sign-in"
       refute get_session(conn, :user_token)
     end
 
@@ -201,7 +201,7 @@ defmodule RailWeb.AuthControllerTest do
         |> put_session(:user_token, token)
         |> get(~p"/auth/logout")
 
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == ~p"/sign-in"
       refute get_session(conn, :user_token)
     end
   end

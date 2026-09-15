@@ -191,7 +191,7 @@ defmodule RailWeb.OverviewLive do
   # A run at a stage a human signs off has handed its work over when it is done,
   # whether or not the human has since reviewed it and moved the task on.
   defp done_text(run, key) do
-    if run.role.stage in [:product, :design, :architect],
+    if run.role.stage in [:product, :design, :architect, :engineer],
       do: "says #{key} is ready for review",
       else: "finished on #{key}"
   end
@@ -228,7 +228,7 @@ defmodule RailWeb.OverviewLive do
 
     {tone, run, subtitle} =
       cond do
-        waiting -> {:waiting, waiting, waiting_subtitle(waiting)}
+        waiting -> waiting_entry(waiting, now)
         running -> {:running, running, "Running · #{running.task.issue.identifier}"}
         last -> last_subtitle(last, now)
         true -> {:idle, nil, "Idle · no work assigned"}
@@ -237,17 +237,26 @@ defmodule RailWeb.OverviewLive do
     %{role: role, tone: tone, run: run, subtitle: subtitle}
   end
 
-  defp waiting_subtitle(run) do
+  # A role waiting because it broke still reads as broken: "waiting on you" is
+  # true of it but says nothing about what it wants.
+  defp waiting_entry(run, now) do
     key = run.task.issue.identifier
-    if Run.state(run) == :done, do: "Handed off #{key} · waiting on you", else: "Blocked · #{key} · waiting on you"
+
+    case Run.state(run) do
+      :done -> {:waiting, run, "Handed off #{key} · waiting on you"}
+      :blocked -> {:waiting, run, "Blocked · #{key} · waiting on you"}
+      :failed -> last_subtitle(run, now)
+      :stopped -> {:failed, run, "Stopped #{age(run, now)} ago · #{key}"}
+    end
   end
+
+  defp age(run, now), do: format_age(DateTime.diff(now, Run.waiting_since(run)))
 
   defp last_subtitle(run, now) do
     key = run.task.issue.identifier
-    age = format_age(DateTime.diff(now, Run.waiting_since(run)))
 
     if Run.state(run) == :failed,
-      do: {:failed, run, "Failed #{age} ago · #{key}"},
-      else: {:idle, run, "Last ran #{age} ago · #{key}"}
+      do: {:failed, run, "Failed #{age(run, now)} ago · #{key}"},
+      else: {:idle, run, "Last ran #{age(run, now)} ago · #{key}"}
   end
 end

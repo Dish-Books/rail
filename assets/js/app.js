@@ -6,7 +6,7 @@ import { Theme } from "./hooks/theme";
 import { Shortcuts } from "./hooks/shortcuts";
 import { Elapsed } from "./hooks/elapsed";
 import { ChatAutoscroll } from "./hooks/chat_autoscroll";
-import { DiffHighlight } from "./hooks/diff_highlight";
+import { DiffScroller } from "./hooks/diff_scroller";
 import { DemoPlayer } from "./hooks/demo_player";
 import { CopyText } from "./hooks/copy_text";
 import { LocalTime } from "./hooks/local_time";
@@ -19,7 +19,7 @@ const Hooks = {
   Shortcuts,
   Elapsed,
   ChatAutoscroll,
-  DiffHighlight,
+  DiffScroller,
   DemoPlayer,
   CopyText,
   LocalTime,

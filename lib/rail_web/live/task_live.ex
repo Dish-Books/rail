@@ -23,8 +23,15 @@ defmodule RailWeb.TaskLive do
   alias Rail.Users
   alias RailWeb.Live.ArchitectStage
   alias RailWeb.Live.DesignStage
+  alias RailWeb.Live.EngineerStage
   alias RailWeb.Live.ProductStage
   alias RailWeb.Live.RunConversation
+
+  # The engineer writes files as it works and the pane reads them off disk, so a
+  # reader watching a run wants the diff to keep up. Re-reading on every batch of
+  # log lines would shell out to git several times a second, so it is throttled to
+  # this; the turn finishing re-reads regardless of when the last one was.
+  @diff_refresh_ms 5_000
 
   @issue_tab "issue"
 
@@ -43,6 +50,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:selected_run, nil)
       |> assign(:conversation_run, nil)
       |> assign(:pane, :issue)
+      |> assign(:diff_refreshed_at, nil)
       |> assign(:approvable, false)
       |> assign(:tabs, [])
       |> assign(:issue, nil)
@@ -144,6 +152,32 @@ defmodule RailWeb.TaskLive do
           task={@task}
           run={@selected_run}
           approvable={@approvable}
+        >
+          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
+          <:actions>
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+          </:actions>
+          <:sidebar>
+            <.conversation_sidebar
+              task={@task}
+              roles_map={@roles_map}
+              blocked?={@blocked?}
+              pending_question={@pending_question}
+              pending_questions={@pending_questions}
+              answer_text={@answer_text}
+              conversation_run={@conversation_run}
+            />
+          </:sidebar>
+        </.live_component>
+
+        <.live_component
+          :if={@task != nil and @pane == :engineer}
+          module={EngineerStage}
+          id={stage_component_id(@selected_role)}
+          task={@task}
+          run={@selected_run}
+          approvable={@approvable}
+          current_scope={@current_scope}
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
@@ -280,7 +314,7 @@ defmodule RailWeb.TaskLive do
       send_update(RunConversation, id: "run-conversation", run_id: run_id, appended_events: events)
     end
 
-    {:noreply, socket}
+    {:noreply, refresh_diff(socket)}
   end
 
   # A queued message went out, or came back, on its own time.
@@ -303,6 +337,9 @@ defmodule RailWeb.TaskLive do
 
       %{pane: :architect, task: task, selected_role: role} ->
         send_update(ArchitectStage, id: stage_component_id(role), task: task)
+
+      %{pane: :engineer, task: task, selected_role: role} ->
+        send_update(EngineerStage, id: stage_component_id(role), task: task)
 
       _no_stage_on_disk ->
         :ok
@@ -414,6 +451,22 @@ defmodule RailWeb.TaskLive do
     """
   end
 
+  defp refresh_diff(%{assigns: %{pane: :engineer, selected_role: %Role{} = role, task: %Task{} = task}} = socket) do
+    now = System.monotonic_time(:millisecond)
+
+    if due?(socket.assigns.diff_refreshed_at, now) do
+      send_update(EngineerStage, id: stage_component_id(role), task: task)
+      assign(socket, :diff_refreshed_at, now)
+    else
+      socket
+    end
+  end
+
+  defp refresh_diff(socket), do: socket
+
+  defp due?(nil, _now), do: true
+  defp due?(last, now), do: now - last >= @diff_refresh_ms
+
   defp refresh_task(socket) do
     case Pipeline.get_task(socket.assigns.task_id) do
       {:ok, task} -> socket |> apply_task(task) |> sync_tab_url()
@@ -503,7 +556,7 @@ defmodule RailWeb.TaskLive do
   end
 
   defp pane(nil), do: :issue
-  defp pane(%Role{stage: stage}) when stage in [:product, :design, :architect], do: stage
+  defp pane(%Role{stage: stage}) when stage in [:product, :design, :architect, :engineer], do: stage
   defp pane(%Role{}), do: :none
 
   defp stage_component_id(%Role{id: id}), do: "stage-#{id}"

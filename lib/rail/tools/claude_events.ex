@@ -139,7 +139,11 @@ defmodule Rail.Tools.ClaudeEvents do
         state.result_error
       end
 
-    result_log = "[result] #{subtype} · #{Run.usage(usage)}"
+    result_log = Enum.join(["[result] #{subtype}" | List.wrap(Run.usage(usage))], " · ")
+
+    # The error is what the human has to read to know what to do next, so it is
+    # said in the conversation and not only on the run.
+    error_logs = if is_error, do: ["[error] #{result_error}"], else: []
 
     %{
       state
@@ -147,10 +151,9 @@ defmodule Rail.Tools.ClaudeEvents do
         final_text: final_text,
         usage: usage,
         thinking_tokens: thinking_tokens,
-        # Private Helpers
         num_turns: num_turns,
         result_error: result_error,
-        logs: Enum.concat(state.logs, [result_log])
+        logs: Enum.concat([state.logs, error_logs, [result_log]])
     }
   end
 

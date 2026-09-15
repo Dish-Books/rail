@@ -288,7 +288,11 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ ~s(id="conversation-role-#{run.role_id}")
   end
 
-  test "a run with no conversation cannot be chatted with", %{task: task, roles: roles, roles_map: roles_map} do
+  test "a run with no conversation cannot be chatted with, but its stage can be retried", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
     {:ok, run} =
       Pipeline.create_run(%{
         task_id: task.id,
@@ -301,5 +305,43 @@ defmodule RailWeb.Live.RunConversationTest do
 
     assert html =~ ~s(id="unavailable-banner")
     assert html =~ "has not started a conversation"
+    assert html =~ ~s(id="retry-run")
+
+    # A stage the task has left is not entered again from here.
+    {:ok, planning} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:architect].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [planning], roles_map: roles_map)
+
+    assert html =~ ~s(id="unavailable-banner")
+    refute html =~ ~s(id="retry-run")
+  end
+
+  test "a run that failed says why in the conversation", %{task: task, roles: roles, roles_map: roles_map} do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        error: "claude reported error_during_execution: Eligibility check failed",
+        started_at: DateTime.utc_now()
+      })
+
+    Pipeline.append_run_events(run.id, nil, [
+      ~s({"type":"result","subtype":"error_during_execution","is_error":true,"result":"Eligibility check failed"})
+    ])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert html =~ ~s(data-qa="error-event")
+    assert html =~ "claude reported error_during_execution: Eligibility check failed"
+
+    # A result that spent nothing says only its status, with no dangling separator.
+    assert html =~ ~r/\[result\] error_during_execution\s*</
   end
 end

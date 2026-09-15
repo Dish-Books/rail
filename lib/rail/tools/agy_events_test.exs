@@ -110,6 +110,62 @@ defmodule Rail.Tools.AgyEventsTest do
     assert state.num_turns == 1
   end
 
+  test "logs a response streamed in chunks as the lines its whole text holds" do
+    steps =
+      Enum.map(
+        [
+          {"ACTIVE", "I will inspect the exist"},
+          {"ACTIVE", "ing Bill schema, actions"},
+          {"ACTIVE", ", components, and LiveViews to under"},
+          {"ACTIVE", "stand their current stru"},
+          {"ACTIVE", "cture before starting TDD. "},
+          {"ACTIVE", "Then:\n"},
+          {"ACTIVE", "\n"},
+          {"ACTIVE", "- write the test"},
+          {"DONE", "\n"},
+          {"DONE", "Second response."}
+        ],
+        fn {step_state, text_delta} ->
+          %{
+            "event" => "step_update",
+            "step_update" => %{"step_type" => "agent_response", "state" => step_state, "text_delta" => text_delta}
+          }
+        end
+      )
+
+    state = Enum.reduce(steps, AgyEvents.new(), &AgyEvents.handle_event(&2, &1))
+
+    assert state.logs == [
+             "I will inspect the existing Bill schema, actions, components, and LiveViews to understand their current structure before starting TDD. Then:",
+             "",
+             "- write the test",
+             "Second response."
+           ]
+  end
+
+  test "a response still streaming shows its text so far, and anything logged ends it" do
+    mid_response = %{
+      "event" => "step_update",
+      "step_update" => %{"step_type" => "agent_response", "state" => "ACTIVE", "text_delta" => "Reading the "}
+    }
+
+    tool_step = %{
+      "event" => "step_update",
+      "step_update" => %{"step_type" => "tool", "state" => "ACTIVE", "tool_name" => "noop", "tool_info" => %{}}
+    }
+
+    after_tool = %{
+      "event" => "step_update",
+      "step_update" => %{"step_type" => "agent_response", "state" => "ACTIVE", "text_delta" => "schema."}
+    }
+
+    state = AgyEvents.handle_event(AgyEvents.new(), mid_response)
+    assert state.logs == ["Reading the"]
+
+    state = state |> AgyEvents.handle_event(tool_step) |> AgyEvents.handle_event(after_tool)
+    assert state.logs == ["Reading the", "[tool] noop", "schema."]
+  end
+
   test "logs tool calls on ACTIVE and tool errors on ERROR, but ignores DONE" do
     state = AgyEvents.new()
 
@@ -234,6 +290,9 @@ defmodule Rail.Tools.AgyEventsTest do
     refute AgyEvents.success?(state)
     refute AgyEvents.recovered?(state)
     assert state.result_error == "agy reported ERROR: stream disconnected"
+
+    # The conversation says why, and a result that spent nothing says only its status.
+    assert Enum.take(state.logs, -2) == ["[error] agy reported ERROR: stream disconnected", "[result] ERROR"]
   end
 
   test "status ERROR after a finished answer is recovered and does not fail run" do
@@ -318,7 +377,7 @@ defmodule Rail.Tools.AgyEventsTest do
 
     state = AgyEvents.handle_event(state, empty_text_step)
     assert state.response_complete
-    assert state.assistant_text == ""
+    assert state.logs == []
 
     tool_no_params = %{
       "event" => "step_update",

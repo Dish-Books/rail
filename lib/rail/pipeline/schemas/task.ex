@@ -2,10 +2,8 @@ defmodule Rail.Pipeline.Schemas.Task do
   @moduledoc """
   Schema for a task moving through the development pipeline.
 
-  Product, design and architect are driven today. The stage enum keeps every value
-  it ever had so a row written before the cut still reads back, and the columns the
-  retired stages wrote — the PR, mergeability, rework and diff bookkeeping — stay
-  in the table unmapped rather than being migrated away.
+  The stage enum spans the whole pipeline, including the stages nothing drives
+  yet: a task can be parked at one of those, it just has no run to show for it.
   """
   use Rail.Schema
 
@@ -16,8 +14,7 @@ defmodule Rail.Pipeline.Schemas.Task do
   alias Rail.Projects.Schemas.Project
 
   # The linear pipeline, then stages a task can be parked in off that path.
-  # `:debugger` has no position in the sequence: nothing advances into or out of
-  # it, so `stage_index/1` leaves it unranked and `next_stage/1` has no clause.
+  # `:debugger` has no position in the sequence: nothing advances into or out of it.
   @stages [
     :product,
     :design,

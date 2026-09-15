@@ -48,7 +48,7 @@ defmodule RailWeb.McpAuthControllerTest do
     end
 
     test "requires a signed-in user", %{conn: conn, server_id: server_id} do
-      assert "/auth/github" = conn |> get(~p"/auth/mcp/#{server_id}") |> redirected_to()
+      assert "/sign-in" = conn |> get(~p"/auth/mcp/#{server_id}") |> redirected_to()
     end
   end
 

@@ -47,6 +47,8 @@ config :rail, RailWeb.Endpoint,
   pubsub_server: Rail.PubSub,
   live_view: [signing_salt: "rail_lv_salt_1234"]
 
+config :rail, :fetch_parsers, true
+
 config :rail,
   config_env: config_env(),
   dev_routes: false,

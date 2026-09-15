@@ -50,9 +50,9 @@ claude_backend =
 
 # 4. Default Roles for Project
 # A stage Rail drives has its real prompt in prompts/<stage>.md, which is the copy
-# that gets edited; the stages still to be built back carry a one-liner until they
-# have one. The path is relative to the repo, which is the only place seeds are run
-# from: prompts/ is not shipped in a release.
+# that gets edited; the rest carry a one-liner until they have one. The path is
+# relative to the repo, which is the only place seeds are run from: prompts/ is not
+# shipped in a release.
 default_roles = [
   %{
     stage: :product,
@@ -98,8 +98,7 @@ default_roles = [
     backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
-    system_prompt:
-      "You are a Staff Software Engineer. Implement features with strict TDD, clean modular code, 100% test coverage, and no lint warnings.",
+    system_prompt: File.read!("prompts/engineer.md"),
     max_concurrent: 2,
     position: 3
   },

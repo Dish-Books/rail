@@ -26,7 +26,7 @@ defmodule Rail.MixProject do
   def application do
     [
       mod: {Rail.Application, []},
-      extra_applications: [:logger, :runtime_tools]
+      extra_applications: [:logger, :runtime_tools, :ssh]
     ]
   end
 
@@ -65,6 +65,7 @@ defmodule Rail.MixProject do
       {:jose, "~> 1.11"},
       {:mdex, "~> 0.13"},
       {:lazy_html, ">= 0.1.0", only: :test},
+      {:lumis, "~> 0.8"},
       {:mimic, "~> 2.0", only: :test},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false},
