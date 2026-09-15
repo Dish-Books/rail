@@ -27,6 +27,12 @@ defmodule RailWeb.TaskLive do
   alias RailWeb.Live.ProductStage
   alias RailWeb.Live.RunConversation
 
+  # The engineer writes files as it works and the pane reads them off disk, so a
+  # reader watching a run wants the diff to keep up. Re-reading on every batch of
+  # log lines would shell out to git several times a second, so it is throttled to
+  # this; the turn finishing re-reads regardless of when the last one was.
+  @diff_refresh_ms 5_000
+
   @issue_tab "issue"
 
   def mount(_params, _session, socket) do
@@ -44,6 +50,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:selected_run, nil)
       |> assign(:conversation_run, nil)
       |> assign(:pane, :issue)
+      |> assign(:diff_refreshed_at, nil)
       |> assign(:approvable, false)
       |> assign(:tabs, [])
       |> assign(:issue, nil)
@@ -307,7 +314,7 @@ defmodule RailWeb.TaskLive do
       send_update(RunConversation, id: "run-conversation", run_id: run_id, appended_events: events)
     end
 
-    {:noreply, socket}
+    {:noreply, refresh_diff(socket)}
   end
 
   # A queued message went out, or came back, on its own time.
@@ -443,6 +450,22 @@ defmodule RailWeb.TaskLive do
     />
     """
   end
+
+  defp refresh_diff(%{assigns: %{pane: :engineer, selected_role: %Role{} = role, task: %Task{} = task}} = socket) do
+    now = System.monotonic_time(:millisecond)
+
+    if due?(socket.assigns.diff_refreshed_at, now) do
+      send_update(EngineerStage, id: stage_component_id(role), task: task)
+      assign(socket, :diff_refreshed_at, now)
+    else
+      socket
+    end
+  end
+
+  defp refresh_diff(socket), do: socket
+
+  defp due?(nil, _now), do: true
+  defp due?(last, now), do: now - last >= @diff_refresh_ms
 
   defp refresh_task(socket) do
     case Pipeline.get_task(socket.assigns.task_id) do

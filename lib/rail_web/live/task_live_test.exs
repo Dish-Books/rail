@@ -996,6 +996,31 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='engineer_work_pending']")
     end
 
+    test "keeps up with the worktree while the engineer works, at most every five seconds", %{
+      conn: conn,
+      task: task,
+      engineer_run: run,
+      repo: repo
+    } do
+      {:ok, _working} = Pipeline.update_run(run, %{status: :running})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      refute has_element?(view, "[data-qa='diff-file-row']", "midway.ex")
+
+      File.write!(Path.join(repo, "midway.ex"), "midway\n")
+      send(view.pid, {:run_events, run.id, []})
+      _settled = render(view)
+
+      assert has_element?(view, "[data-qa='diff-file-row']", "midway.ex")
+
+      # A second batch inside the window does not go back to git.
+      File.write!(Path.join(repo, "later.ex"), "later\n")
+      send(view.pid, {:run_events, run.id, []})
+      _settled = render(view)
+
+      refute has_element?(view, "[data-qa='diff-file-row']", "later.ex")
+    end
+
     # The engineer changes the worktree, so a finished turn changes no row.
     test "re-reads the diff when a turn finishes", %{conn: conn, task: task, engineer_run: run, repo: repo} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")

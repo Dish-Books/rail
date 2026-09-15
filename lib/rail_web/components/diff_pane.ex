@@ -96,8 +96,8 @@ defmodule RailWeb.Components.DiffPane do
       >
         <div
           class="overflow-x-auto overflow-y-auto flex-1 selection:bg-blue-500/20"
-          phx-hook="DiffHighlight"
-          id="diff-highlight-scroller"
+          phx-hook="DiffScroller"
+          id="diff-scroller"
         >
           <div
             :for={file <- @files}
