@@ -73,6 +73,21 @@ defmodule Rail.Git.Actions.PushBranchTest do
     assert git!(repo, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
   end
 
+  test "pushes past the repository's own pre-push hook", %{scope: scope, task: task, repo: repo, remote: remote} do
+    Req.Test.expect(Client, fn conn -> Req.Test.json(conn, %{"token" => "ghs_installation_token"}) end)
+
+    hook = Path.join([repo, ".git", "hooks", "pre-push"])
+    File.write!(hook, "#!/bin/sh\necho 'local CI failed'\nexit 1\n")
+    File.chmod!(hook, 0o755)
+
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "feature"])
+
+    assert :ok = Git.push_branch(scope, task)
+    assert git!(repo, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
+  end
+
   test "reports what git said when the push fails", %{scope: scope, task: task, repo: repo} do
     Req.Test.expect(Client, fn conn -> Req.Test.json(conn, %{"token" => "ghs_installation_token"}) end)
 

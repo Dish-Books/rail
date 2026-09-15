@@ -75,7 +75,7 @@ defmodule RailWeb.Live.EngineerStage do
           <p
             id="engineer-error"
             data-qa="engineer_error"
-            class="text-xs text-red-600 dark:text-red-500"
+            class="max-h-32 overflow-auto whitespace-pre-wrap text-xs text-red-600 dark:text-red-500"
           >
             {@error}
           </p>
