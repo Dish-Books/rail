@@ -227,7 +227,11 @@ defmodule Rail.Tools.AgyEvents do
         "#{status}"
       end
 
-    result_log = "[result] #{status_label} · #{Run.usage(usage)}"
+    result_log = Enum.join(["[result] #{status_label}" | List.wrap(Run.usage(usage))], " · ")
+
+    # The error is what the human has to read to know what to do next, so it is
+    # said in the conversation and not only on the run.
+    error_logs = if result_error, do: ["[error] #{result_error}"], else: []
 
     %{
       state
@@ -237,7 +241,7 @@ defmodule Rail.Tools.AgyEvents do
         num_turns: num_turns,
         result_error: result_error,
         recovered_status: recovered_status,
-        logs: Enum.concat(final_logs, [result_log])
+        logs: Enum.concat([final_logs, error_logs, [result_log]])
     }
   end
 

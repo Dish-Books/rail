@@ -203,6 +203,47 @@ defmodule RailWeb.TaskLiveTest do
     assert %Run{pending_chat: nil} = Repo.reload!(run)
   end
 
+  test "a run that failed before starting a conversation is retried by entering its stage again", %{
+    conn: conn,
+    task: task,
+    project: project,
+    backend: backend
+  } do
+    {:ok, engineer} =
+      Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
+        stage: :engineer,
+        name: "engineer role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the engineer agent."
+      })
+
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+
+    {:ok, failed} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: engineer.id,
+        status: :finished,
+        error: "agy reported ERROR: Eligibility check failed",
+        started_at: DateTime.utc_now()
+      })
+
+    stub(Git, :get_or_create_worktree, fn _project, _task -> {:ok, task.worktree_path} end)
+
+    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "Build the approved plan below."
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{engineer.id}")
+
+    view |> element("#retry-run") |> render_click()
+
+    assert %Run{status: :running, error: nil} = Repo.reload!(failed)
+    refute has_element?(view, "#retry-run")
+  end
+
   test "a question's options, tabs and draft all feed the answer", %{conn: conn, task: task, run: run} do
     {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
     blocked = Repo.preload(blocked, task: :issue)

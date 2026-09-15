@@ -234,6 +234,9 @@ defmodule Rail.Tools.AgyEventsTest do
     refute AgyEvents.success?(state)
     refute AgyEvents.recovered?(state)
     assert state.result_error == "agy reported ERROR: stream disconnected"
+
+    # The conversation says why, and a result that spent nothing says only its status.
+    assert Enum.take(state.logs, -2) == ["[error] agy reported ERROR: stream disconnected", "[result] ERROR"]
   end
 
   test "status ERROR after a finished answer is recovered and does not fail run" do

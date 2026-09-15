@@ -180,6 +180,7 @@ defmodule RailWeb.Live.RunConversation do
             role={selected_role(@selected_run, @roles_map)}
             chat_input={@chat_input}
             chat_sending={@chat_sending}
+            can_retry={retryable?(@selected_run, @task, @roles_map)}
             target={@myself}
           />
         </div>
@@ -376,23 +377,37 @@ defmodule RailWeb.Live.RunConversation do
         </div>
       <% :event -> %>
         <!-- 4.8 _EventTile -->
-        <%= if String.starts_with?(@text, "[rail]") do %>
-          <div
-            id={"msg-#{@idx}"}
-            data-qa="rail-event"
-            class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 font-mono text-[11px] my-1"
-          >
-            <.icon name="pi-info" class="h-3.5 w-3.5 shrink-0" />
-            <span class="select-text">{@text}</span>
-          </div>
-        <% else %>
-          <div
-            id={"msg-#{@idx}"}
-            data-qa="system-event"
-            class="text-center font-mono text-[11px] text-slate-500 dark:text-slate-400 select-text my-0.5"
-          >
-            {@text}
-          </div>
+        <%= cond do %>
+          <% String.starts_with?(@text, "[error]") -> %>
+            <div
+              id={"msg-#{@idx}"}
+              data-qa="error-event"
+              class="flex items-start gap-2 px-3 py-2 rounded-md bg-red-500/10 border border-red-500/30 text-red-700 dark:text-red-300 text-xs my-1"
+            >
+              <.icon name="pi-warning-circle" class="h-4 w-4 shrink-0 mt-px" />
+              <%!-- Kept on one line: pre-wrap would render the template's own indentation. --%>
+              <span
+                phx-no-format
+                class="select-text font-mono whitespace-pre-wrap wrap-break-word"
+              >{String.replace_prefix(@text, "[error] ", "")}</span>
+            </div>
+          <% String.starts_with?(@text, "[rail]") -> %>
+            <div
+              id={"msg-#{@idx}"}
+              data-qa="rail-event"
+              class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 font-mono text-[11px] my-1"
+            >
+              <.icon name="pi-info" class="h-3.5 w-3.5 shrink-0" />
+              <span class="select-text">{@text}</span>
+            </div>
+          <% true -> %>
+            <div
+              id={"msg-#{@idx}"}
+              data-qa="system-event"
+              class="text-center font-mono text-[11px] text-slate-500 dark:text-slate-400 select-text my-0.5"
+            >
+              {@text}
+            </div>
         <% end %>
     <% end %>
     """
@@ -405,6 +420,7 @@ defmodule RailWeb.Live.RunConversation do
   attr :role, :any, required: true
   attr :chat_input, :string, default: ""
   attr :chat_sending, :boolean, default: false
+  attr :can_retry, :boolean, default: false
   attr :target, :any, required: true
 
   def composer(assigns) do
@@ -516,6 +532,18 @@ defmodule RailWeb.Live.RunConversation do
       >
         <.icon name="pi-info" class="h-4 w-4 shrink-0" />
         <span>{"Cannot chat with #{@role_name} yet: the role has not started a conversation."}</span>
+        <button
+          :if={@can_retry}
+          type="button"
+          id="retry-run"
+          data-qa="retry-run"
+          phx-click="retry_run"
+          phx-target={@target}
+          class="ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors cursor-pointer shrink-0"
+        >
+          <.icon name="pi-arrows-clockwise" class="h-3.5 w-3.5 shrink-0" />
+          <span>Retry</span>
+        </button>
       </div>
 
       <!-- Input Row (Enter sends) -->
@@ -648,6 +676,19 @@ defmodule RailWeb.Live.RunConversation do
     {:noreply, socket}
   end
 
+  # With no conversation there is nothing a message could resume, so the stage is
+  # entered again: the run goes back to running and its role starts on the brief.
+  def handle_event("retry_run", _params, socket) do
+    %{task: task, selected_run: run, roles_map: roles_map} = socket.assigns
+
+    if retryable?(run, task, roles_map) do
+      {:ok, %Run{} = run} = Pipeline.enter_stage(task, roles_map[run.role_id].stage)
+      {:noreply, select(socket, run)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_event("stop_and_send_message", _params, socket) do
     run = socket.assigns.selected_run
     _sent = Pipeline.stop_and_send_message(run)
@@ -726,6 +767,14 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   defp selected_role(%Run{role_id: role_id}, roles_map), do: resolve_role(role_id, roles_map)
+
+  # Only the stage the task is in can be entered again without moving the task.
+  # Product is started from its issue, so entering it again would lose its brief.
+  defp retryable?(%Run{role_id: role_id} = run, %{stage: stage}, %{} = roles_map) when stage != :product do
+    not Run.running?(run) and not Run.resumable?(run) and match?(%{stage: ^stage}, roles_map[role_id])
+  end
+
+  defp retryable?(_run, _task, _roles_map), do: false
 
   defp restore_draft(nil, draft), do: draft
   defp restore_draft(queued, draft) when draft in [nil, ""], do: queued
