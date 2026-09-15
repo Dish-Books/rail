@@ -640,7 +640,7 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#roster-running-count", "1 / 5 running")
       assert has_element?(view, "#role-row-#{roles[:engineer].id}[data-tone='running']", "Running")
       assert has_element?(view, "#role-row-#{roles[:qa].id}[data-tone='failed']", "Failed 4h 0m ago")
-      assert has_element?(view, "#role-row-#{roles[:architect].id}[data-tone='idle']", "Last ran 3h 0m ago")
+      assert has_element?(view, "#role-row-#{roles[:architect].id}[data-tone='failed']", "Stopped 3h 0m ago")
       assert has_element?(view, "#role-row-#{roles[:product].id}[href='/tasks/#{moved_on.id}']", "Last ran 2h 0m ago")
     end
 

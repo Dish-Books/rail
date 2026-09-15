@@ -49,6 +49,35 @@ defmodule RailWeb.Components.UpNextTest do
     assert html =~ "plan ready for review"
   end
 
+  test "a failed run leads with the error, and reads as a problem", %{waiting: waiting} do
+    failed = %{waiting.(:engineer) | stage_outcome: :in_progress, error: "The engineer changed nothing."}
+
+    html = render_component(&UpNext.up_next/1, runs: [failed])
+
+    assert html =~ "Needs a fix"
+    assert html =~ "The engineer changed nothing."
+    assert html =~ "Pick it up"
+    assert html =~ "bg-red-500"
+  end
+
+  test "a run that stopped without concluding says how to resume it", %{waiting: waiting} do
+    stopped = %{waiting.(:engineer) | stage_outcome: :in_progress}
+
+    html = render_component(&UpNext.up_next/1, runs: [stopped])
+
+    assert html =~ "Needs a fix"
+    assert html =~ "stopped before finishing"
+  end
+
+  test "a stalled run in the rows says the same thing", %{waiting: waiting} do
+    stalled = %{waiting.(:engineer) | stage_outcome: :in_progress, error: "It went wrong"}
+
+    html = render_component(&UpNext.up_next/1, runs: [waiting.(:architect), stalled])
+
+    assert html =~ "It went wrong"
+    assert html =~ "Fix"
+  end
+
   test "a blocked run leads with what it asked", %{waiting: waiting} do
     blocked = %{
       waiting.(:engineer)

@@ -8,6 +8,7 @@ defmodule RailWeb.Components.UpNext do
   """
   use RailWeb, :html
 
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
 
@@ -41,7 +42,10 @@ defmodule RailWeb.Components.UpNext do
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
               <span
                 data-qa="up-next-chip"
-                class="px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-amber-500 text-slate-950"
+                class={[
+                  "px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider",
+                  tone(@featured).chip
+                ]}
               >
                 {chip(@featured)}
               </span>
@@ -59,7 +63,10 @@ defmodule RailWeb.Components.UpNext do
             </p>
           </div>
 
-          <span class="self-start sm:self-center shrink-0 px-4 py-2 rounded-lg bg-amber-500 text-sm font-semibold text-slate-950 group-hover:bg-amber-400 transition-colors">
+          <span class={[
+            "self-start sm:self-center shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors",
+            tone(@featured).action
+          ]}>
             {action(@featured)}
           </span>
         </div>
@@ -87,25 +94,72 @@ defmodule RailWeb.Components.UpNext do
     """
   end
 
-  # A done run waiting here has produced the work of its stage — a ticket in
-  # product, a design in design, a plan in architect — and is waiting on that being
-  # reviewed; anything else waiting is parked on its questions.
-  defp chip(run), do: if(done?(run), do: "Ready for review", else: "Needs an answer")
+  # Three things bring a run here, and they are not the same errand. A done run has
+  # produced the work of its stage and waits on that being read. A blocked run
+  # waits on its questions. A run that failed or stopped waits on someone picking
+  # it up, and says nothing about itself until they do.
+  defp chip(run) do
+    case Run.state(run) do
+      :done -> "Ready for review"
+      :blocked -> "Needs an answer"
+      _stalled -> "Needs a fix"
+    end
+  end
 
-  defp action(run), do: if(done?(run), do: "Review #{work(run)}", else: "Answer questions")
+  defp action(run) do
+    case Run.state(run) do
+      :done -> "Review #{work(run)}"
+      :blocked -> "Answer questions"
+      _stalled -> "Pick it up"
+    end
+  end
 
-  defp verb(run), do: if(done?(run), do: "Review", else: "Answer")
+  defp verb(run) do
+    case Run.state(run) do
+      :done -> "Review"
+      :blocked -> "Answer"
+      _stalled -> "Fix"
+    end
+  end
 
   defp summary(run) do
-    cond do
-      done?(run) -> "The #{work(run)} is ready for you to review."
-      question = Enum.find(run.questions, &(&1.status == :pending)) -> question.prompt
-      true -> "Every question is answered and ready to send."
+    case Run.state(run) do
+      :done -> "The #{work(run)} is ready for you to review."
+      :blocked -> asked(run)
+      _stalled -> stalled(run)
     end
   end
 
   defp detail(run) do
-    if done?(run), do: "#{work(run)} ready for review", else: "#{run.role.name} asked #{questions(run)}"
+    case Run.state(run) do
+      :done -> "#{work(run)} ready for review"
+      :blocked -> "#{run.role.name} asked #{questions(run)}"
+      _stalled -> stalled(run)
+    end
+  end
+
+  defp asked(run) do
+    case Enum.find(run.questions, &(&1.status == :pending)) do
+      %Question{prompt: prompt} -> prompt
+      nil -> "Every question is answered and ready to send."
+    end
+  end
+
+  # What a failed run left behind is the error; a stopped one left nothing, and
+  # what it needs is the same either way.
+  defp stalled(%Run{error: error}) when is_binary(error), do: error
+
+  defp stalled(%Run{} = run) do
+    "#{run.role.name} stopped before finishing. Send it a message to pick up where it left off."
+  end
+
+  # A stage that stalled is a problem rather than a queue, and reads as one.
+  defp tone(run) do
+    if Run.state(run) in [:failed, :stopped] do
+      %{chip: "bg-red-500 text-white", action: "bg-red-500 text-slate-950 group-hover:bg-red-400"}
+    else
+      %{chip: "bg-amber-500 text-slate-950", action: "bg-amber-500 text-slate-950 group-hover:bg-amber-400"}
+    end
   end
 
   defp work(%Run{task: %Task{stage: :design}}), do: "design"
@@ -115,6 +169,4 @@ defmodule RailWeb.Components.UpNext do
 
   defp questions(%Run{questions: [_one]}), do: "a question"
   defp questions(%Run{questions: questions}), do: "#{length(questions)} questions"
-
-  defp done?(run), do: Run.state(run) == :done
 end

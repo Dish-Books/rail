@@ -205,6 +205,40 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     assert Run.needs_attention?(blocked)
   end
 
+  test "a failed run is waiting on someone fixing it" do
+    failed = %Run{
+      status: :finished,
+      error: "The engineer did not write commits/UPN-1.md.",
+      role: %Role{stage: :engineer},
+      task: %Task{stage: :engineer, merged_at: nil}
+    }
+
+    assert Run.needs_attention?(failed)
+  end
+
+  # A run that ended without concluding is resolved the same way a failed one is,
+  # by a message, so it waits in the same place.
+  test "a run that stopped without concluding is waiting too" do
+    stopped = %Run{
+      status: :finished,
+      role: %Role{stage: :engineer},
+      task: %Task{stage: :engineer, merged_at: nil}
+    }
+
+    assert Run.needs_attention?(stopped)
+  end
+
+  test "a failed run at a stage the task has left is not this task's problem" do
+    passed_by = %Run{
+      status: :finished,
+      error: "It went wrong",
+      role: %Role{stage: :product},
+      task: %Task{stage: :engineer, merged_at: nil}
+    }
+
+    refute Run.needs_attention?(passed_by)
+  end
+
   test "a run that is not blocked needs nothing" do
     running = %Run{status: :running, role: %Role{stage: :engineer}, task: %Task{stage: :engineer, merged_at: nil}}
     refute Run.needs_attention?(running)

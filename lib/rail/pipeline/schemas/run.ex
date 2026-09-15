@@ -172,10 +172,14 @@ defmodule Rail.Pipeline.Schemas.Run do
   in the queue while the human works through the batch. A run at a stage a human
   signs off is waiting on that sign-off once it is done: its ticket, design or
   plan approved, or its diff sent to review.
+
+  A run that failed or stopped is waiting too, and on the same person. Neither
+  moves on its own - a failure is fixed by a message and a stopped run is resumed
+  by one - so leaving them out is how a stage goes quiet with nobody told.
   """
   def needs_attention?(%__MODULE__{role: %Role{} = role, task: %Task{} = task} = run) do
     task.stage != :merged and is_nil(task.merged_at) and role.stage == task.stage and
-      (state(run) == :blocked or (task.stage in [:product, :design, :architect, :engineer] and state(run) == :done))
+      waiting_state?(state(run), task.stage)
   end
 
   @doc """
@@ -223,6 +227,12 @@ defmodule Rail.Pipeline.Schemas.Run do
   end
 
   def can_chat?(_other), do: false
+
+  defp waiting_state?(:blocked, _stage), do: true
+  defp waiting_state?(:failed, _stage), do: true
+  defp waiting_state?(:stopped, _stage), do: true
+  defp waiting_state?(:done, stage), do: stage in [:product, :design, :architect, :engineer]
+  defp waiting_state?(_running_or_queued, _stage), do: false
 
   # A run is one conversation with one agent. Moving it to another would silently
   # strand everything said so far, so a caller trying it is told rather than
