@@ -23,6 +23,7 @@ defmodule RailWeb.TaskLive do
   alias Rail.Users
   alias RailWeb.Live.ArchitectStage
   alias RailWeb.Live.DesignStage
+  alias RailWeb.Live.EngineerStage
   alias RailWeb.Live.ProductStage
   alias RailWeb.Live.RunConversation
 
@@ -144,6 +145,32 @@ defmodule RailWeb.TaskLive do
           task={@task}
           run={@selected_run}
           approvable={@approvable}
+        >
+          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
+          <:actions>
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+          </:actions>
+          <:sidebar>
+            <.conversation_sidebar
+              task={@task}
+              roles_map={@roles_map}
+              blocked?={@blocked?}
+              pending_question={@pending_question}
+              pending_questions={@pending_questions}
+              answer_text={@answer_text}
+              conversation_run={@conversation_run}
+            />
+          </:sidebar>
+        </.live_component>
+
+        <.live_component
+          :if={@task != nil and @pane == :engineer}
+          module={EngineerStage}
+          id={stage_component_id(@selected_role)}
+          task={@task}
+          run={@selected_run}
+          approvable={@approvable}
+          current_scope={@current_scope}
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
@@ -303,6 +330,9 @@ defmodule RailWeb.TaskLive do
 
       %{pane: :architect, task: task, selected_role: role} ->
         send_update(ArchitectStage, id: stage_component_id(role), task: task)
+
+      %{pane: :engineer, task: task, selected_role: role} ->
+        send_update(EngineerStage, id: stage_component_id(role), task: task)
 
       _no_stage_on_disk ->
         :ok
@@ -503,7 +533,7 @@ defmodule RailWeb.TaskLive do
   end
 
   defp pane(nil), do: :issue
-  defp pane(%Role{stage: stage}) when stage in [:product, :design, :architect], do: stage
+  defp pane(%Role{stage: stage}) when stage in [:product, :design, :architect, :engineer], do: stage
   defp pane(%Role{}), do: :none
 
   defp stage_component_id(%Role{id: id}), do: "stage-#{id}"

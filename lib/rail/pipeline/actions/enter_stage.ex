@@ -79,8 +79,8 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   # A stage with a brief of its own spawns itself; the rest have nothing to add.
   # The run carries its task and its role, so it is the whole of what a spawn needs.
   defp start_process(%Run{role: %Role{stage: :design}} = run), do: Pipeline.start_design_run(run)
-
   defp start_process(%Run{role: %Role{stage: :architect}} = run), do: Pipeline.start_architect_run(run)
+  defp start_process(%Run{role: %Role{stage: :engineer}} = run), do: Pipeline.start_engineer_run(run)
 
   defp start_process(%Run{task: %Task{} = task, role: %Role{} = role} = run) do
     prompt =

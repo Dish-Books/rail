@@ -127,4 +127,21 @@ defmodule Rail.Users.Schemas.UserTest do
     refute String.contains?(inspected, "linear_access_token:")
     refute String.contains?(inspected, "linear_refresh_token:")
   end
+
+  test "the signing fingerprint is the one GitHub shows for the key" do
+    user = %User{signing_public_key: "ssh-ed25519 " <> Base.encode64("the key blob") <> " ada@example.com"}
+
+    assert User.signing_fingerprint(user) ==
+             "SHA256:" <> Base.encode64(:crypto.hash(:sha256, "the key blob"), padding: false)
+  end
+
+  test "a key that is not an ssh public key line has no fingerprint" do
+    assert User.signing_fingerprint(%User{signing_public_key: "nonsense"}) == nil
+    assert User.signing_fingerprint(%User{signing_public_key: nil}) == nil
+  end
+
+  test "a user with no key does not sign" do
+    refute User.signing?(%User{})
+    assert User.signing?(%User{signing_key: "-----BEGIN OPENSSH PRIVATE KEY-----"})
+  end
 end

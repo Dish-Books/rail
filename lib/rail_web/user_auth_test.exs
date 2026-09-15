@@ -100,7 +100,7 @@ defmodule RailWeb.UserAuthTest do
         |> put_session(:live_socket_id, "users_sessions:#{Base.url_encode64(user_token)}")
         |> UserAuth.log_out_user()
 
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == ~p"/sign-in"
       refute get_session(conn, :user_token)
       refute Users.get_user_by_session_token(user_token)
     end
@@ -175,14 +175,14 @@ defmodule RailWeb.UserAuthTest do
       refute conn.halted
     end
 
-    test "halts and redirects to /auth/github for GET request, saving path", %{conn: conn} do
+    test "halts and redirects to the sign-in page for a GET request, saving the path", %{conn: conn} do
       conn =
         %{conn | method: "GET", path_info: ["protected", "page"]}
         |> assign(:current_scope, Scope.for_user(nil))
         |> UserAuth.require_authenticated_user([])
 
       assert conn.halted
-      assert redirected_to(conn) == ~p"/auth/github"
+      assert redirected_to(conn) == ~p"/sign-in"
       assert get_session(conn, :user_return_to) == "/protected/page"
     end
 
@@ -193,7 +193,7 @@ defmodule RailWeb.UserAuthTest do
         |> UserAuth.require_authenticated_user([])
 
       assert conn.halted
-      assert redirected_to(conn) == ~p"/auth/github"
+      assert redirected_to(conn) == ~p"/sign-in"
       refute get_session(conn, :user_return_to)
     end
   end

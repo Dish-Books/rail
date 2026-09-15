@@ -60,6 +60,12 @@ defmodule RailWeb.Router do
     get "/:server_id", McpAuthController, :request
   end
 
+  scope "/", RailWeb do
+    pipe_through :browser
+
+    get "/sign-in", SignInController, :index
+  end
+
   scope "/auth", RailWeb do
     pipe_through :browser
 

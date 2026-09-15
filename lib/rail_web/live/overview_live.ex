@@ -191,7 +191,7 @@ defmodule RailWeb.OverviewLive do
   # A run at a stage a human signs off has handed its work over when it is done,
   # whether or not the human has since reviewed it and moved the task on.
   defp done_text(run, key) do
-    if run.role.stage in [:product, :design, :architect],
+    if run.role.stage in [:product, :design, :architect, :engineer],
       do: "says #{key} is ready for review",
       else: "finished on #{key}"
   end

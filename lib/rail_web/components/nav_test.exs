@@ -126,6 +126,22 @@ defmodule RailWeb.Components.NavTest do
     assert html =~ "Switch to Light mode"
   end
 
+  test "top_app_bar offers a way out of the Rail session" do
+    html =
+      render_component(&Nav.top_app_bar/1,
+        current_section: :overview,
+        current_scope: system_scope(),
+        current_project_id: nil,
+        projects: [],
+        theme: "dark",
+        show_project_switcher: false
+      )
+
+    assert html =~ ~s(id="sign-out-button")
+    assert html =~ ~s(href="/auth/logout")
+    assert html =~ "Sign out of Rail"
+  end
+
   test "top_app_bar renders selected project name when filtered" do
     p1 = %Project{id: "prj_1", name: "Alpha App", active: true, linear_team_key: "ALP"}
 

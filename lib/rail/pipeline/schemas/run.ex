@@ -169,13 +169,13 @@ defmodule Rail.Pipeline.Schemas.Run do
   `task` to be preloaded.
 
   A blocked run stays blocked until its answers are sent, so it keeps its place
-  in the queue while the human works through the batch. A product or design run
-  that is done is waiting on its ticket or design to be approved, which moves the
-  task on.
+  in the queue while the human works through the batch. A run at a stage a human
+  signs off is waiting on that sign-off once it is done: its ticket, design or
+  plan approved, or its diff sent to review.
   """
   def needs_attention?(%__MODULE__{role: %Role{} = role, task: %Task{} = task} = run) do
     task.stage != :merged and is_nil(task.merged_at) and role.stage == task.stage and
-      (state(run) == :blocked or (task.stage in [:product, :design, :architect] and state(run) == :done))
+      (state(run) == :blocked or (task.stage in [:product, :design, :architect, :engineer] and state(run) == :done))
   end
 
   @doc """

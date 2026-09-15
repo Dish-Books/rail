@@ -3,6 +3,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.GitHub.Client
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Users
@@ -39,8 +40,8 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     %{conn: conn, authed_conn: authed_conn, user: user, user_id: user_id}
   end
 
-  test "redirects unauthenticated user to /auth/github", %{conn: conn} do
-    assert {:error, {:redirect, %{to: "/auth/github"}}} =
+  test "redirects an unauthenticated user to the sign-in page", %{conn: conn} do
+    assert {:error, {:redirect, %{to: "/sign-in"}}} =
              live(conn, ~p"/settings/connected-accounts")
   end
 
@@ -61,7 +62,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     assert html =~ user.name
     assert html =~ user.email
     assert has_element?(view, "#github-avatar")
-    assert html =~ "Linear is not connected."
+    assert html =~ "issues and comments go out as the workspace"
     assert has_element?(view, "#connect-linear-button")
     refute has_element?(view, "#disconnect-linear-button")
   end
@@ -86,7 +87,29 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
       |> put_session(:user_token, token)
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/settings/connected-accounts")
-    assert has_element?(view, "#github-avatar-placeholder")
+
+    # A user with no name falls back to the initial of their login.
+    assert has_element?(view, "#github-avatar-placeholder", "N")
+  end
+
+  test "counts the repositories Rail can reach as the projects it is configured for", %{authed_conn: conn} do
+    Req.Test.expect(Rail.Linear, fn req_conn ->
+      Req.Test.json(req_conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
+    {:ok, _project} =
+      Rail.Projects.create_project(system_scope(), %{
+        name: "Only Project",
+        github_repo: "org/only-project",
+        github_installation_id: 47_030,
+        linear_team_key: "ONE",
+        default_branch: "main",
+        clone_path: "/tmp/repos/only-project"
+      })
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+
+    assert has_element?(view, "#capability-repositories", "Read and write on 1 repository.")
   end
 
   test "renders connected Linear section when user is linked", %{
@@ -104,7 +127,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
 
     assert {:ok, view, html} = live(conn, ~p"/settings/connected-accounts")
 
-    assert html =~ "Connected as"
+    assert html =~ "issues and comments attributed to you"
     assert html =~ "Jane Doe Linear"
     assert has_element?(view, "#disconnect-linear-button")
     refute has_element?(view, "#connect-linear-button")
@@ -132,7 +155,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
       |> element("#disconnect-linear-button")
       |> render_click()
 
-    assert rendered =~ "Linear is not connected."
+    assert rendered =~ "issues and comments go out as the workspace"
     assert has_element?(view, "#connect-linear-button")
     refute has_element?(view, "#disconnect-linear-button")
 
@@ -157,7 +180,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     expect(Users, :unlink_linear, fn _scope -> {:error, :db_error} end)
 
     rendered = render_click(element(view, "#disconnect-linear-button"))
-    assert rendered =~ "Connected as"
+    assert rendered =~ "issues and comments attributed to you"
   end
 
   test "lists enabled OAuth MCP servers to connect and disconnect", %{authed_conn: conn, user: user} do
@@ -223,5 +246,84 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     assert {:ok, view, _html} = live(admin_conn, ~p"/settings/connected-accounts")
     assert has_element?(view, "#tab-connected-accounts")
     assert has_element?(view, "#tab-projects")
+  end
+
+  describe "commit signing" do
+    test "offers to set it up when there is no key", %{authed_conn: conn} do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+
+      assert has_element?(view, "#commit-signing-message", "Not set up")
+      assert has_element?(view, "#set-up-signing-button", "Set up commit signing")
+      refute has_element?(view, "#remove-signing-button")
+    end
+
+    test "generates a key, registers it with GitHub and shows its fingerprint", %{authed_conn: conn, user: user} do
+      {:ok, _tokened} = Users.update_user(system_scope(), user, %{github_token: "gho_user_token"})
+
+      Req.Test.expect(Client, fn req_conn ->
+        req_conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{"id" => 4711})
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+
+      view |> element("#set-up-signing-button") |> render_click()
+
+      assert has_element?(view, "[data-qa='commit_signing_fingerprint']", "SHA256:")
+      assert has_element?(view, "#remove-signing-button")
+    end
+
+    test "says to sign in again when GitHub has not granted the scope", %{authed_conn: conn, user: user} do
+      {:ok, _tokened} = Users.update_user(system_scope(), user, %{github_token: "gho_user_token"})
+
+      Req.Test.expect(Client, fn req_conn ->
+        req_conn |> Plug.Conn.put_status(403) |> Req.Test.json(%{"message" => "Resource not accessible"})
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+
+      view |> element("#set-up-signing-button") |> render_click()
+
+      assert has_element?(view, "[data-qa='commit_signing_error']", "SSH signing keys permission")
+    end
+
+    test "says to sign in again when Rail holds no GitHub token", %{authed_conn: conn} do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+
+      view |> element("#set-up-signing-button") |> render_click()
+
+      assert has_element?(view, "[data-qa='commit_signing_error']", "Sign in with GitHub again")
+    end
+
+    test "says what came back when GitHub refused the key outright", %{authed_conn: conn, user: user} do
+      {:ok, _tokened} = Users.update_user(system_scope(), user, %{github_token: "gho_user_token"})
+
+      Req.Test.expect(Client, fn req_conn ->
+        req_conn |> Plug.Conn.put_status(422) |> Req.Test.json(%{"message" => "key is already in use"})
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+
+      view |> element("#set-up-signing-button") |> render_click()
+
+      assert has_element?(view, "[data-qa='commit_signing_error']", "Could not set up commit signing")
+    end
+
+    test "removing the key takes it off GitHub and forgets it", %{authed_conn: conn, user: user} do
+      {:ok, _tokened} = Users.update_user(system_scope(), user, %{github_token: "gho_user_token"})
+
+      Req.Test.expect(Client, fn req_conn ->
+        req_conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{"id" => 4711})
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+      view |> element("#set-up-signing-button") |> render_click()
+
+      Req.Test.expect(Client, fn req_conn -> Plug.Conn.send_resp(req_conn, 204, "") end)
+
+      view |> element("#remove-signing-button") |> render_click()
+
+      assert has_element?(view, "#commit-signing-message", "Not set up")
+      assert %User{signing_key: nil} = Repo.reload!(user)
+    end
   end
 end

@@ -5,7 +5,7 @@ defmodule RailWeb.SettingsRedirectControllerTest do
 
   test "GET /settings unauthenticated redirects to /auth/github", %{conn: conn} do
     conn = get(conn, ~p"/settings")
-    assert redirected_to(conn) == ~p"/auth/github"
+    assert redirected_to(conn) == ~p"/sign-in"
   end
 
   test "GET /settings authenticated redirects to /settings/connected-accounts", %{conn: conn} do

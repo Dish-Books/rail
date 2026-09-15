@@ -14,8 +14,8 @@ defmodule RailWeb.IssuesLiveTest do
   alias Rail.Scope
   alias Rail.Users
 
-  test "redirects unauthenticated user to /auth/github", %{conn: conn} do
-    assert {:error, {:redirect, %{to: "/auth/github"}}} = live(conn, ~p"/issues")
+  test "redirects an unauthenticated user to the sign-in page", %{conn: conn} do
+    assert {:error, {:redirect, %{to: "/sign-in"}}} = live(conn, ~p"/issues")
   end
 
   test "renders Issues view and navigation rail with active Issues destination", %{conn: conn} do

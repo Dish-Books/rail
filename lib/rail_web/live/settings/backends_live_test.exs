@@ -9,8 +9,8 @@ defmodule RailWeb.Settings.BackendsLiveTest do
   alias Rail.Tools.Schemas.Backend
   alias Rail.Users
 
-  test "redirects unauthenticated user to /auth/github", %{conn: conn} do
-    assert {:error, {:redirect, %{to: "/auth/github"}}} = live(conn, ~p"/settings/backends")
+  test "redirects an unauthenticated user to the sign-in page", %{conn: conn} do
+    assert {:error, {:redirect, %{to: "/sign-in"}}} = live(conn, ~p"/settings/backends")
   end
 
   test "redirects non-admin user to /", %{conn: conn} do

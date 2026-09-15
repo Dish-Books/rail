@@ -42,10 +42,10 @@ defmodule RailWeb.LinearAuthControllerTest do
       assert get_session(conn, :linear_oauth_state)
     end
 
-    test "redirects unauthenticated user to GitHub login", %{conn: conn} do
+    test "redirects an unauthenticated user to the sign-in page", %{conn: conn} do
       conn = get(conn, ~p"/auth/linear")
 
-      assert redirected_to(conn) == ~p"/auth/github"
+      assert redirected_to(conn) == ~p"/sign-in"
     end
   end
 
@@ -191,10 +191,10 @@ defmodule RailWeb.LinearAuthControllerTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Linear authentication failed"
     end
 
-    test "redirects unauthenticated user to GitHub login", %{conn: conn} do
+    test "redirects an unauthenticated user to the sign-in page", %{conn: conn} do
       conn = get(conn, ~p"/auth/linear/callback", %{"code" => "any_code", "state" => "any_state"})
 
-      assert redirected_to(conn) == ~p"/auth/github"
+      assert redirected_to(conn) == ~p"/sign-in"
     end
   end
 end

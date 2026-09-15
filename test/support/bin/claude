@@ -15,7 +15,7 @@ if [[ -z "$STAGE" ]]; then
     STAGE="demo"
   elif [[ "$ALL_ARGS" =~ "stage review" || "$ALL_ARGS" =~ "Review the implementation" || "$ALL_ARGS" =~ "read-only: report what you find" ]]; then
     STAGE="review"
-  elif [[ "$ALL_ARGS" =~ "stage engineer" || "$ALL_ARGS" =~ "Implement the ticket" || "$ALL_ARGS" =~ "Implement the approved plan" ]]; then
+  elif [[ "$ALL_ARGS" =~ "stage engineer" || "$ALL_ARGS" =~ "Implement the ticket" || "$ALL_ARGS" =~ "Implement the approved plan" || "$ALL_ARGS" =~ "Build the approved plan" ]]; then
     STAGE="engineer"
   elif [[ "$ALL_ARGS" =~ "stage architect" || "$ALL_ARGS" =~ "Plan the implementation" || "$ALL_ARGS" =~ "plans/" || "$ALL_ARGS" =~ "planWriteBrief" ]]; then
     STAGE="architect"
@@ -103,11 +103,15 @@ PLAN_EOF
       ;;
 
     engineer)
-      if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        echo "implementation update $(date +%s)" >> feature_work.txt
-        git add feature_work.txt
-        git commit -m "feat: engineer implementation pass" || true
-      fi
+      # The engineer never runs git: it leaves the worktree dirty and says it is
+      # finished by writing the commit message Rail commits with.
+      echo "implementation update $(date +%s)" >> feature_work.txt
+      mkdir -p "$RAIL_SCRATCH/commits"
+      cat <<MSG_EOF > "$RAIL_SCRATCH/commits/${IDENTIFIER}.md"
+${IDENTIFIER}: implement the approved plan
+
+Adds feature_work.txt, which is the whole of what this fake engineer does.
+MSG_EOF
       ;;
 
     qa)

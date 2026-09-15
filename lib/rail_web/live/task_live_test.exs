@@ -4,6 +4,8 @@ defmodule RailWeb.TaskLiveTest do
   import Mimic
   import Phoenix.LiveViewTest
 
+  alias Rail.Git
+  alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.DetectedQuestion
@@ -92,6 +94,7 @@ defmodule RailWeb.TaskLiveTest do
 
     %{
       conn: log_in_user(conn, user),
+      scope: scope,
       backend: backend,
       project: project,
       issue: issue,
@@ -754,6 +757,215 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "#architect-error", "still running")
       assert %Task{stage: :architect} = Repo.reload!(task)
+    end
+  end
+
+  describe "the engineer stage" do
+    setup %{backend: backend, project: project, task: task} do
+      {:ok, role} =
+        Roles.create_role(system_scope(), project, %{
+          backend_id: backend.id,
+          stage: :engineer,
+          name: "engineer role",
+          model: "claude-3-7-sonnet",
+          system_prompt: "You are the engineer agent."
+        })
+
+      repo = create_temp_git_repo()
+      git!(repo, ["checkout", "-b", "feature"])
+      File.write!(Path.join(repo, "shipped.ex"), "committed\n")
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-m", "the engineer's work"])
+
+      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: repo})
+
+      {:ok, engineer_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: role.id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "sess_engineer_stage",
+          started_at: DateTime.utc_now()
+        })
+
+      %{task: task, role: role, engineer_run: engineer_run, repo: repo}
+    end
+
+    test "renders the diff the engineer produced", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#engineer-diff")
+      assert has_element?(view, "[data-qa='diff-file-row']", "shipped.ex")
+      assert has_element?(view, "#send-to-review")
+      refute has_element?(view, "#commit-work")
+    end
+
+    test "says so when the engineer has changed nothing", %{conn: conn, task: task, repo: repo} do
+      git!(repo, ["checkout", "main"])
+      {:ok, _reset} = Pipeline.update_task(task, %{worktree_path: repo})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#engineer-work-pending-title", "Nothing changed yet")
+      refute has_element?(view, "#send-to-review")
+    end
+
+    test "the filter switches between the branch and what is uncommitted", %{conn: conn, task: task, repo: repo} do
+      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='diff-file-row']", "shipped.ex")
+      assert has_element?(view, "[data-qa='diff-file-row']", "wip.ex")
+
+      view |> element("#diff-filter-uncommitted") |> render_click()
+
+      refute has_element?(view, "[data-qa='diff-file-row']", "shipped.ex")
+      assert has_element?(view, "[data-qa='diff-file-row']", "wip.ex")
+    end
+
+    test "marking a file read collapses it, for this reader only", %{conn: conn, task: task, scope: scope} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("[data-qa='diff-viewed-checkbox']") |> render_click()
+
+      assert %{"shipped.ex" => _digest} = Git.list_viewed_files(scope, task)
+      assert Git.list_viewed_files(user_scope(), task) == %{}
+    end
+
+    test "uncommitted work offers a commit and refuses review until it is taken", %{
+      conn: conn,
+      task: task,
+      repo: repo
+    } do
+      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      stub(Git, :push_branch, fn _scope, _task -> :ok end)
+
+      assert has_element?(view, "#commit-work")
+
+      view |> element("#send-to-review") |> render_click()
+      assert has_element?(view, "#engineer-error", "Commit the engineer's work before sending it to review.")
+
+      view |> element("#commit-work") |> render_click()
+
+      assert git!(repo, ["log", "-1", "--pretty=%s"]) =~ "TLV-1: follow-up changes"
+      refute has_element?(view, "#commit-work")
+    end
+
+    test "sending the diff to review moves the task", %{conn: conn, task: task} do
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#send-to-review") |> render_click()
+
+      assert %Task{stage: :review} = Repo.reload!(task)
+    end
+
+    test "selecting a file in the tree marks it", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      html = view |> element("[data-qa='diff-file-row']") |> render_click()
+
+      assert html =~ "bg-blue-100"
+    end
+
+    test "expanding a gap fills in the lines the diff left out", %{conn: conn, task: task, repo: repo} do
+      File.write!(Path.join(repo, "wide.ex"), Enum.map_join(1..60, "", &"line #{&1}\n"))
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-m", "wide"])
+
+      File.write!(
+        Path.join(repo, "wide.ex"),
+        Enum.map_join(1..60, "", fn n -> if n in [1, 60], do: "changed #{n}\n", else: "line #{n}\n" end)
+      )
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      # Against the branch wide.ex is one whole new file; the two edits to it only
+      # read as two hunks with a gap between them once it is already committed.
+      view |> element("#diff-filter-uncommitted") |> render_click()
+      assert has_element?(view, "[data-qa='diff_gap_row']")
+
+      view |> element("[data-qa='diff_gap_row']") |> render_click()
+
+      refute has_element?(view, "[data-qa='diff_gap_row']")
+      assert has_element?(view, "[data-qa='diff_line_row']", "line 30")
+    end
+
+    test "a commit git refused says why", %{conn: conn, task: task, repo: repo} do
+      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+      stub(Git, :commit_worktree, fn _scope, _task, _message -> {:error, :nothing_to_commit} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#commit-work") |> render_click()
+
+      assert has_element?(view, "#engineer-error", "nothing left to commit")
+    end
+
+    test "a commit git refused in its own words repeats them", %{conn: conn, task: task, repo: repo} do
+      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+      stub(Git, :commit_worktree, fn _scope, _task, _message -> {:error, "index.lock exists"} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#commit-work") |> render_click()
+
+      assert has_element?(view, "#engineer-error", "index.lock exists")
+    end
+
+    test "a push GitHub would not authorize says what came back", %{conn: conn, task: task, repo: repo} do
+      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+
+      Req.Test.stub(Client, fn req_conn ->
+        req_conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#commit-work") |> render_click()
+
+      assert has_element?(view, "#engineer-error", "Could not finish that:")
+    end
+
+    test "sending to review while the engineer works says why it did not", %{
+      conn: conn,
+      task: task,
+      engineer_run: run
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      {:ok, _working} = Pipeline.update_run(run, %{status: :running})
+      view |> element("#send-to-review") |> render_click()
+
+      assert has_element?(view, "#engineer-error", "still running")
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+    end
+
+    test "a cleaned-up worktree has no diff left to read", %{conn: conn, task: task} do
+      {:ok, _gone} = Pipeline.update_task(task, %{worktree_path: "/tmp/gone_#{System.unique_integer([:positive])}"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='engineer_work_pending']")
+    end
+
+    # The engineer changes the worktree, so a finished turn changes no row.
+    test "re-reads the diff when a turn finishes", %{conn: conn, task: task, engineer_run: run, repo: repo} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      refute has_element?(view, "[data-qa='diff-file-row']", "later.ex")
+
+      File.write!(Path.join(repo, "later.ex"), "later\n")
+      send(view.pid, {:os_process_finished, run, %{}})
+
+      # The page forwards to the component, which renders on its own turn.
+      _settled = render(view)
+      assert has_element?(view, "[data-qa='diff-file-row']", "later.ex")
     end
   end
 

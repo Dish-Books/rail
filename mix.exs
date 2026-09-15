@@ -26,7 +26,7 @@ defmodule Rail.MixProject do
   def application do
     [
       mod: {Rail.Application, []},
-      extra_applications: [:logger, :runtime_tools]
+      extra_applications: [:logger, :runtime_tools, :ssh]
     ]
   end
 

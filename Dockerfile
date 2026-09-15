@@ -55,6 +55,7 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     jq \
     libstdc++6 \
     locales \
+    openssh-client \
     openssl \
   && sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen \
   && locale-gen \

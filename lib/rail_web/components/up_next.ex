@@ -110,6 +110,7 @@ defmodule RailWeb.Components.UpNext do
 
   defp work(%Run{task: %Task{stage: :design}}), do: "design"
   defp work(%Run{task: %Task{stage: :architect}}), do: "plan"
+  defp work(%Run{task: %Task{stage: :engineer}}), do: "implementation"
   defp work(%Run{}), do: "ticket"
 
   defp questions(%Run{questions: [_one]}), do: "a question"

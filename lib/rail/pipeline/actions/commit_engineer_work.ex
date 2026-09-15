@@ -1,0 +1,41 @@
+defmodule Rail.Pipeline.Actions.CommitEngineerWork do
+  @moduledoc """
+  Commits and pushes what the engineer left in its worktree.
+
+  Rail commits rather than the agent, because who a commit belongs to and what it
+  is signed with are not decisions to leave to a prompt. What this stage owns is
+  the message — the engineer's own words about the round, plus the trailers naming
+  the ticket and Rail. Who the commit is by, what signs it and what pushes it are
+  `Rail.Git`'s to answer.
+  """
+
+  import Rail.Pipeline.Utils.CommitMessage
+
+  alias Rail.Git
+  alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Task
+  alias Rail.Repo
+  alias Rail.Scope
+
+  @doc """
+  Commits everything in `task`'s worktree and pushes the branch.
+
+  Returns `{:ok, sha}`, or `{:error, reason}` when git or GitHub refused.
+  """
+  def commit_engineer_work(%Scope{} = scope, %Task{} = task) do
+    task = Repo.preload(task, :issue)
+    message = commit_message(task, Pipeline.read_commit_message(task))
+
+    with {:ok, sha} <- Git.commit_worktree(scope, task, message),
+         :ok <- Git.push_branch(scope, task) do
+      drop_message_file(task)
+      {:ok, sha}
+    end
+  end
+
+  # The file being gone is what makes its absence mean something next round.
+  defp drop_message_file(%Task{scratch_path: scratch_path, issue: %Issue{identifier: identifier}}) do
+    [scratch_path, "commits", "#{identifier}.md"] |> Path.join() |> File.rm()
+  end
+end
