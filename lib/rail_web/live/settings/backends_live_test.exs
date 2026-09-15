@@ -501,6 +501,23 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     assert has_element?(view, "#window-reset-#{claude.id}-0-2", "reset time unknown")
     refute has_element?(view, "#progress-bar-#{claude.id}-0-2")
 
+    # The wording the server renders is UTC; the instant is what lets the
+    # client rewrite it on the viewer's own clock.
+    assert [utc_instant] =
+             view
+             |> element("#window-reset-#{claude.id}-0-0")
+             |> render()
+             |> Floki.parse_fragment!()
+             |> Floki.attribute("data-at")
+
+    assert DateTime.from_iso8601(utc_instant) == DateTime.from_iso8601(reset_today)
+
+    assert view
+           |> element("#window-reset-#{claude.id}-0-2")
+           |> render()
+           |> Floki.parse_fragment!()
+           |> Floki.attribute("data-at") == []
+
     assert has_element?(view, "#status-badge-#{agy.id}", "Not configured")
     view |> element("#backend-header-#{agy.id}") |> render_click()
     assert has_element?(view, "#banner-#{agy.id}", "Executable not found at '/bin/agy'")

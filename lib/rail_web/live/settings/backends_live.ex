@@ -267,6 +267,8 @@ defmodule RailWeb.Settings.BackendsLive do
                         <p
                           class="mt-1.5 truncate whitespace-nowrap text-xs text-slate-500 dark:text-slate-400"
                           id={"window-reset-#{key}-#{g_idx}-#{w_idx}"}
+                          phx-hook="LocalResetTime"
+                          data-at={reset_iso(window["resets_at"])}
                         >
                           {format_reset_string(window["resets_at"], @now)}
                         </p>
@@ -1046,6 +1048,15 @@ defmodule RailWeb.Settings.BackendsLive do
       remaining_percent >= 30.0 -> "text-emerald-600 dark:text-emerald-400"
       remaining_percent >= 10.0 -> "text-amber-600 dark:text-amber-400"
       true -> "text-red-600 dark:text-red-400"
+    end
+  end
+
+  # The wording below is in UTC; `LocalResetTime` rewrites it on the viewer's
+  # own clock from this instant, and has nothing to rewrite without it.
+  defp reset_iso(resets_at) do
+    case parse_datetime(resets_at) do
+      %DateTime{} = dt -> DateTime.to_iso8601(dt)
+      nil -> nil
     end
   end
 
