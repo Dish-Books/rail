@@ -21,17 +21,26 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWork do
   @doc """
   Commits everything in `task`'s worktree and pushes the branch.
 
-  Returns `{:ok, sha}`, or `{:error, reason}` when git or GitHub refused.
+  Returns `:ok`, or `{:error, reason}` when git or GitHub refused. Safe to run
+  again after either half failed: it is the outstanding work it acts on, not a
+  fixed pair of steps.
   """
   def commit_engineer_work(%Scope{} = scope, %Task{} = task) do
     task = Repo.preload(task, :issue)
-    message = commit_message(task, Pipeline.read_commit_message(task))
 
-    with {:ok, sha} <- Git.commit_worktree(scope, task, message),
+    with {:ok, _sha} <- commit(scope, task),
          :ok <- Git.push_branch(scope, task) do
       drop_message_file(task)
-      {:ok, sha}
+      :ok
     end
+  end
+
+  # A push that failed leaves a commit that was made and never sent, so running
+  # this again has nothing to commit and everything still to push.
+  defp commit(%Scope{} = scope, %Task{worktree_path: worktree_path} = task) do
+    if Git.worktree_dirty?(worktree_path),
+      do: Git.commit_worktree(scope, task, commit_message(task, Pipeline.read_commit_message(task))),
+      else: {:ok, :nothing_to_commit}
   end
 
   # The file being gone is what makes its absence mean something next round.

@@ -812,11 +812,18 @@ defmodule RailWeb.TaskLiveTest do
           system_prompt: "You are the engineer agent."
         })
 
+      # The pane's buttons are about what is outstanding, so the worktree starts
+      # where a finished round leaves it: committed and pushed.
+      remote = create_temp_git_repo(prefix: "rail_git_remote", initial_commit: false)
+      git!(remote, ["config", "receive.denyCurrentBranch", "ignore"])
+
       repo = create_temp_git_repo()
+      git!(repo, ["remote", "add", "origin", remote])
       git!(repo, ["checkout", "-b", "feature"])
       File.write!(Path.join(repo, "shipped.ex"), "committed\n")
       git!(repo, ["add", "."])
       git!(repo, ["commit", "-m", "the engineer's work"])
+      git!(repo, ["push", "--set-upstream", "origin", "feature"])
 
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: repo})
 
@@ -866,6 +873,77 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='diff-file-row']", "wip.ex")
     end
 
+    # A view that happens to be empty is still a view: without the toolbar there
+    # is no way back to the one that has the changes in it.
+    test "an empty uncommitted view can still be switched out of", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#diff-filter-uncommitted") |> render_click()
+
+      assert has_element?(view, "[data-qa='diff_empty_state']", "Everything in the worktree is committed.")
+      refute has_element?(view, "[data-qa='engineer_work_pending']")
+
+      view |> element("#diff-filter-branch") |> render_click()
+      assert has_element?(view, "[data-qa='diff-file-row']", "shipped.ex")
+    end
+
+    # The commit was made and the push was refused, so what is outstanding is the
+    # push, and pressing the button again is what sends it.
+    test "a push that failed is retried from the pane", %{conn: conn, task: task, engineer_run: run, repo: repo} do
+      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+      stub(Git, :push_branch, fn _scope, _task -> {:error, "remote rejected"} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#commit-work") |> render_click()
+      render_async(view)
+
+      assert has_element?(view, "#engineer-error", "remote rejected")
+      assert has_element?(view, "#commit-work", "Push")
+
+      stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
+        git!(path, ["push", "--set-upstream", "origin", "HEAD"])
+        :ok
+      end)
+
+      view |> element("#commit-work") |> render_click()
+      render_async(view)
+
+      refute has_element?(view, "#commit-work")
+      assert %Run{error: nil} = Repo.reload!(run)
+    end
+
+    # The push runs the repository's pre-push hooks, which can take minutes, so the
+    # pane says it is pushing and will not take the click again meanwhile.
+    test "a push in flight shows it and holds the buttons", %{conn: conn, task: task, repo: repo} do
+      File.write!(Path.join(repo, "local.ex"), "one\n")
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-m", "never pushed"])
+      test_pid = self()
+
+      stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
+        send(test_pid, {:pushing, self()})
+
+        receive do
+          :release ->
+            git!(path, ["push", "--set-upstream", "origin", "HEAD"])
+            :ok
+        end
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#commit-work", "Push") |> render_click()
+
+      assert_receive {:pushing, pusher}
+      assert has_element?(view, "#commit-work[disabled][aria-busy='true']", "Pushing…")
+      assert has_element?(view, "#send-to-review[disabled]")
+
+      send(pusher, :release)
+      render_async(view)
+
+      refute has_element?(view, "#commit-work")
+      refute has_element?(view, "#send-to-review[disabled]")
+    end
+
     test "marking a file read collapses it, for this reader only", %{conn: conn, task: task, scope: scope} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -905,7 +983,10 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      stub(Git, :push_branch, fn _scope, _task -> :ok end)
+      stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
+        git!(path, ["push", "--set-upstream", "origin", "HEAD"])
+        :ok
+      end)
 
       assert has_element?(view, "#commit-work")
 
@@ -913,9 +994,27 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#engineer-error", "Commit the engineer's work before sending it to review.")
 
       view |> element("#commit-work") |> render_click()
+      render_async(view)
 
       assert git!(repo, ["log", "-1", "--pretty=%s"]) =~ "TLV-1: follow-up changes"
       refute has_element?(view, "#commit-work")
+    end
+
+    test "review is refused while the remote has not heard of the commits", %{
+      conn: conn,
+      task: task,
+      repo: repo
+    } do
+      File.write!(Path.join(repo, "local.ex"), "one\n")
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-m", "never pushed"])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#send-to-review") |> render_click()
+
+      assert has_element?(view, "#engineer-error", "Push the engineer's commits")
+      assert %Task{stage: :engineer} = Repo.reload!(task)
     end
 
     test "sending the diff to review moves the task", %{conn: conn, task: task} do
@@ -966,6 +1065,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       view |> element("#commit-work") |> render_click()
+      render_async(view)
 
       assert has_element?(view, "#engineer-error", "nothing left to commit")
     end
@@ -977,6 +1077,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       view |> element("#commit-work") |> render_click()
+      render_async(view)
 
       assert has_element?(view, "#engineer-error", "index.lock exists")
     end
@@ -991,6 +1092,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       view |> element("#commit-work") |> render_click()
+      render_async(view)
 
       assert has_element?(view, "#engineer-error", "Could not finish that:")
     end

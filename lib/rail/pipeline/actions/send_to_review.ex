@@ -8,8 +8,9 @@ defmodule Rail.Pipeline.Actions.SendToReview do
   there has nothing left to send.
 
   A worktree with uncommitted work in it is refused rather than swept up, since
-  a commit made without anyone naming it is a commit nobody meant. The diff pane
-  has a Commit button for exactly that.
+  a commit made without anyone naming it is a commit nobody meant, and so is a
+  branch the remote has never heard of, which is not a branch anyone else can
+  review. The diff pane has a button for both.
   """
 
   alias Rail.Git
@@ -40,6 +41,7 @@ defmodule Rail.Pipeline.Actions.SendToReview do
     cond do
       Task.running?(task) -> {:error, :stage_running}
       Git.worktree_dirty?(task.worktree_path) -> {:error, :uncommitted_changes}
+      Git.branch_unpushed?(task.worktree_path) -> {:error, :unpushed_changes}
       true -> :ok
     end
   end

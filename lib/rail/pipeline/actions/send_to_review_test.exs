@@ -57,7 +57,15 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Send To Review"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
+    # A branch review can read is a branch the remote has, so the worktree here is
+    # one that has actually been pushed.
+    remote = create_temp_git_repo(prefix: "rail_git_remote", initial_commit: false)
+    git!(remote, ["config", "receive.denyCurrentBranch", "ignore"])
+
     worktree_path = create_temp_git_repo()
+    git!(worktree_path, ["remote", "add", "origin", remote])
+    git!(worktree_path, ["push", "--set-upstream", "origin", "main"])
+
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: worktree_path})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
@@ -83,6 +91,16 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     File.write!(Path.join(repo, "uncommitted.ex"), "one\n")
 
     assert {:error, :uncommitted_changes} = Pipeline.send_to_review(run)
+    assert %Task{stage: :engineer} = Repo.reload!(task)
+  end
+
+  # A commit nobody else can see is not a change anyone can review.
+  test "refuses commits the remote has never been told about", %{task: task, run: run, worktree_path: repo} do
+    File.write!(Path.join(repo, "local.ex"), "one\n")
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "never pushed"])
+
+    assert {:error, :unpushed_changes} = Pipeline.send_to_review(run)
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 

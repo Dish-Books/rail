@@ -34,17 +34,7 @@ defmodule RailWeb.Components.DiffPane do
       |> assign(:viewed, Enum.count(assigns.files, & &1.viewed?))
 
     ~H"""
-    <div
-      :if={@files == []}
-      id="diff-empty-state"
-      data-qa="diff_empty_state"
-      class="flex flex-col items-center justify-center min-h-[340px] text-center p-8"
-    >
-      <.icon name="pi-check-circle" class="w-12 h-12 text-emerald-600 mb-3" />
-      <p class="text-sm font-medium text-slate-900 dark:text-slate-100">{@empty_message}</p>
-    </div>
-
-    <div :if={@files != []} id="diff-pane" data-qa="diff-pane diff_pane" class="flex flex-col h-full">
+    <div id="diff-pane" data-qa="diff-pane diff_pane" class="flex flex-col h-full">
       <div
         id="diff-toolbar"
         data-qa="diff_toolbar"
@@ -100,7 +90,7 @@ defmodule RailWeb.Components.DiffPane do
           <div class="h-1.5 w-16 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
             <div
               class="h-full rounded-full bg-emerald-500"
-              style={"width: #{div(@viewed * 100, length(@files))}%;"}
+              style={"width: #{read(@files, @viewed)}%;"}
             />
           </div>
           <span class="font-mono text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
@@ -129,7 +119,17 @@ defmodule RailWeb.Components.DiffPane do
         </form>
       </div>
 
-      <div class="flex-1 min-h-0 flex">
+      <div
+        :if={@files == []}
+        id="diff-empty-state"
+        data-qa="diff_empty_state"
+        class="flex-1 flex flex-col items-center justify-center text-center p-8"
+      >
+        <.icon name="pi-check-circle" class="w-12 h-12 text-emerald-600 mb-3" />
+        <p class="text-sm font-medium text-slate-900 dark:text-slate-100">{@empty_message}</p>
+      </div>
+
+      <div :if={@files != []} class="flex-1 min-h-0 flex">
         <div
           :if={@show_file_tree}
           id="diff-file-tree"
@@ -476,6 +476,9 @@ defmodule RailWeb.Components.DiffPane do
 
   defp line_style(:context),
     do: %{background: "bg-transparent", accent: "border-transparent", glyph_class: "text-transparent", glyph: " "}
+
+  defp read([], _viewed), do: 0
+  defp read(files, viewed), do: div(viewed * 100, length(files))
 
   defp files_changed([_one]), do: "1 file changed"
   defp files_changed(files), do: "#{length(files)} files changed"

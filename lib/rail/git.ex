@@ -23,6 +23,7 @@ defmodule Rail.Git do
   defdelegate branch_fingerprint(worktree_path), to: Actions.BranchFingerprint
 
   defdelegate worktree_dirty?(worktree_path), to: Actions.WorktreeDirty
+  defdelegate branch_unpushed?(worktree_path), to: Actions.BranchUnpushed
   defdelegate commit_worktree(scope, task, message), to: Actions.CommitWorktree
   defdelegate push_branch(scope, task), to: Actions.PushBranch
 

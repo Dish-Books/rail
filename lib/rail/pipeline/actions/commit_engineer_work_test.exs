@@ -67,8 +67,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
     File.write!(message_path, "CMW-1: add the vendor filter\n\nFilters invoices by vendor.\n")
 
-    assert {:ok, sha} = Pipeline.commit_engineer_work(scope, task)
-    assert byte_size(sha) == 40
+    assert :ok = Pipeline.commit_engineer_work(scope, task)
 
     message = git!(repo, ["log", "-1", "--pretty=%B"])
     assert message =~ "CMW-1: add the vendor filter"
@@ -86,7 +85,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
   } do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
 
-    assert {:ok, _sha} = Pipeline.commit_engineer_work(scope, task)
+    assert :ok = Pipeline.commit_engineer_work(scope, task)
     assert git!(repo, ["log", "-1", "--pretty=%s"]) =~ "CMW-1: follow-up changes"
   end
 
@@ -100,7 +99,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
     File.write!(message_path, "CMW-1: add the vendor filter\n")
 
-    assert {:ok, _sha} = Pipeline.commit_engineer_work(scope, task)
+    assert :ok = Pipeline.commit_engineer_work(scope, task)
     refute File.exists?(message_path)
   end
 
@@ -119,7 +118,31 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
     assert File.exists?(message_path)
   end
 
-  test "refuses a worktree with nothing in it to commit", %{scope: scope, task: task} do
-    assert {:error, :nothing_to_commit} = Pipeline.commit_engineer_work(scope, task)
+  # A push that failed left a commit made and never sent. Running again has
+  # nothing to commit and everything still to push, which is what the button
+  # offers after a failure: the same call, finishing what is outstanding.
+  test "pushes again without committing again when only the push failed", %{
+    scope: scope,
+    task: task,
+    repo: repo,
+    message_path: message_path
+  } do
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+    File.write!(message_path, "CMW-1: add the vendor filter\n")
+
+    stub(Git, :push_branch, fn _scope, _task -> {:error, "remote rejected"} end)
+    assert {:error, "remote rejected"} = Pipeline.commit_engineer_work(scope, task)
+
+    commits = git!(repo, ["rev-list", "--count", "HEAD"])
+
+    stub(Git, :push_branch, fn _scope, _task -> :ok end)
+    assert :ok = Pipeline.commit_engineer_work(scope, task)
+
+    assert git!(repo, ["rev-list", "--count", "HEAD"]) == commits
+    refute File.exists?(message_path)
+  end
+
+  test "a clean worktree with nothing left to push is still nothing to do", %{scope: scope, task: task} do
+    assert :ok = Pipeline.commit_engineer_work(scope, task)
   end
 end

@@ -22,6 +22,7 @@ defmodule RailWeb.Live.EngineerStage do
       socket
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
+      |> assign_new(:committing, fn -> false end)
       |> assign_new(:filter, fn -> :branch end)
       |> assign_new(:query, fn -> "" end)
       |> assign_new(:show_files, fn -> true end)
@@ -36,32 +37,35 @@ defmodule RailWeb.Live.EngineerStage do
   def render(assigns) do
     ~H"""
     <div id="engineer-stage" data-qa="engineer-stage" class="contents">
-      <.task_layout task={@task} run={@run} title={@task.issue.title} flush={@files != []}>
+      <.task_layout task={@task} run={@run} title={@task.issue.title} flush={@work?}>
         <:tabs>{render_slot(@tabs)}</:tabs>
         <:actions>
           {render_slot(@actions)}
 
           <button
-            :if={@approvable and @dirty?}
+            :if={@approvable and (@dirty? or @unpushed? or @committing)}
             type="button"
             id="commit-work"
             data-qa="commit_work"
             phx-click="commit"
             phx-target={@myself}
-            disabled={Run.running?(@run)}
-            class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
+            disabled={@committing or Run.running?(@run)}
+            aria-busy={to_string(@committing)}
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Commit
+            <.icon :if={@committing} name="pi-circle-notch" class="size-4 motion-safe:animate-spin" />
+            {commit_label(@dirty?, @committing)}
           </button>
 
           <button
-            :if={@approvable and @files != []}
+            :if={@approvable and @work?}
             type="button"
             id="send-to-review"
             data-qa="send_to_review"
             phx-click="send_to_review"
             phx-target={@myself}
-            class="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs"
+            disabled={@committing}
+            class="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Send to review
           </button>
@@ -77,9 +81,9 @@ defmodule RailWeb.Live.EngineerStage do
           </p>
         </:alerts>
 
-        <.work_pending :if={@files == []} running={Run.running?(@run)} />
+        <.work_pending :if={not @work?} running={Run.running?(@run)} />
 
-        <div :if={@files != []} id="engineer-diff" data-qa="engineer_diff" class="h-full">
+        <div :if={@work?} id="engineer-diff" data-qa="engineer_diff" class="h-full">
           <.diff_pane
             files={@files}
             filter={@filter}
@@ -135,7 +139,9 @@ defmodule RailWeb.Live.EngineerStage do
     _marked =
       Git.set_file_viewed(socket.assigns.current_scope, socket.assigns.task, path, digest, not read_already?)
 
-    {:noreply, socket |> assign(:collapsed, toggle(socket.assigns.collapsed, path, not read_already?)) |> load()}
+    socket = socket |> assign(:collapsed, toggle(socket.assigns.collapsed, path, not read_already?)) |> load()
+
+    {:noreply, socket}
   end
 
   def handle_event("expand_gap", params, socket) do
@@ -153,15 +159,21 @@ defmodule RailWeb.Live.EngineerStage do
     {:noreply, assign(socket, :expanded_gaps, Map.put(socket.assigns.expanded_gaps, key, lines))}
   end
 
-  def handle_event("commit", _params, socket) do
-    case Pipeline.commit_engineer_work(socket.assigns.current_scope, socket.assigns.task) do
-      {:ok, _sha} ->
-        socket = socket |> assign(:error, nil) |> load()
-        {:noreply, socket}
+  # A push runs the repository's own pre-push hooks, which can take minutes, so it
+  # goes off the LiveView process and the button says it is in flight. A second
+  # click while it is would only race the first.
+  def handle_event("commit", _params, %{assigns: %{committing: true}} = socket), do: {:noreply, socket}
 
-      {:error, reason} ->
-        {:noreply, assign(socket, :error, message_for(reason))}
-    end
+  def handle_event("commit", _params, socket) do
+    %{current_scope: scope, task: task} = socket.assigns
+
+    socket =
+      socket
+      |> assign(:committing, true)
+      |> assign(:error, nil)
+      |> start_async(:commit, fn -> Pipeline.commit_engineer_work(scope, task) end)
+
+    {:noreply, socket}
   end
 
   def handle_event("send_to_review", _params, socket) do
@@ -173,6 +185,32 @@ defmodule RailWeb.Live.EngineerStage do
       {:error, reason} ->
         {:noreply, assign(socket, :error, message_for(reason))}
     end
+  end
+
+  # Committing is also how a run that failed to commit is retried, so what it
+  # clears is the run's error as well as this component's. Failing half way
+  # still moved the worktree, so either way the pane re-reads it: what is left
+  # outstanding is what the button offers next.
+  @impl true
+  def handle_async(:commit, {:ok, :ok}, socket) do
+    {:ok, _cleared} = Pipeline.update_run(socket.assigns.run, %{error: nil})
+    send(self(), :task_changed)
+
+    socket = socket |> assign(:committing, false) |> assign(:error, nil) |> load()
+
+    {:noreply, socket}
+  end
+
+  def handle_async(:commit, {:ok, {:error, reason}}, socket) do
+    socket = socket |> assign(:committing, false) |> assign(:error, message_for(reason)) |> load()
+
+    {:noreply, socket}
+  end
+
+  def handle_async(:commit, {:exit, reason}, socket) do
+    socket = socket |> assign(:committing, false) |> assign(:error, message_for(reason)) |> load()
+
+    {:noreply, socket}
   end
 
   attr :running, :boolean, required: true
@@ -227,19 +265,35 @@ defmodule RailWeb.Live.EngineerStage do
     """
   end
 
+  # What the reader is looking at is one view of the branch; whether there is any
+  # work at all is the branch's own question, so a view that happens to be empty
+  # is still a view, with the toolbar that gets them back out of it.
   defp load(socket) do
     %{current_scope: scope, task: task, filter: filter} = socket.assigns
-
-    files =
-      case Git.load_diff(scope, task, filter) do
-        {:ok, files} -> files
-        {:error, :no_worktree} -> []
-      end
+    files = diff(scope, task, filter)
+    present? = Task.worktree_present?(task)
 
     socket
     |> assign(:files, files)
-    |> assign(:dirty?, Task.worktree_present?(task) and Git.worktree_dirty?(task.worktree_path))
+    |> assign(:work?, work?(scope, task, filter, files))
+    |> assign(:dirty?, present? and Git.worktree_dirty?(task.worktree_path))
+    |> assign(:unpushed?, present? and Git.branch_unpushed?(task.worktree_path))
   end
+
+  defp work?(_scope, _task, :branch, files), do: files != []
+  defp work?(scope, task, :uncommitted, _files), do: diff(scope, task, :branch) != []
+
+  defp diff(scope, task, filter) do
+    case Git.load_diff(scope, task, filter) do
+      {:ok, files} -> files
+      {:error, :no_worktree} -> []
+    end
+  end
+
+  defp commit_label(true, true), do: "Committing…"
+  defp commit_label(false, true), do: "Pushing…"
+  defp commit_label(true, false), do: "Commit"
+  defp commit_label(false, false), do: "Push"
 
   defp toggle(paths, path, true), do: Enum.uniq([path | paths])
   defp toggle(paths, path, false), do: List.delete(paths, path)
@@ -249,6 +303,7 @@ defmodule RailWeb.Live.EngineerStage do
 
   defp message_for(:stage_running), do: "Something is still running on this task."
   defp message_for(:uncommitted_changes), do: "Commit the engineer's work before sending it to review."
+  defp message_for(:unpushed_changes), do: "Push the engineer's commits before sending them to review."
   defp message_for(:nothing_to_commit), do: "There is nothing left to commit."
   defp message_for(reason) when is_binary(reason), do: reason
   defp message_for(reason), do: "Could not finish that: #{inspect(reason)}"

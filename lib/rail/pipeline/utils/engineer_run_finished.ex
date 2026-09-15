@@ -38,7 +38,7 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinished do
 
   defp commit(%Run{} = run, %Task{} = task) do
     case Pipeline.commit_engineer_work(Scope.for_system(), task) do
-      {:ok, _sha} -> run
+      :ok -> run
       {:error, reason} -> fail(run, "Could not commit the engineer's work: #{describe(reason)}")
     end
   end
