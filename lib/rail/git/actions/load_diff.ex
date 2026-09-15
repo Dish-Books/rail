@@ -9,11 +9,12 @@ defmodule Rail.Git.Actions.LoadDiff do
   are written into both by hand: git will not diff a file it has never seen, but
   the human still has to read it.
 
-  The files come back already parsed into rows and already marked with whether
-  this reader has read them, because there is nothing a caller would do with the
-  halves separately.
+  The files come back already parsed into rows, already highlighted and already
+  marked with whether this reader has read them, because there is nothing a
+  caller would do with the halves separately.
   """
 
+  import Rail.Git.Utils.HighlightLines
   import Rail.Git.Utils.ParseDiff
 
   alias Rail.Git
@@ -37,13 +38,40 @@ defmodule Rail.Git.Actions.LoadDiff do
         task
         |> raw_diff(filter)
         |> parse_diff()
-        |> Enum.map(&Map.put(&1, :viewed?, Map.get(viewed, &1.path) == &1.digest))
+        |> Enum.map(&(&1 |> Map.put(:viewed?, Map.get(viewed, &1.path) == &1.digest) |> highlight()))
 
       {:ok, files}
     else
       {:error, :no_worktree}
     end
   end
+
+  # Each side of the file is highlighted as its own piece of code, then handed
+  # back to the rows it came from in the order they were taken.
+  defp highlight(%{rows: rows, path: path} = file) do
+    old = Enum.filter(rows, &side?(&1, :deleted))
+    new = Enum.filter(rows, &side?(&1, :added))
+
+    %{file | rows: stamp(rows, highlighted(old, path), highlighted(new, path))}
+  end
+
+  defp side?(%{kind: :line, line_kind: line_kind}, changed), do: line_kind in [:context, changed]
+  defp side?(_row, _changed), do: false
+
+  defp highlighted(rows, path), do: rows |> Enum.map(& &1.text) |> highlight_lines(path)
+
+  defp stamp([], _old, _new), do: []
+
+  defp stamp([%{kind: :line, line_kind: :deleted} = row | rows], [html | old], new),
+    do: [Map.put(row, :html, html) | stamp(rows, old, new)]
+
+  defp stamp([%{kind: :line, line_kind: :added} = row | rows], old, [html | new]),
+    do: [Map.put(row, :html, html) | stamp(rows, old, new)]
+
+  defp stamp([%{kind: :line, line_kind: :context} = row | rows], [_old_side | old], [html | new]),
+    do: [Map.put(row, :html, html) | stamp(rows, old, new)]
+
+  defp stamp([row | rows], old, new), do: [row | stamp(rows, old, new)]
 
   defp raw_diff(%Task{worktree_path: worktree_path} = task, filter) do
     tracked(worktree_path, filter, base_branch(task)) <> untracked(worktree_path)

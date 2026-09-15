@@ -53,8 +53,17 @@ defmodule Rail.Git.Actions.ExpandDiffGapTest do
   end
 
   test "reads the unchanged lines across the gap", %{task: task} do
-    assert {"tracked.txt:0", ["line 3", "line 4", "line 5"]} =
-             Git.expand_diff_gap(task, "tracked.txt", 0, 3, 5)
+    assert {"tracked.txt:0", lines} = Git.expand_diff_gap(task, "tracked.txt", 0, 3, 5)
+    assert Enum.map(lines, & &1.text) == ["line 3", "line 4", "line 5"]
+  end
+
+  # A gap is drawn by the same row the hunks around it are, so it carries the
+  # same highlighted html they do.
+  test "highlights what it read", %{task: task} do
+    File.write!(Path.join(task.worktree_path, "thing.ex"), "defmodule Thing do\n  :ok\nend\n")
+
+    assert {"thing.ex:0", [%{html: html}]} = Git.expand_diff_gap(task, "thing.ex", 0, 1, 1)
+    assert html =~ ~s(class="l-keyword")
   end
 
   test "a file it cannot read expands to nothing", %{task: task} do

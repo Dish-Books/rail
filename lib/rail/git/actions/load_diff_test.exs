@@ -80,6 +80,37 @@ defmodule Rail.Git.Actions.LoadDiffTest do
     assert [%{kind: :hunk_header}, %{kind: :line, line_kind: :added, text: "committed"}] = shipped.rows
   end
 
+  # Deleted lines are highlighted against the old file and added ones against the
+  # new, because the two sides interleaved are not code anything can parse.
+  test "the rows come back highlighted, each side as its own code", %{scope: scope, task: task, repo: repo} do
+    File.write!(Path.join(repo, "thing.ex"), "defmodule Thing do\n  :was\nend\n")
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "thing"])
+    File.write!(Path.join(repo, "thing.ex"), "defmodule Thing do\n  :is\nend\n")
+
+    assert {:ok, files} = Git.load_diff(scope, task, :uncommitted)
+    rows = files |> Enum.find(&(&1.path == "thing.ex")) |> Map.fetch!(:rows)
+
+    assert %{html: was} = Enum.find(rows, &(&1[:line_kind] == :deleted))
+    assert %{html: is} = Enum.find(rows, &(&1[:line_kind] == :added))
+    assert was =~ ":was"
+    assert is =~ ":is"
+    assert is =~ "l-string-special-symbol"
+  end
+
+  test "a file in a language nothing here highlights comes back as its plain text", %{
+    scope: scope,
+    task: task,
+    repo: repo
+  } do
+    File.write!(Path.join(repo, "notes.txt"), "just prose\n")
+
+    assert {:ok, files} = Git.load_diff(scope, task, :branch)
+    rows = files |> Enum.find(&(&1.path == "notes.txt")) |> Map.fetch!(:rows)
+
+    assert %{text: "just prose", html: nil} = Enum.find(rows, &(&1[:line_kind] == :added))
+  end
+
   test "untracked files are written into the diff git would not write them into", %{scope: scope, task: task, repo: repo} do
     File.write!(Path.join(repo, "brand_new.ex"), "one\ntwo\n")
 

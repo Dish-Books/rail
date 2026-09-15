@@ -25,12 +25,8 @@ config :rail, RailWeb.Endpoint,
 
 config :rail, :adopt_on_boot, false
 config :rail, :backends_root, Path.join(System.tmp_dir!(), "rail_test_backends")
-
-config :rail, :github,
-  app_id: "test_app_id",
-  private_key: "test/support/fixtures/github_app.pem",
-  req_options: [plug: {Req.Test, Rail.GitHub.Client}]
-
+config :rail, :fetch_parsers, false
+config :rail, :github, req_options: [plug: {Req.Test, Rail.GitHub.Client}]
 config :rail, :linear, req_options: [plug: {Req.Test, Rail.Linear}]
 config :rail, :linear_oauth, req_options: [plug: {Req.Test, Rail.Linear}]
 config :rail, :mcp, req_options: [plug: {Req.Test, Rail.Mcp}, retry: false]

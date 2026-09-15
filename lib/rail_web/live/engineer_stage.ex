@@ -23,6 +23,9 @@ defmodule RailWeb.Live.EngineerStage do
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
       |> assign_new(:filter, fn -> :branch end)
+      |> assign_new(:query, fn -> "" end)
+      |> assign_new(:show_files, fn -> true end)
+      |> assign_new(:collapsed, fn -> [] end)
       |> assign_new(:selected_file, fn -> nil end)
       |> assign_new(:expanded_gaps, fn -> %{} end)
 
@@ -33,7 +36,7 @@ defmodule RailWeb.Live.EngineerStage do
   def render(assigns) do
     ~H"""
     <div id="engineer-stage" data-qa="engineer-stage" class="contents">
-      <.task_layout task={@task} run={@run} title={@task.issue.title}>
+      <.task_layout task={@task} run={@run} title={@task.issue.title} flush={@files != []}>
         <:tabs>{render_slot(@tabs)}</:tabs>
         <:actions>
           {render_slot(@actions)}
@@ -76,34 +79,13 @@ defmodule RailWeb.Live.EngineerStage do
 
         <.work_pending :if={@files == []} running={Run.running?(@run)} />
 
-        <div :if={@files != []} id="engineer-diff" data-qa="engineer_diff" class="space-y-3">
-          <div
-            id="diff-filter"
-            data-qa="diff_filter"
-            class="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 bg-white dark:bg-slate-900"
-          >
-            <button
-              :for={{filter, label} <- [branch: "All changes", uncommitted: "Uncommitted"]}
-              type="button"
-              id={"diff-filter-#{filter}"}
-              data-qa="diff_filter_option"
-              phx-click="select_diff_filter"
-              phx-target={@myself}
-              phx-value-filter={filter}
-              class={[
-                "px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer",
-                @filter == filter &&
-                  "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100",
-                @filter != filter &&
-                  "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
-              ]}
-            >
-              {label}
-            </button>
-          </div>
-
+        <div :if={@files != []} id="engineer-diff" data-qa="engineer_diff" class="h-full">
           <.diff_pane
             files={@files}
+            filter={@filter}
+            query={@query}
+            show_file_tree={@show_files}
+            collapsed={@collapsed}
             expanded_gaps={@expanded_gaps}
             selected_file={@selected_file}
             target={@myself}
@@ -123,22 +105,37 @@ defmodule RailWeb.Live.EngineerStage do
       socket
       |> assign(:filter, if(filter == "uncommitted", do: :uncommitted, else: :branch))
       |> assign(:expanded_gaps, %{})
+      |> assign(:collapsed, [])
       |> assign(:selected_file, nil)
 
     {:noreply, load(socket)}
+  end
+
+  def handle_event("filter_diff_files", %{"query" => query}, socket) do
+    {:noreply, assign(socket, :query, query)}
+  end
+
+  def handle_event("toggle_file_list", _params, socket) do
+    {:noreply, assign(socket, :show_files, not socket.assigns.show_files)}
+  end
+
+  def handle_event("toggle_collapsed", %{"path" => path}, socket) do
+    {:noreply, assign(socket, :collapsed, toggle(socket.assigns.collapsed, path, path not in socket.assigns.collapsed))}
   end
 
   def handle_event("select_diff_file", %{"path" => path}, socket) do
     {:noreply, assign(socket, :selected_file, path)}
   end
 
+  # Reading a file is also done with it, so it folds away; the caret is there to
+  # open it again.
   def handle_event("toggle_viewed", %{"path" => path, "digest" => digest}, socket) do
     read_already? = Enum.any?(socket.assigns.files, &(&1.path == path and &1.viewed?))
 
     _marked =
       Git.set_file_viewed(socket.assigns.current_scope, socket.assigns.task, path, digest, not read_already?)
 
-    {:noreply, load(socket)}
+    {:noreply, socket |> assign(:collapsed, toggle(socket.assigns.collapsed, path, not read_already?)) |> load()}
   end
 
   def handle_event("expand_gap", params, socket) do
@@ -243,6 +240,9 @@ defmodule RailWeb.Live.EngineerStage do
     |> assign(:files, files)
     |> assign(:dirty?, Task.worktree_present?(task) and Git.worktree_dirty?(task.worktree_path))
   end
+
+  defp toggle(paths, path, true), do: Enum.uniq([path | paths])
+  defp toggle(paths, path, false), do: List.delete(paths, path)
 
   defp empty_message(:uncommitted), do: "Everything in the worktree is committed."
   defp empty_message(:branch), do: "Nothing has been changed on this branch yet."

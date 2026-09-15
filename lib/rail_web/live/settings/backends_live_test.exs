@@ -200,7 +200,12 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     # card then shows.
     expect(Tools, :submit_backend_login_code, fn _scope, ^session, "the-code" -> :ok end)
 
+    # The card says it is signing in only while the read is still running, so the
+    # read waits here until the assertion below has seen it.
     expect(Tools, :refresh_usage, fn ->
+      send(test_pid, {:reading_usage, self()})
+      assert_receive :finish_reading
+
       {:ok, [Repo.update!(Backend.usage_changeset(backend, %{status: :ready, account_label: "me@example.com"}))]}
     end)
 
@@ -208,7 +213,11 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     assert has_element?(view, "#login-code-#{backend.id}[value='the-co']")
 
     view |> element("#login-code-form-#{backend.id}") |> render_submit(%{"code" => "the-code"})
+
+    assert_receive {:reading_usage, reader}
     assert has_element?(view, "#submit-login-code-#{backend.id}", "Signing in")
+
+    send(reader, :finish_reading)
     render_async(view)
 
     refute has_element?(view, "#login-code-form-#{backend.id}")

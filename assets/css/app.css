@@ -4,6 +4,8 @@
 @source "../../lib/rail";
 @source "../../lib/rail_web";
 
+@import "./code.css" layer(components);
+
 @plugin "../vendor/phosphor-icons";
 @plugin "@tailwindcss/typography";
 

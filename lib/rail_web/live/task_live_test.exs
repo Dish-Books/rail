@@ -873,6 +873,27 @@ defmodule RailWeb.TaskLiveTest do
 
       assert %{"shipped.ex" => _digest} = Git.list_viewed_files(scope, task)
       assert Git.list_viewed_files(user_scope(), task) == %{}
+
+      refute has_element?(view, "[data-qa='diff_line_row']")
+
+      view |> element("[data-qa='diff_collapse_toggle']") |> render_click()
+      assert has_element?(view, "[data-qa='diff_line_row']")
+    end
+
+    test "the toolbar puts the file list away and narrows it down", %{conn: conn, task: task, repo: repo} do
+      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#diff-file-filter") |> render_change(%{"query" => "wip"})
+
+      refute has_element?(view, "[data-qa='diff-file-row']", "shipped.ex")
+      assert has_element?(view, "[data-qa='diff-file-row']", "wip.ex")
+      # The counts are of the whole diff, whatever the query leaves showing.
+      assert has_element?(view, "[data-qa='diff_viewed_progress']", "0/2")
+
+      view |> element("#diff-toggle-files") |> render_click()
+      refute has_element?(view, "#diff-file-tree")
     end
 
     test "uncommitted work offers a commit and refuses review until it is taken", %{
@@ -910,9 +931,9 @@ defmodule RailWeb.TaskLiveTest do
     test "selecting a file in the tree marks it", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      html = view |> element("[data-qa='diff-file-row']") |> render_click()
+      _clicked = view |> element("[data-qa='diff-file-row']") |> render_click()
 
-      assert html =~ "bg-blue-100"
+      assert has_element?(view, "[data-qa='diff-file-row'][aria-current='true']", "shipped.ex")
     end
 
     test "expanding a gap fills in the lines the diff left out", %{conn: conn, task: task, repo: repo} do
