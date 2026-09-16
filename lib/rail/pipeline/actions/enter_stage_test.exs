@@ -149,11 +149,17 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
-  test "a spawn that never happens still leaves the stage entered", %{task: task} do
+  # A run left running with no OS process behind it is one nothing recovers:
+  # reconciliation works from `os_processes` rows and there is none, so it reads
+  # as busy forever and hides every button that would move the task on.
+  test "a spawn that never happens leaves the stage entered and the run settled", %{task: task} do
     stub(Tools, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
 
-    assert {:ok, %Run{}} = Pipeline.enter_stage(task, :review)
+    assert {:ok, %Run{status: :failed, error: "Dispatch is off, so no agent was started for this stage."}} =
+             Pipeline.enter_stage(task, :review)
+
     assert %Task{stage: :review} = Repo.reload!(task)
+    refute task |> Repo.preload(:runs, force: true) |> Task.running?()
   end
 
   test "a spawn that fails records the failure on the run", %{task: task} do

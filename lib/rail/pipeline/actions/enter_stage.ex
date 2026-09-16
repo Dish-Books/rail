@@ -47,6 +47,12 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   # The run is started before the spawn is attempted, because starting it is what
   # unlatches the stage. A worktree Rail cannot make is a failure to record on the
   # run, not a reason for the stage never to have been entered.
+  #
+  # Every way out of here settles the run, including the spawn that never
+  # happened. A run left at `:running` with no OS process behind it is a run
+  # nothing recovers: `Boot.reconcile/1` works from `os_processes` rows and there
+  # is none, so it survives every restart, reads as busy, and hides the buttons
+  # that would move it on.
   defp start_role(%Task{} = task, %Role{} = role) do
     worktree_path = worktree(task)
     {:ok, %Run{} = run} = Pipeline.start_or_resume_run(task, role, worktree_path)
@@ -55,7 +61,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
       case start_process(run) do
         {:ok, os_process} -> {:ok, os_process.run}
         {:error, {:spawn_failed, _reason, %Run{} = failed}} -> {:ok, failed}
-        {:error, :dispatch_disabled} -> {:ok, run}
+        {:error, :dispatch_disabled} -> {:ok, fail(run, "Dispatch is off, so no agent was started for this stage.")}
       end
     else
       {:ok, fail(run, "Could not prepare the worktree at #{task.worktree_path}.")}
