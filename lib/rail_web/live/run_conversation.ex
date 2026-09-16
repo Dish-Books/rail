@@ -11,8 +11,10 @@ defmodule RailWeb.Live.RunConversation do
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Turn
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
+  alias Rail.Tools.Schemas.OsProcess
 
   @doc """
   Takes the task and its runs; everything else the conversation decides itself.
@@ -98,17 +100,18 @@ defmodule RailWeb.Live.RunConversation do
               {role.name}
             </span>
 
+            <!-- Every turn the agent has taken on this run, added up: the run's own
+            started_at is reset by each one and says nothing about the rest. -->
             <span
               id={"elapsed-run-#{@selected_run.id}"}
               phx-hook="Elapsed"
-              data-started-at={
-                Run.running?(@selected_run) && format_started_at(@selected_run.started_at)
-              }
-              data-elapsed-seconds={!Run.running?(@selected_run) && elapsed_seconds(@selected_run)}
+              data-started-at={format_started_at(@running_since)}
+              data-elapsed-seconds={@settled_seconds}
               data-qa="elapsed-text"
+              title="Total time the agent has spent on this run"
               class="ml-auto font-mono text-xs text-slate-500 dark:text-slate-400"
             >
-              {format_elapsed_run(@selected_run)}
+              {format_duration(@elapsed_seconds)}
             </span>
           </div>
 
@@ -266,6 +269,35 @@ defmodule RailWeb.Live.RunConversation do
 
     ~H"""
     <%= case @author do %>
+      <% :turn_start -> %>
+        <!-- The boundary between one spawn of the agent and the next: when it
+        started and what it cost. The log lines carry no time of their own. -->
+        <div
+          id={"msg-#{@idx}"}
+          data-qa="turn-start"
+          class="flex items-center gap-3 pt-2 first:pt-0 text-[11px] text-slate-400 dark:text-slate-500"
+        >
+          <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+          <span class="font-mono shrink-0 flex items-center gap-1.5" data-qa="turn-start-label">
+            <span>{@text}</span>
+            <%!-- The hook owns this element's whole text, so the separator sits outside it. --%>
+            <span :if={@msg.at}>·</span>
+            <span
+              :if={@msg.at}
+              id={"turn-time-#{@idx}"}
+              phx-hook="LocalTime"
+              data-at={DateTime.to_iso8601(@msg.at)}
+              data-qa="turn-time"
+            >
+              {Calendar.strftime(@msg.at, "%H:%M")}
+            </span>
+            <span :if={@msg.duration_seconds}>·</span>
+            <span :if={@msg.duration_seconds} data-qa="turn-duration">
+              {format_duration(@msg.duration_seconds)}
+            </span>
+          </span>
+          <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+        </div>
       <% :human -> %>
         <!-- 4.8 _HumanBubble (right-aligned, plain selectable text, NOT markdown) -->
         <div
@@ -735,13 +767,111 @@ defmodule RailWeb.Live.RunConversation do
   # are both derived from it, so an appended batch only updates one list. The log
   # is what the agent's CLI wrote, so its backend reads it into lines before they
   # read as a conversation; lines Rail wrote itself pass through as they are.
+  #
+  # The log is parsed a turn at a time rather than all at once, because a turn is
+  # one process's stream and its own self-contained NDJSON, and because that is
+  # the only place the time of anything is known: the lines carry none.
   defp assign_run_events(socket, run_events) do
+    socket = load_os_processes(socket, run_events)
+    processes = socket.assigns.os_processes
     lines = Enum.map(run_events, & &1.line)
+
+    turns =
+      run_events
+      |> group_by_turn()
+      |> Enum.with_index(1)
+      |> Enum.flat_map(fn {{os_process_id, events}, number} ->
+        said = events |> Enum.map(& &1.line) |> readable_lines(socket.assigns) |> Pipeline.parse_transcript()
+
+        case Map.get(processes, os_process_id) do
+          %OsProcess{} = os_process -> [turn_start(os_process, number) | said]
+          nil -> said
+        end
+      end)
 
     socket
     |> assign(:run_events, run_events)
     |> assign(:log_lines, lines)
-    |> assign(:turns, lines |> readable_lines(socket.assigns) |> Pipeline.parse_transcript())
+    |> assign(:turns, turns)
+    |> assign_elapsed(Map.values(processes))
+  end
+
+  # Consecutive events of one process are one turn. Rail writes lines of its own
+  # with no process behind them; they belong to the turn they interrupted rather
+  # than to one of their own.
+  defp group_by_turn(run_events) do
+    run_events
+    |> Enum.chunk_while(
+      nil,
+      fn event, current ->
+        case {current, turn_id(event)} do
+          {nil, id} -> {:cont, {id, [event]}}
+          {{id, events}, nil} -> {:cont, {id, [event | events]}}
+          {{id, events}, id} -> {:cont, {id, [event | events]}}
+          {done, id} -> {:cont, finish_turn(done), {id, [event]}}
+        end
+      end,
+      fn
+        nil -> {:cont, []}
+        current -> {:cont, finish_turn(current), []}
+      end
+    )
+    |> Enum.reject(&(&1 == []))
+  end
+
+  defp finish_turn({id, events}), do: {id, Enum.reverse(events)}
+
+  # Lines broadcast to an open conversation are whatever the writer sent, which
+  # is not always a full row, so the turn is read off the event rather than
+  # assumed onto it.
+  defp turn_id(event), do: Map.get(event, :os_process_id)
+
+  defp turn_start(%OsProcess{} = os_process, number) do
+    %Turn{
+      author: :turn_start,
+      content: "Turn #{number}",
+      at: os_process.started_at,
+      duration_seconds: OsProcess.duration_seconds(os_process)
+    }
+  end
+
+  # The processes are the run's turns, and there are only ever a handful, so they
+  # are read once and again only when a turn nobody has seen shows up.
+  defp load_os_processes(socket, run_events) do
+    held = socket.assigns[:os_processes] || %{}
+    seen = run_events |> Enum.map(&turn_id/1) |> Enum.reject(&is_nil/1) |> MapSet.new()
+
+    if held != %{} and Enum.all?(seen, &Map.has_key?(held, &1)) and not stale?(held) do
+      assign(socket, :os_processes, held)
+    else
+      assign(socket, :os_processes, read_os_processes(socket.assigns.selected_run))
+    end
+  end
+
+  # A turn still going has no duration yet, so its row is re-read rather than
+  # trusted to still say what it said.
+  defp stale?(processes) do
+    Enum.any?(Map.values(processes), &(&1.status in [:starting, :running]))
+  end
+
+  defp read_os_processes(%Run{id: run_id}) do
+    [run_id: run_id] |> Tools.list_os_processes() |> Map.new(&{&1.id, &1})
+  end
+
+  defp read_os_processes(_no_run), do: %{}
+
+  # The run's own `started_at` is reset by every turn, so the total comes from the
+  # turns themselves. What is already settled is a number; what is still running
+  # has to keep counting in the browser, so it goes over as the time it began.
+  defp assign_elapsed(socket, processes) do
+    {running, settled} = Enum.split_with(processes, &(&1.status in [:starting, :running]))
+    settled_seconds = OsProcess.total_duration_seconds(settled)
+    running_since = running |> Enum.map(& &1.started_at) |> Enum.min(DateTime, fn -> nil end)
+
+    socket
+    |> assign(:settled_seconds, settled_seconds)
+    |> assign(:running_since, running_since)
+    |> assign(:elapsed_seconds, settled_seconds + OsProcess.total_duration_seconds(running))
   end
 
   defp readable_lines(lines, %{selected_run: %Run{role_id: role_id}, roles_map: %{} = roles_map}) do
@@ -797,15 +927,7 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   defp format_started_at(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
-
-  defp format_elapsed_run(%Run{} = run), do: run |> elapsed_seconds() |> format_duration()
-
-  # A run that stopped without a completion time has no end to measure to, so it
-  # reads as when it last changed.
-  defp elapsed_seconds(%Run{started_at: %DateTime{} = started} = run) do
-    ended = if Run.running?(run), do: DateTime.utc_now(), else: run.completed_at || run.updated_at || DateTime.utc_now()
-    max(0, DateTime.diff(ended, started, :second))
-  end
+  defp format_started_at(_not_running), do: nil
 
   # An activity turn is `[tool] Name summary` lines, as the backends write them,
   # with `[tool error] detail` where a call failed. Older logs name the tool in

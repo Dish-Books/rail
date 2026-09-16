@@ -64,4 +64,38 @@ defmodule Rail.Tools.Schemas.OsProcess do
   end
 
   def statuses, do: @statuses
+
+  @doc """
+  How long this process has been going, in seconds.
+
+  One process is one turn of an agent, so this is the whole of what a turn cost
+  in time. A process still going is measured to now; one that has stopped is
+  measured to when it was last written to, which is the moment its exit was
+  recorded — there is no separate finish time, and adding one would only restate
+  what the row already says.
+  """
+  def duration_seconds(os_process, now \\ DateTime.utc_now())
+
+  def duration_seconds(%__MODULE__{started_at: %DateTime{} = started, status: status}, now)
+      when status in [:starting, :running] do
+    max(0, DateTime.diff(now, started, :second))
+  end
+
+  def duration_seconds(%__MODULE__{started_at: %DateTime{} = started, updated_at: %DateTime{} = ended}, _now) do
+    max(0, DateTime.diff(ended, started, :second))
+  end
+
+  def duration_seconds(%__MODULE__{}, _now), do: 0
+
+  @doc """
+  What every one of a run's processes has cost in time, added up.
+
+  A run outlives the processes carrying it — retries and chat turns each spawn a
+  new one — so its own `started_at` says when the latest turn began and nothing
+  about the rest. This is the figure a reader means by "how long has the agent
+  been on this".
+  """
+  def total_duration_seconds(os_processes, now \\ DateTime.utc_now()) when is_list(os_processes) do
+    Enum.reduce(os_processes, 0, fn os_process, total -> total + duration_seconds(os_process, now) end)
+  end
 end
