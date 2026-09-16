@@ -130,7 +130,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
       prompt: "Refactor auth",
       model: "gemini-2.5-pro",
       effort: "high",
-      work_dir: "/Users/michael/Code/rail/.worktrees/task-1",
+      work_dir: "/var/rail/worktrees/task-1",
       log_file: "/tmp/rail/agy-logs/task-1.log"
     ]
 
@@ -151,7 +151,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
              "--print-timeout",
              "6h",
              "--add-dir",
-             "/Users/michael/Code/rail/.worktrees/task-1",
+             "/var/rail/worktrees/task-1",
              "--log-file",
              "/tmp/rail/agy-logs/task-1.log"
            ]

@@ -2,9 +2,9 @@ defmodule RailWeb.Components.Input do
   @moduledoc """
   Renders a form control with its label and error message.
 
-  Modeled on Dishbooks' input: the bordered frame, label and errors live here, so
-  every form reads the same. `class` goes on the control itself (fonts, resizing),
-  `container_class` on the wrapper (spacing).
+  The bordered frame, label and errors live here, so every form reads the same.
+  `class` goes on the control itself (fonts, resizing), `container_class` on the
+  wrapper (spacing).
 
   ## Types
 
