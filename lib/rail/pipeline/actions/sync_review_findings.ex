@@ -20,8 +20,21 @@ defmodule Rail.Pipeline.Actions.SyncReviewFindings do
 
   # What a later pass is allowed to restate. `decision` is the human's and
   # `inserted_at` is when the problem was first raised, so neither is replaced,
-  # and `id` stays whatever the row was given when it was inserted.
-  @restated [:title, :detail, :file, :line, :severity, :recommendation, :status, :updated_at]
+  # and `id` stays whatever the row was given when it was inserted. A column the
+  # reviewer writes and this list forgets is a column that never reaches an
+  # existing row, so every field in the changeset belongs here or is deliberately
+  # left out.
+  @restated [
+    :title,
+    :detail,
+    :suggestion,
+    :file,
+    :line,
+    :severity,
+    :recommendation,
+    :status,
+    :updated_at
+  ]
 
   @doc """
   Records `findings` against `task`, and returns them all as they now stand,

@@ -4,7 +4,9 @@ defmodule Rail.Pipeline.Schemas.ReviewFinding do
 
   Three things are said about a finding and each is said by someone different.
   The reviewer `recommends` fixing it or letting it stand, and on a later pass
-  says whether it is `fixed`. The human `decides`, and that is the only column
+  says whether it is `fixed`. It says what is wrong in `detail` and what would
+  settle it in `suggestion`, because those are read by different people: the
+  human deciding needs the first, the engineer fixing needs the second. The human `decides`, and that is the only column
   the reviewer may not write: a finding the human dismissed stays dismissed
   however many times the change comes back round.
 
@@ -24,6 +26,7 @@ defmodule Rail.Pipeline.Schemas.ReviewFinding do
     field :key, :string
     field :title, :string
     field :detail, :string
+    field :suggestion, :string
     field :file, :string
     field :line, :integer
     field :severity, Ecto.Enum, values: @severities
@@ -43,6 +46,7 @@ defmodule Rail.Pipeline.Schemas.ReviewFinding do
     :key,
     :title,
     :detail,
+    :suggestion,
     :file,
     :line,
     :severity,

@@ -578,27 +578,29 @@ defmodule RailWeb.Live.RunConversation do
         </button>
       </div>
 
-      <!-- Input Row (Enter sends) -->
+      <!-- Input Row: Enter sends, Shift+Enter writes a newline. -->
       <form
         id="chat-composer-form"
         phx-submit="send_chat"
         phx-change="chat_input_change"
         phx-target={@target}
-        class="flex items-center gap-2"
+        class="flex items-end gap-2"
       >
         <input type="hidden" name="role_id" value={@role_id} />
-        <input
-          type="text"
+        <%!-- Kept on one line: a textarea renders the template's own indentation. --%>
+        <textarea
           id="chat-input"
           name="message"
           data-qa="chat-input"
-          value={@chat_input}
+          rows="1"
           placeholder={@hint_text}
           disabled={@is_unavailable or @chat_sending}
           autocomplete="off"
+          phx-hook="ChatComposer"
           phx-debounce="300"
-          class="flex-1 px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-        />
+          phx-no-format
+          class="flex-1 resize-none px-3 py-2 text-xs sm:text-sm rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        >{@chat_input}</textarea>
 
         <button
           type="submit"

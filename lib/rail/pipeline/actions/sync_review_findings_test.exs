@@ -49,6 +49,7 @@ defmodule Rail.Pipeline.Actions.SyncReviewFindingsTest do
       key: "unhandled-nil",
       title: "Nil is not handled",
       detail: "The clause assumes a map.",
+      suggestion: "Match the empty map first.",
       file: "lib/rail/example.ex",
       line: 12,
       severity: :major,
@@ -67,6 +68,31 @@ defmodule Rail.Pipeline.Actions.SyncReviewFindingsTest do
   test "a finding the reviewer would leave starts dismissed", %{task: task, raised: raised} do
     assert {:ok, [%ReviewFinding{recommendation: :skip, decision: :skip}]} =
              Pipeline.sync_review_findings(task, [%{raised | recommendation: :skip}])
+  end
+
+  # A column the reviewer writes and the upsert's replace list forgets never
+  # reaches a row that already exists, which reads in the UI as the reviewer
+  # having said nothing.
+  test "a second pass restates every field the reviewer wrote", %{task: task, raised: raised} do
+    {:ok, _first} = Pipeline.sync_review_findings(task, [raised])
+
+    restated = %{
+      raised
+      | title: "Nil is still not handled",
+        detail: "The clause still assumes a map.",
+        suggestion: "Match the empty map first.",
+        file: "lib/rail/other.ex",
+        line: 99,
+        severity: :blocker,
+        recommendation: :skip,
+        status: :not_fixed
+    }
+
+    assert {:ok, [finding]} = Pipeline.sync_review_findings(task, [restated])
+
+    for {field, value} <- Map.delete(restated, :key) do
+      assert Map.fetch!(finding, field) == value, "#{field} was not restated"
+    end
   end
 
   test "a second pass updates the finding it already raised", %{task: task, raised: raised} do

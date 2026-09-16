@@ -106,14 +106,15 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_review_run(run)
   end
 
-  # The detail is what the human decides on and, forwarded verbatim, the whole of
-  # what the engineer is given, so the brief has to say so.
-  test "tells the reviewer the detail has two readers", %{run: run} do
+  # The human rules on the reasoning and the engineer is handed the remedy, so the
+  # two are separate fields and the brief has to say which is which.
+  test "tells the reviewer the reasoning and the remedy have different readers", %{run: run} do
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv
-      assert prompt =~ "`detail` is read twice"
-      assert prompt =~ "the whole of what the engineer is given"
+      assert prompt =~ "`detail` and `suggestion` have different readers"
+      assert prompt =~ "the whole of what the engineer is handed"
       assert prompt =~ "whether this change caused the problem or merely stands next to it"
+      assert prompt =~ ~s("suggestion": "what would settle it")
 
       {:ok, %OsProcess{run: spawned}}
     end)

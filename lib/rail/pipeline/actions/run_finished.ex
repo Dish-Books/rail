@@ -113,8 +113,17 @@ defmodule Rail.Pipeline.Actions.RunFinished do
     end
   end
 
-  # A run only concludes by saying so, having actually finished: a non-zero exit
-  # and a task still parked on a question are both runs that have not.
+  # A reviewer that has already reported can be argued with, and what comes back
+  # from that argument is a new report, so review reads its file again on every
+  # clean turn rather than once. Latching is still once: `latch_done/1` leaves a
+  # run that is already done exactly as it was.
+  defp concluded?(%Run{role: %Role{stage: :review}} = run) do
+    run.exit_code == 0 and pending_questions(run.task_id) == []
+  end
+
+  # Every other run only concludes by saying so, having actually finished: a
+  # non-zero exit and a task still parked on a question are both runs that have
+  # not.
   defp concluded?(%Run{} = run) do
     run.stage_outcome == :in_progress and
       run.exit_code == 0 and

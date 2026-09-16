@@ -226,6 +226,51 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert [%{key: "unhandled-nil", decision: :fix}] = Pipeline.list_review_findings(task)
   end
 
+  # The reviewer is argued with after it has reported, and the argument ends in a
+  # rewritten report. A latch that stopped Rail reading it would leave the panel
+  # showing what the reviewer said two turns ago.
+  test "a review run that already reported reads its file again on the next turn", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+    File.mkdir_p!(Path.join(task.scratch_path, "reviews"))
+    report = Path.join([task.scratch_path, "reviews", "RUN-1.json"])
+
+    File.write!(report, """
+    {"findings": [
+      {"key": "unhandled-nil", "title": "Nil is not handled", "severity": "major", "recommendation": "fix"}
+    ]}
+    """)
+
+    {run, os_process} = exited.(:review, %{})
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert [%{key: "unhandled-nil", suggestion: nil}] = Pipeline.list_review_findings(task)
+
+    File.write!(report, """
+    {"findings": [
+      {"key": "unhandled-nil", "title": "Nil is not handled", "severity": "major", "recommendation": "fix",
+       "suggestion": "Match the empty map first."}
+    ]}
+    """)
+
+    {:ok, chat_process} =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: "/tmp/run_finished/#{run.id}-chat.ndjson",
+        node: to_string(Node.self()),
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert()
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(chat_process, %{exit_code: 0})
+
+    assert [%{suggestion: "Match the empty map first."}] = Pipeline.list_review_findings(task)
+  end
+
   test "a run at a stage with no finish of its own records itself and moves nothing", %{
     task: task,
     exited: exited

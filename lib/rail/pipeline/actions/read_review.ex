@@ -46,6 +46,7 @@ defmodule Rail.Pipeline.Actions.ReadReview do
       key: key,
       title: String.trim(title),
       detail: text(finding["detail"]),
+      suggestion: text(finding["suggestion"]),
       file: text(finding["file"]),
       line: line(finding["line"]),
       severity: enum(finding["severity"], ReviewFinding.severities()),

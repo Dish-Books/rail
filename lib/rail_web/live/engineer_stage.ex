@@ -28,7 +28,10 @@ defmodule RailWeb.Live.EngineerStage do
       |> assign_new(:show_files, fn -> true end)
       |> assign_new(:collapsed, fn -> [] end)
       |> assign_new(:selected_file, fn -> nil end)
+      |> assign_new(:focus_file, fn -> nil end)
       |> assign_new(:expanded_gaps, fn -> %{} end)
+
+    socket = if socket.assigns.focus_file, do: assign(socket, :selected_file, socket.assigns.focus_file), else: socket
 
     {:ok, load(socket)}
   end
@@ -92,6 +95,7 @@ defmodule RailWeb.Live.EngineerStage do
             collapsed={@collapsed}
             expanded_gaps={@expanded_gaps}
             selected_file={@selected_file}
+            scroll_to={@focus_file}
             target={@myself}
             empty_message={empty_message(@filter)}
           />

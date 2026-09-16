@@ -131,6 +131,18 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
     assert {:ok, %Run{}} = Pipeline.send_findings_to_engineer(run)
   end
 
+  # The pending answer is consumed by the spawn, so without this the engineer
+  # starts working again with nothing in its conversation saying why.
+  test "what was sent is written to the engineer's log", %{engineer_run: engineer_run, review_run: run} do
+    assert {:ok, %Run{}} = Pipeline.send_findings_to_engineer(run)
+
+    log = engineer_run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
+
+    assert log =~ "[human] The reviewer read the change you pushed"
+    assert log =~ "Nil is not handled"
+    refute log =~ "Poor variable name"
+  end
+
   test "a finding the human put back is sent too", %{review_run: run, findings: findings} do
     nit = Enum.find(findings, &(&1.key == "naming-nit"))
     {:ok, _promoted} = Pipeline.decide_review_finding(nit, :fix)

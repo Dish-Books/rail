@@ -54,11 +54,29 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineer do
 
   # The engineer has run before, so the note waits on its existing run; a stage
   # `enter_stage/3` is about to spawn reads its pending answer on the way out.
+  #
+  # The pending answer is consumed by the spawn and never written anywhere, so
+  # the note is also recorded on the engineer's log. Without it the engineer
+  # simply starts working again with nothing in its conversation saying why, and
+  # a reader has no way to see what it was asked to do.
   defp brief_engineer(%Task{} = task, %Role{id: role_id}, findings) do
+    note = note(findings)
+
     case Repo.get_by(Run, task_id: task.id, role_id: role_id) do
-      %Run{} = engineer_run -> Pipeline.update_run(engineer_run, %{pending_answer: note(findings)})
-      nil -> :ok
+      %Run{} = engineer_run ->
+        record_transcript(engineer_run, note)
+        Pipeline.update_run(engineer_run, %{pending_answer: note})
+
+      nil ->
+        :ok
     end
+  end
+
+  # Tagged as the human's, because it is: the reviewer raised the findings and a
+  # person chose which of them the engineer is being handed.
+  defp record_transcript(%Run{} = run, note) do
+    lines = note |> String.trim() |> String.split("\n") |> Enum.map(&"[human] #{&1}")
+    Pipeline.append_run_events(run.id, nil, lines)
   end
 
   defp note(findings) do
@@ -84,9 +102,20 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineer do
     #{finding.title}
 
     #{String.trim(finding.detail || "")}
-    </finding>
+    #{suggestion(finding)}</finding>
     """)
   end
+
+  # The reviewer wrote the remedy for this reader, so it goes over labelled
+  # rather than run together with the reasoning the human ruled on.
+  defp suggestion(%ReviewFinding{suggestion: suggestion}) when is_binary(suggestion) do
+    case String.trim(suggestion) do
+      "" -> ""
+      trimmed -> "\nSuggested fix: #{trimmed}\n"
+    end
+  end
+
+  defp suggestion(%ReviewFinding{}), do: ""
 
   defp enter_next(%Run{} = run) do
     {:ok, latched} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()

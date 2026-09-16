@@ -60,6 +60,22 @@ defmodule Rail.Pipeline.Actions.ListReviewFindingsTest do
              task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
   end
 
+  # A dismissed finding is still shown, because what was dealt with is what makes
+  # "what is left" mean anything, but it is no longer something to read past.
+  test "what the human dismissed sinks below what still stands", %{task: task} do
+    {:ok, [blocker, _nit]} =
+      Pipeline.sync_review_findings(task, [
+        %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+        %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+      ])
+
+    assert ["a-blocker", "a-nit"] = task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
+
+    {:ok, _dismissed} = Pipeline.decide_review_finding(blocker, :skip)
+
+    assert ["a-nit", "a-blocker"] = task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
+  end
+
   test "a task nobody has reviewed has no findings", %{task: task} do
     assert Pipeline.list_review_findings(task) == []
   end

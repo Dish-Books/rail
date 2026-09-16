@@ -1,24 +1,26 @@
 defmodule RailWeb.Live.ReviewStage do
   @moduledoc """
-  What the reviewer found, and the two decisions a human takes on it.
+  What the reviewer found, read one finding at a time.
 
-  Every finding is here whatever has become of it, because "what is left" only
-  means something next to what was dealt with: a change with six findings and
-  five dismissed reads very differently from one with a single nit. The reviewer
-  recommends and the human overrides, so each row carries both, and the two
-  buttons in the header are exactly the two things that can follow - back to the
-  engineer with what is outstanding, or on to QA when nothing is.
+  Findings are a list to work through rather than a wall to read, so the pane is
+  master and detail: every finding down the left with its severity and where it
+  is, and the one being read on the right with the reasoning, the change it
+  points at, and what would settle it. The reviewer recommends and the human
+  overrules, so each finding carries both, and the two buttons in the header are
+  the only two things that can follow - back to the engineer with what is
+  outstanding, or on to QA when nothing is.
+
+  Nothing about a dismissed finding is hidden. "What is left" only means
+  something next to what was dealt with: six findings with five dismissed reads
+  very differently from one lone nit.
   """
   use RailWeb, :live_component
 
+  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ReviewFinding
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-
-  # Worst news first: what the engineer tried and did not fix, then what it has
-  # not seen, then what is settled.
-  @group_order [:not_fixed, :to_fix, :fixed, :dismissed]
 
   @impl true
   def update(assigns, socket) do
@@ -26,15 +28,19 @@ defmodule RailWeb.Live.ReviewStage do
       socket
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
+      |> assign_new(:selected_key, fn -> nil end)
+      |> assign_new(:engineer_tab, fn -> nil end)
 
-    {:ok, load(socket)}
+    socket = socket |> load() |> load_hunk()
+
+    {:ok, socket}
   end
 
   @impl true
   def render(assigns) do
     ~H"""
     <div id="review-stage" data-qa="review-stage" class="contents">
-      <.task_layout task={@task} run={@run} title={@task.issue.title}>
+      <.task_layout task={@task} run={@run} title={@task.issue.title} flush={@findings != []}>
         <:tabs>{render_slot(@tabs)}</:tabs>
 
         <:actions>
@@ -73,35 +79,18 @@ defmodule RailWeb.Live.ReviewStage do
 
         <.review_pending :if={@findings == []} running={@running} reviewed={@reviewed} />
 
-        <div
-          :if={@findings != []}
-          id="review-findings"
-          data-qa="review_findings"
-          class="max-w-3xl mx-auto space-y-8 select-text"
-        >
-          <section
-            :for={group <- @groups}
-            id={"review-group-#{group.state}"}
-            data-qa={"review_group_#{group.state}"}
-          >
-            <h2 class="flex items-baseline gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-              {group.label}
-              <span class="text-xs font-normal text-slate-500 dark:text-slate-400">
-                {length(group.findings)}
-              </span>
-            </h2>
-
-            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{group.hint}</p>
-
-            <ul class="mt-3 space-y-3">
-              <.finding
-                :for={finding <- group.findings}
-                finding={finding}
-                decidable={@approvable and not @running}
-                target={@myself}
-              />
-            </ul>
-          </section>
+        <div :if={@findings != []} id="review-findings" data-qa="review_findings" class="h-full flex">
+          <.finding_list findings={@findings} selected={@selected} target={@myself} />
+          <.finding_detail
+            finding={@selected}
+            position={@position}
+            count={length(@findings)}
+            hunk={@hunk}
+            diff_link={diff_link(@task, @engineer_tab, @hunk)}
+            decidable={@approvable and not @running}
+            neighbours={@neighbours}
+            target={@myself}
+          />
         </div>
 
         <:sidebar>{render_slot(@sidebar)}</:sidebar>
@@ -111,11 +100,17 @@ defmodule RailWeb.Live.ReviewStage do
   end
 
   @impl true
-  def handle_event("toggle_decision", %{"finding_id" => finding_id}, socket) do
-    finding = Enum.find(socket.assigns.findings, &(&1.id == finding_id))
+  def handle_event("select_finding", %{"key" => key}, socket) do
+    socket = socket |> assign(:selected_key, key) |> load() |> load_hunk()
+
+    {:noreply, socket}
+  end
+
+  def handle_event("decide", %{"key" => key, "decision" => decision}, socket) do
+    finding = Enum.find(socket.assigns.findings, &(&1.key == key))
 
     socket =
-      case Pipeline.decide_review_finding(finding, flip(finding.decision)) do
+      case Pipeline.decide_review_finding(finding, decision(decision)) do
         {:ok, _decided} -> socket |> assign(:error, nil) |> load()
         {:error, reason} -> assign(socket, :error, message_for(reason))
       end
@@ -145,55 +140,233 @@ defmodule RailWeb.Live.ReviewStage do
     end
   end
 
-  attr :finding, :any, required: true
-  attr :decidable, :boolean, required: true
+  attr :findings, :list, required: true
+  attr :selected, :any, required: true
   attr :target, :any, required: true
 
-  defp finding(assigns) do
+  defp finding_list(assigns) do
     ~H"""
-    <li
-      id={"finding-#{@finding.id}"}
-      data-qa="review_finding"
-      data-state={ReviewFinding.state(@finding)}
-      class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4"
+    <div
+      id="review-finding-list"
+      data-qa="review_finding_list"
+      class="w-[300px] shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30"
     >
-      <div class="flex items-start gap-3">
-        <span class={[
-          "mt-0.5 shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
-          severity_class(@finding.severity)
-        ]}>
-          {ReviewFinding.severity_label(@finding.severity)}
-        </span>
+      <div class="flex items-baseline gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+        <span class="text-sm font-bold text-slate-900 dark:text-slate-100">Findings</span>
+        <span class="text-xs text-slate-500 dark:text-slate-400">{length(@findings)}</span>
+      </div>
 
-        <div class="min-w-0 flex-1">
-          <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">{@finding.title}</h3>
-
-          <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] text-slate-500 dark:text-slate-400">
-            <span data-qa="finding_key">{@finding.key}</span>
-            <span :if={@finding.file} data-qa="finding_location">{location(@finding)}</span>
-          </p>
-        </div>
-
+      <div class="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
         <button
-          :if={@decidable}
+          :for={finding <- @findings}
           type="button"
-          id={"toggle-decision-#{@finding.id}"}
-          data-qa="toggle_decision"
-          phx-click="toggle_decision"
+          id={"finding-#{finding.key}"}
+          data-qa="review_finding"
+          data-state={ReviewFinding.state(finding)}
+          phx-click="select_finding"
           phx-target={@target}
-          phx-value-finding_id={@finding.id}
-          class="shrink-0 rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+          phx-value-key={finding.key}
+          aria-current={to_string(@selected.key == finding.key)}
+          class={[
+            "w-full flex gap-2.5 px-3 py-2.5 rounded-lg text-left cursor-pointer",
+            @selected.key == finding.key &&
+              "bg-blue-50 dark:bg-blue-950/40 ring-1 ring-blue-300 dark:ring-blue-800",
+            @selected.key != finding.key && "hover:bg-slate-100 dark:hover:bg-slate-800/60",
+            finding.decision == :skip && "opacity-60"
+          ]}
         >
-          {toggle_label(@finding.decision)}
+          <span class={["mt-1.5 size-1.5 shrink-0 rounded-full", severity_dot(finding)]} />
+
+          <span class="min-w-0 flex-1">
+            <span class={[
+              "block text-[13px] leading-snug",
+              @selected.key == finding.key &&
+                "font-semibold text-slate-900 dark:text-slate-100",
+              @selected.key != finding.key && "text-slate-700 dark:text-slate-300",
+              finding.decision == :skip && "line-through"
+            ]}>
+              {finding.title}
+            </span>
+            <span class="block truncate font-mono text-[10px] text-slate-500 dark:text-slate-400">
+              {list_subtitle(finding)}
+            </span>
+          </span>
         </button>
       </div>
 
-      <.markdown :if={@finding.detail} content={@finding.detail} class="mt-3 text-sm" />
-
-      <p class="mt-3 text-[11px] text-slate-500 dark:text-slate-400" data-qa="finding_recommendation">
-        {recommendation_line(@finding)}
+      <p
+        data-qa="review_finding_tally"
+        class="px-4 py-3 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400"
+      >
+        {tally(@findings)}
       </p>
-    </li>
+    </div>
+    """
+  end
+
+  attr :finding, :any, required: true
+  attr :position, :integer, required: true
+  attr :count, :integer, required: true
+  attr :hunk, :any, required: true
+  attr :diff_link, :any, required: true
+  attr :decidable, :boolean, required: true
+  attr :neighbours, :map, required: true
+  attr :target, :any, required: true
+
+  defp finding_detail(assigns) do
+    ~H"""
+    <div
+      id="review-finding-detail"
+      data-qa="review_finding_detail"
+      class="flex-1 min-w-0 flex flex-col"
+    >
+      <div class="shrink-0 flex items-start gap-4 px-7 py-4 border-b border-slate-200 dark:border-slate-700">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2.5">
+            <span class={[
+              "rounded px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider",
+              severity_chip(@finding)
+            ]}>
+              {ReviewFinding.severity_label(@finding.severity)}
+            </span>
+            <span data-qa="finding_position" class="text-xs text-slate-500 dark:text-slate-400">
+              {@position} of {@count}
+            </span>
+            <span
+              :if={@finding.decision == :skip}
+              data-qa="finding_dismissed"
+              class="text-xs font-semibold text-slate-500 dark:text-slate-400"
+            >
+              Dismissed
+            </span>
+            <span
+              :if={@finding.status == :fixed}
+              data-qa="finding_fixed"
+              class="text-xs font-semibold text-emerald-600 dark:text-emerald-500"
+            >
+              Fixed
+            </span>
+            <span
+              :if={@finding.status == :not_fixed}
+              data-qa="finding_not_fixed"
+              class="text-xs font-semibold text-amber-600 dark:text-amber-500"
+            >
+              Still not fixed
+            </span>
+          </div>
+
+          <h2 class="mt-2 text-lg font-bold text-slate-900 dark:text-slate-100">
+            {@finding.title}
+          </h2>
+
+          <p
+            :if={@finding.file}
+            data-qa="finding_location"
+            class="mt-1.5 font-mono text-[11.5px] text-slate-500 dark:text-slate-400"
+          >
+            {location(@finding)}
+          </p>
+        </div>
+
+        <div :if={@decidable} class="shrink-0 flex gap-2">
+          <button
+            :for={{decision, label} <- [fix: "Fix", skip: "Don't fix"]}
+            type="button"
+            id={"decide-#{decision}-#{@finding.key}"}
+            data-qa={"decide_#{decision}"}
+            phx-click="decide"
+            phx-target={@target}
+            phx-value-key={@finding.key}
+            phx-value-decision={decision}
+            aria-pressed={to_string(@finding.decision == decision)}
+            class={[
+              "px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer",
+              @finding.decision == decision && "bg-blue-600 dark:bg-blue-500 text-white",
+              @finding.decision != decision &&
+                "border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+            ]}
+          >
+            {label}
+          </button>
+        </div>
+      </div>
+
+      <div class="flex-1 min-h-0 overflow-y-auto px-7 py-6">
+        <div class="max-w-4xl space-y-5">
+          <.markdown :if={@finding.detail} content={@finding.detail} class="text-[13.5px]" />
+
+          <div
+            :if={@finding.suggestion}
+            data-qa="finding_suggestion"
+            class="rounded-r-lg border border-l-2 border-slate-200 border-l-amber-500 dark:border-slate-700 dark:border-l-amber-500 bg-amber-50/50 dark:bg-amber-950/20 px-4 py-3.5"
+          >
+            <p class="text-[11px] font-extrabold uppercase tracking-wider text-amber-700 dark:text-amber-500">
+              Suggested fix
+            </p>
+            <.markdown content={@finding.suggestion} class="mt-2 text-[13px]" />
+          </div>
+
+          <div
+            :if={@hunk}
+            data-qa="finding_diff"
+            class="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden"
+          >
+            <div class="flex items-center gap-2.5 px-3.5 py-2.5 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+              <span class="min-w-0 truncate font-mono text-[11.5px] text-slate-700 dark:text-slate-300">
+                {@hunk.display_path}
+              </span>
+              <.diff_stat additions={@hunk.additions} deletions={@hunk.deletions} font_size={11} />
+
+              <!-- The whole change lives on the engineer's tab, so the finding
+              points there rather than growing a second diff pane of its own. -->
+              <.link
+                :if={@diff_link}
+                patch={@diff_link}
+                id="finding-open-in-diff"
+                data-qa="finding_open_in_diff"
+                class="ml-auto shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Open diff <.icon name="pi-arrow-up-right" class="size-3" />
+              </.link>
+            </div>
+
+            <.diff_hunk rows={@hunk.rows} />
+
+            <p
+              :if={@hunk.other_hunks > 0}
+              data-qa="finding_other_hunks"
+              class="px-3.5 py-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 text-[11.5px] text-slate-500 dark:text-slate-400"
+            >
+              {@hunk.other_hunks} other {hunk_word(@hunk.other_hunks)} in this file.
+            </p>
+          </div>
+
+          <p
+            data-qa="finding_recommendation"
+            class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"
+          >
+            <span class={["size-1.5 shrink-0 rounded-full", severity_dot(@finding)]} />
+            {recommendation_line(@finding)}
+          </p>
+        </div>
+      </div>
+
+      <div class="shrink-0 flex items-center gap-2 px-7 py-3 border-t border-slate-200 dark:border-slate-700 text-xs">
+        <button
+          :for={{side, label} <- [previous: "← Previous", next: "Next finding →"]}
+          type="button"
+          id={"finding-#{side}"}
+          data-qa={"finding_#{side}"}
+          disabled={@neighbours[side] == nil}
+          phx-click="select_finding"
+          phx-target={@target}
+          phx-value-key={@neighbours[side]}
+          class="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {label}
+        </button>
+      </div>
+    </div>
     """
   end
 
@@ -205,11 +378,7 @@ defmodule RailWeb.Live.ReviewStage do
   # and only the middle one is a change anybody should send on.
   defp review_pending(assigns) do
     ~H"""
-    <div
-      id="review-pending"
-      data-qa="review_pending"
-      class="flex flex-col items-center gap-10 py-10"
-    >
+    <div id="review-pending" data-qa="review_pending" class="flex flex-col items-center gap-10 py-10">
       <div class="flex flex-col items-center text-center max-w-md">
         <div class="relative flex items-center justify-center size-14 rounded-2xl bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 ring-1 ring-blue-100 dark:ring-blue-900">
           <span
@@ -245,16 +414,30 @@ defmodule RailWeb.Live.ReviewStage do
     """
   end
 
+  # Worst first, and what is settled last, so the list reads as the order to work
+  # through it in.
   defp load(socket) do
     findings = Pipeline.list_review_findings(socket.assigns.task)
+    selected = Enum.find(findings, List.first(findings), &(&1.key == socket.assigns.selected_key))
 
     socket
     |> assign(:findings, findings)
-    |> assign(:groups, groups(findings))
+    |> assign(:selected, selected)
+    |> assign(:selected_key, selected && selected.key)
+    |> assign(:position, position(findings, selected))
+    |> assign(:neighbours, neighbours(findings, selected))
     |> assign(:outstanding, Enum.filter(findings, &ReviewFinding.outstanding?/1))
     |> assign(:running, Run.running?(socket.assigns.run))
     |> assign(:reviewed, reviewed?(socket.assigns.run))
   end
+
+  # The change a finding points at is read off the worktree, so it is loaded only
+  # for the finding being read rather than for all of them.
+  defp load_hunk(%{assigns: %{selected: %ReviewFinding{file: file} = finding}} = socket) when is_binary(file) do
+    assign(socket, :hunk, Git.load_diff_hunk(socket.assigns.current_scope, socket.assigns.task, file, finding.line))
+  end
+
+  defp load_hunk(socket), do: assign(socket, :hunk, nil)
 
   # A run that has not latched has not reported, so its silence is not a clean
   # review: a stopped reviewer and one that found nothing look identical
@@ -262,34 +445,75 @@ defmodule RailWeb.Live.ReviewStage do
   defp reviewed?(%Run{stage_outcome: :done}), do: true
   defp reviewed?(_not_concluded), do: false
 
-  defp groups(findings) do
-    grouped = Enum.group_by(findings, &ReviewFinding.state/1)
+  defp position(_findings, nil), do: 0
+  defp position(findings, selected), do: Enum.find_index(findings, &(&1.key == selected.key)) + 1
 
-    for state <- @group_order, findings = Map.get(grouped, state, []), findings != [] do
-      %{state: state, label: group_label(state), hint: group_hint(state), findings: findings}
-    end
+  defp neighbours(_findings, nil), do: %{previous: nil, next: nil}
+
+  defp neighbours(findings, selected) do
+    index = Enum.find_index(findings, &(&1.key == selected.key))
+
+    Map.new(
+      %{
+        previous: index > 0 && Enum.at(findings, index - 1).key,
+        next: index < length(findings) - 1 && Enum.at(findings, index + 1).key
+      },
+      fn {side, key} -> {side, key || nil} end
+    )
   end
 
-  defp group_label(:not_fixed), do: "Still not fixed"
-  defp group_label(:to_fix), do: "To fix"
-  defp group_label(:fixed), do: "Fixed"
-  defp group_label(:dismissed), do: "Dismissed"
+  defp tally(findings) do
+    dismissed = Enum.count(findings, &(&1.decision == :skip))
+    fixed = Enum.count(findings, &(&1.status == :fixed))
+    outstanding = Enum.count(findings, &ReviewFinding.outstanding?/1)
 
-  defp group_hint(:not_fixed), do: "The engineer has been round these and the reviewer says they still stand."
-  defp group_hint(:to_fix), do: "These go back to the engineer when you send them."
-  defp group_hint(:fixed), do: "The reviewer checked these on the change as it now stands."
-  defp group_hint(:dismissed), do: "You chose to live with these. The reviewer will not raise them again."
+    [{outstanding, "to fix"}, {fixed, "fixed"}, {dismissed, "dismissed"}]
+    |> Enum.reject(fn {count, _word} -> count == 0 end)
+    |> Enum.map_join(" · ", fn {count, word} -> "#{count} #{word}" end)
+  end
 
-  defp severity_class(:blocker), do: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
-  defp severity_class(:major), do: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300"
-  defp severity_class(:minor), do: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
-  defp severity_class(:nit), do: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+  defp list_subtitle(%ReviewFinding{decision: :skip}), do: "dismissed"
+  defp list_subtitle(%ReviewFinding{status: :fixed} = finding), do: "fixed · #{location(finding)}"
+  defp list_subtitle(%ReviewFinding{file: nil}), do: "no file"
+  defp list_subtitle(%ReviewFinding{} = finding), do: location(finding)
 
+  defp location(%ReviewFinding{file: nil}), do: ""
   defp location(%ReviewFinding{file: file, line: nil}), do: file
   defp location(%ReviewFinding{file: file, line: line}), do: "#{file}:#{line}"
 
-  defp toggle_label(:fix), do: "Don't fix"
-  defp toggle_label(:skip), do: "Fix this"
+  # A settled finding is not asking for attention, so it stops shouting whatever
+  # it was raised as.
+  defp severity_dot(%ReviewFinding{decision: :skip}), do: "bg-slate-300 dark:bg-slate-600"
+  defp severity_dot(%ReviewFinding{status: :fixed}), do: "bg-emerald-500"
+  defp severity_dot(%ReviewFinding{severity: :blocker}), do: "bg-red-500"
+  defp severity_dot(%ReviewFinding{severity: :major}), do: "bg-amber-500"
+  defp severity_dot(%ReviewFinding{severity: :minor}), do: "bg-amber-400"
+  defp severity_dot(%ReviewFinding{severity: :nit}), do: "bg-slate-400"
+
+  defp severity_chip(%ReviewFinding{severity: :blocker}), do: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+
+  defp severity_chip(%ReviewFinding{severity: :major}),
+    do: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+
+  defp severity_chip(%ReviewFinding{severity: :minor}),
+    do: "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400"
+
+  defp severity_chip(%ReviewFinding{severity: :nit}),
+    do: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+
+  # Only once the engineer has a tab to land on, and only for a file the branch
+  # actually changed - a link to a file the diff does not hold lands on nothing.
+  defp diff_link(%Task{} = task, engineer_tab, %{path: path}) when is_binary(engineer_tab) do
+    ~p"/tasks/#{task.id}?tab=#{engineer_tab}&file=#{path}"
+  end
+
+  defp diff_link(_task, _no_tab, _no_hunk), do: nil
+
+  defp hunk_word(1), do: "change"
+  defp hunk_word(_many), do: "changes"
+
+  defp decision("fix"), do: :fix
+  defp decision("skip"), do: :skip
 
   defp recommendation_line(%ReviewFinding{recommendation: :fix, decision: :skip}) do
     "The reviewer recommended fixing this. You dismissed it."
@@ -301,9 +525,6 @@ defmodule RailWeb.Live.ReviewStage do
 
   defp recommendation_line(%ReviewFinding{recommendation: :fix}), do: "The reviewer recommends fixing this."
   defp recommendation_line(%ReviewFinding{recommendation: :skip}), do: "The reviewer recommends leaving this."
-
-  defp flip(:fix), do: :skip
-  defp flip(:skip), do: :fix
 
   defp pending_icon(true, _reviewed), do: "pi-magnifying-glass"
   defp pending_icon(false, true), do: "pi-seal-check"

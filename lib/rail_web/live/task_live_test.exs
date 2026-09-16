@@ -1238,7 +1238,8 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("#stop-run") |> render_click()
 
-      assert has_element?(view, "#chat-input[value='']")
+      assert has_element?(view, "#chat-input")
+      refute has_element?(view, "#chat-input", "Please")
       assert %Run{status: :finished} = Repo.reload!(run)
     end
 
@@ -1361,7 +1362,7 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("#cancel-queued-message") |> render_click()
 
-      assert has_element?(view, "#chat-input[value='Please add a test']")
+      assert has_element?(view, "#chat-input", "Please add a test")
       assert %Run{pending_chat: nil, status: :finished} = Repo.reload!(run)
     end
 
@@ -1511,7 +1512,148 @@ defmodule RailWeb.TaskLiveTest do
       %{task: task, role: role, review_run: review_run, raised: raised}
     end
 
-    test "lists every finding with its severity and what the reviewer advised", %{
+    test "lists every finding, worst first, with where it is", %{conn: conn, task: task, raised: raised} do
+      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#review-findings")
+      assert has_element?(view, "#finding-unhandled-nil", "Nil is not handled")
+      assert has_element?(view, "#finding-naming-nit", "Poor variable name")
+      assert has_element?(view, "[data-qa='review_finding_tally']", "1 to fix · 1 dismissed")
+    end
+
+    test "the worst finding is the one open in the reading pane", %{conn: conn, task: task, raised: raised} do
+      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='review_finding_detail']", "Nil is not handled")
+      assert has_element?(view, "[data-qa='finding_position']", "1 of 2")
+      assert has_element?(view, "[data-qa='finding_location']", "lib/rail/example.ex:12")
+      assert has_element?(view, "[data-qa='finding_recommendation']", "recommends fixing this")
+    end
+
+    test "picking a finding reads it", %{conn: conn, task: task, raised: raised} do
+      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#finding-naming-nit") |> render_click()
+
+      assert has_element?(view, "[data-qa='review_finding_detail']", "Poor variable name")
+      assert has_element?(view, "[data-qa='finding_position']", "2 of 2")
+      assert has_element?(view, "[data-qa='finding_dismissed']", "Dismissed")
+      assert has_element?(view, "[data-qa='finding_recommendation']", "recommends leaving this")
+    end
+
+    test "the reader walks the findings without going back to the list", %{
+      conn: conn,
+      task: task,
+      raised: raised
+    } do
+      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#finding-previous[disabled]")
+
+      view |> element("#finding-next") |> render_click()
+
+      assert has_element?(view, "[data-qa='review_finding_detail']", "Poor variable name")
+      assert has_element?(view, "#finding-next[disabled]")
+
+      view |> element("#finding-previous") |> render_click()
+
+      assert has_element?(view, "[data-qa='review_finding_detail']", "Nil is not handled")
+    end
+
+    # A finding names a line; the change it points at lives on the engineer's tab,
+    # so the panel shows the one hunk and links to the rest.
+    test "a finding shows the change it points at and links to the whole diff", %{
+      conn: conn,
+      task: task,
+      raised: raised
+    } do
+      File.mkdir_p!(Path.join(task.worktree_path, "lib/rail"))
+
+      File.write!(
+        Path.join(task.worktree_path, "lib/rail/example.ex"),
+        Enum.map_join(1..20, "", &"line #{&1}\n")
+      )
+
+      git!(task.worktree_path, ["add", "."])
+      git!(task.worktree_path, ["commit", "-m", "before"])
+      git!(task.worktree_path, ["checkout", "-b", "feature"])
+
+      File.write!(
+        Path.join(task.worktree_path, "lib/rail/example.ex"),
+        Enum.map_join(1..20, "", fn
+          12 -> "the line the finding points at\n"
+          n -> "line #{n}\n"
+        end)
+      )
+
+      git!(task.worktree_path, ["add", "."])
+      git!(task.worktree_path, ["commit", "-m", "the change under review"])
+
+      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='finding_diff']", "lib/rail/example.ex")
+      assert has_element?(view, "[data-qa='diff_line_row']", "the line the finding points at")
+      assert has_element?(view, "#finding-open-in-diff", "Open diff")
+    end
+
+    test "the suggested fix is set apart from the reasoning", %{conn: conn, task: task, raised: raised} do
+      {:ok, _synced} =
+        Pipeline.sync_review_findings(
+          task,
+          List.update_at(raised, 0, &Map.put(&1, :suggestion, "Match the empty map first."))
+        )
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='finding_suggestion']", "Suggested fix")
+      assert has_element?(view, "[data-qa='finding_suggestion']", "Match the empty map first.")
+    end
+
+    test "a finding the reviewer checked again shows as fixed", %{conn: conn, task: task, raised: raised} do
+      {:ok, _synced} = Pipeline.sync_review_findings(task, List.update_at(raised, 0, &%{&1 | status: :fixed}))
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='finding_fixed']", "Fixed")
+      assert has_element?(view, "[data-qa='review_finding'][data-state='fixed']")
+    end
+
+    test "a finding the engineer did not fix says so", %{conn: conn, task: task, raised: raised} do
+      {:ok, _synced} = Pipeline.sync_review_findings(task, List.update_at(raised, 0, &%{&1 | status: :not_fixed}))
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='finding_not_fixed']", "Still not fixed")
+      assert has_element?(view, "#send-findings-to-engineer")
+    end
+
+    test "the human overrules a recommendation from the reading pane", %{
+      conn: conn,
+      task: task,
+      raised: raised
+    } do
+      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "[data-qa='review_finding'][data-state='to_fix']", "Nil is not handled")
+
+      view |> element("#decide-skip-unhandled-nil") |> render_click()
+
+      assert has_element?(view, "[data-qa='review_finding'][data-state='dismissed']", "Nil is not handled")
+      assert has_element?(view, "[data-qa='finding_recommendation']", "You dismissed it.")
+      assert has_element?(view, "[data-qa='review_finding_tally']", "2 dismissed")
+    end
+
+    test "the human takes on a finding the reviewer would have left", %{
       conn: conn,
       task: task,
       raised: raised
@@ -1520,33 +1662,11 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "#review-findings")
-      assert has_element?(view, "[data-qa='review_group_to_fix']", "Nil is not handled")
-      assert has_element?(view, "[data-qa='finding_location']", "lib/rail/example.ex:12")
-      assert has_element?(view, "[data-qa='finding_recommendation']", "recommends fixing this")
-      assert has_element?(view, "[data-qa='review_group_dismissed']", "Poor variable name")
-      assert has_element?(view, "[data-qa='finding_recommendation']", "recommends leaving this")
-    end
+      view |> element("#finding-naming-nit") |> render_click()
+      view |> element("#decide-fix-naming-nit") |> render_click()
 
-    test "a finding the reviewer checked again shows as fixed", %{conn: conn, task: task, raised: raised} do
-      {:ok, _synced} = Pipeline.sync_review_findings(task, List.update_at(raised, 0, &%{&1 | status: :fixed}))
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "[data-qa='review_group_fixed']", "Nil is not handled")
-    end
-
-    test "the human overrules a recommendation and the finding moves", %{conn: conn, task: task, raised: raised} do
-      {:ok, [finding | _rest]} = Pipeline.sync_review_findings(task, raised)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "[data-qa='review_group_to_fix']", "Nil is not handled")
-
-      view |> element("#toggle-decision-#{finding.id}") |> render_click()
-
-      assert has_element?(view, "[data-qa='review_group_dismissed']", "Nil is not handled")
-      refute has_element?(view, "[data-qa='review_group_to_fix']")
-      assert has_element?(view, "[data-qa='finding_recommendation']", "You dismissed it.")
+      assert has_element?(view, "[data-qa='finding_recommendation']", "You chose to fix it.")
+      assert has_element?(view, "#send-findings-to-engineer", "Send 2 back to engineer")
     end
 
     test "outstanding findings go back to the engineer", %{conn: conn, task: task, raised: raised} do
@@ -1574,12 +1694,12 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "dismissing the last outstanding finding is what opens QA", %{conn: conn, task: task, raised: raised} do
-      {:ok, [finding | _rest]} = Pipeline.sync_review_findings(task, raised)
+      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       refute has_element?(view, "#send-to-qa")
 
-      view |> element("#toggle-decision-#{finding.id}") |> render_click()
+      view |> element("#decide-skip-unhandled-nil") |> render_click()
 
       assert has_element?(view, "#send-to-qa")
       refute has_element?(view, "#send-findings-to-engineer")
@@ -1593,7 +1713,7 @@ defmodule RailWeb.TaskLiveTest do
 
       refute has_element?(view, "#send-findings-to-engineer")
       refute has_element?(view, "#send-to-qa")
-      refute has_element?(view, "[data-qa='toggle_decision']")
+      refute has_element?(view, "[data-qa='decide_fix']")
     end
 
     test "a reviewer still reading says so rather than showing an empty report", %{
@@ -1622,54 +1742,6 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "#review-pending-title", "No findings yet")
       refute has_element?(view, "#send-to-qa")
-    end
-
-    test "every severity is read at a glance", %{conn: conn, task: task} do
-      {:ok, _synced} =
-        Pipeline.sync_review_findings(task, [
-          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-          %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
-          %{key: "a-minor", title: "A minor", severity: :minor, recommendation: :fix, status: :open},
-          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-        ])
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      for label <- ["Blocker", "Major", "Minor", "Nit"] do
-        assert has_element?(view, "[data-qa='review_finding']", label)
-      end
-    end
-
-    test "a finding the engineer did not fix is grouped on its own", %{conn: conn, task: task} do
-      {:ok, _synced} =
-        Pipeline.sync_review_findings(task, [
-          %{
-            key: "unhandled-nil",
-            title: "Nil is not handled",
-            file: "lib/rail/example.ex",
-            severity: :major,
-            recommendation: :fix,
-            status: :not_fixed
-          }
-        ])
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      assert has_element?(view, "[data-qa='review_group_not_fixed']", "Nil is not handled")
-      assert has_element?(view, "[data-qa='finding_location']", "lib/rail/example.ex")
-      assert has_element?(view, "#send-findings-to-engineer")
-    end
-
-    test "the human takes on a finding the reviewer would have left", %{conn: conn, task: task, raised: raised} do
-      {:ok, [_blocker, nit]} = Pipeline.sync_review_findings(task, raised)
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      view |> element("#toggle-decision-#{nit.id}") |> render_click()
-
-      assert has_element?(view, "[data-qa='review_group_to_fix']", "Poor variable name")
-      assert has_element?(view, "[data-qa='finding_recommendation']", "You chose to fix it.")
-      assert has_element?(view, "#send-findings-to-engineer", "Send 2 back to engineer")
     end
 
     test "a finding raised underneath the page stops it going to QA", %{conn: conn, task: task, raised: raised} do
@@ -1704,12 +1776,12 @@ defmodule RailWeb.TaskLiveTest do
       review_run: run,
       raised: raised
     } do
-      {:ok, [finding | _rest]} = Pipeline.sync_review_findings(task, raised)
+      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       {:ok, _running} = Pipeline.update_run(run, %{status: :running})
-      view |> element("#toggle-decision-#{finding.id}") |> render_click()
+      view |> element("#decide-skip-unhandled-nil") |> render_click()
 
       assert has_element?(view, "#review-error", "still running on this task")
     end
@@ -1754,7 +1826,7 @@ defmodule RailWeb.TaskLiveTest do
       send(view.pid, {:os_process_finished, run, %{}})
 
       _settled = render(view)
-      assert has_element?(view, "[data-qa='review_group_to_fix']", "Nil is not handled")
+      assert has_element?(view, "[data-qa='review_finding_detail']", "Nil is not handled")
     end
   end
 end

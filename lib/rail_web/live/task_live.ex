@@ -66,6 +66,8 @@ defmodule RailWeb.TaskLive do
       |> assign(:answer_text, "")
       |> assign(:blocked?, false)
       |> assign(:cleaning_up, false)
+      |> assign(:focus_file, nil)
+      |> assign(:engineer_tab, nil)
 
     {:ok, socket}
   end
@@ -76,6 +78,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:task_id, task_id)
       |> assign(:url_tab, params["tab"])
       |> assign(:selected_tab, params["tab"])
+      |> assign(:focus_file, params["file"])
       |> refresh_task()
 
     {:noreply, socket}
@@ -179,6 +182,7 @@ defmodule RailWeb.TaskLive do
           run={@selected_run}
           approvable={@approvable}
           current_scope={@current_scope}
+          focus_file={@focus_file}
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
@@ -204,6 +208,8 @@ defmodule RailWeb.TaskLive do
           task={@task}
           run={@selected_run}
           approvable={@approvable}
+          current_scope={@current_scope}
+          engineer_tab={@engineer_tab}
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
@@ -525,6 +531,7 @@ defmodule RailWeb.TaskLive do
     |> assign(:pane, pane(role))
     |> assign(:approvable, role != nil and role.stage == task.stage and selected_run != nil)
     |> assign(:tabs, build_tabs(task, started, role, questions))
+    |> assign(:engineer_tab, engineer_tab(started))
     |> assign(:blocked?, match?(%Run{status: :blocked_on_input}, selected_run))
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
     |> assign(:pending_questions, pending_questions)
@@ -582,6 +589,12 @@ defmodule RailWeb.TaskLive do
 
   defp sync_tab_url(%{assigns: %{selected_tab: tab, task_id: task_id}} = socket) do
     push_patch(socket, to: ~p"/tasks/#{task_id}?tab=#{tab}")
+  end
+
+  # A finding names a file, and the diff that file changed in is the engineer's
+  # tab, so review can only link there once the engineer has a tab to link to.
+  defp engineer_tab(started) do
+    Enum.find_value(started, fn {role, _run} -> role.stage == :engineer and role.id end)
   end
 
   defp pane(nil), do: :issue
