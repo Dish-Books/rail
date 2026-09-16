@@ -60,9 +60,10 @@ defmodule Rail.Tools.Actions.SubmitBackendLoginCodeTest do
 
     submit = Task.async(fn -> Tools.submit_backend_login_code(scope, session, "hang") end)
 
-    Enum.find(1..200, fn _attempt ->
-      match?(%{waiting: {:code, _from}}, :sys.get_state(session)) || Process.sleep(10)
-    end)
+    # Expiring before the session is waiting on the code tests something else, so
+    # this waits for that state rather than polling a fixed number of times and
+    # carrying on regardless.
+    eventually(fn -> assert %{waiting: {:code, _from}} = :sys.get_state(session) end, 5_000)
 
     send(session, :expire)
     assert {:error, :expired} = Task.await(submit)

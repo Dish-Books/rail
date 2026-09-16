@@ -5,6 +5,18 @@ defmodule RailTest.Helpers do
   defdelegate git!(dir, args), to: RailTest.GitHelpers
 
   @doc """
+  Runs `fun` until its assertions hold, or `timeout` passes.
+
+  Anything a timer drives - a tail poll, a batch tick, a process noticing it has
+  exited - lands when the scheduler gets to it, not when a fixed sleep says it
+  should. Sleeping for the interval and asserting once passes on an idle machine
+  and fails on a loaded one; this waits for the state the test is actually about.
+  """
+  def eventually(fun, timeout \\ 2_000) when is_function(fun, 0) do
+    attempt(fun, System.monotonic_time(:millisecond) + timeout)
+  end
+
+  @doc """
   Puts a session token for `user` on `conn` so requests are authenticated.
   """
   def log_in_user(conn, user) do
@@ -14,5 +26,17 @@ defmodule RailTest.Helpers do
     |> Map.replace!(:secret_key_base, RailWeb.Endpoint.config(:secret_key_base))
     |> Plug.Test.init_test_session(%{})
     |> Plug.Conn.put_session(:user_token, token)
+  end
+
+  defp attempt(fun, deadline) do
+    fun.()
+  rescue
+    error ->
+      if System.monotonic_time(:millisecond) < deadline do
+        Process.sleep(10)
+        attempt(fun, deadline)
+      else
+        reraise error, __STACKTRACE__
+      end
   end
 end

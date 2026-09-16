@@ -1,5 +1,10 @@
 defmodule Rail.Tools.FollowerTest do
-  use Rail.DataCase, async: true
+  # Serial, for the sandbox: a Follower is started by its supervisor rather than
+  # by the test, and a restarted one is a pid nobody here has seen, so there is
+  # no moment at which every process that will touch the database can be lent a
+  # connection. Shared mode is the only way to hand one to a process this test
+  # does not own, and shared mode cannot run beside other tests.
+  use Rail.DataCase, async: false
 
   import Rail.Pipeline.Utils.QuestionQueue
 
@@ -147,11 +152,12 @@ defmodule Rail.Tools.FollowerTest do
 
     # Write partial line
     File.write!(stream_path, ~s({"type":"system","sub))
-    Process.sleep(50)
 
-    state = :sys.get_state(follower_pid)
-    assert state.partial_line == ~s({"type":"system","sub)
-    assert state.event_state.conversation_id == nil
+    eventually(fn ->
+      state = :sys.get_state(follower_pid)
+      assert state.partial_line == ~s({"type":"system","sub)
+      assert state.event_state.conversation_id == nil
+    end)
 
     # Complete the line and add another
     File.write!(
@@ -160,12 +166,12 @@ defmodule Rail.Tools.FollowerTest do
       [:append]
     )
 
-    Process.sleep(80)
-
-    updated_state = :sys.get_state(follower_pid)
-    assert updated_state.partial_line == ""
-    assert updated_state.event_state.conversation_id == "sess-claude-1"
-    assert updated_state.event_state.assistant_text =~ "Done"
+    eventually(fn ->
+      updated_state = :sys.get_state(follower_pid)
+      assert updated_state.partial_line == ""
+      assert updated_state.event_state.conversation_id == "sess-claude-1"
+      assert updated_state.event_state.assistant_text =~ "Done"
+    end)
 
     # Stop process and follower
     FollowerSupervisor.stop_follower(follower_pid)
@@ -197,7 +203,7 @@ defmodule Rail.Tools.FollowerTest do
     File.write!(stream_path, "#{line1}\n#{line2}\n")
 
     # PubSub broadcast should arrive on batch_tick
-    assert_receive {:run_events, run_id, events}, 1_000
+    assert_receive {:run_events, run_id, events}, 5_000
     assert run_id == run.id
     assert length(events) == 2
 
@@ -222,11 +228,13 @@ defmodule Rail.Tools.FollowerTest do
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
 
-    # Ticks slow enough that the restarted Follower can be lent the connection first.
+    # Ticks slow enough that the restarted Follower can be lent the connection
+    # before it reaches for one: a tick that beats the loan kills it again, and
+    # the pid this test is holding is then already stale.
     {:ok, follower_pid} =
       FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
-        tail_interval_ms: 300,
-        batch_interval_ms: 400
+        tail_interval_ms: 2_000,
+        batch_interval_ms: 2_500
       )
 
     Sandbox.allow(Repo, self(), follower_pid)
@@ -234,7 +242,7 @@ defmodule Rail.Tools.FollowerTest do
     line1 = ~s({"type":"system","subtype":"init","session_id":"sess-crash-1"})
     File.write!(stream_path, "#{line1}\n")
 
-    assert_receive {:run_events, _run_id, [%{line: ^line1}]}, 2_000
+    assert_receive {:run_events, _run_id, [%{line: ^line1}]}, 5_000
     logged = byte_size(line1) + 1
     assert %OsProcess{stream_offset: ^logged} = Repo.reload!(os_process)
 
@@ -244,21 +252,17 @@ defmodule Rail.Tools.FollowerTest do
     Process.exit(follower_pid, :kill)
 
     restarted_pid =
-      Enum.find_value(1..100, fn _attempt ->
-        Process.sleep(5)
-
-        case Registry.lookup(Rail.Tools.FollowerRegistry, os_process.id) do
-          [{pid, _value}] when pid != follower_pid -> pid
-          _not_yet -> nil
-        end
+      eventually(fn ->
+        assert [{restarted, _value}] = Registry.lookup(Rail.Tools.FollowerRegistry, os_process.id)
+        assert restarted != follower_pid
+        Sandbox.allow(Repo, self(), restarted)
+        restarted
       end)
-
-    Sandbox.allow(Repo, self(), restarted_pid)
 
     line2 = ~s({"type":"assistant","message":{"content":[{"type":"text","text":"after the crash"}]}})
     File.write!(stream_path, "#{line2}\n", [:append])
 
-    assert_receive {:run_events, _run_id, [%{line: ^line2}]}, 2_000
+    assert_receive {:run_events, _run_id, [%{line: ^line2}]}, 5_000
     assert [^line1, ^line2] = Enum.map(Pipeline.list_run_events(run), & &1.line)
 
     # The replay brought back what the first Follower had seen.
@@ -298,7 +302,7 @@ defmodule Rail.Tools.FollowerTest do
     follower_ref = Process.monitor(follower_pid)
 
     # Wait for process exit and follower settlement
-    assert_receive {:os_process_finished, finished_run, outcome}, 2_000
+    assert_receive {:os_process_finished, finished_run, outcome}, 5_000
     assert finished_run.status == :finished
     assert outcome.conversation_id == "sess-exit-1"
     assert %Run.Usage{input_tokens: 50, output_tokens: 25} = outcome.usage
@@ -311,7 +315,7 @@ defmodule Rail.Tools.FollowerTest do
     assert reloaded_run.usage.input_tokens == 50
 
     # Follower GenServer should have stopped normally
-    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
+    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 5_000
     refute Process.alive?(follower_pid)
   end
 
@@ -355,11 +359,12 @@ defmodule Rail.Tools.FollowerTest do
       <<(~s({"type":"assistant","message":{"content":[{"type":"text","text":"bad )), 255, " byte\"}]}}\n">>
 
     File.write!(stream_path, invalid_utf8_line)
-    Process.sleep(50)
 
-    state = :sys.get_state(follower_pid)
-    assert state.event_state.assistant_text =~ "bad"
-    assert state.event_state.assistant_text =~ "byte"
+    eventually(fn ->
+      state = :sys.get_state(follower_pid)
+      assert state.event_state.assistant_text =~ "bad"
+      assert state.event_state.assistant_text =~ "byte"
+    end)
 
     FollowerSupervisor.stop_follower(follower_pid)
     Tools.terminate_os_process(pid, grace_period: 50)
@@ -379,7 +384,12 @@ defmodule Rail.Tools.FollowerTest do
     dummy_pid = spawn(fn -> :ok end)
     send(follower_pid, {:EXIT, dummy_pid, :normal})
     send(follower_pid, :unknown_message)
-    Process.sleep(20)
+
+    # A reply means both messages were handled and the process is still standing,
+    # with the state it had before they arrived.
+    assert %Follower{partial_line: "", event_state: %{conversation_id: nil}} =
+             :sys.get_state(follower_pid)
+
     assert Process.alive?(follower_pid)
 
     FollowerSupervisor.stop_follower(follower_pid)
@@ -435,7 +445,7 @@ defmodule Rail.Tools.FollowerTest do
 
     follower_ref = Process.monitor(follower_pid)
 
-    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
+    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 5_000
     refute_received {:os_process_finished, _os_process, _outcome}
   end
 
@@ -490,11 +500,11 @@ defmodule Rail.Tools.FollowerTest do
     follower_ref = Process.monitor(follower_pid)
     Process.unlink(port)
 
-    assert_receive {:os_process_finished, finished_run, outcome}, 1_000
+    assert_receive {:os_process_finished, finished_run, outcome}, 5_000
     assert finished_run.status == :finished
     assert outcome.exit_code == 0
     assert is_nil(outcome.error)
-    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
+    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 5_000
     refute Process.alive?(follower_pid)
   end
 
@@ -545,7 +555,7 @@ defmodule Rail.Tools.FollowerTest do
 
     Process.unlink(port1)
 
-    assert_receive {:os_process_finished, _r1, outcome1}, 1_000
+    assert_receive {:os_process_finished, _r1, outcome1}, 5_000
     assert outcome1.error == "claude reported error"
 
     # Part 2: both result_error and stderr
@@ -591,7 +601,7 @@ defmodule Rail.Tools.FollowerTest do
 
     Process.unlink(port2)
 
-    assert_receive {:os_process_finished, _r, outcome2}, 1_000
+    assert_receive {:os_process_finished, _r, outcome2}, 5_000
     assert outcome2.error =~ "claude reported error"
     assert outcome2.error =~ "stderr text here"
   end
@@ -636,7 +646,7 @@ defmodule Rail.Tools.FollowerTest do
 
     send(follower_pid, {nil, {:exit_status, 0}})
 
-    assert_receive {:os_process_finished, _r, outcome}, 1_000
+    assert_receive {:os_process_finished, _r, outcome}, 5_000
     assert outcome.exit_code == 0
     assert is_nil(outcome.error)
   end
@@ -755,7 +765,7 @@ defmodule Rail.Tools.FollowerTest do
 
     Sandbox.allow(Repo, self(), follower_pid)
 
-    assert_receive {:os_process_finished, _os_process, _outcome}, 2_000
+    assert_receive {:os_process_finished, _os_process, _outcome}, 5_000
 
     # Both are filed, in the order asked, and the task parks on the first.
     assert Enum.map(pending_questions(task.id), & &1.prompt) == [
@@ -818,8 +828,8 @@ defmodule Rail.Tools.FollowerTest do
 
     follower_ref = Process.monitor(follower_pid)
 
-    assert_receive {:os_process_finished, _run, _outcome}, 2_000
-    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
+    assert_receive {:os_process_finished, _run, _outcome}, 5_000
+    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 5_000
 
     {:ok, reloaded_rr} = Pipeline.get_run(run.id)
     assert reloaded_rr.conversation_id == "sess-orig"
@@ -872,8 +882,8 @@ defmodule Rail.Tools.FollowerTest do
 
     follower_ref = Process.monitor(follower_pid)
 
-    assert_receive {:os_process_finished, _run, _outcome}, 2_000
-    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
+    assert_receive {:os_process_finished, _run, _outcome}, 5_000
+    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 5_000
 
     {:ok, reloaded_rr} = Pipeline.get_run(run.id)
     assert reloaded_rr.conversation_id == "sess-same"
@@ -927,8 +937,8 @@ defmodule Rail.Tools.FollowerTest do
 
     follower_ref = Process.monitor(follower_pid)
 
-    assert_receive {:os_process_finished, _run, _outcome}, 2_000
-    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 2_000
+    assert_receive {:os_process_finished, _run, _outcome}, 5_000
+    assert_receive {:DOWN, ^follower_ref, :process, ^follower_pid, :normal}, 5_000
 
     {:ok, reloaded_rr} = Pipeline.get_run(run.id)
     assert reloaded_rr.status == :finished

@@ -2,11 +2,19 @@ import Config
 
 if config_env() == :dev and File.exists?(".env"), do: Dotenv.load!()
 
+# Tests read no environment of their own. A developer whose shell (or whose
+# parent checkout's .env, which mise loads) carries a real GITHUB_APP_ID would
+# otherwise be running a different suite from CI's, and find a test failing that
+# has nothing to do with their change.
+get_env = fn name, default ->
+  if config_env() == :test, do: default, else: System.get_env(name, default)
+end
+
 cloak_key =
   if config_env() == :prod do
     System.fetch_env!("CLOAK_KEY_V1")
   else
-    System.get_env("CLOAK_KEY_V1", "L2zKQh+tDxkUH94a2O+oa8Mae3mryHitrR/LrYABeNA=")
+    get_env.("CLOAK_KEY_V1", "L2zKQh+tDxkUH94a2O+oa8Mae3mryHitrR/LrYABeNA=")
   end
 
 config :rail, Rail.Vault,
@@ -19,20 +27,20 @@ config :rail, :git,
   bot_email: "rail[bot]@railai.dev"
 
 config :rail, :github,
-  app_id: System.get_env("GITHUB_APP_ID", "test_app_id"),
-  private_key: System.get_env("GITHUB_APP_PRIVATE_KEY", "test/support/fixtures/github_app.pem")
+  app_id: get_env.("GITHUB_APP_ID", "test_app_id"),
+  private_key: get_env.("GITHUB_APP_PRIVATE_KEY", "test/support/fixtures/github_app.pem")
 
 config :rail, :linear_oauth,
-  client_id: System.get_env("LINEAR_CLIENT_ID", "linear_client_id"),
-  client_secret: System.get_env("LINEAR_CLIENT_SECRET", "linear_client_secret")
+  client_id: get_env.("LINEAR_CLIENT_ID", "linear_client_id"),
+  client_secret: get_env.("LINEAR_CLIENT_SECRET", "linear_client_secret")
 
 # The one gate on invoking an agent CLI. Read here so app code never touches the
 # environment directly.
-config :rail, :no_dispatch, System.get_env("RAIL_NO_DISPATCH") == "1"
+config :rail, :no_dispatch, get_env.("RAIL_NO_DISPATCH", nil) == "1"
 
 config :ueberauth, Ueberauth.Strategy.Github.OAuth,
-  client_id: System.get_env("GITHUB_CLIENT_ID", "github_client_id"),
-  client_secret: System.get_env("GITHUB_CLIENT_SECRET", "github_client_secret")
+  client_id: get_env.("GITHUB_CLIENT_ID", "github_client_id"),
+  client_secret: get_env.("GITHUB_CLIENT_SECRET", "github_client_secret")
 
 if config_env() == :prod do
   config :rail, Rail.Repo,

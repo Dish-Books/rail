@@ -895,7 +895,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       view |> element("#commit-work") |> render_click()
-      render_async(view)
+      render_async(view, 5_000)
 
       assert has_element?(view, "#engineer-error", "remote rejected")
       assert has_element?(view, "#commit-work", "Push")
@@ -906,7 +906,7 @@ defmodule RailWeb.TaskLiveTest do
       end)
 
       view |> element("#commit-work") |> render_click()
-      render_async(view)
+      render_async(view, 5_000)
 
       refute has_element?(view, "#commit-work")
       assert %Run{error: nil} = Repo.reload!(run)
@@ -938,7 +938,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#send-to-review[disabled]")
 
       send(pusher, :release)
-      render_async(view)
+      render_async(view, 5_000)
 
       refute has_element?(view, "#commit-work")
       refute has_element?(view, "#send-to-review[disabled]")
@@ -994,7 +994,7 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#engineer-error", "Commit the engineer's work before sending it to review.")
 
       view |> element("#commit-work") |> render_click()
-      render_async(view)
+      render_async(view, 5_000)
 
       assert git!(repo, ["log", "-1", "--pretty=%s"]) =~ "TLV-1: follow-up changes"
       refute has_element?(view, "#commit-work")
@@ -1065,7 +1065,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       view |> element("#commit-work") |> render_click()
-      render_async(view)
+      render_async(view, 5_000)
 
       assert has_element?(view, "#engineer-error", "nothing left to commit")
     end
@@ -1077,7 +1077,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       view |> element("#commit-work") |> render_click()
-      render_async(view)
+      render_async(view, 5_000)
 
       assert has_element?(view, "#engineer-error", "index.lock exists")
     end
@@ -1092,7 +1092,7 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       view |> element("#commit-work") |> render_click()
-      render_async(view)
+      render_async(view, 5_000)
 
       assert has_element?(view, "#engineer-error", "Could not finish that:")
     end
