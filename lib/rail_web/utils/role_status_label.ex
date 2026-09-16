@@ -38,5 +38,6 @@ defmodule RailWeb.Utils.RoleStatusLabel do
   defp waiting_label(:product), do: "review the ticket"
   defp waiting_label(:design), do: "review the designs"
   defp waiting_label(:architect), do: "review the plan"
+  defp waiting_label(:review), do: "review the findings"
   defp waiting_label(_other), do: "needs review"
 end

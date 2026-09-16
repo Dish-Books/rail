@@ -303,8 +303,8 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     done = %Run{
       status: :finished,
       stage_outcome: :done,
-      role: %Role{stage: :review},
-      task: %Task{stage: :review, merged_at: nil}
+      role: %Role{stage: :qa},
+      task: %Task{stage: :qa, merged_at: nil}
     }
 
     refute Run.needs_attention?(done)

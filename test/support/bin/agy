@@ -13,7 +13,7 @@ if [[ -z "$STAGE" ]]; then
     STAGE="qa"
   elif [[ "$ALL_ARGS" =~ "stage demo" || "$ALL_ARGS" =~ "Record a demo" || "$ALL_ARGS" =~ "demo/" ]]; then
     STAGE="demo"
-  elif [[ "$ALL_ARGS" =~ "stage review" || "$ALL_ARGS" =~ "Review the implementation" || "$ALL_ARGS" =~ "read-only: report what you find" ]]; then
+  elif [[ "$ALL_ARGS" =~ "reviews/" || "$ALL_ARGS" =~ "Review the change described below" ]]; then
     STAGE="review"
   elif [[ "$ALL_ARGS" =~ "stage engineer" || "$ALL_ARGS" =~ "Implement the ticket" || "$ALL_ARGS" =~ "Implement the approved plan" ]]; then
     STAGE="engineer"
@@ -158,7 +158,44 @@ QA_EOF
 DEMO_EOF
       ;;
 
-    review|qa_lead)
+    review)
+      # A second pass lands on the report the first one left, so it says the
+      # findings are fixed rather than raising them again.
+      mkdir -p "$RAIL_SCRATCH/reviews"
+      REPORT="$RAIL_SCRATCH/reviews/${IDENTIFIER}.json"
+      FINDING_STATUS="open"
+      if [[ -f "$REPORT" ]]; then
+        FINDING_STATUS="fixed"
+      fi
+      cat <<REVIEW_EOF > "$REPORT"
+{
+  "findings": [
+    {
+      "key": "unhandled-empty-list",
+      "title": "The empty list is not handled",
+      "detail": "An empty list falls through to the clause that assumes a head.",
+      "file": "lib/rail/example.ex",
+      "line": 12,
+      "severity": "major",
+      "recommendation": "fix",
+      "status": "${FINDING_STATUS}"
+    },
+    {
+      "key": "naming-nit",
+      "title": "The variable could be named better",
+      "detail": "A preference, not a problem.",
+      "file": "lib/rail/example.ex",
+      "line": 30,
+      "severity": "nit",
+      "recommendation": "skip",
+      "status": "${FINDING_STATUS}"
+    }
+  ]
+}
+REVIEW_EOF
+      ;;
+
+    qa_lead)
       ;;
   esac
 fi

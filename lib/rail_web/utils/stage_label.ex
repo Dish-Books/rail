@@ -34,5 +34,6 @@ defmodule RailWeb.Utils.StageLabel do
   defp approval_label(:design), do: "Review the designs"
   defp approval_label(:architect), do: "Review the plan"
   defp approval_label(:engineer), do: "Review the diff"
+  defp approval_label(:review), do: "Review the findings"
   defp approval_label(_other), do: "Waiting on you"
 end

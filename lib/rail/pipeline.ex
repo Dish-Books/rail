@@ -7,10 +7,12 @@ defmodule Rail.Pipeline do
   three options, refines it in chat and approves it. Architect turns that into one
   implementation plan, which the human approves in the same way, and engineer
   builds it — Rail commits and pushes what it leaves, and the human reads the diff
-  and sends it to review.
+  and sends it to review. Review reads the change and raises findings, each with a
+  recommendation; the human decides which to address and either sends them back to
+  the engineer or hands the change to QA.
 
-  Review, QA, demo and merge are stages a task can reach and nothing drives yet: a
-  task entering one parks there.
+  QA, demo and merge are stages a task can reach and nothing drives yet: a task
+  entering one parks there.
   """
 
   alias Rail.Pipeline.Actions
@@ -37,6 +39,14 @@ defmodule Rail.Pipeline do
   defdelegate read_commit_message(task), to: Actions.ReadCommitMessage
   defdelegate commit_engineer_work(scope, task), to: Actions.CommitEngineerWork
   defdelegate send_to_review(run), to: Actions.SendToReview
+
+  defdelegate start_review_run(run), to: Actions.StartReviewRun
+  defdelegate read_review(task), to: Actions.ReadReview
+  defdelegate sync_review_findings(task, findings), to: Actions.SyncReviewFindings
+  defdelegate list_review_findings(task), to: Actions.ListReviewFindings
+  defdelegate decide_review_finding(finding, decision), to: Actions.DecideReviewFinding
+  defdelegate send_findings_to_engineer(run), to: Actions.SendFindingsToEngineer
+  defdelegate send_to_qa(run), to: Actions.SendToQa
 
   defdelegate create_task(issue, stage), to: Actions.CreateTask
   defdelegate list_tasks(opts \\ []), to: Actions.ListTasks

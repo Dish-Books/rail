@@ -40,7 +40,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       })
 
     roles =
-      Map.new([:product, :design, :architect, :engineer, :review], fn stage ->
+      Map.new([:product, :design, :architect, :engineer, :review, :qa], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
             backend_id: backend.id,
@@ -209,15 +209,32 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert [%{prompt: "Which database?"}] = pending_questions(task.id)
   end
 
-  test "a run at a stage with no finish of its own records itself and moves nothing", %{
-    task: task,
-    exited: exited
-  } do
+  test "a review run records what it found and leaves the task at review", %{task: task, exited: exited} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+    File.mkdir_p!(Path.join(task.scratch_path, "reviews"))
+
+    File.write!(Path.join([task.scratch_path, "reviews", "RUN-1.json"]), """
+    {"findings": [
+      {"key": "unhandled-nil", "title": "Nil is not handled", "severity": "major", "recommendation": "fix"}
+    ]}
+    """)
+
     {_run, os_process} = exited.(:review, %{})
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :review} = Repo.reload!(task)
+    assert [%{key: "unhandled-nil", decision: :fix}] = Pipeline.list_review_findings(task)
+  end
+
+  test "a run at a stage with no finish of its own records itself and moves nothing", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
+    {_run, os_process} = exited.(:qa, %{})
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :qa} = Repo.reload!(task)
   end
 
   test "an engineer run that left no commit message stays open for the message that fixes it", %{

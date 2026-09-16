@@ -27,6 +27,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   import Rail.Pipeline.Utils.ProductRunFinished
   import Rail.Pipeline.Utils.QuestionQueue
   import Rail.Pipeline.Utils.RegisterAskedQuestions
+  import Rail.Pipeline.Utils.ReviewRunFinished
 
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -121,12 +122,13 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   end
 
   # Which stage settles is the run's own role, never the task's stage. Product,
-  # design, architect and engineer have a finish of their own; a run at any other
-  # records itself and moves nothing.
+  # design, architect, engineer and review have a finish of their own; a run at any
+  # other records itself and moves nothing.
   defp finish_action(%Run{role: %Role{stage: :product}}), do: &product_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :design}}), do: &design_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :architect}}), do: &architect_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :engineer}}), do: &engineer_run_finished/2
+  defp finish_action(%Run{role: %Role{stage: :review}}), do: &review_run_finished/2
   defp finish_action(%Run{}), do: fn run, _opts -> run end
 
   # A finish that recorded an error did not conclude anything, so it stays open

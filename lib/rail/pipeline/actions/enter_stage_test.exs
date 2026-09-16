@@ -97,6 +97,30 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert {:ok, %Run{role_id: ^design_role_id, status: :running}} = Pipeline.enter_stage(task, :design)
   end
 
+  test "review is spawned with its own brief", %{task: task, roles: roles} do
+    %{id: review_role_id} = roles[:review]
+
+    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "#{task.scratch_path}/reviews/ENT-1.json"
+      {:ok, %OsProcess{run: spawned, task: task}}
+    end)
+
+    assert {:ok, %Run{role_id: ^review_role_id, status: :running}} = Pipeline.enter_stage(task, :review)
+  end
+
+  # QA has a role bound and no brief of its own, which is every stage Rail has
+  # not built yet: the role's own instructions are the whole of what it gets.
+  test "a stage with no brief of its own is spawned with the plain prompt", %{task: task, roles: roles} do
+    %{id: qa_role_id} = roles[:qa]
+
+    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
+      refute prompt =~ task.scratch_path
+      {:ok, %OsProcess{run: spawned, task: task}}
+    end)
+
+    assert {:ok, %Run{role_id: ^qa_role_id, status: :running}} = Pipeline.enter_stage(task, :qa)
+  end
+
   test "unlatches a run that had already concluded, so the stage can conclude again", %{
     task: task,
     roles: roles

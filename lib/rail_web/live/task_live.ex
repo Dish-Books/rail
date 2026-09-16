@@ -25,6 +25,7 @@ defmodule RailWeb.TaskLive do
   alias RailWeb.Live.DesignStage
   alias RailWeb.Live.EngineerStage
   alias RailWeb.Live.ProductStage
+  alias RailWeb.Live.ReviewStage
   alias RailWeb.Live.RunConversation
 
   # The engineer writes files as it works and the pane reads them off disk, so a
@@ -196,6 +197,31 @@ defmodule RailWeb.TaskLive do
           </:sidebar>
         </.live_component>
 
+        <.live_component
+          :if={@task != nil and @pane == :review}
+          module={ReviewStage}
+          id={stage_component_id(@selected_role)}
+          task={@task}
+          run={@selected_run}
+          approvable={@approvable}
+        >
+          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
+          <:actions>
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+          </:actions>
+          <:sidebar>
+            <.conversation_sidebar
+              task={@task}
+              roles_map={@roles_map}
+              blocked?={@blocked?}
+              pending_question={@pending_question}
+              pending_questions={@pending_questions}
+              answer_text={@answer_text}
+              conversation_run={@conversation_run}
+            />
+          </:sidebar>
+        </.live_component>
+
         <!-- The issue is the same view the issue page shows, and it is read on its
         own: there is no one role whose conversation belongs beside it. -->
         <.task_layout
@@ -340,6 +366,9 @@ defmodule RailWeb.TaskLive do
 
       %{pane: :engineer, task: task, selected_role: role} ->
         send_update(EngineerStage, id: stage_component_id(role), task: task)
+
+      %{pane: :review, task: task, selected_role: role} ->
+        send_update(ReviewStage, id: stage_component_id(role), task: task)
 
       _no_stage_on_disk ->
         :ok
@@ -556,7 +585,7 @@ defmodule RailWeb.TaskLive do
   end
 
   defp pane(nil), do: :issue
-  defp pane(%Role{stage: stage}) when stage in [:product, :design, :architect, :engineer], do: stage
+  defp pane(%Role{stage: stage}) when stage in [:product, :design, :architect, :engineer, :review], do: stage
   defp pane(%Role{}), do: :none
 
   defp stage_component_id(%Role{id: id}), do: "stage-#{id}"
