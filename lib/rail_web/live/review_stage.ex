@@ -172,7 +172,7 @@ defmodule RailWeb.Live.ReviewStage do
             @selected.key == finding.key &&
               "bg-blue-50 dark:bg-blue-950/40 ring-1 ring-blue-300 dark:ring-blue-800",
             @selected.key != finding.key && "hover:bg-slate-100 dark:hover:bg-slate-800/60",
-            finding.decision == :skip && "opacity-60"
+            ReviewFinding.state(finding) == :dismissed && "opacity-60"
           ]}
         >
           <span class={["mt-1.5 size-1.5 shrink-0 rounded-full", severity_dot(finding)]} />
@@ -183,7 +183,7 @@ defmodule RailWeb.Live.ReviewStage do
               @selected.key == finding.key &&
                 "font-semibold text-slate-900 dark:text-slate-100",
               @selected.key != finding.key && "text-slate-700 dark:text-slate-300",
-              finding.decision == :skip && "line-through"
+              ReviewFinding.state(finding) == :dismissed && "line-through"
             ]}>
               {finding.title}
             </span>
@@ -233,6 +233,13 @@ defmodule RailWeb.Live.ReviewStage do
               {@position} of {@count}
             </span>
             <span
+              :if={@finding.decision == nil and @finding.status != :fixed}
+              data-qa="finding_undecided"
+              class="text-xs font-semibold text-blue-600 dark:text-blue-400"
+            >
+              Needs your call
+            </span>
+            <span
               :if={@finding.decision == :skip}
               data-qa="finding_dismissed"
               class="text-xs font-semibold text-slate-500 dark:text-slate-400"
@@ -268,7 +275,9 @@ defmodule RailWeb.Live.ReviewStage do
           </p>
         </div>
 
-        <div :if={@decidable} class="shrink-0 flex gap-2">
+        <!-- A fixed finding has nothing left to rule on, so the choice, the remedy
+        and the advice all go: what is left is the record that it was dealt with. -->
+        <div :if={@decidable and @finding.status != :fixed} class="shrink-0 flex gap-2">
           <button
             :for={{decision, label} <- [fix: "Fix", skip: "Don't fix"]}
             type="button"
@@ -296,7 +305,7 @@ defmodule RailWeb.Live.ReviewStage do
           <.markdown :if={@finding.detail} content={@finding.detail} class="text-[13.5px]" />
 
           <div
-            :if={@finding.suggestion}
+            :if={@finding.suggestion && @finding.status != :fixed}
             data-qa="finding_suggestion"
             class="rounded-r-lg border border-l-2 border-slate-200 border-l-amber-500 dark:border-slate-700 dark:border-l-amber-500 bg-amber-50/50 dark:bg-amber-950/20 px-4 py-3.5"
           >
@@ -333,15 +342,16 @@ defmodule RailWeb.Live.ReviewStage do
             <.diff_hunk rows={@hunk.rows} />
 
             <p
-              :if={@hunk.other_hunks > 0}
+              :if={elided(@hunk) != nil}
               data-qa="finding_other_hunks"
               class="px-3.5 py-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 text-[11.5px] text-slate-500 dark:text-slate-400"
             >
-              {@hunk.other_hunks} other {hunk_word(@hunk.other_hunks)} in this file.
+              {elided(@hunk)}
             </p>
           </div>
 
           <p
+            :if={@finding.status != :fixed}
             data-qa="finding_recommendation"
             class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"
           >
@@ -463,17 +473,18 @@ defmodule RailWeb.Live.ReviewStage do
   end
 
   defp tally(findings) do
-    dismissed = Enum.count(findings, &(&1.decision == :skip))
+    dismissed = Enum.count(findings, &(&1.decision == :skip and &1.status != :fixed))
     fixed = Enum.count(findings, &(&1.status == :fixed))
+    undecided = Enum.count(findings, &ReviewFinding.undecided?/1)
     outstanding = Enum.count(findings, &ReviewFinding.outstanding?/1)
 
-    [{outstanding, "to fix"}, {fixed, "fixed"}, {dismissed, "dismissed"}]
+    [{undecided, "to decide"}, {outstanding, "to fix"}, {fixed, "fixed"}, {dismissed, "dismissed"}]
     |> Enum.reject(fn {count, _word} -> count == 0 end)
     |> Enum.map_join(" · ", fn {count, word} -> "#{count} #{word}" end)
   end
 
-  defp list_subtitle(%ReviewFinding{decision: :skip}), do: "dismissed"
   defp list_subtitle(%ReviewFinding{status: :fixed} = finding), do: "fixed · #{location(finding)}"
+  defp list_subtitle(%ReviewFinding{decision: :skip}), do: "dismissed"
   defp list_subtitle(%ReviewFinding{file: nil}), do: "no file"
   defp list_subtitle(%ReviewFinding{} = finding), do: location(finding)
 
@@ -483,8 +494,8 @@ defmodule RailWeb.Live.ReviewStage do
 
   # A settled finding is not asking for attention, so it stops shouting whatever
   # it was raised as.
-  defp severity_dot(%ReviewFinding{decision: :skip}), do: "bg-slate-300 dark:bg-slate-600"
   defp severity_dot(%ReviewFinding{status: :fixed}), do: "bg-emerald-500"
+  defp severity_dot(%ReviewFinding{decision: :skip}), do: "bg-slate-300 dark:bg-slate-600"
   defp severity_dot(%ReviewFinding{severity: :blocker}), do: "bg-red-500"
   defp severity_dot(%ReviewFinding{severity: :major}), do: "bg-amber-500"
   defp severity_dot(%ReviewFinding{severity: :minor}), do: "bg-amber-400"
@@ -509,8 +520,21 @@ defmodule RailWeb.Live.ReviewStage do
 
   defp diff_link(_task, _no_tab, _no_hunk), do: nil
 
-  defp hunk_word(1), do: "change"
-  defp hunk_word(_many), do: "changes"
+  # Only a window around the line the finding names is shown, so the pane says
+  # what it left out rather than letting the reader assume that is the whole of
+  # the change.
+  defp elided(%{hidden_lines: hidden, other_hunks: others}) do
+    [{hidden, "line", "lines"}, {others, "other change", "other changes"}]
+    |> Enum.reject(fn {count, _one, _many} -> count == 0 end)
+    |> Enum.map_join(" and ", fn
+      {1, one, _many} -> "1 more #{one}"
+      {count, _one, many} -> "#{count} more #{many}"
+    end)
+    |> case do
+      "" -> nil
+      parts -> "#{parts} in this file."
+    end
+  end
 
   defp decision("fix"), do: :fix
   defp decision("skip"), do: :skip
@@ -550,6 +574,7 @@ defmodule RailWeb.Live.ReviewStage do
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not review."
   defp message_for(:nothing_outstanding), do: "There is nothing left for the engineer to fix."
   defp message_for(:findings_outstanding), do: "Some findings are still outstanding. Fix them or dismiss them first."
+  defp message_for(:findings_undecided), do: "Some findings have no decision yet. Rule on every one before sending."
   defp message_for(:no_engineer_role), do: "This project has no engineer to send the findings to."
   defp message_for(reason), do: "Could not finish that: #{inspect(reason)}"
 end

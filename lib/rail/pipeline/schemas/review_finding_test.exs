@@ -57,17 +57,20 @@ defmodule Rail.Pipeline.Schemas.ReviewFindingTest do
     %{task: task, attrs: attrs}
   end
 
-  test "a finding nobody has ruled on starts at the recommendation", %{attrs: attrs} do
-    changeset = ReviewFinding.changeset(%ReviewFinding{}, %{attrs | recommendation: :skip})
+  # Seeding the decision from the recommendation made the two indistinguishable
+  # afterwards: a finding the reviewer thought not worth fixing read exactly like
+  # one a person had dismissed.
+  test "a finding nobody has ruled on has no decision", %{attrs: attrs} do
+    changeset = ReviewFinding.changeset(%ReviewFinding{}, attrs)
 
-    assert %{decision: :skip} = changeset.changes
     assert changeset.valid?
+    refute Map.has_key?(changeset.changes, :decision)
   end
 
   test "the reviewer cannot write the decision", %{attrs: attrs} do
     changeset = ReviewFinding.changeset(%ReviewFinding{}, Map.put(attrs, :decision, :skip))
 
-    assert %{decision: :fix} = changeset.changes
+    refute Map.has_key?(changeset.changes, :decision)
   end
 
   test "a finding needs a key, a title, a severity and a recommendation", %{task: task} do
@@ -87,23 +90,34 @@ defmodule Rail.Pipeline.Schemas.ReviewFindingTest do
 
   test "the human's call is the only thing the decision changeset writes", %{attrs: attrs} do
     finding = %ReviewFinding{} |> ReviewFinding.changeset(attrs) |> Repo.insert!()
+    assert finding.decision == nil
 
     assert %{decision: :skip} = finding |> ReviewFinding.decision_changeset(:skip) |> Repo.update!()
   end
 
-  test "outstanding is what the engineer still owes", %{attrs: attrs} do
+  test "outstanding is only what a human said to fix", %{attrs: attrs} do
     finding = %ReviewFinding{} |> ReviewFinding.changeset(attrs) |> Repo.insert!()
 
-    assert ReviewFinding.outstanding?(finding)
+    refute ReviewFinding.outstanding?(finding)
+    assert ReviewFinding.outstanding?(%{finding | decision: :fix})
     refute ReviewFinding.outstanding?(%{finding | decision: :skip})
-    refute ReviewFinding.outstanding?(%{finding | status: :fixed})
+    refute ReviewFinding.outstanding?(%{finding | decision: :fix, status: :fixed})
+  end
+
+  test "undecided is what is still waiting on a human", %{attrs: attrs} do
+    finding = %ReviewFinding{} |> ReviewFinding.changeset(attrs) |> Repo.insert!()
+
+    assert ReviewFinding.undecided?(finding)
+    refute ReviewFinding.undecided?(%{finding | decision: :skip})
+    refute ReviewFinding.undecided?(%{finding | status: :fixed})
   end
 
   test "state is the one word a reader groups by", %{attrs: attrs} do
     finding = %ReviewFinding{} |> ReviewFinding.changeset(attrs) |> Repo.insert!()
 
-    assert ReviewFinding.state(finding) == :to_fix
-    assert ReviewFinding.state(%{finding | status: :not_fixed}) == :not_fixed
+    assert ReviewFinding.state(finding) == :undecided
+    assert ReviewFinding.state(%{finding | decision: :fix}) == :to_fix
+    assert ReviewFinding.state(%{finding | decision: :fix, status: :not_fixed}) == :not_fixed
     assert ReviewFinding.state(%{finding | status: :fixed}) == :fixed
     assert ReviewFinding.state(%{finding | decision: :skip}) == :dismissed
   end

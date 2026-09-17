@@ -2,10 +2,14 @@ defmodule Rail.Pipeline.Actions.SendToQa do
   @moduledoc """
   Hands a reviewed change to QA, once nothing is left outstanding on it.
 
-  Nothing outstanding means one of three things and they are all the same thing:
-  the reviewer found nothing, the engineer fixed everything it did find, or a
-  human read the findings and dismissed them. Rail does not rank those - a
-  finding somebody chose to live with is closed.
+  Nothing left means one of three things and they are all the same thing: the
+  reviewer found nothing, the engineer fixed everything it did find, or a human
+  read the findings and dismissed them. Rail does not rank those - a finding
+  somebody chose to live with is closed.
+
+  A finding nobody has ruled on is not closed. It is the one case where the
+  change cannot go either way yet, and saying so is better than quietly treating
+  silence as a dismissal.
 
   A one-way door: the task leaves review, and a task no longer there has nothing
   left to send.
@@ -33,12 +37,15 @@ defmodule Rail.Pipeline.Actions.SendToQa do
     end
   end
 
+  defp findings(%Task{} = task), do: Pipeline.list_review_findings(task)
+
   defp sendable(%Task{stage: stage}) when stage != :review, do: {:error, {:invalid_stage, stage}}
 
   defp sendable(%Task{} = task) do
     cond do
       Task.running?(task) -> {:error, :stage_running}
-      Enum.any?(Pipeline.list_review_findings(task), &ReviewFinding.outstanding?/1) -> {:error, :findings_outstanding}
+      Enum.any?(findings(task), &ReviewFinding.undecided?/1) -> {:error, :findings_undecided}
+      Enum.any?(findings(task), &ReviewFinding.outstanding?/1) -> {:error, :findings_outstanding}
       true -> :ok
     end
   end

@@ -1509,11 +1509,32 @@ defmodule RailWeb.TaskLiveTest do
         %{key: "naming-nit", title: "Poor variable name", severity: :nit, recommendation: :skip, status: :open}
       ]
 
-      %{task: task, role: role, review_run: review_run, raised: raised}
+      # Nothing is decided until a person decides it, so a test that is not about
+      # deciding rules the way the reviewer advised and changes only its own bit.
+      decide_as_advised = fn ->
+        {:ok, findings} = Pipeline.sync_review_findings(task, raised)
+
+        Enum.map(findings, fn finding ->
+          {:ok, decided} = Pipeline.decide_review_finding(finding, finding.recommendation)
+          decided
+        end)
+      end
+
+      %{
+        task: task,
+        role: role,
+        review_run: review_run,
+        raised: raised,
+        decide_as_advised: decide_as_advised
+      }
     end
 
-    test "lists every finding, worst first, with where it is", %{conn: conn, task: task, raised: raised} do
-      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
+    test "lists every finding, worst first, with where it is", %{
+      conn: conn,
+      task: task,
+      decide_as_advised: decide_as_advised
+    } do
+      _decided = decide_as_advised.()
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -1523,8 +1544,12 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='review_finding_tally']", "1 to fix · 1 dismissed")
     end
 
-    test "the worst finding is the one open in the reading pane", %{conn: conn, task: task, raised: raised} do
-      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
+    test "the worst finding is the one open in the reading pane", %{
+      conn: conn,
+      task: task,
+      decide_as_advised: decide_as_advised
+    } do
+      _decided = decide_as_advised.()
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -1534,8 +1559,8 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='finding_recommendation']", "recommends fixing this")
     end
 
-    test "picking a finding reads it", %{conn: conn, task: task, raised: raised} do
-      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
+    test "picking a finding reads it", %{conn: conn, task: task, decide_as_advised: decide_as_advised} do
+      _decided = decide_as_advised.()
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -1550,9 +1575,9 @@ defmodule RailWeb.TaskLiveTest do
     test "the reader walks the findings without going back to the list", %{
       conn: conn,
       task: task,
-      raised: raised
+      decide_as_advised: decide_as_advised
     } do
-      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
+      _decided = decide_as_advised.()
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "#finding-previous[disabled]")
@@ -1627,7 +1652,15 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='review_finding'][data-state='fixed']")
     end
 
-    test "a finding the engineer did not fix says so", %{conn: conn, task: task, raised: raised} do
+    test "a finding the engineer did not fix says so", %{
+      conn: conn,
+      task: task,
+      raised: raised,
+      decide_as_advised: decide_as_advised
+    } do
+      _decided = decide_as_advised.()
+
+      # The later pass keeps the ruling and only restates what it found.
       {:ok, _synced} = Pipeline.sync_review_findings(task, List.update_at(raised, 0, &%{&1 | status: :not_fixed}))
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
@@ -1639,9 +1672,9 @@ defmodule RailWeb.TaskLiveTest do
     test "the human overrules a recommendation from the reading pane", %{
       conn: conn,
       task: task,
-      raised: raised
+      decide_as_advised: decide_as_advised
     } do
-      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
+      _decided = decide_as_advised.()
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "[data-qa='review_finding'][data-state='to_fix']", "Nil is not handled")
@@ -1656,9 +1689,9 @@ defmodule RailWeb.TaskLiveTest do
     test "the human takes on a finding the reviewer would have left", %{
       conn: conn,
       task: task,
-      raised: raised
+      decide_as_advised: decide_as_advised
     } do
-      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
+      _decided = decide_as_advised.()
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -1669,8 +1702,8 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#send-findings-to-engineer", "Send 2 back to engineer")
     end
 
-    test "outstanding findings go back to the engineer", %{conn: conn, task: task, raised: raised} do
-      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
+    test "outstanding findings go back to the engineer", %{conn: conn, task: task, decide_as_advised: decide_as_advised} do
+      _decided = decide_as_advised.()
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "#send-findings-to-engineer", "Send 1 back to engineer")
@@ -1693,8 +1726,12 @@ defmodule RailWeb.TaskLiveTest do
       assert %Task{stage: :qa} = Repo.reload!(task)
     end
 
-    test "dismissing the last outstanding finding is what opens QA", %{conn: conn, task: task, raised: raised} do
-      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
+    test "dismissing the last outstanding finding is what opens QA", %{
+      conn: conn,
+      task: task,
+      decide_as_advised: decide_as_advised
+    } do
+      _decided = decide_as_advised.()
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       refute has_element?(view, "#send-to-qa")
@@ -1751,16 +1788,16 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
       view |> element("#send-to-qa") |> render_click()
 
-      assert has_element?(view, "#review-error", "still outstanding")
+      assert has_element?(view, "#review-error", "no decision yet")
       assert %Task{stage: :review} = Repo.reload!(task)
     end
 
     test "findings dismissed underneath the page leave nothing to send back", %{
       conn: conn,
       task: task,
-      raised: raised
+      decide_as_advised: decide_as_advised
     } do
-      {:ok, findings} = Pipeline.sync_review_findings(task, raised)
+      findings = decide_as_advised.()
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -1799,9 +1836,9 @@ defmodule RailWeb.TaskLiveTest do
       conn: conn,
       task: task,
       project: project,
-      raised: raised
+      decide_as_advised: decide_as_advised
     } do
-      {:ok, _synced} = Pipeline.sync_review_findings(task, raised)
+      _decided = decide_as_advised.()
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 

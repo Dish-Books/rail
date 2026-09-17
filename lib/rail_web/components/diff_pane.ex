@@ -194,10 +194,15 @@ defmodule RailWeb.Components.DiffPane do
               No file here matches {@query}.
             </p>
 
+            <!-- A branch diff runs to thousands of rows, each with sticky gutters
+            the compositor would otherwise re-evaluate on every frame. Off-screen
+            files are left unrendered until they are scrolled near; the intrinsic
+            size keeps the scrollbar honest while they are. -->
             <div
               :for={file <- @visible}
               id={"diff-file-#{slug(file.path)}"}
               data-qa="diff_file_section"
+              style={"content-visibility: auto; contain-intrinsic-size: auto #{intrinsic_height(file, @collapsed)}px;"}
               class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden"
             >
               <div
@@ -440,35 +445,48 @@ defmodule RailWeb.Components.DiffPane do
   attr :line, :map, required: true
 
   defp line(assigns) do
-    assigns = assign(assigns, :style, line_style(assigns.line.line_kind))
+    assigns =
+      assigns
+      |> assign(:style, line_style(assigns.line.line_kind))
+      |> assign(:focus?, Map.get(assigns.line, :focus?, false))
 
     ~H"""
+    <!-- A row fetched because something points at it says so: a reader arriving
+    from a finding should not have to count lines to find the one it meant. -->
     <div
       data-qa="diff_line_row"
       data-kind={@line.line_kind}
+      data-focus={to_string(@focus?)}
       class={[
         "h-[22px] w-full flex items-stretch leading-[22px] font-mono text-xs select-text border-l-2",
         @style.background,
-        @style.accent
+        @focus? && "ring-1 ring-inset ring-amber-500/70 bg-amber-500/10",
+        not @focus? && @style.accent,
+        @focus? && "border-amber-500"
       ]}
     >
       <div class={[
-        "sticky left-0 z-10 w-12 shrink-0 pr-2 text-right text-[11px] text-slate-400 dark:text-slate-500 select-none tabular-nums",
-        @style.gutter
+        "sticky left-0 z-10 w-12 shrink-0 pr-2 text-right text-[11px] select-none tabular-nums",
+        @focus? && "bg-amber-100 dark:bg-amber-950 font-bold text-amber-800 dark:text-amber-300",
+        not @focus? && "text-slate-400 dark:text-slate-500",
+        not @focus? && @style.gutter
       ]}>
         {@line.old_line}
       </div>
 
       <div class={[
-        "sticky left-12 z-10 w-12 shrink-0 pr-2 text-right text-[11px] text-slate-400 dark:text-slate-500 select-none tabular-nums",
-        @style.gutter
+        "sticky left-12 z-10 w-12 shrink-0 pr-2 text-right text-[11px] select-none tabular-nums",
+        @focus? && "bg-amber-100 dark:bg-amber-950 font-bold text-amber-800 dark:text-amber-300",
+        not @focus? && "text-slate-400 dark:text-slate-500",
+        not @focus? && @style.gutter
       ]}>
         {@line.new_line}
       </div>
 
       <div class={[
         "sticky left-24 z-10 w-5 shrink-0 text-center font-bold select-none",
-        @style.gutter,
+        @focus? && "bg-amber-100 dark:bg-amber-950",
+        not @focus? && @style.gutter,
         @style.glyph_class
       ]}>
         {@style.glyph}
@@ -584,6 +602,14 @@ defmodule RailWeb.Components.DiffPane do
 
   defp expanded(expanded_gaps, %{kind: :gap, key: key}), do: Map.get(expanded_gaps, key)
   defp expanded(_expanded_gaps, _row), do: nil
+
+  # Header plus a row each, at the heights the rows are drawn at. Only a guess
+  # for a file that has not been rendered yet, which is all the browser wants.
+  defp intrinsic_height(_file, nil = _collapsed), do: 44
+
+  defp intrinsic_height(file, collapsed) do
+    if file.path in collapsed, do: 44, else: 44 + length(file.rows) * 22
+  end
 
   defp slug(path), do: path |> String.replace(~r/[^a-zA-Z0-9_-]/, "-") |> String.trim("-")
 end

@@ -6,7 +6,12 @@ defmodule Rail.Pipeline.Schemas.ReviewFinding do
   The reviewer `recommends` fixing it or letting it stand, and on a later pass
   says whether it is `fixed`. It says what is wrong in `detail` and what would
   settle it in `suggestion`, because those are read by different people: the
-  human deciding needs the first, the engineer fixing needs the second. The human `decides`, and that is the only column
+  human deciding needs the first, the engineer fixing needs the second.
+
+  `decision` starts as nothing and only a human ever writes it. Seeding it from
+  the recommendation made the two indistinguishable afterwards: a finding the
+  reviewer thought not worth fixing and one a person read and dismissed looked
+  the same, and the panel could not say which rulings had actually been made. The human `decides`, and that is the only column
   the reviewer may not write: a finding the human dismissed stays dismissed
   however many times the change comes back round.
 
@@ -60,21 +65,15 @@ defmodule Rail.Pipeline.Schemas.ReviewFinding do
     :title,
     :severity,
     :recommendation,
-    :status,
-    :decision
+    :status
   ]
 
   @doc """
   Builds a changeset for a finding the reviewer raised.
-
-  A finding nobody has ruled on yet starts at the reviewer's recommendation, so
-  accepting the review as it stands is the default and the human only has to
-  touch what they disagree with.
   """
   def changeset(review_finding, attrs) do
     review_finding
     |> cast(attrs, @cast_fields)
-    |> default_decision()
     |> validate_required(@required_fields)
     |> foreign_key_constraint(:task_id)
     |> unique_constraint([:task_id, :key])
@@ -88,17 +87,28 @@ defmodule Rail.Pipeline.Schemas.ReviewFinding do
   end
 
   @doc """
-  True when this finding is still asking something of the engineer.
+  True when this finding is one the engineer is being asked to fix.
+
+  Only what a human ruled on: a finding nobody has decided yet is not something
+  to send, it is something to decide.
   """
-  def outstanding?(%__MODULE__{decision: :skip}), do: false
   def outstanding?(%__MODULE__{status: :fixed}), do: false
-  def outstanding?(%__MODULE__{}), do: true
+  def outstanding?(%__MODULE__{decision: :fix}), do: true
+  def outstanding?(%__MODULE__{}), do: false
+
+  @doc """
+  True when this finding is still waiting on a human to rule on it.
+  """
+  def undecided?(%__MODULE__{status: :fixed}), do: false
+  def undecided?(%__MODULE__{decision: nil}), do: true
+  def undecided?(%__MODULE__{}), do: false
 
   @doc """
   Where a finding sits right now, as the one word the panel groups by.
   """
-  def state(%__MODULE__{decision: :skip}), do: :dismissed
   def state(%__MODULE__{status: :fixed}), do: :fixed
+  def state(%__MODULE__{decision: :skip}), do: :dismissed
+  def state(%__MODULE__{decision: nil}), do: :undecided
   def state(%__MODULE__{status: :not_fixed}), do: :not_fixed
   def state(%__MODULE__{}), do: :to_fix
 
@@ -110,11 +120,4 @@ defmodule Rail.Pipeline.Schemas.ReviewFinding do
   def severity_label(:major), do: "Major"
   def severity_label(:minor), do: "Minor"
   def severity_label(:nit), do: "Nit"
-
-  defp default_decision(changeset) do
-    case {get_field(changeset, :decision), get_field(changeset, :recommendation)} do
-      {nil, recommendation} when recommendation in @recommendations -> put_change(changeset, :decision, recommendation)
-      _already_decided -> changeset
-    end
-  end
 end

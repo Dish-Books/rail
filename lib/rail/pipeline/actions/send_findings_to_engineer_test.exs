@@ -87,7 +87,7 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
         started_at: DateTime.utc_now()
       })
 
-    {:ok, findings} =
+    {:ok, raised} =
       Pipeline.sync_review_findings(task, [
         %{
           key: "unhandled-nil",
@@ -101,6 +101,14 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
         },
         %{key: "naming-nit", title: "Poor variable name", severity: :nit, recommendation: :skip, status: :open}
       ])
+
+    # Nothing is decided until a person decides it, so the fixture rules the way
+    # the reviewer advised and each test changes only what it is about.
+    findings =
+      Enum.map(raised, fn finding ->
+        {:ok, decided} = Pipeline.decide_review_finding(finding, finding.recommendation)
+        decided
+      end)
 
     %{
       task: task,
@@ -175,6 +183,17 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
     for finding <- findings, do: {:ok, _dismissed} = Pipeline.decide_review_finding(finding, :skip)
 
     assert {:error, :nothing_outstanding} = Pipeline.send_findings_to_engineer(run)
+  end
+
+  # Sending while one is undecided would drop it from the round without anyone
+  # having said to.
+  test "nothing is sent while a finding has no decision", %{task: task, review_run: run} do
+    {:ok, _raised} =
+      Pipeline.sync_review_findings(task, [
+        %{key: "brand-new", title: "Raised on the latest pass", severity: :major, recommendation: :fix, status: :open}
+      ])
+
+    assert {:error, :findings_undecided} = Pipeline.send_findings_to_engineer(run)
   end
 
   test "a project with nobody to send to says so", %{review_run: run} do

@@ -101,9 +101,19 @@ defmodule Rail.Pipeline.Actions.SendToQaTest do
   end
 
   test "a change with something still to fix does not go on", %{task: task, run: run, raised: raised} do
-    {:ok, _synced} = Pipeline.sync_review_findings(task, [raised])
+    {:ok, [finding]} = Pipeline.sync_review_findings(task, [raised])
+    {:ok, _to_fix} = Pipeline.decide_review_finding(finding, :fix)
 
     assert {:error, :findings_outstanding} = Pipeline.send_to_qa(run)
+    assert %Task{stage: :review} = Repo.reload!(task)
+  end
+
+  # Silence is not a dismissal, so a finding nobody has ruled on holds the change
+  # here rather than going quietly to QA.
+  test "a finding nobody has ruled on does not go on either", %{task: task, run: run, raised: raised} do
+    {:ok, _synced} = Pipeline.sync_review_findings(task, [raised])
+
+    assert {:error, :findings_undecided} = Pipeline.send_to_qa(run)
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 

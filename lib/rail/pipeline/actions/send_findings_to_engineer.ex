@@ -47,10 +47,15 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineer do
     if Task.running?(task), do: {:error, :stage_running}, else: :ok
   end
 
+  # Everything has to have been ruled on first: sending while one is undecided
+  # would drop it from the round without anyone having said to.
   defp outstanding(%Task{} = task) do
-    case Enum.filter(Pipeline.list_review_findings(task), &ReviewFinding.outstanding?/1) do
-      [] -> {:error, :nothing_outstanding}
-      findings -> {:ok, findings}
+    findings = Pipeline.list_review_findings(task)
+
+    cond do
+      Enum.any?(findings, &ReviewFinding.undecided?/1) -> {:error, :findings_undecided}
+      Enum.filter(findings, &ReviewFinding.outstanding?/1) == [] -> {:error, :nothing_outstanding}
+      true -> {:ok, Enum.filter(findings, &ReviewFinding.outstanding?/1)}
     end
   end
 

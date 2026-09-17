@@ -91,7 +91,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
     assert %Run{error: nil} = review_run_finished(run, [])
     assert %Task{stage: :review} = Repo.reload!(task)
 
-    assert [%ReviewFinding{key: "unhandled-nil", severity: :blocker, decision: :fix}] =
+    assert [%ReviewFinding{key: "unhandled-nil", severity: :blocker, decision: nil}] =
              Pipeline.list_review_findings(task)
   end
 

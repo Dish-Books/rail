@@ -29,6 +29,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   import Rail.Pipeline.Utils.RegisterAskedQuestions
   import Rail.Pipeline.Utils.ReviewRunFinished
 
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -82,6 +83,10 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp settled_status(%Run{status: :blocked_on_input}), do: :blocked_on_input
   defp settled_status(%Run{}), do: :finished
 
+  defp said_it_was_done?(%Task{} = task) do
+    task |> Repo.preload(:issue) |> Pipeline.read_commit_message() != nil
+  end
+
   defp exit_code(%{exit_code: code}, _run) when is_integer(code), do: code
   defp exit_code(%{"exit_code" => code}, _run) when is_integer(code), do: code
   defp exit_code(_outcome, %Run{exit_code: code}) when is_integer(code), do: code
@@ -119,6 +124,17 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   # run that is already done exactly as it was.
   defp concluded?(%Run{role: %Role{stage: :review}} = run) do
     run.exit_code == 0 and pending_questions(run.task_id) == []
+  end
+
+  # The engineer says it has finished by writing its commit message, and that is
+  # a better signal than the exit code of the CLI carrying it: Agy exits non-zero
+  # when its root agent stops with background tasks still running, having done
+  # the work and said so. Throwing that turn away leaves the change sitting
+  # uncommitted in the worktree with nothing to move it on.
+  defp concluded?(%Run{role: %Role{stage: :engineer}, task: %Task{} = task} = run) do
+    run.stage_outcome == :in_progress and
+      pending_questions(run.task_id) == [] and
+      (run.exit_code == 0 or said_it_was_done?(task))
   end
 
   # Every other run only concludes by saying so, having actually finished: a

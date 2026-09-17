@@ -6,20 +6,29 @@ defmodule Rail.Git.Actions.LoadDiffHunk do
   that line is part of, not the whole file and not the whole branch. The rest of
   the file's hunks are counted rather than returned, so the pane can offer them
   without paying for them.
+
+  A hunk can itself be long enough to bury the line it was fetched for, so only
+  a few lines either side of that one come back, and the line itself is marked
+  so the pane can say which of them the finding is about.
   """
 
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Scope
 
+  # Enough either side to see what the line sits in, without the reader having
+  # to hunt for it again.
+  @context 6
+
   @doc """
   Returns the hunk covering `line` of `path` in `task`'s branch diff.
 
-  `%{path:, display_path:, additions:, deletions:, rows:, other_hunks:}`, or
-  `nil` when the branch does not touch that file at all. A `path` with no `line`
-  takes the file's first hunk, which is what a finding that names only a file
-  means. A line the diff does not cover reads as the first hunk too: the file did
-  change, and showing the change is better than showing nothing.
+  `%{path:, display_path:, additions:, deletions:, rows:, other_hunks:,
+  hidden_lines:}`, or `nil` when the branch does not touch that file at all. The
+  row `line` falls on carries `focus?: true`. A `path` with no `line` takes the
+  file's first hunk, which is what a finding that names only a file means. A line
+  the diff does not cover reads as the first hunk too: the file did change, and
+  showing the change is better than showing nothing.
   """
   def load_diff_hunk(%Scope{} = scope, %Task{} = task, path, line \\ nil) when is_binary(path) do
     with {:ok, files} <- Git.load_diff(scope, task, :branch),
@@ -28,13 +37,16 @@ defmodule Rail.Git.Actions.LoadDiffHunk do
 
       case pick(hunks, line) do
         rows when is_list(rows) ->
+          {trimmed, hidden} = trim(rows, line)
+
           %{
             path: file.path,
             display_path: file.display_path,
             additions: file.additions,
             deletions: file.deletions,
-            rows: rows,
-            other_hunks: max(length(hunks) - 1, 0)
+            rows: trimmed,
+            other_hunks: max(length(hunks) - 1, 0),
+            hidden_lines: hidden
           }
 
         nil ->
@@ -86,4 +98,25 @@ defmodule Rail.Git.Actions.LoadDiffHunk do
 
   defp covers?(%{kind: :line, new_line: new_line}, line), do: new_line == line
   defp covers?(_other_row, _line), do: false
+
+  # The header stays whatever is cut, because it is what says where in the file
+  # these lines are.
+  defp trim(rows, line) do
+    {headers, lines} = Enum.split_with(rows, &(&1.kind == :hunk_header))
+
+    case Enum.find_index(lines, &covers?(&1, line)) do
+      focus when is_integer(focus) ->
+        first = max(focus - @context, 0)
+        kept = lines |> Enum.slice(first, @context * 2 + 1) |> Enum.map(&mark(&1, line))
+
+        {headers ++ kept, length(lines) - length(kept)}
+
+      nil ->
+        {rows, 0}
+    end
+  end
+
+  defp mark(row, line) do
+    if covers?(row, line), do: Map.put(row, :focus?, true), else: row
+  end
 end

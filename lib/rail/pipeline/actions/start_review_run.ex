@@ -150,6 +150,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
   defp decision_word(:fix), do: "fix it"
   defp decision_word(:skip), do: "dismissed, leave it"
+  defp decision_word(nil), do: "not yet decided"
 
   # A task that skipped architect has no plan, and the ticket is then the whole
   # of the specification the change is read against.

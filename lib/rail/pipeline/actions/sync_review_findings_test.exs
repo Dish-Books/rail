@@ -60,13 +60,15 @@ defmodule Rail.Pipeline.Actions.SyncReviewFindingsTest do
     %{task: task, raised: raised}
   end
 
-  test "a finding starts at the reviewer's recommendation", %{task: task, raised: raised} do
-    assert {:ok, [%ReviewFinding{key: "unhandled-nil", recommendation: :fix, decision: :fix}]} =
+  # The recommendation is advice and the decision is a ruling. Seeding one from
+  # the other left no way to tell a dismissal from advice nobody had read yet.
+  test "a finding arrives with nobody having ruled on it", %{task: task, raised: raised} do
+    assert {:ok, [%ReviewFinding{key: "unhandled-nil", recommendation: :fix, decision: nil}]} =
              Pipeline.sync_review_findings(task, [raised])
   end
 
-  test "a finding the reviewer would leave starts dismissed", %{task: task, raised: raised} do
-    assert {:ok, [%ReviewFinding{recommendation: :skip, decision: :skip}]} =
+  test "a finding the reviewer would leave is still undecided", %{task: task, raised: raised} do
+    assert {:ok, [%ReviewFinding{recommendation: :skip, decision: nil}]} =
              Pipeline.sync_review_findings(task, [%{raised | recommendation: :skip}])
   end
 

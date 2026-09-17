@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   import Rail.Pipeline.Utils.QuestionQueue
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -223,7 +224,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :review} = Repo.reload!(task)
-    assert [%{key: "unhandled-nil", decision: :fix}] = Pipeline.list_review_findings(task)
+    assert [%{key: "unhandled-nil", decision: nil}] = Pipeline.list_review_findings(task)
   end
 
   # The reviewer is argued with after it has reported, and the argument ends in a
@@ -282,6 +283,27 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{stage: :qa} = Repo.reload!(task)
   end
 
+  # Agy exits non-zero when its root agent stops with background tasks still
+  # running, having done the work and written its commit message. Throwing that
+  # turn away left the change uncommitted with nothing to move it on.
+  test "an engineer that said it was done is taken at its word, whatever the exit code", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    File.mkdir_p!(Path.join(task.scratch_path, "commits"))
+    File.write!(Path.join([task.scratch_path, "commits", "RUN-1.md"]), "RUN-1: did the work\n")
+    File.write!(Path.join(task.worktree_path, "changed.ex"), "the engineer's work\n")
+
+    stub(Git, :push_branch, fn _path, _branch -> :ok end)
+    {_run, os_process} = exited.(:engineer, %{})
+
+    assert {:ok, %Run{stage_outcome: :done, error: nil}} =
+             Pipeline.run_finished(os_process, %{exit_code: 1, error: "root agent idle; waiting for 2 background task(s)"})
+
+    refute Git.worktree_dirty?(task.worktree_path)
+  end
+
   test "an engineer run that left no commit message stays open for the message that fixes it", %{
     task: task,
     exited: exited
@@ -301,7 +323,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
     {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
 
-    reject(&Rail.Git.commit_worktree/3)
+    reject(&Git.commit_worktree/3)
 
     assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :engineer} = Repo.reload!(task)

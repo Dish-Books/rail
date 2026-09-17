@@ -181,7 +181,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     task: task,
     run: run
   } do
-    {:ok, [_raised, dismissed]} =
+    {:ok, [to_fix, dismissed]} =
       Pipeline.sync_review_findings(task, [
         %{
           key: "unhandled-nil",
@@ -206,6 +206,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       ])
 
     {:ok, _stopped} = Pipeline.update_run(run, %{status: :finished})
+    {:ok, _to_fix} = Pipeline.decide_review_finding(to_fix, :fix)
     {:ok, _skipped} = Pipeline.decide_review_finding(dismissed, :skip)
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
