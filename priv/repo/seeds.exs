@@ -122,8 +122,7 @@ default_roles = [
     backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
-    system_prompt:
-      "You are an expert QA Automation Engineer. Execute test suites, verify user flows against acceptance criteria, and capture reproducible defect reports.",
+    system_prompt: File.read!("prompts/qa.md"),
     max_concurrent: 1,
     position: 5
   },

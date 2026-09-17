@@ -41,7 +41,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       })
 
     roles =
-      Map.new([:product, :design, :architect, :engineer, :review, :qa], fn stage ->
+      Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
             backend_id: backend.id,
@@ -299,11 +299,89 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     task: task,
     exited: exited
   } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa_lead})
+    {_run, os_process} = exited.(:qa_lead, %{})
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :qa_lead} = Repo.reload!(task)
+  end
+
+  test "a QA run records what it found and leaves the task at QA", %{task: task, exited: exited} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
+    File.mkdir_p!(Path.join(task.scratch_path, "qa"))
+
+    File.write!(Path.join([task.scratch_path, "qa", "RUN-1.json"]), """
+    {"verdict": "fail", "findings": [
+      {"key": "total-unrounded", "title": "The total renders as $1234.5",
+       "check": "A bill's total reads as money", "severity": "major", "recommendation": "fix"}
+    ]}
+    """)
+
     {_run, os_process} = exited.(:qa, %{})
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :qa} = Repo.reload!(task)
+    assert [%{key: "total-unrounded", decision: nil}] = Pipeline.list_qa_findings(task)
+  end
+
+  test "a QA run that wrote no report says so and stays open", %{task: task, exited: exited} do
+    {:ok, _at_qa} = Pipeline.update_task(task, %{stage: :qa})
+    {_run, os_process} = exited.(:qa, %{})
+
+    error = "The QA agent did not write qa/RUN-1.json."
+
+    assert {:ok, %Run{stage_outcome: :in_progress, error: ^error}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  # QA is argued with after it has reported, and the argument ends in a rewritten
+  # report with a new verdict. A latch that stopped Rail reading it would leave
+  # the panel showing what QA said two turns ago.
+  test "a QA run that already reported reads its file again on the next turn", %{
+    task: task,
+    roles: roles,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
+    File.mkdir_p!(Path.join(task.scratch_path, "qa"))
+    report = Path.join([task.scratch_path, "qa", "RUN-1.json"])
+
+    File.write!(report, """
+    {"verdict": "fail", "findings": [
+      {"key": "total-unrounded", "title": "The total renders as $1234.5",
+       "check": "A bill's total reads as money", "severity": "major", "recommendation": "fix"}
+    ]}
+    """)
+
+    {run, os_process} = exited.(:qa, %{})
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert [%{status: :open}] = Pipeline.list_qa_findings(task)
+
+    File.write!(report, """
+    {"verdict": "pass", "findings": [
+      {"key": "total-unrounded", "title": "The total renders as $1234.5",
+       "check": "A bill's total reads as money", "severity": "major", "recommendation": "fix",
+       "status": "fixed"}
+    ]}
+    """)
+
+    {:ok, chat_process} =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        role_id: roles[:qa].id,
+        os_pid: 4321,
+        stream_path: "/tmp/run_finished/#{run.id}-qa-chat.ndjson",
+        node: to_string(Node.self()),
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert()
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(chat_process, %{exit_code: 0})
+    assert [%{status: :fixed}] = Pipeline.list_qa_findings(task)
   end
 
   # Agy exits non-zero when its root agent stops with background tasks still

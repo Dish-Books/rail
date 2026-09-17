@@ -409,26 +409,26 @@ defmodule RailWeb.TaskLiveTest do
       project: project,
       backend: backend
     } do
-      {:ok, qa} =
+      {:ok, qa_lead} =
         Roles.create_role(system_scope(), project, %{
           backend_id: backend.id,
-          stage: :qa,
-          name: "qa role",
+          stage: :qa_lead,
+          name: "qa lead role",
           model: "claude-3-7-sonnet",
-          system_prompt: "You are the QA agent."
+          system_prompt: "You are the QA lead."
         })
 
       {:ok, _testing} =
         Pipeline.create_run(%{
           task_id: task.id,
-          role_id: qa.id,
+          role_id: qa_lead.id,
           status: :running,
           started_at: DateTime.utc_now()
         })
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      view |> element("#task-tab-#{qa.id}") |> render_click()
+      view |> element("#task-tab-#{qa_lead.id}") |> render_click()
 
       assert has_element?(view, "[data-qa='role_no_work']")
       assert has_element?(view, "[data-qa='conversation-tab']")
@@ -1899,6 +1899,264 @@ defmodule RailWeb.TaskLiveTest do
 
       _settled = render(view)
       assert has_element?(view, "[data-qa='review_finding_detail']", "Nil is not handled")
+    end
+  end
+
+  describe "the qa stage" do
+    setup %{backend: backend, project: project, task: task} do
+      {:ok, role} =
+        Roles.create_role(system_scope(), project, %{
+          backend_id: backend.id,
+          stage: :qa,
+          name: "qa role",
+          model: "claude-3-7-sonnet",
+          system_prompt: "You are the QA agent."
+        })
+
+      {:ok, engineer_role} =
+        Roles.create_role(system_scope(), project, %{
+          backend_id: backend.id,
+          stage: :engineer,
+          name: "engineer role",
+          model: "claude-3-7-sonnet",
+          system_prompt: "You are the engineer agent."
+        })
+
+      {:ok, task} = Pipeline.update_task(task, %{stage: :qa, worktree_path: create_temp_git_repo()})
+
+      {:ok, _engineer_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: engineer_role.id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "sess_qa_stage_engineer",
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, qa_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: role.id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "sess_qa_stage",
+          started_at: DateTime.utc_now()
+        })
+
+      qa_dir = Path.join(task.scratch_path, "qa")
+      File.mkdir_p!(Path.join(qa_dir, "evidence"))
+      File.write!(Path.join([qa_dir, "evidence", "total.png"]), "png bytes")
+
+      File.write!(Path.join(qa_dir, "TLV-1.json"), """
+      {"verdict": "fail",
+       "summary": "The bill saves but its total is wrong.",
+       "not_checked": "The Plaid callback, which needs a real bank.",
+       "findings": []}
+      """)
+
+      raised = [
+        %{
+          key: "total-unrounded",
+          title: "The bill total renders as $1234.5",
+          check: "A bill's total reads as money on the bill page",
+          criterion: "Totals read as money",
+          screen: "/bills/new",
+          steps: "1. Open a new bill\n2. Enter 1234.50",
+          expected: "$1,234.50",
+          observed: "$1234.5",
+          detail: "Every bill screen reads this way.",
+          suggestion: "Format it with Money.to_string/1.",
+          severity: :blocker,
+          recommendation: :fix,
+          status: :open,
+          evidence: [%{name: "the total as rendered", kind: :screenshot, path: "evidence/total.png"}]
+        },
+        %{
+          key: "spacing-nit",
+          title: "Buttons sit too close together",
+          check: "The bill form looks like the rest of the app",
+          severity: :nit,
+          recommendation: :skip,
+          status: :open,
+          caused_by_change: false
+        }
+      ]
+
+      # Nothing is decided until a person decides it, so a test that is not about
+      # deciding rules the way QA advised and changes only its own bit.
+      decide_as_advised = fn ->
+        {:ok, findings} = Pipeline.sync_qa_findings(task, raised)
+
+        Enum.map(findings, fn finding ->
+          {:ok, decided} = Pipeline.decide_qa_finding(finding, finding.recommendation)
+          decided
+        end)
+      end
+
+      %{task: task, role: role, qa_run: qa_run, raised: raised, decide_as_advised: decide_as_advised}
+    end
+
+    test "lists every finding with QA's verdict over the top", %{
+      conn: conn,
+      task: task,
+      decide_as_advised: decide_as_advised
+    } do
+      _decided = decide_as_advised.()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#qa-findings")
+      assert has_element?(view, "[data-qa='qa_verdict_label']", "Failed")
+      assert has_element?(view, "[data-qa='qa_verdict']", "The bill saves but its total is wrong.")
+      assert has_element?(view, "[data-qa='qa_not_checked']", "The Plaid callback")
+      assert has_element?(view, "#qa-finding-total-unrounded", "The bill total renders as $1234.5")
+      assert has_element?(view, "#qa-finding-spacing-nit", "Buttons sit too close together")
+      assert has_element?(view, "[data-qa='qa_finding_tally']", "1 to fix · 1 dismissed")
+    end
+
+    test "the detail pane says what QA drove and what it saw", %{
+      conn: conn,
+      task: task,
+      decide_as_advised: decide_as_advised
+    } do
+      _decided = decide_as_advised.()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='qa_finding_detail']", "The bill total renders as $1234.5")
+      assert has_element?(view, "[data-qa='qa_finding_position']", "1 of 2")
+      assert has_element?(view, "[data-qa='qa_finding_screen']", "/bills/new")
+      assert has_element?(view, "[data-qa='qa_finding_criterion']", "Totals read as money")
+      assert has_element?(view, "[data-qa='qa_finding_check']", "A bill's total reads as money")
+      assert has_element?(view, "[data-qa='qa_finding_steps']", "Enter 1234.50")
+      assert has_element?(view, "[data-qa='qa_finding_expected']", "$1,234.50")
+      assert has_element?(view, "[data-qa='qa_finding_observed']", "$1234.5")
+      assert has_element?(view, "[data-qa='qa_finding_suggestion']", "Money.to_string/1")
+      assert has_element?(view, "[data-qa='qa_finding_recommendation']", "recommends fixing this")
+    end
+
+    test "a screenshot is shown rather than described", %{
+      conn: conn,
+      task: task,
+      decide_as_advised: decide_as_advised
+    } do
+      _decided = decide_as_advised.()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(
+               view,
+               ~s(img[src="/tasks/#{task.id}/qa/total-unrounded/evidence/0"][alt="the total as rendered"])
+             )
+    end
+
+    test "what this change did not cause is marked and sorted below what it did", %{
+      conn: conn,
+      task: task,
+      decide_as_advised: decide_as_advised
+    } do
+      _decided = decide_as_advised.()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#qa-finding-spacing-nit") |> render_click()
+
+      assert has_element?(view, "[data-qa='qa_finding_pre_existing']", "Not this change")
+      assert has_element?(view, "[data-qa='qa_finding_dismissed']", "Dismissed")
+    end
+
+    test "a pass that raised nothing says so", %{conn: conn, task: task} do
+      {:ok, _raised} = Pipeline.sync_qa_findings(task, [])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#qa-pending-title", "Nothing to fix")
+    end
+
+    test "a finding is ruled on from the detail pane", %{conn: conn, task: task, decide_as_advised: decide_as_advised} do
+      _decided = decide_as_advised.()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#decide-skip-total-unrounded") |> render_click()
+
+      assert has_element?(view, "[data-qa='qa_finding_dismissed']", "Dismissed")
+      assert has_element?(view, "[data-qa='qa_finding_recommendation']", "You dismissed it")
+    end
+
+    test "nothing can be sent while a finding has no ruling on it", %{conn: conn, task: task, raised: raised} do
+      {:ok, _undecided} = Pipeline.sync_qa_findings(task, raised)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='qa_finding_undecided']", "Needs your call")
+      refute has_element?(view, "#send-qa-findings-to-engineer")
+      refute has_element?(view, "#send-to-demo")
+    end
+
+    test "what the human kept goes back to the engineer", %{conn: conn, task: task, decide_as_advised: decide_as_advised} do
+      _decided = decide_as_advised.()
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#send-qa-findings-to-engineer", "Send 1 back to engineer") |> render_click()
+
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+    end
+
+    test "a change with nothing left goes on to demo", %{conn: conn, task: task, decide_as_advised: decide_as_advised} do
+      for finding <- decide_as_advised.(), do: {:ok, _dismissed} = Pipeline.decide_qa_finding(finding, :skip)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      refute has_element?(view, "#send-qa-findings-to-engineer")
+      view |> element("#send-to-demo") |> render_click()
+
+      assert %Task{stage: :demo} = Repo.reload!(task)
+    end
+
+    test "a refusal is shown rather than swallowed", %{conn: conn, task: task, decide_as_advised: decide_as_advised} do
+      _decided = decide_as_advised.()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
+      view |> element("#send-qa-findings-to-engineer") |> render_click()
+
+      assert has_element?(view, "#qa-error", "This task is at Review, not QA.")
+    end
+
+    # A stopped QA agent and one that exercised the change and found nothing look
+    # identical otherwise, and only one of them is a change anybody should send on.
+    test "a QA run that never reported is not a clean pass", %{conn: conn, task: task, qa_run: run} do
+      {:ok, _unlatched} = Pipeline.update_run(run, %{stage_outcome: :in_progress})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#qa-pending-title", "No findings yet")
+      refute has_element?(view, "#send-to-demo")
+    end
+
+    test "a QA pass still running says so", %{conn: conn, task: task, qa_run: run} do
+      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#qa-pending-title", "Driving the application")
+    end
+
+    # The verdict is read off disk, so nothing else would bring it up to date.
+    test "a turn that lands underneath the reader is picked up", %{conn: conn, task: task, qa_run: run, raised: raised} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#qa-pending-title", "Nothing to fix")
+
+      {:ok, _synced} = Pipeline.sync_qa_findings(task, raised)
+      send(view.pid, {:os_process_finished, run, %{}})
+
+      _settled = render(view)
+      assert has_element?(view, "[data-qa='qa_finding_detail']", "The bill total renders as $1234.5")
     end
   end
 end
