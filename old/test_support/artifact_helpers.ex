@@ -45,39 +45,4 @@ defmodule RailTest.Support.ArtifactHelpers do
     File.write!(manifest_file, Jason.encode!(data))
     manifest_file
   end
-
-  @doc "Writes a valid QA manifest in the qa directory."
-  def write_qa_manifest(qa_dir, attrs \\ %{}) do
-    screenshot_path = Path.join(qa_dir, "screenshot.png")
-    write_dummy_image(screenshot_path)
-
-    default_data = %{
-      "commit" => "abc1234",
-      "session" => %{"port" => 4000, "url" => "http://localhost:4000"},
-      "rows" => [
-        %{
-          "id" => "check_1",
-          "check" => "Login works",
-          "result" => "pass",
-          "severity" => "blocker",
-          "caused_by_change" => true,
-          "command" => "mix test",
-          "exit_code" => 0,
-          "note" => "Passed cleanly",
-          "artifacts" => [
-            %{
-              "name" => "screenshot.png",
-              "kind" => "image",
-              "path" => "screenshot.png"
-            }
-          ]
-        }
-      ]
-    }
-
-    data = Map.merge(default_data, attrs)
-    manifest_file = Path.join(qa_dir, "manifest.json")
-    File.write!(manifest_file, Jason.encode!(data))
-    manifest_file
-  end
 end

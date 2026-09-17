@@ -2,7 +2,6 @@ defmodule Rail.Artifacts.Utils.CommentFormatter do
   @moduledoc false
 
   alias Rail.Artifacts.Schemas.Demo
-  alias Rail.Artifacts.Schemas.QaReport
 
   @doc "Formats a Linear comment for a demo artifact."
   def format_demo_comment(%Demo{outcome: outcome} = demo) when outcome in ["declined", "failed"] do
@@ -28,50 +27,6 @@ defmodule Rail.Artifacts.Utils.CommentFormatter do
     body = Enum.map_join(segments, "\n\n", &format_demo_segment/1)
 
     header <> body
-  end
-
-  @doc "Formats a Linear comment for a QA report."
-  def format_qa_comment(%QaReport{} = qa_report) do
-    rows = qa_report.rows || []
-
-    passed =
-      Enum.count(rows, fn r ->
-        result = get_val(r, :result)
-        result in [:pass, "pass"]
-      end)
-
-    failed =
-      Enum.count(rows, fn r ->
-        result = get_val(r, :result)
-        result in [:fail, "fail"]
-      end)
-
-    skipped =
-      Enum.count(rows, fn r ->
-        result = get_val(r, :result)
-        result in [:skip, "skip"]
-      end)
-
-    header = """
-    ## QA Report
-
-    Commit: `#{qa_report.commit || "unknown"}`
-    Summary: #{passed} passed, #{failed} failed, #{skipped} skipped
-
-    | Check | Result | Severity | Caused by change |
-    |---|---|---|---|
-    """
-
-    table_rows =
-      Enum.map_join(rows, "\n", fn row ->
-        check = get_val(row, :check)
-        result = get_val(row, :result)
-        severity = get_val(row, :severity)
-        caused = get_val(row, :caused_by_change)
-        "| #{check} | #{result} | #{severity} | #{caused} |"
-      end)
-
-    header <> table_rows
   end
 
   defp format_demo_segment(seg) do

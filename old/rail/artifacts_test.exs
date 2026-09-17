@@ -3,7 +3,6 @@ defmodule Rail.ArtifactsTest do
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Demo
-  alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Projects
   alias Rail.Scope
   alias RailTest.Mocks.Linear, as: LinearMock
@@ -13,7 +12,7 @@ defmodule Rail.ArtifactsTest do
 
   setup do
     dir = Path.join(@tmp_base, "facade_#{System.unique_integer([:positive])}")
-    Enum.each(["demo", "qa"], &File.mkdir_p!(Path.join(dir, &1)))
+    File.mkdir_p!(Path.join(dir, "demo"))
 
     {:ok, ws} =
       Projects.upsert_linear_workspace(system_scope(), %{
@@ -58,33 +57,5 @@ defmodule Rail.ArtifactsTest do
       assert {:ok, %Demo{stale: true}} = Artifacts.mark_demo_stale(scope, "tsk_facade_dmo")
     end
 
-    test "delegates qa actions and asset helper", %{dir: dir, project: project} do
-      scope = Scope.for_system()
-      ArtifactHelpers.write_qa_manifest(Path.join(dir, "qa"))
-
-      assert {:ok, %{}} = Artifacts.read_qa_report(scope, dir)
-
-      LinearMock.mock_file_upload_success(
-        upload_url: "https://api.linear.app/upload/facade_qar",
-        asset_url: "https://uploads.linear.app/facade_qar/shot.png",
-        asset_id: "ast_facade_qar"
-      )
-
-      assert {:ok, %QaReport{task_id: "tsk_facade_qar"}} =
-               Artifacts.capture_qa_report(scope, "tsk_facade_qar", dir, project: project)
-
-      assert Artifacts.asset_url(:demo, "ast_123") == "/assets/demo/ast_123"
-
-      assert {:ok, %{url: "https://uploads.linear.app/facade_qar/shot.png"}} =
-               Artifacts.get_asset(scope, :qa, "shot.png")
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Plug.Conn.send_resp(conn, 200, "SHOT_BYTES")
-      end)
-
-      dest_dir = Path.join(dir, "mat_out")
-      qa_mat_dir = Path.join(dest_dir, "qa")
-      assert {:ok, ^qa_mat_dir} = Artifacts.materialize(scope, "tsk_facade_qar", dest_dir, kind: :qa)
-    end
   end
 end

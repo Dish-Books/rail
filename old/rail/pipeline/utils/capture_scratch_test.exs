@@ -136,21 +136,11 @@ defmodule Rail.Pipeline.Utils.CaptureScratchTest do
              Repo.get!(Issue, task.issue_id)
   end
 
-  test "capture_scratch delegates to artifacts for qa, demo when manifests exist", %{task: task} do
+  test "capture_scratch delegates to artifacts for demo when a manifest exists", %{task: task} do
     # Artifact capture only posts to Linear when the task has an issue.
     {:ok, task} = Pipeline.update_task(task, %{issue_id: nil})
 
     scratch_dir = create_temp_git_repo()
-
-    qa_dir = Path.join(scratch_dir, "qa")
-    File.mkdir_p!(qa_dir)
-    File.write!(Path.join(qa_dir, "manifest.json"), ~s({"commit": "abc", "session": {}, "rows": []}))
-
-    assert {:ok, %Task{}} = capture_scratch(:qa, %{task | scratch_path: scratch_dir})
-
-    scratch_dir_direct = create_temp_git_repo()
-    File.write!(Path.join(scratch_dir_direct, "manifest.json"), ~s({"commit": "dir_qa", "session": {}, "rows": []}))
-    assert {:ok, %Task{}} = capture_scratch(:qa, %{task | scratch_path: scratch_dir_direct})
 
     demo_dir = Path.join(scratch_dir, "demo")
     File.mkdir_p!(demo_dir)

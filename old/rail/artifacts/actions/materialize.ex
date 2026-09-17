@@ -4,11 +4,8 @@ defmodule Rail.Artifacts.Actions.Materialize do
   import Ecto.Query
 
   alias Rail.Artifacts.Schemas.Demo
-  alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Domain.Embeds.DemoFrame
   alias Rail.Domain.Embeds.DemoSegment
-  alias Rail.Domain.Embeds.QaArtifact
-  alias Rail.Domain.Embeds.QaRow
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
@@ -22,11 +19,6 @@ defmodule Rail.Artifacts.Actions.Materialize do
     materialize_demo(demo, dest_scratch_dir, opts)
   end
 
-  defp do_materialize(%QaReport{} = report, dest_scratch_dir, opts) do
-    opts = maybe_attach_task_project(nil, report.task_id, opts)
-    materialize_qa_report(report, dest_scratch_dir, opts)
-  end
-
   defp do_materialize(task_target, dest_scratch_dir, opts) do
     task_id = extract_task_id(task_target)
     opts = maybe_attach_task_project(task_target, task_id, opts)
@@ -37,12 +29,6 @@ defmodule Rail.Artifacts.Actions.Materialize do
         case get_latest_demo(task_id) do
           %Demo{} = demo -> materialize_demo(demo, dest_scratch_dir, opts)
           nil -> {:error, :demo_not_found}
-        end
-
-      :qa ->
-        case get_latest_qa_report(task_id) do
-          %QaReport{} = report -> materialize_qa_report(report, dest_scratch_dir, opts)
-          nil -> {:error, :qa_report_not_found}
         end
 
       :all ->
@@ -58,10 +44,6 @@ defmodule Rail.Artifacts.Actions.Materialize do
     Repo.one(from(d in Demo, where: d.task_id == ^task_id, order_by: [desc: d.version], limit: 1))
   end
 
-  defp get_latest_qa_report(task_id) do
-    Repo.one(from(q in QaReport, where: q.task_id == ^task_id, order_by: [desc: q.inserted_at], limit: 1))
-  end
-
   defp materialize_all(task_id, dest_scratch_dir, opts) do
     results = %{}
 
@@ -70,16 +52,6 @@ defmodule Rail.Artifacts.Actions.Materialize do
         %Demo{} = demo ->
           {:ok, path} = materialize_demo(demo, dest_scratch_dir, opts)
           Map.put(results, :demo, path)
-
-        nil ->
-          results
-      end
-
-    results =
-      case get_latest_qa_report(task_id) do
-        %QaReport{} = report ->
-          {:ok, path} = materialize_qa_report(report, dest_scratch_dir, opts)
-          Map.put(results, :qa, path)
 
         nil ->
           results
@@ -161,121 +133,6 @@ defmodule Rail.Artifacts.Actions.Materialize do
         }
 
         {:ok, seg_map}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp materialize_qa_report(%QaReport{} = report, dest_scratch_dir, opts) do
-    qa_dir =
-      if String.ends_with?(dest_scratch_dir, "qa") do
-        dest_scratch_dir
-      else
-        Path.join(dest_scratch_dir, "qa")
-      end
-
-    File.mkdir_p!(qa_dir)
-
-    with {:ok, token} <- maybe_resolve_token_for_qa(report, opts),
-         {:ok, rows_data} <- download_qa_rows(report.rows || [], qa_dir, token, opts) do
-      manifest = %{
-        "commit" => report.commit,
-        "session" => report.session,
-        "rows" => rows_data
-      }
-
-      manifest_path = Path.join(qa_dir, "manifest.json")
-      File.write!(manifest_path, Jason.encode!(manifest, pretty: true))
-      {:ok, qa_dir}
-    end
-  end
-
-  defp maybe_resolve_token_for_qa(report, opts) do
-    if qa_report_requires_download?(report) do
-      resolve_token(opts)
-    else
-      case resolve_token(opts) do
-        {:ok, token} -> {:ok, token}
-        _not_available -> {:ok, nil}
-      end
-    end
-  end
-
-  defp qa_report_requires_download?(%QaReport{rows: rows}) do
-    Enum.any?(rows || [], fn row ->
-      Enum.any?(row.artifacts || [], fn art ->
-        is_binary(art.url) and art.url != ""
-      end)
-    end)
-  end
-
-  defp download_qa_rows(rows, qa_dir, token, opts) do
-    rows
-    |> Enum.reduce_while({:ok, []}, fn %QaRow{} = row, {:ok, acc} ->
-      case download_row_artifacts(row, qa_dir, token, opts) do
-        {:ok, row_data} -> {:cont, {:ok, [row_data | acc]}}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
-    |> case do
-      {:ok, rev_rows} -> {:ok, Enum.reverse(rev_rows)}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp download_row_artifacts(%QaRow{} = row, qa_dir, token, opts) do
-    artifacts = row.artifacts || []
-
-    artifacts
-    |> Enum.reduce_while({:ok, []}, fn %QaArtifact{} = art, {:ok, acc} ->
-      dest_path = Path.join(qa_dir, art.name)
-      File.mkdir_p!(Path.dirname(dest_path))
-
-      res =
-        cond do
-          art.kind == :text ->
-            File.write!(dest_path, art.text || "")
-            :ok
-
-          is_binary(art.url) and art.url != "" ->
-            maybe_download_file(art.url, dest_path, token, opts)
-
-          true ->
-            :ok
-        end
-
-      case res do
-        :ok ->
-          art_map = %{
-            "name" => art.name,
-            "kind" => to_string(art.kind),
-            "text" => art.text,
-            "url" => art.url,
-            "path" => art.name
-          }
-
-          {:cont, {:ok, [art_map | acc]}}
-
-        {:error, reason} ->
-          {:halt, {:error, reason}}
-      end
-    end)
-    |> case do
-      {:ok, rev_arts} ->
-        row_map = %{
-          "id" => row.id,
-          "check" => row.check,
-          "result" => to_string(row.result),
-          "severity" => to_string(row.severity),
-          "causedByChange" => row.caused_by_change,
-          "command" => row.command,
-          "exitCode" => row.exit_code,
-          "note" => row.note,
-          "artifacts" => Enum.reverse(rev_arts)
-        }
-
-        {:ok, row_map}
 
       {:error, reason} ->
         {:error, reason}
