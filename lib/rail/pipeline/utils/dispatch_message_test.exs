@@ -66,7 +66,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     {:ok, task} = Pipeline.create_task(issue, :product)
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
 
-    {:ok, run} =
+    {:ok, %Run{id: run_id} = run} =
       Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
@@ -76,16 +76,15 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
         started_at: DateTime.utc_now()
       })
 
-    %{run: run}
+    %{run: run, run_id: run_id}
   end
 
-  test "sends the queued message and takes it off the run", %{run: run} do
+  test "sends the queued message and takes it off the run", %{run: run, run_id: run_id} do
     expect(Tools, :start_os_process, fn spawned, argv ->
       assert Enum.any?(argv, &(&1 =~ "Please also add a test"))
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    run_id = run.id
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run_id}")
 
     assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
@@ -93,10 +92,9 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert_received {:run_changed, ^run_id}
   end
 
-  test "a message that fails to spawn goes back on the run", %{run: run} do
+  test "a message that fails to spawn goes back on the run", %{run: run, run_id: run_id} do
     expect(Tools, :start_os_process, fn spawned, _argv -> {:error, {:spawn_failed, :enoent, spawned}} end)
 
-    run_id = run.id
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run_id}")
 
     assert {:error, {:spawn_failed, :enoent}} = dispatch_message(run, async: false)

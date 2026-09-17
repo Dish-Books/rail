@@ -1,3 +1,7 @@
+# credo:disable-for-this-file RailCredo.Checks.MigrationTimestamps
+# The hand-written version is wrong, and renaming it now would be worse: every
+# database that has already run it would see the new version as unrun and try to
+# add the column a second time.
 defmodule Rail.Repo.Migrations.AddTaskCleanedUpAt do
   @moduledoc false
   use Ecto.Migration
