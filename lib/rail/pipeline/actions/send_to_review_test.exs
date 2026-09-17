@@ -79,7 +79,53 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
         started_at: DateTime.utc_now()
       })
 
-    %{project: project, task: task, run: Repo.preload(run, [:task, :role]), worktree_path: worktree_path}
+    %{
+      backend: backend,
+      project: project,
+      task: task,
+      run: Repo.preload(run, [:task, :role]),
+      worktree_path: worktree_path
+    }
+  end
+
+  # The brief the reviewer is spawned with never reaches its log, so without this
+  # the change comes back round with nothing in the conversation marking that it
+  # did.
+  test "the reviewer's log says the change came back", %{backend: backend, project: project, task: task, run: run} do
+    {:ok, review_role} =
+      Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
+        stage: :review,
+        name: "review role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the review agent."
+      })
+
+    {:ok, review_run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: review_role.id,
+        status: :finished,
+        stage_outcome: :done,
+        conversation_id: "sess_send_to_review_review",
+        started_at: DateTime.utc_now()
+      })
+
+    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+
+    log = review_run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
+
+    assert log =~ "[human] The engineer has been round and pushed the change again."
+    assert log =~ "whether it has been addressed"
+  end
+
+  # A reviewer that has never run has no conversation for this to be the next
+  # thing in: its first turn is the brief.
+  test "a reviewer that has never run gets no such line", %{run: run} do
+    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+
+    assert [%Run{}] = Repo.all(Run)
+    assert Repo.all(Rail.Pipeline.Schemas.RunEvent) == []
   end
 
   test "hands the task to review and latches the engineer run", %{task: task, run: run} do

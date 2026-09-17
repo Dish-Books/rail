@@ -12,6 +12,8 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineer do
   nothing left to send.
   """
 
+  import Rail.Pipeline.Utils.SendBack
+
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ReviewFinding
   alias Rail.Pipeline.Schemas.Run
@@ -61,22 +63,12 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineer do
   # a reader has no way to see what it was asked to do.
   defp brief_engineer(%Task{} = task, %Role{id: role_id}, findings) do
     note = note(findings)
+    send_back(task, :engineer, note)
 
     case Repo.get_by(Run, task_id: task.id, role_id: role_id) do
-      %Run{} = engineer_run ->
-        record_transcript(engineer_run, note)
-        Pipeline.update_run(engineer_run, %{pending_answer: note})
-
-      nil ->
-        :ok
+      %Run{} = engineer_run -> Pipeline.update_run(engineer_run, %{pending_answer: note})
+      nil -> :ok
     end
-  end
-
-  # Tagged as the human's, because it is: the reviewer raised the findings and a
-  # person chose which of them the engineer is being handed.
-  defp record_transcript(%Run{} = run, note) do
-    lines = note |> String.trim() |> String.split("\n") |> Enum.map(&"[human] #{&1}")
-    Pipeline.append_run_events(run.id, nil, lines)
   end
 
   defp note(findings) do
