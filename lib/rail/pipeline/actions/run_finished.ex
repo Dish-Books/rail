@@ -27,7 +27,9 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   import Rail.Pipeline.Utils.ProductRunFinished
   import Rail.Pipeline.Utils.QuestionQueue
   import Rail.Pipeline.Utils.RegisterAskedQuestions
+  import Rail.Pipeline.Utils.ReviewRunFinished
 
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -81,6 +83,10 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp settled_status(%Run{status: :blocked_on_input}), do: :blocked_on_input
   defp settled_status(%Run{}), do: :finished
 
+  defp said_it_was_done?(%Task{} = task) do
+    task |> Repo.preload(:issue) |> Pipeline.read_commit_message() != nil
+  end
+
   defp exit_code(%{exit_code: code}, _run) when is_integer(code), do: code
   defp exit_code(%{"exit_code" => code}, _run) when is_integer(code), do: code
   defp exit_code(_outcome, %Run{exit_code: code}) when is_integer(code), do: code
@@ -106,14 +112,45 @@ defmodule Rail.Pipeline.Actions.RunFinished do
 
   defp maybe_finish(%Run{} = run, opts) do
     if concluded?(run) do
-      run |> finish_action(run).(opts) |> latch_done()
+      run |> apply_finish(opts) |> latch_done()
     else
       run
     end
   end
 
-  # A run only concludes by saying so, having actually finished: a non-zero exit
-  # and a task still parked on a question are both runs that have not.
+  defp apply_finish(%Run{} = run, opts) do
+    finish_action(run).(run, opts)
+  rescue
+    exception -> fail(run, Exception.message(exception))
+  end
+
+  defp fail(%Run{} = run, error) do
+    {:ok, failed} = run |> Run.changeset(%{error: error}) |> Repo.update()
+    %{failed | task: run.task, role: run.role}
+  end
+
+  # A reviewer that has already reported can be argued with, and what comes back
+  # from that argument is a new report, so review reads its file again on every
+  # clean turn rather than once. Latching is still once: `latch_done/1` leaves a
+  # run that is already done exactly as it was.
+  defp concluded?(%Run{role: %Role{stage: :review}} = run) do
+    run.exit_code == 0 and pending_questions(run.task_id) == []
+  end
+
+  # The engineer says it has finished by writing its commit message, and that is
+  # a better signal than the exit code of the CLI carrying it: Agy exits non-zero
+  # when its root agent stops with background tasks still running, having done
+  # the work and said so. Throwing that turn away leaves the change sitting
+  # uncommitted in the worktree with nothing to move it on.
+  defp concluded?(%Run{role: %Role{stage: :engineer}, task: %Task{} = task} = run) do
+    run.stage_outcome == :in_progress and
+      pending_questions(run.task_id) == [] and
+      (run.exit_code == 0 or said_it_was_done?(task))
+  end
+
+  # Every other run only concludes by saying so, having actually finished: a
+  # non-zero exit and a task still parked on a question are both runs that have
+  # not.
   defp concluded?(%Run{} = run) do
     run.stage_outcome == :in_progress and
       run.exit_code == 0 and
@@ -121,12 +158,13 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   end
 
   # Which stage settles is the run's own role, never the task's stage. Product,
-  # design, architect and engineer have a finish of their own; a run at any other
-  # records itself and moves nothing.
+  # design, architect, engineer and review have a finish of their own; a run at any
+  # other records itself and moves nothing.
   defp finish_action(%Run{role: %Role{stage: :product}}), do: &product_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :design}}), do: &design_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :architect}}), do: &architect_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :engineer}}), do: &engineer_run_finished/2
+  defp finish_action(%Run{role: %Role{stage: :review}}), do: &review_run_finished/2
   defp finish_action(%Run{}), do: fn run, _opts -> run end
 
   # A finish that recorded an error did not conclude anything, so it stays open

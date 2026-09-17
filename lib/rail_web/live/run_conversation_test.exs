@@ -7,6 +7,7 @@ defmodule RailWeb.Live.RunConversationTest do
   alias Rail.Pipeline
   alias Rail.Projects
   alias Rail.Roles
+  alias Rail.Tools.Schemas.OsProcess
   alias RailWeb.Live.RunConversation
 
   setup do
@@ -87,8 +88,8 @@ defmodule RailWeb.Live.RunConversationTest do
         task_id: task.id,
         role_id: roles[:architect].id,
         status: :finished,
-        started_at: ~U[2026-09-09 09:00:00Z],
-        completed_at: ~U[2026-09-09 09:05:00Z]
+        started_at: ~U[2026-09-09 09:00:00.000000Z],
+        completed_at: ~U[2026-09-09 09:05:00.000000Z]
       })
 
     {:ok, engineer} =
@@ -97,7 +98,7 @@ defmodule RailWeb.Live.RunConversationTest do
         role_id: roles[:engineer].id,
         status: :running,
         conversation_id: "conv_engineer",
-        started_at: ~U[2026-09-09 10:00:00Z]
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
       })
 
     html =
@@ -121,7 +122,7 @@ defmodule RailWeb.Live.RunConversationTest do
         task_id: task.id,
         role_id: roles[:architect].id,
         status: :finished,
-        started_at: ~U[2026-09-09 09:00:00Z]
+        started_at: ~U[2026-09-09 09:00:00.000000Z]
       })
 
     {:ok, engineer} =
@@ -130,7 +131,7 @@ defmodule RailWeb.Live.RunConversationTest do
         role_id: roles[:engineer].id,
         status: :running,
         conversation_id: "conv_engineer",
-        started_at: ~U[2026-09-09 10:00:00Z]
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
       })
 
     Pipeline.append_run_events(
@@ -173,8 +174,8 @@ defmodule RailWeb.Live.RunConversationTest do
         role_id: roles[:engineer].id,
         status: :finished,
         conversation_id: "conv_stream",
-        started_at: ~U[2026-09-09 10:00:00Z],
-        completed_at: ~U[2026-09-09 10:01:05Z]
+        started_at: ~U[2026-09-09 10:00:00.000000Z],
+        completed_at: ~U[2026-09-09 10:01:05.000000Z]
       })
 
     Pipeline.append_run_events(run.id, nil, [
@@ -190,8 +191,127 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ "<strong>One</strong>"
     assert html =~ "Tool activity (1 step)"
     assert html =~ "Looks good"
-    assert html =~ ~s(data-elapsed-seconds="65")
+  end
+
+  # The run's own started_at is reset by every turn, so the figure a reader wants
+  # is the turns added up, not the last one.
+  test "the elapsed time is every turn the agent took, added up", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        started_at: ~U[2026-09-09 10:30:00.000000Z],
+        completed_at: ~U[2026-09-09 10:30:20.000000Z]
+      })
+
+    for {started, ended} <- [
+          {~U[2026-09-09 10:00:00.000000Z], ~U[2026-09-09 10:01:05.000000Z]},
+          {~U[2026-09-09 10:30:00.000000Z], ~U[2026-09-09 10:30:20.000000Z]}
+        ] do
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        stream_path: "/tmp/#{run.id}.ndjson",
+        node: "test@localhost",
+        status: :finished,
+        started_at: started
+      })
+      |> Repo.insert!()
+      |> Ecto.Changeset.change(updated_at: ended)
+      |> Repo.update!()
+    end
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert html =~ ~s(data-elapsed-seconds="85")
+    assert html =~ "1m 25s"
     refute html =~ "data-started-at"
+  end
+
+  test "a turn still running keeps counting in the browser", %{task: task, roles: roles, roles_map: roles_map} do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :running,
+        started_at: ~U[2026-09-09 10:30:00.000000Z]
+      })
+
+    %OsProcess{}
+    |> OsProcess.changeset(%{
+      run_id: run.id,
+      task_id: task.id,
+      stream_path: "/tmp/#{run.id}.ndjson",
+      node: "test@localhost",
+      status: :running,
+      started_at: ~U[2026-09-09 10:30:00.000000Z]
+    })
+    |> Repo.insert!()
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert html =~ ~s(data-started-at="2026-09-09T10:30:00.000000Z")
+    assert html =~ ~s(data-elapsed-seconds="0")
+  end
+
+  test "each turn is marked in the transcript with when it started and what it cost", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+
+    first =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        stream_path: "/tmp/#{run.id}.ndjson",
+        node: "test@localhost",
+        status: :finished,
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+      |> Repo.insert!()
+      |> Ecto.Changeset.change(updated_at: ~U[2026-09-09 10:00:30.000000Z])
+      |> Repo.update!()
+
+    second =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        stream_path: "/tmp/#{run.id}.ndjson",
+        node: "test@localhost",
+        status: :finished,
+        started_at: ~U[2026-09-09 11:00:00.000000Z]
+      })
+      |> Repo.insert!()
+      |> Ecto.Changeset.change(updated_at: ~U[2026-09-09 11:02:00.000000Z])
+      |> Repo.update!()
+
+    Pipeline.append_run_events(run.id, first.id, ["[rail] the first turn"])
+    Pipeline.append_run_events(run.id, second.id, ["[rail] the second turn"])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert html =~ ~s(data-qa="turn-start")
+    assert html =~ "Turn 1"
+    assert html =~ "Turn 2"
+    assert html =~ "30s"
+    assert html =~ "2m 0s"
+    assert html =~ ~s(data-at="2026-09-09T11:00:00.000000Z")
   end
 
   test "tool activity names each step, reads paths from the worktree root and flags errors", %{
@@ -207,7 +327,7 @@ defmodule RailWeb.Live.RunConversationTest do
         role_id: roles[:engineer].id,
         status: :finished,
         conversation_id: "conv_tools",
-        started_at: ~U[2026-09-09 10:00:00Z]
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
       })
 
     Pipeline.append_run_events(run.id, nil, [
@@ -276,7 +396,7 @@ defmodule RailWeb.Live.RunConversationTest do
         status: :finished,
         conversation_id: "conv_unknown_role",
         usage: %{input_tokens: 1200, output_tokens: 300},
-        started_at: ~U[2026-09-09 10:00:00Z]
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
       })
 
     Pipeline.append_run_events(run.id, nil, ["Plain words from the agent."])

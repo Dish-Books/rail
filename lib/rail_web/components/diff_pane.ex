@@ -23,6 +23,7 @@ defmodule RailWeb.Components.DiffPane do
   attr :filter, :atom, default: :branch
   attr :query, :string, default: ""
   attr :empty_message, :string, default: "Nothing has been changed on this branch yet."
+  attr :scroll_to, :string, default: nil
   attr :target, :any, default: nil
 
   def diff_pane(assigns) do
@@ -177,10 +178,13 @@ defmodule RailWeb.Components.DiffPane do
           data-qa="diff_row_list"
           class="flex-1 min-w-0 flex flex-col bg-slate-50 dark:bg-slate-800/30"
         >
+          <!-- A reader arriving from a finding is arriving at one file, so the
+          scroller is told which section to put in front of them. -->
           <div
-            class="flex-1 overflow-y-auto p-3 space-y-3 selection:bg-blue-500/20"
+            class="flex-1 overflow-y-auto px-3 pb-3 space-y-3 selection:bg-blue-500/20"
             phx-hook="DiffScroller"
             id="diff-scroller"
+            data-scroll-to={@scroll_to}
           >
             <p
               :if={@visible == []}
@@ -194,12 +198,17 @@ defmodule RailWeb.Components.DiffPane do
               :for={file <- @visible}
               id={"diff-file-#{slug(file.path)}"}
               data-qa="diff_file_section"
-              class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden"
+              data-path={file.path}
+              class="first:mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
             >
               <div
                 id={"diff-header-#{slug(file.path)}"}
                 data-qa="diff_file_header"
-                class="sticky top-0 z-10 h-11 px-3 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700"
+                class={[
+                  "sticky -top-px z-10 h-11 px-3 flex items-center gap-2 rounded-t-xl data-stuck:rounded-t-none",
+                  "bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700",
+                  file.path in @collapsed && "rounded-b-xl"
+                ]}
               >
                 <button
                   type="button"
@@ -254,15 +263,19 @@ defmodule RailWeb.Components.DiffPane do
                 </span>
               </div>
 
-              <!-- Each file scrolls its own long lines, so the header above them and
-              the file list beside them stay where the reader left them. -->
-              <div :if={file.path not in @collapsed} class="overflow-x-auto">
-                <.row
-                  :for={row <- file.rows}
-                  row={row}
-                  expanded={expanded(@expanded_gaps, row)}
-                  target={@target}
-                />
+              <div
+                :if={file.path not in @collapsed}
+                style={"content-visibility: auto; contain-intrinsic-size: auto #{intrinsic_height(file)}px;"}
+                class="overflow-x-auto rounded-b-xl"
+              >
+                <div class="min-w-max">
+                  <.row
+                    :for={row <- file.rows}
+                    row={row}
+                    expanded={expanded(@expanded_gaps, row)}
+                    target={@target}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -277,6 +290,25 @@ defmodule RailWeb.Components.DiffPane do
 
   # Read is worth a mark of its own; until then the dot says what became of the
   # file, which is what tells two rows of the same name apart.
+  attr :rows, :list, required: true
+
+  @doc """
+  One hunk's rows, drawn the way the pane draws them.
+
+  What a finding points at is a few lines of a change rather than a file, and
+  those lines have to read identically wherever they are shown, so the pane lends
+  them out rather than letting a second copy of them drift.
+  """
+  def diff_hunk(assigns) do
+    ~H"""
+    <div data-qa="diff_hunk" class="overflow-x-auto">
+      <div class="min-w-max">
+        <.row :for={row <- @rows} row={row} expanded={nil} target={nil} />
+      </div>
+    </div>
+    """
+  end
+
   defp file_mark(assigns) do
     ~H"""
     <.icon :if={@viewed?} name="pi-check-circle" class="mt-0.5 size-4 shrink-0 text-emerald-500" />
@@ -353,9 +385,9 @@ defmodule RailWeb.Components.DiffPane do
     ~H"""
     <div
       data-qa="diff_hunk_header"
-      class="h-7 px-4 flex items-center font-mono text-[11px] text-slate-500 dark:text-slate-400 truncate select-none bg-slate-50 dark:bg-slate-800/40 border-y border-slate-200 dark:border-slate-700/50"
+      class="h-7 w-full flex items-center whitespace-nowrap font-mono text-[11px] text-slate-500 dark:text-slate-400 select-none bg-slate-100 dark:bg-slate-800 border-y border-slate-200 dark:border-slate-700/50"
     >
-      <span class="truncate">{@row.text}</span>
+      <span class="sticky left-0 px-4 bg-slate-100 dark:bg-slate-800">{@row.text}</span>
     </div>
     """
   end
@@ -413,33 +445,56 @@ defmodule RailWeb.Components.DiffPane do
   attr :line, :map, required: true
 
   defp line(assigns) do
-    assigns = assign(assigns, :style, line_style(assigns.line.line_kind))
+    assigns =
+      assigns
+      |> assign(:style, line_style(assigns.line.line_kind))
+      |> assign(:focus?, Map.get(assigns.line, :focus?, false))
 
     ~H"""
+    <!-- A row fetched because something points at it says so: a reader arriving
+    from a finding should not have to count lines to find the one it meant. -->
     <div
       data-qa="diff_line_row"
       data-kind={@line.line_kind}
+      data-focus={to_string(@focus?)}
       class={[
-        "h-[22px] flex items-stretch leading-[22px] font-mono text-xs select-text border-l-2",
+        "h-[22px] w-full flex items-stretch leading-[22px] font-mono text-xs select-text border-l-2",
         @style.background,
-        @style.accent
+        @focus? && "ring-1 ring-inset ring-amber-500/70 bg-amber-500/10",
+        not @focus? && @style.accent,
+        @focus? && "border-amber-500"
       ]}
     >
-      <div class="w-12 shrink-0 pr-2 text-right text-[11px] text-slate-400 dark:text-slate-500 select-none tabular-nums">
+      <div class={[
+        "sticky left-0 z-10 w-12 shrink-0 pr-2 text-right text-[11px] select-none tabular-nums",
+        @focus? && "bg-amber-100 dark:bg-amber-950 font-bold text-amber-800 dark:text-amber-300",
+        not @focus? && "text-slate-400 dark:text-slate-500",
+        not @focus? && @style.gutter
+      ]}>
         {@line.old_line}
       </div>
 
-      <div class="w-12 shrink-0 pr-2 text-right text-[11px] text-slate-400 dark:text-slate-500 select-none tabular-nums">
+      <div class={[
+        "sticky left-12 z-10 w-12 shrink-0 pr-2 text-right text-[11px] select-none tabular-nums",
+        @focus? && "bg-amber-100 dark:bg-amber-950 font-bold text-amber-800 dark:text-amber-300",
+        not @focus? && "text-slate-400 dark:text-slate-500",
+        not @focus? && @style.gutter
+      ]}>
         {@line.new_line}
       </div>
 
-      <div class={["w-5 shrink-0 text-center font-bold select-none", @style.glyph_class]}>
+      <div class={[
+        "sticky left-24 z-10 w-5 shrink-0 text-center font-bold select-none",
+        @focus? && "bg-amber-100 dark:bg-amber-950",
+        not @focus? && @style.gutter,
+        @style.glyph_class
+      ]}>
         {@style.glyph}
       </div>
 
       <!-- A flex row drops the whitespace between its children, which a `pre` cell
       would otherwise draw as the blank lines the markup is written across. -->
-      <div class="flex-1 min-w-0 pl-1.5 pr-4 flex text-slate-800 dark:text-slate-200">
+      <div class="flex-1 pl-1.5 pr-4 flex text-slate-800 dark:text-slate-200">
         <.code text={@line.text} html={Map.get(@line, :html)} />
       </div>
     </div>
@@ -458,9 +513,12 @@ defmodule RailWeb.Components.DiffPane do
     """
   end
 
+  # `gutter` is the row's tint again, opaque: a sticky cell with a see-through
+  # background shows the code sliding beneath it.
   defp line_style(:added),
     do: %{
       background: "bg-emerald-500/10",
+      gutter: "bg-emerald-50 dark:bg-emerald-950",
       accent: "border-emerald-500",
       glyph_class: "text-emerald-600 dark:text-emerald-500",
       glyph: "+"
@@ -469,13 +527,20 @@ defmodule RailWeb.Components.DiffPane do
   defp line_style(:deleted),
     do: %{
       background: "bg-rose-500/10",
+      gutter: "bg-rose-50 dark:bg-rose-950",
       accent: "border-rose-500",
       glyph_class: "text-rose-600 dark:text-rose-500",
       glyph: "-"
     }
 
   defp line_style(:context),
-    do: %{background: "bg-transparent", accent: "border-transparent", glyph_class: "text-transparent", glyph: " "}
+    do: %{
+      background: "bg-transparent",
+      gutter: "bg-white dark:bg-slate-900",
+      accent: "border-transparent",
+      glyph_class: "text-transparent",
+      glyph: " "
+    }
 
   defp read([], _viewed), do: 0
   defp read(files, viewed), do: div(viewed * 100, length(files))
@@ -537,6 +602,10 @@ defmodule RailWeb.Components.DiffPane do
 
   defp expanded(expanded_gaps, %{kind: :gap, key: key}), do: Map.get(expanded_gaps, key)
   defp expanded(_expanded_gaps, _row), do: nil
+
+  # A row each, at the height rows are drawn at. Only a guess for a file that has
+  # not been rendered yet, which is all the browser wants.
+  defp intrinsic_height(file), do: length(file.rows) * 22
 
   defp slug(path), do: path |> String.replace(~r/[^a-zA-Z0-9_-]/, "-") |> String.trim("-")
 end

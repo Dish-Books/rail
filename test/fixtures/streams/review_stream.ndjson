@@ -1,0 +1,6 @@
+{"type":"system","subtype":"init","session_id":"sess-review-001","tools":["read_file","bash","write_to_file"],"mcp_servers":[]}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Reading the branch against the plan it was built from..."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"call_review_1","name":"write_to_file","input":{"path":"reviews/report.json"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"call_review_1","content":"Report written successfully"}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Two findings: one worth fixing, one I would leave."}]}}
+{"type":"result","subtype":"success","session_id":"sess-review-001","result":"Review findings written to scratch.","num_turns":2,"usage":{"input_tokens":260,"output_tokens":190,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cost_usd":0.006}}

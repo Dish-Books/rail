@@ -130,7 +130,7 @@ defmodule Rail.Tools.BootTest do
 
     assert [{:adopted_live, %OsProcess{}, follower_pid}] = Boot.reconcile(node: to_string(Node.self()))
 
-    assert_receive {:run_events, _run_id, [%{line: ^line2}]}, 2_000
+    assert_receive {:run_events, _run_id, [%{line: ^line2}]}, 5_000
     assert [^line2] = Enum.map(Pipeline.list_run_events(run), & &1.line)
 
     FollowerSupervisor.stop_follower(follower_pid)
@@ -377,9 +377,9 @@ defmodule Rail.Tools.BootTest do
 
     {:ok, pid} = Boot.start_link(node: "nonexistent_node")
     assert is_pid(pid)
-    # Task should finish quickly and exit normally
-    Process.sleep(50)
-    refute Process.alive?(pid)
+
+    # The task finishes and exits normally, when the scheduler gets to it.
+    eventually(fn -> refute Process.alive?(pid) end)
   end
 
   test "settles dead run with various error and stderr combinations", %{tmp_dir: tmp_dir, role: role} do

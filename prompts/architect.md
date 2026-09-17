@@ -18,7 +18,7 @@ Everything about the issue is already in front of you. Do not use the Linear MCP
 2. The docs settle it. Follow them, and cite the one you followed.
 3. The existing code settles it. Follow the pattern already there, and name the file you followed.
 4. A reasonable default settles it. Take it, and name it as an assumption so it can be vetoed.
-5. Nothing settles it. Ask, as a line of its own: `[QUESTION: <the question>] [OPTIONS: <a>, <b>]`, with your recommended answer first.
+5. Nothing settles it. Ask, with your recommended answer first.
 
 ## The plan
 

@@ -3,7 +3,6 @@ defmodule Rail.Tools.Actions.BuildArgs do
 
   alias Rail.Tools.Schemas.Backend
 
-  @default_print_timeout "6h"
   @default_effort "high"
 
   @doc """
@@ -23,7 +22,6 @@ defmodule Rail.Tools.Actions.BuildArgs do
   - `:mcp`: boolean (Claude only, default `false`) — connect the agent to Rail's MCP
     proxy, authenticated by the `RAIL_MCP_TOKEN` the spawn puts in its environment
   - `:conversation_id`, `:conversation`, or `:resume`: session id for resumption
-  - `:print_timeout`: string timeout for Agy (default `"6h"`)
   - `:work_dir` or `:working_directory`: directory for `--add-dir` (Agy only)
   - `:log_file`, `:log_path`, or `:agy_log_path`: path for `--log-file` (Agy only)
   """
@@ -102,14 +100,13 @@ defmodule Rail.Tools.Actions.BuildArgs do
     effort = opts[:reasoning_effort] || opts[:effort] || @default_effort
     read_only = Map.get(opts, :read_only, false)
     mode = if read_only, do: "plan", else: "accept-edits"
-    print_timeout = opts[:print_timeout] || @default_print_timeout
     work_dir = opts[:work_dir] || opts[:working_directory]
     log_file = opts[:log_file] || opts[:log_path] || opts[:agy_log_path]
     conversation_id = opts[:conversation_id] || opts[:conversation] || opts[:resume]
 
     ["-p", prompt, "--model", model, "--effort", effort] ++
       agy_permission_flags(read_only) ++
-      ["--mode", mode, "--output-format", "stream-json", "--print-timeout", print_timeout] ++
+      ["--mode", mode, "--output-format", "stream-json"] ++
       agy_add_dir_flags(work_dir) ++
       agy_log_file_flags(log_file) ++
       agy_conversation_flags(conversation_id)

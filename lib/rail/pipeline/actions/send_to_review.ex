@@ -13,6 +13,8 @@ defmodule Rail.Pipeline.Actions.SendToReview do
   review. The diff pane has a button for both.
   """
 
+  import Rail.Pipeline.Utils.SendBack
+
   alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -29,10 +31,20 @@ defmodule Rail.Pipeline.Actions.SendToReview do
 
     with :ok <- sendable(run.task) do
       {:ok, latched} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
+      send_back(run.task, :review, returning())
       {:ok, _next} = Pipeline.enter_stage(run.task, :review)
 
       {:ok, %{latched | task: run.task, role: run.role}}
     end
+  end
+
+  # The brief the reviewer is spawned with never reaches its log, so without this
+  # the change simply comes back round with nothing in the conversation marking
+  # that it did, or saying what the reviewer is being asked to look at again.
+  defp returning do
+    """
+    The engineer has been round and pushed the change again. Read it as it now stands and say, for every finding still open, whether it has been addressed.
+    """
   end
 
   defp sendable(%Task{stage: stage}) when stage != :engineer, do: {:error, {:invalid_stage, stage}}

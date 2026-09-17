@@ -36,11 +36,21 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinished do
     end
   end
 
+  # A turn that reached here concluded, so whatever the exit said about it no
+  # longer stands: leaving the error on would keep the run from latching and
+  # leave the page reporting a failure that has just been committed.
   defp commit(%Run{} = run, %Task{} = task) do
     case Pipeline.commit_engineer_work(Scope.for_system(), task) do
-      :ok -> run
+      :ok -> clear(run)
       {:error, reason} -> fail(run, "Could not commit the engineer's work: #{describe(reason)}")
     end
+  end
+
+  defp clear(%Run{error: nil} = run), do: run
+
+  defp clear(%Run{} = run) do
+    {:ok, cleared} = run |> Run.changeset(%{error: nil}) |> Repo.update()
+    %{cleared | task: run.task, role: run.role}
   end
 
   defp describe(reason) when is_binary(reason), do: reason

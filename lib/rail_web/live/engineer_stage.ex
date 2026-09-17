@@ -27,8 +27,12 @@ defmodule RailWeb.Live.EngineerStage do
       |> assign_new(:query, fn -> "" end)
       |> assign_new(:show_files, fn -> true end)
       |> assign_new(:collapsed, fn -> [] end)
+      |> assign_new(:auto_collapsed, fn -> MapSet.new() end)
       |> assign_new(:selected_file, fn -> nil end)
+      |> assign_new(:focus_file, fn -> nil end)
       |> assign_new(:expanded_gaps, fn -> %{} end)
+
+    socket = if socket.assigns.focus_file, do: assign(socket, :selected_file, socket.assigns.focus_file), else: socket
 
     {:ok, load(socket)}
   end
@@ -43,7 +47,7 @@ defmodule RailWeb.Live.EngineerStage do
           {render_slot(@actions)}
 
           <button
-            :if={@approvable and (@dirty? or @unpushed? or @committing)}
+            :if={@dirty? or @unpushed? or @committing}
             type="button"
             id="commit-work"
             data-qa="commit_work"
@@ -92,6 +96,7 @@ defmodule RailWeb.Live.EngineerStage do
             collapsed={@collapsed}
             expanded_gaps={@expanded_gaps}
             selected_file={@selected_file}
+            scroll_to={@focus_file}
             target={@myself}
             empty_message={empty_message(@filter)}
           />
@@ -110,6 +115,7 @@ defmodule RailWeb.Live.EngineerStage do
       |> assign(:filter, if(filter == "uncommitted", do: :uncommitted, else: :branch))
       |> assign(:expanded_gaps, %{})
       |> assign(:collapsed, [])
+      |> assign(:auto_collapsed, MapSet.new())
       |> assign(:selected_file, nil)
 
     {:noreply, load(socket)}
@@ -127,8 +133,16 @@ defmodule RailWeb.Live.EngineerStage do
     {:noreply, assign(socket, :collapsed, toggle(socket.assigns.collapsed, path, path not in socket.assigns.collapsed))}
   end
 
+  # Picking a file is asking to read it, so it is put in front of the reader and
+  # opened if it was folded away.
   def handle_event("select_diff_file", %{"path" => path}, socket) do
-    {:noreply, assign(socket, :selected_file, path)}
+    socket =
+      socket
+      |> assign(:selected_file, path)
+      |> assign(:collapsed, toggle(socket.assigns.collapsed, path, false))
+      |> push_event("diff:scroll_to", %{path: path})
+
+    {:noreply, socket}
   end
 
   # Reading a file is also done with it, so it folds away; the caret is there to
@@ -274,10 +288,34 @@ defmodule RailWeb.Live.EngineerStage do
     present? = Task.worktree_present?(task)
 
     socket
+    |> fold_away_read_files(files)
     |> assign(:files, files)
     |> assign(:work?, work?(scope, task, filter, files))
     |> assign(:dirty?, present? and Git.worktree_dirty?(task.worktree_path))
     |> assign(:unpushed?, present? and Git.branch_unpushed?(task.worktree_path))
+  end
+
+  # A file already read is folded away the first time it is seen that way, and
+  # only then: a reader who opens one again has it stay open. The engineer
+  # touching it makes it unread, which lets it fold again on the next pass.
+  defp fold_away_read_files(socket, files) do
+    {read, unread} = Enum.split_with(files, & &1.viewed?)
+    # The file a finding sent the reader here for stays open however read it is:
+    # folding it away is folding away the thing they came to look at.
+    fresh =
+      Enum.reject(read, fn file ->
+        MapSet.member?(socket.assigns.auto_collapsed, file.path) or file.path == socket.assigns.focus_file
+      end)
+
+    socket
+    |> assign(:collapsed, Enum.uniq(Enum.map(fresh, & &1.path) ++ socket.assigns.collapsed))
+    |> assign(:auto_collapsed, forget(socket.assigns.auto_collapsed, read, unread))
+  end
+
+  defp forget(auto_collapsed, read, unread) do
+    auto_collapsed
+    |> MapSet.union(MapSet.new(read, & &1.path))
+    |> MapSet.difference(MapSet.new(unread, & &1.path))
   end
 
   defp work?(_scope, _task, :branch, files), do: files != []

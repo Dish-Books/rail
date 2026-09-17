@@ -110,8 +110,7 @@ default_roles = [
     backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
-    system_prompt:
-      "You are a Principal Code Reviewer. Review git diffs thoroughly for correctness, edge cases, regression risks, style compliance, and security vulnerabilities.",
+    system_prompt: File.read!("prompts/review.md"),
     max_concurrent: 1,
     position: 4
   },

@@ -6,6 +6,7 @@ import { Theme } from "./hooks/theme";
 import { Shortcuts } from "./hooks/shortcuts";
 import { Elapsed } from "./hooks/elapsed";
 import { ChatAutoscroll } from "./hooks/chat_autoscroll";
+import { ChatComposer } from "./hooks/chat_composer";
 import { DiffScroller } from "./hooks/diff_scroller";
 import { DemoPlayer } from "./hooks/demo_player";
 import { CopyText } from "./hooks/copy_text";
@@ -19,6 +20,7 @@ const Hooks = {
   Shortcuts,
   Elapsed,
   ChatAutoscroll,
+  ChatComposer,
   DiffScroller,
   DemoPlayer,
   CopyText,

@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   import Rail.Pipeline.Utils.QuestionQueue
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -40,7 +41,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       })
 
     roles =
-      Map.new([:product, :design, :architect, :engineer, :review], fn stage ->
+      Map.new([:product, :design, :architect, :engineer, :review, :qa], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
             backend_id: backend.id,
@@ -209,15 +210,121 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert [%{prompt: "Which database?"}] = pending_questions(task.id)
   end
 
-  test "a run at a stage with no finish of its own records itself and moves nothing", %{
-    task: task,
-    exited: exited
-  } do
+  test "a review run records what it found and leaves the task at review", %{task: task, exited: exited} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+    File.mkdir_p!(Path.join(task.scratch_path, "reviews"))
+
+    File.write!(Path.join([task.scratch_path, "reviews", "RUN-1.json"]), """
+    {"findings": [
+      {"key": "unhandled-nil", "title": "Nil is not handled", "severity": "major", "recommendation": "fix"}
+    ]}
+    """)
+
     {_run, os_process} = exited.(:review, %{})
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :review} = Repo.reload!(task)
+    assert [%{key: "unhandled-nil", decision: nil}] = Pipeline.list_review_findings(task)
+  end
+
+  # The process is settled before the stage's finish runs, so a finish that raises
+  # would otherwise unwind leaving a run that looks finished, moved nothing and
+  # said nothing about why.
+  test "a finish that blows up says so on the run", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+    File.mkdir_p!(Path.join(task.scratch_path, "reviews"))
+
+    File.write!(Path.join([task.scratch_path, "reviews", "RUN-1.json"]), """
+    {"findings": [
+      {"key": "too-far", "title": "Past the end of the file", "severity": "major",
+       "recommendation": "fix", "line": 99999999999}
+    ]}
+    """)
+
+    {_run, os_process} = exited.(:review, %{})
+
+    assert {:ok, %Run{stage_outcome: :in_progress, error: error}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+
+    assert error =~ "Postgrex expected an integer"
+    assert Pipeline.list_review_findings(task) == []
+  end
+
+  # The reviewer is argued with after it has reported, and the argument ends in a
+  # rewritten report. A latch that stopped Rail reading it would leave the panel
+  # showing what the reviewer said two turns ago.
+  test "a review run that already reported reads its file again on the next turn", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+    File.mkdir_p!(Path.join(task.scratch_path, "reviews"))
+    report = Path.join([task.scratch_path, "reviews", "RUN-1.json"])
+
+    File.write!(report, """
+    {"findings": [
+      {"key": "unhandled-nil", "title": "Nil is not handled", "severity": "major", "recommendation": "fix"}
+    ]}
+    """)
+
+    {run, os_process} = exited.(:review, %{})
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert [%{key: "unhandled-nil", suggestion: nil}] = Pipeline.list_review_findings(task)
+
+    File.write!(report, """
+    {"findings": [
+      {"key": "unhandled-nil", "title": "Nil is not handled", "severity": "major", "recommendation": "fix",
+       "suggestion": "Match the empty map first."}
+    ]}
+    """)
+
+    {:ok, chat_process} =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: "/tmp/run_finished/#{run.id}-chat.ndjson",
+        node: to_string(Node.self()),
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert()
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(chat_process, %{exit_code: 0})
+
+    assert [%{suggestion: "Match the empty map first."}] = Pipeline.list_review_findings(task)
+  end
+
+  test "a run at a stage with no finish of its own records itself and moves nothing", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
+    {_run, os_process} = exited.(:qa, %{})
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :qa} = Repo.reload!(task)
+  end
+
+  # Agy exits non-zero when its root agent stops with background tasks still
+  # running, having done the work and written its commit message. Throwing that
+  # turn away left the change uncommitted with nothing to move it on.
+  test "an engineer that said it was done is taken at its word, whatever the exit code", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    File.mkdir_p!(Path.join(task.scratch_path, "commits"))
+    File.write!(Path.join([task.scratch_path, "commits", "RUN-1.md"]), "RUN-1: did the work\n")
+    File.write!(Path.join(task.worktree_path, "changed.ex"), "the engineer's work\n")
+
+    stub(Git, :push_branch, fn _path, _branch -> :ok end)
+    {_run, os_process} = exited.(:engineer, %{})
+
+    assert {:ok, %Run{stage_outcome: :done, error: nil}} =
+             Pipeline.run_finished(os_process, %{exit_code: 1, error: "root agent idle; waiting for 2 background task(s)"})
+
+    refute Git.worktree_dirty?(task.worktree_path)
   end
 
   test "an engineer run that left no commit message stays open for the message that fixes it", %{
@@ -239,7 +346,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
     {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
 
-    reject(&Rail.Git.commit_worktree/3)
+    reject(&Git.commit_worktree/3)
 
     assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :engineer} = Repo.reload!(task)

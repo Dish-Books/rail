@@ -148,8 +148,6 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
              "accept-edits",
              "--output-format",
              "stream-json",
-             "--print-timeout",
-             "6h",
              "--add-dir",
              "/var/rail/worktrees/task-1",
              "--log-file",
@@ -163,8 +161,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
       prompt: "Plan the feature",
       model: "gemini-2.5-flash",
       reasoning_effort: "low",
-      read_only: true,
-      print_timeout: "2h"
+      read_only: true
     }
 
     args = Tools.build_args(opts)
@@ -179,9 +176,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
              "--mode",
              "plan",
              "--output-format",
-             "stream-json",
-             "--print-timeout",
-             "2h"
+             "stream-json"
            ]
 
     refute "--dangerously-skip-permissions" in args
@@ -215,7 +210,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
     args = Tools.build_args(opts)
 
     assert "--mode" in args
-    assert "--print-timeout" in args
+    refute "--print-timeout" in args
 
     nil_args = Tools.build_args(backend: nil, prompt: "Nil engine")
     assert "--mode" in nil_args
