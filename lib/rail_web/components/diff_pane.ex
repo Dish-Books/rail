@@ -181,10 +181,10 @@ defmodule RailWeb.Components.DiffPane do
           <!-- A reader arriving from a finding is arriving at one file, so the
           scroller is told which section to put in front of them. -->
           <div
-            class="flex-1 overflow-y-auto p-3 space-y-3 selection:bg-blue-500/20"
+            class="flex-1 overflow-y-auto px-3 pb-3 space-y-3 selection:bg-blue-500/20"
             phx-hook="DiffScroller"
             id="diff-scroller"
-            data-scroll-to={@scroll_to && "diff-file-#{slug(@scroll_to)}"}
+            data-scroll-to={@scroll_to}
           >
             <p
               :if={@visible == []}
@@ -194,21 +194,21 @@ defmodule RailWeb.Components.DiffPane do
               No file here matches {@query}.
             </p>
 
-            <!-- A branch diff runs to thousands of rows, each with sticky gutters
-            the compositor would otherwise re-evaluate on every frame. Off-screen
-            files are left unrendered until they are scrolled near; the intrinsic
-            size keeps the scrollbar honest while they are. -->
             <div
               :for={file <- @visible}
               id={"diff-file-#{slug(file.path)}"}
               data-qa="diff_file_section"
-              style={"content-visibility: auto; contain-intrinsic-size: auto #{intrinsic_height(file, @collapsed)}px;"}
-              class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden"
+              data-path={file.path}
+              class="first:mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
             >
               <div
                 id={"diff-header-#{slug(file.path)}"}
                 data-qa="diff_file_header"
-                class="sticky top-0 z-10 h-11 px-3 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700"
+                class={[
+                  "sticky -top-px z-10 h-11 px-3 flex items-center gap-2 rounded-t-xl data-stuck:rounded-t-none",
+                  "bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700",
+                  file.path in @collapsed && "rounded-b-xl"
+                ]}
               >
                 <button
                   type="button"
@@ -263,11 +263,11 @@ defmodule RailWeb.Components.DiffPane do
                 </span>
               </div>
 
-              <!-- Each file scrolls its own long lines, so the header above them and
-              the file list beside them stay where the reader left them. The inner
-              box takes the width of the longest line, because rows capped at the
-              box's own width leave nothing for overflow-x to scroll. -->
-              <div :if={file.path not in @collapsed} class="overflow-x-auto">
+              <div
+                :if={file.path not in @collapsed}
+                style={"content-visibility: auto; contain-intrinsic-size: auto #{intrinsic_height(file)}px;"}
+                class="overflow-x-auto rounded-b-xl"
+              >
                 <div class="min-w-max">
                   <.row
                     :for={row <- file.rows}
@@ -603,13 +603,9 @@ defmodule RailWeb.Components.DiffPane do
   defp expanded(expanded_gaps, %{kind: :gap, key: key}), do: Map.get(expanded_gaps, key)
   defp expanded(_expanded_gaps, _row), do: nil
 
-  # Header plus a row each, at the heights the rows are drawn at. Only a guess
-  # for a file that has not been rendered yet, which is all the browser wants.
-  defp intrinsic_height(_file, nil = _collapsed), do: 44
-
-  defp intrinsic_height(file, collapsed) do
-    if file.path in collapsed, do: 44, else: 44 + length(file.rows) * 22
-  end
+  # A row each, at the height rows are drawn at. Only a guess for a file that has
+  # not been rendered yet, which is all the browser wants.
+  defp intrinsic_height(file), do: length(file.rows) * 22
 
   defp slug(path), do: path |> String.replace(~r/[^a-zA-Z0-9_-]/, "-") |> String.trim("-")
 end

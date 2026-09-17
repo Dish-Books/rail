@@ -112,10 +112,21 @@ defmodule Rail.Pipeline.Actions.RunFinished do
 
   defp maybe_finish(%Run{} = run, opts) do
     if concluded?(run) do
-      run |> finish_action(run).(opts) |> latch_done()
+      run |> apply_finish(opts) |> latch_done()
     else
       run
     end
+  end
+
+  defp apply_finish(%Run{} = run, opts) do
+    finish_action(run).(run, opts)
+  rescue
+    exception -> fail(run, Exception.message(exception))
+  end
+
+  defp fail(%Run{} = run, error) do
+    {:ok, failed} = run |> Run.changeset(%{error: error}) |> Repo.update()
+    %{failed | task: run.task, role: run.role}
   end
 
   # A reviewer that has already reported can be argued with, and what comes back

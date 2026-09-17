@@ -47,7 +47,7 @@ defmodule RailWeb.Live.EngineerStage do
           {render_slot(@actions)}
 
           <button
-            :if={@approvable and (@dirty? or @unpushed? or @committing)}
+            :if={@dirty? or @unpushed? or @committing}
             type="button"
             id="commit-work"
             data-qa="commit_work"
@@ -133,8 +133,16 @@ defmodule RailWeb.Live.EngineerStage do
     {:noreply, assign(socket, :collapsed, toggle(socket.assigns.collapsed, path, path not in socket.assigns.collapsed))}
   end
 
+  # Picking a file is asking to read it, so it is put in front of the reader and
+  # opened if it was folded away.
   def handle_event("select_diff_file", %{"path" => path}, socket) do
-    {:noreply, assign(socket, :selected_file, path)}
+    socket =
+      socket
+      |> assign(:selected_file, path)
+      |> assign(:collapsed, toggle(socket.assigns.collapsed, path, false))
+      |> push_event("diff:scroll_to", %{path: path})
+
+    {:noreply, socket}
   end
 
   # Reading a file is also done with it, so it folds away; the caret is there to
@@ -292,7 +300,12 @@ defmodule RailWeb.Live.EngineerStage do
   # touching it makes it unread, which lets it fold again on the next pass.
   defp fold_away_read_files(socket, files) do
     {read, unread} = Enum.split_with(files, & &1.viewed?)
-    fresh = Enum.reject(read, &MapSet.member?(socket.assigns.auto_collapsed, &1.path))
+    # The file a finding sent the reader here for stays open however read it is:
+    # folding it away is folding away the thing they came to look at.
+    fresh =
+      Enum.reject(read, fn file ->
+        MapSet.member?(socket.assigns.auto_collapsed, file.path) or file.path == socket.assigns.focus_file
+      end)
 
     socket
     |> assign(:collapsed, Enum.uniq(Enum.map(fresh, & &1.path) ++ socket.assigns.collapsed))

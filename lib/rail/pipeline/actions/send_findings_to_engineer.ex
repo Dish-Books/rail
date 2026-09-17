@@ -82,7 +82,7 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineer do
 
     #{Enum.map_join(findings, "\n\n", &finding/1)}
 
-    Address every one of them in the same worktree on the same branch, run the project's checks from the top, and write the commit message file as you did before - that round becomes a commit of its own, so describe what you changed this round rather than the whole ticket again. Where you disagree with a finding, say so and why rather than silently leaving it.
+    Each carries the reviewer's suggested fix, written for a finding that would be addressed, which is what this one is: apply it rather than weighing whether to. Address every one of them in the same worktree on the same branch, run the project's checks from the top, and write the commit message file as you did before - that round becomes a commit of its own, so describe what you changed this round rather than the whole ticket again. Where you disagree with a finding, say so and why rather than silently leaving it.
     """
   end
 

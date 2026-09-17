@@ -78,6 +78,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
 
     - A heredoc into #{file}, never an inline string.
     - Write it only when the work is actually finished and the project's own checks pass. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you rather than committing half a change.
+    - Run every command in the foreground and wait for it, however long it takes. Stopping with a command still running in the background ends the turn as a failure however much you finished, because the CLI carrying you exits on the work still outstanding.
     - Review and QA findings come back as further turns of this same conversation. Each round writes the file again and becomes a commit of its own, so describe that round's change, not the whole ticket over again.
     - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each `[QUESTION: ...]` on a line of its own. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or a named assumption is not a question.
 

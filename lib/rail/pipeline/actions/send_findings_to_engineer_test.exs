@@ -147,6 +147,7 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
     log = engineer_run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
 
     assert log =~ "[human] The reviewer read the change you pushed"
+    assert log =~ "apply it rather than weighing whether to"
     assert log =~ "Nil is not handled"
     refute log =~ "Poor variable name"
   end

@@ -227,6 +227,29 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert [%{key: "unhandled-nil", decision: nil}] = Pipeline.list_review_findings(task)
   end
 
+  # The process is settled before the stage's finish runs, so a finish that raises
+  # would otherwise unwind leaving a run that looks finished, moved nothing and
+  # said nothing about why.
+  test "a finish that blows up says so on the run", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+    File.mkdir_p!(Path.join(task.scratch_path, "reviews"))
+
+    File.write!(Path.join([task.scratch_path, "reviews", "RUN-1.json"]), """
+    {"findings": [
+      {"key": "too-far", "title": "Past the end of the file", "severity": "major",
+       "recommendation": "fix", "line": 99999999999}
+    ]}
+    """)
+
+    {_run, os_process} = exited.(:review, %{})
+
+    assert {:ok, %Run{stage_outcome: :in_progress, error: error}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+
+    assert error =~ "Postgrex expected an integer"
+    assert Pipeline.list_review_findings(task) == []
+  end
+
   # The reviewer is argued with after it has reported, and the argument ends in a
   # rewritten report. A latch that stopped Rail reading it would leave the panel
   # showing what the reviewer said two turns ago.

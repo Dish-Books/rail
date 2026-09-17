@@ -114,7 +114,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       assert prompt =~ "`detail` and `suggestion` have different readers"
       assert prompt =~ "the whole of what the engineer is handed"
       assert prompt =~ "whether this change caused the problem or merely stands next to it"
-      assert prompt =~ ~s("suggestion": "what would settle it")
+      assert prompt =~ ~s("suggestion": "the change that settles it")
+      assert prompt =~ "written as though the finding will be fixed"
+      assert prompt =~ "hands the engineer a decision the human has already taken"
 
       {:ok, %OsProcess{run: spawned}}
     end)

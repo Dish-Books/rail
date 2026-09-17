@@ -1017,6 +1017,19 @@ defmodule RailWeb.TaskLiveTest do
       assert %Task{stage: :engineer} = Repo.reload!(task)
     end
 
+    # A turn that ended badly leaves the worktree dirty, and the task can already
+    # have moved on by the time anyone looks. Withholding the button there leaves
+    # work that nothing can commit.
+    test "the commit is still offered once the task has moved past engineer", %{conn: conn, task: task, repo: repo} do
+      File.write!(Path.join(repo, "left_behind.ex"), "uncommitted\n")
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :review})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#commit-work")
+      refute has_element?(view, "#send-to-review")
+    end
+
     test "sending the diff to review moves the task", %{conn: conn, task: task} do
       stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
@@ -1027,12 +1040,34 @@ defmodule RailWeb.TaskLiveTest do
       assert %Task{stage: :review} = Repo.reload!(task)
     end
 
-    test "selecting a file in the tree marks it", %{conn: conn, task: task} do
+    test "selecting a file in the tree marks it and goes there", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       _clicked = view |> element("[data-qa='diff-file-row']") |> render_click()
 
       assert has_element?(view, "[data-qa='diff-file-row'][aria-current='true']", "shipped.ex")
+      assert_push_event(view, "diff:scroll_to", %{path: "shipped.ex"})
+    end
+
+    test "selecting a file opens it again if reading it had folded it away", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("[data-qa='diff-viewed-checkbox']") |> render_click()
+      refute has_element?(view, "[data-qa='diff_line_row']")
+
+      _clicked = view |> element("[data-qa='diff-file-row']") |> render_click()
+
+      assert has_element?(view, "[data-qa='diff_line_row']")
+    end
+
+    test "the file a finding sent the reader to stays open however read it is", %{conn: conn, task: task} do
+      assert {:ok, read, _html} = live(conn, ~p"/tasks/#{task.id}")
+      read |> element("[data-qa='diff-viewed-checkbox']") |> render_click()
+      refute has_element?(read, "[data-qa='diff_line_row']")
+
+      assert {:ok, sent, _html} = live(conn, ~p"/tasks/#{task.id}?file=shipped.ex")
+
+      assert has_element?(sent, "[data-qa='diff_line_row']")
     end
 
     test "expanding a gap fills in the lines the diff left out", %{conn: conn, task: task, repo: repo} do

@@ -83,7 +83,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
           "key": "short-stable-slug",
           "title": "one line naming the problem",
           "detail": "what is wrong and what it costs",
-          "suggestion": "what would settle it",
+          "suggestion": "the change that settles it",
           "file": "lib/path/to/file.ex",
           "line": 42,
           "severity": "major",
@@ -99,7 +99,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     - `key` is your own name for the problem, lowercase with hyphens, and it must stay the same for the same problem across passes. That is what lets a later pass update a finding rather than raise it twice.
     - `severity` is `blocker`, `major`, `minor` or `nit`, and says how much the problem matters. `recommendation` is `fix` or `skip`, and says whether you would act on it. They are separate axes: a nit worth the thirty seconds it costs is `fix`, and a blocker is never `skip`. Most changes have some of each.
     - `recommendation` is your advice, not your decision. A human reads it beside the finding and decides, so say which you would do rather than reporting everything as equal.
-    - `detail` and `suggestion` have different readers, so do not write one twice. `detail` is what is wrong and what it costs, which is what the human rules on. `suggestion` is what would settle it, named concretely enough to act on, and it is the whole of what the engineer is handed. Say in `detail` whether this change caused the problem or merely stands next to it - something already broken before this change is `skip` unless the change made it worse.
+    - `detail` and `suggestion` have different readers, so do not write one twice. `detail` is what is wrong and what it costs, which is what the human rules on. Say in `detail` whether this change caused the problem or merely stands next to it - something already broken before this change is `skip` unless the change made it worse.
+    - `suggestion` is written as though the finding will be fixed, because by the time an engineer reads it a human has decided it will be. It is one change, named concretely enough to apply: the files, the edit, and the tests that go with it. It is the whole of what the engineer is handed.
+    - Nothing in `suggestion` restates or reconsiders `recommendation`. "Leave it", "only if you think it matters", or a fix offered as one branch of a choice hands the engineer a decision the human has already taken, and it will be built as the hedge rather than the fix. Recommend `skip` in the field for recommending it; still write the fix you would apply if told to.
     - `status` is `open` for a problem that still stands. Leave findings out entirely rather than inventing them: `{"findings": []}` is a clean review and is the right answer when the change is good.
     - A finding with no file is fine. Give `file` and `line` whenever you can point at one.
     - Report only what you checked. You have the worktree: open the callers, read the test, run it. A finding you could have confirmed and did not is a guess, and a guess costs the engineer a whole round.

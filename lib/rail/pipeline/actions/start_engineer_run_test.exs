@@ -95,6 +95,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       assert prompt =~ "The branch #{task.worktree_name} is already checked out"
       assert prompt =~ "its base is main on remote `origin`"
       assert prompt =~ "Ask everything at once."
+      assert prompt =~ "Run every command in the foreground and wait for it"
 
       {:ok, %OsProcess{run: spawned}}
     end)
