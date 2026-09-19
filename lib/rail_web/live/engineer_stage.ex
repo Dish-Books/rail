@@ -29,7 +29,6 @@ defmodule RailWeb.Live.EngineerStage do
       |> assign_new(:collapsed, fn -> [] end)
       |> assign_new(:auto_collapsed, fn -> MapSet.new() end)
       |> assign_new(:selected_file, fn -> nil end)
-      |> assign_new(:focus_file, fn -> nil end)
       |> assign_new(:expanded_gaps, fn -> %{} end)
 
     socket = if socket.assigns.focus_file, do: assign(socket, :selected_file, socket.assigns.focus_file), else: socket

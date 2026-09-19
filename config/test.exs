@@ -30,4 +30,5 @@ config :rail, :github, req_options: [plug: {Req.Test, Rail.GitHub.Client}]
 config :rail, :linear, req_options: [plug: {Req.Test, Rail.Linear}]
 config :rail, :linear_oauth, req_options: [plug: {Req.Test, Rail.Linear}]
 config :rail, :mcp, req_options: [plug: {Req.Test, Rail.Mcp}, retry: false]
+config :rail, :type_safe, req_options: [plug: {Req.Test, Rail.TypeSafe}, retry: false]
 config :rail, dev_routes: true

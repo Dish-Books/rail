@@ -84,9 +84,22 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
       assert prompt =~ "git diff origin/main...HEAD"
       assert prompt =~ task.worktree_name
       assert prompt =~ "cat > #{qa_dir}/SQA-1.json <<'JSON'"
-      assert prompt =~ "Write screenshots and captured output into #{qa_dir}/evidence"
+      assert prompt =~ "A screenshot comes from `qa_shot`"
+      # Reading a picture is what costs, and Rail cannot take one back out of a
+      # context once it is in one.
+      assert prompt =~ "read one with the Read tool when a check turns on how something looks"
+      assert prompt =~ "Anything else you captured goes into #{qa_dir}/evidence"
       assert prompt =~ "Ask everything at once."
       assert prompt =~ "Filter invoices by vendor."
+
+      # The browser and the checklist are Rail's, so the brief is where they are
+      # named rather than the project's own prompt.
+      assert prompt =~ "`qa_goto`, `qa_do`, `qa_look`, `qa_shot` and `qa_problems`"
+      assert prompt =~ "call `qa_plan` with every check this pass will run"
+      assert prompt =~ "Call `qa_check` on each one the moment you have run it"
+      assert prompt =~ "each under a `group` that says what kind of check it is"
+      assert prompt =~ "`qa_shot` takes the row's key as well as a caption"
+      assert prompt =~ "`summary` is one or two sentences"
 
       {:ok, %OsProcess{run: spawned}}
     end)
@@ -121,7 +134,7 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
       assert prompt =~ "it must stay the same for the same defect across passes"
       assert prompt =~ "a finding nobody can re-run is a finding nobody can close"
       assert prompt =~ "`caused_by_change` is `false` for something that was already broken"
-      assert prompt =~ "never an absolute path and never one climbing out with `..`"
+      assert prompt =~ "never absolute and never climbing out with `..`"
 
       {:ok, %OsProcess{run: spawned}}
     end)

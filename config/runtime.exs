@@ -38,6 +38,10 @@ config :rail, :linear_oauth,
 # environment directly.
 config :rail, :no_dispatch, get_env.("RAIL_NO_DISPATCH", nil) == "1"
 
+config :rail, :type_safe,
+  api_key: get_env.("TYPESAFE_API_KEY", "typesafe_api_key"),
+  model: get_env.("TYPESAFE_MODEL", "jev-latest")
+
 config :ueberauth, Ueberauth.Strategy.Github.OAuth,
   client_id: get_env.("GITHUB_CLIENT_ID", "github_client_id"),
   client_secret: get_env.("GITHUB_CLIENT_SECRET", "github_client_secret")

@@ -8,6 +8,8 @@ defmodule RailWeb.Components.UpNext do
   """
   use RailWeb, :html
 
+  import RailWeb.Utils.StageLabel
+
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -106,9 +108,11 @@ defmodule RailWeb.Components.UpNext do
     end
   end
 
-  defp action(run) do
+  # The same sentence the task page puts at the top of the stage, so a card and
+  # the page it opens do not name the errand differently.
+  defp action(%Run{task: %Task{stage: stage}} = run) do
     case Run.state(run) do
-      :done -> "Review #{work(run)}"
+      :done -> approval_label(stage)
       :blocked -> "Answer questions"
       _stalled -> "Pick it up"
     end
@@ -124,7 +128,7 @@ defmodule RailWeb.Components.UpNext do
 
   defp summary(run) do
     case Run.state(run) do
-      :done -> "The #{work(run)} is ready for you to review."
+      :done -> "Waiting on you to read the #{work(run)}."
       :blocked -> asked(run)
       _stalled -> stalled(run)
     end
@@ -162,9 +166,11 @@ defmodule RailWeb.Components.UpNext do
     end
   end
 
-  defp work(%Run{task: %Task{stage: :design}}), do: "design"
+  defp work(%Run{task: %Task{stage: :design}}), do: "designs"
   defp work(%Run{task: %Task{stage: :architect}}), do: "plan"
-  defp work(%Run{task: %Task{stage: :engineer}}), do: "implementation"
+  defp work(%Run{task: %Task{stage: :engineer}}), do: "diff"
+  defp work(%Run{task: %Task{stage: :review}}), do: "findings"
+  defp work(%Run{task: %Task{stage: :qa}}), do: "QA report"
   defp work(%Run{}), do: "ticket"
 
   defp questions(%Run{questions: [_one]}), do: "a question"

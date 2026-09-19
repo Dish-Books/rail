@@ -49,8 +49,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
         reasoning_effort: role.reasoning_effort || "high",
         system_prompt: role.system_prompt,
         conversation_id: run.conversation_id,
-        work_dir: task.worktree_path,
-        mcp: role.mcp_tools != []
+        work_dir: task.worktree_path
       )
 
     Tools.start_os_process(run, args)

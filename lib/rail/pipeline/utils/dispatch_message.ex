@@ -86,8 +86,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
         read_only: false,
         system_prompt: role.system_prompt,
         conversation_id: run.conversation_id,
-        work_dir: worktree_path,
-        mcp: role.mcp_tools != []
+        work_dir: worktree_path
       )
 
     case Tools.start_os_process(run, argv) do

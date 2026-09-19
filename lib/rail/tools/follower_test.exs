@@ -110,7 +110,6 @@ defmodule Rail.Tools.FollowerTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: stream_path,
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -478,7 +477,6 @@ defmodule Rail.Tools.FollowerTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: stream,
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -538,7 +536,6 @@ defmodule Rail.Tools.FollowerTest do
         run_id: run1.id,
         task_id: run1.task_id,
         stream_path: stream1,
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -584,7 +581,6 @@ defmodule Rail.Tools.FollowerTest do
         run_id: run2.id,
         task_id: run2.task_id,
         stream_path: stream2,
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -629,7 +625,6 @@ defmodule Rail.Tools.FollowerTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: stream,
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -736,7 +731,6 @@ defmodule Rail.Tools.FollowerTest do
         run_id: run.id,
         task_id: task.id,
         stream_path: stream,
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -806,7 +800,6 @@ defmodule Rail.Tools.FollowerTest do
         run_id: run.id,
         task_id: task_id,
         stream_path: stream,
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -860,7 +853,6 @@ defmodule Rail.Tools.FollowerTest do
         run_id: run.id,
         task_id: task_id,
         stream_path: stream,
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -915,7 +907,6 @@ defmodule Rail.Tools.FollowerTest do
         run_id: run.id,
         task_id: task_id,
         stream_path: stream,
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })

@@ -22,7 +22,6 @@ defmodule Rail.Tools.Utils.EnsureExecutableTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: "/tmp/ensure_executable/#{run.id}.ndjson",
-        node: to_string(Node.self()),
         status: :starting,
         started_at: DateTime.utc_now()
       })

@@ -118,12 +118,11 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     Tools.terminate_os_process(os_process.os_pid, grace_period: 100)
   end
 
-  test "gives a role with MCP tools a run token in its environment, and records only its hash", %{
-    run: run,
-    scope: scope
-  } do
-    {:ok, role} = Roles.get_role(id: run.role_id)
-    {:ok, _role} = Roles.update_role(scope, role, %{mcp_tools: ["linear__*"]})
+  # Every turn is pointed at Rail and given a token for it, whatever its role is
+  # allowed: what it may actually call is decided on Rail's side, per call.
+  # Deciding it twice is how a QA turn ended up told to connect with no token and
+  # got a 401 on its first call.
+  test "gives every turn a run token in its environment, and records only its hash", %{run: run} do
     test_pid = self()
 
     expect(Tools, :spawn_os_process, fn _executable, _args, opts ->
@@ -140,19 +139,26 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     assert %OsProcess{mcp_token_hash: ^hash} = Repo.get!(OsProcess, os_process_id)
   end
 
-  test "spawns a role without MCP tools with no token", %{run: run} do
+  # A token is good only while its turn is, so the next turn cannot be driven
+  # with the last one's.
+  test "a second turn gets a token of its own", %{run: run} do
     test_pid = self()
 
-    expect(Tools, :spawn_os_process, fn _executable, _args, opts ->
+    stub(Tools, :spawn_os_process, fn _executable, _args, opts ->
       send(test_pid, {:env, Keyword.fetch!(opts, :env)})
       {:ok, nil, 4243}
     end)
 
-    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+    stub(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
 
-    assert {:ok, %OsProcess{mcp_token_hash: nil}} = Tools.start_os_process(run, ["2"])
-    assert_received {:env, env}
-    refute Map.has_key?(env, "RAIL_MCP_TOKEN")
+    {:ok, %OsProcess{} = first} = Tools.start_os_process(run, ["2"])
+    assert_received {:env, %{"RAIL_MCP_TOKEN" => first_token}}
+
+    {:ok, _finished} = Tools.stop_os_process(first)
+    {:ok, %OsProcess{}} = Tools.start_os_process(run, ["2"])
+    assert_received {:env, %{"RAIL_MCP_TOKEN" => second_token}}
+
+    refute first_token == second_token
   end
 
   test "writes the stream under the task's scratch directory, one file per run", %{

@@ -163,6 +163,35 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineerTest do
 
   # The pending answer is consumed by the spawn, so without this the engineer
   # starts working again with nothing in its conversation saying why.
+  # A field QA left blank is a field it had nothing to say in, and a labelled
+  # heading over nothing reads as something lost in transit.
+  test "a section QA left blank is left out rather than sent empty", %{task: task, qa_run: run} do
+    {:ok, findings} =
+      Pipeline.sync_qa_findings(task, [
+        %{
+          key: "total-unrounded",
+          title: "The bill total renders as $1234.5",
+          check: "A bill's total reads as money",
+          steps: "   ",
+          severity: :major,
+          recommendation: :fix,
+          status: :open
+        }
+      ])
+
+    Enum.each(findings, fn finding -> {:ok, _fix} = Pipeline.decide_qa_finding(finding, :fix) end)
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
+      assert ["-p", prompt | _rest] = argv
+      assert prompt =~ "Found by: A bill's total reads as money"
+      refute prompt =~ "Steps to reproduce"
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{}} = Pipeline.send_qa_findings_to_engineer(run)
+  end
+
   test "what was sent is written to the engineer's log", %{engineer_run: engineer_run, qa_run: run} do
     assert {:ok, %Run{}} = Pipeline.send_qa_findings_to_engineer(run)
 

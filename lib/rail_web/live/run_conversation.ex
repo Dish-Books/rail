@@ -883,8 +883,6 @@ defmodule RailWeb.Live.RunConversation do
     end
   end
 
-  defp readable_lines(lines, _no_run), do: lines
-
   defp load_run_events(%Run{} = run), do: Pipeline.list_run_events(run)
   defp load_run_events(_no_run), do: []
 

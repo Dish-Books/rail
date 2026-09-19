@@ -55,8 +55,7 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
         reasoning_effort: role.reasoning_effort || "high",
         system_prompt: role.system_prompt,
         conversation_id: run.conversation_id,
-        work_dir: task.worktree_path,
-        mcp: role.mcp_tools != []
+        work_dir: task.worktree_path
       )
 
     Tools.start_os_process(run, args)
@@ -74,13 +73,19 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
 
     Nothing under #{scratch_path} is part of the change. It is your workspace, and Rail keeps it out of the commit.
 
+    The browser is Rail's rather than yours. `qa_goto`, `qa_do`, `qa_look`, `qa_shot` and `qa_problems` drive one headless Chrome that stays where you left it between calls; it opens on the first call and Rail closes it when the task moves on, so there is nothing to start and nothing to stop.
+
+    Before you open anything, call `qa_plan` with every check this pass will run, each under a `group` that says what kind of check it is - the setup you had to do to reach the change reads differently from the acceptance criteria. Every acceptance criterion on the ticket gets at least one check, quoting it in `criterion`: that mapping is how a reader knows the ticket was covered rather than the application poked at, and a criterion you cannot exercise is still a row - run it and mark it `skipped` with the reason. Call `qa_check` on each one the moment you have run it rather than at the end. A human watches that list fill in while you work - it is the only view they have of a pass in flight, and a pass that stops half way says which rows it never reached. The `check` field on a finding names the row it came out of, so the two have to agree.
+
+    Every picture is filed against a check: `qa_shot` takes the row's key as well as a caption, and the human reads the checklist a row at a time with the pictures taken for it. Take at least one for every check, at the moment it asserts something - a row with no picture is a row they have only your word for.
+
     Writing #{file} is how you report, and it is the last thing you do. Write it from your worktree with a heredoc, the body and its closing JSON line at column zero:
 
     mkdir -p #{dir}
     cat > #{file} <<'JSON'
     {
       "verdict": "fail",
-      "summary": "what works, what does not, and what you would do about it",
+      "summary": "one or two sentences: whether the change works, and the one thing most in the way if it does not",
       "not_checked": "what you could not check, and why",
       "findings": [
         {
@@ -107,6 +112,7 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
     JSON
 
     - A heredoc into #{file}, never an inline string. Write the whole file every pass; it is the complete report, not a list of what is new.
+    - `summary` is one or two sentences and sits above everything else a human reads, so it is the headline and not the report. Whether the change works, and the single thing most in the way if it does not. No list of the findings - they are listed underneath it - and no recap of what you drove.
     - `verdict` is `pass`, `concerns` or `fail`, and it is your judgement rather than a tally of what is below it. Three majors that were all broken before this change is a `pass`. One minor that makes the feature unusable is a `fail`. A human reads it beside the findings and decides what to do, so it gates nothing - say what you actually think.
     - One finding per defect. Two symptoms of one cause are one finding; one screen with three unrelated defects is three.
     - `key` is your own name for the defect, lowercase with hyphens, and it must stay the same for the same defect across passes. That is what lets a later pass update a finding rather than raise it twice.
@@ -115,7 +121,7 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
     - `caused_by_change` is `false` for something that was already broken before this branch. Report those - finding them is half the job - but they are rarely this branch's to fix, and saying so is what stops the engineer chasing them.
     - `suggestion` is written as though the finding will be fixed, because by the time an engineer reads it a human has decided it will be. It is one change, named concretely enough to apply. Nothing in it restates or reconsiders `recommendation`: "leave it", or a fix offered as one branch of a choice, hands the engineer a decision the human has already taken.
     - `steps`, `expected` and `observed` are what the engineer reproduces from. A defect it cannot see is a defect it will argue with rather than fix.
-    - Evidence is how a reader knows you saw it rather than reasoned it. Write screenshots and captured output into #{evidence}, and name each one with a `path` relative to #{dir} - never an absolute path and never one climbing out with `..`, or Rail drops it and nobody sees the picture. `kind` is `screenshot`, `log`, `query` or `note`; something small enough to read inline goes in `text` instead of a file.
+    - Evidence is how a reader knows you saw it rather than reasoned it. A screenshot comes from `qa_shot`, which files it under the check you named and hands back the name to put in `path` - do not invent one, and do not write a picture yourself. `qa_shot` gives you the name and not the picture: read one with the Read tool when a check turns on how something looks, and cite the name without reading it when it does not. A picture you read is in your context for the rest of the pass, and the human opens it from the finding either way. Anything else you captured goes into #{evidence} with a `path` relative to #{dir}, never absolute and never climbing out with `..`, or Rail drops it and nobody sees it. `kind` is `screenshot`, `log`, `query` or `note`; something small enough to read inline goes in `text` instead of a file.
     - `status` is `open` for a defect that still stands. Leave findings out entirely rather than inventing them: `{"findings": []}` with a `pass` verdict is a clean QA pass and is the right answer when the change works.
     - Report only what you exercised. A finding you could have reproduced and did not is a guess, and a guess costs the engineer a whole round.
     - Write the file only once the pass is finished. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you.

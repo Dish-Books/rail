@@ -13,6 +13,7 @@ import { CopyText } from "./hooks/copy_text";
 import { LocalTime } from "./hooks/local_time";
 import { LocalResetTime } from "./hooks/local_reset_time";
 import { DesignFrame } from "./hooks/design_frame";
+import { QaScreencast } from "./hooks/qa_screencast";
 
 const Hooks = {
   DesignFrame,
@@ -25,7 +26,8 @@ const Hooks = {
   DemoPlayer,
   CopyText,
   LocalTime,
-  LocalResetTime
+  LocalResetTime,
+  QaScreencast
 };
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");

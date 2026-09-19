@@ -99,7 +99,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
           run_id: run.id,
           task_id: run.task_id,
           stream_path: "/tmp/run_finished/#{run.id}.ndjson",
-          node: to_string(Node.self()),
           status: :running,
           started_at: DateTime.utc_now()
         })
@@ -284,7 +283,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: "/tmp/run_finished/#{run.id}-chat.ndjson",
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -374,7 +372,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
         role_id: roles[:qa].id,
         os_pid: 4321,
         stream_path: "/tmp/run_finished/#{run.id}-qa-chat.ndjson",
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })

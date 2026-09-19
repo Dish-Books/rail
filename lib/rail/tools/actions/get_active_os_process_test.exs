@@ -25,7 +25,6 @@ defmodule Rail.Tools.Actions.GetActiveOsProcessTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: "/tmp/get_active_os_process.ndjson",
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -42,7 +41,6 @@ defmodule Rail.Tools.Actions.GetActiveOsProcessTest do
       run_id: run.id,
       task_id: run.task_id,
       stream_path: "/tmp/get_active_os_process.ndjson",
-      node: to_string(Node.self()),
       status: :running,
       started_at: DateTime.utc_now()
     })
@@ -54,7 +52,6 @@ defmodule Rail.Tools.Actions.GetActiveOsProcessTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: "/tmp/get_active_os_process.ndjson",
-        node: to_string(Node.self()),
         status: :starting,
         started_at: DateTime.utc_now()
       })
@@ -69,7 +66,6 @@ defmodule Rail.Tools.Actions.GetActiveOsProcessTest do
       run_id: run.id,
       task_id: run.task_id,
       stream_path: "/tmp/get_active_os_process.ndjson",
-      node: to_string(Node.self()),
       status: :finished,
       started_at: DateTime.utc_now()
     })

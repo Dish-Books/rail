@@ -109,14 +109,10 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineer do
     """)
   end
 
+  # A field QA left blank never gets this far: the changeset reads whitespace as
+  # nothing and stores it as nothing.
   defp section(_label, nil), do: ""
-
-  defp section(label, value) do
-    case String.trim(value) do
-      "" -> ""
-      trimmed -> "\n#{label}: #{trimmed}\n"
-    end
-  end
+  defp section(label, value), do: "\n#{label}: #{String.trim(value)}\n"
 
   # The engineer cannot open a screenshot, so what it is handed is what each one
   # is of. That is enough to know a picture exists and to ask for it.

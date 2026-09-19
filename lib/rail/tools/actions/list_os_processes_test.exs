@@ -21,7 +21,6 @@ defmodule Rail.Tools.Actions.ListOsProcessesTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: "/tmp/list_os_processes_running.ndjson",
-        node: "node_under_test",
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -33,7 +32,6 @@ defmodule Rail.Tools.Actions.ListOsProcessesTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: "/tmp/list_os_processes_finished.ndjson",
-        node: "node_under_test",
         status: :finished,
         started_at: DateTime.utc_now()
       })
@@ -42,10 +40,9 @@ defmodule Rail.Tools.Actions.ListOsProcessesTest do
     %{run: run, running: running, running_id: running_id, finished: finished}
   end
 
-  test "filters by run, task, node and status", %{run: run, running_id: running_id} do
+  test "filters by run, task and status", %{run: run, running_id: running_id} do
     assert length(Tools.list_os_processes(run_id: run.id)) == 2
     assert length(Tools.list_os_processes(task_id: run.task_id)) == 2
-    assert length(Tools.list_os_processes(node: "node_under_test")) == 2
 
     assert [%OsProcess{id: ^running_id}] = Tools.list_os_processes(run_id: run.id, status: :running)
   end

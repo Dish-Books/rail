@@ -218,7 +218,6 @@ defmodule RailWeb.Live.RunConversationTest do
         run_id: run.id,
         task_id: task.id,
         stream_path: "/tmp/#{run.id}.ndjson",
-        node: "test@localhost",
         status: :finished,
         started_at: started
       })
@@ -248,7 +247,6 @@ defmodule RailWeb.Live.RunConversationTest do
       run_id: run.id,
       task_id: task.id,
       stream_path: "/tmp/#{run.id}.ndjson",
-      node: "test@localhost",
       status: :running,
       started_at: ~U[2026-09-09 10:30:00.000000Z]
     })
@@ -279,7 +277,6 @@ defmodule RailWeb.Live.RunConversationTest do
         run_id: run.id,
         task_id: task.id,
         stream_path: "/tmp/#{run.id}.ndjson",
-        node: "test@localhost",
         status: :finished,
         started_at: ~U[2026-09-09 10:00:00.000000Z]
       })
@@ -293,7 +290,6 @@ defmodule RailWeb.Live.RunConversationTest do
         run_id: run.id,
         task_id: task.id,
         stream_path: "/tmp/#{run.id}.ndjson",
-        node: "test@localhost",
         status: :finished,
         started_at: ~U[2026-09-09 11:00:00.000000Z]
       })
@@ -301,7 +297,7 @@ defmodule RailWeb.Live.RunConversationTest do
       |> Ecto.Changeset.change(updated_at: ~U[2026-09-09 11:02:00.000000Z])
       |> Repo.update!()
 
-    Pipeline.append_run_events(run.id, first.id, ["[rail] the first turn"])
+    Pipeline.append_run_events(run.id, first.id, ["[rail] the first turn", "[rail] still the first turn"])
     Pipeline.append_run_events(run.id, second.id, ["[rail] the second turn"])
 
     html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
@@ -312,6 +308,36 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ "30s"
     assert html =~ "2m 0s"
     assert html =~ ~s(data-at="2026-09-09T11:00:00.000000Z")
+    assert html =~ "still the first turn"
+  end
+
+  # The page's tab says which run is being read, and a role whose turn has not
+  # come has nothing to show rather than somebody else's transcript.
+  test "a tab whose role has not run reads as nothing, not as the last run", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+
+    Pipeline.append_run_events(run.id, nil, ["Plain words from the agent."])
+
+    html =
+      render_component(RunConversation,
+        id: "conv",
+        task: task,
+        runs: [run],
+        roles_map: roles_map,
+        stage_run: nil
+      )
+
+    refute html =~ "Plain words from the agent."
   end
 
   test "tool activity names each step, reads paths from the worktree root and flags errors", %{

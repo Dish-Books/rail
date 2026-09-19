@@ -4,7 +4,22 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
 
-  test "builds standard Claude args in exact flag order" do
+  setup do
+    config =
+      Jason.encode!(%{
+        "mcpServers" => %{
+          "rail" => %{
+            "type" => "http",
+            "url" => RailWeb.Endpoint.url() <> "/mcp",
+            "headers" => %{"Authorization" => "Bearer ${RAIL_MCP_TOKEN}"}
+          }
+        }
+      })
+
+    %{rail_mcp_config: config}
+  end
+
+  test "builds standard Claude args in exact flag order", %{rail_mcp_config: rail_mcp_config} do
     opts = [
       backend: %Backend{name: :claude},
       prompt: "Fix the bug",
@@ -22,14 +37,18 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
              "--effort",
              "high",
              "--dangerously-skip-permissions",
+             "--mcp-config",
+             rail_mcp_config,
              "--strict-mcp-config",
+             "--allowedTools",
+             "mcp__rail",
              "--output-format",
              "stream-json",
              "--verbose"
            ]
   end
 
-  test "builds read-only Claude args with tools empty string and strict mcp config" do
+  test "builds read-only Claude args with tools empty string", %{rail_mcp_config: rail_mcp_config} do
     opts = %{
       backend: %Backend{name: :claude},
       prompt: "Review the code",
@@ -49,7 +68,11 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
              "medium",
              "--tools",
              "",
+             "--mcp-config",
+             rail_mcp_config,
              "--strict-mcp-config",
+             "--allowedTools",
+             "mcp__rail",
              "--output-format",
              "stream-json",
              "--verbose"
@@ -58,34 +81,20 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
     refute "--dangerously-skip-permissions" in args
   end
 
-  test "connects Claude to Rail's MCP proxy with the token left to its environment" do
-    config =
-      Jason.encode!(%{
-        "mcpServers" => %{
-          "rail" => %{
-            "type" => "http",
-            "url" => RailWeb.Endpoint.url() <> "/mcp",
-            "headers" => %{"Authorization" => "Bearer ${RAIL_MCP_TOKEN}"}
-          }
-        }
-      })
+  # Every run is pointed at Rail and given a token for it; what it may call is
+  # decided on Rail's side. So there is no flag to get wrong, and no way for a
+  # run to be told to connect without the token to do it.
+  test "points every Claude run at Rail's MCP proxy, with the token left to its environment", %{
+    rail_mcp_config: rail_mcp_config
+  } do
+    for opts <- [[], [read_only: true], [mcp: false]] do
+      args = Tools.build_args([backend: %Backend{name: :claude}, prompt: "Go", model: "m"] ++ opts)
 
-    args = Tools.build_args(backend: %Backend{name: :claude}, prompt: "Go", model: "m", mcp: true)
+      assert ["--mcp-config", rail_mcp_config, "--strict-mcp-config", "--allowedTools", "mcp__rail"] ==
+               Enum.slice(args, Enum.find_index(args, &(&1 == "--mcp-config")), 5)
 
-    assert [
-             "--dangerously-skip-permissions",
-             "--mcp-config",
-             ^config,
-             "--strict-mcp-config",
-             "--allowedTools",
-             "mcp__rail",
-             "--output-format"
-           ] = Enum.slice(args, 6, 7)
-
-    read_only = Tools.build_args(backend: %Backend{name: :claude}, prompt: "Go", model: "m", mcp: true, read_only: true)
-
-    assert ["--tools", "", "--mcp-config", ^config, "--strict-mcp-config", "--allowedTools", "mcp__rail"] =
-             Enum.slice(read_only, 6, 7)
+      refute Enum.any?(args, &(&1 =~ "RAIL_MCP_TOKEN=")), "the token must never reach argv"
+    end
   end
 
   test "appends the role prompt to Claude's own and attaches --resume when present" do

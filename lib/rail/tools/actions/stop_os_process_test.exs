@@ -20,7 +20,6 @@ defmodule Rail.Tools.Actions.StopOsProcessTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: "/tmp/stop_os_process.ndjson",
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })

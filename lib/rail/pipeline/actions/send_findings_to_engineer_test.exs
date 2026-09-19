@@ -139,6 +139,48 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
     assert {:ok, %Run{}} = Pipeline.send_findings_to_engineer(run)
   end
 
+  # The reviewer wrote the remedy for this reader, so it goes over labelled
+  # rather than run together with the reasoning the human ruled on - and a
+  # reviewer that left the field blank has not written one.
+  test "a remedy the reviewer wrote goes over labelled", %{task: task, review_run: run} do
+    {:ok, findings} =
+      Pipeline.sync_review_findings(task, [
+        %{
+          key: "unhandled-nil",
+          title: "Nil is not handled",
+          suggestion: "Add a clause for nil.",
+          severity: :major,
+          recommendation: :fix,
+          status: :open
+        },
+        %{
+          key: "blank-suggestion",
+          title: "Nothing suggested",
+          suggestion: "   ",
+          severity: :minor,
+          recommendation: :fix,
+          status: :open
+        }
+      ])
+
+    Enum.each(findings, fn finding -> {:ok, _fix} = Pipeline.decide_review_finding(finding, :fix) end)
+
+    # Whitespace is nothing, so the field is stored as nothing and nothing is
+    # written over it.
+    assert Enum.any?(findings, &(&1.key == "blank-suggestion" and &1.suggestion == nil))
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
+      assert ["-p", prompt | _rest] = argv
+      assert prompt =~ "Suggested fix: Add a clause for nil."
+      assert prompt =~ "Nothing suggested"
+      refute prompt =~ "Suggested fix: \n"
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{}} = Pipeline.send_findings_to_engineer(run)
+  end
+
   # The pending answer is consumed by the spawn, so without this the engineer
   # starts working again with nothing in its conversation saying why.
   test "what was sent is written to the engineer's log", %{engineer_run: engineer_run, review_run: run} do

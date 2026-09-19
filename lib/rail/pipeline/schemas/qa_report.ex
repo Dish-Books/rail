@@ -19,17 +19,12 @@ defmodule Rail.Pipeline.Schemas.QaReport do
   feature unusable is a fail. It is advice, though - what the human decides about
   each finding is what actually moves the task.
   """
-  use Rail.Schema
-
   @verdicts [:pass, :concerns, :fail]
 
-  @primary_key false
-  embedded_schema do
-    field :verdict, Ecto.Enum, values: @verdicts
-    field :summary, :string
-    field :not_checked, :string
-    field :findings, {:array, :map}, default: []
-  end
+  # A plain struct rather than an embedded schema: nothing casts this, nothing
+  # queries it, and the only thing that builds one is the reader, which has
+  # already checked the verdict against the list below.
+  defstruct [:verdict, :summary, :not_checked, findings: []]
 
   def verdicts, do: @verdicts
 

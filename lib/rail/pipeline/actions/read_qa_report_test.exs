@@ -153,6 +153,9 @@ defmodule Rail.Pipeline.Actions.ReadQaReportTest do
     {"findings": [
       {"key": "one", "title": "One", "check": "A check", "severity": "nit", "recommendation": "skip",
        "evidence": [
+         "a bare string where a piece of evidence should be",
+         {"kind": "screenshot", "path": "evidence/fine.png"},
+         {"name": 12, "kind": "screenshot", "path": "evidence/fine.png"},
          {"name": "climbing", "kind": "screenshot", "path": "../../etc/passwd"},
          {"name": "absolute", "kind": "screenshot", "path": "/etc/passwd"},
          {"name": "nameless", "kind": "screenshot", "path": "evidence/fine.png", "x": 1},

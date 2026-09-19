@@ -63,7 +63,6 @@ defmodule Rail.Tools.Utils.GetFollowerPidTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: stream_path,
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })

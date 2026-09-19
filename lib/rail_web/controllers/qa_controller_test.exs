@@ -90,6 +90,22 @@ defmodule RailWeb.QaControllerTest do
     assert response(conn, 200) == "** (RuntimeError) boom"
   end
 
+  # Watching a pass means seeing what it saw before any finding names it, so the
+  # roll is served straight out of the directory - matched against it, never
+  # joined onto it.
+  test "serves a screenshot no finding names yet", %{conn: conn, task: task} do
+    conn = get(conn, ~p"/tasks/#{task.id}/qa/evidence/unnamed.png")
+
+    assert response(conn, 200) == "nobody points at this"
+    assert response_content_type(conn, :png) =~ "image/png"
+  end
+
+  test "serves nothing the directory does not hold", %{conn: conn, task: task} do
+    assert conn |> get(~p"/tasks/#{task.id}/qa/evidence/invented.png") |> response(404)
+    assert conn |> get(~p"/tasks/#{task.id}/qa/evidence/server.log") |> response(404)
+    assert conn |> get(~p"/tasks/tsk_missing/qa/evidence/unnamed.png") |> response(404)
+  end
+
   # The path is looked up, never taken from the URL: the worst a caller can do
   # with a key or an index it invented is get a 404.
   test "serves nothing a finding does not name", %{conn: conn, task: task} do

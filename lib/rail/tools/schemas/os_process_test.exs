@@ -14,7 +14,6 @@ defmodule Rail.Tools.Schemas.OsProcessTest do
       task_id: task_id,
       os_pid: 12_345,
       stream_path: "/tmp/rail/streams/test.ndjson",
-      node: "nonode@nohost",
       status: :running,
       started_at: now
     }
@@ -37,7 +36,6 @@ defmodule Rail.Tools.Schemas.OsProcessTest do
     assert "can't be blank" in errors.run_id
     assert "can't be blank" in errors.task_id
     assert "can't be blank" in errors.stream_path
-    assert "can't be blank" in errors.node
     assert "can't be blank" in errors.status
     assert "can't be blank" in errors.started_at
   end
@@ -48,7 +46,6 @@ defmodule Rail.Tools.Schemas.OsProcessTest do
         run_id: UXID.generate!(prefix: "run"),
         task_id: UXID.generate!(prefix: "tsk"),
         stream_path: "/tmp/rail/streams/test.ndjson",
-        node: "node@host",
         status: "invalid_status",
         started_at: DateTime.utc_now()
       })
@@ -84,7 +81,6 @@ defmodule Rail.Tools.Schemas.OsProcessTest do
         task_id: run.task_id,
         os_pid: 12_345,
         stream_path: "/tmp/rail/streams/#{run.id}.ndjson",
-        node: "node@host",
         status: :starting,
         started_at: DateTime.utc_now()
       })
@@ -94,5 +90,11 @@ defmodule Rail.Tools.Schemas.OsProcessTest do
     assert os_process.run_id == run.id
     assert os_process.os_pid == 12_345
     assert os_process.status == :starting
+  end
+
+  # A process nobody recorded a start for has run for no time anybody can
+  # account for, which reads better than a negative number or a crash.
+  test "a process with no start has no duration" do
+    assert OsProcess.duration_seconds(%OsProcess{}, DateTime.utc_now()) == 0
   end
 end

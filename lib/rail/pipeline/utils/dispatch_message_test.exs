@@ -110,6 +110,16 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert %Run{pending_chat: "Please also add a test"} = Repo.reload!(run)
   end
 
+  # A worktree that cannot be made is the message never leaving, and the run has
+  # to say so rather than look like it was delivered.
+  test "a message with nowhere to run fails the run", %{run: run} do
+    expect(Rail.Git, :get_or_create_worktree, fn _project, _task -> {:error, :no_such_branch} end)
+
+    assert {:error, {:worktree_failed, :no_such_branch}} = dispatch_message(run, async: false)
+    assert %Run{pending_chat: "Please also add a test"} = Repo.reload!(run)
+    assert [%RunEvent{line: "[rail] That message was not delivered: " <> _reason}] = Repo.all(RunEvent)
+  end
+
   test "a run that is gone has nothing to dispatch", %{run: run} do
     Repo.delete!(run)
 

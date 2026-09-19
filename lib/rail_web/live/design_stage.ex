@@ -379,5 +379,7 @@ defmodule RailWeb.Live.DesignStage do
   defp message_for(:nothing_picked), do: "Pick a design before approving it."
   defp message_for(:screenshot_missing), do: "The picked design has no screenshot yet."
   defp message_for(:stale_screenshot), do: "The screenshot is older than the design. Ask the designer to retake it."
+  # coveralls-ignore-start (a refusal nobody has written a sentence for yet)
   defp message_for(reason), do: "Could not update the design: #{inspect(reason)}"
+  # coveralls-ignore-stop
 end

@@ -418,7 +418,7 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert has_element?(view, "#up-next-featured-#{review_run.id}[href='/tasks/#{review.id}']", "Ticket to review")
       assert has_element?(view, "#up-next-featured-#{review_run.id} [data-qa='up-next-chip']", "Ready for review")
-      assert has_element?(view, "#up-next-featured-#{review_run.id}", "Review ticket")
+      assert has_element?(view, "#up-next-featured-#{review_run.id}", "Review the ticket")
 
       assert has_element?(view, "#up-next-row-#{one_question.id}[href='/tasks/#{one_task.id}']", "asked a question")
       assert has_element?(view, "#up-next-row-#{two_questions.id}[href='/tasks/#{two_task.id}']", "asked 2 questions")
@@ -473,8 +473,14 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/")
 
-      assert has_element?(view, "#up-next-featured-#{design_run.id}", "Review design")
-      assert has_element?(view, "#up-next-featured-#{design_run.id} [data-qa='up-next-summary']", "The design is ready")
+      assert has_element?(view, "#up-next-featured-#{design_run.id}", "Review the designs")
+
+      assert has_element?(
+               view,
+               "#up-next-featured-#{design_run.id} [data-qa='up-next-summary']",
+               "Waiting on you to read the designs"
+             )
+
       refute has_element?(view, "#up-next-featured-#{product_run.id}")
       refute has_element?(view, "#up-next-row-#{product_run.id}")
       assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")

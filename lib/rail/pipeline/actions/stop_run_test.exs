@@ -113,7 +113,6 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: "/tmp/stop_run/#{run.id}.ndjson",
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })

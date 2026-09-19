@@ -33,9 +33,17 @@ defmodule Rail.Tools.FollowerSupervisor do
   # and it gets the port.
   def start_follower(%OsProcess{} = os_process, opts \\ []) when is_list(opts) do
     case DynamicSupervisor.start_child(__MODULE__, {Follower, {os_process, opts}}) do
-      {:ok, follower_pid} -> {:ok, connect(follower_pid, opts)}
-      {:error, {:already_started, follower_pid}} -> {:ok, connect(follower_pid, opts)}
-      {:error, reason} -> {:error, reason}
+      {:ok, follower_pid} ->
+        {:ok, connect(follower_pid, opts)}
+
+      {:error, {:already_started, follower_pid}} ->
+        {:ok, connect(follower_pid, opts)}
+
+      # coveralls-ignore-start (a Follower that refuses to start, which nothing
+      # in its own init can bring about)
+      {:error, reason} ->
+        {:error, reason}
+        # coveralls-ignore-stop
     end
   end
 

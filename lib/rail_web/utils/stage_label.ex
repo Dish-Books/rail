@@ -30,11 +30,19 @@ defmodule RailWeb.Utils.StageLabel do
     end
   end
 
-  defp approval_label(:product), do: "Review the ticket"
-  defp approval_label(:design), do: "Review the designs"
-  defp approval_label(:architect), do: "Review the plan"
-  defp approval_label(:engineer), do: "Review the diff"
-  defp approval_label(:review), do: "Review the findings"
-  defp approval_label(:qa), do: "Review the QA report"
-  defp approval_label(_other), do: "Waiting on you"
+  @doc """
+  What the human is being asked to read, for a stage that has finished.
+
+  Public because the overview asks the same question from the other side - a
+  card that says "Review ticket" while the task page says "Review the findings"
+  is two answers to one question, and the reader has to open the task to find
+  out which is right.
+  """
+  def approval_label(:product), do: "Review the ticket"
+  def approval_label(:design), do: "Review the designs"
+  def approval_label(:architect), do: "Review the plan"
+  def approval_label(:engineer), do: "Review the diff"
+  def approval_label(:review), do: "Review the findings"
+  def approval_label(:qa), do: "Review the QA report"
+  def approval_label(_other), do: "Waiting on you"
 end
