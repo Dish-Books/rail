@@ -56,3 +56,6 @@ debug/
 
 # Demo and QA scratchpads: frames, scenarios and reset scripts, none of which belong in history.
 .scratch/
+
+# What the agents write for a task: tickets, designs, plans, reviews, QA reports.
+/output/

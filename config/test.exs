@@ -32,3 +32,4 @@ config :rail, :linear_oauth, req_options: [plug: {Req.Test, Rail.Linear}]
 config :rail, :mcp, req_options: [plug: {Req.Test, Rail.Mcp}, retry: false]
 config :rail, :type_safe, req_options: [plug: {Req.Test, Rail.TypeSafe}, retry: false]
 config :rail, dev_routes: true
+config :rail, scratch_root: Path.join(System.tmp_dir!(), "rail")

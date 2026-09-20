@@ -52,6 +52,7 @@ config :rail, :fetch_parsers, true
 config :rail,
   config_env: config_env(),
   dev_routes: false,
+  scratch_root: Path.expand("../output", __DIR__),
   ecto_repos: [Rail.Repo],
   generators: [timestamp_type: :utc_datetime_usec]
 
