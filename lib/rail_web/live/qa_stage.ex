@@ -140,6 +140,8 @@ defmodule RailWeb.Live.QaStage do
                 :if={@pane == :finding}
                 task={@task}
                 finding={@selected}
+                checklist={@checklist}
+                shots={@shots}
                 position={@position}
                 count={length(@findings)}
                 decidable={@approvable and not @running}
@@ -170,12 +172,15 @@ defmodule RailWeb.Live.QaStage do
   def handle_event("select_check", %{"key" => key}, socket), do: {:noreply, focus(socket, {:check, key})}
 
   # A picture takes over the middle rather than opening somewhere else, so what
-  # it is of stays next to the list it was taken for.
-  def handle_event("select_shot", %{"file" => file}, socket), do: {:noreply, focus(socket, {:shot, file})}
+  # it is of stays next to the list it was taken for. Where it was opened from
+  # travels with it, because that is where closing it should land.
+  def handle_event("select_shot", %{"file" => file} = params, socket) do
+    {:noreply, focus(socket, {:shot, file, back(params["back"])})}
+  end
 
-  # Closing a picture that belongs to a row goes back to the row rather than all
-  # the way out, because that is where it was opened from.
-  def handle_event("close_focus", params, socket), do: {:noreply, focus(socket, back(params["check"]))}
+  def handle_event("close_focus", _params, socket) do
+    {:noreply, focus(socket, closes_to(socket.assigns.focus))}
+  end
 
   def handle_event("decide", %{"key" => key, "decision" => decision}, socket) do
     finding = Enum.find(socket.assigns.findings, &(&1.key == key))
@@ -280,7 +285,6 @@ defmodule RailWeb.Live.QaStage do
   end
 
   attr :target, :any, required: true
-  attr :check, :string, default: nil
 
   # Every pane the sidebar opens closes the same way, back to whatever the panel
   # would have shown on its own.
@@ -292,7 +296,6 @@ defmodule RailWeb.Live.QaStage do
       data-qa="qa_close_pane"
       phx-click="close_focus"
       phx-target={@target}
-      phx-value-check={@check}
       class="ml-auto shrink-0 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-xs font-semibold hover:bg-white/40 dark:hover:bg-slate-800 cursor-pointer"
     >
       Close
@@ -401,6 +404,8 @@ defmodule RailWeb.Live.QaStage do
 
   attr :task, :any, required: true
   attr :finding, :any, required: true
+  attr :checklist, :any, required: true
+  attr :shots, :list, required: true
   attr :position, :integer, required: true
   attr :count, :integer, required: true
   attr :decidable, :boolean, required: true
@@ -408,6 +413,13 @@ defmodule RailWeb.Live.QaStage do
   attr :target, :any, required: true
 
   defp finding_detail(assigns) do
+    row = row_for(assigns.checklist, assigns.finding)
+
+    assigns =
+      assigns
+      |> assign(:check_title, (row && row.title) || assigns.finding.check)
+      |> assign(:taken, row && shots_for(assigns.shots, row))
+
     ~H"""
     <div
       id="qa-finding-detail"
@@ -513,7 +525,7 @@ defmodule RailWeb.Live.QaStage do
           </div>
 
           <p data-qa="qa_finding_check" class="text-xs text-slate-500 dark:text-slate-400">
-            Found by: {@finding.check}
+            Found by: {@check_title}
           </p>
 
           <.markdown :if={@finding.detail} content={@finding.detail} class="text-[13.5px]" />
@@ -531,6 +543,36 @@ defmodule RailWeb.Live.QaStage do
               <.markdown content={@finding.observed} class="text-[13px]" />
             </.section>
           </div>
+
+          <.section
+            :if={@taken not in [nil, []]}
+            title="Taken for this check"
+            qa="qa_finding_check_shots"
+          >
+            <div class="grid gap-2.5 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
+              <button
+                :for={shot <- @taken}
+                type="button"
+                id={shot_id("qa-finding-shot", shot)}
+                data-qa="qa_finding_check_shot"
+                phx-click="select_shot"
+                phx-target={@target}
+                phx-value-file={shot.file}
+                title={shot.name}
+                class="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 text-left cursor-pointer hover:border-blue-400 dark:hover:border-blue-500"
+              >
+                <img
+                  src={~p"/tasks/#{@task.id}/qa/evidence/#{shot.file}"}
+                  alt={shot.name}
+                  loading="lazy"
+                  class="h-[78px] w-full object-cover object-top"
+                />
+                <span class="block truncate px-2 py-1.5 text-[10.5px] text-slate-500 dark:text-slate-400">
+                  {shot.name}
+                </span>
+              </button>
+            </div>
+          </.section>
 
           <.section :if={@finding.evidence != []} title="Evidence" qa="qa_finding_evidence">
             <div class="space-y-4">
@@ -782,7 +824,7 @@ defmodule RailWeb.Live.QaStage do
           Full size <.icon name="pi-arrow-up-right" class="size-3" />
         </a>
 
-        <.close_pane target={@target} check={@shot.check} />
+        <.close_pane target={@target} />
       </div>
 
       <div class="flex-1 min-h-[280px] overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-900">
@@ -868,6 +910,7 @@ defmodule RailWeb.Live.QaStage do
                   phx-click="select_shot"
                   phx-target={@target}
                   phx-value-file={shot.file}
+                  phx-value-back={@check.key}
                   class="block w-full cursor-pointer"
                 >
                   <img
@@ -1095,6 +1138,12 @@ defmodule RailWeb.Live.QaStage do
   defp back(nil), do: nil
   defp back(key), do: {:check, key}
 
+  # A picture opened off a checklist row goes back to the row. One opened from a
+  # finding, or from the browser while a pass is running, goes back to whatever
+  # the panel was showing on its own - which is that finding, or that browser.
+  defp closes_to({:shot, _file, back}), do: back
+  defp closes_to(_other), do: nil
+
   # One thing in the middle, and what the human asked for beats what the pass is
   # doing: a picture opened while the browser drives stays open.
   defp pane(socket) do
@@ -1109,11 +1158,19 @@ defmodule RailWeb.Live.QaStage do
   defp chosen(%{selected: %QaFinding{}}), do: :finding
   defp chosen(_nothing_picked), do: :pending
 
-  defp focused_shot({:shot, file}, shots), do: Enum.find(shots, &(&1.file == file))
+  defp focused_shot({:shot, file, _back}, shots), do: Enum.find(shots, &(&1.file == file))
   defp focused_shot(_other, _shots), do: nil
 
   defp focused_check({:check, key}, %QaChecklist{checks: checks}), do: Enum.find(checks, &(&1.key == key))
   defp focused_check(_other, _checklist), do: nil
+
+  # The row a finding came out of. It names the key, and a pass that wrote the
+  # row's title instead is still saying which row it meant.
+  defp row_for(%QaChecklist{checks: checks}, %QaFinding{check: check}) when is_binary(check) do
+    Enum.find(checks, &(&1.key == check)) || Enum.find(checks, &(&1.title == check))
+  end
+
+  defp row_for(_checklist, _finding), do: nil
 
   # The pictures a row has, oldest first: a row's shots read as the order they
   # were taken in, unlike the roll underneath, where the newest is the news.
