@@ -21,7 +21,7 @@ defmodule Rail.Tools.Actions.DriveBrowser do
 
   alias Rail.Tools
 
-  @max_actions 12
+  @max_steps 12
 
   @doc """
   Carries out `intent` in `session` and returns what it did.
@@ -31,63 +31,99 @@ defmodule Rail.Tools.Actions.DriveBrowser do
   it happens rather than when it ends.
   """
   def drive_browser(session, intent, opts \\ []) do
+    pass = %{intent: intent, opts: opts}
+
     with {:ok, page} <- Tools.observe_browser(session) do
-      step(session, intent, page, [], opts)
+      step(session, pass, page, [], %{steps: 0, still: 0, refused: nil})
     end
   end
 
-  defp step(_session, _intent, page, history, _opts) when length(history) >= @max_actions do
+  # Twice over a page that did not move. Either the element being acted on is not
+  # the one the instruction is about, or it is and the page does not care - and a
+  # third go would type the same thing into the same wrong field, or ask the same
+  # refused control again. The caller is told which, because only the caller can
+  # do anything about either.
+  defp step(_session, _pass, page, history, %{still: 2, refused: nil}) do
+    {:ok, receipt(page, history, :not_moving)}
+  end
+
+  defp step(_session, _pass, page, history, %{still: 2, refused: refused}) do
+    {:ok, receipt(page, history, {:refused, refused})}
+  end
+
+  # The budget is decisions rather than actions, so a page that keeps moving out
+  # from under them runs out too. A decision the page then refuses is the one way
+  # this loop could otherwise never end: nothing is executed, so nothing
+  # accumulates, and the same decision comes back to be refused again.
+  defp step(_session, _pass, page, history, %{steps: steps}) when steps >= @max_steps do
     {:ok, receipt(page, history, :too_many_actions)}
   end
 
-  defp step(session, intent, page, history, opts) do
-    case Tools.decide_browser_action(page, intent, Enum.map(history, & &1.action), opts) do
+  defp step(session, pass, page, history, budget) do
+    case Tools.decide_browser_action(page, pass.intent, Enum.map(history, & &1.action), pass.opts) do
       {:ok, %{operation: "DONE"}} -> {:ok, receipt(page, history, :done)}
       {:ok, %{operation: "BLOCKED"}} -> {:ok, receipt(page, history, :blocked)}
-      {:ok, decision} -> act(session, intent, page, history, decision, opts)
+      {:ok, decision} -> act(session, pass, page, history, %{budget | steps: budget.steps + 1}, decision)
       {:error, reason} -> {:error, reason}
     end
   end
 
-  defp act(session, intent, page, history, %{operation: "TYPE_TEXT"} = decision, opts) do
-    case Keyword.get(opts, :text) do
-      text when is_binary(text) -> perform(session, intent, page, history, decision, text, opts)
+  defp act(session, pass, page, history, budget, %{operation: "TYPE_TEXT"} = decision) do
+    case Keyword.get(pass.opts, :text) do
+      text when is_binary(text) -> perform(session, pass, page, history, budget, decision, text)
       nil -> {:ok, receipt(page, history, {:needs_text, decision.action["label"]})}
     end
   end
 
-  defp act(session, intent, page, history, decision, opts) do
-    perform(session, intent, page, history, decision, nil, opts)
+  defp act(session, pass, page, history, budget, decision) do
+    perform(session, pass, page, history, budget, decision, nil)
   end
 
-  defp perform(session, intent, page, history, decision, text, opts) do
+  defp perform(session, pass, page, history, budget, decision, text) do
     case Tools.execute_browser_action(session, decision.action, text) do
       {:ok, _executed} ->
         executed = executed(decision, text)
-        announce(executed, opts)
-        advance(session, intent, page, [executed | history], opts)
+        announce(executed, pass.opts)
+        advance(session, pass, page, [executed | history], %{budget | refused: nil})
 
-      # The page moved between reading it and acting on it, and nothing was done.
-      # Reading it again and deciding afresh is the whole of the recovery.
-      {:error, :stale} ->
-        restart(session, intent, history, opts)
+      # The page would not take it. Reading it again and deciding afresh is the
+      # whole of the recovery, and the reason is said out loud: a control that is
+      # disabled or covered is what a person watching a pass that has stopped
+      # moving needs to see, and often the answer to the check as well.
+      {:error, {:refused, why, by}} ->
+        refused = %{label: decision.action["label"], why: why, by: by}
+        announce(%{operation: "REFUSED", action: refusal_line(refused), text: nil}, pass.opts)
+        restart(session, pass, page, history, %{budget | refused: refused})
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp advance(session, intent, page, history, opts) do
+  defp refusal_line(%{label: label, why: why, by: nil}), do: "#{label} - #{why}"
+  defp refusal_line(%{label: label, why: why, by: by}), do: "#{label} - #{why} by #{by}"
+
+  defp advance(session, pass, page, history, budget) do
     case Tools.observe_browser(session) do
-      {:ok, fresh} -> step(session, intent, fresh, history, opts)
+      {:ok, fresh} -> step(session, pass, fresh, history, moved(page, fresh, budget))
       {:error, reason} -> {:ok, Map.put(receipt(page, history, :done), :error, reason)}
     end
   end
 
-  defp restart(session, intent, history, opts) do
+  # A refusal is only worth a second go if the page is different when it is read
+  # again: the same page refusing the same control twice is an answer, not a race.
+  defp restart(session, pass, page, history, budget) do
     with {:ok, fresh} <- Tools.observe_browser(session) do
-      step(session, intent, fresh, history, opts)
+      step(session, pass, fresh, history, moved(page, fresh, budget))
     end
+  end
+
+  # The snapshot's marker is what the page means rather than how it is drawn, so
+  # an animation is not movement and a value that changed is.
+  defp moved(page, fresh, budget) do
+    if fresh["marker"] == page["marker"],
+      do: %{budget | still: budget.still + 1},
+      else: %{budget | still: 0}
   end
 
   defp executed(decision, text) do

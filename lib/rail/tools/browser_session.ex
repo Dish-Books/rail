@@ -44,12 +44,7 @@ defmodule Rail.Tools.BrowserSession do
 
   @viewport %{width: 1920, height: 1080}
 
-  # Small and cheap: this is a picture of what is happening, not evidence. The
-  # evidence screenshots are taken separately and at full size.
-  # `everyNthFrame` stays at 1. Chrome drops the frames it skips rather than
-  # deferring them, and a page that paints once and then sits still - which is
-  # most of what QA looks at - paints too few for any of them to be spare.
-  @screencast %{format: "jpeg", quality: 40, maxWidth: 800, maxHeight: 600, everyNthFrame: 1}
+  @screencast %{format: "jpeg", quality: 80, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1}
   @ready_timeout_ms 15_000
   @poll_interval_ms 100
 
@@ -63,6 +58,7 @@ defmodule Rail.Tools.BrowserSession do
     :debug_port,
     :profile_path,
     :frame,
+    :url,
     problems: []
   ]
 
@@ -111,6 +107,11 @@ defmodule Rail.Tools.BrowserSession do
   """
   def last_frame(pid), do: GenServer.call(pid, :last_frame)
 
+  @doc """
+  The URL the tab is on, or nil before it has gone anywhere.
+  """
+  def where(pid), do: GenServer.call(pid, :where)
+
   @impl true
   def init(opts) do
     Process.flag(:trap_exit, true)
@@ -151,6 +152,10 @@ defmodule Rail.Tools.BrowserSession do
     {:reply, state.frame, state}
   end
 
+  def handle_call(:where, _from, %__MODULE__{} = state) do
+    {:reply, state.url, state}
+  end
+
   # The connection going down means the browser did, so the session goes with it
   # rather than answering calls against a Chrome that is not there.
   @impl true
@@ -171,6 +176,13 @@ defmodule Rail.Tools.BrowserSession do
     Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{state.task_id}", {:browser_frame, state.task_id, data})
 
     {:noreply, %{state | frame: data}}
+  end
+
+  # The tab said it navigated. Only the main frame counts: an iframe going
+  # somewhere is not the page going somewhere.
+  def handle_info({:cdp_event, "Page.frameNavigated", %{"frame" => %{"url" => url} = frame}}, %__MODULE__{} = state)
+      when not is_map_key(frame, "parentId") do
+    {:noreply, %{state | url: url}}
   end
 
   # What the browser says without being asked. Most of it is noise; what is kept

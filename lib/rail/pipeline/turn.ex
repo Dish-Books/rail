@@ -10,6 +10,10 @@ defmodule Rail.Pipeline.Turn do
   `author` is who or what said it, and it is the whole of what the chat pane
   needs to decide how to draw a turn.
 
+  `:driving` is the browser Rail drove on the role's behalf: one line per step,
+  kept as written rather than run together as prose, because what a reader wants
+  from it is the sequence.
+
   `:turn_start` is the one author no log line produced: it is the boundary
   between one spawn of the agent and the next, carrying when that turn began and
   what it cost. The log says what was said, never when, so the time comes from
@@ -18,7 +22,7 @@ defmodule Rail.Pipeline.Turn do
   defstruct author: :role, content: "", at: nil, duration_seconds: nil
 
   @type t :: %__MODULE__{
-          author: :human | :role | :activity | :event | :turn_start,
+          author: :human | :role | :activity | :driving | :event | :turn_start,
           content: String.t(),
           at: DateTime.t() | nil,
           duration_seconds: non_neg_integer() | nil

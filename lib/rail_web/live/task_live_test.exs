@@ -2429,11 +2429,31 @@ defmodule RailWeb.TaskLiveTest do
 
       {:ok, _marked} = Pipeline.record_qa_check(task, "bill-saves", "pass", "saved to the cent")
 
+      _logged =
+        Pipeline.append_run_events(run.id, nil, [
+          "[qa] goto http://localhost:4000/bills/new",
+          "[qa]   click \"Save\""
+        ])
+
+      File.write!(Path.join([task.scratch_path, "qa", "evidence", "totals~the-journal-entry.png"]), "png bytes")
+
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#qa-running", "Driving the application")
       assert has_element?(view, "#qa-screencast")
       assert has_element?(view, "[data-qa='qa_screencast_waiting']")
+
+      # Where the browser is, and the last thing Rail actually did to it.
+      assert has_element?(view, "[data-qa='qa_browser_url']", "localhost:4000/bills/new")
+      assert has_element?(view, "[data-qa='qa_doing']", "click")
+      assert has_element?(view, "[data-qa='qa_doing']", "Save")
+
+      # The pictures taken for the row it is on.
+      assert has_element?(view, "[data-qa='qa_current_shot']", "The journal entry")
+
+      view |> element("[data-qa='qa_current_shot']") |> render_click()
+
+      assert has_element?(view, "#qa-shot-viewer [data-qa='qa_shot_name']", "The journal entry")
       assert has_element?(view, "[data-qa='qa_checklist_progress']", "1 of 2")
       assert has_element?(view, "[data-qa='qa_check'][data-key='bill-saves'][data-outcome='pass']")
       assert has_element?(view, "[data-qa='qa_check_note']", "saved to the cent")

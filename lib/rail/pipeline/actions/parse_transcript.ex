@@ -10,7 +10,9 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
 
   Consecutive lines of the same kind group into one turn: everything a human
   typed until the harness says otherwise, everything the role said until a tool
-  call interrupts, and each run of tool lines as one activity block.
+  call interrupts, and each run of tool lines as one activity block. A browser
+  step is the exception: each one is its own turn, because each one is a separate
+  thing that happened to the page.
 
   Accepts a list of lines or one multiline string; a log with nothing in it
   parses to no turns rather than to an empty turn.
@@ -82,6 +84,13 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
 
   defp process_non_human_line(state, line) do
     cond do
+      driving_line?(line) ->
+        state
+        |> flush_human()
+        |> flush_activity()
+        |> flush_role()
+        |> append_turn(%Turn{author: :driving, content: line})
+
       tool_line?(line) ->
         state
         |> flush_human()
@@ -102,6 +111,11 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
         |> append_role_line(line)
     end
   end
+
+  # What Rail did to the page: an instruction, then each step it actually took.
+  # One turn each rather than a block of them, because they are separate things
+  # that happened and a reader is counting them.
+  defp driving_line?(line), do: String.starts_with?(line, "[qa] ")
 
   defp tool_line?(line) do
     String.starts_with?(line, "[tool ") or String.starts_with?(line, "[tool]") or

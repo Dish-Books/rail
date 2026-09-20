@@ -48,8 +48,11 @@ defmodule Rail.Tools.Actions.ExecuteBrowserAction do
   whatever the page displays - and anything else comes back as
   `{:error, {:value_rejected, text}}`.
 
-  Returns `{:ok, executed}` naming what was done, or `{:error, :stale}` when the
-  element the decision named is no longer the element that would be acted on.
+  Returns `{:ok, executed}` naming what was done, or `{:error, {:refused, why}}`
+  when the element the decision named is not one that can be acted on now. `why`
+  says which - gone, disabled, hidden, off screen, covered and by what - because
+  they are different answers: one is worth reading the page again, and one is
+  what the check was asking about.
   """
   def execute_browser_action(session, %{"kind" => "scroll"} = action, _text) do
     delta = Map.get(action, "delta", @scroll_amount)
@@ -94,7 +97,8 @@ defmodule Rail.Tools.Actions.ExecuteBrowserAction do
     case BrowserSession.call(session, "Runtime.evaluate", %{expression: expression, returnByValue: true}) do
       {:ok, %{"result" => %{"value" => %{"x" => x, "y" => y}}}} -> {:ok, {x, y}}
       {:ok, %{"result" => %{"value" => %{"rejected" => true}}}} -> {:error, {:value_rejected, text}}
-      {:ok, _covered_or_gone} -> {:error, :stale}
+      {:ok, %{"result" => %{"value" => %{"refused" => why} = refusal}}} -> {:error, {:refused, why, refusal["by"]}}
+      {:ok, _no_answer} -> {:error, {:refused, "gone", nil}}
       {:error, reason} -> {:error, reason}
     end
   end

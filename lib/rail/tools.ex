@@ -42,6 +42,7 @@ defmodule Rail.Tools do
   defdelegate start_browser_session(task, opts \\ []), to: Actions.StartBrowserSession
   defdelegate get_browser_session(task), to: Actions.GetBrowserSession
   defdelegate get_browser_frame(task), to: Actions.GetBrowserFrame
+  defdelegate get_browser_url(task), to: Actions.GetBrowserUrl
   defdelegate stop_browser_session(task), to: Actions.StopBrowserSession
   defdelegate reconcile_browser_sessions(opts \\ []), to: Actions.ReconcileBrowserSessions
   defdelegate observe_browser(session, opts \\ []), to: Actions.ObserveBrowser

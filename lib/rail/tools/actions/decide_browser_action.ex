@@ -28,8 +28,13 @@ defmodule Rail.Tools.Actions.DecideBrowserAction do
   values and what has already been done. Do not repeat something the page shows
   is already done: a field that already holds the requested value does not need
   typing into, and a checkbox already in the requested state does not need
-  clicking. A typed query still needs its suggestion selected. For a date picker,
-  CLICK the field, then the date, then any confirmation.
+  clicking. For a date picker, CLICK the field, then the date, then any
+  confirmation.
+
+  Text in a combobox is what was typed, not what was chosen. A list of options
+  offered on the page means nothing has been chosen yet, so an instruction naming
+  one of them is carried out by CLICKing that option - never by answering DONE
+  because the box already shows its text.
 
   DONE means the instruction has visibly been carried out and there is nothing
   left to do for it. BLOCKED means no offered operation can carry it out - the

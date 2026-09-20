@@ -45,6 +45,7 @@ defmodule Rail.Tools.Follower do
     logged_offset: 0,
     saved_offset: 0,
     resumed?: false,
+    stopped?: false,
     partial_line: "",
     pending_events: []
   ]
@@ -116,7 +117,7 @@ defmodule Rail.Tools.Follower do
       Tools.terminate_os_process(state.os_pid, opts)
     end
 
-    state = %{state | exit_code: -1}
+    state = %{state | exit_code: -1, stopped?: true}
     {updated_os_process, final_state} = do_child_exit(state)
     {:stop, :normal, {:ok, updated_os_process}, final_state}
   end
@@ -275,7 +276,7 @@ defmodule Rail.Tools.Follower do
     flush_pending_events(%{state | pending_events: pending_events, logged_offset: final_offset})
 
     raw_stderr = state.err_path |> drain_err_file() |> Enum.join("\n")
-    error = compute_error(event_state.result_error, raw_stderr, state.exit_code)
+    error = compute_error(event_state.result_error, raw_stderr, reported_exit_code(state))
     exit_code = compute_exit_code(state.exit_code, error, event_state.saw_result)
 
     case Repo.get(OsProcess, state.os_process_id) do
@@ -326,6 +327,11 @@ defmodule Rail.Tools.Follower do
   end
 
   # coveralls-ignore-stop
+
+  # A run the human stopped exited because it was killed, so its exit code is not
+  # news. Anything the agent actually said on the way out still is.
+  defp reported_exit_code(%__MODULE__{stopped?: true}), do: nil
+  defp reported_exit_code(%__MODULE__{exit_code: exit_code}), do: exit_code
 
   defp compute_error(result_error, raw_stderr, exit_code) do
     cond do

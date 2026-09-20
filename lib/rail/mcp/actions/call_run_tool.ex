@@ -53,16 +53,41 @@ defmodule Rail.Mcp.Actions.CallRunTool do
 
   defp own(%RunContext{} = context, name, arguments) do
     arguments = arguments || %{}
+    line = asked(name, arguments)
 
     with {:ok, task} <- task(context) do
-      log(context, asked(name, arguments))
+      if not answers_itself?(name), do: log(context, line)
 
-      case run(name, task, arguments, on_action: &log(context, action_line(&1))) do
+      result = run(name, task, arguments, on_action: &log(context, action_line(&1)))
+
+      if answers_itself?(name), do: log(context, said(name, line, result))
+
+      case result do
         {:ok, text} -> {:ok, %{"content" => [%{"type" => "text", "text" => text}]}}
         {:error, reason} -> {:error, reason}
       end
     end
   end
+
+  # Everything says what it is doing before it does it, because a page that takes
+  # ten seconds to load is ten seconds of a person watching nothing happen.
+  #
+  # Three are the exception, for two reasons. The checklist lines are what tell
+  # the panel to read the file again, so one written first arrives before there
+  # is anything to read. And a call whose arguments say nothing - `qa_problems`
+  # takes none - has nothing to log until it has an answer.
+  defp answers_itself?(name), do: name in ["qa_plan", "qa_check", "qa_problems"]
+
+  # What the browser complained about, counted rather than quoted: the agent has
+  # the list, and a watcher wants to know whether there was one.
+  defp said("qa_problems", line, {:ok, text}) do
+    case String.split(String.trim(text), "\n", trim: true) do
+      ["Nothing since the last check."] -> line <> " none"
+      problems -> "#{line} #{length(problems)} · #{hd(problems)}"
+    end
+  end
+
+  defp said(_name, line, _result), do: line
 
   defp proxy(%RunContext{role: %{mcp_tools: mcp_tools}, user: user}, name, arguments) do
     with [server_name, tool] <- String.split(name, "__", parts: 2),

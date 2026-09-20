@@ -407,6 +407,46 @@ defmodule RailWeb.Live.RunConversation do
             </li>
           </ul>
         </div>
+      <% :driving -> %>
+        <!-- One thing Rail did to the page, on its own: the instruction it was
+        given, or one step it took carrying it out. Separate blocks because they
+        are separate events, and a step that was refused or repeated should be as
+        countable as one that landed.
+
+        The word for what happened is lifted out of the line and set beside it, so
+        a column of these reads as a sequence of actions rather than as forty
+        sentences that happen to start differently. -->
+        <div
+          id={"msg-#{@idx}"}
+          data-qa="driving-step"
+          data-step={driving_kind(@text)}
+          class={[
+            "my-1.5 flex items-baseline gap-2.5 rounded-md border px-3 py-2 font-mono text-[11px] select-text",
+            driving_kind(@text) == "step" &&
+              "relative ml-5 border-slate-200/70 dark:border-slate-700/60 " <>
+                "before:absolute before:-left-5 before:-top-1.5 before:-bottom-1.5 before:w-px " <>
+                "before:bg-slate-200 dark:before:bg-slate-700 " <>
+                "after:absolute after:-left-5 after:top-1/2 after:w-5 after:h-px " <>
+                "after:bg-slate-200 dark:after:bg-slate-700",
+            driving_kind(@text) == "instruction" &&
+              "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40"
+          ]}
+        >
+          <span
+            data-qa="driving-verb"
+            class={[
+              "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+              driving_tone(@text)
+            ]}
+          >
+            {driving_verb(@text)}
+          </span>
+
+          <%!-- The line's own wrapping, without the template's indentation. --%><span
+            phx-no-format
+            class="min-w-0 flex-1 whitespace-pre-wrap wrap-break-word text-slate-600 dark:text-slate-300"
+          >{driving_rest(@text)}</span>
+        </div>
       <% :event -> %>
         <!-- 4.8 _EventTile -->
         <%= cond do %>
@@ -444,6 +484,40 @@ defmodule RailWeb.Live.RunConversation do
     <% end %>
     """
   end
+
+  # Every line carries the same prefix, and forty of those down the left is a
+  # column of noise: what varies is what happened.
+  # Rail indents the steps it actually took under the instruction it was given,
+  # so the shape of the line is already the difference between the two.
+  defp driving_kind(text) do
+    if String.starts_with?(text, "[qa]  "), do: "step", else: "instruction"
+  end
+
+  defp driving_verb(text), do: text |> driving_split() |> elem(0)
+  defp driving_rest(text), do: text |> driving_split() |> elem(1)
+
+  # Every line starts with what happened - `do`, `goto`, `check`, `CLICK`,
+  # `REFUSED` - and the rest is what it happened to.
+  defp driving_split(text) do
+    case text |> String.replace_prefix("[qa] ", "") |> String.trim() |> String.split(" ", parts: 2) do
+      [verb, rest] -> {verb, rest}
+      [verb] -> {verb, ""}
+    end
+  end
+
+  # A refusal is the one of these a reader should stop at. What Rail asked for
+  # and what it managed to do read as themselves.
+  defp driving_tone(text) do
+    case driving_verb(text) do
+      "REFUSED" -> "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+      "check" -> "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+      "plan" -> "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+      verb -> if verb == String.upcase(verb), do: step_tone(), else: asked_tone()
+    end
+  end
+
+  defp step_tone, do: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+  defp asked_tone, do: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
 
   # --- Composer Component ---
 

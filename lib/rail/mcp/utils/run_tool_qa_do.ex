@@ -40,10 +40,37 @@ defmodule Rail.Mcp.Utils.RunToolQaDo do
     """
   end
 
+  defp receipt_text(%{outcome: {:refused, refused}} = receipt) do
+    """
+    #{done(receipt)}
+    Stopped: "#{refused.label}" #{refusal(refused)}, twice over a page that did not change.
+    That is the page's answer rather than something to word differently. #{receipt.url} - #{receipt.title}
+    """
+  end
+
+  defp receipt_text(%{outcome: :not_moving} = receipt) do
+    """
+    #{done(receipt)}
+    Stopped: the last steps left the page exactly as they found it, so they were not doing what you asked.
+    Read the page and name the element another way. #{receipt.url} - #{receipt.title}
+    """
+  end
+
   defp receipt_text(%{outcome: :too_many_actions} = receipt) do
     """
     #{done(receipt)}
     Stopped after too many actions without finishing. #{receipt.url} - #{receipt.title}
+    """
+  end
+
+  # Nothing done and nothing left to do means the page already read as carrying
+  # the instruction out. Saying which of the two it was is what stops a caller
+  # asking the same thing again in different words.
+  defp receipt_text(%{outcome: :done, executed: []} = receipt) do
+    """
+    Did nothing: the page already reads as having that carried out.
+    Read the page before asking again - the same instruction reworded lands the same way.
+    #{receipt.url} - #{receipt.title}
     """
   end
 
@@ -61,6 +88,9 @@ defmodule Rail.Mcp.Utils.RunToolQaDo do
       "#{step.operation} #{inspect(step.action)}#{typed(step)}"
     end)
   end
+
+  defp refusal(%{why: why, by: nil}), do: "is #{why}"
+  defp refusal(%{why: why, by: by}), do: "is #{why} by #{by}"
 
   defp typed(%{text: text}) when is_binary(text), do: " ← #{inspect(text)}"
   defp typed(_step), do: ""

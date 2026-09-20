@@ -60,7 +60,7 @@ defmodule RailWeb.Live.QaStage do
   def render(assigns) do
     ~H"""
     <div id="qa-stage" data-qa="qa-stage" class="contents">
-      <.task_layout task={@task} run={@run} title={@task.issue.title} flush={@findings != []}>
+      <.task_layout task={@task} run={@run} title={@task.issue.title} flush>
         <:tabs>{render_slot(@tabs)}</:tabs>
 
         <:actions>
@@ -106,6 +106,7 @@ defmodule RailWeb.Live.QaStage do
               selected={@selected}
               checklist={@checklist}
               check={@check}
+              current={@current}
               shots={@shots}
               running={@running}
               target={@myself}
@@ -126,9 +127,13 @@ defmodule RailWeb.Live.QaStage do
 
               <.browser_viewer
                 :if={@pane == :browser}
+                task={@task}
                 checklist={@checklist}
+                current={@current}
                 frame={@frame}
-                doing={@doing}
+                driving={@driving}
+                shots={@shots}
+                target={@myself}
               />
 
               <.finding_detail
@@ -301,6 +306,7 @@ defmodule RailWeb.Live.QaStage do
   attr :selected, :any, required: true
   attr :checklist, :any, required: true
   attr :check, :any, required: true
+  attr :current, :any, required: true
   attr :shots, :list, required: true
   attr :running, :boolean, required: true
   attr :target, :any, required: true
@@ -329,8 +335,8 @@ defmodule RailWeb.Live.QaStage do
       <.checklist_panel
         checklist={@checklist}
         check={@check}
+        current={@current}
         shots={@shots}
-        running={@running}
         target={@target}
       />
     </div>
@@ -637,13 +643,26 @@ defmodule RailWeb.Live.QaStage do
   end
 
   attr :checklist, :any, required: true
+  attr :current, :any, required: true
   attr :frame, :any, required: true
-  attr :doing, :string, default: nil
+  attr :driving, :map, required: true
+  attr :task, :any, required: true
+  attr :shots, :list, required: true
+  attr :target, :any, required: true
 
-  # A pass in flight, which is the one thing a spinner cannot show.
+  # A pass in flight, which is the one thing a spinner cannot show. What it is
+  # looking at, where that is, and what Rail last did to it - the three things a
+  # person standing behind someone testing would ask - and under it the pictures
+  # taken for the row it is on.
   defp browser_viewer(assigns) do
+    assigns = assign(assigns, :taken, assigns.current && shots_for(assigns.shots, assigns.current))
+
     ~H"""
-    <div id="qa-running" data-qa="qa_running" class="flex-1 min-h-0 flex flex-col gap-3.5 p-4">
+    <div
+      id="qa-running"
+      data-qa="qa_running"
+      class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3.5 p-4"
+    >
       <div class="shrink-0 flex flex-wrap items-center gap-x-3.5 gap-y-2">
         <p class="flex items-center gap-2.5 text-sm font-bold text-slate-900 dark:text-slate-100">
           <span class="relative flex size-2">
@@ -662,16 +681,19 @@ defmodule RailWeb.Live.QaStage do
         </span>
       </div>
 
-      <div class="flex-1 min-h-[280px] flex flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
+      <div class="shrink-0 flex flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
         <div class="shrink-0 flex items-center gap-2.5 px-3 py-2 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60">
           <span :for={_dot <- 1..3} class="size-2.5 rounded-full bg-slate-300 dark:bg-slate-600" />
-          <span class="flex-1 min-w-0 truncate rounded-md border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/70 px-2.5 py-1 font-mono text-[11px] text-slate-500 dark:text-slate-400">
-            The QA browser
+          <span
+            data-qa="qa_browser_url"
+            class="flex-1 min-w-0 truncate rounded-md border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/70 px-2.5 py-1 font-mono text-[11px] text-slate-500 dark:text-slate-400"
+          >
+            {@driving.url || "about:blank"}
           </span>
           <span class="font-mono text-[11px] text-slate-400 dark:text-slate-500">1920 × 1080</span>
         </div>
 
-        <div class="relative flex-1 bg-slate-900">
+        <div class="relative w-full aspect-video bg-slate-900">
           <img
             id="qa-screencast"
             data-qa="qa_screencast"
@@ -679,24 +701,56 @@ defmodule RailWeb.Live.QaStage do
             phx-update="ignore"
             src={@frame && "data:image/jpeg;base64,#{@frame}"}
             alt="What the QA browser is looking at"
-            class="absolute inset-0 size-full object-contain"
+            class="peer absolute inset-0 size-full object-contain"
           />
 
-          <p
+          <div
             :if={@frame == nil}
             data-qa="qa_screencast_waiting"
-            class="absolute inset-0 flex items-center justify-center text-xs text-slate-400"
+            class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-900 peer-data-[live=true]:hidden"
           >
-            Waiting for the browser to paint.
-          </p>
+            <span class="size-5 rounded-full border-2 border-slate-700 border-t-blue-500 motion-safe:animate-spin" />
+            <span class="font-mono text-[11.5px] text-slate-400">Waiting for the browser to paint.</span>
+          </div>
         </div>
 
         <p
           data-qa="qa_doing"
-          class="shrink-0 truncate px-3 py-2 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 font-mono text-[11.5px] text-slate-600 dark:text-slate-300"
+          class="shrink-0 flex gap-2 px-3 py-2 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 font-mono text-[11.5px]"
         >
-          {@doing || "Waiting for the first instruction."}
+          <span class="shrink-0 text-blue-600 dark:text-blue-400">{verb(@driving.doing)}</span>
+          <span class="min-w-0 truncate text-slate-600 dark:text-slate-300">{target(@driving.doing)}</span>
         </p>
+      </div>
+
+      <div :if={@taken not in [nil, []]} class="shrink-0" data-qa="qa_current_shots">
+        <p class="mb-2 text-[10.5px] font-extrabold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
+          Taken for this check
+        </p>
+
+        <div class="grid gap-2.5 grid-cols-[repeat(auto-fill,minmax(120px,1fr))]">
+          <button
+            :for={shot <- @taken}
+            type="button"
+            id={shot_id("qa-current-shot", shot)}
+            data-qa="qa_current_shot"
+            phx-click="select_shot"
+            phx-target={@target}
+            phx-value-file={shot.file}
+            title={shot.name}
+            class="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-left cursor-pointer hover:border-blue-400 dark:hover:border-blue-500"
+          >
+            <img
+              src={~p"/tasks/#{@task.id}/qa/evidence/#{shot.file}"}
+              alt={shot.name}
+              loading="lazy"
+              class="h-[66px] w-full object-cover object-top"
+            />
+            <span class="block truncate px-2 py-1.5 font-mono text-[10.5px] text-slate-500 dark:text-slate-400">
+              {shot.name}
+            </span>
+          </button>
+        </div>
       </div>
     </div>
     """
@@ -775,8 +829,6 @@ defmodule RailWeb.Live.QaStage do
 
           <h2 class="mt-2 text-lg font-bold text-slate-900 dark:text-slate-100">{@check.title}</h2>
         </div>
-
-        <.close_pane target={@target} />
       </div>
 
       <div class="flex-1 min-h-0 overflow-y-auto px-7 py-6">
@@ -840,8 +892,8 @@ defmodule RailWeb.Live.QaStage do
 
   attr :checklist, :any, required: true
   attr :check, :any, default: nil
+  attr :current, :any, default: nil
   attr :shots, :list, default: []
-  attr :running, :boolean, default: false
   attr :target, :any, required: true
 
   # What the pass said it would do, before it knew any of the answers. A row with
@@ -851,15 +903,9 @@ defmodule RailWeb.Live.QaStage do
   # Every row opens: what a reader wants from one is the pictures taken for it,
   # and those are too big for a column this wide.
   defp checklist_panel(assigns) do
-    assigns = assign(assigns, :current, assigns.running && assigns.checklist && QaChecklist.current(assigns.checklist))
-
     ~H"""
-    <div
-      id="qa-checklist"
-      data-qa="qa_checklist"
-      class="flex flex-col"
-    >
-      <div class="shrink-0 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+    <div id="qa-checklist" data-qa="qa_checklist" class="flex-1 flex flex-col">
+      <div class="sticky top-0 z-10 shrink-0 px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/95 backdrop-blur-sm">
         <div class="flex items-baseline gap-2">
           <span class="text-sm font-bold text-slate-900 dark:text-slate-100">Checklist</span>
           <span
@@ -884,13 +930,23 @@ defmodule RailWeb.Live.QaStage do
         </div>
       </div>
 
-      <p
-        :if={@checklist == nil}
-        data-qa="qa_checklist_unwritten"
-        class="px-4 py-6 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400"
-      >
-        QA writes its checklist before it opens anything, so this fills in within the first minute of a pass.
-      </p>
+      <div :if={@checklist == nil} data-qa="qa_checklist_unwritten" class="px-4 py-5 space-y-4">
+        <p class="text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
+          QA writes its checklist before it opens anything, so this fills in within the first minute of a pass.
+        </p>
+
+        <!-- The rows that are coming, so the column reads as filling in rather
+        than as empty. -->
+        <div class="space-y-2.5" aria-hidden="true">
+          <span
+            :for={width <- ["w-11/12", "w-8/12", "w-10/12"]}
+            class={[
+              "block h-3 rounded bg-slate-200 dark:bg-slate-700 motion-safe:animate-pulse",
+              width
+            ]}
+          />
+        </div>
+      </div>
 
       <div :if={@checklist} class="px-2 py-2">
         <div :for={{group, checks} <- QaChecklist.groups(@checklist)}>
@@ -938,18 +994,8 @@ defmodule RailWeb.Live.QaStage do
                 {check.title}
               </span>
               <span
-                :if={check.criterion}
-                data-qa="qa_check_criterion"
-                class="block truncate text-[11px] italic text-slate-500 dark:text-slate-400"
-              >
-                {check.criterion}
-              </span>
-              <span
                 data-qa="qa_check_note"
-                class={[
-                  "block font-mono text-[11px] leading-snug break-words",
-                  check_tone(check, @current)
-                ]}
+                class={["block font-mono text-[11px] leading-snug", check_tone(check, @current)]}
               >
                 {check_state(check, @current)}
               </span>
@@ -970,7 +1016,7 @@ defmodule RailWeb.Live.QaStage do
       <p
         :if={@checklist}
         data-qa="qa_checklist_tally"
-        class="flex gap-3 px-4 py-2.5 border-t border-slate-200 dark:border-slate-700 font-mono text-[11.5px]"
+        class="sticky bottom-0 mt-auto flex gap-3 px-4 py-2.5 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/95 backdrop-blur-sm font-mono text-[11.5px]"
       >
         <span :for={{text, tone} <- checklist_tally(@checklist)} class={tone}>{text}</span>
       </p>
@@ -1017,6 +1063,8 @@ defmodule RailWeb.Live.QaStage do
     checklist = checklist(socket.assigns.task)
     shots = Pipeline.list_qa_evidence(socket.assigns.task)
     running = Run.running?(socket.assigns.run)
+    current = running && checklist && QaChecklist.current(checklist)
+    driving = driving(running, socket.assigns.run, socket.assigns.task)
 
     socket
     |> assign(:findings, findings)
@@ -1030,11 +1078,12 @@ defmodule RailWeb.Live.QaStage do
     |> assign(:reported, reported?(socket.assigns.run))
     |> assign(:report, report(socket.assigns.task))
     |> assign(:checklist, checklist)
-    |> assign(:frame, Tools.get_browser_frame(socket.assigns.task))
+    |> assign(:frame, frame(driving, socket.assigns.task))
     |> assign(:shots, shots)
     |> assign(:shot, focused_shot(socket.assigns.focus, shots))
     |> assign(:check, focused_check(socket.assigns.focus, checklist))
-    |> assign(:doing, running && doing(socket.assigns.run))
+    |> assign(:current, current)
+    |> assign(:driving, driving)
     |> pane()
   end
 
@@ -1054,6 +1103,7 @@ defmodule RailWeb.Live.QaStage do
 
   defp chosen(%{shot: %{}}), do: :shot
   defp chosen(%{focus: :summary, report: %QaReport{}, running: false}), do: :summary
+  defp chosen(%{running: true, check: check, current: check}), do: :browser
   defp chosen(%{check: %QaCheck{}}), do: :check
   defp chosen(%{running: true}), do: :browser
   defp chosen(%{selected: %QaFinding{}}), do: :finding
@@ -1071,15 +1121,40 @@ defmodule RailWeb.Live.QaStage do
     shots |> Enum.filter(&(&1.check == key)) |> Enum.reverse()
   end
 
-  # The last thing Rail actually did to the page, off the run's own log. What is
-  # written there is what was executed rather than what the agent asked for, so a
-  # step that went to the wrong element reads as the wrong element.
-  defp doing(%Run{} = run) do
-    run
-    |> Pipeline.list_run_events(order: :desc, limit: 40)
-    |> Enum.find_value(fn %{line: line} -> String.starts_with?(line, "[qa] ") and String.trim(line) end)
-    |> then(fn line -> line && String.replace_prefix(line, "[qa] ", "") end)
+  # A browser this pass has not touched yet has nothing to show, whatever is
+  # still painted in it: a Chrome left open by the pass before this one would
+  # otherwise read as this one's first page.
+  defp frame(%{doing: nil}, %Task{}), do: nil
+  defp frame(%{}, %Task{} = task), do: Tools.get_browser_frame(task)
+
+  # Where the browser is and the last thing Rail actually did to it, both off the
+  # run's own log. What is written there is what was executed rather than what the
+  # agent asked for, so a step that went to the wrong element reads as the wrong
+  # element.
+  defp driving(false, _run, _task), do: %{doing: nil, url: nil}
+
+  defp driving(true, %Run{} = run, %Task{} = task) do
+    lines =
+      run
+      |> Pipeline.list_run_events(order: :desc, limit: 60)
+      |> Enum.filter(&String.starts_with?(&1.line, "[qa] "))
+      |> Enum.map(&(&1.line |> String.replace_prefix("[qa] ", "") |> String.trim()))
+
+    %{doing: List.first(lines), url: Tools.get_browser_url(task) || Enum.find_value(lines, &opened/1)}
   end
+
+  # `qa_goto` is the only thing that says where the browser went, and the newest
+  # one is where it is.
+  defp opened("goto " <> url), do: url
+  defp opened(_other), do: nil
+
+  # The log line reads as an instruction - `click "Save"` - so the word it starts
+  # with is what Rail did and the rest is what it did it to.
+  defp verb(nil), do: "idle"
+  defp verb(line), do: line |> String.split(" ", parts: 2) |> List.first()
+
+  defp target(nil), do: "Waiting for the first instruction."
+  defp target(line), do: line |> String.split(" ", parts: 2) |> Enum.at(1, "")
 
   # The verdict belongs to the pass rather than to any row, so it is read off the
   # report every time the panel draws rather than stored.
@@ -1211,12 +1286,9 @@ defmodule RailWeb.Live.QaStage do
   defp check_tone(%QaCheck{outcome: :fail}, _current), do: "text-red-600 dark:text-red-500"
   defp check_tone(%QaCheck{outcome: :skipped}, _current), do: "text-slate-400 dark:text-slate-500"
 
-  # Its outcome, and what the pass said about it where it said anything.
+  # Its outcome and nothing else: what the pass said about a row is a sentence or
+  # a paragraph, and forty of those is a column nobody can scan. The row opens.
   defp check_state(check, check), do: "running"
-
-  defp check_state(%QaCheck{note: note} = check, _current) when is_binary(note) do
-    "#{check.outcome |> QaCheck.outcome_label() |> String.downcase()} · #{note}"
-  end
 
   defp check_state(%QaCheck{} = check, _current), do: String.downcase(QaCheck.outcome_label(check.outcome))
 
