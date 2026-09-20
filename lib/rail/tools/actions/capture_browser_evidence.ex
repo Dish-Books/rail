@@ -13,6 +13,12 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidence do
   of the checklist and the panel shows it against that row. `~` separates them:
   a slug cannot contain one and neither can a key, so the name comes apart again
   without anything having recorded where to cut it.
+
+  What the caption actually said is written down beside the picture rather than
+  read back out of the filename. A filename has to survive a filesystem and a
+  URL, so it loses the capitals, the punctuation and anything past sixty
+  characters - which is fine for naming a file and useless as a caption under
+  one.
   """
 
   alias Rail.Pipeline.Schemas.Task
@@ -32,6 +38,7 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidence do
          {:ok, bytes} <- Base.decode64(data) do
       File.mkdir_p!(Path.dirname(path))
       File.write!(path, bytes)
+      caption(path, Path.basename(file), name)
 
       {:ok, file}
     else
@@ -44,6 +51,15 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidence do
   # just belongs to no row.
   defp prefix(nil), do: ""
   defp prefix(key), do: "#{slug(key)}~"
+
+  # One line per picture, appended rather than rewritten: a pass that dies half
+  # way leaves every caption it had already written, and the panel falls back to
+  # the filename for any it did not.
+  defp caption(path, file, name) do
+    line = Jason.encode_to_iodata!(%{file: file, name: name})
+
+    File.write!(Path.join(Path.dirname(path), "captions.jsonl"), [line, "\n"], [:append])
+  end
 
   # A caption becomes a filename, so it is reduced to something a filesystem and
   # a URL both accept. Two shots described the same way would collide, which is

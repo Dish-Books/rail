@@ -17,11 +17,12 @@ defmodule Rail.Mcp.Utils.RunToolQaDo do
 
   @doc """
   Carries out `arguments["intent"]` in `task`'s browser, typing
-  `arguments["text"]` where a step needs a value.
+  `arguments["values"]`, or `arguments["text"]` for an outcome that types once.
   """
   def run_tool_qa_do(%Task{} = task, %{"intent" => intent} = arguments, opts) do
     with {:ok, session} <- Tools.start_browser_session(task, opts),
-         {:ok, receipt} <- Tools.drive_browser(session, intent, Keyword.put(opts, :text, arguments["text"])) do
+         driving = Keyword.merge(opts, text: arguments["text"], values: arguments["values"]),
+         {:ok, receipt} <- Tools.drive_browser(session, intent, driving) do
       {:ok, receipt_text(receipt)}
     end
   end

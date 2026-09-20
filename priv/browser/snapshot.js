@@ -17,6 +17,9 @@
   // Inputs whose value is set rather than typed: the browser draws its own
   // segmented control and no keystroke reaches it.
   const PICKERS = ['date','datetime-local','month','week','time'];
+  // A dropdown's options are the choices in it, never a name for it: run
+  // together they read as a label made of everything it could be.
+  const SPOKEN_FOR = ['OPTION','OPTGROUP'];
   const visible = e => !e.closest('[aria-hidden="true"],[inert]') &&
     e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
   const name = (e,seen=new Set()) => {
@@ -28,8 +31,25 @@
       [...(e.labels||[])].map(l=>name(l,seen)).filter(Boolean).join(' ') ||
       (['button','submit','reset'].includes(e.type) ? e.value : '') || e.getAttribute('alt') ||
       (e.tagName==='INPUT' ? '' : [...e.childNodes].map(n=>n.nodeType===3 ? n.textContent :
-        n.nodeType===1 && n.getAttribute('aria-hidden')!=='true' ? name(n,seen) : '').join(' ').trim()) ||
+        n.nodeType===1 && n.getAttribute('aria-hidden')!=='true' && !SPOKEN_FOR.includes(n.tagName)
+          ? name(n,seen) : '').join(' ').trim()) ||
+      // A dropdown nobody labelled is known by what it says while nothing is
+      // chosen, which is the first option and what a person reads on the page.
+      (e.tagName==='SELECT' ? (e.options[0]?.label||'').trim() : '') ||
       e.getAttribute('title') || e.getAttribute('placeholder') || '';
+  };
+  // A grid cell's own text is a number in a column of numbers, and the editor
+  // inside one has no name at all. What tells them apart is the column they sit
+  // under and the row they are in, which the grid already publishes as
+  // `aria-colindex` on the cell and a `columnheader` carrying the same index.
+  const placed = e => {
+    const cell = e.matches('[role="gridcell"]') ? e : e.closest('[role="gridcell"]');
+    if (!cell) return '';
+    const index = cell.getAttribute('aria-colindex'), grid = cell.closest('[role="grid"],[role="treegrid"]');
+    const header = index && grid &&
+      grid.querySelector('[role="columnheader"][aria-colindex="'+CSS.escape(index)+'"]');
+    const row = cell.closest('[role="row"]')?.getAttribute('aria-rowindex');
+    return [header ? name(header) : '', row ? 'row '+row : ''].filter(Boolean).join(' ');
   };
   const roles=['button','link','checkbox','radio','switch','tab','menuitem','menuitemradio',
     'option','gridcell','combobox','textbox','searchbox','spinbutton'];
@@ -71,7 +91,7 @@
     const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
     if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
-    const base={node:identity(e),role:rname,label:name(e)||rname,
+    const base={node:identity(e),role:rname,label:[placed(e),name(e)].filter(Boolean).join(' · ')||rname,
       rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
     for (const key of ['checked','selected','expanded']) {
       const value=e.getAttribute('aria-'+key);
@@ -79,7 +99,11 @@
     }
     if (['checkbox','radio'].includes(e.type)) base.checked=String(e.checked);
     if (e.tagName==='SELECT') {
-      for (const o of e.options) if (!o.selected && !o.disabled && !o.closest('optgroup[disabled]'))
+      // An option with no value is the prompt to choose one - "Select a
+      // location" - so offering it is offering to choose nothing, which reads as
+      // carrying the instruction out and is how the same choice gets made twice.
+      for (const o of e.options)
+        if (o.value!=='' && !o.selected && !o.disabled && !o.closest('optgroup[disabled]'))
         actions.push({...base,kind:'select',value:o.value,
           current_value:[...e.selectedOptions].map(o=>o.label).join(', '),label:base.label+' → '+o.label});
     } else {

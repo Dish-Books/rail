@@ -100,18 +100,32 @@ defmodule Rail.Mcp.Utils.McpTools do
     %{
       "name" => "qa_do",
       "description" =>
-        "Carry out one instruction on the current page, in plain words: \"click Save\", " <>
-          "\"open the vendor dropdown and choose Acme\". Rail works out which element that is " <>
-          "and does it, taking as many actions as the instruction needs. To type, supply `text` - " <>
-          "nothing is ever invented, so an instruction that reaches a field with no text supplied " <>
-          "comes back asking for it. A date or time field takes the value HTML gives it whatever " <>
-          "the page displays: `2026-09-19`, `2026-09-19T14:30`, `14:30`, `2026-09`. Returns what " <>
-          "was actually executed, not the page.",
+        "Say what you want to be true of the current page and Rail drives until it is: \"a bill " <>
+          "for Sysco dated 12 Aug 2026 for $2,500 is entered and saved\". It reads the page, acts, " <>
+          "reads again, and stops when the outcome is reached or nothing offered can reach it. " <>
+          "Give it the whole outcome rather than one keystroke - a step at a time is slower and " <>
+          "reads worse, because each call starts again knowing nothing of the last. Nothing is " <>
+          "ever invented: supply every value it will need in `values`, keyed by the field as the " <>
+          "page labels it, and a field with no value stops the call and asks. A date or time field " <>
+          "takes the value HTML gives it whatever the page displays: `2026-09-19`, " <>
+          "`2026-09-19T14:30`, `14:30`, `2026-09`. Returns what was executed, not the page - read " <>
+          "it with qa_look before you mark a check, because reaching the end is not the same as " <>
+          "the application having done the right thing.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
-          "intent" => %{"type" => "string", "description" => "What to do, in one instruction."},
-          "text" => %{"type" => "string", "description" => "The exact value to type, when the instruction types."}
+          "intent" => %{"type" => "string", "description" => "The outcome you want on this page."},
+          "values" => %{
+            "type" => "object",
+            "description" =>
+              ~s(What to type, keyed by the field's label on the page - {"Number": "QA-1", ) <>
+                ~s("Date": "2026-08-12"}. Every field the outcome needs.),
+            "additionalProperties" => %{"type" => "string"}
+          },
+          "text" => %{
+            "type" => "string",
+            "description" => "A single value, for an outcome that types into one field and no more."
+          }
         },
         "required" => ["intent"]
       }

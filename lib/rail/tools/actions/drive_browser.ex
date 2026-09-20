@@ -1,15 +1,19 @@
 defmodule Rail.Tools.Actions.DriveBrowser do
   @moduledoc """
-  Carries out one instruction on a page, however many actions that takes.
+  Drives a page to an outcome, however many actions that takes.
 
-  "Click Save" is one action. "Fill in the amount and save" is several, and the
-  caller should not have to know which in advance - so this loops: read the page,
-  decide, act, read again, until the page shows the instruction has been carried
-  out or nothing offered can carry it out.
+  "Click Save" is one action. "A bill for Sysco dated 12 Aug for $2,500 is
+  entered and saved" is a dozen, and the caller should not have to know which in
+  advance - so this loops: read the page, decide, act, read again, until the page
+  shows the outcome has been reached or nothing offered can reach it. An outcome
+  is what this is for: a caller asking one keystroke at a time pays the whole
+  loop for each of them and hands it no idea what the keystrokes are for, which
+  is how the same step gets chosen twice.
 
   It stops early for one other reason. A `TYPE_TEXT` decision needs a value, and
-  values come from the caller rather than from a model, so reaching a field the
-  caller supplied no text for returns what was done so far and asks for it. One
+  values come from the caller rather than from a model - `:values` keyed by the
+  field's label, or `:text` for an outcome that types into one field - so reaching
+  a field with nothing supplied returns what was done so far and asks for it. One
   extra turn, only when a form had a field the caller did not anticipate.
 
   What comes back is a receipt rather than a page: where it ended up, what was
@@ -21,14 +25,15 @@ defmodule Rail.Tools.Actions.DriveBrowser do
 
   alias Rail.Tools
 
-  @max_steps 12
+  @max_steps 30
 
   @doc """
   Carries out `intent` in `session` and returns what it did.
 
-  `opts` takes `:text` for a value to type, and `:on_action` - a function called
-  with each executed step, which is how a log and a watching panel see a pass as
-  it happens rather than when it ends.
+  `opts` takes `:values` - what to type, keyed by the field's label - or `:text`
+  for a single value, and `:on_action`, a function called with each executed
+  step, which is how a log and a watching panel see a pass as it happens rather
+  than when it ends.
   """
   def drive_browser(session, intent, opts \\ []) do
     pass = %{intent: intent, opts: opts}
@@ -69,7 +74,7 @@ defmodule Rail.Tools.Actions.DriveBrowser do
   end
 
   defp act(session, pass, page, history, budget, %{operation: "TYPE_TEXT"} = decision) do
-    case Keyword.get(pass.opts, :text) do
+    case supplied(pass.opts, decision.action["label"]) do
       text when is_binary(text) -> perform(session, pass, page, history, budget, decision, text)
       nil -> {:ok, receipt(page, history, {:needs_text, decision.action["label"]})}
     end
@@ -77,6 +82,30 @@ defmodule Rail.Tools.Actions.DriveBrowser do
 
   defp act(session, pass, page, history, budget, decision) do
     perform(session, pass, page, history, budget, decision, nil)
+  end
+
+  # The value for the field the decision landed on. A label is matched as the
+  # page writes it, then without case, then as part of it - because "Number" is
+  # what the caller knows and "Number · row 2" is what the grid calls it. A
+  # caller with one value and one field says so with `:text` and names nothing.
+  defp supplied(opts, label) do
+    values = opts[:values] || %{}
+
+    cond do
+      values == %{} -> opts[:text]
+      is_binary(values[label]) -> values[label]
+      true -> loosely(values, label) || opts[:text]
+    end
+  end
+
+  defp loosely(values, label) do
+    wanted = String.downcase(label || "")
+
+    Enum.find_value(values, fn {field, value} ->
+      field = String.downcase(field)
+
+      is_binary(value) and (String.contains?(wanted, field) or String.contains?(field, wanted)) and value
+    end)
   end
 
   defp perform(session, pass, page, history, budget, decision, text) do

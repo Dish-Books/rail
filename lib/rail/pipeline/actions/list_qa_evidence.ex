@@ -6,10 +6,13 @@ defmodule Rail.Pipeline.Actions.ListQaEvidence do
   written its report - and the whole point of watching a pass is seeing what it
   saw while it is still going. So this reads the directory rather than the rows.
 
-  Rail named every one of these files from the check `qa_shot` was given and the
-  caption it was given, so both come back out of the name. Nothing else is in
-  that directory: an agent writing its own picture there is writing somewhere no
-  finding can cite.
+  The check each one was filed against is in its name, because Rail put it there.
+  What the caption said is read from the captions written beside the pictures -
+  a filename has lost the capitals and the punctuation by the time it is a
+  filename, and a picture from before there were captions falls back to it.
+
+  Nothing else in that directory is a picture: an agent writing its own there is
+  writing somewhere no finding can cite.
   """
 
   alias Rail.Pipeline.Schemas.Task
@@ -25,18 +28,43 @@ defmodule Rail.Pipeline.Actions.ListQaEvidence do
     directory = Path.join([scratch_path, "qa", "evidence"])
 
     case File.ls(directory) do
-      {:ok, entries} -> entries |> Enum.filter(&shot?/1) |> Enum.map(&shot(directory, &1)) |> newest_first()
-      {:error, _none} -> []
+      {:ok, entries} ->
+        captions = captions(directory)
+
+        entries |> Enum.filter(&shot?/1) |> Enum.map(&shot(directory, &1, captions)) |> newest_first()
+
+      {:error, _none} ->
+        []
     end
+  end
+
+  # One JSON object a line, the last one for a name winning, and anything
+  # unreadable skipped: the file is appended to while a pass runs, so its last
+  # line can be half written.
+  defp captions(directory) do
+    directory
+    |> Path.join("captions.jsonl")
+    |> File.read()
+    |> case do
+      {:ok, written} -> written
+      {:error, _none} -> ""
+    end
+    |> String.split("\n", trim: true)
+    |> Enum.reduce(%{}, fn line, captions ->
+      case Jason.decode(line) do
+        {:ok, %{"file" => file, "name" => name}} -> Map.put(captions, file, name)
+        _unreadable -> captions
+      end
+    end)
   end
 
   defp shot?(entry), do: String.downcase(Path.extname(entry)) in @shots
 
-  defp shot(directory, entry) do
+  defp shot(directory, entry, captions) do
     {check, caption} = split(entry)
 
     %{
-      name: caption,
+      name: Map.get(captions, entry, caption),
       file: entry,
       check: check,
       taken_at: File.stat!(Path.join(directory, entry), time: :posix).mtime
