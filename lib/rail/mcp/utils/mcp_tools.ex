@@ -73,9 +73,11 @@ defmodule Rail.Mcp.Utils.McpTools do
       "name" => "qa_check",
       "description" =>
         "Mark one checklist row as run, as soon as you have run it rather than at the end. " <>
-          "`outcome` is `pass`, `fail` or `skipped`. A `fail` normally has a finding behind it, but " <>
-          "say so here either way - the checklist is the account of what was looked at, and the " <>
-          "findings are only what went wrong.",
+          "`outcome` is `pass`, `fail` or `skipped`. A row you will raise a finding against is a " <>
+          "`fail`, and the only exception is a defect that was already there before this change - " <>
+          "the checklist and the findings are one account of the same pass, and a list of passes " <>
+          "over a report of findings is a pass nobody can believe. A defect belonging to no row " <>
+          "you planned means calling `qa_plan` again with the row added, then marking it.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{

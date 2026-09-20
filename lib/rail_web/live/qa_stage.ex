@@ -122,6 +122,7 @@ defmodule RailWeb.Live.QaStage do
                 task={@task}
                 check={@check}
                 shots={shots_for(@shots, @check)}
+                findings={found_for(@findings, @check)}
                 target={@myself}
               />
 
@@ -841,6 +842,7 @@ defmodule RailWeb.Live.QaStage do
   attr :task, :any, required: true
   attr :check, :any, required: true
   attr :shots, :list, required: true
+  attr :findings, :list, required: true
   attr :target, :any, required: true
 
   # One row of the checklist, with the pictures the pass filed against it. This
@@ -885,6 +887,36 @@ defmodule RailWeb.Live.QaStage do
             </p>
             <.markdown content={@check.criterion} class="mt-2 text-[13px]" />
           </div>
+
+          <.section
+            :if={@findings != []}
+            title="Raised against this check"
+            qa="qa_check_detail_findings"
+          >
+            <div class="space-y-1">
+              <button
+                :for={finding <- @findings}
+                type="button"
+                id={"qa-check-finding-#{finding.key}"}
+                phx-click="select_finding"
+                phx-target={@target}
+                phx-value-key={finding.key}
+                class="w-full flex items-baseline gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/60"
+              >
+                <span class={["mt-1.5 size-1.5 shrink-0 rounded-full", severity_dot(finding)]} />
+                <span class="min-w-0 flex-1 text-slate-700 dark:text-slate-300">{finding.title}</span>
+              </button>
+            </div>
+
+            <p
+              :if={@check.outcome == :pass}
+              data-qa="qa_check_detail_disagrees"
+              class="mt-2 text-[12.5px] text-amber-700 dark:text-amber-500"
+            >
+              QA marked this row passed and raised {length(@findings)} findings against it. Both are
+              its own account of the same work, and only one of them can be right.
+            </p>
+          </.section>
 
           <p
             :if={@check.note}
@@ -1172,6 +1204,12 @@ defmodule RailWeb.Live.QaStage do
 
   defp row_for(_checklist, _finding), do: nil
 
+  # What was raised against a row. A finding names its row by key, and one that
+  # named the row's title instead is still saying which row it meant.
+  defp found_for(findings, %QaCheck{key: key, title: title}) do
+    Enum.filter(findings, &(&1.check == key or &1.check == title))
+  end
+
   # The pictures a row has, oldest first: a row's shots read as the order they
   # were taken in, unlike the roll underneath, where the newest is the news.
   defp shots_for(shots, %QaCheck{key: key}) do
@@ -1355,14 +1393,19 @@ defmodule RailWeb.Live.QaStage do
     QaChecklist.tally(checklist)[outcome] * 100 / length(checklist.checks)
   end
 
+  # A count of nothing is not news: a finished pass says what it came to, and only
+  # one still running has rows left to say so about.
   defp checklist_tally(%QaChecklist{} = checklist) do
     counted = QaChecklist.tally(checklist)
 
     [
-      {"#{counted.pass} passed", "text-emerald-600 dark:text-emerald-500"},
-      {"#{counted.fail} failed", "text-red-600 dark:text-red-500"},
-      {"#{counted.pending} left", "text-slate-500 dark:text-slate-400"}
+      {counted.pass, "passed", "text-emerald-600 dark:text-emerald-500"},
+      {counted.fail, "failed", "text-red-600 dark:text-red-500"},
+      {counted.skipped, "skipped", "text-slate-400 dark:text-slate-500"},
+      {counted.pending, "left", "text-slate-500 dark:text-slate-400"}
     ]
+    |> Enum.reject(fn {count, _word, _tone} -> count == 0 end)
+    |> Enum.map(fn {count, word, tone} -> {"#{count} #{word}", tone} end)
   end
 
   # The filename carries an extension and the key it was filed under, and to

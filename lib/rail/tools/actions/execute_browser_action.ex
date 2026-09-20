@@ -69,6 +69,22 @@ defmodule Rail.Tools.Actions.ExecuteBrowserAction do
     end
   end
 
+  # A form abandoned by following a link is only recoverable by going back, and
+  # the history is Chrome's rather than the page's: `history.back()` inside a page
+  # that has replaced its own entries goes somewhere else.
+  def execute_browser_action(session, %{"kind" => "back"} = action, _text) do
+    with {:ok, %{"currentIndex" => index, "entries" => entries}} when index > 0 <-
+           BrowserSession.call(session, "Page.getNavigationHistory", %{}),
+         %{"id" => entry} <- Enum.at(entries, index - 1),
+         {:ok, _went} <- BrowserSession.call(session, "Page.navigateToHistoryEntry", %{entryId: entry}) do
+      {:ok, action["id"]}
+    else
+      {:ok, _no_history} -> {:error, {:refused, "nowhere to go back to", nil}}
+      nil -> {:error, {:refused, "nowhere to go back to", nil}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   def execute_browser_action(_session, %{"kind" => "wait"} = action, _text) do
     Process.sleep(100)
 

@@ -85,7 +85,11 @@
       e.getAttribute('aria-expanded'),e.getAttribute('aria-checked'),e.getAttribute('aria-selected'),
       e.getAttribute('href'),scope?.innerText?.slice(0,6000)||''];
   };
-  const actions=[];
+  // A dropdown with two thousand vendors in it would be two thousand entries, and
+  // the page's own buttons would fall off the end of the list behind them. What
+  // is kept is enough to choose from; what is dropped is counted and said.
+  const OPTIONS_PER_DROPDOWN=40;
+  const actions=[]; let omitted_options=0;
   for (const e of document.querySelectorAll(selector)) {
     if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
     const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
@@ -102,10 +106,13 @@
       // An option with no value is the prompt to choose one - "Select a
       // location" - so offering it is offering to choose nothing, which reads as
       // carrying the instruction out and is how the same choice gets made twice.
-      for (const o of e.options)
-        if (o.value!=='' && !o.selected && !o.disabled && !o.closest('optgroup[disabled]'))
+      let listed=0;
+      for (const o of e.options) {
+        if (o.value==='' || o.selected || o.disabled || o.closest('optgroup[disabled]')) continue;
+        if (listed++ >= OPTIONS_PER_DROPDOWN) { omitted_options++; continue; }
         actions.push({...base,kind:'select',value:o.value,
           current_value:[...e.selectedOptions].map(o=>o.label).join(', '),label:base.label+' → '+o.label});
+      }
     } else {
       const editable=!e.readOnly && e.getAttribute('aria-readonly')!=='true' &&
         (['textbox','searchbox','spinbutton'].includes(rname) ||
@@ -137,9 +144,12 @@
   const omitted_actions=Math.max(0,actions.length-250);
   actions.splice(250);
   actions.forEach((a,i)=>a.id='e'+(i+1));
+  // Where the page came from is somewhere it can be sent, and a form abandoned by
+  // following a link is only recoverable this way.
+  if (history.length>1) actions.push({id:'back',kind:'back',label:'Go back to the previous page'});
   if (scrollY+innerHeight<height-2) actions.push({id:'scroll_down',kind:'scroll',label:'Scroll down',delta:560});
   if (scrollY>0) actions.push({id:'scroll_up',kind:'scroll',label:'Scroll up',delta:-560});
   actions.push({id:'wait',kind:'wait',label:'Wait for the page to update'});
   return {url:location.href,title:document.title,w:innerWidth,h:innerHeight,text,
-    scroll:{y:scrollY,height},actions,marker,page_key,guards,omitted_actions};
+    scroll:{y:scrollY,height},actions,marker,page_key,guards,omitted_actions,omitted_options};
 })()

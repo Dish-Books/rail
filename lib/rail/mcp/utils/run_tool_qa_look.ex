@@ -35,7 +35,22 @@ defmodule Rail.Mcp.Utils.RunToolQaLook do
 
     On this page:
     #{Enum.map_join(elements, "\n", &"  [#{&1["index"]}] #{&1["role"]} #{inspect(&1["label"])}#{holding(&1)}")}
+    #{omitted(page)}
     """
+  end
+
+  # A page can offer more than a list can carry, and a dropdown with two thousand
+  # entries is the usual reason. Saying so is the difference between a control
+  # that is not there and one that was not listed: the second is reachable by
+  # narrowing the page - scroll, filter, type into the dropdown - and a pass told
+  # nothing would report it as missing.
+  defp omitted(page) do
+    [{page["omitted_actions"], "more controls"}, {page["omitted_options"], "more dropdown options"}]
+    |> Enum.filter(fn {count, _what} -> is_integer(count) and count > 0 end)
+    |> case do
+      [] -> ""
+      counted -> "\n" <> Enum.map_join(counted, "; ", fn {count, what} -> "#{count} #{what} not listed" end)
+    end
   end
 
   defp holding(%{"value" => value}) when is_binary(value) and value != "", do: " holding #{inspect(value)}"
