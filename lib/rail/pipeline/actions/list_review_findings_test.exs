@@ -76,6 +76,37 @@ defmodule Rail.Pipeline.Actions.ListReviewFindingsTest do
     assert ["a-nit", "a-blocker"] = task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
   end
 
+  # Nothing moves until every finding has been ruled on, so the ones asking for
+  # a ruling are the ones to read - above a worse finding already settled.
+  test "what is waiting on a human comes before what is settled", %{task: task} do
+    {:ok, [blocker, _nit]} =
+      Pipeline.sync_review_findings(task, [
+        %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+        %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+      ])
+
+    {:ok, _decided} = Pipeline.decide_review_finding(blocker, :fix)
+
+    assert ["a-nit", "a-blocker"] = task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
+  end
+
+  # Fixed is finished with, and dismissed is the human's last word: both sit
+  # under what is still being worked through, in that order.
+  test "what is fixed sits under what is open, and dismissed under that", %{task: task} do
+    {:ok, [blocker, major, _nit]} =
+      Pipeline.sync_review_findings(task, [
+        %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :fixed},
+        %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
+        %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+      ])
+
+    {:ok, _dismissed} = Pipeline.decide_review_finding(major, :skip)
+    {:ok, _decided} = Pipeline.decide_review_finding(blocker, :fix)
+
+    assert ["a-nit", "a-blocker", "a-major"] =
+             task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
+  end
+
   test "a task nobody has reviewed has no findings", %{task: task} do
     assert Pipeline.list_review_findings(task) == []
   end

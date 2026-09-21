@@ -1385,6 +1385,12 @@ defmodule RailWeb.Live.QaStage do
   # a paragraph, and forty of those is a column nobody can scan. The row opens.
   defp check_state(check, check), do: "running"
 
+  # A row this pass did not run reads as what it came to and when: forty greens
+  # where half were earned last time is a list that overstates itself.
+  defp check_state(%QaCheck{carried: true} = check, _current) do
+    "#{check.outcome |> QaCheck.outcome_label() |> String.downcase()} earlier"
+  end
+
   defp check_state(%QaCheck{} = check, _current), do: String.downcase(QaCheck.outcome_label(check.outcome))
 
   # How much of the bar each outcome has earned. Pending rows are the gap. A

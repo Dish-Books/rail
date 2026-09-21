@@ -12,6 +12,10 @@ defmodule Rail.Pipeline.Schemas.QaCheck do
   reader scanning forty rows wants them apart. QA chooses the headings, because
   what they should be depends on the change.
 
+  `carried` marks a row this pass did not run: its outcome came from the pass
+  before, kept because the change since could not have touched it. A reader
+  seeing forty greens should be able to tell which of them were earned today.
+
   `outcome` starts `pending` and is set once, when the check has actually been
   run. A `fail` is expected to have a finding behind it, but nothing here
   enforces that - a check can fail for a reason too small to raise, and a
@@ -30,10 +34,11 @@ defmodule Rail.Pipeline.Schemas.QaCheck do
     field :criterion, :string
     field :outcome, Ecto.Enum, values: @outcomes, default: :pending
     field :note, :string
+    field :carried, :boolean, default: false
   end
 
   @key ~r/\A[a-z0-9][a-z0-9-]*\z/
-  @cast_fields [:key, :title, :group, :criterion, :outcome, :note]
+  @cast_fields [:key, :title, :group, :criterion, :outcome, :note, :carried]
   @required_fields [:key, :title]
 
   @doc """

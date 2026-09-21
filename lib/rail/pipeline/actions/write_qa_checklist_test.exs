@@ -62,10 +62,45 @@ defmodule Rail.Pipeline.Actions.WriteQaChecklistTest do
       "group" => nil,
       "criterion" => nil,
       "outcome" => "pending",
-      "note" => nil
+      "note" => nil,
+      "carried" => false
     }
 
     assert %{"checks" => [^first, %{"criterion" => "Totals match"}]} = path |> File.read!() |> Jason.decode!()
+  end
+
+  # A second QA pass lists every check again and re-runs the few the new commits
+  # could have touched. What it does not run stands as it was answered, marked as
+  # somebody else's work.
+  test "a row already answered keeps its outcome and says it was carried", %{task: task} do
+    {:ok, _first} =
+      Pipeline.write_qa_checklist(task, [
+        %{"key" => "bill-saves", "title" => "A bill saves"},
+        %{"key" => "totals", "title" => "The totals agree"}
+      ])
+
+    {:ok, _marked} = Pipeline.record_qa_check(task, "bill-saves", "pass", "saved to the cent")
+
+    assert {:ok, %{checks: [carried, fresh]}} =
+             Pipeline.write_qa_checklist(task, [
+               %{"key" => "bill-saves", "title" => "A bill saves"},
+               %{"key" => "totals", "title" => "The totals agree"}
+             ])
+
+    assert %{key: "bill-saves", outcome: :pass, note: "saved to the cent", carried: true} = carried
+    assert %{key: "totals", outcome: :pending, carried: false} = fresh
+  end
+
+  # Running it again is what makes it this pass's answer rather than the last
+  # one's.
+  test "a row this pass runs again is no longer carried", %{task: task} do
+    {:ok, _first} = Pipeline.write_qa_checklist(task, [%{"key" => "totals", "title" => "The totals agree"}])
+    {:ok, _marked} = Pipeline.record_qa_check(task, "totals", "pass", "they did")
+
+    assert {:ok, %{checks: [%{carried: true}]}} =
+             Pipeline.write_qa_checklist(task, [%{"key" => "totals", "title" => "The totals agree"}])
+
+    assert {:ok, %{outcome: :fail, carried: false}} = Pipeline.record_qa_check(task, "totals", "fail", "not now")
   end
 
   # The list is a statement of the pass rather than a journal of it, so a second

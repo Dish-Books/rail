@@ -70,6 +70,8 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
     You are reading it, not changing it: write no application code and no tests, and never run a git command that writes - no commit, no push, no branch, no checkout, no stash. Reading the tree with git is exactly what you are here for.
 
+    Do not run the project's test suite, its coverage run or its linters. Those are the engineer's to have passed before the change reached you, they take minutes you would spend not reading, and a number out of one of them is not a finding. Run a single targeted check only where it settles a question you cannot answer by reading, and say in the finding what you ran.
+
     Nothing under #{scratch_path} is part of the change, and the diff never includes it.
 
     Writing #{file} is how you report, and it is the last thing you do. Write it from your worktree with a heredoc, the body and its closing JSON line at column zero:

@@ -162,7 +162,9 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
 
         #{Enum.map_join(findings, "\n", &finding_line/1)}
 
-        Re-run the check each one came from and restate its key in the file you write, with `status` set to `fixed` where the application now behaves and `not_fixed` where it does not, and say in `detail` what you actually drove. Keep a dismissed finding listed with the `status` it has and never argue it again - the human has ruled on it. Anything new you find in the application as it now stands is a new finding with a new key, and is welcome.
+        Plan this pass with `qa_plan` as usual and give every check the key it had before. Rail keeps the outcome of any row you do not run again, marked as carried, so the list stays the account of the whole change rather than of this hour: re-run the checks the new commits could have touched - read the diff since your last pass and work out which those are - along with the check behind every finding above, and leave the rest to stand.
+
+        Re-run the check each finding came from and restate its key in the file you write, with `status` set to `fixed` where the application now behaves and `not_fixed` where it does not, and say in `detail` what you actually drove. Keep a dismissed finding listed with the `status` it has and never argue it again - the human has ruled on it. Anything new you find in the application as it now stands is a new finding with a new key, and is welcome.
         """
     end
   end

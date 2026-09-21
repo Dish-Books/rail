@@ -44,7 +44,7 @@ defmodule Rail.Pipeline.Actions.RecordQaCheck do
   end
 
   defp mark(%QaCheck{key: key} = check, key, outcome, note) do
-    check |> row() |> Map.merge(%{outcome: outcome, note: note || check.note})
+    check |> row() |> Map.merge(%{outcome: outcome, note: note || check.note, carried: false})
   end
 
   defp mark(%QaCheck{} = check, _other, _outcome, _note), do: row(check)
@@ -56,7 +56,8 @@ defmodule Rail.Pipeline.Actions.RecordQaCheck do
       group: check.group,
       criterion: check.criterion,
       outcome: check.outcome,
-      note: check.note
+      note: check.note,
+      carried: check.carried
     }
   end
 end

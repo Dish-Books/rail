@@ -70,7 +70,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
 
     mkdir -p #{dir}
     cat > #{file} <<'MSG'
-    #{issue.identifier}: <one line saying what this change does>
+    <one line saying what this change does>
 
     <what changed and why, as a commit body>
     MSG

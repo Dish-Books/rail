@@ -1858,6 +1858,10 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
+      # A finished finding is nobody's to rule on, so it sits under what is, and
+      # reading it is something the human asks for.
+      view |> element("#finding-unhandled-nil") |> render_click()
+
       assert has_element?(view, "[data-qa='finding_fixed']", "Fixed")
       assert has_element?(view, "[data-qa='review_finding'][data-state='fixed']")
     end
