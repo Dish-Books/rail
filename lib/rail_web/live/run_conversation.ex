@@ -485,40 +485,6 @@ defmodule RailWeb.Live.RunConversation do
     """
   end
 
-  # Every line carries the same prefix, and forty of those down the left is a
-  # column of noise: what varies is what happened.
-  # Rail indents the steps it actually took under the instruction it was given,
-  # so the shape of the line is already the difference between the two.
-  defp driving_kind(text) do
-    if String.starts_with?(text, "[qa]  "), do: "step", else: "instruction"
-  end
-
-  defp driving_verb(text), do: text |> driving_split() |> elem(0)
-  defp driving_rest(text), do: text |> driving_split() |> elem(1)
-
-  # Every line starts with what happened - `do`, `goto`, `check`, `CLICK`,
-  # `REFUSED` - and the rest is what it happened to.
-  defp driving_split(text) do
-    case text |> String.replace_prefix("[qa] ", "") |> String.trim() |> String.split(" ", parts: 2) do
-      [verb, rest] -> {verb, rest}
-      [verb] -> {verb, ""}
-    end
-  end
-
-  # A refusal is the one of these a reader should stop at. What Rail asked for
-  # and what it managed to do read as themselves.
-  defp driving_tone(text) do
-    case driving_verb(text) do
-      "REFUSED" -> "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-      "check" -> "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-      "plan" -> "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-      verb -> if verb == String.upcase(verb), do: step_tone(), else: asked_tone()
-    end
-  end
-
-  defp step_tone, do: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-  defp asked_tone, do: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-
   # --- Composer Component ---
 
   attr :task, :any, required: true
@@ -804,6 +770,40 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   # --- Private Helpers ---
+
+  # Every line carries the same prefix, and forty of those down the left is a
+  # column of noise: what varies is what happened.
+  # Rail indents the steps it actually took under the instruction it was given,
+  # so the shape of the line is already the difference between the two.
+  defp driving_kind(text) do
+    if String.starts_with?(text, "[qa]  "), do: "step", else: "instruction"
+  end
+
+  defp driving_verb(text), do: text |> driving_split() |> elem(0)
+  defp driving_rest(text), do: text |> driving_split() |> elem(1)
+
+  # Every line starts with what happened - `do`, `goto`, `check`, `CLICK`,
+  # `REFUSED` - and the rest is what it happened to.
+  defp driving_split(text) do
+    case text |> String.replace_prefix("[qa] ", "") |> String.trim() |> String.split(" ", parts: 2) do
+      [verb, rest] -> {verb, rest}
+      [verb] -> {verb, ""}
+    end
+  end
+
+  # A refusal is the one of these a reader should stop at. What Rail asked for
+  # and what it managed to do read as themselves.
+  defp driving_tone(text) do
+    case driving_verb(text) do
+      "REFUSED" -> "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+      "check" -> "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+      "plan" -> "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+      verb -> if verb == String.upcase(verb), do: step_tone(), else: asked_tone()
+    end
+  end
+
+  defp step_tone, do: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+  defp asked_tone, do: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
 
   defp send_chat(socket, %Run{} = run, message) do
     if String.trim(message) == "" or socket.assigns.chat_sending do

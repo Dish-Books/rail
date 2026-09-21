@@ -506,6 +506,54 @@ defmodule Rail.Tools.FollowerTest do
     refute Process.alive?(follower_pid)
   end
 
+  # A CLI that fails before it has anything to say says it with its exit code
+  # alone, and a run recording nothing would look like one that worked.
+  test "an exit code is the whole error when nothing else said anything", %{role: role, tmp_dir: tmp_dir} do
+    run =
+      %Run{}
+      |> Run.changeset(%{
+        task_id: UXID.generate!(prefix: "tsk"),
+        role_id: role.id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+      |> Repo.preload(role: :backend)
+
+    stream = Path.join(tmp_dir, "silent_failure.ndjson")
+    File.write!(stream, "")
+    File.write!("#{stream}.err", "")
+
+    port = Port.open({:spawn_executable, "/bin/sh"}, [:binary, :exit_status, args: ["-c", "sleep 0.05; exit 3"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: stream,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
+        port: port,
+        tail_interval_ms: 10,
+        batch_interval_ms: 20
+      )
+
+    Sandbox.allow(Repo, self(), follower_pid)
+    Process.unlink(port)
+
+    assert_receive {:os_process_finished, _finished, outcome}, 5_000
+    assert outcome.error == "Exited with code 3"
+  end
+
   test "child exit handles both result_error only and result_error with stderr", %{
     role: role,
     tmp_dir: tmp_dir

@@ -72,6 +72,23 @@ defmodule Rail.Mcp.Utils.RunToolQaDoTest do
     assert text =~ "Now at http://localhost:4000/bills - Bills"
   end
 
+  # Steps that changed nothing are steps aimed at the wrong thing, and saying
+  # that is what stops the caller rewording the same instruction.
+  test "steps that left the page as they found it say to name the element another way", %{task: task} do
+    receipt = %{
+      outcome: :not_moving,
+      executed: [%{operation: "CLICK", action: "Confirm vendor"}],
+      url: "http://localhost:4000/bills/new",
+      title: "New bill"
+    }
+
+    stub(Tools, :drive_browser, fn :session, _intent, _opts -> {:ok, receipt} end)
+
+    assert {:ok, text} = run_tool_qa_do(task, %{"intent" => "confirm the vendor"}, [])
+    assert text =~ "left the page exactly as they found it"
+    assert text =~ "name the element another way"
+  end
+
   # Values are the caller's, whether one field or a form's worth, and they reach
   # the driver as they were given.
   test "what to type is handed through as the caller keyed it", %{task: task} do

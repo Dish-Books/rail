@@ -2433,8 +2433,15 @@ defmodule RailWeb.TaskLiveTest do
 
       {:ok, _marked} = Pipeline.record_qa_check(task, "bill-saves", "pass", "saved to the cent")
 
+      # What the pass did reads as a sequence of actions: the word for each one is
+      # lifted out of the line, and the ones worth stopping at - a refusal, a
+      # step Rail took rather than was given - are set apart from the rest.
       _logged =
         Pipeline.append_run_events(run.id, nil, [
+          "[qa] look",
+          "[qa] plan 3 checks",
+          "[qa]   CLICK \"Save changes\"",
+          "[qa] REFUSED \"Save changes\" is covered",
           "[qa] goto http://localhost:4000/bills/new",
           "[qa]   click \"Save\""
         ])
@@ -2451,6 +2458,14 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='qa_browser_url']", "localhost:4000/bills/new")
       assert has_element?(view, "[data-qa='qa_doing']", "click")
       assert has_element?(view, "[data-qa='qa_doing']", "Save")
+
+      # A line with nothing after the verb is all verb, a step Rail took is set
+      # apart from the instruction it came from, and a refusal is the one of
+      # these a reader should stop at.
+      assert has_element?(view, "[data-qa='driving-verb']", "look")
+      assert has_element?(view, "[data-qa='driving-verb']", "plan")
+      assert has_element?(view, "[data-qa='driving-step'][data-step='step']", "CLICK")
+      assert has_element?(view, "[data-qa='driving-verb'].bg-amber-100", "REFUSED")
 
       # The pictures taken for the row it is on.
       assert has_element?(view, "[data-qa='qa_current_shot']", "The journal entry")
@@ -2604,6 +2619,52 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "#qa-pending-title", "Nothing to fix")
       assert has_element?(view, "[data-qa='qa_check'][data-key='plaid'][data-outcome='skipped']")
+    end
+
+    # A row answered last time round and a finding standing against it are the
+    # same pass contradicting itself, and the reader who opens the row is the one
+    # who has to see both.
+    test "a row carried from an earlier pass shows what was raised against it", %{
+      conn: conn,
+      task: task
+    } do
+      plan = [%{"key" => "totals", "title" => "The totals agree", "group" => "Acceptance"}]
+
+      {:ok, _first} = Pipeline.write_qa_checklist(task, plan)
+      {:ok, _marked} = Pipeline.record_qa_check(task, "totals", "pass", "agreed to the cent")
+      {:ok, _replanned} = Pipeline.write_qa_checklist(task, plan)
+
+      {:ok, _synced} =
+        Pipeline.sync_qa_findings(task, [
+          %{
+            key: "off-by-a-cent",
+            title: "The journal entry is off by a cent",
+            check: "totals",
+            severity: :major,
+            recommendation: :fix
+          }
+        ])
+
+      File.write!(Path.join([task.scratch_path, "qa", "evidence", "totals~the-journal-entry.png"]), "png bytes")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      # It passed, but not this time round, and the list says which.
+      assert has_element?(view, "[data-qa='qa_check'][data-key='totals']", "passed earlier")
+
+      view |> element("[data-qa='qa_check'][data-key='totals']") |> render_click()
+      assert has_element?(view, "#qa-check-finding-off-by-a-cent", "off by a cent")
+      assert has_element?(view, "[data-qa='qa_check_detail_disagrees']", "only one of them can be right")
+
+      # The finding opens off the row, and the pictures filed for that row come
+      # with it - evidence a reader can see beats a paragraph describing it.
+      view |> element("#qa-check-finding-off-by-a-cent") |> render_click()
+      assert has_element?(view, "[data-qa='qa_finding_check_shots']", "The journal entry")
+
+      # A Close that arrives when the middle is no longer a picture closes to
+      # nothing rather than crashing the panel.
+      view |> with_target("#qa-stage") |> render_click("close_focus", %{})
+      assert has_element?(view, "[data-qa='qa_finding_detail']", "off by a cent")
     end
 
     # Severity is the first thing a reader takes off the list, so every grade has

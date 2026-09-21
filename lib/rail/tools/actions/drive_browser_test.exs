@@ -303,9 +303,9 @@ defmodule Rail.Tools.Actions.DriveBrowserTest do
       {:error, {:refused, "covered", ~s(div "Saving")}}
     end)
 
-    assert {:ok, receipt} = Tools.drive_browser(session, "click Save")
-    assert receipt.outcome == {:refused, %{label: "Save", why: "covered", by: ~s(div "Saving")}}
-    assert receipt.executed == []
+    refused = {:refused, %{label: "Save", why: "covered", by: ~s(div "Saving")}}
+
+    assert {:ok, %{outcome: ^refused, executed: []}} = Tools.drive_browser(session, "click Save")
   end
 
   # A step that leaves the page as it found it, chosen again, is a step doing
