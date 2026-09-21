@@ -65,12 +65,29 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
     end
   end
 
-  defp send_message(%Task{} = task, %Role{} = role, %Run{} = run, worktree_path, _opts) do
-    message = run.pending_chat || ""
+  # Two things can reach a run's queue at once - the human sending now and the
+  # exit of the turn they interrupted - and only one of them can carry the text.
+  # The loser finds the queue empty, and an agent spawned with no prompt is an
+  # error the run then wears, so it stops here instead.
+  defp send_message(%Task{}, %Role{}, %Run{pending_chat: queued}, _worktree_path, _opts) when queued in [nil, ""] do
+    {:error, :nothing_queued}
+  end
 
+  defp send_message(%Task{} = task, %Role{} = role, %Run{} = run, worktree_path, _opts) do
+    message = run.pending_chat
+
+    # The turn before this one is history the moment another starts. Its error
+    # and exit code go with it: left on the row they read as this turn's, and a
+    # run still wearing an error is one that can never be latched done.
     {:ok, run} =
       run
-      |> Run.changeset(%{pending_chat: nil, status: :running, started_at: run.started_at || DateTime.utc_now()})
+      |> Run.changeset(%{
+        pending_chat: nil,
+        status: :running,
+        error: nil,
+        exit_code: nil,
+        started_at: run.started_at || DateTime.utc_now()
+      })
       |> Repo.update()
 
     broadcast_changed(run)
