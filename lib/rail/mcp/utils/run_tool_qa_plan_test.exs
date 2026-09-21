@@ -84,6 +84,35 @@ defmodule Rail.Mcp.Utils.RunToolQaPlanTest do
     assert {:ok, %{checks: [%{key: "totals", outcome: :pending}]}} = Pipeline.read_qa_checklist(task)
   end
 
+  # A pass reads the receipt, not the file, so a receipt that says "mark each one
+  # as you run it" is what sends it round the whole list a second time.
+  test "the rows an earlier pass answered are named as answered", %{task: task} do
+    plan = %{
+      "checks" => [
+        %{"key" => "bill-saves", "title" => "A bill saves"},
+        %{"key" => "totals", "title" => "The totals agree"}
+      ]
+    }
+
+    assert {:ok, _first} = run_tool_qa_plan(task, plan, [])
+    {:ok, _marked} = Pipeline.record_qa_check(task, "bill-saves", :pass, "Saved and landed on the bill")
+
+    assert {:ok, written} = run_tool_qa_plan(task, plan, [])
+    assert written =~ "1 of them keep the answer an earlier pass gave: bill-saves"
+    assert written =~ "Run these 1 and mark each with qa_check as you go: totals"
+  end
+
+  test "a list an earlier pass answered in full asks for nothing", %{task: task} do
+    plan = %{"checks" => [%{"key" => "bill-saves", "title" => "A bill saves"}]}
+
+    assert {:ok, _first} = run_tool_qa_plan(task, plan, [])
+    {:ok, _marked} = Pipeline.record_qa_check(task, "bill-saves", :pass, "Saved")
+
+    assert {:ok, written} = run_tool_qa_plan(task, plan, [])
+    assert written =~ "an earlier pass answered every one of them: bill-saves"
+    refute written =~ "Run these"
+  end
+
   # Nothing an agent can get wrong is an error: it reads the answer and puts it
   # right on the next call.
   test "a list Rail cannot use is refused in words, and nothing is written", %{task: task} do

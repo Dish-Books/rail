@@ -36,7 +36,9 @@ defmodule Rail.Mcp.Utils.McpTools do
           "the ticket's acceptance criteria - every one of them gets at least one check quoting " <>
           "it in `criterion` - and add whatever else this change makes worth looking at. Rail " <>
           "shows the list to the human watching and marks each row off as you report it, so this " <>
-          "is also how a pass says what it is going to do. Calling it again replaces the whole list.",
+          "is also how a pass says what it is going to do. Calling it again replaces the whole list, " <>
+          "except that a row an earlier pass already answered keeps that answer when you list it again " <>
+          "under the same key - so a second pass lists everything and drives only what has changed.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{

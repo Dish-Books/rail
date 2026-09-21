@@ -11,6 +11,8 @@ defmodule Rail.Mcp.Utils.RunToolQaPlan do
   """
 
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.QaCheck
+  alias Rail.Pipeline.Schemas.QaChecklist
   alias Rail.Pipeline.Schemas.Task
 
   @stated ["key", "title", "group", "criterion"]
@@ -23,7 +25,7 @@ defmodule Rail.Mcp.Utils.RunToolQaPlan do
 
     case Pipeline.write_qa_checklist(task, listed) do
       {:ok, checklist} ->
-        {:ok, "Checklist written: #{length(checklist.checks)} checks. Mark each one with qa_check as you run it."}
+        {:ok, written(checklist)}
 
       {:error, _refused} ->
         {:ok,
@@ -33,4 +35,29 @@ defmodule Rail.Mcp.Utils.RunToolQaPlan do
   end
 
   def run_tool_qa_plan(%Task{}, _arguments, _opts), do: {:ok, "qa_plan needs a `checks` list. Nothing was written."}
+
+  # A row an earlier pass answered is answered. Saying so here is what stops the
+  # whole list being driven a second time: the pass reads this receipt, not the
+  # file, and a receipt that says "mark each one as you run it" is an instruction
+  # to run all of them.
+  defp written(%QaChecklist{checks: checks}) do
+    case Enum.split_with(checks, & &1.carried) do
+      {[], _run_these} ->
+        "Checklist written: #{length(checks)} checks. Mark each one with qa_check as you run it."
+
+      {carried, []} ->
+        "Checklist written: #{length(checks)} checks, and an earlier pass answered every one of them: " <>
+          "#{keys(carried)}. Nothing here needs driving again unless the new commits could have changed " <>
+          "what it asserts."
+
+      {carried, run_these} ->
+        "Checklist written: #{length(checks)} checks. #{length(carried)} of them keep the answer an " <>
+          "earlier pass gave: #{keys(carried)}. Leave those alone - they already count - unless the new " <>
+          "commits could have changed what one of them asserts, in which case driving it again and " <>
+          "marking it with qa_check is how you overrule it. Run these #{length(run_these)} and mark each " <>
+          "with qa_check as you go: #{keys(run_these)}."
+    end
+  end
+
+  defp keys(checks), do: Enum.map_join(checks, ", ", fn %QaCheck{key: key} -> key end)
 end
