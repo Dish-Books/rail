@@ -115,7 +115,8 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
 
     log = review_run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
 
-    assert log =~ "[human] The engineer has been round and pushed the change again."
+    assert log =~ "[human] The engineer has worked on your findings and pushed the change again."
+    assert log =~ "a fix can be wrong, or right and break something next to it"
     assert log =~ "whether it has been addressed"
   end
 

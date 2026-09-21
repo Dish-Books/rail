@@ -108,13 +108,24 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert {:ok, %Run{role_id: ^review_role_id, status: :running}} = Pipeline.enter_stage(task, :review)
   end
 
-  # QA has a role bound and no brief of its own, which is every stage Rail has
+  # Demo has a role bound and no brief of its own, which is every stage Rail has
   # not built yet: the role's own instructions are the whole of what it gets.
   test "a stage with no brief of its own is spawned with the plain prompt", %{task: task, roles: roles} do
-    %{id: qa_role_id} = roles[:qa]
+    %{id: demo_role_id} = roles[:demo]
 
     expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
       refute prompt =~ task.scratch_path
+      {:ok, %OsProcess{run: spawned, task: task}}
+    end)
+
+    assert {:ok, %Run{role_id: ^demo_role_id, status: :running}} = Pipeline.enter_stage(task, :demo)
+  end
+
+  test "QA is briefed on the report it writes, like every stage Rail has built", %{task: task, roles: roles} do
+    %{id: qa_role_id} = roles[:qa]
+
+    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ Path.join(task.scratch_path, "qa")
       {:ok, %OsProcess{run: spawned, task: task}}
     end)
 

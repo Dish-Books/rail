@@ -5,7 +5,6 @@ defmodule Rail.Artifacts.Actions.GetAsset do
   import Rail.Artifacts.Utils.MimeType
 
   alias Rail.Artifacts.Schemas.Demo
-  alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Repo
 
   def get_asset(_scope, kind, id) do
@@ -29,23 +28,6 @@ defmodule Rail.Artifacts.Actions.GetAsset do
     end
   end
 
-  defp do_get_asset(kind, id) when kind in ["qa", "qa_report"] do
-    query =
-      from q in QaReport,
-        where: fragment("?::text LIKE ?", q.rows, ^("%" <> id <> "%")),
-        order_by: [desc: q.inserted_at]
-
-    matching_artifact =
-      query
-      |> Repo.all()
-      |> Enum.find_value(&find_artifact_in_report(&1, id))
-
-    case matching_artifact do
-      %{} = asset -> {:ok, asset}
-      nil -> {:error, :not_found}
-    end
-  end
-
   defp do_get_asset(_kind, _id), do: {:error, :not_found}
 
   defp find_frame_in_demo(demo, id) do
@@ -58,20 +40,6 @@ defmodule Rail.Artifacts.Actions.GetAsset do
     Enum.find_value(seg.frames || [], fn frame ->
       if frame.linear_asset_id == id do
         %{url: frame.url, task_id: task_id, content_type: mime_type(frame.url)}
-      end
-    end)
-  end
-
-  defp find_artifact_in_report(report, id) do
-    Enum.find_value(report.rows || [], fn row ->
-      find_artifact_in_row(row, report.task_id, id)
-    end)
-  end
-
-  defp find_artifact_in_row(row, task_id, id) do
-    Enum.find_value(row.artifacts || [], fn art ->
-      if art.name == id or (art.url && String.contains?(art.url, id)) do
-        %{url: art.url, task_id: task_id, content_type: mime_type(art.url || art.name)}
       end
     end)
   end

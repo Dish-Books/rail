@@ -57,7 +57,6 @@ defmodule Rail.Tools.Workers.ReconcileOsProcessesTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: stream_path,
-        node: to_string(Node.self()),
         status: :running,
         os_pid: 999_996,
         started_at: DateTime.utc_now()

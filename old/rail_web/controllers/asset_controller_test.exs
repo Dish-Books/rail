@@ -2,7 +2,6 @@ defmodule RailWeb.AssetControllerTest do
   use RailWeb.ConnCase, async: true
 
   alias Rail.Artifacts.Schemas.Demo
-  alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Projects
   alias Rail.Repo
   alias Rail.Users
@@ -113,50 +112,6 @@ defmodule RailWeb.AssetControllerTest do
 
       conn = get(conn, ~p"/assets/demo/ast_frame_proxy")
       assert response(conn, 200) == "DEMO_FRAME_BINARY"
-    end
-
-    test "proxies QA artifact asset", %{authed_conn: conn} do
-      {:ok, _ws} =
-        Projects.upsert_linear_workspace(system_scope(), %{
-          name: "Asset Controller Workspace 12803",
-          external_id: "lin_ws_asset_controller_12803",
-          token: "lin_api_token_asset_controller_12803",
-          webhook_secret: "whsec_asset_controller_12803"
-        })
-
-      {:ok, _qa} =
-        %QaReport{}
-        |> QaReport.changeset(%{
-          task_id: "tsk_qa_proxy",
-          session: %{},
-          rows: [
-            %{
-              id: "c1",
-              check: "Check A",
-              result: :pass,
-              severity: :blocker,
-              artifacts: [
-                %{
-                  name: "qa_evidence.png",
-                  kind: :image,
-                  url: "https://uploads.linear.app/asset/qa_evidence.png"
-                }
-              ]
-            }
-          ]
-        })
-        |> Repo.insert()
-
-      Req.Test.expect(Rail.Linear, fn req_conn ->
-        assert req_conn.request_path == "/asset/qa_evidence.png"
-
-        req_conn
-        |> Plug.Conn.put_resp_content_type("image/png")
-        |> Plug.Conn.send_resp(200, "QA_EVIDENCE_BINARY")
-      end)
-
-      conn = get(conn, ~p"/assets/qa/qa_evidence.png")
-      assert response(conn, 200) == "QA_EVIDENCE_BINARY"
     end
 
     test "returns 502 when upstream Linear returns non-200", %{authed_conn: conn} do

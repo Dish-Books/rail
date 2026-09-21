@@ -2,6 +2,7 @@ defmodule RailWeb.Components.UpNextTest do
   use ExUnit.Case, async: true
 
   import Phoenix.LiveViewTest
+  import RailWeb.Utils.StageLabel
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Question
@@ -31,11 +32,21 @@ defmodule RailWeb.Components.UpNextTest do
     assert render_component(&UpNext.up_next/1, runs: []) =~ "Nothing is waiting on you."
   end
 
+  # A card and the page it opens have to name the errand the same way, so both
+  # read it off `StageLabel.approval_label/1`.
   test "names the work each stage is holding out for review", %{waiting: waiting} do
-    for {stage, work} <- [product: "ticket", design: "design", architect: "plan", engineer: "implementation"] do
+    for stage <- [:product, :design, :architect, :engineer, :review, :qa] do
       html = render_component(&UpNext.up_next/1, runs: [waiting.(stage)])
 
-      assert html =~ "The #{work} is ready for you to review."
+      assert html =~ approval_label(stage)
+    end
+  end
+
+  test "says what is waiting to be read, however many of it there is", %{waiting: waiting} do
+    for {stage, work} <- [product: "ticket", design: "designs", review: "findings", qa: "QA report"] do
+      html = render_component(&UpNext.up_next/1, runs: [waiting.(stage)])
+
+      assert html =~ "Waiting on you to read the #{work}."
     end
   end
 

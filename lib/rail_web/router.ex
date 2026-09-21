@@ -84,6 +84,8 @@ defmodule RailWeb.Router do
     get "/issues/:issue_id/assets/*path", IssueAssetController, :show
     get "/tasks/:task_id/design/:key", DesignController, :show
     get "/tasks/:task_id/design/:key/screenshot", DesignController, :screenshot
+    get "/tasks/:task_id/qa/evidence/:file", QaController, :shot
+    get "/tasks/:task_id/qa/:key/evidence/:index", QaController, :evidence
 
     live_session :require_authenticated_user,
       on_mount: [

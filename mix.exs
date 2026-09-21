@@ -67,6 +67,7 @@ defmodule Rail.MixProject do
       {:lazy_html, ">= 0.1.0", only: :test},
       {:lumis, "~> 0.8"},
       {:mimic, "~> 2.0", only: :test},
+      {:mint_web_socket, "~> 1.0"},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false},
       {:oban, "~> 2.19"},

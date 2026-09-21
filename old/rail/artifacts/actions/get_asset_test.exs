@@ -3,7 +3,6 @@ defmodule Rail.Artifacts.Actions.GetAssetTest do
 
   alias Rail.Artifacts
   alias Rail.Artifacts.Schemas.Demo
-  alias Rail.Artifacts.Schemas.QaReport
   alias Rail.Scope
 
   describe "get_asset/3" do
@@ -45,41 +44,8 @@ defmodule Rail.Artifacts.Actions.GetAssetTest do
       assert {:error, :not_found} = Artifacts.get_asset(scope, "demo", "missing_frame")
     end
 
-    test "looks up qa asset by name or url" do
-      scope = Scope.for_system()
-
-      {:ok, _qa} =
-        %QaReport{}
-        |> QaReport.changeset(%{
-          task_id: "tsk_qar_lookup",
-          session: %{},
-          rows: [
-            %{
-              id: "c1",
-              check: "Check",
-              result: :pass,
-              severity: :blocker,
-              artifacts: [
-                %{
-                  name: "shot_1.png",
-                  kind: :image,
-                  url: "https://uploads.linear.app/asset/shot_1.png"
-                }
-              ]
-            }
-          ]
-        })
-        |> Repo.insert()
-
-      assert {:ok, %{url: "https://uploads.linear.app/asset/shot_1.png", task_id: "tsk_qar_lookup"}} =
-               Artifacts.get_asset(scope, "qa", "shot_1.png")
-
-      assert {:ok, %{url: "https://uploads.linear.app/asset/shot_1.png"}} =
-               Artifacts.get_asset(scope, "qa_report", "shot_1.png")
-
-      assert {:error, :not_found} = Artifacts.get_asset(scope, "qa", "missing_shot.png")
-
-      assert {:error, :not_found} = Artifacts.get_asset(scope, "unknown_kind", "shot_1.png")
+    test "an unknown kind is not found" do
+      assert {:error, :not_found} = Artifacts.get_asset(Scope.for_system(), "unknown_kind", "shot_1.png")
     end
   end
 end

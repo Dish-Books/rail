@@ -7,6 +7,8 @@ Mimic.copy(Rail.Issues)
 Mimic.copy(Rail.Mcp)
 Mimic.copy(Rail.Tools)
 Mimic.copy(Rail.Roles)
+Mimic.copy(Rail.Tools.Browser)
+Mimic.copy(Rail.Tools.BrowserSession)
 Mimic.copy(Rail.Tools.FollowerSupervisor)
 
 # Ensure that all Req calls are mocked by default

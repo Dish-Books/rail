@@ -237,4 +237,26 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     assert {:ok, %Task{}} = Pipeline.cleanup_task(task)
   end
+
+  # Cleaning up twice is ordinary: two people can press it, and the second press
+  # must not rewrite when the first one happened.
+  test "a task already cleaned up keeps the time it was", %{project: project} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_twice", "identifier" => "CLN-2", "title" => "Task cleaned twice"}
+          }
+        }
+      })
+    end)
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Task cleaned twice"})
+    {:ok, task} = Pipeline.create_task(issue, :product)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :merged})
+
+    assert {:ok, %Task{cleaned_up_at: %DateTime{} = first}} = Pipeline.cleanup_task(task)
+    assert {:ok, %Task{cleaned_up_at: ^first}} = Pipeline.cleanup_task(Repo.reload!(task))
+  end
 end

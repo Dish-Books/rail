@@ -16,7 +16,6 @@ defmodule Rail.Tools.Actions.ListOsProcesses do
       Enum.reduce(opts, query, fn
         {:run_id, run_id}, q -> where(q, [r], r.run_id == ^run_id)
         {:task_id, task_id}, q -> where(q, [r], r.task_id == ^task_id)
-        {:node, node}, q -> where(q, [r], r.node == ^node)
         {:status, status}, q -> where(q, [r], r.status == ^status)
         _other, q -> q
       end)

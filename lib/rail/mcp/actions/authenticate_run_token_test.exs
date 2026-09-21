@@ -84,7 +84,6 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
         run_id: run.id,
         task_id: task.id,
         stream_path: "/tmp/run-token-#{unique}/stream.ndjson",
-        node: "test",
         status: :running,
         started_at: DateTime.utc_now(),
         mcp_token_hash: hash

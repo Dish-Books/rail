@@ -55,8 +55,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
         reasoning_effort: role.reasoning_effort || "high",
         system_prompt: role.system_prompt,
         conversation_id: run.conversation_id,
-        work_dir: task.worktree_path,
-        mcp: role.mcp_tools != []
+        work_dir: task.worktree_path
       )
 
     Tools.start_os_process(run, args)
@@ -70,6 +69,8 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     Review the change described below. #{workspace(task)}
 
     You are reading it, not changing it: write no application code and no tests, and never run a git command that writes - no commit, no push, no branch, no checkout, no stash. Reading the tree with git is exactly what you are here for.
+
+    Do not run the project's test suite, its coverage run or its linters. Those are the engineer's to have passed before the change reached you, they take minutes you would spend not reading, and a number out of one of them is not a finding. Run a single targeted check only where it settles a question you cannot answer by reading, and say in the finding what you ran.
 
     Nothing under #{scratch_path} is part of the change, and the diff never includes it.
 
@@ -125,7 +126,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     """)
   end
 
-  # A task comes back to review once the engineer has been round again. What the
+  # A task comes back to review once the engineer has worked on it again. What the
   # reviewer is owed is a verdict on each thing it already raised, so the rows
   # are handed back to it rather than left for it to remember.
   defp outstanding(%Task{} = task) do

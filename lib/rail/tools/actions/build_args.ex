@@ -19,8 +19,6 @@ defmodule Rail.Tools.Actions.BuildArgs do
   - `:system_prompt`: string (Claude only, included when non-empty) — appended to
     Claude Code's own system prompt rather than replacing it, which is what teaches
     the agent its tools (deferred MCP tools included)
-  - `:mcp`: boolean (Claude only, default `false`) — connect the agent to Rail's MCP
-    proxy, authenticated by the `RAIL_MCP_TOKEN` the spawn puts in its environment
   - `:conversation_id`, `:conversation`, or `:resume`: session id for resumption
   - `:work_dir` or `:working_directory`: directory for `--add-dir` (Agy only)
   - `:log_file`, `:log_path`, or `:agy_log_path`: path for `--log-file` (Agy only)
@@ -68,17 +66,21 @@ defmodule Rail.Tools.Actions.BuildArgs do
 
     ["-p", prompt, "--model", model, "--effort", effort] ++
       permission_flags ++
-      claude_mcp_flags(Map.get(opts, :mcp, false)) ++
+      claude_mcp_flags() ++
       ["--output-format", "stream-json", "--verbose"] ++
       system_prompt_flags ++
       resume_flags
   end
 
+  # Every run is pointed at Rail and given a token for it. What it may actually
+  # call is decided on Rail's side, per run, so there is nothing for the spawn to
+  # work out and no way for the flag and the token to disagree - a run told to
+  # connect without one gets a 401 on its first call.
+  #
   # The token stays out of argv, where `ps` would show it: Claude expands
   # `${RAIL_MCP_TOKEN}` from its own environment when it reads the config.
-  # `--strict-mcp-config` keeps the user's own MCP servers out of the run, and goes
-  # on every run: a role allowed no MCP tools gets no servers, not the user's own.
-  defp claude_mcp_flags(true) do
+  # `--strict-mcp-config` keeps the user's own MCP servers out of the run.
+  defp claude_mcp_flags do
     config = %{
       "mcpServers" => %{
         "rail" => %{
@@ -91,8 +93,6 @@ defmodule Rail.Tools.Actions.BuildArgs do
 
     ["--mcp-config", Jason.encode!(config), "--strict-mcp-config", "--allowedTools", "mcp__rail"]
   end
-
-  defp claude_mcp_flags(_mcp), do: ["--strict-mcp-config"]
 
   defp build_agy_args(opts) do
     prompt = opts[:prompt] || ""

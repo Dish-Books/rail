@@ -2,6 +2,7 @@ defmodule Rail.Mcp.Actions.ListRunTools do
   @moduledoc false
 
   import Ecto.Query
+  import Rail.Mcp.Utils.McpTools
   import Rail.Mcp.Utils.ToolAllowed
   import Rail.Mcp.Utils.WithUpstreamToken
 
@@ -15,14 +16,15 @@ defmodule Rail.Mcp.Actions.ListRunTools do
   @timeout to_timeout(second: 30)
 
   @doc """
-  The tools a turn may call: every tool its role allows, on the enabled servers
-  the issue's assigned user can reach, each renamed `<server name>__<tool>`.
+  The tools a turn may call: Rail's own, plus every tool its role allows on the
+  enabled servers the issue's assigned user can reach, each of those renamed
+  `<server name>__<tool>`.
 
   Servers are asked in parallel. One that fails, or that the user never
   connected, just contributes nothing — an agent is better off with the other
   servers' tools than with none.
   """
-  def list_run_tools(%RunContext{role: %{mcp_tools: mcp_tools}, user: user}) do
+  def list_run_tools(%RunContext{role: %{mcp_tools: mcp_tools}, user: user} = context) do
     tools =
       mcp_tools
       |> allowed_servers()
@@ -33,7 +35,7 @@ defmodule Rail.Mcp.Actions.ListRunTools do
         {:exit, _reason} -> []
       end)
 
-    {:ok, tools}
+    {:ok, mcp_tools(context.role) ++ tools}
   end
 
   defp allowed_servers(mcp_tools) do

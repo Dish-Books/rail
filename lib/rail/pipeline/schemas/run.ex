@@ -231,7 +231,7 @@ defmodule Rail.Pipeline.Schemas.Run do
   defp waiting_state?(:blocked, _stage), do: true
   defp waiting_state?(:failed, _stage), do: true
   defp waiting_state?(:stopped, _stage), do: true
-  defp waiting_state?(:done, stage), do: stage in [:product, :design, :architect, :engineer, :review]
+  defp waiting_state?(:done, stage), do: stage in [:product, :design, :architect, :engineer, :review, :qa]
   defp waiting_state?(_running_or_queued, _stage), do: false
 
   # A run is one conversation with one agent. Moving it to another would silently

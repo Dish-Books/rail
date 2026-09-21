@@ -50,12 +50,12 @@ defmodule Rail.Tools.Actions.StartOsProcess do
 
     executable = backend.executable_path
     stream_path = prepare_stream_files(task, run)
-    {env, token_hash} = mcp_env(run.role)
+    {token, token_hash} = Mcp.issue_run_token()
     os_process = insert_os_process(run, stream_path, token_hash)
 
     result =
       case ensure_executable(executable, os_process, run) do
-        :ok -> launch(os_process, run, backend, argv, stream_path, task, env)
+        :ok -> launch(os_process, run, backend, argv, stream_path, task, token)
         {:error, reason} -> {:error, reason}
       end
 
@@ -86,21 +86,11 @@ defmodule Rail.Tools.Actions.StartOsProcess do
     {:error, {:spawn_failed, reason, run}}
   end
 
-  # A role with MCP tools gets a token for this turn only; the row keeps its hash
-  # and the child gets the token itself.
-  defp mcp_env(%Role{mcp_tools: [_first | _rest]}) do
-    {token, hash} = Mcp.issue_run_token()
-    {%{"RAIL_MCP_TOKEN" => token}, hash}
-  end
-
-  defp mcp_env(_role), do: {%{}, nil}
-
   defp insert_os_process(run, stream_path, token_hash) do
     attrs = %{
       run_id: run.id,
       task_id: run.task_id,
       stream_path: stream_path,
-      node: to_string(Node.self()),
       status: :starting,
       started_at: DateTime.utc_now(),
       mcp_token_hash: token_hash
@@ -121,12 +111,12 @@ defmodule Rail.Tools.Actions.StartOsProcess do
     stream_path
   end
 
-  defp launch(os_process, run, backend, args, stream_path, task, mcp_env) do
+  defp launch(os_process, run, backend, args, stream_path, task, token) do
     spawn_opts = [
       stdout_path: stream_path,
       stderr_path: "#{stream_path}.err",
       cd: task.worktree_path,
-      env: Map.merge(backend_env(backend), mcp_env)
+      env: Map.put(backend_env(backend), "RAIL_MCP_TOKEN", token)
     ]
 
     case Tools.spawn_os_process(backend.executable_path, args, spawn_opts) do

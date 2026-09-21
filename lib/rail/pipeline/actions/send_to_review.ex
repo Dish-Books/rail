@@ -43,7 +43,7 @@ defmodule Rail.Pipeline.Actions.SendToReview do
   # that it did, or saying what the reviewer is being asked to look at again.
   defp returning do
     """
-    The engineer has been round and pushed the change again. Read it as it now stands and say, for every finding still open, whether it has been addressed.
+    The engineer has worked on your findings and pushed the change again. Read it as it now stands and say, for every finding still open, whether it has been addressed. Review the new work on its own terms as well: a fix can be wrong, or right and break something next to it, and a finding raised this round is as much your business as one raised last round.
     """
   end
 

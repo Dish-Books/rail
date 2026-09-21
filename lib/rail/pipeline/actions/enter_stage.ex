@@ -88,6 +88,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   defp start_process(%Run{role: %Role{stage: :architect}} = run), do: Pipeline.start_architect_run(run)
   defp start_process(%Run{role: %Role{stage: :engineer}} = run), do: Pipeline.start_engineer_run(run)
   defp start_process(%Run{role: %Role{stage: :review}} = run), do: Pipeline.start_review_run(run)
+  defp start_process(%Run{role: %Role{stage: :qa}} = run), do: Pipeline.start_qa_run(run)
 
   defp start_process(%Run{task: %Task{} = task, role: %Role{} = role} = run) do
     prompt =
@@ -108,8 +109,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
         reasoning_effort: role.reasoning_effort || "high",
         system_prompt: role.system_prompt,
         conversation_id: run.conversation_id,
-        work_dir: task.worktree_path,
-        mcp: role.mcp_tools != []
+        work_dir: task.worktree_path
       )
 
     Tools.start_os_process(run, argv)

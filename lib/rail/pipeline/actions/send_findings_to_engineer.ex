@@ -104,12 +104,11 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineer do
   end
 
   # The reviewer wrote the remedy for this reader, so it goes over labelled
-  # rather than run together with the reasoning the human ruled on.
+  # rather than run together with the reasoning the human ruled on. A field the
+  # reviewer left blank never gets this far: the changeset reads whitespace as
+  # nothing and stores it as nothing.
   defp suggestion(%ReviewFinding{suggestion: suggestion}) when is_binary(suggestion) do
-    case String.trim(suggestion) do
-      "" -> ""
-      trimmed -> "\nSuggested fix: #{trimmed}\n"
-    end
+    "\nSuggested fix: #{String.trim(suggestion)}\n"
   end
 
   defp suggestion(%ReviewFinding{}), do: ""

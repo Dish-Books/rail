@@ -73,20 +73,19 @@ defmodule Rail.Tools.BootTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: stream_path,
-        node: to_string(Node.self()),
         status: :running,
         os_pid: pid,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    results = Boot.reconcile(node: to_string(Node.self()))
+    results = Boot.reconcile()
     assert [{:adopted_live, %OsProcess{id: ^os_process_id}, follower_pid}] = results
     assert is_pid(follower_pid)
     assert Process.alive?(follower_pid)
 
     # Calling adopt again sees it is already followed
-    repeat = Boot.reconcile(node: to_string(Node.self()))
+    repeat = Boot.reconcile()
     assert [{:already_following, _run, ^follower_pid}] = repeat
 
     FollowerSupervisor.stop_follower(follower_pid)
@@ -120,7 +119,6 @@ defmodule Rail.Tools.BootTest do
       run_id: run.id,
       task_id: run.task_id,
       stream_path: stream_path,
-      node: to_string(Node.self()),
       status: :running,
       os_pid: pid,
       stream_offset: byte_size(line1) + 1,
@@ -128,7 +126,7 @@ defmodule Rail.Tools.BootTest do
     })
     |> Repo.insert!()
 
-    assert [{:adopted_live, %OsProcess{}, follower_pid}] = Boot.reconcile(node: to_string(Node.self()))
+    assert [{:adopted_live, %OsProcess{}, follower_pid}] = Boot.reconcile()
 
     assert_receive {:run_events, _run_id, [%{line: ^line2}]}, 5_000
     assert [^line2] = Enum.map(Pipeline.list_run_events(run), & &1.line)
@@ -159,7 +157,6 @@ defmodule Rail.Tools.BootTest do
       run_id: run.id,
       task_id: run.task_id,
       stream_path: stream_path,
-      node: to_string(Node.self()),
       status: :running,
       os_pid: 999_997,
       stream_offset: byte_size(line1) + 1,
@@ -167,7 +164,7 @@ defmodule Rail.Tools.BootTest do
     })
     |> Repo.insert!()
 
-    assert [{:adopted_dead, %OsProcess{}}] = Boot.reconcile(node: to_string(Node.self()))
+    assert [{:adopted_dead, %OsProcess{}}] = Boot.reconcile()
 
     assert [^line2] = Enum.map(Pipeline.list_run_events(run), & &1.line)
     assert {:ok, %Run{status: :finished, conversation_id: "sess-resume-dead"}} = Pipeline.get_run(run.id)
@@ -200,14 +197,13 @@ defmodule Rail.Tools.BootTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: stream_path,
-        node: to_string(Node.self()),
         status: :running,
         os_pid: dead_pid,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    results = Boot.reconcile(node: to_string(Node.self()))
+    results = Boot.reconcile()
     assert [{:adopted_dead, %OsProcess{status: :adopted_dead}}] = results
 
     # Run should be settled
@@ -242,14 +238,13 @@ defmodule Rail.Tools.BootTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: stream_path,
-        node: to_string(Node.self()),
         status: :running,
         os_pid: 999_997,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    results = Boot.reconcile(node: to_string(Node.self()))
+    results = Boot.reconcile()
     assert [{:adopted_dead, %OsProcess{status: :adopted_dead}}] = results
 
     {:ok, settled_run} = Pipeline.get_run(run.id)
@@ -279,14 +274,13 @@ defmodule Rail.Tools.BootTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: stream_path,
-        node: to_string(Node.self()),
         status: :starting,
         os_pid: nil,
         started_at: DateTime.shift(DateTime.utc_now(), second: -70)
       })
       |> Repo.insert!()
 
-    results = Boot.reconcile(node: to_string(Node.self()), timeout_seconds: 60)
+    results = Boot.reconcile(timeout_seconds: 60)
     assert [{:failed_starting, %OsProcess{status: :finished}}] = results
 
     {:ok, settled_run} = Pipeline.get_run(run.id)
@@ -315,18 +309,17 @@ defmodule Rail.Tools.BootTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: stream_path,
-        node: to_string(Node.self()),
         status: :starting,
         os_pid: nil,
         started_at: DateTime.utc_now()
       })
       |> Repo.insert!()
 
-    results = Boot.reconcile(node: to_string(Node.self()), timeout_seconds: 60)
+    results = Boot.reconcile(timeout_seconds: 60)
     assert [{:still_starting, %OsProcess{id: ^os_process_id}}] = results
   end
 
-  test "ignores runs from different node or already finished", %{tmp_dir: tmp_dir, role: role} do
+  test "ignores a process that has already finished", %{tmp_dir: tmp_dir, role: role} do
     run =
       %Run{}
       |> Run.changeset(%{
@@ -337,45 +330,31 @@ defmodule Rail.Tools.BootTest do
       })
       |> Repo.insert!()
 
-    stream_path = Path.join(tmp_dir, "foreign.ndjson")
+    stream_path = Path.join(tmp_dir, "finished.ndjson")
     File.write!(stream_path, "")
     File.write!("#{stream_path}.err", "")
 
-    # Foreign node run
     Repo.insert!(%OsProcess{
       run_id: run.id,
       task_id: run.task_id,
       stream_path: stream_path,
-      node: "other_node@remote_host",
-      status: :running,
-      os_pid: 999_990,
-      started_at: DateTime.utc_now()
-    })
-
-    # Already finished run
-    Repo.insert!(%OsProcess{
-      run_id: run.id,
-      task_id: run.task_id,
-      stream_path: stream_path,
-      node: to_string(Node.self()),
       status: :finished,
       os_pid: 999_991,
       started_at: DateTime.utc_now()
     })
 
-    results = Boot.reconcile(node: to_string(Node.self()))
-    assert results == []
+    assert Boot.reconcile() == []
   end
 
   test "start_link/1 stays out of the tree while adoption on boot is off" do
-    assert Boot.start_link(node: "nonexistent_node") == :ignore
+    assert Boot.start_link([]) == :ignore
   end
 
   test "start_link/1 reconciles as a task when adoption on boot is enabled" do
     Application.put_env(:rail, :adopt_on_boot, true)
     on_exit(fn -> Application.put_env(:rail, :adopt_on_boot, false) end)
 
-    {:ok, pid} = Boot.start_link(node: "nonexistent_node")
+    {:ok, pid} = Boot.start_link([])
     assert is_pid(pid)
 
     # The task finishes and exits normally, when the scheduler gets to it.
@@ -402,7 +381,6 @@ defmodule Rail.Tools.BootTest do
       run_id: run1.id,
       task_id: run1.task_id,
       stream_path: stream1,
-      node: to_string(Node.self()),
       status: :running,
       os_pid: 999_980,
       started_at: DateTime.utc_now()
@@ -410,7 +388,7 @@ defmodule Rail.Tools.BootTest do
 
     Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run1.id}")
 
-    Boot.reconcile(node: to_string(Node.self()))
+    Boot.reconcile()
 
     assert_receive {:os_process_finished, _run, outcome1}, 500
     assert outcome1.error =~ "claude reported error"
@@ -435,13 +413,12 @@ defmodule Rail.Tools.BootTest do
       run_id: run2.id,
       task_id: run2.task_id,
       stream_path: stream2,
-      node: to_string(Node.self()),
       status: :running,
       os_pid: 999_981,
       started_at: DateTime.utc_now()
     })
 
-    Boot.reconcile(node: to_string(Node.self()))
+    Boot.reconcile()
     {:ok, r2} = Pipeline.get_run(run2.id)
     assert r2.error == "claude reported error_max_turns"
 
@@ -464,13 +441,12 @@ defmodule Rail.Tools.BootTest do
       run_id: run3.id,
       task_id: run3.task_id,
       stream_path: stream3,
-      node: to_string(Node.self()),
       status: :running,
       os_pid: 999_982,
       started_at: DateTime.utc_now()
     })
 
-    Boot.reconcile(node: to_string(Node.self()))
+    Boot.reconcile()
     {:ok, r3} = Pipeline.get_run(run3.id)
     assert r3.error == "only stderr output"
 
@@ -490,12 +466,11 @@ defmodule Rail.Tools.BootTest do
         run_id: run4.id,
         task_id: run4.task_id,
         stream_path: Path.join(tmp_dir, "nonexistent.ndjson"),
-        node: to_string(Node.self()),
         status: :running,
         os_pid: 999_983,
         started_at: DateTime.utc_now()
       })
 
-    assert [{:adopted_dead, %OsProcess{id: ^run4_id}}] = Boot.reconcile(node: to_string(Node.self()))
+    assert [{:adopted_dead, %OsProcess{id: ^run4_id}}] = Boot.reconcile()
   end
 end

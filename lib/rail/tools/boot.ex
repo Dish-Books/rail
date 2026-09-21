@@ -7,6 +7,10 @@ defmodule Rail.Tools.Boot do
   from what was already logged. A process that died unfollowed is settled here,
   its unlogged lines written to the run's log first. A process that has a
   Follower is left to it, alive or not: the Follower sees its own exit.
+
+  Browser sessions are reaped on the same pass, and for the same reason: a Chrome
+  whose session process is gone is a core held until the machine restarts, and its
+  row is what stops its task ever getting another browser.
   """
   use Task, restart: :transient
 
@@ -41,10 +45,13 @@ defmodule Rail.Tools.Boot do
   end
 
   @doc """
-  Adopts every in-flight os process on this node, once the runs tables exist.
+  Adopts every in-flight os process, once the runs tables exist.
   """
   def reconcile(opts \\ []) do
-    adopt_live_os_processes(opts)
+    adopted = adopt_live_os_processes(opts)
+    _browsers = Tools.reconcile_browser_sessions(opts)
+
+    adopted
 
     # coveralls-ignore-start (defensive rescue on boot failure)
   rescue
@@ -53,16 +60,14 @@ defmodule Rail.Tools.Boot do
       # coveralls-ignore-stop
   end
 
-  # Adopts all in-flight runs on the current node.
   defp adopt_live_os_processes(opts) do
-    current_node = Keyword.get(opts, :node) || to_string(Node.self())
     timeout_seconds = Keyword.get(opts, :timeout_seconds, @default_starting_timeout_seconds)
     now = Keyword.get(opts, :now) || DateTime.utc_now()
 
     os_processes =
       Repo.all(
         from r in OsProcess,
-          where: r.node == ^current_node and r.status in [:starting, :running],
+          where: r.status in [:starting, :running],
           preload: [run: [role: :backend]],
           order_by: [asc: r.started_at]
       )
@@ -205,7 +210,7 @@ defmodule Rail.Tools.Boot do
         run: updated_run
       }
 
-      # A process adopted dead settles exactly as one this node watched exit: the row
+      # A process adopted dead settles exactly as one Rail watched exit: the row
       # says which task and run it belonged to and whether it was a chat turn.
       Pipeline.run_finished(updated_os_process, outcome)
 

@@ -25,10 +25,6 @@ defmodule Rail.Pipeline.Utils.CaptureScratch do
         :product ->
           capture_ticket(task, identifier, scratch_dir)
 
-        :qa ->
-          maybe_capture_qa(scope, task, scratch_dir)
-          task
-
         :demo ->
           maybe_capture_demo(scope, task, scratch_dir)
           task
@@ -60,24 +56,6 @@ defmodule Rail.Pipeline.Utils.CaptureScratch do
   end
 
   defp adopt_ticket(nil, _parsed), do: :ok
-
-  defp maybe_capture_qa(scope, task, scratch_dir) do
-    qa_path =
-      cond do
-        File.exists?(Path.join([scratch_dir, "qa", "manifest.json"])) ->
-          Path.join(scratch_dir, "qa")
-
-        File.exists?(Path.join(scratch_dir, "manifest.json")) ->
-          scratch_dir
-
-        true ->
-          nil
-      end
-
-    if qa_path do
-      Artifacts.capture_qa_report(scope, task, qa_path)
-    end
-  end
 
   defp maybe_capture_demo(scope, task, scratch_dir) do
     manifest_path = Path.join([scratch_dir, "demo", "manifest.json"])

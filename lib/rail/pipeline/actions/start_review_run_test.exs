@@ -207,6 +207,11 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
         }
       ])
 
+    {:ok, _all} =
+      Pipeline.sync_review_findings(task, [
+        %{key: "not-ruled-on", title: "Nobody has looked", severity: :minor, recommendation: :fix, status: :open}
+      ])
+
     {:ok, _stopped} = Pipeline.update_run(run, %{status: :finished})
     {:ok, _to_fix} = Pipeline.decide_review_finding(to_fix, :fix)
     {:ok, _skipped} = Pipeline.decide_review_finding(dismissed, :skip)
@@ -217,6 +222,10 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
       assert prompt =~ "`unhandled-nil` [major, human decided: fix it, status: open] Nil is not handled"
       assert prompt =~ "(lib/rail/example.ex:12)"
       assert prompt =~ "`naming-nit` [nit, human decided: dismissed, leave it, status: open]"
+      # A turn that came back before anybody read it leaves findings nobody has
+      # ruled on, and the next pass is owed the truth about that rather than a
+      # default.
+      assert prompt =~ "`not-ruled-on` [minor, human decided: not yet decided, status: open]"
       assert prompt =~ "never argue it again"
 
       {:ok, %OsProcess{run: spawned}}

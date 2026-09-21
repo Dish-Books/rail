@@ -115,4 +115,33 @@ defmodule Rail.Git.Actions.LoadDiffHunkTest do
 
     assert Git.load_diff_hunk(scope, task, "lib/example.ex", 5) == nil
   end
+
+  # A picture has no lines to show, and the pane is handed the fact of it rather
+  # than nothing at all.
+  test "a file with no lines still says the branch touched it", %{scope: scope, task: task} do
+    File.write!(Path.join(task.worktree_path, "logo.png"), <<0x89, 0x50, 0x4E, 0x47, 0, 1, 2, 3>>)
+    git!(task.worktree_path, ["add", "."])
+    git!(task.worktree_path, ["commit", "-m", "a picture"])
+
+    assert %{path: "logo.png", rows: [%{kind: :binary}], other_hunks: 0} =
+             Git.load_diff_hunk(scope, task, "logo.png", 1)
+  end
+
+  # A file the branch changed without changing a line of it - here made
+  # executable - is in the diff with nothing underneath to show.
+  test "a file with no content change at all has no hunk", %{scope: scope, task: task} do
+    repo = create_temp_git_repo()
+    script = Path.join(repo, "script.sh")
+    File.write!(script, "echo hello\n")
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "the script"])
+    git!(repo, ["checkout", "-b", "feature"])
+    File.chmod!(script, 0o755)
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "made it runnable"])
+
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: repo})
+
+    assert Git.load_diff_hunk(scope, task, "script.sh", 1) == nil
+  end
 end

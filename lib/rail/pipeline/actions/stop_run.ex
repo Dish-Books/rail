@@ -28,20 +28,24 @@ defmodule Rail.Pipeline.Actions.StopRun do
     queued = run.pending_chat
     was_running = Run.running?(run)
 
-    # Read the queue before the kill: stopping the process settles the run
-    # synchronously, and the settle would otherwise send this message out.
-    stop_live_process(run, opts)
+    # Take the queue off the row before the kill, not after. Stopping the process
+    # settles the run synchronously, and a settle that still saw a queued message
+    # would send it out from under the caller - twice over, racing whoever sends
+    # it next for the one copy of the text.
+    {:ok, drained} = run |> Run.changeset(%{pending_chat: nil}) |> Repo.update()
 
-    {:ok, clear_queue(run, was_running), queued}
+    stop_live_process(drained, opts)
+
+    {:ok, mark_stopped(%{drained | task: run.task}, was_running), queued}
   end
 
-  defp clear_queue(%Run{} = run, was_running) do
+  defp mark_stopped(%Run{} = run, was_running) do
     if was_running, do: Pipeline.append_run_events(run.id, nil, ["[rail] Stopped by user."])
 
     {:ok, stopped} =
       Run
       |> Repo.get!(run.id)
-      |> Run.changeset(%{pending_chat: nil, status: :finished})
+      |> Run.changeset(%{status: :finished})
       |> Repo.update()
 
     %{stopped | task: run.task}

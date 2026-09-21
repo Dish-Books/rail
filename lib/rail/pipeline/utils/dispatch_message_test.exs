@@ -92,6 +92,17 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert_received {:run_changed, ^run_id}
   end
 
+  # How the last turn ended is not how this one has ended, and a run left wearing
+  # an error is a run nothing will ever latch as done.
+  test "the turn before this one takes its error with it", %{run: run} do
+    {:ok, failed} = run |> Run.changeset(%{error: "Error: empty prompt", exit_code: 1}) |> Repo.update()
+
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %OsProcess{}} = dispatch_message(failed, async: false)
+    assert %Run{error: nil, exit_code: nil} = Repo.reload!(failed)
+  end
+
   test "a message that fails to spawn goes back on the run", %{run: run, run_id: run_id} do
     expect(Tools, :start_os_process, fn spawned, _argv -> {:error, {:spawn_failed, :enoent, spawned}} end)
 
@@ -110,9 +121,31 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert %Run{pending_chat: "Please also add a test"} = Repo.reload!(run)
   end
 
+  # A worktree that cannot be made is the message never leaving, and the run has
+  # to say so rather than look like it was delivered.
+  test "a message with nowhere to run fails the run", %{run: run} do
+    expect(Rail.Git, :get_or_create_worktree, fn _project, _task -> {:error, :no_such_branch} end)
+
+    assert {:error, {:worktree_failed, :no_such_branch}} = dispatch_message(run, async: false)
+    assert %Run{pending_chat: "Please also add a test"} = Repo.reload!(run)
+    assert [%RunEvent{line: "[rail] That message was not delivered: " <> _reason}] = Repo.all(RunEvent)
+  end
+
   test "a run that is gone has nothing to dispatch", %{run: run} do
     Repo.delete!(run)
 
     assert {:error, :invalid_state} = dispatch_message(run, async: false)
+  end
+
+  # Two dispatches can reach one queued message - the human sending it now and
+  # the exit of the turn they interrupted - and the one that arrives second finds
+  # the row empty. Spawning an agent with no prompt is an error the run then
+  # wears, so the second one sends nothing at all.
+  test "a queue someone else already emptied spawns nothing", %{run: run} do
+    {:ok, drained} = run |> Run.changeset(%{pending_chat: nil}) |> Repo.update()
+
+    reject(&Tools.start_os_process/2)
+
+    assert {:error, :nothing_queued} = dispatch_message(drained, async: false)
   end
 end

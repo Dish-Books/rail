@@ -9,9 +9,12 @@ defmodule Rail.Pipeline do
   builds it — Rail commits and pushes what it leaves, and the human reads the diff
   and sends it to review. Review reads the change and raises findings, each with a
   recommendation; the human decides which to address and either sends them back to
-  the engineer or hands the change to QA.
+  the engineer or hands the change to QA. QA drives the running application and
+  reports the same way, with a verdict over the top of it, and what the human
+  sends back from there goes to the engineer and comes round through review
+  again before QA sees it a second time.
 
-  QA, demo and merge are stages a task can reach and nothing drives yet: a task
+  Demo and merge are stages a task can reach and nothing drives yet: a task
   entering one parks there.
   """
 
@@ -47,6 +50,18 @@ defmodule Rail.Pipeline do
   defdelegate decide_review_finding(finding, decision), to: Actions.DecideReviewFinding
   defdelegate send_findings_to_engineer(run), to: Actions.SendFindingsToEngineer
   defdelegate send_to_qa(run), to: Actions.SendToQa
+
+  defdelegate start_qa_run(run), to: Actions.StartQaRun
+  defdelegate write_qa_checklist(task, checks), to: Actions.WriteQaChecklist
+  defdelegate read_qa_checklist(task), to: Actions.ReadQaChecklist
+  defdelegate record_qa_check(task, key, outcome, note \\ nil), to: Actions.RecordQaCheck
+  defdelegate list_qa_evidence(task), to: Actions.ListQaEvidence
+  defdelegate read_qa_report(task), to: Actions.ReadQaReport
+  defdelegate sync_qa_findings(task, findings), to: Actions.SyncQaFindings
+  defdelegate list_qa_findings(task), to: Actions.ListQaFindings
+  defdelegate decide_qa_finding(finding, decision), to: Actions.DecideQaFinding
+  defdelegate send_qa_findings_to_engineer(run), to: Actions.SendQaFindingsToEngineer
+  defdelegate send_to_demo(run), to: Actions.SendToDemo
 
   defdelegate create_task(issue, stage), to: Actions.CreateTask
   defdelegate list_tasks(opts \\ []), to: Actions.ListTasks

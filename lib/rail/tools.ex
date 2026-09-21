@@ -11,8 +11,9 @@ defmodule Rail.Tools do
   alias Rail.Tools.Actions
 
   @doc """
-  Starts the processes this context owns: the registry followers name themselves
-  in, the supervisor they run under, and the boot-time adoption pass.
+  Starts the processes this context owns: the registries followers and browser
+  sessions name themselves in, the supervisors they run under, and the boot-time
+  adoption pass.
   """
   def start_link(opts \\ []) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
@@ -24,6 +25,8 @@ defmodule Rail.Tools do
       {Registry, keys: :unique, name: Rail.Tools.FollowerRegistry},
       Rail.Tools.FollowerSupervisor,
       {DynamicSupervisor, name: Rail.Tools.LoginSupervisor, strategy: :one_for_one},
+      {Registry, keys: :unique, name: Rail.Tools.BrowserRegistry},
+      {DynamicSupervisor, name: Rail.Tools.BrowserSupervisor, strategy: :one_for_one},
       Rail.Tools.Boot
     ]
 
@@ -35,6 +38,18 @@ defmodule Rail.Tools do
   defdelegate connect_port(port, owner), to: Actions.ConnectPort
   defdelegate os_process_alive?(pid), to: Actions.OsProcessAlive
   defdelegate terminate_os_process(pid, opts \\ []), to: Actions.TerminateOsProcess
+
+  defdelegate start_browser_session(task, opts \\ []), to: Actions.StartBrowserSession
+  defdelegate get_browser_session(task), to: Actions.GetBrowserSession
+  defdelegate get_browser_frame(task), to: Actions.GetBrowserFrame
+  defdelegate get_browser_url(task), to: Actions.GetBrowserUrl
+  defdelegate stop_browser_session(task), to: Actions.StopBrowserSession
+  defdelegate reconcile_browser_sessions(opts \\ []), to: Actions.ReconcileBrowserSessions
+  defdelegate observe_browser(session, opts \\ []), to: Actions.ObserveBrowser
+  defdelegate decide_browser_action(page, intent, history \\ [], opts \\ []), to: Actions.DecideBrowserAction
+  defdelegate execute_browser_action(session, action, text \\ nil), to: Actions.ExecuteBrowserAction
+  defdelegate drive_browser(session, intent, opts \\ []), to: Actions.DriveBrowser
+  defdelegate capture_browser_evidence(session, task, name, key \\ nil), to: Actions.CaptureBrowserEvidence
 
   defdelegate build_args(opts), to: Actions.BuildArgs
   defdelegate start_os_process(run, argv), to: Actions.StartOsProcess

@@ -141,5 +141,7 @@ defmodule RailWeb.Live.ArchitectStage do
   defp message_for(:stage_running), do: "Something is still running on this task."
   defp message_for({:invalid_stage, stage}), do: "This task is at #{Task.stage_label(stage)}, not architect."
   defp message_for(:no_plan), do: "The architect has not written a plan yet."
+  # coveralls-ignore-start (a refusal nobody has written a sentence for yet)
   defp message_for(reason), do: "Could not approve the plan: #{inspect(reason)}"
+  # coveralls-ignore-stop
 end

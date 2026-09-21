@@ -17,7 +17,6 @@ defmodule Rail.Tools.Schemas.OsProcess do
   schema "os_processes" do
     field :os_pid, :integer
     field :stream_path, :string
-    field :node, :string
     field :status, Ecto.Enum, values: @statuses
     field :started_at, :utc_datetime_usec
     field :mcp_token_hash, :binary, redact: true
@@ -37,7 +36,6 @@ defmodule Rail.Tools.Schemas.OsProcess do
     :task_id,
     :os_pid,
     :stream_path,
-    :node,
     :status,
     :started_at,
     :mcp_token_hash,
@@ -48,7 +46,6 @@ defmodule Rail.Tools.Schemas.OsProcess do
     :run_id,
     :task_id,
     :stream_path,
-    :node,
     :status,
     :started_at
   ]

@@ -113,7 +113,6 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
         run_id: run.id,
         task_id: run.task_id,
         stream_path: "/tmp/stop_run/#{run.id}.ndjson",
-        node: to_string(Node.self()),
         status: :running,
         started_at: DateTime.utc_now()
       })
@@ -125,5 +124,30 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
     end)
 
     assert {:ok, %Run{}, nil} = Pipeline.stop_run(run)
+  end
+
+  # Killing the process settles the run then and there, and a settle that still
+  # found a queued message would send it - so by the time anything is killed the
+  # queue is already empty and the text is the caller's alone.
+  test "the queue is empty before the process is killed", %{working: working} do
+    run = working.(%{pending_chat: "Please add a test"})
+
+    {:ok, os_process} =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: "/tmp/stop_run/#{run.id}.ndjson",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert()
+
+    expect(Tools, :stop_os_process, fn %OsProcess{}, _opts ->
+      assert %Run{pending_chat: nil} = Repo.get!(Run, run.id)
+      {:ok, os_process}
+    end)
+
+    assert {:ok, %Run{}, "Please add a test"} = Pipeline.stop_run(run)
   end
 end
