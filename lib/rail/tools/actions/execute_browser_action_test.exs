@@ -205,7 +205,7 @@ defmodule Rail.Tools.Actions.ExecuteBrowserActionTest do
 
   # The gap between reading a page and acting on it is real, and the whole point
   # of resolving again is that the element it names may be gone.
-  test "an element that has left the page is stale rather than acted on", %{session: session, page: page} do
+  test "an element that has left the page is refused, and says so", %{session: session, page: page} do
     save = Enum.find(page["actions"], &(&1["label"] == "Save"))
 
     {:ok, _removed} =
@@ -214,12 +214,99 @@ defmodule Rail.Tools.Actions.ExecuteBrowserActionTest do
         returnByValue: true
       })
 
-    assert {:error, :stale} = Tools.execute_browser_action(session, save)
+    assert {:error, {:refused, "gone", nil}} = Tools.execute_browser_action(session, save)
+  end
+
+  # Disabled, hidden, covered and gone are four different answers, and the one
+  # about a control the page will not let anybody use is often the finding.
+  test "a control the page has disabled is refused as disabled", %{session: session, page: page} do
+    save = Enum.find(page["actions"], &(&1["label"] == "Save"))
+
+    {:ok, _disabled} =
+      BrowserSession.call(session, "Runtime.evaluate", %{
+        expression: "document.getElementById('save').disabled = true",
+        returnByValue: true
+      })
+
+    assert {:error, {:refused, "disabled", nil}} = Tools.execute_browser_action(session, save)
+  end
+
+  # What is drawn over it is the part a person debugging this cannot work out
+  # from a refusal on its own.
+  test "a control something is drawn over names what took the click", %{session: session, page: page} do
+    save = Enum.find(page["actions"], &(&1["label"] == "Save"))
+
+    {:ok, _covered} =
+      BrowserSession.call(session, "Runtime.evaluate", %{
+        expression: """
+        const over = document.createElement('div');
+        over.textContent = 'Saving';
+        over.setAttribute('style', 'position:fixed;inset:0;background:white');
+        document.body.appendChild(over);
+        """,
+        returnByValue: true
+      })
+
+    assert {:error, {:refused, "covered", ~s(div "Saving")}} = Tools.execute_browser_action(session, save)
+  end
+
+  # A form abandoned by following a link is only recoverable by going back, so
+  # back is a thing the page offers like any other.
+  test "goes back to where the browser came from", %{session: session} do
+    second = Path.join(System.tmp_dir!(), "rail-back-#{System.unique_integer([:positive])}.html")
+    File.write!(second, "<!doctype html><title>Sent</title>")
+    on_exit(fn -> File.rm(second) end)
+
+    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: "file://#{second}"})
+
+    eventually(fn ->
+      assert {:ok, %{"title" => "Sent"}} = Tools.observe_browser(session)
+    end)
+
+    assert {:ok, "back"} = Tools.execute_browser_action(session, %{"kind" => "back", "id" => "back"})
+
+    eventually(fn ->
+      assert {:ok, %{"title" => "New bill"}} = Tools.observe_browser(session)
+    end)
+  end
+
+  test "a browser with nowhere to go back to says so", %{page: _page} do
+    stub(BrowserSession, :call, fn _session, "Page.getNavigationHistory", _params ->
+      {:ok, %{"currentIndex" => 0, "entries" => [%{"id" => 1}]}}
+    end)
+
+    assert {:error, {:refused, "nowhere to go back to", nil}} =
+             Tools.execute_browser_action(:fresh, %{"kind" => "back", "id" => "back"})
+  end
+
+  test "a history entry that is not there says the same", %{page: _page} do
+    stub(BrowserSession, :call, fn _session, "Page.getNavigationHistory", _params ->
+      {:ok, %{"currentIndex" => 2, "entries" => [%{"id" => 1}]}}
+    end)
+
+    assert {:error, {:refused, "nowhere to go back to", nil}} =
+             Tools.execute_browser_action(:fresh, %{"kind" => "back", "id" => "back"})
+  end
+
+  test "a browser that will not say where it has been reports that", %{page: _page} do
+    stub(BrowserSession, :call, fn _session, "Page.getNavigationHistory", _params -> {:error, "no such target"} end)
+
+    assert {:error, "no such target"} = Tools.execute_browser_action(:gone, %{"kind" => "back", "id" => "back"})
   end
 
   # Everything below drives a browser that answers badly rather than a real one,
   # because a page cannot be asked to fail on command and these are the answers
   # that decide whether a step is reported as done.
+  # A resolve that answers with nothing at all is an element that is not there
+  # any more, which is the same answer as saying so.
+  test "a browser that answers nothing about the element reads as gone", %{page: page} do
+    save = Enum.find(page["actions"], &(&1["label"] == "Save"))
+
+    stub(BrowserSession, :call, fn _session, "Runtime.evaluate", _params -> {:ok, %{"result" => %{}}} end)
+
+    assert {:error, {:refused, "gone", nil}} = Tools.execute_browser_action(:blank, save)
+  end
+
   test "a browser that will not resolve the element says why", %{page: page} do
     save = Enum.find(page["actions"], &(&1["label"] == "Save"))
 

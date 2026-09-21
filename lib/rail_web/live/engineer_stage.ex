@@ -61,7 +61,7 @@ defmodule RailWeb.Live.EngineerStage do
           </button>
 
           <button
-            :if={@approvable and @work?}
+            :if={@approvable and @work? and not Run.running?(@run)}
             type="button"
             id="send-to-review"
             data-qa="send_to_review"

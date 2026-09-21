@@ -43,16 +43,10 @@ defmodule Rail.Tools.Actions.DriveBrowser do
     end
   end
 
-  # Twice over a page that did not move. Either the element being acted on is not
-  # the one the instruction is about, or it is and the page does not care - and a
-  # third go would type the same thing into the same wrong field, or ask the same
-  # refused control again. The caller is told which, because only the caller can
-  # do anything about either.
-  defp step(_session, _pass, page, history, %{still: 2, refused: nil}) do
-    {:ok, receipt(page, history, :not_moving)}
-  end
-
-  defp step(_session, _pass, page, history, %{still: 2, refused: refused}) do
+  # The same control refused twice over a page that did not move in between. It
+  # is not a race, it is the page's answer, and the caller is the one who can do
+  # something about it.
+  defp step(_session, _pass, page, history, %{still: 2, refused: refused}) when refused != nil do
     {:ok, receipt(page, history, {:refused, refused})}
   end
 
@@ -73,16 +67,34 @@ defmodule Rail.Tools.Actions.DriveBrowser do
     end
   end
 
-  defp act(session, pass, page, history, budget, %{operation: "TYPE_TEXT"} = decision) do
+  defp act(session, pass, page, history, budget, decision) do
+    cond do
+      # The step that just ran left the page as it found it, and the same step
+      # has been chosen again. Either it is not doing what was asked or the page
+      # does not care, and a third go would only do it a third time.
+      budget.still > 0 and again?(history, decision) ->
+        {:ok, receipt(page, history, :not_moving)}
+
+      decision.operation == "TYPE_TEXT" ->
+        type(session, pass, page, history, budget, decision)
+
+      true ->
+        perform(session, pass, page, history, budget, decision, nil)
+    end
+  end
+
+  defp type(session, pass, page, history, budget, decision) do
     case supplied(pass.opts, decision.action["label"]) do
       text when is_binary(text) -> perform(session, pass, page, history, budget, decision, text)
       nil -> {:ok, receipt(page, history, {:needs_text, decision.action["label"]})}
     end
   end
 
-  defp act(session, pass, page, history, budget, decision) do
-    perform(session, pass, page, history, budget, decision, nil)
+  defp again?([%{operation: operation, action: label} | _rest], %{operation: operation} = decision) do
+    decision.action["label"] == label
   end
+
+  defp again?(_history, _decision), do: false
 
   # The value for the field the decision landed on. A label is matched as the
   # page writes it, then without case, then as part of it - because "Number" is

@@ -158,7 +158,7 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
 
       findings ->
         """
-        This change has been QA'd before and has been round the engineer and the reviewer since. These are the findings already on it, and this pass owes a verdict on every one of them.
+        This change has been QA'd before, and the engineer and the reviewer have both worked on it since. These are the findings already on it, and this pass owes a verdict on every one of them.
 
         #{Enum.map_join(findings, "\n", &finding_line/1)}
 

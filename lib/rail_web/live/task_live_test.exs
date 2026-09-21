@@ -2456,7 +2456,11 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#qa-shot-viewer [data-qa='qa_shot_name']", "The journal entry")
       assert has_element?(view, "[data-qa='qa_checklist_progress']", "1 of 2")
       assert has_element?(view, "[data-qa='qa_check'][data-key='bill-saves'][data-outcome='pass']")
-      assert has_element?(view, "[data-qa='qa_check_note']", "saved to the cent")
+
+      # The row says how it went and no more: what the pass wrote about it is a
+      # sentence or a paragraph, and forty of those is a column nobody can scan.
+      assert has_element?(view, "[data-qa='qa_check_note']", "passed")
+      refute has_element?(view, "[data-qa='qa_check_note']", "saved to the cent")
       assert has_element?(view, "[data-qa='qa_check'][data-key='totals'][data-outcome='pending']")
 
       # The headings the pass chose, and the row it is on.
@@ -2497,9 +2501,6 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#qa-sidebar #qa-finding-list")
       assert has_element?(view, "#qa-sidebar #qa-checklist")
 
-      # Every row says which acceptance criterion it is there for.
-      assert has_element?(view, "[data-qa='qa_check_criterion']", "A bill can be entered and saved")
-
       assert has_element?(view, "[data-qa='qa_check'][data-key='bill-saves'] [data-qa='qa_check_shots']", "1")
       refute has_element?(view, "[data-qa='qa_check'][data-key='totals'] [data-qa='qa_check_shots']")
 
@@ -2507,6 +2508,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "#qa-check-detail", "A bill saves and survives a reload")
       assert has_element?(view, "[data-qa='qa_check_detail_group']", "Setup")
+      assert has_element?(view, "[data-qa='qa_check_detail_note']", "saved to the cent")
       assert has_element?(view, "[data-qa='qa_check_detail_criterion']", "A bill can be entered and saved")
       assert has_element?(view, "[data-qa='qa_check_detail_note']", "saved to the cent")
 
@@ -2528,8 +2530,11 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-qa='qa_check_detail_shots']", "Nothing was filed against this row")
 
-      # Closing goes back to what the panel shows on its own.
-      view |> element("#qa-close-pane") |> render_click()
+      # A row reads on its own; picking the next thing to read is how you leave
+      # it, and only a picture has a way out of its own.
+      refute has_element?(view, "#qa-check-detail [data-qa='qa_close_pane']")
+
+      view |> element("#qa-finding-a-nit") |> render_click()
 
       assert has_element?(view, "[data-qa='qa_finding_detail']", "A nit")
     end

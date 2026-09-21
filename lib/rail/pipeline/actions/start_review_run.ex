@@ -124,7 +124,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     """)
   end
 
-  # A task comes back to review once the engineer has been round again. What the
+  # A task comes back to review once the engineer has worked on it again. What the
   # reviewer is owed is a verdict on each thing it already raised, so the rows
   # are handed back to it rather than left for it to remember.
   defp outstanding(%Task{} = task) do

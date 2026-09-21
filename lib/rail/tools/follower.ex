@@ -333,7 +333,15 @@ defmodule Rail.Tools.Follower do
   defp reported_exit_code(%__MODULE__{stopped?: true}), do: nil
   defp reported_exit_code(%__MODULE__{exit_code: exit_code}), do: exit_code
 
+  # The harness says this on its way out when the agent stopped while something it
+  # started was still running. On its own it reads as a fault in Rail; what it
+  # means is a round that ended early with its own command unread, and the human
+  # can put that right with a message.
+  @background_task "left a command running in the background and stopped, so the round ended before it read the result"
+
   defp compute_error(result_error, raw_stderr, exit_code) do
+    raw_stderr = if abandoned?(raw_stderr), do: @background_task, else: raw_stderr
+
     cond do
       is_binary(result_error) and result_error != "" and raw_stderr != "" ->
         "#{result_error}\n#{raw_stderr}"
@@ -350,6 +358,10 @@ defmodule Rail.Tools.Follower do
       true ->
         nil
     end
+  end
+
+  defp abandoned?(raw_stderr) do
+    String.contains?(raw_stderr, "background task") and String.contains?(raw_stderr, "terminating")
   end
 
   # A nil `error` already means no result error and no stderr, so a run that

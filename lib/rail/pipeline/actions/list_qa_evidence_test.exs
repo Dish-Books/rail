@@ -80,6 +80,30 @@ defmodule Rail.Pipeline.Actions.ListQaEvidenceTest do
     assert [%{file: "totals~second.jpg"}, %{file: "totals~first.jpg"}] = Pipeline.list_qa_evidence(task)
   end
 
+  # A filename has lost the capitals and the punctuation by the time it is a
+  # filename, so what the caption said is written down beside the picture.
+  test "the caption is what the pass wrote, not what the filename kept", %{task: task, directory: directory} do
+    File.write!(Path.join(directory, "totals~qa231d-new-1-bill-2-500-00-total.jpg"), "jpeg")
+
+    File.write!(
+      Path.join(directory, "captions.jsonl"),
+      Jason.encode!(%{file: "totals~qa231d-new-1-bill-2-500-00-total.jpg", name: "QA231D-NEW-1 Bill: $2,500.00 total"}) <>
+        "\n"
+    )
+
+    assert [%{name: "QA231D-NEW-1 Bill: $2,500.00 total"}] = Pipeline.list_qa_evidence(task)
+  end
+
+  # The file is appended to while a pass runs, so its last line can be half
+  # written, and a picture from before there were captions has none at all.
+  test "an unreadable line is skipped and an uncaptioned picture falls back", %{task: task, directory: directory} do
+    File.write!(Path.join(directory, "totals~the-journal-entry.jpg"), "jpeg")
+
+    File.write!(Path.join(directory, "captions.jsonl"), ~s({"file": "totals~the-journ))
+
+    assert [%{name: "The journal entry"}] = Pipeline.list_qa_evidence(task)
+  end
+
   test "a pass that photographed nothing has no directory and no pictures", %{task: task, directory: directory} do
     File.rm_rf!(directory)
 

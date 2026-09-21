@@ -127,6 +127,18 @@ defmodule Rail.Tools.BrowserSessionTest do
     end)
   end
 
+  # Where the tab is comes from Chrome rather than from the run's log: the log
+  # says where a pass asked to go, which a redirect makes a different place.
+  test "says where the tab went", %{task: task, page: page} do
+    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
+
+    eventually(fn ->
+      assert BrowserSession.where(session) == page
+      assert Tools.get_browser_url(task) == page
+    end)
+  end
+
   test "stopping a task that has no browser is fine", %{task: task} do
     assert :ok = Tools.stop_browser_session(task)
   end

@@ -228,7 +228,7 @@ defmodule Rail.Tools.Actions.DriveBrowserTest do
       }
     end)
 
-    expect(Tools, :execute_browser_action, fn _session, _action, _text -> {:error, :stale} end)
+    expect(Tools, :execute_browser_action, fn _session, _action, _text -> {:error, {:refused, "gone", nil}} end)
     stub(Tools, :execute_browser_action, fn _session, _action, _text -> {:ok, "save"} end)
 
     assert {:ok, %{outcome: :done, executed: [%{operation: "CLICK", action: "Save"}]}} =
@@ -280,6 +280,110 @@ defmodule Rail.Tools.Actions.DriveBrowserTest do
 
     assert {:ok, %{outcome: :done, error: :navigating, executed: [%{action: "Save"}]}} =
              Tools.drive_browser(session, "click Save")
+  end
+
+  # A control that refuses twice over a page that has not moved is not a race
+  # being lost, it is the page's answer - and what refused it is the finding.
+  test "a control that keeps refusing stops the instruction and says why", %{
+    session: session,
+    answering: answering,
+    choosing: choosing
+  } do
+    answering.(fn questions, state ->
+      save = Enum.find(state["elements"], &(&1["label"] == "Save"))
+
+      %{
+        "operation" => choosing.(questions, "operation", "CLICK"),
+        "click_target" => choosing.(questions, "click_target", save["index"]),
+        "type_text_target" => choosing.(questions, "type_text_target", "1")
+      }
+    end)
+
+    stub(Tools, :execute_browser_action, fn _session, _action, _text ->
+      {:error, {:refused, "covered", ~s(div "Saving")}}
+    end)
+
+    assert {:ok, receipt} = Tools.drive_browser(session, "click Save")
+    assert receipt.outcome == {:refused, %{label: "Save", why: "covered", by: ~s(div "Saving")}}
+    assert receipt.executed == []
+  end
+
+  # A step that leaves the page as it found it, chosen again, is a step doing
+  # something other than what was asked.
+  test "the same step over a page that did not move stops after the second", %{
+    session: session,
+    answering: answering,
+    choosing: choosing
+  } do
+    answering.(fn questions, state ->
+      save = Enum.find(state["elements"], &(&1["label"] == "Save"))
+
+      %{
+        "operation" => choosing.(questions, "operation", "CLICK"),
+        "click_target" => choosing.(questions, "click_target", save["index"]),
+        "type_text_target" => choosing.(questions, "type_text_target", "1")
+      }
+    end)
+
+    stub(Tools, :execute_browser_action, fn _session, _action, _text -> {:ok, "save"} end)
+
+    assert {:ok, %{outcome: :not_moving, executed: executed}} = Tools.drive_browser(session, "click Save")
+    assert length(executed) == 1
+  end
+
+  # An instruction that keeps finding something else to do is stopped by the
+  # budget rather than by a page that stopped changing.
+  test "an instruction that never finishes is stopped by its budget", %{
+    session: session,
+    answering: answering,
+    choosing: choosing
+  } do
+    # Alternating, so no step is ever the one just taken and only the budget can
+    # end this. The count is its own because what the decider is told about what
+    # has been done stops growing after ten.
+    taken = :counters.new(1, [])
+
+    answering.(fn questions, state ->
+      :counters.add(taken, 1, 1)
+      wanted = if rem(:counters.get(taken, 1), 2) == 0, do: "Save", else: "Amount"
+      target = Enum.find(state["elements"], &(&1["label"] == wanted))
+
+      %{
+        "operation" => choosing.(questions, "operation", "CLICK"),
+        "click_target" => choosing.(questions, "click_target", target["index"]),
+        "type_text_target" => choosing.(questions, "type_text_target", "1")
+      }
+    end)
+
+    stub(Tools, :execute_browser_action, fn _session, _action, _text -> {:ok, "acted"} end)
+
+    assert {:ok, %{outcome: :too_many_actions, executed: executed}} = Tools.drive_browser(session, "click about")
+    assert length(executed) == 30
+  end
+
+  # The caller keys its values by the field as the page labels it, so one call
+  # fills a form - and a label the page writes differently still matches.
+  test "values are matched to the field they were keyed for", %{
+    session: session,
+    answering: answering,
+    choosing: choosing
+  } do
+    answering.(fn questions, state ->
+      amount = Enum.find(state["elements"], &(&1["label"] == "Amount"))
+      done? = state["already_done"] != []
+
+      %{
+        "operation" => choosing.(questions, "operation", if(done?, do: "DONE", else: "TYPE_TEXT")),
+        "click_target" => choosing.(questions, "click_target", "1"),
+        "type_text_target" => choosing.(questions, "type_text_target", amount["index"])
+      }
+    end)
+
+    assert {:ok, %{executed: [%{text: "12.50"}]}} =
+             Tools.drive_browser(session, "the amount is 12.50", values: %{"Amount" => "12.50"})
+
+    assert {:ok, %{executed: [%{text: "13.50"}]}} =
+             Tools.drive_browser(session, "the amount is 13.50", values: %{"amount field" => "13.50"})
   end
 
   # An answer Rail did not offer never reaches the page.
