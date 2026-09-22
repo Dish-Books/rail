@@ -26,6 +26,7 @@ defmodule Rail.Tools do
       Rail.Tools.FollowerSupervisor,
       {DynamicSupervisor, name: Rail.Tools.LoginSupervisor, strategy: :one_for_one},
       {Registry, keys: :unique, name: Rail.Tools.BrowserRegistry},
+      {Registry, keys: :unique, name: Rail.Tools.RecorderRegistry},
       {DynamicSupervisor, name: Rail.Tools.BrowserSupervisor, strategy: :one_for_one},
       Rail.Tools.Boot
     ]
@@ -50,6 +51,11 @@ defmodule Rail.Tools do
   defdelegate execute_browser_action(session, action, text \\ nil), to: Actions.ExecuteBrowserAction
   defdelegate drive_browser(session, intent, opts \\ []), to: Actions.DriveBrowser
   defdelegate capture_browser_evidence(session, task, name, key \\ nil), to: Actions.CaptureBrowserEvidence
+
+  defdelegate start_browser_recording(task), to: Actions.StartBrowserRecording
+  defdelegate get_browser_recording(task), to: Actions.GetBrowserRecording
+  defdelegate stop_browser_recording(task), to: Actions.StopBrowserRecording
+  defdelegate encode_recording(directory, marks \\ []), to: Actions.EncodeRecording
 
   defdelegate build_args(opts), to: Actions.BuildArgs
   defdelegate start_os_process(run, argv), to: Actions.StartOsProcess

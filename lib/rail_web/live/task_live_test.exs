@@ -436,26 +436,26 @@ defmodule RailWeb.TaskLiveTest do
       project: project,
       backend: backend
     } do
-      {:ok, qa_lead} =
+      {:ok, debugger} =
         Roles.create_role(system_scope(), project, %{
           backend_id: backend.id,
-          stage: :qa_lead,
-          name: "qa lead role",
+          stage: :debugger,
+          name: "debugger role",
           model: "claude-3-7-sonnet",
-          system_prompt: "You are the QA lead."
+          system_prompt: "You are the debugger."
         })
 
       {:ok, _testing} =
         Pipeline.create_run(%{
           task_id: task.id,
-          role_id: qa_lead.id,
+          role_id: debugger.id,
           status: :running,
           started_at: DateTime.utc_now()
         })
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      view |> element("#task-tab-#{qa_lead.id}") |> render_click()
+      view |> element("#task-tab-#{debugger.id}") |> render_click()
 
       assert has_element?(view, "[data-qa='role_no_work']")
       assert has_element?(view, "[data-qa='conversation-tab']")
@@ -2438,12 +2438,12 @@ defmodule RailWeb.TaskLiveTest do
       # step Rail took rather than was given - are set apart from the rest.
       _logged =
         Pipeline.append_run_events(run.id, nil, [
-          "[qa] look",
+          "[browser] look",
           "[qa] plan 3 checks",
-          "[qa]   CLICK \"Save changes\"",
-          "[qa] REFUSED \"Save changes\" is covered",
-          "[qa] goto http://localhost:4000/bills/new",
-          "[qa]   click \"Save\""
+          "[browser]   CLICK \"Save changes\"",
+          "[browser] REFUSED \"Save changes\" is covered",
+          "[browser] goto http://localhost:4000/bills/new",
+          "[browser]   click \"Save\""
         ])
 
       File.write!(Path.join([task.scratch_path, "qa", "evidence", "totals~the-journal-entry.png"]), "png bytes")
@@ -2595,7 +2595,7 @@ defmodule RailWeb.TaskLiveTest do
       send(view.pid, {:browser_frame, task.id, "some-base64"})
       _settled = render(view)
 
-      assert_push_event(view, "qa:frame", %{data: "some-base64"})
+      assert_push_event(view, "browser:frame", %{data: "some-base64"})
     end
 
     # A frame for a task nobody is reading, or while another pane is in front, is
@@ -2888,6 +2888,204 @@ defmodule RailWeb.TaskLiveTest do
 
       _settled = render(view)
       assert has_element?(view, "[data-qa='qa_finding_detail']", "The bill total renders as $1234.5")
+    end
+  end
+
+  describe "the demo stage" do
+    setup %{backend: backend, project: project, task: task} do
+      {:ok, role} =
+        Roles.create_role(system_scope(), project, %{
+          backend_id: backend.id,
+          stage: :demo,
+          name: "demo role",
+          model: "claude-3-7-sonnet",
+          system_prompt: "You are the demo agent."
+        })
+
+      {:ok, task} = Pipeline.update_task(task, %{stage: :demo, worktree_path: create_temp_git_repo()})
+
+      {:ok, demo_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: role.id,
+          status: :finished,
+          stage_outcome: :done,
+          conversation_id: "sess_demo_stage",
+          started_at: DateTime.utc_now()
+        })
+
+      demo_dir = Path.join(task.scratch_path, "demo")
+      File.mkdir_p!(demo_dir)
+
+      recorded = fn ->
+        File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
+
+        File.write!(Path.join(demo_dir, "TLV-1.json"), """
+        {"title": "Bills can be filtered by vendor",
+         "summary": "A vendor filter on the invoice index, narrowing the list as you type.",
+         "not_shown": "The Plaid callback, which needs a real bank."}
+        """)
+
+        File.write!(Path.join(demo_dir, "captions.jsonl"), """
+        {"at_ms": 0, "text": "Starting on the invoice index", "criterion": null}
+        {"at_ms": 5200, "text": "Filtering to Sysco", "criterion": "Invoices can be filtered by vendor"}
+        """)
+      end
+
+      %{task: task, role: role, demo_run: demo_run, demo_dir: demo_dir, recorded: recorded}
+    end
+
+    # A demo concludes nothing and moves nothing, so the panel is a player and an
+    # index into it: the task stops here.
+    test "plays the recording with its beats beside it", %{conn: conn, task: task, recorded: recorded} do
+      recorded.()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='demo_title']", "Bills can be filtered by vendor")
+      assert has_element?(view, "[data-qa='demo_summary']", "narrowing the list as you type")
+      assert has_element?(view, "#demo-video[src='/tasks/#{task.id}/demo/video']")
+      assert has_element?(view, "[data-qa='demo_not_shown']", "The Plaid callback")
+
+      assert has_element?(view, "#demo-beat-0", "Starting on the invoice index")
+      assert has_element?(view, "#demo-beat-5200", "Filtering to Sysco")
+      assert has_element?(view, "#demo-beat-5200 [data-qa='demo_beat_criterion']", "filtered by vendor")
+
+      # A beat is an index into the video: the stamp is what a reader matches
+      # against the player's own clock.
+      assert has_element?(view, "#demo-beat-5200", "0:05")
+    end
+
+    # The whole point of recording the application is seeing the application, so
+    # the caption has a bar of its own under the video rather than a box over it.
+    test "the caption sits under the video, never over it", %{conn: conn, task: task, recorded: recorded} do
+      recorded.()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      caption = view |> element("#demo-caption") |> render()
+
+      refute caption =~ "absolute"
+      refute caption =~ "inset"
+
+      # Empty until the player says which beat is up, and holding its height so
+      # the layout does not move when one lands.
+      assert caption =~ "min-h-"
+
+      # The beats reach the player as data rather than as a <track>, which would
+      # render its cues inside the video element.
+      assert has_element?(view, "#demo-video-frame[phx-hook='DemoCaptions']")
+      refute has_element?(view, "#demo-video track")
+    end
+
+    test "a task nothing recorded has nothing to send", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#demo-pending", "Nothing recorded yet")
+      assert has_element?(view, "[data-qa='demo_no_beats']")
+    end
+
+    test "a recording that could not be encoded says so rather than showing nothing", %{
+      conn: conn,
+      task: task,
+      demo_run: run
+    } do
+      {:ok, _failed} =
+        Pipeline.update_run(run, %{error: "The recording could not be encoded: ffmpeg is not installed."})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#demo-pending", "The last recording did not produce a video.")
+      assert has_element?(view, "#task-error-card", "ffmpeg is not installed")
+    end
+
+    # A recording in flight has no video yet, so what is shown is the browser it
+    # is being made from, with the beats landing as they are narrated.
+    test "a demo still recording shows the browser and what has been said", %{
+      conn: conn,
+      task: task,
+      demo_run: run,
+      demo_dir: demo_dir
+    } do
+      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+
+      File.write!(
+        Path.join(demo_dir, "captions.jsonl"),
+        ~s({"at_ms": 1200, "text": "Opening the invoice index", "criterion": null}\n)
+      )
+
+      _logged =
+        Pipeline.append_run_events(run.id, nil, [
+          "[browser] goto http://localhost:4000/invoices",
+          "[demo] say 0:01 Opening the invoice index",
+          "[browser] do \"filter to Sysco\""
+        ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#demo-running", "Recording")
+      assert has_element?(view, "#demo-screencast")
+      assert has_element?(view, "[data-qa='demo_screencast_waiting']")
+      assert has_element?(view, "[data-qa='demo_browser_url']", "localhost:4000/invoices")
+      assert has_element?(view, "[data-qa='demo_doing']", "do")
+      assert has_element?(view, "#demo-beats", "Narrated so far")
+      assert has_element?(view, "#demo-beat-1200", "Opening the invoice index")
+
+      refute has_element?(view, "#demo-video")
+    end
+
+    # A frame goes straight to the client: re-rendering the panel around a picture
+    # arriving several times a second would diff everything else to move one image.
+    test "frames from the browser reach the panel while it records", %{conn: conn, task: task, demo_run: run} do
+      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      send(view.pid, {:browser_frame, task.id, "some-base64"})
+
+      assert_push_event(view, "browser:frame", %{data: "some-base64"})
+    end
+
+    # The write-up is read off disk, so nothing else would bring it up to date.
+    test "a recording that landed underneath the reader is picked up", %{
+      conn: conn,
+      task: task,
+      demo_run: run,
+      recorded: recorded
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#demo-pending")
+
+      recorded.()
+      send(view.pid, {:os_process_finished, run, %{}})
+
+      _settled = render(view)
+      assert has_element?(view, "[data-qa='demo_title']", "Bills can be filtered by vendor")
+    end
+
+    # The panel is the stage's, and the conversation beside it is the page's.
+    test "the conversation sits beside the recording", %{conn: conn, task: task, recorded: recorded} do
+      recorded.()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#task-conversation-column")
+      assert has_element?(view, "[data-qa='conversation-tab']")
+    end
+
+    # The captions are on disk, so nothing tells the panel a beat landed. The run
+    # says so in its own log as it happens, and that is already carried here.
+    test "a beat narrated underneath the reader is picked up", %{conn: conn, task: task, demo_run: run, demo_dir: dir} do
+      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "[data-qa='demo_no_beats']")
+
+      File.write!(Path.join(dir, "captions.jsonl"), ~s({"at_ms": 800, "text": "Saving the bill"}\n))
+      _logged = Pipeline.append_run_events(run.id, nil, ["[demo] say 0:00 Saving the bill"])
+
+      _settled = render(view)
+      assert has_element?(view, "#demo-beat-800", "Saving the bill")
     end
   end
 end

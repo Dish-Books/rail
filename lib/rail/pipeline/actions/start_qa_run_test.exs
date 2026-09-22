@@ -94,7 +94,7 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
 
       # The browser and the checklist are Rail's, so the brief is where they are
       # named rather than the project's own prompt.
-      assert prompt =~ "`qa_goto`, `qa_do`, `qa_look`, `qa_shot` and `qa_problems`"
+      assert prompt =~ "`browser_goto`, `browser_do`, `browser_look`, `qa_shot` and `browser_problems`"
       assert prompt =~ "call `qa_plan` with every check this pass will run"
       assert prompt =~ "Call `qa_check` on each one the moment you have run it"
       assert prompt =~ "each under a `group` that says what kind of check it is"

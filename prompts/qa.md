@@ -43,7 +43,7 @@ mise exec -- mix run -e '
 '
 ```
 
-`qa_goto` the URL it prints. A successful login redirects off `/login`; a failed one sits on
+`browser_goto` the URL it prints. A successful login redirects off `/login`; a failed one sits on
 `/login/<token>`, so check where you landed rather than reading the page for the words "sign in" —
 the settings page it lands on has a "Sign in with" button and has caught this out before.
 

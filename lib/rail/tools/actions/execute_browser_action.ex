@@ -14,6 +14,11 @@ defmodule Rail.Tools.Actions.ExecuteBrowserAction do
   a click is listening for the event a person would produce. A click that only
   fires a handler is a check that proves less than it appears to.
 
+  A key press has no element at all: it goes wherever focus is. Committing a grid
+  cell, closing a menu or leaving a field are all a key and none of them is a
+  control that can be clicked, so a driver without them hunts for something to
+  click instead and films itself doing it.
+
   Two controls cannot take input that way and are set while the element is still
   held: a dropdown, whose list the operating system draws, and a date or time
   input, whose segments no keystroke reaches. Both dispatch the `input` and
@@ -91,6 +96,19 @@ defmodule Rail.Tools.Actions.ExecuteBrowserAction do
     {:ok, action["id"]}
   end
 
+  # A key goes to whatever holds focus, so there is no element to resolve and
+  # nothing to refuse: the page either was listening for it or was not. Enter is
+  # how a grid cell commits and a form submits, Escape is how a menu closes, and
+  # Tab is how a field is left - none of which any control on the page can be
+  # clicked to achieve.
+  def execute_browser_action(session, %{"kind" => "press", "key" => key} = action, _text) do
+    with {:ok, _down} <- key_event(session, down(key), key),
+         {:ok, _up} <- key_event(session, "keyUp", key),
+         :ok <- settle(session, action) do
+      {:ok, action["id"]}
+    end
+  end
+
   def execute_browser_action(_session, %{"kind" => "fill"}, text) when not is_binary(text) do
     {:error, :no_text_to_type}
   end
@@ -152,6 +170,32 @@ defmodule Rail.Tools.Actions.ExecuteBrowserAction do
   end
 
   defp type(_session, _action, _text), do: :ok
+
+  # Chrome names a key from the code and the text it carries, not from `key`: a
+  # press sent without them arrives as `Unidentified`, which no page is listening
+  # for. Enter and Tab produce text, so they are a `keyDown`; Escape produces none
+  # and is a `rawKeyDown`.
+  @keys %{
+    "Enter" => %{code: 13, text: "\r"},
+    "Tab" => %{code: 9, text: "\t"},
+    "Escape" => %{code: 27, text: nil}
+  }
+
+  defp down(key), do: if(@keys[key].text, do: "keyDown", else: "rawKeyDown")
+
+  defp key_event(session, type, key) do
+    %{code: code, text: text} = @keys[key]
+
+    params = %{
+      type: type,
+      key: key,
+      code: key,
+      windowsVirtualKeyCode: code,
+      nativeVirtualKeyCode: code
+    }
+
+    BrowserSession.call(session, "Input.dispatchKeyEvent", if(text, do: Map.put(params, :text, text), else: params))
+  end
 
   defp select_all(session) do
     BrowserSession.call(session, "Input.dispatchKeyEvent", %{

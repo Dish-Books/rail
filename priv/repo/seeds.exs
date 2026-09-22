@@ -127,30 +127,16 @@ default_roles = [
     position: 5
   },
   %{
-    stage: :qa_lead,
-    name: "QA Lead",
-    description: "Evaluates overall quality gates, reviews QA reports, and grants sign-off",
-    icon_name: "pi-shield-check",
-    backend_id: claude_backend.id,
-    model: "claude-3-7-sonnet",
-    reasoning_effort: :high,
-    system_prompt:
-      "You are the QA Lead. Review test evidence, verify acceptance criteria completeness, evaluate defect severity, and grant release sign-off.",
-    max_concurrent: 1,
-    position: 6
-  },
-  %{
     stage: :demo,
     name: "Demo Presenter",
-    description: "Generates narrated demonstration walkthroughs of completed features",
+    description: "Records narrated walkthroughs of the finished change in the running application",
     icon_name: "pi-video-camera",
     backend_id: claude_backend.id,
     model: "claude-3-7-sonnet",
     reasoning_effort: :high,
-    system_prompt:
-      "You are a Demo Presenter. Record comprehensive, narrated end-to-end walkthroughs showcasing feature functionality and verified user journeys.",
+    system_prompt: File.read!("prompts/demo.md"),
     max_concurrent: 1,
-    position: 7
+    position: 6
   }
 ]
 

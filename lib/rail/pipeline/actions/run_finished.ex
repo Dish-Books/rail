@@ -21,6 +21,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   """
 
   import Rail.Pipeline.Utils.ArchitectRunFinished
+  import Rail.Pipeline.Utils.DemoRunFinished
   import Rail.Pipeline.Utils.DesignRunFinished
   import Rail.Pipeline.Utils.DispatchMessage
   import Rail.Pipeline.Utils.EngineerRunFinished
@@ -130,13 +131,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
     %{failed | task: run.task, role: run.role}
   end
 
-  # A reviewer or a QA engineer that has already reported can be argued with, and
-  # what comes back from that argument is a new report, so both read their file
-  # again on every clean turn rather than once. QA needs it most: it drives a
-  # live application, so a turn that ends "the server was not up" is ordinary and
-  # the recovery turn is the one that writes the report. Latching is still once:
-  # `latch_done/1` leaves a run that is already done exactly as it was.
-  defp concluded?(%Run{role: %Role{stage: stage}} = run) when stage in [:review, :qa] do
+  defp concluded?(%Run{role: %Role{stage: stage}} = run) when stage in [:review, :qa, :demo] do
     run.exit_code == 0 and pending_questions(run.task_id) == []
   end
 
@@ -160,15 +155,13 @@ defmodule Rail.Pipeline.Actions.RunFinished do
       pending_questions(run.task_id) == []
   end
 
-  # Which stage settles is the run's own role, never the task's stage. Product,
-  # design, architect, engineer, review and QA have a finish of their own; a run at
-  # any other records itself and moves nothing.
   defp finish_action(%Run{role: %Role{stage: :product}}), do: &product_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :design}}), do: &design_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :architect}}), do: &architect_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :engineer}}), do: &engineer_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :review}}), do: &review_run_finished/2
   defp finish_action(%Run{role: %Role{stage: :qa}}), do: &qa_run_finished/2
+  defp finish_action(%Run{role: %Role{stage: :demo}}), do: &demo_run_finished/2
   defp finish_action(%Run{}), do: fn run, _opts -> run end
 
   # A finish that recorded an error did not conclude anything, so it stays open

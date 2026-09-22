@@ -22,6 +22,7 @@ defmodule RailWeb.TaskLive do
   alias Rail.Roles.Schemas.Role
   alias Rail.Users
   alias RailWeb.Live.ArchitectStage
+  alias RailWeb.Live.DemoStage
   alias RailWeb.Live.DesignStage
   alias RailWeb.Live.EngineerStage
   alias RailWeb.Live.ProductStage
@@ -256,6 +257,32 @@ defmodule RailWeb.TaskLive do
           </:sidebar>
         </.live_component>
 
+        <.live_component
+          :if={@task != nil and @pane == :demo}
+          module={DemoStage}
+          id={stage_component_id(@selected_role)}
+          task={@task}
+          run={@selected_run}
+          approvable={@approvable}
+          current_scope={@current_scope}
+        >
+          <:tabs><.task_tabs tabs={@tabs} /></:tabs>
+          <:actions>
+            <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
+          </:actions>
+          <:sidebar>
+            <.conversation_sidebar
+              task={@task}
+              roles_map={@roles_map}
+              blocked?={@blocked?}
+              pending_question={@pending_question}
+              pending_questions={@pending_questions}
+              answer_text={@answer_text}
+              conversation_run={@conversation_run}
+            />
+          </:sidebar>
+        </.live_component>
+
         <!-- The issue is the same view the issue page shows, and it is read on its
         own: there is no one role whose conversation belongs beside it. -->
         <.task_layout
@@ -374,7 +401,7 @@ defmodule RailWeb.TaskLive do
       send_update(RunConversation, id: "run-conversation", run_id: run_id, appended_events: events)
     end
 
-    socket = socket |> refresh_diff() |> refresh_checklist(events)
+    socket = socket |> refresh_diff() |> refresh_written(events)
 
     {:noreply, socket}
   end
@@ -384,8 +411,8 @@ defmodule RailWeb.TaskLive do
   # re-rendering the panel around it would be paying for a diff of everything
   # else to move one image.
   def handle_info({:browser_frame, task_id, data}, socket) do
-    if socket.assigns.task_id == task_id and socket.assigns.pane == :qa do
-      {:noreply, push_event(socket, "qa:frame", %{data: data})}
+    if socket.assigns.task_id == task_id and socket.assigns.pane in [:qa, :demo] do
+      {:noreply, push_event(socket, "browser:frame", %{data: data})}
     else
       {:noreply, socket}
     end
@@ -420,6 +447,9 @@ defmodule RailWeb.TaskLive do
 
       %{pane: :qa, task: task, selected_role: role} ->
         send_update(QaStage, id: stage_component_id(role), task: task)
+
+      %{pane: :demo, task: task, selected_role: role} ->
+        send_update(DemoStage, id: stage_component_id(role), task: task)
 
       _no_stage_on_disk ->
         :ok
@@ -544,9 +574,11 @@ defmodule RailWeb.TaskLive do
 
   defp refresh_diff(socket), do: socket
 
-  # The checklist is on disk, so nothing tells the panel it moved. The pass says
-  # so in its own log as it happens, and that is already being carried here.
-  defp refresh_checklist(%{assigns: %{pane: :qa, task: task, selected_role: role}} = socket, events) do
+  # What a running stage writes goes to disk, so nothing tells the panel it moved.
+  # The run says so in its own log as it happens, and that is already being
+  # carried here: QA's checklist fills a row at a time, and a demo's captions land
+  # as they are narrated.
+  defp refresh_written(%{assigns: %{pane: :qa, task: task, selected_role: role}} = socket, events) do
     if Enum.any?(events, &checklist_line?/1) do
       send_update(QaStage, id: stage_component_id(role), task: task)
     end
@@ -554,9 +586,19 @@ defmodule RailWeb.TaskLive do
     socket
   end
 
-  defp refresh_checklist(socket, _events), do: socket
+  defp refresh_written(%{assigns: %{pane: :demo, task: task, selected_role: role}} = socket, events) do
+    if Enum.any?(events, &beat_line?/1) do
+      send_update(DemoStage, id: stage_component_id(role), task: task)
+    end
+
+    socket
+  end
+
+  defp refresh_written(socket, _events), do: socket
 
   defp checklist_line?(%{line: line}), do: String.starts_with?(line, ["[qa] plan ", "[qa] check "])
+
+  defp beat_line?(%{line: line}), do: String.starts_with?(line, "[demo] say ")
 
   defp due?(nil, _now), do: true
   defp due?(last, now), do: now - last >= @diff_refresh_ms
@@ -658,7 +700,7 @@ defmodule RailWeb.TaskLive do
   end
 
   defp pane(nil), do: :issue
-  defp pane(%Role{stage: stage}) when stage in [:product, :design, :architect, :engineer, :review, :qa], do: stage
+  defp pane(%Role{stage: stage}) when stage in [:product, :design, :architect, :engineer, :review, :qa, :demo], do: stage
   defp pane(%Role{}), do: :none
 
   defp stage_component_id(%Role{id: id}), do: "stage-#{id}"

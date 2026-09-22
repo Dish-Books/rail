@@ -61,6 +61,8 @@ defmodule Rail.Tools.Actions.ExecuteBrowserActionTest do
     <label for="due">Due date</label><input id="due" type="date">
     <label for="at">Posted at</label><input id="at" type="datetime-local">
     <button type="button" id="save" onclick="document.title = 'Saved ' + amount.value">Save</button>
+    <label for="keys">Notes</label><input id="keys" value="" onkeydown="document.title = 'Key ' + event.key">
+    <button type="button" id="wide" style="width: 400px" onclick="document.title = 'Wide'">Wide button</button>
     <div style="height: 4000px"></div>
     <p id="bottom">The end</p>
     """)
@@ -248,6 +250,72 @@ defmodule Rail.Tools.Actions.ExecuteBrowserActionTest do
       })
 
     assert {:error, {:refused, "covered", ~s(div "Saving")}} = Tools.execute_browser_action(session, save)
+  end
+
+  # Committing a grid cell, closing a menu and leaving a field are all a key, and
+  # none of them is a control that can be clicked. A driver without keys hunts for
+  # something to click instead.
+  test "a key reaches whatever holds focus", %{session: session, page: page} do
+    keys = Enum.find(page["actions"], &(&1["label"] == "Notes" and &1["kind"] == "fill"))
+    enter = Enum.find(page["actions"], &(&1["id"] == "press_enter"))
+
+    assert %{"kind" => "press", "key" => "Enter"} = enter
+
+    {:ok, _focused} = Tools.execute_browser_action(session, keys, "1234.56")
+
+    assert {:ok, "press_enter"} = Tools.execute_browser_action(session, enter)
+
+    assert {:ok, %{"result" => %{"value" => "Key Enter"}}} =
+             BrowserSession.call(session, "Runtime.evaluate", %{expression: "document.title", returnByValue: true})
+  end
+
+  test "escape and tab are offered too", %{page: page} do
+    assert ["Escape", "Tab"] =
+             page["actions"]
+             |> Enum.filter(&(&1["kind"] == "press" and &1["key"] != "Enter"))
+             |> Enum.map(& &1["key"])
+             |> Enum.sort()
+  end
+
+  # A sticky bar across the middle of a wide control does not make it unclickable:
+  # it is still reachable at either end, and refusing it sends whoever is driving
+  # looking for another way to do something that was always possible.
+  test "a control covered only in the middle is clicked where it is not", %{session: session, page: page} do
+    wide = Enum.find(page["actions"], &(&1["label"] == "Wide button"))
+
+    {:ok, _covered} =
+      BrowserSession.call(session, "Runtime.evaluate", %{
+        expression: """
+        const bar = document.createElement('div');
+        const r = document.getElementById('wide').getBoundingClientRect();
+        bar.textContent = 'Bill total $0.00';
+        bar.setAttribute('style',
+          `position:fixed;left:${r.x + 60}px;top:${r.y - 4}px;width:120px;height:${r.height + 8}px;background:white`);
+        document.body.appendChild(bar);
+        """,
+        returnByValue: true
+      })
+
+    assert {:ok, _executed} = Tools.execute_browser_action(session, wide)
+
+    assert {:ok, %{"result" => %{"value" => "Wide"}}} =
+             BrowserSession.call(session, "Runtime.evaluate", %{expression: "document.title", returnByValue: true})
+  end
+
+  # Between reading the page and acting on it the page can move - a banner loads,
+  # a toast pushes everything down, the reader scrolls. An element carried out of
+  # view that way is one the page will happily show again if asked, rather than
+  # one to refuse as off screen.
+  test "an element the page scrolled away is scrolled back to", %{session: session, page: page} do
+    save = Enum.find(page["actions"], &(&1["label"] == "Save"))
+
+    {:ok, _moved} =
+      BrowserSession.call(session, "Runtime.evaluate", %{expression: "scrollTo(0, 2000)", returnByValue: true})
+
+    assert {:ok, _executed} = Tools.execute_browser_action(session, save)
+
+    assert {:ok, %{"result" => %{"value" => "Saved 99"}}} =
+             BrowserSession.call(session, "Runtime.evaluate", %{expression: "document.title", returnByValue: true})
   end
 
   # A form abandoned by following a link is only recoverable by going back, so

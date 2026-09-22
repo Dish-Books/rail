@@ -8,6 +8,7 @@ defmodule RailWeb.Helpers do
 
   alias RailWeb.Utils
 
+  defdelegate browser_driving(run, task), to: Utils.BrowserDriving
   defdelegate format_age(seconds), to: Utils.FormatAge
   defdelegate format_duration(seconds), to: Utils.FormatDuration
   defdelegate format_run_status(status), to: Utils.FormatRunStatus

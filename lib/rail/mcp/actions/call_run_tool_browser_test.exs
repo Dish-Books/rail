@@ -42,7 +42,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
       })
 
     roles =
-      Map.new([:qa, :review], fn stage ->
+      Map.new([:qa, :demo, :review], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
             backend_id: backend.id,
@@ -141,6 +141,8 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     # row it would settle is rolled back with the test anyway. What must not
     # survive is the Chrome.
     on_exit(fn ->
+      Tools.stop_browser_recording(task)
+
       case Tools.get_browser_session(task) do
         pid when is_pid(pid) -> GenServer.stop(pid, :normal, 10_000)
         nil -> :ok
@@ -156,7 +158,71 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   test "another stage cannot call one by knowing its name", %{context: context, roles: roles} do
     reviewing = %{context | role: roles[:review]}
 
-    assert {:error, :unknown_tool} = Mcp.call_run_tool(reviewing, "qa_goto", %{"url" => "about:blank"})
+    assert {:error, :unknown_tool} = Mcp.call_run_tool(reviewing, "browser_goto", %{"url" => "about:blank"})
+  end
+
+  # Rehearsing is driving the application without filming it, which is the whole
+  # of what `demo_start` buys: the camera is off until the agent says otherwise.
+  test "a demo run is not filmed until it starts a take", %{context: context, task: task, roles: roles, page: page} do
+    filming = %{context | role: roles[:demo]}
+
+    assert {:ok, _rehearsed} = Mcp.call_run_tool(filming, "browser_goto", %{"url" => page})
+    refute Tools.get_browser_recording(task)
+
+    assert {:ok, %{"content" => [%{"text" => rolling}]}} = Mcp.call_run_tool(filming, "demo_start", %{})
+    assert rolling =~ "Recording."
+
+    assert is_pid(Tools.get_browser_recording(task))
+  end
+
+  # A walkthrough that went wrong costs a retake rather than a bad video, so the
+  # beats of the take being replaced go with its frames.
+  test "another take discards the one before it", %{context: context, task: task, roles: roles} do
+    filming = %{context | role: roles[:demo]}
+    captions = Path.join([task.scratch_path, "demo", "captions.jsonl"])
+
+    {:ok, _rolling} = Mcp.call_run_tool(filming, "demo_start", %{})
+    {:ok, _said} = Mcp.call_run_tool(filming, "demo_say", %{"text" => "A take that went wrong"})
+    assert File.exists?(captions)
+
+    {:ok, _again} = Mcp.call_run_tool(filming, "demo_start", %{})
+
+    refute File.exists?(captions)
+  end
+
+  test "a caption is filed under the demo and says when it landed", %{context: context, task: task, roles: roles} do
+    filming = %{context | role: roles[:demo]}
+
+    {:ok, _rolling} = Mcp.call_run_tool(filming, "demo_start", %{})
+
+    assert {:ok, %{"content" => [%{"text" => said}]}} =
+             Mcp.call_run_tool(filming, "demo_say", %{"text" => "Entering a bill for Sysco"})
+
+    assert said =~ "Said at 0:00"
+
+    assert [%{"text" => "Entering a bill for Sysco"}] =
+             [task.scratch_path, "demo", "captions.jsonl"]
+             |> Path.join()
+             |> File.read!()
+             |> String.split("\n", trim: true)
+             |> Enum.map(&Jason.decode!/1)
+  end
+
+  # What a caption said and when it landed is what a person reading the log back
+  # wants; the receipt the agent read is not.
+  test "the log carries the caption and the moment it landed", %{context: context, roles: roles, run: run} do
+    filming = %{context | role: roles[:demo]}
+
+    {:ok, _rolling} = Mcp.call_run_tool(filming, "demo_start", %{})
+    {:ok, _said} = Mcp.call_run_tool(filming, "demo_say", %{"text" => "Entering a bill for Sysco"})
+
+    # A caption with no words is still a call somebody has to see having happened.
+    {:ok, _nothing} = Mcp.call_run_tool(filming, "demo_say", %{})
+
+    log = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
+
+    assert log =~ ~s([demo] 0:00 say "Entering a bill for Sysco")
+    assert log =~ "[demo] say"
   end
 
   # The checklist is written before anything is opened, so neither of these costs
@@ -221,16 +287,16 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   end
 
   test "opening a page starts the browser without being asked", %{context: context, task: task, page: page} do
-    assert {:ok, %{"content" => [%{"text" => text}]}} = Mcp.call_run_tool(context, "qa_goto", %{"url" => page})
+    assert {:ok, %{"content" => [%{"text" => text}]}} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 
     assert text =~ "New bill"
     assert Tools.start_browser_session(task) == {:ok, Tools.get_browser_session(task)}
   end
 
   test "reading the page names what can be acted on", %{context: context, page: page} do
-    {:ok, _opened} = Mcp.call_run_tool(context, "qa_goto", %{"url" => page})
+    {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 
-    assert {:ok, %{"content" => [%{"text" => text}]}} = Mcp.call_run_tool(context, "qa_look", %{})
+    assert {:ok, %{"content" => [%{"text" => text}]}} = Mcp.call_run_tool(context, "browser_look", %{})
 
     assert text =~ "New bill"
     assert text =~ ~s(textbox "Amount")
@@ -239,7 +305,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
 
   # Rail names the file, so nothing arriving from a model becomes a path.
   test "a screenshot is described rather than located", %{context: context, task: task, page: page} do
-    {:ok, _opened} = Mcp.call_run_tool(context, "qa_goto", %{"url" => page})
+    {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 
     assert {:ok, %{"content" => [%{"text" => text}]}} =
              Mcp.call_run_tool(context, "qa_shot", %{"name" => "The bill total as rendered"})
@@ -252,37 +318,37 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   end
 
   test "the browser's own complaints are drained, not accumulated", %{context: context, page: page} do
-    {:ok, _opened} = Mcp.call_run_tool(context, "qa_goto", %{"url" => page})
+    {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 
     {:ok, _clicked} =
-      Mcp.call_run_tool(context, "qa_do", %{"intent" => "click Save"})
+      Mcp.call_run_tool(context, "browser_do", %{"intent" => "click Save"})
 
     eventually(fn ->
-      assert {:ok, %{"content" => [%{"text" => text}]}} = Mcp.call_run_tool(context, "qa_problems", %{})
+      assert {:ok, %{"content" => [%{"text" => text}]}} = Mcp.call_run_tool(context, "browser_problems", %{})
       assert text =~ "total is unrounded"
     end)
 
     assert {:ok, %{"content" => [%{"text" => "Nothing since the last check."}]}} =
-             Mcp.call_run_tool(context, "qa_problems", %{})
+             Mcp.call_run_tool(context, "browser_problems", %{})
   end
 
   # What is logged is what Rail executed, not what the agent asked for, so a step
   # that went to the wrong element is visible while the pass is still running.
   test "every browser action reaches the run's log as it happens", %{context: context, run: run, page: page} do
-    {:ok, _opened} = Mcp.call_run_tool(context, "qa_goto", %{"url" => page})
-    {:ok, _clicked} = Mcp.call_run_tool(context, "qa_do", %{"intent" => "click Save"})
+    {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
+    {:ok, _clicked} = Mcp.call_run_tool(context, "browser_do", %{"intent" => "click Save"})
 
     log = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
 
-    assert log =~ "[qa] goto file://"
-    assert log =~ ~s([qa] do "click Save")
-    assert log =~ ~s([qa]   CLICK "Save")
+    assert log =~ "[browser] goto file://"
+    assert log =~ ~s([browser] do "click Save")
+    assert log =~ ~s([browser]   CLICK "Save")
   end
 
   # What comes back is a receipt rather than a page, and each way an instruction
   # can end has to read as itself or the agent's next move is a guess.
   test "an instruction that cannot be carried out says so rather than failing", %{context: context, page: page} do
-    {:ok, _opened} = Mcp.call_run_tool(context, "qa_goto", %{"url" => page})
+    {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 
     Req.Test.stub(Rail.TypeSafe, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
@@ -299,7 +365,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     end)
 
     assert {:ok, %{"content" => [%{"text" => text}]}} =
-             Mcp.call_run_tool(context, "qa_do", %{"intent" => "delete the invoice"})
+             Mcp.call_run_tool(context, "browser_do", %{"intent" => "delete the invoice"})
 
     assert text =~ "Did nothing."
     assert text =~ "Nothing on this page can carry that out."
@@ -308,20 +374,20 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   # The one thing a decision cannot supply. Rather than inventing a value, the
   # instruction stops and hands the question back.
   test "an instruction that reaches a field asks for the value", %{context: context, page: page} do
-    {:ok, _opened} = Mcp.call_run_tool(context, "qa_goto", %{"url" => page})
+    {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 
     stub(Tools, :drive_browser, fn _session, _intent, _opts ->
       {:ok, %{outcome: {:needs_text, "Amount"}, url: "file:///bill.html", title: "New bill", executed: []}}
     end)
 
     assert {:ok, %{"content" => [%{"text" => asked}]}} =
-             Mcp.call_run_tool(context, "qa_do", %{"intent" => "fill in the amount"})
+             Mcp.call_run_tool(context, "browser_do", %{"intent" => "fill in the amount"})
 
     assert asked =~ ~s(Stopped at "Amount", which needs a value.)
   end
 
   test "an instruction that never finishes says how far it got", %{context: context, page: page} do
-    {:ok, _opened} = Mcp.call_run_tool(context, "qa_goto", %{"url" => page})
+    {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 
     stub(Tools, :drive_browser, fn _session, _intent, _opts ->
       {:ok,
@@ -334,7 +400,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     end)
 
     assert {:ok, %{"content" => [%{"text" => text}]}} =
-             Mcp.call_run_tool(context, "qa_do", %{"intent" => "fill in every field"})
+             Mcp.call_run_tool(context, "browser_do", %{"intent" => "fill in every field"})
 
     assert text =~ ~s(TYPE_TEXT "Amount" ← "12")
     assert text =~ "Stopped after too many actions"
@@ -343,7 +409,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   # The value supplied is written down as well as typed, so a check that entered
   # the wrong thing is visible in the log rather than only in the outcome.
   test "the value a step typed reaches the log", %{context: context, run: run, page: page} do
-    {:ok, _opened} = Mcp.call_run_tool(context, "qa_goto", %{"url" => page})
+    {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 
     stub(Tools, :drive_browser, fn _session, _intent, opts ->
       opts[:on_action].(%{operation: "TYPE_TEXT", action: "Amount", text: "1234.50"})
@@ -351,20 +417,20 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
       {:ok, %{outcome: :done, url: "file:///bill.html", title: "New bill", executed: []}}
     end)
 
-    {:ok, _typed} = Mcp.call_run_tool(context, "qa_do", %{"intent" => "fill in the amount", "text" => "1234.50"})
+    {:ok, _typed} = Mcp.call_run_tool(context, "browser_do", %{"intent" => "fill in the amount", "text" => "1234.50"})
 
     log = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
 
-    assert log =~ ~s([qa] do "fill in the amount" ← "1234.50")
-    assert log =~ ~s([qa]   TYPE_TEXT "Amount" ← "1234.50")
+    assert log =~ ~s([browser] do "fill in the amount" ← "1234.50")
+    assert log =~ ~s([browser]   TYPE_TEXT "Amount" ← "1234.50")
   end
 
   # Reading the page is how a check asserts a value, so what a field is holding
   # is part of what comes back rather than something to photograph.
   test "what a field is holding is read off the page", %{context: context, page: page} do
-    {:ok, _opened} = Mcp.call_run_tool(context, "qa_goto", %{"url" => page})
+    {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 
-    assert {:ok, %{"content" => [%{"text" => text}]}} = Mcp.call_run_tool(context, "qa_look", %{})
+    assert {:ok, %{"content" => [%{"text" => text}]}} = Mcp.call_run_tool(context, "browser_look", %{})
 
     assert text =~ ~s(textbox "Amount" holding "1234.50")
   end
@@ -372,10 +438,10 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   # A request that failed says which one, because "something 404'd" is not a
   # finding anybody can act on.
   test "a problem that happened somewhere says where", %{context: context, page: page} do
-    {:ok, _opened} = Mcp.call_run_tool(context, "qa_goto", %{"url" => page})
+    {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 
     eventually(fn ->
-      assert {:ok, %{"content" => [%{"text" => text}]}} = Mcp.call_run_tool(context, "qa_problems", %{})
+      assert {:ok, %{"content" => [%{"text" => text}]}} = Mcp.call_run_tool(context, "browser_problems", %{})
       assert text =~ "nowhere-at-all.png" or text =~ "(Image)"
     end)
   end
@@ -393,12 +459,12 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
 
   test "a call with no task behind it is refused", %{roles: roles} do
     assert {:error, :no_task} =
-             Mcp.call_run_tool(%RunContext{os_process: %OsProcess{}, role: roles[:qa], user: nil}, "qa_look", %{})
+             Mcp.call_run_tool(%RunContext{os_process: %OsProcess{}, role: roles[:qa], user: nil}, "browser_look", %{})
 
     assert {:error, :no_task} =
              Mcp.call_run_tool(
                %RunContext{os_process: %OsProcess{task_id: "tsk_gone"}, role: roles[:qa], user: nil},
-               "qa_look",
+               "browser_look",
                %{}
              )
   end
@@ -412,18 +478,18 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   # Whatever went wrong down there reaches the agent as an error rather than as
   # a sentence, because it is not something a different instruction would fix.
   test "a browser that will not answer is an error, not advice", %{context: context, page: page} do
-    {:ok, _opened} = Mcp.call_run_tool(context, "qa_goto", %{"url" => page})
+    {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 
     stub(Tools, :drive_browser, fn _session, _intent, _opts -> {:error, :no_text_to_type} end)
 
-    assert {:error, :no_text_to_type} = Mcp.call_run_tool(context, "qa_do", %{"intent" => "click Save"})
+    assert {:error, :no_text_to_type} = Mcp.call_run_tool(context, "browser_do", %{"intent" => "click Save"})
   end
 
   test "stopping closes the browser", %{context: context, task: task, page: page} do
-    {:ok, _opened} = Mcp.call_run_tool(context, "qa_goto", %{"url" => page})
+    {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 
     assert {:ok, %{"content" => [%{"text" => "The browser is closed."}]}} =
-             Mcp.call_run_tool(context, "qa_stop", %{})
+             Mcp.call_run_tool(context, "browser_stop", %{})
 
     assert Tools.get_browser_session(task) == nil
   end

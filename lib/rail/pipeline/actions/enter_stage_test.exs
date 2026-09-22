@@ -37,7 +37,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
       })
 
     roles =
-      Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
+      Map.new([:product, :design, :architect, :engineer, :review, :qa, :demo, :debugger], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
             backend_id: backend.id,
@@ -108,17 +108,17 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert {:ok, %Run{role_id: ^review_role_id, status: :running}} = Pipeline.enter_stage(task, :review)
   end
 
-  # Demo has a role bound and no brief of its own, which is every stage Rail has
-  # not built yet: the role's own instructions are the whole of what it gets.
+  # Debugger has a role bound and no brief of its own, which is every stage Rail
+  # has not built yet: the role's own instructions are the whole of what it gets.
   test "a stage with no brief of its own is spawned with the plain prompt", %{task: task, roles: roles} do
-    %{id: demo_role_id} = roles[:demo]
+    %{id: debugger_role_id} = roles[:debugger]
 
     expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
       refute prompt =~ task.scratch_path
       {:ok, %OsProcess{run: spawned, task: task}}
     end)
 
-    assert {:ok, %Run{role_id: ^demo_role_id, status: :running}} = Pipeline.enter_stage(task, :demo)
+    assert {:ok, %Run{role_id: ^debugger_role_id, status: :running}} = Pipeline.enter_stage(task, :debugger)
   end
 
   test "QA is briefed on the report it writes, like every stage Rail has built", %{task: task, roles: roles} do

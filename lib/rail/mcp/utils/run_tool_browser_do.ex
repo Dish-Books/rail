@@ -1,4 +1,4 @@
-defmodule Rail.Mcp.Utils.RunToolQaDo do
+defmodule Rail.Mcp.Utils.RunToolBrowserDo do
   @moduledoc """
   Carries out one instruction on the current page and says what was executed.
 
@@ -19,7 +19,7 @@ defmodule Rail.Mcp.Utils.RunToolQaDo do
   Carries out `arguments["intent"]` in `task`'s browser, typing
   `arguments["values"]`, or `arguments["text"]` for an outcome that types once.
   """
-  def run_tool_qa_do(%Task{} = task, %{"intent" => intent} = arguments, opts) do
+  def run_tool_browser_do(%Task{} = task, %{"intent" => intent} = arguments, opts) do
     with {:ok, session} <- Tools.start_browser_session(task, opts),
          driving = Keyword.merge(opts, text: arguments["text"], values: arguments["values"]),
          {:ok, receipt} <- Tools.drive_browser(session, intent, driving) do
@@ -54,6 +54,14 @@ defmodule Rail.Mcp.Utils.RunToolQaDo do
     #{done(receipt)}
     Stopped: the last steps left the page exactly as they found it, so they were not doing what you asked.
     Read the page and name the element another way. #{receipt.url} - #{receipt.title}
+    """
+  end
+
+  defp receipt_text(%{outcome: :going_in_circles} = receipt) do
+    """
+    #{done(receipt)}
+    Stopped: those steps kept bringing the page back to where it had already been - a control set one way and then back again.
+    Whatever it keeps changing is not what the instruction is about: read the page and say what you want more narrowly. #{receipt.url} - #{receipt.title}
     """
   end
 

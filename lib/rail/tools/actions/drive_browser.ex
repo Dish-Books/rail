@@ -14,7 +14,15 @@ defmodule Rail.Tools.Actions.DriveBrowser do
   values come from the caller rather than from a model - `:values` keyed by the
   field's label, or `:text` for an outcome that types into one field - so reaching
   a field with nothing supplied returns what was done so far and asks for it. One
-  extra turn, only when a form had a field the caller did not anticipate.
+  extra turn, only when a form had a field the caller did not anticipate. A
+  `:text` is for one field and is used up once it is typed: the same value typed
+  into the next field along is how a price ends up in the notes.
+
+  A page that keeps moving can still be going nowhere. A dropdown set one way and
+  then back again changes the page on every step, and every step names a
+  different option, so nothing about any single step looks stuck. What gives it
+  away is the page coming back to a state it has already been in, and the third
+  time it does is where this stops.
 
   What comes back is a receipt rather than a page: where it ended up, what was
   actually executed, and how it finished. The page itself is only read when
@@ -26,6 +34,10 @@ defmodule Rail.Tools.Actions.DriveBrowser do
   alias Rail.Tools
 
   @max_steps 30
+
+  # One round trip is a menu opened and closed again. A third visit to the same
+  # state is going in circles.
+  @max_visits 3
 
   @doc """
   Carries out `intent` in `session` and returns what it did.
@@ -39,7 +51,7 @@ defmodule Rail.Tools.Actions.DriveBrowser do
     pass = %{intent: intent, opts: opts}
 
     with {:ok, page} <- Tools.observe_browser(session) do
-      step(session, pass, page, [], %{steps: 0, still: 0, refused: nil})
+      step(session, pass, page, [], %{steps: 0, still: 0, refused: nil, seen: %{page["marker"] => 1}, typed: nil})
     end
   end
 
@@ -59,6 +71,12 @@ defmodule Rail.Tools.Actions.DriveBrowser do
   end
 
   defp step(session, pass, page, history, budget) do
+    if Map.get(budget.seen, page["marker"], 0) >= @max_visits,
+      do: {:ok, receipt(page, history, :going_in_circles)},
+      else: decide(session, pass, page, history, budget)
+  end
+
+  defp decide(session, pass, page, history, budget) do
     case Tools.decide_browser_action(page, pass.intent, Enum.map(history, & &1.action), pass.opts) do
       {:ok, %{operation: "DONE"}} -> {:ok, receipt(page, history, :done)}
       {:ok, %{operation: "BLOCKED"}} -> {:ok, receipt(page, history, :blocked)}
@@ -83,12 +101,29 @@ defmodule Rail.Tools.Actions.DriveBrowser do
     end
   end
 
+  # A single `:text` is for one field. Chosen again for the field it already went
+  # into, the typing is done; chosen for a different field, the caller never said
+  # what goes there. A caller with `:values` named every field, so each is looked
+  # up as usual however many have been typed.
   defp type(session, pass, page, history, budget, decision) do
-    case supplied(pass.opts, decision.action["label"]) do
-      text when is_binary(text) -> perform(session, pass, page, history, budget, decision, text)
-      nil -> {:ok, receipt(page, history, {:needs_text, decision.action["label"]})}
+    label = decision.action["label"]
+
+    cond do
+      single_value?(pass.opts) and budget.typed == label ->
+        {:ok, receipt(page, history, :done)}
+
+      single_value?(pass.opts) and is_binary(budget.typed) ->
+        {:ok, receipt(page, history, {:needs_text, label})}
+
+      true ->
+        case supplied(pass.opts, label) do
+          text when is_binary(text) -> perform(session, pass, page, history, budget, decision, text)
+          nil -> {:ok, receipt(page, history, {:needs_text, label})}
+        end
     end
   end
+
+  defp single_value?(opts), do: (opts[:values] || %{}) == %{} and is_binary(opts[:text])
 
   defp again?([%{operation: operation, action: label} | _rest], %{operation: operation} = decision) do
     decision.action["label"] == label
@@ -125,7 +160,7 @@ defmodule Rail.Tools.Actions.DriveBrowser do
       {:ok, _executed} ->
         executed = executed(decision, text)
         announce(executed, pass.opts)
-        advance(session, pass, page, [executed | history], %{budget | refused: nil})
+        advance(session, pass, page, [executed | history], %{budget | refused: nil, typed: typed(decision, budget)})
 
       # The page would not take it. Reading it again and deciding afresh is the
       # whole of the recovery, and the reason is said out loud: a control that is
@@ -160,12 +195,17 @@ defmodule Rail.Tools.Actions.DriveBrowser do
   end
 
   # The snapshot's marker is what the page means rather than how it is drawn, so
-  # an animation is not movement and a value that changed is.
+  # an animation is not movement and a value that changed is. A page that moved
+  # is counted into the state it moved to, which is how coming back to one is
+  # noticed; one that did not move has not visited anywhere.
   defp moved(page, fresh, budget) do
     if fresh["marker"] == page["marker"],
       do: %{budget | still: budget.still + 1},
-      else: %{budget | still: 0}
+      else: %{budget | still: 0, seen: Map.update(budget.seen, fresh["marker"], 1, &(&1 + 1))}
   end
+
+  defp typed(%{operation: "TYPE_TEXT", action: %{"label" => label}}, _budget), do: label
+  defp typed(_decision, %{typed: typed}), do: typed
 
   defp executed(decision, text) do
     %{

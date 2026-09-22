@@ -14,7 +14,6 @@ defmodule Rail.Roles.Schemas.Role do
     :engineer,
     :review,
     :qa,
-    :qa_lead,
     :demo,
     :debugger
   ]
