@@ -49,6 +49,10 @@ defmodule Rail.DataCase do
   spawning `claude` is this: the spawn boundary answers with a pretend pid. A
   test that is about spawning overrides it with its own `expect/3`, or tags
   itself `@moduletag :real_spawn` to run a real child.
+
+  A pretend pid has nothing to follow, so no Follower is started for it either.
+  One would outlive the test with no sandbox to read from, and enough of those
+  crashing takes `Rail.Tools.FollowerSupervisor` down under every other test.
   """
   def stub_agent_spawn(%{real_spawn: true}), do: :ok
 
@@ -56,6 +60,8 @@ defmodule Rail.DataCase do
     Mimic.stub(Rail.Tools, :spawn_os_process, fn _executable, _args, _opts ->
       {:ok, nil, System.unique_integer([:positive])}
     end)
+
+    Mimic.stub(Rail.Tools.FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
 
     Mimic.stub(Rail.Tools, :os_process_alive?, fn _os_pid -> false end)
     Mimic.stub(Rail.Tools, :terminate_os_process, fn _os_pid, _opts -> :ok end)
