@@ -68,7 +68,8 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
       Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
-        status: :running,
+        # What `run_finished/3` hands over: the process has exited and the run is settled.
+        status: :finished,
         conversation_id: "sess_review_finished",
         started_at: DateTime.utc_now()
       })
@@ -95,11 +96,104 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
              Pipeline.list_review_findings(task)
   end
 
-  test "a run that found nothing leaves a task with nothing on it", %{task: task, run: run, report_path: path} do
+  test "a run that found nothing goes on to QA by itself", %{task: task, run: run, report_path: path} do
     File.write!(path, ~s({"findings": []}))
 
-    assert %Run{error: nil} = review_run_finished(run, [])
+    assert %Run{error: nil, stage_outcome: :done} = review_run_finished(run, [])
+    assert %Task{stage: :qa} = Repo.reload!(task)
     assert Pipeline.list_review_findings(task) == []
+  end
+
+  test "a re-review that finds everything fixed goes on to QA", %{task: task, run: run, report_path: path} do
+    {:ok, [finding]} =
+      Pipeline.sync_review_findings(task, [
+        %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :open}
+      ])
+
+    {:ok, _to_fix} = Pipeline.decide_review_finding(finding, :fix)
+
+    File.write!(path, """
+    {"findings": [
+      {"key": "unhandled-nil", "title": "Nil is not handled", "severity": "major", "recommendation": "fix",
+       "status": "fixed"}
+    ]}
+    """)
+
+    assert %Run{error: nil, stage_outcome: :done} = review_run_finished(run, [])
+    assert %Task{stage: :qa} = Repo.reload!(task)
+  end
+
+  # A finding the human already dismissed is closed however the reviewer restates
+  # it, so it does not hold the change at review.
+  test "a re-review that leaves only what the human dismissed goes on to QA", %{
+    task: task,
+    run: run,
+    report_path: path
+  } do
+    {:ok, [finding]} =
+      Pipeline.sync_review_findings(task, [
+        %{key: "long-name", title: "The name is long", severity: :nit, recommendation: :skip, status: :open}
+      ])
+
+    {:ok, _dismissed} = Pipeline.decide_review_finding(finding, :skip)
+
+    File.write!(path, """
+    {"findings": [
+      {"key": "long-name", "title": "The name is long", "severity": "nit", "recommendation": "skip",
+       "status": "not_fixed"}
+    ]}
+    """)
+
+    assert %Run{error: nil} = review_run_finished(run, [])
+    assert %Task{stage: :qa} = Repo.reload!(task)
+  end
+
+  test "a re-review that finds a fix still missing stays at review", %{task: task, run: run, report_path: path} do
+    {:ok, [finding]} =
+      Pipeline.sync_review_findings(task, [
+        %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :open}
+      ])
+
+    {:ok, _to_fix} = Pipeline.decide_review_finding(finding, :fix)
+
+    File.write!(path, """
+    {"findings": [
+      {"key": "unhandled-nil", "title": "Nil is not handled", "severity": "major", "recommendation": "fix",
+       "status": "not_fixed"}
+    ]}
+    """)
+
+    assert %Run{error: nil, stage_outcome: :in_progress} = review_run_finished(run, [])
+    assert %Task{stage: :review} = Repo.reload!(task)
+  end
+
+  # The reviewer recommending a finding be let stand is still a finding: whether
+  # to live with it is the human's call, not the reviewer's.
+  test "a run whose only finding it would skip still waits on the human", %{
+    task: task,
+    run: run,
+    report_path: path
+  } do
+    File.write!(path, """
+    {"findings": [
+      {"key": "long-name", "title": "The name is long", "severity": "nit", "recommendation": "skip"}
+    ]}
+    """)
+
+    assert %Run{error: nil} = review_run_finished(run, [])
+    assert %Task{stage: :review} = Repo.reload!(task)
+  end
+
+  test "a message queued for the reviewer holds a clean review at review", %{
+    task: task,
+    run: run,
+    report_path: path
+  } do
+    File.write!(path, ~s({"findings": []}))
+    {:ok, queued} = Pipeline.update_run(run, %{pending_chat: "Look at the migration too."})
+
+    assert %Run{error: nil} = review_run_finished(%{queued | task: run.task, role: run.role}, [])
+    assert %Task{stage: :review} = Repo.reload!(task)
   end
 
   test "a run that exited without a report records that rather than reading as clean", %{

@@ -68,7 +68,8 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
       Pipeline.create_run(%{
         task_id: task.id,
         role_id: role.id,
-        status: :running,
+        # What `run_finished/3` hands over: the process has exited and the run is settled.
+        status: :finished,
         conversation_id: "sess_qa_finished",
         started_at: DateTime.utc_now()
       })
@@ -96,11 +97,72 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
              Pipeline.list_qa_findings(task)
   end
 
-  test "a run that found nothing leaves a task with nothing on it", %{task: task, run: run, report_path: path} do
+  test "a run that found nothing goes on to demo by itself", %{task: task, run: run, report_path: path} do
     File.write!(path, ~s({"verdict": "pass", "findings": []}))
 
-    assert %Run{error: nil} = qa_run_finished(run, [])
+    assert %Run{error: nil, stage_outcome: :done} = qa_run_finished(run, [])
+    assert %Task{stage: :demo} = Repo.reload!(task)
     assert Pipeline.list_qa_findings(task) == []
+  end
+
+  test "a re-test that finds everything fixed goes on to demo", %{task: task, run: run, report_path: path} do
+    {:ok, [finding]} =
+      Pipeline.sync_qa_findings(task, [
+        %{
+          key: "total-unrounded",
+          title: "The total renders as $1234.5",
+          check: "A bill's total reads as money",
+          severity: :major,
+          recommendation: :fix,
+          status: :open
+        }
+      ])
+
+    {:ok, _to_fix} = Pipeline.decide_qa_finding(finding, :fix)
+
+    File.write!(path, """
+    {"verdict": "pass", "findings": [
+      {"key": "total-unrounded", "title": "The total renders as $1234.5",
+       "check": "A bill's total reads as money", "severity": "major", "recommendation": "fix", "status": "fixed"}
+    ]}
+    """)
+
+    assert %Run{error: nil, stage_outcome: :done} = qa_run_finished(run, [])
+    assert %Task{stage: :demo} = Repo.reload!(task)
+  end
+
+  test "a re-test that finds a fix still missing stays at QA", %{task: task, run: run, report_path: path} do
+    {:ok, [finding]} =
+      Pipeline.sync_qa_findings(task, [
+        %{
+          key: "total-unrounded",
+          title: "The total renders as $1234.5",
+          check: "A bill's total reads as money",
+          severity: :major,
+          recommendation: :fix,
+          status: :open
+        }
+      ])
+
+    {:ok, _to_fix} = Pipeline.decide_qa_finding(finding, :fix)
+
+    File.write!(path, """
+    {"verdict": "fail", "findings": [
+      {"key": "total-unrounded", "title": "The total renders as $1234.5",
+       "check": "A bill's total reads as money", "severity": "major", "recommendation": "fix", "status": "not_fixed"}
+    ]}
+    """)
+
+    assert %Run{error: nil, stage_outcome: :in_progress} = qa_run_finished(run, [])
+    assert %Task{stage: :qa} = Repo.reload!(task)
+  end
+
+  test "a message queued for QA holds a clean pass at QA", %{task: task, run: run, report_path: path} do
+    File.write!(path, ~s({"verdict": "pass", "findings": []}))
+    {:ok, queued} = Pipeline.update_run(run, %{pending_chat: "Try it on a phone too."})
+
+    assert %Run{error: nil} = qa_run_finished(%{queued | task: run.task, role: run.role}, [])
+    assert %Task{stage: :qa} = Repo.reload!(task)
   end
 
   test "a run that exited without a report records that rather than reading as clean", %{

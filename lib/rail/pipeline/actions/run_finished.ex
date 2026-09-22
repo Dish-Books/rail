@@ -17,7 +17,8 @@ defmodule Rail.Pipeline.Actions.RunFinished do
 
   A run that already had its say is latched at `stage_outcome: :done` and is left
   alone however many times it is messaged afterwards. `enter_stage/3` is what
-  unlatches it, which is why nothing here moves a task.
+  unlatches it, which is why nothing here moves a task: a stage's own finish
+  does, when what it concluded leaves nobody anything to decide.
   """
 
   import Rail.Pipeline.Utils.ArchitectRunFinished
