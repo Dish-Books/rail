@@ -223,6 +223,32 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert has_element?(view, "#project-status-#{project_id}", "Inactive")
   end
 
+  test "sets the script a project's new worktrees are set up with", %{admin_conn: conn, admin_user: admin} do
+    assert {:ok, %Project{id: project_id}} =
+             Projects.create_project(Scope.for_user(admin), %{
+               name: "Setup App",
+               github_repo: "example/setup-#{System.unique_integer([:positive])}",
+               github_installation_id: 334,
+               linear_team_key: "SUP",
+               default_branch: "main",
+               clone_path: "/tmp/setup"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#edit-project-#{project_id}") |> render_click()
+
+    assert view
+           |> form("#project-form", %{"project" => %{"worktree_setup_script" => "/etc/setup"}})
+           |> render_submit() =~ "must be a path inside the repository"
+
+    view
+    |> form("#project-form", %{"project" => %{"worktree_setup_script" => "scripts/setup-worktree.sh"}})
+    |> render_submit()
+
+    refute has_element?(view, "#project-modal")
+    assert %Project{worktree_setup_script: "scripts/setup-worktree.sh"} = Repo.get!(Project, project_id)
+  end
+
   test "editing a project's Linear workspace updates the workspace it already has", %{
     admin_conn: conn,
     admin_user: admin

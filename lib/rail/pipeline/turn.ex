@@ -18,13 +18,17 @@ defmodule Rail.Pipeline.Turn do
   between one spawn of the agent and the next, carrying when that turn began and
   what it cost. The log says what was said, never when, so the time comes from
   the process row rather than from the transcript.
+
+  `:command` is a shell command Rail ran on the run, such as a worktree's setup
+  script: its whole output as one block, with the `process` that ran it.
   """
-  defstruct author: :role, content: "", at: nil, duration_seconds: nil
+  defstruct author: :role, content: "", at: nil, duration_seconds: nil, process: nil
 
   @type t :: %__MODULE__{
-          author: :human | :role | :activity | :driving | :event | :turn_start,
+          author: :human | :role | :activity | :driving | :event | :turn_start | :command,
           content: String.t(),
           at: DateTime.t() | nil,
-          duration_seconds: non_neg_integer() | nil
+          duration_seconds: non_neg_integer() | nil,
+          process: struct() | nil
         }
 end

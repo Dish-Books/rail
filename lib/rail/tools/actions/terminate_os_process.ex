@@ -9,12 +9,16 @@ defmodule Rail.Tools.Actions.TerminateOsProcess do
   @doc """
   Terminates an OS process with SIGTERM, waiting up to `:grace_period`
   milliseconds, and escalates to SIGKILL if it is still alive.
+
+  `group: true` signals the whole process group `pid` leads, for a process that
+  was started as the leader of one.
   """
   def terminate_os_process(pid, opts) when is_integer(pid) and pid > 0 do
-    kill(pid, "TERM")
+    target = if Keyword.get(opts, :group, false), do: "-#{pid}", else: to_string(pid)
+    kill(target, "TERM")
 
     if !wait_until_dead(pid, Keyword.get(opts, :grace_period, @kill_grace_ms)) do
-      kill(pid, "KILL")
+      kill(target, "KILL")
       wait_until_dead(pid, @kill_grace_ms)
     end
 
@@ -23,8 +27,8 @@ defmodule Rail.Tools.Actions.TerminateOsProcess do
 
   def terminate_os_process(_other, _opts), do: :ok
 
-  defp kill(pid, signal) do
-    System.cmd("kill", ["-#{signal}", to_string(pid)], stderr_to_stdout: true, env: %{})
+  defp kill(target, signal) do
+    System.cmd("kill", ["-#{signal}", "--", target], stderr_to_stdout: true, env: %{})
     # coveralls-ignore-start (defensive rescue if kill fails)
   rescue
     _error ->

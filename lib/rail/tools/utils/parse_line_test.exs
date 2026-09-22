@@ -12,5 +12,8 @@ defmodule Rail.Tools.Utils.ParseLineTest do
 
     agy = new_event_state(%Backend{name: :agy})
     assert parse_line(agy, "agy message").logs == ["agy message"]
+
+    command = new_event_state(:command)
+    assert parse_line(command, "compiling 3 files") == command
   end
 end

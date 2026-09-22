@@ -36,6 +36,9 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :scratch_path, :string
     field :merged_at, :utc_datetime_usec
     field :cleaned_up_at, :utc_datetime_usec
+    # A block of ports on this machine, unique across every project's tasks.
+    field :worktree_slot, :integer
+    field :worktree_setup_at, :utc_datetime_usec
 
     belongs_to :project, Project
     belongs_to :issue, Issue
@@ -55,7 +58,9 @@ defmodule Rail.Pipeline.Schemas.Task do
     :worktree_path,
     :scratch_path,
     :merged_at,
-    :cleaned_up_at
+    :cleaned_up_at,
+    :worktree_slot,
+    :worktree_setup_at
   ]
 
   @required_fields [
@@ -79,7 +84,15 @@ defmodule Rail.Pipeline.Schemas.Task do
     |> foreign_key_constraint(:project_id)
     |> foreign_key_constraint(:issue_id)
     |> unique_constraint(:issue_id)
+    |> unique_constraint(:worktree_slot, name: :tasks_worktree_slot_index)
   end
+
+  @doc """
+  The first of the hundred ports the worktree of a task holding a slot owns.
+
+  Starts well above the 4000s, where checkouts set up by hand pick their own.
+  """
+  def port_base(%__MODULE__{worktree_slot: slot}) when is_integer(slot), do: 20_000 + slot * 100
 
   @doc """
   True when the task's worktree directory is actually on disk.

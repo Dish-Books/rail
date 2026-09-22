@@ -13,6 +13,10 @@ defmodule Rail.Tools.Schemas.OsProcess do
 
   @statuses [:starting, :running, :finished, :adopted_dead, :blocked_on_input, :unwatched, :failed]
 
+  # An agent's CLI writes NDJSON for its backend to read; a setup script writes
+  # plain text for a person to read, and says how it went with its exit status.
+  @kinds [:agent, :setup]
+
   @primary_key {:id, UXID, autogenerate: true, prefix: "proc"}
   schema "os_processes" do
     field :os_pid, :integer
@@ -24,6 +28,11 @@ defmodule Rail.Tools.Schemas.OsProcess do
     # How far into the stream the run's log has been written, in bytes, always on
     # a line boundary. Whatever follows this process next starts reading here.
     field :stream_offset, :integer, default: 0
+
+    field :kind, Ecto.Enum, values: @kinds, default: :agent
+    field :command, :string
+    field :exit_code, :integer
+    field :deadline_at, :utc_datetime_usec
 
     belongs_to :task, Task
     belongs_to :run, Run
@@ -39,7 +48,11 @@ defmodule Rail.Tools.Schemas.OsProcess do
     :status,
     :started_at,
     :mcp_token_hash,
-    :stream_offset
+    :stream_offset,
+    :kind,
+    :command,
+    :exit_code,
+    :deadline_at
   ]
 
   @required_fields [
@@ -61,6 +74,13 @@ defmodule Rail.Tools.Schemas.OsProcess do
   end
 
   def statuses, do: @statuses
+
+  @doc "True for a process running a shell command rather than an agent."
+  def command?(%__MODULE__{kind: :agent}), do: false
+  def command?(%__MODULE__{}), do: true
+
+  @doc "Where a command process records the status it exited with."
+  def exit_path(%__MODULE__{stream_path: stream_path}), do: "#{stream_path}.exit"
 
   @doc """
   How long this process has been going, in seconds.

@@ -2,10 +2,12 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
+  alias Rail.Projects.Schemas.Project
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
@@ -180,5 +182,90 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     end)
 
     assert {:ok, %Run{error: "No such CLI binary"}} = Pipeline.enter_stage(task, :review)
+  end
+
+  test "claims the task the lowest worktree slot no other task holds, whatever its project", %{task: task} do
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
+    other_project =
+      %Project{}
+      |> Project.changeset(%{
+        name: "Other Project",
+        github_repo: "org/other-slot",
+        github_installation_id: 44_002,
+        linear_team_key: "OTH",
+        default_branch: "main",
+        clone_path: "/tmp/repos/other-slot"
+      })
+      |> Repo.insert!()
+
+    other_issue =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: other_project.id,
+        external_id: "lin_other_slot",
+        identifier: "OTH-1",
+        title: "Other",
+        state: :backlog
+      })
+      |> Repo.insert!()
+
+    %Task{}
+    |> Task.changeset(
+      %{
+        issue_id: other_issue.id,
+        worktree_name: "oth-1",
+        worktree_path: "/tmp/oth-1",
+        scratch_path: "/tmp/oth-1-scratch",
+        worktree_slot: 0
+      },
+      other_project.id
+    )
+    |> Repo.insert!()
+
+    assert {:ok, %Run{}} = Pipeline.enter_stage(task, :review)
+    assert %Task{worktree_slot: 1} = Repo.reload!(task)
+  end
+
+  test "keeps the slot a task already holds", %{task: task} do
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+    {:ok, task} = Pipeline.update_task(task, %{worktree_slot: 7})
+
+    assert {:ok, %Run{}} = Pipeline.enter_stage(task, :review)
+    assert %Task{worktree_slot: 7} = Repo.reload!(task)
+  end
+
+  test "runs the project's setup script in a new worktree before the stage's agent", %{
+    project: project,
+    task: task
+  } do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{worktree_setup_script: "scripts/setup.sh"})
+
+    reject(Tools, :start_os_process, 2)
+
+    expect(Tools, :start_command_process, fn spawned, :setup, "./scripts/setup.sh", [timeout_ms: _timeout] ->
+      {:ok, %OsProcess{kind: :setup, run: spawned, task: task}}
+    end)
+
+    assert {:ok, %Run{status: :running}} = Pipeline.enter_stage(task, :review)
+  end
+
+  test "a worktree already set up goes straight to the stage's agent", %{project: project, task: task} do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{worktree_setup_script: "scripts/setup.sh"})
+    {:ok, task} = Pipeline.update_task(task, %{worktree_setup_at: DateTime.utc_now()})
+
+    reject(Tools, :start_command_process, 4)
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
+    assert {:ok, %Run{status: :running}} = Pipeline.enter_stage(task, :review)
+  end
+
+  test "a setup script that cannot be started fails the run on why", %{project: project, task: task} do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{worktree_setup_script: "scripts/setup.sh"})
+
+    expect(Tools, :start_command_process, fn _run, :setup, _command, _opts -> {:error, {:bad_cwd, "/gone"}} end)
+
+    assert {:ok, %Run{status: :failed, error: "Could not start the worktree setup script: {:bad_cwd, \"/gone\"}"}} =
+             Pipeline.enter_stage(task, :review)
   end
 end

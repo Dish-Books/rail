@@ -30,6 +30,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   import Rail.Pipeline.Utils.QuestionQueue
   import Rail.Pipeline.Utils.RegisterAskedQuestions
   import Rail.Pipeline.Utils.ReviewRunFinished
+  import Rail.Pipeline.Utils.SetupRunFinished
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -105,6 +106,9 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp usage(%{"usage" => usage}) when is_map(usage), do: struct(Run.Usage, usage)
   defp usage(_other), do: nil
 
+  # A setup script asks no questions and concludes nothing about its stage.
+  defp finish(%Run{} = run, %OsProcess{kind: :setup}, opts), do: setup_run_finished(run, opts)
+
   defp finish(%Run{} = run, %OsProcess{} = os_process, opts) do
     case register_asked_questions(os_process, run) do
       [] -> maybe_finish(run, opts)
@@ -176,6 +180,9 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   # This run is idle now, so whatever the human queued on it while it worked goes
   # out. A run parked on a question is not idle: the answer goes first.
   defp drain_queued_message(%Run{pending_chat: nil} = run, _opts), do: run
+
+  # Finishing started another process on this run, and the message waits for it.
+  defp drain_queued_message(%Run{status: :running} = run, _opts), do: run
 
   defp drain_queued_message(%Run{} = run, opts) do
     if pending_questions(run.task_id) == [] do

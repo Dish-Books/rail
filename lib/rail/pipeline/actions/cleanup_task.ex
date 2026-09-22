@@ -40,7 +40,10 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
   end
 
   defp mark_cleaned_up(%Task{cleaned_up_at: nil} = task) do
-    task |> Task.changeset(%{cleaned_up_at: DateTime.utc_now()}) |> Repo.update()
+    # The worktree is gone, so its ports are free and a new one would need setting up.
+    task
+    |> Task.changeset(%{cleaned_up_at: DateTime.utc_now(), worktree_slot: nil, worktree_setup_at: nil})
+    |> Repo.update()
   end
 
   defp mark_cleaned_up(%Task{} = task), do: {:ok, task}

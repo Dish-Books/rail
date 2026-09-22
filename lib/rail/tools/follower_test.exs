@@ -983,4 +983,127 @@ defmodule Rail.Tools.FollowerTest do
     assert reloaded_rr.status == :finished
     assert %Run.Usage{input_tokens: 0} = reloaded_rr.usage
   end
+
+  test "a command's exit status is the whole of its outcome, and is kept on its row", %{
+    run: run,
+    tmp_dir: tmp_dir
+  } do
+    stream = Path.join(tmp_dir, "command.log")
+    File.write!(stream, "")
+
+    port = Port.open({:spawn_executable, "/bin/sh"}, [:binary, :exit_status, args: ["-c", "sleep 0.05; exit 3"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
+        kind: :setup,
+        stream_path: stream,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
+        port: port,
+        tail_interval_ms: 10,
+        batch_interval_ms: 20
+      )
+
+    Sandbox.allow(Repo, self(), follower_pid)
+    Process.unlink(port)
+
+    assert_receive {:os_process_finished, %OsProcess{exit_code: 3}, %{exit_code: 3, error: "Exited with code 3"}}, 5_000
+  end
+
+  test "a command followed again after a restart reads the status it wrote on its way out", %{
+    run: run,
+    tmp_dir: tmp_dir
+  } do
+    stream = Path.join(tmp_dir, "resumed_command.log")
+    File.write!(stream, "setting up\n")
+    File.write!("#{stream}.exit", "0\n")
+
+    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["0.05"]])
+    {:os_pid, pid} = Port.info(port, :os_pid)
+
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
+        kind: :setup,
+        stream_path: stream,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
+        tail_interval_ms: 10,
+        batch_interval_ms: 20
+      )
+
+    Sandbox.allow(Repo, self(), follower_pid)
+
+    assert_receive {:os_process_finished, %OsProcess{exit_code: 0}, %{exit_code: 0, error: nil}}, 5_000
+  end
+
+  test "a command still running at its deadline is stopped, and everything it started with it", %{
+    run: run,
+    tmp_dir: tmp_dir
+  } do
+    stream = Path.join(tmp_dir, "overdue_command.log")
+    child_pid_path = Path.join(tmp_dir, "overdue_child.pid")
+    File.write!(stream, "")
+
+    port =
+      Port.open(
+        {:spawn_executable, "/usr/bin/perl"},
+        [
+          :binary,
+          :exit_status,
+          args: ["-e", "setpgrp(0, 0); exec @ARGV", "/bin/sh", "-c", "sleep 30 & echo $! > #{child_pid_path}; wait"]
+        ]
+      )
+
+    {:os_pid, pid} = Port.info(port, :os_pid)
+    child_pid = eventually(fn -> child_pid_path |> File.read!() |> String.trim() |> String.to_integer() end)
+
+    os_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
+        kind: :setup,
+        stream_path: stream,
+        status: :running,
+        started_at: DateTime.shift(DateTime.utc_now(), minute: -1),
+        deadline_at: DateTime.shift(DateTime.utc_now(), second: -1)
+      })
+      |> Repo.insert!()
+
+    Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+    {:ok, follower_pid} =
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run},
+        port: port,
+        tail_interval_ms: 10,
+        batch_interval_ms: 20
+      )
+
+    Sandbox.allow(Repo, self(), follower_pid)
+    Process.unlink(port)
+
+    assert_receive {:os_process_finished, _finished, %{error: "Timed out, so it was stopped."}}, 5_000
+    eventually(fn -> refute Tools.os_process_alive?(child_pid) end)
+  end
 end

@@ -79,4 +79,26 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
 
     assert {:error, :not_authorized} = Projects.update_project(nil, project, %{name: "Hacked"})
   end
+
+  test "a worktree setup script has to be a path inside the repository" do
+    admin_scope = Scope.for_user(%{admin: true})
+
+    assert {:ok, %Project{} = project} =
+             Projects.create_project(admin_scope, %{
+               name: "Setup Project",
+               github_repo: "example/setup-repo-#{System.unique_integer([:positive])}",
+               github_installation_id: 55_670,
+               linear_team_key: "SET",
+               default_branch: "main",
+               clone_path: "/tmp/set"
+             })
+
+    assert {:ok, %Project{worktree_setup_script: "scripts/setup-worktree.sh"}} =
+             Projects.update_project(admin_scope, project, %{worktree_setup_script: "scripts/setup-worktree.sh"})
+
+    for outside <- ["/usr/local/bin/setup", "../elsewhere/setup.sh"] do
+      assert {:error, changeset} = Projects.update_project(admin_scope, project, %{worktree_setup_script: outside})
+      assert %{worktree_setup_script: ["must be a path inside the repository"]} = errors_on(changeset)
+    end
+  end
 end

@@ -12,8 +12,10 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   degrades to a message that is still queued rather than one that is lost.
   """
 
+  import Rail.Pipeline.Utils.PrepareWorktree
+  import Rail.Pipeline.Utils.StartWorktreeSetup
+
   alias Ecto.Adapters.SQL.Sandbox
-  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -45,11 +47,24 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
     end
   end
 
+  # A worktree that still needs setting up gets that first, with the message left
+  # queued: the setup's finish drains it.
   defp execute(%Run{} = run, opts) do
-    with %Run{task: %Task{} = task, role: %Role{} = role} = run <- reload(run),
-         %Project{} = project <- Repo.get(Project, task.project_id),
-         {:ok, worktree_path} <- worktree(project, task) do
-      send_message(task, role, run, worktree_path, opts)
+    with %Run{task: %Task{}, role: %Role{} = role} = run <- reload(run),
+         %Project{} = project <- Repo.get(Project, run.task.project_id),
+         {:ok, task, worktree_path} <- worktree(project, run.task) do
+      case start_worktree_setup(%{run | task: task}) do
+        :not_needed ->
+          send_message(task, role, run, worktree_path, opts)
+
+        {:ok, %OsProcess{} = os_process} ->
+          broadcast_changed(os_process.run)
+          {:ok, os_process}
+
+        {:error, %Run{} = failed} ->
+          broadcast_changed(failed)
+          {:error, :worktree_setup_failed}
+      end
     else
       nil -> {:error, :invalid_state}
       {:error, reason} -> fail(run, reason)
@@ -59,8 +74,8 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   defp reload(%Run{id: id}), do: Run |> Repo.get(id) |> Repo.preload([:task, role: :backend])
 
   defp worktree(%Project{} = project, %Task{} = task) do
-    case Git.get_or_create_worktree(project, task) do
-      {:ok, resolved} -> {:ok, resolved}
+    case prepare_worktree(project, task) do
+      {:ok, task, resolved} -> {:ok, task, resolved}
       {:error, reason} -> {:error, {:worktree_failed, reason}}
     end
   end

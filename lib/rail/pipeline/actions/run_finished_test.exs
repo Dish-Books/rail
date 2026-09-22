@@ -558,4 +558,94 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{status: :blocked_on_input}} = Pipeline.run_finished(os_process, %{exit_code: 0})
   end
+
+  test "a worktree setup that succeeded marks the worktree set up and enters the stage it held up", %{
+    task: task,
+    roles: roles,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :debugger, worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:debugger, %{})
+    os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+    %{id: debugger_role_id} = roles[:debugger]
+
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %Run{role_id: ^debugger_role_id, status: :running}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+
+    assert %Task{worktree_setup_at: %DateTime{}} = Repo.reload!(task)
+  end
+
+  test "a worktree setup that failed says so on the run and starts nothing", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :debugger})
+    {_run, os_process} = exited.(:debugger, %{})
+    os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+    reject(Tools, :start_os_process, 2)
+
+    assert {:ok, %Run{error: "The worktree setup script failed (Exited with code 1)." <> _rest}} =
+             Pipeline.run_finished(os_process, %{exit_code: 1, error: "Exited with code 1"})
+
+    assert %Task{worktree_setup_at: nil} = Repo.reload!(task)
+  end
+
+  test "a worktree set up under a conversation already going sends the message that was waiting", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :debugger, worktree_path: create_temp_git_repo()})
+    {run, _agent_process} = exited.(:debugger, %{status: :finished, pending_chat: "Keep going"})
+
+    setup_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
+        kind: :setup,
+        stream_path: "/tmp/run_finished/#{run.id}.log",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    test_pid = self()
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      send(test_pid, {:dispatched, argv})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(setup_process, %{exit_code: 0}, async: false)
+    assert_received {:dispatched, argv}
+    assert Enum.any?(argv, &(&1 =~ "Keep going"))
+  end
+
+  test "a message typed while a new worktree was set up waits for the stage's first turn", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :debugger, worktree_path: create_temp_git_repo()})
+    {run, os_process} = exited.(:debugger, %{pending_chat: "Also check the logs"})
+    os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      refute Enum.any?(argv, &(&1 =~ "Also check the logs"))
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{status: :running}} = Pipeline.run_finished(os_process, %{exit_code: 0}, async: false)
+    assert %Run{pending_chat: "Also check the logs"} = Repo.reload!(run)
+  end
+
+  test "a worktree set up for a stage the task has since left enters nothing", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+    {_run, os_process} = exited.(:debugger, %{})
+    os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+    reject(Tools, :start_os_process, 2)
+
+    assert {:ok, %Run{status: :finished, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :review, worktree_setup_at: %DateTime{}} = Repo.reload!(task)
+  end
 end

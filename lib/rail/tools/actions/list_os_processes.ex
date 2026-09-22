@@ -17,6 +17,7 @@ defmodule Rail.Tools.Actions.ListOsProcesses do
         {:run_id, run_id}, q -> where(q, [r], r.run_id == ^run_id)
         {:task_id, task_id}, q -> where(q, [r], r.task_id == ^task_id)
         {:status, status}, q -> where(q, [r], r.status == ^status)
+        {:kind, kind}, q -> where(q, [r], r.kind == ^kind)
         _other, q -> q
       end)
 
