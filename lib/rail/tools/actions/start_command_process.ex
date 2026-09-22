@@ -10,10 +10,6 @@ defmodule Rail.Tools.Actions.StartCommandProcess do
   alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.OsProcess
 
-  # perl rather than setsid, which macOS does not ship: leading its own process
-  # group is what lets a stop take down everything the command started.
-  @perl "/usr/bin/perl"
-  @group_leader "setpgrp(0, 0); exec @ARGV or die $!"
   @exit_var "__RAIL_EXIT_PATH"
   @default_timeout_ms to_timeout(minute: 30)
 
@@ -42,7 +38,7 @@ defmodule Rail.Tools.Actions.StartCommandProcess do
       env: env
     ]
 
-    case Tools.spawn_os_process(@perl, ["-e", @group_leader, "/bin/sh", "-c", script(command)], spawn_opts) do
+    case Tools.spawn_os_process("/bin/sh", ["-c", script(command)], spawn_opts) do
       {:ok, port, os_pid} ->
         os_process = os_process |> OsProcess.changeset(%{status: :running, os_pid: os_pid}) |> Repo.update!()
         follow(%{os_process | run: run, task: task}, port)

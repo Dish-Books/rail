@@ -43,7 +43,6 @@ defmodule Rail.Tools.Follower do
     :batch_interval_ms,
     :exit_code,
     :deadline_at,
-    kind: :agent,
     file_offset: 0,
     logged_offset: 0,
     saved_offset: 0,
@@ -105,7 +104,6 @@ defmodule Rail.Tools.Follower do
       os_pid: os_process.os_pid,
       port: Keyword.get(opts, :port),
       event_state: event_state,
-      kind: os_process.kind,
       deadline_at: os_process.deadline_at,
       tail_interval_ms: tail_interval_ms,
       batch_interval_ms: batch_interval_ms
@@ -120,7 +118,7 @@ defmodule Rail.Tools.Follower do
   @impl true
   def handle_call({:stop_os_process, opts}, _from, state) do
     if is_integer(state.os_pid) and state.os_pid > 0 do
-      Tools.terminate_os_process(state.os_pid, terminate_opts(state.kind, opts))
+      Tools.terminate_os_process(state.os_pid, opts)
     end
 
     state = %{state | exit_code: -1, stopped?: true}
@@ -160,7 +158,7 @@ defmodule Rail.Tools.Follower do
 
     cond do
       alive? and past_deadline?(updated_state) ->
-        Tools.terminate_os_process(updated_state.os_pid, terminate_opts(updated_state.kind, []))
+        Tools.terminate_os_process(updated_state.os_pid)
         {_run, final_state} = do_child_exit(%{updated_state | timed_out?: true})
         {:stop, :normal, final_state}
 
@@ -196,11 +194,6 @@ defmodule Rail.Tools.Follower do
   end
 
   defp past_deadline?(%__MODULE__{}), do: false
-
-  # A command leads its own process group, and stopping only the leader would
-  # leave whatever it started still running.
-  defp terminate_opts(:agent, opts), do: opts
-  defp terminate_opts(_command, opts), do: Keyword.put(opts, :group, true)
 
   defp process_incoming_lines(lines, state) do
     Enum.reduce(lines, {state.event_state, state.pending_events}, fn line, {ev_state, pending} ->
@@ -277,7 +270,7 @@ defmodule Rail.Tools.Follower do
 
   defp fallback_stop_os_process(os_process, opts) do
     if is_integer(os_process.os_pid) and os_process.os_pid > 0 do
-      Tools.terminate_os_process(os_process.os_pid, terminate_opts(os_process.kind, opts))
+      Tools.terminate_os_process(os_process.os_pid, opts)
     end
 
     {:ok, updated_os_process} =

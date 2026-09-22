@@ -1057,26 +1057,12 @@ defmodule Rail.Tools.FollowerTest do
     assert_receive {:os_process_finished, %OsProcess{exit_code: 0}, %{exit_code: 0, error: nil}}, 5_000
   end
 
-  test "a command still running at its deadline is stopped, and everything it started with it", %{
-    run: run,
-    tmp_dir: tmp_dir
-  } do
+  test "a command still running at its deadline is stopped", %{run: run, tmp_dir: tmp_dir} do
     stream = Path.join(tmp_dir, "overdue_command.log")
-    child_pid_path = Path.join(tmp_dir, "overdue_child.pid")
     File.write!(stream, "")
 
-    port =
-      Port.open(
-        {:spawn_executable, "/usr/bin/perl"},
-        [
-          :binary,
-          :exit_status,
-          args: ["-e", "setpgrp(0, 0); exec @ARGV", "/bin/sh", "-c", "sleep 30 & echo $! > #{child_pid_path}; wait"]
-        ]
-      )
-
+    port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, :exit_status, args: ["30"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
-    child_pid = eventually(fn -> child_pid_path |> File.read!() |> String.trim() |> String.to_integer() end)
 
     os_process =
       %OsProcess{}
@@ -1104,6 +1090,6 @@ defmodule Rail.Tools.FollowerTest do
     Process.unlink(port)
 
     assert_receive {:os_process_finished, %OsProcess{exit_code: 124}, %{error: "Timed out, so it was stopped."}}, 5_000
-    eventually(fn -> refute Tools.os_process_alive?(child_pid) end)
+    refute Tools.os_process_alive?(pid)
   end
 end
