@@ -955,6 +955,22 @@ defmodule RailWeb.TaskLiveTest do
 
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: repo})
 
+      # Every push opens the task's pull request if it has none.
+      Req.Test.stub(Client, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/" <> _id} ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          {"GET", _pulls} ->
+            Req.Test.json(conn, [])
+
+          {"POST", _pulls} ->
+            conn
+            |> Plug.Conn.put_status(201)
+            |> Req.Test.json(%{"number" => 7, "html_url" => "https://github.com/org/repo/pull/7", "draft" => true})
+        end
+      end)
+
       {:ok, engineer_run} =
         Pipeline.create_run(%{
           task_id: task.id,
@@ -975,6 +991,252 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='diff-file-row']", "shipped.ex")
       assert has_element?(view, "#send-to-review")
       refute has_element?(view, "#commit-work")
+    end
+
+    test "with CI, the change waits on a pass before it can go to review", %{
+      conn: conn,
+      project: project,
+      task: task,
+      engineer_run: run
+    } do
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+      stub(Git, :credential_env, fn _project -> {:ok, %{}} end)
+
+      expect(Tools, :start_command_process, fn spawned, :ci, "mise run ci", _opts ->
+        {:ok, %OsProcess{kind: :ci, run: spawned}}
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#ci-status", "CI not run")
+      assert has_element?(view, "#send-to-review[disabled]")
+      refute has_element?(view, "#commit-work")
+
+      view |> with_target("#engineer-stage") |> render_click("send_to_review", %{})
+      assert has_element?(view, "#engineer-error", "CI has to pass on the latest commit before this goes to review.")
+
+      view |> element("#run-ci", "Run CI") |> render_click()
+
+      assert %Run{status: :running, ci_failure_streak: 0} = Repo.reload!(run)
+    end
+
+    test "with CI, a pass on the latest commit lets the change go to review", %{
+      conn: conn,
+      project: project,
+      task: task,
+      engineer_run: run,
+      repo: repo
+    } do
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        kind: :ci,
+        command: "mise run ci",
+        exit_code: 0,
+        head_sha: String.trim(git!(repo, ["rev-parse", "HEAD"])),
+        stream_path: "/tmp/#{run.id}.log",
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#ci-status[title='mise run ci']", "CI passed")
+      assert has_element?(view, "#send-to-review")
+      refute has_element?(view, "#send-to-review[disabled]")
+      refute has_element?(view, "#run-ci")
+    end
+
+    test "with CI, a failure says how many times it has gone back, and can be run again", %{
+      conn: conn,
+      project: project,
+      task: task,
+      engineer_run: run
+    } do
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+      {:ok, run} = Pipeline.update_run(run, %{ci_failure_streak: 2})
+
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        kind: :ci,
+        exit_code: 1,
+        stream_path: "/tmp/#{run.id}.log",
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+      stub(Git, :credential_env, fn _project -> {:error, {:github_api_error, 401, %{}}} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#ci-status", "CI failed · 2 of 3")
+      view |> element("#run-ci", "Run CI again") |> render_click()
+
+      assert has_element?(view, "#engineer-error", "Could not start CI: {:github_api_error, 401, %{}}")
+    end
+
+    test "with CI running, the pane says so", %{conn: conn, project: project, task: task, engineer_run: run} do
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        kind: :ci,
+        stream_path: "/tmp/#{run.id}.log",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#ci-status", "CI running")
+    end
+
+    test "with CI failed and nobody sent back yet, it just says it failed", %{
+      conn: conn,
+      project: project,
+      task: task,
+      engineer_run: run
+    } do
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        kind: :ci,
+        exit_code: 2,
+        stream_path: "/tmp/#{run.id}.log",
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#ci-status", "CI failed")
+      refute has_element?(view, "#ci-status", "of 3")
+    end
+
+    test "the header links the task's pull request", %{conn: conn, task: task} do
+      {:ok, task} =
+        Pipeline.update_task(task, %{pr_number: 12, pr_url: "https://github.com/org/app/pull/12", pr_is_draft: true})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#task-pull-request[href='https://github.com/org/app/pull/12']", "PR #12")
+      refute has_element?(view, "#task-pull-request", "Draft")
+    end
+
+    test "rebase hands conflicts to the engineer and says it is rebasing", %{
+      conn: conn,
+      task: task,
+      engineer_run: run
+    } do
+      expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
+      expect(Git, :rebase_branch, fn _scope, _task -> {:conflicts, ["shipped.ex"]} end)
+
+      expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "- shipped.ex"
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#rebase-task[title='Rebase onto origin/main']", "Rebase")
+
+      view |> element("#rebase-task") |> render_click()
+
+      assert_patch(view, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
+      assert %Task{is_rebasing: true} = Repo.reload!(task)
+      assert %Run{status: :running} = Repo.reload!(run)
+      assert has_element?(view, "#rebase-task[disabled]", "Rebasing…")
+    end
+
+    test "rebase says why for each way it can be refused", %{conn: conn, task: task, engineer_run: run, repo: repo} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      expect(Git, :fetch_default_branch, fn _project, _path -> {:error, "could not read from remote"} end)
+      view |> element("#rebase-task") |> render_click()
+      assert render(view) =~ "Could not rebase: could not read from remote"
+
+      expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
+      expect(Git, :rebase_branch, fn _scope, _task -> {:conflicts, ["shipped.ex"]} end)
+      expect(Tools, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
+      view |> element("#rebase-task") |> render_click()
+      assert render(view) =~ "Could not rebase: :dispatch_disabled"
+
+      {:ok, running} = Pipeline.update_run(Repo.reload!(run), %{status: :running})
+      render_click(view, "rebase", %{})
+      assert render(view) =~ "Stop the task&#39;s run before rebasing it"
+
+      {:ok, _idle} = Pipeline.update_run(running, %{status: :finished})
+      File.rm_rf!(repo)
+      render_click(view, "rebase", %{})
+      assert render(view) =~ "The task&#39;s worktree is gone, so there is nothing to rebase"
+    end
+
+    test "rebase says why when the branch cannot be handed back", %{conn: conn, task: task, repo: repo} do
+      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#rebase-task") |> render_click()
+
+      assert render(view) =~ "Commit the engineer&#39;s work before rebasing it"
+    end
+
+    test "a task past engineer offers review again for what the engineer changed since", %{
+      conn: conn,
+      task: task,
+      role: role
+    } do
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :demo})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
+      assert has_element?(view, "#send-to-review")
+    end
+
+    test "a task past engineer with nothing new is not offered review again", %{
+      conn: conn,
+      backend: backend,
+      project: project,
+      task: task,
+      role: role,
+      repo: repo
+    } do
+      {:ok, review_role} =
+        Roles.create_role(system_scope(), project, %{
+          backend_id: backend.id,
+          stage: :review,
+          name: "review role",
+          model: "claude-3-7-sonnet",
+          system_prompt: "You are the review agent."
+        })
+
+      {:ok, _review_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: review_role.id,
+          status: :finished,
+          stage_outcome: :done,
+          stage_fingerprint_head_sha: String.trim(git!(repo, ["rev-parse", "HEAD"])),
+          started_at: DateTime.utc_now()
+        })
+
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :demo})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
+      refute has_element?(view, "#send-to-review")
+
+      view |> with_target("#engineer-stage") |> render_click("send_to_review", %{})
+      assert has_element?(view, "#engineer-error", "Review has already seen this commit.")
     end
 
     test "says so when the engineer has changed nothing", %{conn: conn, task: task, repo: repo} do
@@ -1177,7 +1439,6 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#commit-work")
-      refute has_element?(view, "#send-to-review")
     end
 
     test "sending the diff to review moves the task", %{conn: conn, task: task} do
@@ -2989,6 +3250,57 @@ defmodule RailWeb.TaskLiveTest do
       # render its cues inside the video element.
       assert has_element?(view, "#demo-video-frame[phx-hook='DemoCaptions']")
       refute has_element?(view, "#demo-video track")
+    end
+
+    test "a demo the stage was entered without asks whether it is needed", %{
+      conn: conn,
+      task: task,
+      demo_run: run,
+      role: role
+    } do
+      Repo.delete!(run)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#task-tab-#{role.id}[aria-selected='true']")
+      assert has_element?(view, "#demo-pending", "Nothing recorded yet.")
+
+      view |> element("#skip-demo", "No demo needed") |> render_click()
+
+      assert has_element?(view, "#demo-pending", "No demo is needed for this change.")
+      refute has_element?(view, "#skip-demo")
+
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      view |> element("#record-demo", "Record a demo") |> render_click()
+
+      assert %Task{demo_skipped_at: nil} = Repo.reload!(task)
+    end
+
+    test "a demo already recorded can be recorded again", %{conn: conn, task: task, recorded: recorded} do
+      recorded.()
+
+      expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "fresh take"
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#rerecord-demo", "Re-record") |> render_click()
+
+      assert has_element?(view, "[data-qa='demo_running']")
+    end
+
+    test "a demo that cannot be recorded says why", %{conn: conn, task: task, demo_run: run} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      {:ok, running} = Pipeline.update_run(run, %{status: :running})
+      view |> with_target("#demo-stage") |> render_click("skip_demo", %{})
+      assert has_element?(view, "#demo-error", "Something is still running on this task.")
+
+      {:ok, _idle} = Pipeline.update_run(running, %{status: :finished})
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :qa})
+      view |> with_target("#demo-stage") |> render_click("record_demo", %{})
+      assert has_element?(view, "#demo-error", "Could not do that: {:invalid_stage, :qa}")
     end
 
     test "a task nothing recorded has nothing to send", %{conn: conn, task: task} do

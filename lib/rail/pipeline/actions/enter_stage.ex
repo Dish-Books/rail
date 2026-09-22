@@ -13,7 +13,9 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   never a side effect of a process exiting.
   """
 
-  alias Rail.Git
+  import Rail.Pipeline.Utils.PrepareWorktree
+  import Rail.Pipeline.Utils.StartWorktreeSetup
+
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -28,13 +30,17 @@ defmodule Rail.Pipeline.Actions.EnterStage do
 
   Returns `{:ok, run}` with the run left executing, or `{:ok, task}` when the
   project has bound no role to that stage, which records the move and stops there.
+  `start: false` records the move and stops there too, for a stage a person
+  decides whether to run at all.
   """
-  def enter_stage(%Task{} = task, stage, _opts \\ []) when is_atom(stage) do
+  def enter_stage(%Task{} = task, stage, opts \\ []) when is_atom(stage) do
     {:ok, task} = claim_stage(task, stage)
 
-    case Roles.get_role(project_id: task.project_id, stage: stage) do
-      {:ok, %Role{} = role} -> start_role(task, role)
-      {:error, :role_not_found} -> {:ok, task}
+    with true <- Keyword.get(opts, :start, true),
+         {:ok, %Role{} = role} <- Roles.get_role(project_id: task.project_id, stage: stage) do
+      start_role(task, role)
+    else
+      _not_started -> {:ok, task}
     end
   end
 
@@ -53,27 +59,38 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   # nothing recovers: `Boot.reconcile/1` works from `os_processes` rows and there
   # is none, so it survives every restart, reads as busy, and hides the buttons
   # that would move it on.
+  #
+  # A worktree the project has a setup script for runs it first, and the stage is
+  # entered again once it has succeeded.
   defp start_role(%Task{} = task, %Role{} = role) do
-    worktree_path = worktree(task)
+    {task, worktree_path} = worktree(task)
     {:ok, %Run{} = run} = Pipeline.start_or_resume_run(task, role, worktree_path)
 
     if worktree_path do
-      case start_process(run) do
+      case start_worktree_setup(run) do
+        :not_needed -> start_agent(run)
         {:ok, os_process} -> {:ok, os_process.run}
-        {:error, {:spawn_failed, _reason, %Run{} = failed}} -> {:ok, failed}
-        {:error, :dispatch_disabled} -> {:ok, fail(run, "Dispatch is off, so no agent was started for this stage.")}
+        {:error, %Run{} = failed} -> {:ok, failed}
       end
     else
       {:ok, fail(run, "Could not prepare the worktree at #{task.worktree_path}.")}
     end
   end
 
+  defp start_agent(%Run{} = run) do
+    case start_process(run) do
+      {:ok, os_process} -> {:ok, os_process.run}
+      {:error, {:spawn_failed, _reason, %Run{} = failed}} -> {:ok, failed}
+      {:error, :dispatch_disabled} -> {:ok, fail(run, "Dispatch is off, so no agent was started for this stage.")}
+    end
+  end
+
   defp worktree(%Task{} = task) do
     with %Project{} = project <- Repo.get(Project, task.project_id),
-         {:ok, resolved} <- Git.get_or_create_worktree(project, task) do
-      resolved
+         {:ok, task, resolved} <- prepare_worktree(project, task) do
+      {task, resolved}
     else
-      _unavailable -> nil
+      _unavailable -> {task, nil}
     end
   end
 

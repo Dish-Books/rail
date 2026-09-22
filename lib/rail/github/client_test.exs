@@ -1,5 +1,7 @@
 defmodule Rail.GitHub.ClientTest do
-  use Rail.DataCase, async: true
+  # Serial: some of these swap the app's key in the application env, which every
+  # test minting a token reads.
+  use Rail.DataCase, async: false
 
   alias Rail.GitHub.Client
 
@@ -142,5 +144,91 @@ defmodule Rail.GitHub.ClientTest do
     end)
 
     assert {:error, {:github_api_error, 500, %{"message" => "boom"}}} = Client.delete_signing_key("gho_user", 99)
+  end
+
+  test "finds the open pull request from a branch, or says there is none" do
+    Req.Test.expect(Client, fn conn ->
+      assert conn.request_path == "/repos/acme/app/pulls"
+      assert %{"head" => "acme:dis-231", "state" => "open"} = Plug.Conn.fetch_query_params(conn).query_params
+      Req.Test.json(conn, [%{"number" => 42, "html_url" => "https://github.com/acme/app/pull/42"}])
+    end)
+
+    assert {:ok, %{"number" => 42}} = Client.find_pull_request("ghs_token", "acme/app", "dis-231")
+
+    Req.Test.expect(Client, &Req.Test.json(&1, []))
+    assert {:ok, nil} = Client.find_pull_request("ghs_token", "acme/app", "dis-231")
+
+    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})))
+    assert {:error, {:github_api_error, 404, _body}} = Client.find_pull_request("ghs_token", "acme/app", "dis-231")
+
+    Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
+    assert {:error, %Req.TransportError{}} = Client.find_pull_request("ghs_token", "acme/app", "dis-231")
+  end
+
+  test "opens a pull request from what GitHub takes" do
+    Req.Test.expect(Client, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/repos/acme/app/pulls"
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"head" => "dis-231", "base" => "main", "draft" => true} = Jason.decode!(body)
+      conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{"number" => 43})
+    end)
+
+    assert {:ok, %{"number" => 43}} =
+             Client.create_pull_request("ghs_token", "acme/app", %{head: "dis-231", base: "main", draft: true})
+
+    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(422) |> Req.Test.json(%{"message" => "Validation Failed"})))
+    assert {:error, {:github_api_error, 422, _body}} = Client.create_pull_request("ghs_token", "acme/app", %{})
+
+    Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
+    assert {:error, %Req.TransportError{}} = Client.create_pull_request("ghs_token", "acme/app", %{})
+  end
+
+  test "reads one pull request by its number" do
+    Req.Test.expect(Client, fn conn ->
+      assert conn.request_path == "/repos/acme/app/pulls/43"
+      Req.Test.json(conn, %{"number" => 43, "node_id" => "PR_kw43"})
+    end)
+
+    assert {:ok, %{"node_id" => "PR_kw43"}} = Client.get_pull_request("ghs_token", "acme/app", 43)
+
+    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})))
+    assert {:error, {:github_api_error, 404, _body}} = Client.get_pull_request("ghs_token", "acme/app", 43)
+
+    Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
+    assert {:error, %Req.TransportError{}} = Client.get_pull_request("ghs_token", "acme/app", 43)
+  end
+
+  test "takes a draft out of draft through GraphQL" do
+    Req.Test.expect(Client, fn conn ->
+      assert conn.request_path == "/graphql"
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"query" => "mutation" <> _rest, "variables" => %{"id" => "PR_kw43"}} = Jason.decode!(body)
+      Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{"pullRequest" => %{"isDraft" => false}}}})
+    end)
+
+    assert :ok = Client.mark_pull_request_ready("ghs_token", "PR_kw43")
+
+    Req.Test.expect(Client, &Req.Test.json(&1, %{"errors" => [%{"message" => "Could not resolve"}]}))
+    assert {:error, {:github_api_error, 200, _body}} = Client.mark_pull_request_ready("ghs_token", "PR_kw43")
+
+    Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
+    assert {:error, %Req.TransportError{}} = Client.mark_pull_request_ready("ghs_token", "PR_kw43")
+  end
+
+  test "changes a pull request" do
+    Req.Test.expect(Client, fn conn ->
+      assert conn.method == "PATCH"
+      assert conn.request_path == "/repos/acme/app/pulls/43"
+      Req.Test.json(conn, %{"number" => 43})
+    end)
+
+    assert {:ok, %{"number" => 43}} = Client.update_pull_request("ghs_token", "acme/app", 43, %{body: "b"})
+
+    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(422) |> Req.Test.json(%{"message" => "Validation Failed"})))
+    assert {:error, {:github_api_error, 422, _body}} = Client.update_pull_request("ghs_token", "acme/app", 43, %{})
+
+    Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
+    assert {:error, %Req.TransportError{}} = Client.update_pull_request("ghs_token", "acme/app", 43, %{})
   end
 end

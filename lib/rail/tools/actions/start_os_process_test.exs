@@ -139,6 +139,21 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     assert %OsProcess{mcp_token_hash: ^hash} = Repo.get!(OsProcess, os_process_id)
   end
 
+  test "tells the agent which ports its worktree owns", %{run: run} do
+    {:ok, _task} = Pipeline.update_task(Repo.get!(Task, run.task_id), %{worktree_slot: 2})
+    test_pid = self()
+
+    expect(Tools, :spawn_os_process, fn _executable, _args, opts ->
+      send(test_pid, {:env, Keyword.fetch!(opts, :env)})
+      {:ok, nil, 4242}
+    end)
+
+    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+
+    assert {:ok, %OsProcess{}} = Tools.start_os_process(run, ["2"])
+    assert_received {:env, %{"RAIL_WORKTREE_SLOT" => "2", "RAIL_PORT_BASE" => "20200"}}
+  end
+
   # A token is good only while its turn is, so the next turn cannot be driven
   # with the last one's.
   test "a second turn gets a token of its own", %{run: run} do

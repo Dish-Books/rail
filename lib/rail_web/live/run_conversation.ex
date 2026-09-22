@@ -449,6 +449,13 @@ defmodule RailWeb.Live.RunConversation do
             class="min-w-0 flex-1 whitespace-pre-wrap wrap-break-word text-slate-600 dark:text-slate-300"
           >{driving_rest(@text)}</span>
         </div>
+      <% :command -> %>
+        <.command_block
+          msg={@msg}
+          idx={@idx}
+          expanded_activities={@expanded_activities}
+          target={@target}
+        />
       <% :event -> %>
         <!-- 4.8 _EventTile -->
         <%= cond do %>
@@ -469,7 +476,7 @@ defmodule RailWeb.Live.RunConversation do
             <div
               id={"msg-#{@idx}"}
               data-qa="rail-event"
-              class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 font-mono text-[11px] my-1"
+              class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 font-mono text-[11px] mt-4 mb-1"
             >
               <.icon name="pi-info" class="h-3.5 w-3.5 shrink-0" />
               <span class="select-text">{@text}</span>
@@ -484,6 +491,83 @@ defmodule RailWeb.Live.RunConversation do
             </div>
         <% end %>
     <% end %>
+    """
+  end
+
+  # --- Command Block Subcomponent ---
+
+  attr :msg, Turn, required: true
+  attr :idx, :integer, required: true
+  attr :expanded_activities, MapSet, required: true
+  attr :target, :any, required: true
+
+  # Open by default while it runs or once it has failed, which is when its output
+  # is what someone came to read; a click flips that either way.
+  def command_block(assigns) do
+    %Turn{process: %OsProcess{} = process} = assigns.msg
+    running? = process.status in [:starting, :running]
+    failed? = not running? and process.exit_code != 0
+
+    assigns =
+      assigns
+      |> assign(:label, command_label(process))
+      |> assign(:running?, running?)
+      |> assign(:failed?, failed?)
+      |> assign(:open?, (running? or failed?) != MapSet.member?(assigns.expanded_activities, assigns.idx))
+
+    ~H"""
+    <div
+      id={"command-#{@idx}"}
+      data-qa="command-block"
+      class={[
+        "max-w-[720px] mt-4 rounded-lg border bg-white dark:bg-slate-900 overflow-hidden",
+        @failed? && "border-red-500/40",
+        not @failed? && "border-slate-200 dark:border-slate-700"
+      ]}
+    >
+      <button
+        type="button"
+        phx-click="toggle_activity"
+        phx-target={@target}
+        phx-value-index={@idx}
+        class="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer text-left"
+      >
+        <.icon name="pi-terminal-window" class="h-3.5 w-3.5 shrink-0" />
+        <span class="font-medium text-slate-700 dark:text-slate-300 shrink-0">{@label}</span>
+        <span class="font-mono truncate">{@msg.process.command}</span>
+        <%!-- A command still running counts up in the browser, as the header does. --%>
+        <span
+          id={"command-elapsed-#{@msg.process.id}"}
+          phx-hook="Elapsed"
+          data-started-at={if @running?, do: DateTime.to_iso8601(@msg.process.started_at)}
+          data-elapsed-seconds={if @running?, do: 0, else: @msg.duration_seconds}
+          data-qa="command-elapsed"
+          class="font-mono shrink-0"
+        >
+          {format_duration(@msg.duration_seconds || 0)}
+        </span>
+        <span
+          data-qa="command-status"
+          class={[
+            "ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+            @running? && "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+            @failed? && "bg-red-500/10 text-red-700 dark:text-red-300",
+            (not @running? and not @failed?) && "bg-green-500/10 text-green-700 dark:text-green-300"
+          ]}
+        >
+          {command_status(@msg.process, @running?)}
+        </span>
+        <.icon name={if @open?, do: "pi-caret-up", else: "pi-caret-down"} class="h-4 w-4 shrink-0" />
+      </button>
+      <%!-- Kept on one line: pre-wrap would render the template's own indentation. --%>
+      <pre
+        :if={@open?}
+        id={"command-output-#{@idx}"}
+        data-qa="command-output"
+        phx-no-format
+        class="border-t border-slate-200 dark:border-slate-700 px-3 py-2 max-h-96 overflow-auto font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap wrap-break-word select-text"
+      >{@msg.content}</pre>
+    </div>
     """
   end
 
@@ -854,16 +938,14 @@ defmodule RailWeb.Live.RunConversation do
     processes = socket.assigns.os_processes
     lines = Enum.map(run_events, & &1.line)
 
-    turns =
+    {turns, _next_number} =
       run_events
       |> group_by_turn()
-      |> Enum.with_index(1)
-      |> Enum.flat_map(fn {{os_process_id, events}, number} ->
-        said = events |> Enum.map(& &1.line) |> readable_lines(socket.assigns) |> Pipeline.parse_transcript()
-
+      |> Enum.flat_map_reduce(1, fn {os_process_id, events}, number ->
         case Map.get(processes, os_process_id) do
-          %OsProcess{} = os_process -> [turn_start(os_process, number) | said]
-          nil -> said
+          %OsProcess{kind: :agent} = os_process -> {[turn_start(os_process, number) | said(events, socket)], number + 1}
+          %OsProcess{} = os_process -> {command_turn(os_process, events, socket), number}
+          nil -> {said(events, socket), number}
         end
       end)
 
@@ -872,6 +954,26 @@ defmodule RailWeb.Live.RunConversation do
     |> assign(:log_lines, lines)
     |> assign(:turns, turns)
     |> assign_elapsed(Map.values(processes))
+  end
+
+  defp said(events, socket) do
+    events |> Enum.map(& &1.line) |> readable_lines(socket.assigns) |> Pipeline.parse_transcript()
+  end
+
+  # A command's output is read as it was written. Lines Rail wrote while it ran
+  # are not its output, so they follow it as themselves.
+  defp command_turn(%OsProcess{} = os_process, events, socket) do
+    {output, interjected} = Enum.split_with(events, &(turn_id(&1) == os_process.id))
+
+    turn = %Turn{
+      author: :command,
+      content: output |> Enum.map_join("\n", & &1.line) |> Tools.plain_text(),
+      at: os_process.started_at,
+      duration_seconds: OsProcess.duration_seconds(os_process),
+      process: os_process
+    }
+
+    [turn | said(interjected, socket)]
   end
 
   # Consecutive events of one process are one turn. Rail writes lines of its own
@@ -1098,4 +1200,13 @@ defmodule RailWeb.Live.RunConversation do
         "text-zinc-300"
     end
   end
+
+  defp command_label(%OsProcess{kind: :setup}), do: "Worktree setup"
+  defp command_label(%OsProcess{kind: :ci}), do: "CI"
+
+  defp command_status(%OsProcess{}, true), do: "Running"
+  defp command_status(%OsProcess{exit_code: 0}, false), do: "Passed"
+  defp command_status(%OsProcess{exit_code: 124}, false), do: "Timed out"
+  defp command_status(%OsProcess{exit_code: code}, false) when is_integer(code) and code > 0, do: "Failed · exit #{code}"
+  defp command_status(%OsProcess{}, false), do: "Stopped"
 end

@@ -17,6 +17,11 @@ defmodule Rail.Projects.Schemas.Project do
     field :linear_state_ids, :map, default: %{}
     field :clone_path, :string
     field :active, :boolean, default: true
+    # Run once in each new worktree, from its root, before any agent works there.
+    field :worktree_setup_script, :string
+    # Run on every commit the engineer finishes, before it is pushed or reviewed.
+    field :ci_command, :string
+    field :ci_timeout_minutes, :integer, default: 30
 
     has_one :linear_workspace, LinearWorkspace, on_replace: :update
 
@@ -31,7 +36,10 @@ defmodule Rail.Projects.Schemas.Project do
     :linear_team_key,
     :linear_state_ids,
     :clone_path,
-    :active
+    :active,
+    :worktree_setup_script,
+    :ci_command,
+    :ci_timeout_minutes
   ]
 
   @required_fields [
@@ -48,6 +56,8 @@ defmodule Rail.Projects.Schemas.Project do
     |> cast(attrs, @fields)
     |> validate_required(@required_fields)
     |> validate_change(:clone_path, &validate_clone_path/2)
+    |> validate_change(:worktree_setup_script, &validate_worktree_setup_script/2)
+    |> validate_number(:ci_timeout_minutes, greater_than: 0, message: "must be at least a minute")
     |> cast_assoc(:linear_workspace)
     |> unique_constraint(:github_repo)
     |> put_linear_team_id()
@@ -56,6 +66,13 @@ defmodule Rail.Projects.Schemas.Project do
   # Every worktree is added from this checkout, so it has to be the root of one.
   defp validate_clone_path(:clone_path, path) do
     if Git.git_repo?(path), do: [], else: [clone_path: "is not a git repository"]
+  end
+
+  # It is run from inside the task's worktree, so it has to name a file in there.
+  defp validate_worktree_setup_script(:worktree_setup_script, path) do
+    if Path.type(path) == :relative and ".." not in Path.split(path),
+      do: [],
+      else: [worktree_setup_script: "must be a path inside the repository"]
   end
 
   # People know a Linear team by its key; Linear's API wants its id, and the ids

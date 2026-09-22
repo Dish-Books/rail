@@ -19,6 +19,7 @@ defmodule Rail.Tools.Boot do
   import Rail.Tools.Utils.DrainErrFile
   import Rail.Tools.Utils.NewEventState
   import Rail.Tools.Utils.ParseLine
+  import Rail.Tools.Utils.ReadExitFile
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Pipeline
@@ -152,7 +153,7 @@ defmodule Rail.Tools.Boot do
     %Run{role: %Role{backend: %Backend{} = backend}} = run = os_process.run
 
     event_state =
-      new_event_state(backend,
+      new_event_state(if(OsProcess.command?(os_process), do: :command, else: backend),
         conversation_id: run.conversation_id
       )
 
@@ -167,26 +168,11 @@ defmodule Rail.Tools.Boot do
         parse_line(acc, line)
       end)
 
-    raw_stderr = Enum.join(err_lines, "\n")
-
-    error =
-      compute_dead_error(
-        updated_event_state.result_error,
-        raw_stderr,
-        updated_event_state.saw_result,
-        os_process.os_pid
-      )
-
-    exit_code =
-      compute_dead_exit_code(
-        updated_event_state.saw_result,
-        updated_event_state.result_error,
-        raw_stderr
-      )
+    {exit_code, error} = settle_dead_exit(os_process, updated_event_state, Enum.join(err_lines, "\n"))
 
     {:ok, updated_os_process} =
       os_process
-      |> OsProcess.changeset(%{status: :adopted_dead})
+      |> OsProcess.changeset(%{status: :adopted_dead, exit_code: exit_code})
       |> Repo.update()
 
     if run do
@@ -219,6 +205,21 @@ defmodule Rail.Tools.Boot do
     end
 
     {:adopted_dead, updated_os_process}
+  end
+
+  # A command says how it went only with its status, which it wrote to a file on
+  # its way out. One that never wrote it was killed before it could finish.
+  defp settle_dead_exit(%OsProcess{kind: kind} = os_process, _event_state, _raw_stderr) when kind != :agent do
+    case read_exit_file(os_process) do
+      0 -> {0, nil}
+      code when is_integer(code) -> {code, "Exited with code #{code}"}
+      nil -> {-1, "Ended while Rail was not watching it, without recording how it exited."}
+    end
+  end
+
+  defp settle_dead_exit(%OsProcess{} = os_process, event_state, raw_stderr) do
+    error = compute_dead_error(event_state.result_error, raw_stderr, event_state.saw_result, os_process.os_pid)
+    {compute_dead_exit_code(event_state.saw_result, event_state.result_error, raw_stderr), error}
   end
 
   defp compute_dead_error(result_error, raw_stderr, saw_result, os_pid) do

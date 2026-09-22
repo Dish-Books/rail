@@ -473,4 +473,93 @@ defmodule Rail.Tools.BootTest do
 
     assert [{:adopted_dead, %OsProcess{id: ^run4_id}}] = Boot.reconcile()
   end
+
+  test "settles a dead command from the status it wrote on its way out", %{tmp_dir: tmp_dir, role: role} do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: UXID.generate!(prefix: "tsk"),
+        role_id: role.id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    stream_path = Path.join(tmp_dir, "dead_command.log")
+    File.write!(stream_path, "copied the database\n")
+    File.write!("#{stream_path}.exit", "0\n")
+
+    %OsProcess{}
+    |> OsProcess.changeset(%{
+      run_id: run.id,
+      task_id: run.task_id,
+      kind: :setup,
+      stream_path: stream_path,
+      status: :running,
+      os_pid: 999_997,
+      started_at: DateTime.utc_now()
+    })
+    |> Repo.insert!()
+
+    assert [{:adopted_dead, %OsProcess{exit_code: 0}}] = Boot.reconcile()
+    assert {:ok, %Run{status: :finished, exit_code: 0, error: nil}} = Pipeline.get_run(run.id)
+    assert [%{line: "copied the database"}] = Pipeline.list_run_events(run)
+  end
+
+  test "a dead command that never wrote how it exited is a failure", %{tmp_dir: tmp_dir, role: role} do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: UXID.generate!(prefix: "tsk"),
+        role_id: role.id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    stream_path = Path.join(tmp_dir, "killed_command.log")
+    File.write!(stream_path, "")
+
+    %OsProcess{}
+    |> OsProcess.changeset(%{
+      run_id: run.id,
+      task_id: run.task_id,
+      kind: :setup,
+      stream_path: stream_path,
+      status: :running,
+      os_pid: 999_996,
+      started_at: DateTime.utc_now()
+    })
+    |> Repo.insert!()
+
+    assert [{:adopted_dead, %OsProcess{exit_code: -1}}] = Boot.reconcile()
+
+    assert {:ok, %Run{exit_code: -1, error: "Ended while Rail was not watching it, without recording how it exited."}} =
+             Pipeline.get_run(run.id)
+  end
+
+  test "a dead command that failed keeps the status it failed with", %{tmp_dir: tmp_dir, role: role} do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: UXID.generate!(prefix: "tsk"),
+        role_id: role.id,
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+
+    stream_path = Path.join(tmp_dir, "failed_command.log")
+    File.write!(stream_path, "")
+    File.write!("#{stream_path}.exit", "2\n")
+
+    %OsProcess{}
+    |> OsProcess.changeset(%{
+      run_id: run.id,
+      task_id: run.task_id,
+      kind: :setup,
+      stream_path: stream_path,
+      status: :running,
+      os_pid: 999_995,
+      started_at: DateTime.utc_now()
+    })
+    |> Repo.insert!()
+
+    assert [{:adopted_dead, %OsProcess{exit_code: 2}}] = Boot.reconcile()
+    assert {:ok, %Run{exit_code: 2, error: "Exited with code 2"}} = Pipeline.get_run(run.id)
+  end
 end

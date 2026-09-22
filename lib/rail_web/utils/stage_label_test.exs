@@ -40,6 +40,6 @@ defmodule RailWeb.Utils.StageLabelTest do
     assert stage_label(%Task{stage: :review}, done) == "Review the findings"
     assert stage_label(%Task{stage: :qa}, done) == "Review the QA report"
     assert stage_label(%Task{stage: :demo}, done) == "Watch the demo"
-    assert stage_label(%Task{stage: :ready_to_merge}, done) == "Waiting on you"
+    assert stage_label(%Task{stage: :merged}, done) == "Waiting on you"
   end
 end

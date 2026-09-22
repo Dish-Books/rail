@@ -311,6 +311,156 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ "still the first turn"
   end
 
+  test "a setup script reads as its output in one block, not as a turn of the agent's", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :failed,
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+
+    setup =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        kind: :setup,
+        command: "./scripts/setup-worktree.sh",
+        exit_code: 1,
+        stream_path: "/tmp/#{run.id}.log",
+        status: :finished,
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+      |> Repo.insert!()
+
+    Pipeline.append_run_events(run.id, setup.id, ["Worktree slot \e[1m3\e[0m", "Cannot copy dishbooks_dev"])
+    Pipeline.append_run_events(run.id, nil, ["[rail] the stage was not entered"])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    refute html =~ ~s(data-qa="turn-start")
+    assert html =~ ~s(data-qa="command-block")
+    assert html =~ "./scripts/setup-worktree.sh"
+    assert html =~ "Failed · exit 1"
+    assert html =~ "Worktree slot 3\nCannot copy dishbooks_dev"
+    assert html =~ ~s(data-qa="rail-event")
+  end
+
+  test "a CI run reads as CI", %{task: task, roles: roles, roles_map: roles_map} do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    ci =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        kind: :ci,
+        command: "mise run ci",
+        exit_code: 0,
+        stream_path: "/tmp/#{run.id}.log",
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    Pipeline.append_run_events(run.id, ci.id, ["all gates passed"])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert html =~ ~r/>\s*CI\s*</
+    assert html =~ "mise run ci"
+  end
+
+  test "a setup script that passed keeps its output folded away until asked", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+
+    setup =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        kind: :setup,
+        command: "./bin/setup",
+        exit_code: 0,
+        stream_path: "/tmp/#{run.id}.log",
+        status: :finished,
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+      |> Repo.insert!()
+
+    Pipeline.append_run_events(run.id, setup.id, ["all set"])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert html =~ "Passed"
+    refute html =~ ~s(data-qa="command-output")
+  end
+
+  test "a setup script says whether it is still going or was stopped", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :running,
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+
+    for {status, exit_code, line} <- [
+          {:finished, -1, "was stopped"},
+          {:finished, 124, "ran out of time"},
+          {:running, nil, "still copying"}
+        ] do
+      setup =
+        %OsProcess{}
+        |> OsProcess.changeset(%{
+          run_id: run.id,
+          task_id: task.id,
+          kind: :setup,
+          command: "./bin/setup",
+          exit_code: exit_code,
+          stream_path: "/tmp/#{run.id}-#{status}.log",
+          status: status,
+          started_at: ~U[2026-09-09 10:00:00.000000Z]
+        })
+        |> Repo.insert!()
+
+      Pipeline.append_run_events(run.id, setup.id, [line])
+    end
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert html =~ "Stopped"
+    assert html =~ "Timed out"
+    assert html =~ "Running"
+    assert html =~ ~s(phx-hook="Elapsed" data-started-at="2026-09-09T10:00:00.000000Z")
+    assert html =~ "still copying"
+  end
+
   # The page's tab says which run is being read, and a role whose turn has not
   # come has nothing to show rather than somebody else's transcript.
   test "a tab whose role has not run reads as nothing, not as the last run", %{

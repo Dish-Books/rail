@@ -18,6 +18,7 @@ defmodule Rail.Tools.Follower do
   import Rail.Tools.Utils.NewEventState
   import Rail.Tools.Utils.ParseLine
   import Rail.Tools.Utils.PumpStream
+  import Rail.Tools.Utils.ReadExitFile
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -41,11 +42,13 @@ defmodule Rail.Tools.Follower do
     :tail_interval_ms,
     :batch_interval_ms,
     :exit_code,
+    :deadline_at,
     file_offset: 0,
     logged_offset: 0,
     saved_offset: 0,
     resumed?: false,
     stopped?: false,
+    timed_out?: false,
     partial_line: "",
     pending_events: []
   ]
@@ -89,7 +92,7 @@ defmodule Rail.Tools.Follower do
     batch_interval_ms = Keyword.get(opts, :batch_interval_ms, @default_batch_interval)
 
     event_state =
-      new_event_state(backend,
+      new_event_state(if(OsProcess.command?(os_process), do: :command, else: backend),
         conversation_id: run.conversation_id
       )
 
@@ -101,6 +104,7 @@ defmodule Rail.Tools.Follower do
       os_pid: os_process.os_pid,
       port: Keyword.get(opts, :port),
       event_state: event_state,
+      deadline_at: os_process.deadline_at,
       tail_interval_ms: tail_interval_ms,
       batch_interval_ms: batch_interval_ms
     }
@@ -152,12 +156,19 @@ defmodule Rail.Tools.Follower do
         false
       end
 
-    if alive? do
-      Process.send_after(self(), :tail_tick, updated_state.tail_interval_ms)
-      {:noreply, updated_state}
-    else
-      {_run, final_state} = do_child_exit(updated_state)
-      {:stop, :normal, final_state}
+    cond do
+      alive? and past_deadline?(updated_state) ->
+        Tools.terminate_os_process(updated_state.os_pid)
+        {_run, final_state} = do_child_exit(%{updated_state | timed_out?: true})
+        {:stop, :normal, final_state}
+
+      alive? ->
+        Process.send_after(self(), :tail_tick, updated_state.tail_interval_ms)
+        {:noreply, updated_state}
+
+      true ->
+        {_run, final_state} = do_child_exit(updated_state)
+        {:stop, :normal, final_state}
     end
   end
 
@@ -177,6 +188,12 @@ defmodule Rail.Tools.Follower do
   def handle_info(_msg, state) do
     {:noreply, state}
   end
+
+  defp past_deadline?(%__MODULE__{deadline_at: %DateTime{} = deadline_at}) do
+    DateTime.compare(DateTime.utc_now(), deadline_at) != :lt
+  end
+
+  defp past_deadline?(%__MODULE__{}), do: false
 
   defp process_incoming_lines(lines, state) do
     Enum.reduce(lines, {state.event_state, state.pending_events}, fn line, {ev_state, pending} ->
@@ -276,14 +293,14 @@ defmodule Rail.Tools.Follower do
     flush_pending_events(%{state | pending_events: pending_events, logged_offset: final_offset})
 
     raw_stderr = state.err_path |> drain_err_file() |> Enum.join("\n")
-    error = compute_error(event_state.result_error, raw_stderr, reported_exit_code(state))
-    exit_code = compute_exit_code(state.exit_code, error, event_state.saw_result)
 
     case Repo.get(OsProcess, state.os_process_id) do
       %OsProcess{} = os_process ->
+        {exit_code, error} = settle_exit(state, os_process, event_state, raw_stderr)
+
         {:ok, updated_os_process} =
           os_process
-          |> OsProcess.changeset(%{status: :finished})
+          |> OsProcess.changeset(%{status: :finished, exit_code: exit_code})
           |> Repo.update()
 
         updated_run = update_run(state.run_id, event_state)
@@ -304,6 +321,25 @@ defmodule Rail.Tools.Follower do
       nil ->
         {nil, %{state | file_offset: final_offset, pending_events: [], event_state: event_state}}
     end
+  end
+
+  # 124, as `timeout(1)` has it: what ran out was time, not a stop someone asked for.
+  defp settle_exit(%__MODULE__{timed_out?: true}, %OsProcess{}, _event_state, _raw_stderr) do
+    {124, "Timed out, so it was stopped."}
+  end
+
+  # A command's output is its log, not an error, so all it has to say about its
+  # exit is the status. A Follower resumed after a restart has no port to hear
+  # that from, and reads the file the command wrote on its way out.
+  defp settle_exit(%__MODULE__{} = state, %OsProcess{kind: kind} = os_process, _event_state, _raw_stderr)
+       when kind != :agent do
+    exit_code = state.exit_code || read_exit_file(os_process) || -1
+    {exit_code, compute_error(nil, "", if(state.stopped?, do: nil, else: exit_code))}
+  end
+
+  defp settle_exit(%__MODULE__{} = state, %OsProcess{}, event_state, raw_stderr) do
+    error = compute_error(event_state.result_error, raw_stderr, reported_exit_code(state))
+    {compute_exit_code(state.exit_code, error, event_state.saw_result), error}
   end
 
   # A stop can arrive before the first tick has resumed anything.

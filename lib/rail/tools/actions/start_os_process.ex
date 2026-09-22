@@ -3,6 +3,7 @@ defmodule Rail.Tools.Actions.StartOsProcess do
 
   import Rail.Tools.Utils.BackendEnv
   import Rail.Tools.Utils.EnsureExecutable
+  import Rail.Tools.Utils.WorktreeEnv
 
   alias Rail.Mcp
   alias Rail.Pipeline
@@ -116,7 +117,7 @@ defmodule Rail.Tools.Actions.StartOsProcess do
       stdout_path: stream_path,
       stderr_path: "#{stream_path}.err",
       cd: task.worktree_path,
-      env: Map.put(backend_env(backend), "RAIL_MCP_TOKEN", token)
+      env: task |> worktree_env() |> Map.merge(backend_env(backend)) |> Map.put("RAIL_MCP_TOKEN", token)
     ]
 
     case Tools.spawn_os_process(backend.executable_path, args, spawn_opts) do

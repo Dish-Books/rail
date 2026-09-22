@@ -13,12 +13,14 @@ defmodule Rail.Pipeline.Actions.SendToReview do
   review. The diff pane has a button for both.
   """
 
+  import Rail.Pipeline.Utils.CiPassed
   import Rail.Pipeline.Utils.SendBack
 
   alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
 
   @doc """
@@ -27,7 +29,7 @@ defmodule Rail.Pipeline.Actions.SendToReview do
   Returns `{:ok, run}`, the run that was handed in, latched done.
   """
   def send_to_review(%Run{} = run) do
-    run = Repo.preload(run, [task: [:issue, :runs]], force: true)
+    run = Repo.preload(run, [task: [:issue, :project, :runs]], force: true)
 
     with :ok <- sendable(run.task) do
       {:ok, latched} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
@@ -47,14 +49,21 @@ defmodule Rail.Pipeline.Actions.SendToReview do
     """
   end
 
-  defp sendable(%Task{stage: stage}) when stage != :engineer, do: {:error, {:invalid_stage, stage}}
+  # A task that has moved on past engineer goes back to review only for what the
+  # engineer has changed since, such as a rebase it resolved or a fix asked for.
+  defp sendable(%Task{stage: stage}) when stage not in [:engineer, :review, :qa, :demo],
+    do: {:error, {:invalid_stage, stage}}
 
   defp sendable(%Task{} = task) do
     cond do
       Task.running?(task) -> {:error, :stage_running}
+      task.stage != :engineer and not Pipeline.changed_since_review?(task) -> {:error, :nothing_new_to_review}
       Git.worktree_dirty?(task.worktree_path) -> {:error, :uncommitted_changes}
       Git.branch_unpushed?(task.worktree_path) -> {:error, :unpushed_changes}
+      ci_required?(task) and not ci_passed?(task) -> {:error, :ci_not_passed}
       true -> :ok
     end
   end
+
+  defp ci_required?(%Task{project: %Project{ci_command: command}}), do: command not in [nil, ""]
 end

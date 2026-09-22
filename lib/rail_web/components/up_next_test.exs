@@ -127,4 +127,28 @@ defmodule RailWeb.Components.UpNextTest do
 
     assert render_component(&UpNext.up_next/1, runs: [one, one]) =~ "asked a question"
   end
+
+  test "a change whose demo is recorded is ready to merge, and opens on the demo", %{waiting: waiting} do
+    demo = waiting.(:demo)
+    ready = %{demo | role_id: "rol_demo", task: %{demo.task | pr_url: "https://github.com/org/app/pull/12"}}
+
+    html = render_component(&UpNext.up_next/1, runs: [ready])
+
+    assert html =~ ~s(href="/tasks/tsk_demo?tab=rol_demo")
+    assert html =~ "Ready to merge"
+    assert html =~ "The demo is recorded, and the pull request is waiting on you to merge it."
+
+    html = render_component(&UpNext.up_next/1, runs: [waiting.(:engineer), %{ready | id: "run_ready"}])
+
+    assert html =~ "demo recorded"
+    assert html =~ ~s(href="/tasks/tsk_demo?tab=rol_demo")
+  end
+
+  test "a recorded demo with no pull request to merge is watched on the task page", %{waiting: waiting} do
+    html = render_component(&UpNext.up_next/1, runs: [waiting.(:demo)])
+
+    assert html =~ "Watch the demo"
+    assert html =~ ~s(href="/tasks/tsk_demo")
+    refute html =~ "Ready to merge"
+  end
 end

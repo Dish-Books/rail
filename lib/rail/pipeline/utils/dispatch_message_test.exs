@@ -76,7 +76,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
         started_at: DateTime.utc_now()
       })
 
-    %{run: run, run_id: run_id}
+    %{project: project, run: run, run_id: run_id}
   end
 
   test "sends the queued message and takes it off the run", %{run: run, run_id: run_id} do
@@ -94,6 +94,15 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
 
   # How the last turn ended is not how this one has ended, and a run left wearing
   # an error is a run nothing will ever latch as done.
+  test "a person's message starts the count of CI failures sent back over", %{run: run} do
+    {:ok, run} = Pipeline.update_run(run, %{ci_failure_streak: 3})
+
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+    assert %Run{ci_failure_streak: 0} = Repo.reload!(run)
+  end
+
   test "the turn before this one takes its error with it", %{run: run} do
     {:ok, failed} = run |> Run.changeset(%{error: "Error: empty prompt", exit_code: 1}) |> Repo.update()
 
@@ -147,5 +156,30 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     reject(&Tools.start_os_process/2)
 
     assert {:error, :nothing_queued} = dispatch_message(drained, async: false)
+  end
+
+  test "a worktree that still needs setting up gets that first, with the message left queued", %{
+    project: project,
+    run: run
+  } do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{worktree_setup_script: "bin/setup"})
+
+    reject(Tools, :start_os_process, 2)
+
+    expect(Tools, :start_command_process, fn spawned, :setup, "./bin/setup", _opts ->
+      {:ok, %OsProcess{kind: :setup, run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{kind: :setup}} = dispatch_message(run, async: false)
+    assert %Run{pending_chat: "Please also add a test", status: :running} = Repo.reload!(run)
+  end
+
+  test "a setup that cannot start leaves the message queued and the run failed", %{project: project, run: run} do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{worktree_setup_script: "bin/setup"})
+
+    expect(Tools, :start_command_process, fn _run, :setup, _command, _opts -> {:error, :enoent} end)
+
+    assert {:error, :worktree_setup_failed} = dispatch_message(run, async: false)
+    assert %Run{pending_chat: "Please also add a test", status: :failed} = Repo.reload!(run)
   end
 end

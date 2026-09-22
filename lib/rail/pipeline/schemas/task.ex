@@ -23,7 +23,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     :review,
     :qa,
     :demo,
-    :ready_to_merge,
     :merged,
     :debugger
   ]
@@ -36,6 +35,17 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :scratch_path, :string
     field :merged_at, :utc_datetime_usec
     field :cleaned_up_at, :utc_datetime_usec
+    # A block of ports on this machine, unique across every project's tasks.
+    field :worktree_slot, :integer
+    field :worktree_setup_at, :utc_datetime_usec
+    # The pull request Rail opened, as a draft, the first time the branch was pushed.
+    field :pr_number, :integer
+    field :pr_url, :string
+    field :pr_is_draft, :boolean
+    # The engineer has been asked to rebase onto the default branch and has not yet.
+    field :is_rebasing, :boolean, default: false
+    # A person settled the demo stage as not needed rather than recording one.
+    field :demo_skipped_at, :utc_datetime_usec
 
     belongs_to :project, Project
     belongs_to :issue, Issue
@@ -55,7 +65,14 @@ defmodule Rail.Pipeline.Schemas.Task do
     :worktree_path,
     :scratch_path,
     :merged_at,
-    :cleaned_up_at
+    :cleaned_up_at,
+    :worktree_slot,
+    :worktree_setup_at,
+    :pr_number,
+    :pr_url,
+    :pr_is_draft,
+    :is_rebasing,
+    :demo_skipped_at
   ]
 
   @required_fields [
@@ -79,7 +96,15 @@ defmodule Rail.Pipeline.Schemas.Task do
     |> foreign_key_constraint(:project_id)
     |> foreign_key_constraint(:issue_id)
     |> unique_constraint(:issue_id)
+    |> unique_constraint(:worktree_slot, name: :tasks_worktree_slot_index)
   end
+
+  @doc """
+  The first of the hundred ports the worktree of a task holding a slot owns.
+
+  Starts well above the 4000s, where checkouts set up by hand pick their own.
+  """
+  def port_base(%__MODULE__{worktree_slot: slot}) when is_integer(slot), do: 20_000 + slot * 100
 
   @doc """
   True when the task's worktree directory is actually on disk.
@@ -104,6 +129,11 @@ defmodule Rail.Pipeline.Schemas.Task do
 
   def stages, do: @stages
 
+  @doc "True when the demo stage has a video on disk for `task`."
+  def demo_recorded?(%__MODULE__{scratch_path: scratch_path}) do
+    File.regular?(Path.join([scratch_path, "demo", "demo.webm"]))
+  end
+
   def stage_label(:product), do: "Product"
   def stage_label(:design), do: "Design"
   def stage_label(:architect), do: "Architect"
@@ -111,7 +141,6 @@ defmodule Rail.Pipeline.Schemas.Task do
   def stage_label(:review), do: "Review"
   def stage_label(:qa), do: "QA"
   def stage_label(:demo), do: "Demo"
-  def stage_label(:ready_to_merge), do: "Ready to merge"
   def stage_label(:merged), do: "Merged"
   def stage_label(:debugger), do: "Debugger"
   def stage_label(_other), do: nil

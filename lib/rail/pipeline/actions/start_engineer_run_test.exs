@@ -71,7 +71,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
 
     {:ok, run} = Pipeline.start_or_resume_run(task, role, worktree_path)
 
-    %{task: task, run: run}
+    %{project: project, task: task, run: run}
   end
 
   test "briefs the engineer on the plan it builds and the file that says it is done", %{task: task, run: run} do
@@ -223,5 +223,16 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     end)
 
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_engineer_run(run)
+  end
+
+  test "tells the engineer CI runs on its commit, and that failures come back to it", %{project: project, run: run} do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "Rail runs `mise run ci` on it before anything else sees it"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_engineer_run(run)
   end
 end

@@ -4,7 +4,8 @@ defmodule RailWeb.Components.UpNext do
 
   The first leads as a card and the rest follow as rows. Nothing here acts on a
   run: what the human does next — reading a ticket, answering a question — needs
-  the task in front of them, so every entry is only a way there.
+  the task in front of them, so every entry is only a way there. A change whose
+  demo is recorded is ready to merge, and its entry opens on the demo.
   """
   use RailWeb, :html
 
@@ -13,6 +14,7 @@ defmodule RailWeb.Components.UpNext do
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Roles.Schemas.Role
 
   attr :runs, :list, required: true
 
@@ -34,7 +36,7 @@ defmodule RailWeb.Components.UpNext do
 
       <.link
         :if={@featured}
-        navigate={~p"/tasks/#{@featured.task_id}"}
+        {destination(@featured)}
         id={"up-next-featured-#{@featured.id}"}
         data-qa="up-next-featured"
         class="group block rounded-xl border border-amber-300 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-950/30 px-5 py-4 transition-colors hover:bg-amber-100/70 dark:hover:bg-amber-950/50"
@@ -76,7 +78,7 @@ defmodule RailWeb.Components.UpNext do
 
       <.link
         :for={run <- @rest}
-        navigate={~p"/tasks/#{run.task_id}"}
+        {destination(run)}
         id={"up-next-row-#{run.id}"}
         data-qa="up-next-row"
         class="group flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-800/40 px-5 py-3.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/70"
@@ -96,13 +98,28 @@ defmodule RailWeb.Components.UpNext do
     """
   end
 
+  # The demo is what the merge is decided on, so a change ready for it opens there.
+  defp destination(run) do
+    if ready_to_merge?(run),
+      do: [navigate: ~p"/tasks/#{run.task_id}?tab=#{run.role_id}"],
+      else: [navigate: ~p"/tasks/#{run.task_id}"]
+  end
+
+  # The demo is the last thing Rail makes, so a change with one recorded and a
+  # pull request to merge has nothing left to wait on but the merge.
+  defp ready_to_merge?(%Run{role: %Role{stage: :demo}, task: %Task{pr_url: pr_url}} = run) when is_binary(pr_url) do
+    Run.state(run) == :done
+  end
+
+  defp ready_to_merge?(%Run{}), do: false
+
   # Three things bring a run here, and they are not the same errand. A done run has
   # produced the work of its stage and waits on that being read. A blocked run
   # waits on its questions. A run that failed or stopped waits on someone picking
   # it up, and says nothing about itself until they do.
   defp chip(run) do
     case Run.state(run) do
-      :done -> "Ready for review"
+      :done -> if ready_to_merge?(run), do: "Ready to merge", else: "Ready for review"
       :blocked -> "Needs an answer"
       _stalled -> "Needs a fix"
     end
@@ -112,7 +129,7 @@ defmodule RailWeb.Components.UpNext do
   # the page it opens do not name the errand differently.
   defp action(%Run{task: %Task{stage: stage}} = run) do
     case Run.state(run) do
-      :done -> approval_label(stage)
+      :done -> if ready_to_merge?(run), do: "Ready to merge", else: approval_label(stage)
       :blocked -> "Answer questions"
       _stalled -> "Pick it up"
     end
@@ -120,7 +137,7 @@ defmodule RailWeb.Components.UpNext do
 
   defp verb(run) do
     case Run.state(run) do
-      :done -> "Review"
+      :done -> if ready_to_merge?(run), do: "Ready to merge", else: "Review"
       :blocked -> "Answer"
       _stalled -> "Fix"
     end
@@ -128,15 +145,22 @@ defmodule RailWeb.Components.UpNext do
 
   defp summary(run) do
     case Run.state(run) do
-      :done -> "Waiting on you to read the #{work(run)}."
-      :blocked -> asked(run)
-      _stalled -> stalled(run)
+      :done ->
+        if ready_to_merge?(run),
+          do: "The demo is recorded, and the pull request is waiting on you to merge it.",
+          else: "Waiting on you to read the #{work(run)}."
+
+      :blocked ->
+        asked(run)
+
+      _stalled ->
+        stalled(run)
     end
   end
 
   defp detail(run) do
     case Run.state(run) do
-      :done -> "#{work(run)} ready for review"
+      :done -> if ready_to_merge?(run), do: "demo recorded", else: "#{work(run)} ready for review"
       :blocked -> "#{run.role.name} asked #{questions(run)}"
       _stalled -> stalled(run)
     end
@@ -171,6 +195,7 @@ defmodule RailWeb.Components.UpNext do
   defp work(%Run{task: %Task{stage: :engineer}}), do: "diff"
   defp work(%Run{task: %Task{stage: :review}}), do: "findings"
   defp work(%Run{task: %Task{stage: :qa}}), do: "QA report"
+  defp work(%Run{task: %Task{stage: :demo}}), do: "demo"
   defp work(%Run{}), do: "ticket"
 
   defp questions(%Run{questions: [_one]}), do: "a question"

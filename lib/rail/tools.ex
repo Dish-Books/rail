@@ -59,11 +59,13 @@ defmodule Rail.Tools do
 
   defdelegate build_args(opts), to: Actions.BuildArgs
   defdelegate start_os_process(run, argv), to: Actions.StartOsProcess
+  defdelegate start_command_process(run, kind, command, opts \\ []), to: Actions.StartCommandProcess
   defdelegate stop_os_process(os_process, opts \\ []), to: Actions.StopOsProcess
   defdelegate get_os_process(id), to: Actions.GetOsProcess
   defdelegate get_active_os_process(run), to: Actions.GetActiveOsProcess
   defdelegate list_os_processes(opts \\ []), to: Actions.ListOsProcesses
   defdelegate parse_stream(backend, lines, opts \\ []), to: Actions.ParseStream
+  defdelegate plain_text(text), to: Actions.PlainText
 
   defdelegate list_backends(), to: Actions.ListBackends
   defdelegate get_backend(name), to: Actions.GetBackend

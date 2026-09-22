@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   import Rail.Pipeline.Utils.QuestionQueue
 
   alias Rail.Git
+  alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -106,6 +107,22 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
       {run, os_process}
     end
+
+    # Every push opens the task's pull request if it has none.
+    Req.Test.stub(Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/" <> _id} ->
+          Req.Test.json(conn, %{"token" => "ghs_token"})
+
+        {"GET", _pulls} ->
+          Req.Test.json(conn, [])
+
+        {"POST", _pulls} ->
+          conn
+          |> Plug.Conn.put_status(201)
+          |> Req.Test.json(%{"number" => 7, "html_url" => "https://github.com/org/repo/pull/7", "draft" => true})
+      end
+    end)
 
     %{project: project, task: task, roles: roles, exited: exited}
   end
@@ -339,6 +356,200 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{stage: :demo} = Repo.reload!(task)
   end
 
+  test "a demo that is done takes the task's pull request out of draft", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: true})
+    demo_dir = Path.join(task.scratch_path, "demo")
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+
+    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+
+    Req.Test.expect(Client, 3, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/43001/access_tokens"} ->
+          Req.Test.json(conn, %{"token" => "ghs_token"})
+
+        {"GET", "/repos/org/run-finished/pulls/7"} ->
+          Req.Test.json(conn, %{"number" => 7, "node_id" => "PR_kw7"})
+
+        {"POST", "/graphql"} ->
+          Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{"pullRequest" => %{"isDraft" => false}}}})
+      end
+    end)
+
+    {_run, os_process} = exited.(:demo, %{})
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :demo, pr_is_draft: false} = Repo.reload!(task)
+  end
+
+  test "a recorded demo is posted on the ticket and linked from the pull request", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: false})
+    demo_dir = Path.join(task.scratch_path, "demo")
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+    File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
+
+    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "fileUpload" => %{
+            "success" => true,
+            "uploadFile" => %{
+              "uploadUrl" => "https://uploads.linear.app/put/run-1",
+              "assetUrl" => "https://uploads.linear.app/assets/RUN-1-demo.webm",
+              "headers" => []
+            }
+          }
+        }
+      })
+    end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert {:ok, "webm bytes", conn} = Plug.Conn.read_body(conn)
+      Plug.Conn.send_resp(conn, 200, "")
+    end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      comment = "## Demo: Filters\n\nIt filters.\n\n[Watch the demo](https://uploads.linear.app/assets/RUN-1-demo.webm)"
+      assert %{"variables" => %{"input" => %{"body" => ^comment}}} = Jason.decode!(body)
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "commentCreate" => %{
+            "success" => true,
+            "comment" => %{
+              "id" => "comment_demo",
+              "body" => comment,
+              "createdAt" => "2026-09-22T10:00:00.000Z",
+              "issue" => %{"id" => "lin_run_finished_1"},
+              "botActor" => %{"name" => "Rail"}
+            }
+          }
+        }
+      })
+    end)
+
+    Req.Test.expect(Client, 3, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/" <> _id} ->
+          Req.Test.json(conn, %{"token" => "ghs_token"})
+
+        {"GET", "/repos/org/run-finished/pulls/7"} ->
+          Req.Test.json(conn, %{"number" => 7, "body" => "Opened by Rail.\n\n## Demo\n\n[Watch the demo](old)"})
+
+        {"PATCH", "/repos/org/run-finished/pulls/7"} ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+          assert %{
+                   "body" =>
+                     "Opened by Rail.\n\n## Demo\n\n[Watch the demo](https://uploads.linear.app/assets/RUN-1-demo.webm)"
+                 } =
+                   Jason.decode!(body)
+
+          Req.Test.json(conn, %{"number" => 7})
+      end
+    end)
+
+    {run, os_process} = exited.(:demo, %{})
+
+    assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "Could not publish"))
+  end
+
+  test "a recorded demo on a task with no pull request goes on the ticket alone", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo})
+    demo_dir = Path.join(task.scratch_path, "demo")
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+    File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
+
+    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "fileUpload" => %{
+            "success" => true,
+            "uploadFile" => %{
+              "uploadUrl" => "https://uploads.linear.app/put/run-1",
+              "assetUrl" => "https://uploads.linear.app/a.webm",
+              "headers" => []
+            }
+          }
+        }
+      })
+    end)
+
+    Req.Test.expect(Rail.Linear, &Plug.Conn.send_resp(&1, 200, ""))
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "commentCreate" => %{
+            "success" => true,
+            "comment" => %{
+              "id" => "comment_demo_2",
+              "body" => "## Demo: Filters",
+              "createdAt" => "2026-09-22T10:00:00.000Z",
+              "issue" => %{"id" => "lin_run_finished_1"},
+              "botActor" => %{"name" => "Rail"}
+            }
+          }
+        }
+      })
+    end)
+
+    Req.Test.stub(Client, fn _conn -> flunk("asked GitHub about a pull request the task does not have") end)
+
+    {run, os_process} = exited.(:demo, %{})
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "Could not publish"))
+  end
+
+  test "a demo that could not be published says so and is still done", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo})
+    demo_dir = Path.join(task.scratch_path, "demo")
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+    File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
+
+    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+    Req.Test.expect(Rail.Linear, &Req.Test.json(&1, %{"data" => %{"fileUpload" => %{"success" => false}}}))
+
+    {run, os_process} = exited.(:demo, %{})
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "[rail] Could not publish the demo:"))
+  end
+
+  test "a draft GitHub will not mark ready does not hold the demo back", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: true})
+    demo_dir = Path.join(task.scratch_path, "demo")
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+
+    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})))
+
+    {_run, os_process} = exited.(:demo, %{})
+
+    assert ExUnit.CaptureLog.capture_log(fn ->
+             assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+           end) =~ "Could not mark org/run-finished#7 ready for review"
+
+    assert %Task{pr_is_draft: true} = Repo.reload!(task)
+  end
+
   test "a QA run that wrote no report says so and stays open", %{task: task, exited: exited} do
     {:ok, _at_qa} = Pipeline.update_task(task, %{stage: :qa})
     {_run, os_process} = exited.(:qa, %{})
@@ -557,5 +768,393 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     {_run, os_process} = exited.(:product, %{status: :blocked_on_input})
 
     assert {:ok, %Run{status: :blocked_on_input}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  test "a worktree setup that succeeded marks the worktree set up and enters the stage it held up", %{
+    task: task,
+    roles: roles,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :debugger, worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:debugger, %{})
+    os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+    %{id: debugger_role_id} = roles[:debugger]
+
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %Run{role_id: ^debugger_role_id, status: :running}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+
+    assert %Task{worktree_setup_at: %DateTime{}} = Repo.reload!(task)
+  end
+
+  test "a worktree setup that failed says so on the run and starts nothing", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :debugger})
+    {_run, os_process} = exited.(:debugger, %{})
+    os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+    reject(Tools, :start_os_process, 2)
+
+    assert {:ok, %Run{error: "The worktree setup script failed (Exited with code 1)." <> _rest}} =
+             Pipeline.run_finished(os_process, %{exit_code: 1, error: "Exited with code 1"})
+
+    assert %Task{worktree_setup_at: nil} = Repo.reload!(task)
+  end
+
+  test "a worktree set up under a conversation already going sends the message that was waiting", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :debugger, worktree_path: create_temp_git_repo()})
+    {run, _agent_process} = exited.(:debugger, %{status: :finished, pending_chat: "Keep going"})
+
+    setup_process =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
+        kind: :setup,
+        stream_path: "/tmp/run_finished/#{run.id}.log",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    test_pid = self()
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      send(test_pid, {:dispatched, argv})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(setup_process, %{exit_code: 0}, async: false)
+    assert_received {:dispatched, argv}
+    assert Enum.any?(argv, &(&1 =~ "Keep going"))
+  end
+
+  test "a message typed while a new worktree was set up waits for the stage's first turn", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :debugger, worktree_path: create_temp_git_repo()})
+    {run, os_process} = exited.(:debugger, %{pending_chat: "Also check the logs"})
+    os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      refute Enum.any?(argv, &(&1 =~ "Also check the logs"))
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{status: :running}} = Pipeline.run_finished(os_process, %{exit_code: 0}, async: false)
+    assert %Run{pending_chat: "Also check the logs"} = Repo.reload!(run)
+  end
+
+  test "a worktree set up for a stage the task has since left enters nothing", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+    {_run, os_process} = exited.(:debugger, %{})
+    os_process = os_process |> OsProcess.changeset(%{kind: :setup}) |> Repo.update!()
+
+    reject(Tools, :start_os_process, 2)
+
+    assert {:ok, %Run{status: :finished, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :review, worktree_setup_at: %DateTime{}} = Repo.reload!(task)
+  end
+
+  test "an engineer finished on a project with CI commits and starts CI, and is not done until it passes", %{
+    project: project,
+    task: task,
+    exited: exited
+  } do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    File.mkdir_p!(Path.join(task.scratch_path, "commits"))
+    File.write!(Path.join([task.scratch_path, "commits", "RUN-1.md"]), "RUN-1: did the work\n")
+    File.write!(Path.join(task.worktree_path, "changed.ex"), "the engineer's work\n")
+    head_before = String.trim(git!(task.worktree_path, ["rev-parse", "HEAD"]))
+
+    reject(&Git.push_branch/2)
+    stub(Git, :credential_env, fn _project -> {:ok, %{"RAIL_GIT_TOKEN" => "ghs_token"}} end)
+
+    expect(Tools, :start_command_process, fn run, :ci, "mise run ci", opts ->
+      assert %{"RAIL_GIT_TOKEN" => "ghs_token"} = opts[:env]
+      assert opts[:timeout_ms] == to_timeout(minute: 30)
+      assert opts[:head_sha] == String.trim(git!(task.worktree_path, ["rev-parse", "HEAD"]))
+      refute opts[:head_sha] == head_before
+      {:ok, %OsProcess{kind: :ci, run: run}}
+    end)
+
+    {_run, os_process} = exited.(:engineer, %{})
+
+    assert {:ok, %Run{status: :running, stage_outcome: :in_progress, error: nil}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+
+    refute Git.worktree_dirty?(task.worktree_path)
+  end
+
+  test "CI that cannot get a credential to push with fails the run on why", %{
+    project: project,
+    task: task,
+    exited: exited
+  } do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    File.mkdir_p!(Path.join(task.scratch_path, "commits"))
+    File.write!(Path.join([task.scratch_path, "commits", "RUN-1.md"]), "RUN-1: did the work\n")
+    File.write!(Path.join(task.worktree_path, "changed.ex"), "the engineer's work\n")
+
+    stub(Git, :credential_env, fn _project -> {:error, {:github_api_error, 404, %{}}} end)
+    reject(Tools, :start_command_process, 4)
+    {_run, os_process} = exited.(:engineer, %{})
+
+    assert {:ok,
+            %Run{
+              stage_outcome: :in_progress,
+              error: "Could not commit the engineer's work: Could not start CI: " <> _reason
+            }} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  test "CI that passed pushes the branch and has the engineer's run done", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+    {_run, os_process} = exited.(:engineer, %{ci_failure_streak: 2})
+    os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+    expect(Git, :push_branch, fn _scope, _task -> :ok end)
+
+    assert {:ok, %Run{stage_outcome: :done, ci_failure_streak: 0, error: nil}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  test "CI that passed on a branch that will not push says so and is not done", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+    {_run, os_process} = exited.(:engineer, %{})
+    os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+    expect(Git, :push_branch, fn _scope, _task -> {:error, "no CI receipt for this tree"} end)
+
+    assert {:ok,
+            %Run{
+              stage_outcome: :in_progress,
+              error: "CI passed, but the branch could not be pushed: no CI receipt for this tree"
+            }} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  test "CI that failed goes back to the engineer with the end of its output", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    {run, os_process} = exited.(:engineer, %{})
+    stream_path = Path.join(task.scratch_path, "ci.log")
+    File.mkdir_p!(task.scratch_path)
+    File.write!(stream_path, Enum.map_join(1..200, "\n", &"line #{&1}") <> "\n\e[31m1 test, 1 failure\e[0m\n")
+
+    os_process =
+      os_process |> OsProcess.changeset(%{kind: :ci, command: "mise run ci", stream_path: stream_path}) |> Repo.update!()
+
+    test_pid = self()
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      send(test_pid, {:resumed, Enum.join(argv, " ")})
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{status: :running, ci_failure_streak: 1}} =
+             Pipeline.run_finished(os_process, %{exit_code: 1, error: "Exited with code 1"})
+
+    assert_received {:resumed, prompt}
+    assert prompt =~ "`mise run ci` exited with code 1"
+    assert prompt =~ "1 test, 1 failure"
+    assert prompt =~ "line 60"
+    refute prompt =~ "line 50\n"
+    assert prompt =~ "The whole log is #{stream_path}"
+
+    assert [%{line: "[rail] CI failed, so its output went back to the engineer (1 of 3)."}] =
+             Pipeline.list_run_events(run)
+  end
+
+  test "CI that timed out goes back to the engineer saying so", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:engineer, %{})
+
+    os_process =
+      os_process
+      |> OsProcess.changeset(%{kind: :ci, command: "mise run ci", stream_path: "/tmp/gone.log"})
+      |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      assert Enum.any?(argv, &(&1 =~ "`mise run ci` timed out and was stopped"))
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{status: :running}} = Pipeline.run_finished(os_process, %{exit_code: 124})
+  end
+
+  test "CI that failed a third time in a row waits for a person", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+    {_run, os_process} = exited.(:engineer, %{ci_failure_streak: 2})
+    os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+    reject(Tools, :start_os_process, 2)
+
+    assert {:ok, %Run{status: :finished, ci_failure_streak: 3, error: "CI failed 3 times in a row" <> _rest}} =
+             Pipeline.run_finished(os_process, %{exit_code: 1})
+  end
+
+  test "CI that was stopped before it finished sends nothing back", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+    {_run, os_process} = exited.(:engineer, %{ci_failure_streak: 1})
+    os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+    reject(Tools, :start_os_process, 2)
+
+    assert {:ok, %Run{ci_failure_streak: 1, error: "CI was stopped before it finished." <> _rest}} =
+             Pipeline.run_finished(os_process, %{exit_code: -1})
+  end
+
+  test "CI that failed with dispatch off says the engineer was not resumed", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:engineer, %{})
+    os_process = os_process |> OsProcess.changeset(%{kind: :ci, command: "mise run ci"}) |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
+
+    assert {:ok, %Run{status: :finished, error: "Dispatch is off, so the engineer was not resumed."}} =
+             Pipeline.run_finished(os_process, %{exit_code: 1})
+  end
+
+  test "CI that failed and could not resume the engineer keeps why", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    {run, os_process} = exited.(:engineer, %{})
+    os_process = os_process |> OsProcess.changeset(%{kind: :ci, command: "mise run ci"}) |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn spawned, _argv ->
+      {:ok, failed} = Pipeline.update_run(spawned, %{status: :failed, error: "Failed to spawn runner: :enoent"})
+      {:error, {:spawn_failed, :enoent, failed}}
+    end)
+
+    assert {:ok, %Run{error: "Failed to spawn runner: :enoent"}} = Pipeline.run_finished(os_process, %{exit_code: 1})
+    assert %Run{ci_failure_streak: 1} = Repo.reload!(run)
+  end
+
+  test "CI that passed on a branch GitHub will not give a token for says why", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+    {_run, os_process} = exited.(:engineer, %{})
+    os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
+
+    expect(Git, :push_branch, fn _scope, _task -> {:error, {:github_api_error, 401, %{}}} end)
+
+    assert {:ok, %Run{error: "CI passed, but the branch could not be pushed: {:github_api_error, 401, %{}}"}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  test "conflicts the engineer resolved are carried on and the branch sent on", %{task: task, exited: exited} do
+    {:ok, task} =
+      Pipeline.update_task(task, %{stage: :review, is_rebasing: true, worktree_path: create_temp_git_repo()})
+
+    {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
+
+    stub(Git, :rebase_in_progress?, fn _path -> true end)
+    expect(Git, :rebase_branch, fn _scope, _task -> :ok end)
+    expect(Git, :push_branch, fn _scope, _task -> :ok end)
+
+    assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{is_rebasing: false, stage: :review} = Repo.reload!(task)
+  end
+
+  test "a rebase carried on through CI is not done until CI passes", %{project: project, task: task, exited: exited} do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+    {:ok, _task} = Pipeline.update_task(task, %{is_rebasing: true, worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
+
+    stub(Git, :rebase_in_progress?, fn _path -> true end)
+    expect(Git, :rebase_branch, fn _scope, _task -> :ok end)
+    reject(&Git.push_branch/2)
+    stub(Git, :credential_env, fn _project -> {:ok, %{}} end)
+    expect(Tools, :start_command_process, fn run, :ci, "mise run ci", _opts -> {:ok, %OsProcess{kind: :ci, run: run}} end)
+
+    assert {:ok, %Run{status: :running, stage_outcome: :in_progress}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  test "the next commit conflicting goes back to the engineer", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{is_rebasing: true, worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:engineer, %{})
+
+    stub(Git, :rebase_in_progress?, fn _path -> true end)
+    expect(Git, :rebase_branch, fn _scope, _task -> {:conflicts, ["lib/next.ex"]} end)
+
+    expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
+      assert prompt =~ "- lib/next.ex"
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{status: :running}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  test "an engineer that stopped with conflicts unresolved stays rebasing", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{is_rebasing: true, worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:engineer, %{})
+
+    stub(Git, :conflicted_files, fn _path -> ["lib/app.ex"] end)
+    reject(&Git.rebase_branch/2)
+
+    assert {:ok, %Run{error: "The engineer stopped with conflicts still unresolved." <> _rest}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+
+    assert %Task{is_rebasing: true} = Repo.reload!(task)
+  end
+
+  test "a rebase the engineer abandoned is said so", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{is_rebasing: true, worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:engineer, %{})
+
+    stub(Git, :rebase_in_progress?, fn _path -> false end)
+    stub(Git, :rebased_onto?, fn _path, "main" -> false end)
+
+    assert {:ok, %Run{error: "The rebase onto origin/main was abandoned before it finished." <> _rest}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  test "a rebase that cannot be carried on says why", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{is_rebasing: true, worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:engineer, %{})
+
+    stub(Git, :rebase_in_progress?, fn _path -> true end)
+    expect(Git, :rebase_branch, fn _scope, _task -> {:error, {:github_api_error, 401, %{}}} end)
+
+    assert {:ok, %Run{error: "The rebase could not be finished: {:github_api_error, 401, %{}}"}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  test "a rebase carried on whose push fails says why", %{task: task, exited: exited} do
+    {:ok, _task} = Pipeline.update_task(task, %{is_rebasing: true, worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:engineer, %{})
+
+    stub(Git, :rebase_in_progress?, fn _path -> true end)
+    expect(Git, :rebase_branch, fn _scope, _task -> :ok end)
+    expect(Git, :push_branch, fn _scope, _task -> {:error, "! [rejected] (stale info)"} end)
+
+    assert {:ok, %Run{error: "The rebase could not be finished: ! [rejected] (stale info)"}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  test "an engineer that asks something while rebasing parks on it", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{is_rebasing: true})
+    {run, os_process} = exited.(:engineer, %{})
+    now = DateTime.utc_now()
+
+    Repo.insert_all(RunEvent, [
+      %{
+        id: UXID.generate!(),
+        run_id: run.id,
+        os_process_id: os_process.id,
+        line: "[QUESTION: Keep both migrations?]",
+        inserted_at: now,
+        updated_at: now
+      }
+    ])
+
+    reject(&Git.rebase_branch/2)
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert [%{prompt: "Keep both migrations?"}] = pending_questions(task.id)
   end
 end

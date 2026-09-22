@@ -259,4 +259,10 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert {:ok, %Task{cleaned_up_at: %DateTime{} = first}} = Pipeline.cleanup_task(task)
     assert {:ok, %Task{cleaned_up_at: ^first}} = Pipeline.cleanup_task(Repo.reload!(task))
   end
+
+  test "frees the task's worktree slot, and a new worktree would need setting up again", %{task: task} do
+    {:ok, task} = Pipeline.update_task(task, %{worktree_slot: 2, worktree_setup_at: DateTime.utc_now()})
+
+    assert {:ok, %Task{worktree_slot: nil, worktree_setup_at: nil}} = Pipeline.cleanup_task(task)
+  end
 end

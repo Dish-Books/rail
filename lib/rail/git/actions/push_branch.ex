@@ -5,60 +5,47 @@ defmodule Rail.Git.Actions.PushBranch do
   The credential is minted here from the project's GitHub App installation rather
   than passed in: a token is not something a caller should be holding, and the
   installation is what keeps a branch pushable after whoever was assigned leaves.
-  It reaches git through a credential helper in the process environment and never
-  through argv, where `ps` would show it — the same rule
-  `Rail.Tools.Actions.BuildArgs` follows for the MCP token.
 
-  The repository's own pre-push hooks are skipped. They are a person's local CI,
-  which can run for minutes and fail on things the round did not touch, and the
-  pull request's CI is where the branch gets checked.
+  Forced, because a rebased branch no longer extends what the remote has, but
+  only over what Rail has itself seen and built on: a push made outside Rail is
+  refused rather than overwritten.
+
+  The repository's own pre-push hooks run. A project whose CI runs before Rail
+  pushes leaves a record a hook can recognise, so they should cost nothing; one
+  that still runs for longer than it may is stopped.
   """
 
-  alias Rail.GitHub.Client, as: GitHub
+  alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Tools
 
-  @helper ~S|!f() { echo username=x-access-token; echo "password=$RAIL_GIT_TOKEN"; }; f|
+  @timeout_ms to_timeout(minute: 10)
 
   @doc """
   Pushes `task`'s branch, setting it to track `origin`.
   """
   def push_branch(%Scope{}, %Task{} = task) do
-    with {:ok, token} <- token(task) do
-      push(task.worktree_path, task.worktree_name, token)
+    with {:ok, env} <- Git.credential_env(Repo.get!(Project, task.project_id)) do
+      push(task.worktree_path, task.worktree_name, env)
     end
   end
 
-  # Every project is required to name an installation, so there is nothing to fall
-  # back to: a project that cannot be read is a broken invariant, not a branch to
-  # handle.
-  defp token(%Task{project_id: project_id}) do
-    %Project{github_installation_id: installation_id} = Repo.get(Project, project_id)
-
-    GitHub.installation_token(installation_id)
-  end
-
-  defp push(worktree_path, branch, token) do
-    case Tools.run("git", ["push", "--no-verify", "--set-upstream", "origin", branch],
+  defp push(worktree_path, branch, env) do
+    case Tools.run("git", ["push", "--force-with-lease", "--force-if-includes", "--set-upstream", "origin", branch],
            cd: worktree_path,
-           env: env(token),
-           stderr_to_stdout: true
+           env: env,
+           stderr_to_stdout: true,
+           timeout: @timeout_ms
          ) do
       {_output, 0} -> :ok
-      {output, _code} -> {:error, String.trim(output)}
+      # coveralls-ignore-next-line (a hook that runs for ten minutes)
+      {:error, :timeout} -> {:error, "The push was still running after ten minutes, so it was stopped."}
+      {output, code} when is_binary(output) and is_integer(code) -> {:error, String.trim(output)}
+      # coveralls-ignore-next-line (git itself could not be started)
+      {:error, reason} -> {:error, reason}
     end
-  end
-
-  defp env(token) do
-    %{
-      "RAIL_GIT_TOKEN" => token,
-      "GIT_CONFIG_COUNT" => "1",
-      "GIT_CONFIG_KEY_0" => "credential.helper",
-      "GIT_CONFIG_VALUE_0" => @helper,
-      "GIT_TERMINAL_PROMPT" => "0"
-    }
   end
 end
