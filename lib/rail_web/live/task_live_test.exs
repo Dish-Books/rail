@@ -1199,6 +1199,19 @@ defmodule RailWeb.TaskLiveTest do
       assert_push_event(view, "diff:scroll_to", %{path: "shipped.ex"})
     end
 
+    test "marking a file reviewed goes on to the next unreviewed file", %{conn: conn, task: task, repo: repo} do
+      File.write!(Path.join(repo, "zeta.ex"), "also committed\n")
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-m", "more work"])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#diff-header-shipped-ex [data-qa='diff-viewed-checkbox']") |> render_click()
+
+      assert_push_event(view, "diff:scroll_to", %{path: "zeta.ex"})
+      assert has_element?(view, "[data-qa='diff-file-row'][aria-current='true']", "zeta.ex")
+    end
+
     test "selecting a file opens it again if reading it had folded it away", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 

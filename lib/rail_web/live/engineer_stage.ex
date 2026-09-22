@@ -145,7 +145,7 @@ defmodule RailWeb.Live.EngineerStage do
   end
 
   # Reading a file is also done with it, so it folds away; the caret is there to
-  # open it again.
+  # open it again. The reader is then taken on to the next file they have not read.
   def handle_event("toggle_viewed", %{"path" => path, "digest" => digest}, socket) do
     read_already? = Enum.any?(socket.assigns.files, &(&1.path == path and &1.viewed?))
 
@@ -154,7 +154,7 @@ defmodule RailWeb.Live.EngineerStage do
 
     socket = socket |> assign(:collapsed, toggle(socket.assigns.collapsed, path, not read_already?)) |> load()
 
-    {:noreply, socket}
+    {:noreply, if(read_already?, do: socket, else: go_to_next_unread(socket, path))}
   end
 
   def handle_event("expand_gap", params, socket) do
@@ -331,6 +331,23 @@ defmodule RailWeb.Live.EngineerStage do
   defp commit_label(false, true), do: "Pushing…"
   defp commit_label(true, false), do: "Commit"
   defp commit_label(false, false), do: "Push"
+
+  # The first unread file after the one just read, wrapping round to the top so
+  # one skipped earlier is not left behind.
+  defp go_to_next_unread(socket, path) do
+    {before, after_read} = Enum.split_while(socket.assigns.files, &(&1.path != path))
+
+    case Enum.find(after_read ++ before, &(not &1.viewed?)) do
+      %{path: next} ->
+        socket
+        |> assign(:selected_file, next)
+        |> assign(:collapsed, toggle(socket.assigns.collapsed, next, false))
+        |> push_event("diff:scroll_to", %{path: next})
+
+      nil ->
+        socket
+    end
+  end
 
   defp toggle(paths, path, true), do: Enum.uniq([path | paths])
   defp toggle(paths, path, false), do: List.delete(paths, path)
