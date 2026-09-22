@@ -156,6 +156,18 @@ defmodule Rail.GitHub.Client do
     end
   end
 
+  @doc "Changes a pull request in `repo`, from the attrs GitHub takes, such as `body`."
+  def update_pull_request(token, repo, number, attrs, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.patch(url: "/repos/#{repo}/pulls/#{number}", auth: {:bearer, token}, headers: headers(), json: attrs)
+    |> case do
+      {:ok, %{status: 200, body: %{"number" => _number} = pull_request}} -> {:ok, pull_request}
+      {:ok, %{status: status, body: body}} -> {:error, {:github_api_error, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc "Reads one pull request in `repo` by its number."
   def get_pull_request(token, repo, number, opts \\ []) do
     opts

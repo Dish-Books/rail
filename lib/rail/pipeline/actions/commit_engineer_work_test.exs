@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Users.Schemas.User
 
   setup do
     scope = system_scope()
@@ -94,6 +95,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})
 
     %{
+      issue: issue,
       run: run,
       scope: scope,
       project: project,
@@ -311,5 +313,72 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
     assert :ok = Pipeline.commit_engineer_work(scope, task)
     assert %Task{pr_number: nil} = Repo.reload!(task)
     assert [%RunEvent{run_id: ^run_id, line: "[rail] Could not open the pull request: " <> _reason}] = Repo.all(RunEvent)
+  end
+
+  test "the pull request is opened as the ticket's owner", %{scope: scope, task: task, issue: issue} do
+    {:ok, owner} =
+      %User{}
+      |> User.changeset(%{
+        github_id: "gh_cmw",
+        login: "ada",
+        name: "Ada",
+        email: "ada@example.com",
+        github_token: "gho_ada"
+      })
+      |> Repo.insert()
+
+    {:ok, _assigned} = Issues.update_issue(issue, %{owner_user_id: owner.id})
+
+    Req.Test.expect(Client, 3, fn conn ->
+      case {conn.method, conn.request_path, Plug.Conn.get_req_header(conn, "authorization")} do
+        {"POST", "/app/installations/" <> _id, _auth} ->
+          Req.Test.json(conn, %{"token" => "ghs_app"})
+
+        {"GET", "/repos/org/commit-work/pulls", ["Bearer ghs_app"]} ->
+          Req.Test.json(conn, [])
+
+        {"POST", "/repos/org/commit-work/pulls", ["Bearer gho_ada"]} ->
+          conn
+          |> Plug.Conn.put_status(201)
+          |> Req.Test.json(%{"number" => 21, "html_url" => "https://github.com/org/commit-work/pull/21"})
+      end
+    end)
+
+    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert %Task{pr_number: 21} = Repo.reload!(task)
+  end
+
+  test "an owner GitHub turns away has the pull request opened as the Rail app", %{
+    scope: scope,
+    task: task,
+    issue: issue
+  } do
+    {:ok, owner} =
+      %User{}
+      |> User.changeset(%{github_id: "gh_cmw2", login: "bo", name: "Bo", email: "bo@example.com", github_token: "gho_bo"})
+      |> Repo.insert()
+
+    {:ok, _assigned} = Issues.update_issue(issue, %{owner_user_id: owner.id})
+
+    Req.Test.expect(Client, 4, fn conn ->
+      case {conn.method, conn.request_path, Plug.Conn.get_req_header(conn, "authorization")} do
+        {"POST", "/app/installations/" <> _id, _auth} ->
+          Req.Test.json(conn, %{"token" => "ghs_app"})
+
+        {"GET", "/repos/org/commit-work/pulls", _auth} ->
+          Req.Test.json(conn, [])
+
+        {"POST", "/repos/org/commit-work/pulls", ["Bearer gho_bo"]} ->
+          conn |> Plug.Conn.put_status(403) |> Req.Test.json(%{"message" => "Resource not accessible"})
+
+        {"POST", "/repos/org/commit-work/pulls", ["Bearer ghs_app"]} ->
+          conn
+          |> Plug.Conn.put_status(201)
+          |> Req.Test.json(%{"number" => 22, "html_url" => "https://github.com/org/commit-work/pull/22"})
+      end
+    end)
+
+    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert %Task{pr_number: 22} = Repo.reload!(task)
   end
 end

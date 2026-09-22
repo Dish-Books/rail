@@ -1,5 +1,7 @@
 defmodule Rail.GitHub.ClientTest do
-  use Rail.DataCase, async: true
+  # Serial: some of these swap the app's key in the application env, which every
+  # test minting a token reads.
+  use Rail.DataCase, async: false
 
   alias Rail.GitHub.Client
 
@@ -212,5 +214,21 @@ defmodule Rail.GitHub.ClientTest do
 
     Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
     assert {:error, %Req.TransportError{}} = Client.mark_pull_request_ready("ghs_token", "PR_kw43")
+  end
+
+  test "changes a pull request" do
+    Req.Test.expect(Client, fn conn ->
+      assert conn.method == "PATCH"
+      assert conn.request_path == "/repos/acme/app/pulls/43"
+      Req.Test.json(conn, %{"number" => 43})
+    end)
+
+    assert {:ok, %{"number" => 43}} = Client.update_pull_request("ghs_token", "acme/app", 43, %{body: "b"})
+
+    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(422) |> Req.Test.json(%{"message" => "Validation Failed"})))
+    assert {:error, {:github_api_error, 422, _body}} = Client.update_pull_request("ghs_token", "acme/app", 43, %{})
+
+    Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
+    assert {:error, %Req.TransportError{}} = Client.update_pull_request("ghs_token", "acme/app", 43, %{})
   end
 end

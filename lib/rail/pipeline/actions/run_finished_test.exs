@@ -384,6 +384,153 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{stage: :demo, pr_is_draft: false} = Repo.reload!(task)
   end
 
+  test "a recorded demo is posted on the ticket and linked from the pull request", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: false})
+    demo_dir = Path.join(task.scratch_path, "demo")
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+    File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
+
+    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "fileUpload" => %{
+            "success" => true,
+            "uploadFile" => %{
+              "uploadUrl" => "https://uploads.linear.app/put/run-1",
+              "assetUrl" => "https://uploads.linear.app/assets/RUN-1-demo.webm",
+              "headers" => []
+            }
+          }
+        }
+      })
+    end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert {:ok, "webm bytes", conn} = Plug.Conn.read_body(conn)
+      Plug.Conn.send_resp(conn, 200, "")
+    end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      comment = "## Demo: Filters\n\nIt filters.\n\n[Watch the demo](https://uploads.linear.app/assets/RUN-1-demo.webm)"
+      assert %{"variables" => %{"input" => %{"body" => ^comment}}} = Jason.decode!(body)
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "commentCreate" => %{
+            "success" => true,
+            "comment" => %{
+              "id" => "comment_demo",
+              "body" => comment,
+              "createdAt" => "2026-09-22T10:00:00.000Z",
+              "issue" => %{"id" => "lin_run_finished_1"},
+              "botActor" => %{"name" => "Rail"}
+            }
+          }
+        }
+      })
+    end)
+
+    Req.Test.expect(Client, 3, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/" <> _id} ->
+          Req.Test.json(conn, %{"token" => "ghs_token"})
+
+        {"GET", "/repos/org/run-finished/pulls/7"} ->
+          Req.Test.json(conn, %{"number" => 7, "body" => "Opened by Rail.\n\n## Demo\n\n[Watch the demo](old)"})
+
+        {"PATCH", "/repos/org/run-finished/pulls/7"} ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+          assert %{
+                   "body" =>
+                     "Opened by Rail.\n\n## Demo\n\n[Watch the demo](https://uploads.linear.app/assets/RUN-1-demo.webm)"
+                 } =
+                   Jason.decode!(body)
+
+          Req.Test.json(conn, %{"number" => 7})
+      end
+    end)
+
+    {run, os_process} = exited.(:demo, %{})
+
+    assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "Could not publish"))
+  end
+
+  test "a recorded demo on a task with no pull request goes on the ticket alone", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo})
+    demo_dir = Path.join(task.scratch_path, "demo")
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+    File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
+
+    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "fileUpload" => %{
+            "success" => true,
+            "uploadFile" => %{
+              "uploadUrl" => "https://uploads.linear.app/put/run-1",
+              "assetUrl" => "https://uploads.linear.app/a.webm",
+              "headers" => []
+            }
+          }
+        }
+      })
+    end)
+
+    Req.Test.expect(Rail.Linear, &Plug.Conn.send_resp(&1, 200, ""))
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "commentCreate" => %{
+            "success" => true,
+            "comment" => %{
+              "id" => "comment_demo_2",
+              "body" => "## Demo: Filters",
+              "createdAt" => "2026-09-22T10:00:00.000Z",
+              "issue" => %{"id" => "lin_run_finished_1"},
+              "botActor" => %{"name" => "Rail"}
+            }
+          }
+        }
+      })
+    end)
+
+    Req.Test.stub(Client, fn _conn -> flunk("asked GitHub about a pull request the task does not have") end)
+
+    {run, os_process} = exited.(:demo, %{})
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "Could not publish"))
+  end
+
+  test "a demo that could not be published says so and is still done", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo})
+    demo_dir = Path.join(task.scratch_path, "demo")
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+    File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
+
+    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+    Req.Test.expect(Rail.Linear, &Req.Test.json(&1, %{"data" => %{"fileUpload" => %{"success" => false}}}))
+
+    {run, os_process} = exited.(:demo, %{})
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "[rail] Could not publish the demo:"))
+  end
+
   test "a draft GitHub will not mark ready does not hold the demo back", %{task: task, exited: exited} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: true})
     demo_dir = Path.join(task.scratch_path, "demo")

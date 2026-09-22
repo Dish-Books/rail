@@ -1,7 +1,9 @@
 defmodule Rail.Pipeline.Utils.OpenPullRequest do
   @moduledoc """
   Opens a task's pull request once its branch is on the remote, as a draft, which
-  keeps people and review bots off it while Rail's own review and QA run.
+  keeps people and review bots off it while Rail's own review and QA run. It is
+  opened as the ticket's owner, the same person its commits are by, and as the
+  Rail app only when there is no owner or GitHub turns their token away.
 
   A pull request is not what the stage is for, so one that cannot be opened is
   said in the run's log and tried again on the next push, never a failure.
@@ -14,6 +16,7 @@ defmodule Rail.Pipeline.Utils.OpenPullRequest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Users.Schemas.User
 
   @doc """
   Opens `task`'s pull request unless it has one, adopting an open one on its
@@ -22,7 +25,7 @@ defmodule Rail.Pipeline.Utils.OpenPullRequest do
   def open_pull_request(%Task{pr_number: number} = task, %Run{}) when is_integer(number), do: task
 
   def open_pull_request(%Task{} = task, %Run{} = run) do
-    %Task{project: %Project{} = project} = task = Repo.preload(task, [:project, :issue])
+    %Task{project: %Project{} = project} = task = Repo.preload(task, [:project, issue: :owner_user])
 
     with {:ok, token} <- GitHub.installation_token(project.github_installation_id),
          {:ok, %{"number" => number} = pull_request} <- find_or_create(token, task) do
@@ -38,17 +41,25 @@ defmodule Rail.Pipeline.Utils.OpenPullRequest do
 
   defp find_or_create(token, %Task{project: %Project{} = project} = task) do
     case GitHub.find_pull_request(token, project.github_repo, task.worktree_name) do
-      {:ok, nil} ->
-        GitHub.create_pull_request(token, project.github_repo, %{
-          title: "#{task.issue.identifier} #{task.issue.title}",
-          head: task.worktree_name,
-          base: project.default_branch,
-          body: body(task.issue),
-          draft: true
-        })
+      {:ok, nil} -> create(token, task)
+      found -> found
+    end
+  end
 
-      found ->
-        found
+  defp create(app_token, %Task{project: %Project{} = project, issue: %Issue{} = issue} = task) do
+    attrs = %{
+      title: "#{issue.identifier} #{issue.title}",
+      head: task.worktree_name,
+      base: project.default_branch,
+      body: body(issue),
+      draft: true
+    }
+
+    with %User{github_token: owner_token} when is_binary(owner_token) <- issue.owner_user,
+         {:ok, pull_request} <- GitHub.create_pull_request(owner_token, project.github_repo, attrs) do
+      {:ok, pull_request}
+    else
+      _no_owner_or_refused -> GitHub.create_pull_request(app_token, project.github_repo, attrs)
     end
   end
 
