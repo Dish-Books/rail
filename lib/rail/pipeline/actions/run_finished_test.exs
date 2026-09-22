@@ -4,6 +4,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   import Rail.Pipeline.Utils.QuestionQueue
 
   alias Rail.Git
+  alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -108,7 +109,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     end
 
     # Every push opens the task's pull request if it has none.
-    Req.Test.stub(Rail.GitHub.Client, fn conn ->
+    Req.Test.stub(Client, fn conn ->
       case {conn.method, conn.request_path} do
         {"POST", "/app/installations/" <> _id} ->
           Req.Test.json(conn, %{"token" => "ghs_token"})
@@ -353,6 +354,53 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :demo} = Repo.reload!(task)
+  end
+
+  test "a demo that is done takes the task's pull request out of draft", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: true})
+    demo_dir = Path.join(task.scratch_path, "demo")
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+
+    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+
+    Req.Test.expect(Client, 3, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/43001/access_tokens"} ->
+          Req.Test.json(conn, %{"token" => "ghs_token"})
+
+        {"GET", "/repos/org/run-finished/pulls/7"} ->
+          Req.Test.json(conn, %{"number" => 7, "node_id" => "PR_kw7"})
+
+        {"POST", "/graphql"} ->
+          Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{"pullRequest" => %{"isDraft" => false}}}})
+      end
+    end)
+
+    {_run, os_process} = exited.(:demo, %{})
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :demo, pr_is_draft: false} = Repo.reload!(task)
+  end
+
+  test "a draft GitHub will not mark ready does not hold the demo back", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: true})
+    demo_dir = Path.join(task.scratch_path, "demo")
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+
+    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})))
+
+    {_run, os_process} = exited.(:demo, %{})
+
+    assert ExUnit.CaptureLog.capture_log(fn ->
+             assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+           end) =~ "Could not mark org/run-finished#7 ready for review"
+
+    assert %Task{pr_is_draft: true} = Repo.reload!(task)
   end
 
   test "a QA run that wrote no report says so and stays open", %{task: task, exited: exited} do

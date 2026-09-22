@@ -1,7 +1,6 @@
 defmodule Rail.Pipeline.Actions.EnterStageTest do
   use Rail.DataCase, async: true
 
-  alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -268,42 +267,5 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
 
     assert {:ok, %Run{status: :failed, error: "Could not start the worktree setup script: {:bad_cwd, \"/gone\"}"}} =
              Pipeline.enter_stage(task, :review)
-  end
-
-  test "a task ready to merge has its draft pull request marked ready for review", %{task: task} do
-    {:ok, task} = Pipeline.update_task(task, %{pr_number: 7, pr_is_draft: true})
-
-    Req.Test.expect(Client, 3, fn conn ->
-      case {conn.method, conn.request_path} do
-        {"POST", "/app/installations/44001/access_tokens"} ->
-          Req.Test.json(conn, %{"token" => "ghs_token"})
-
-        {"GET", "/repos/org/enter-stage/pulls/7"} ->
-          Req.Test.json(conn, %{"number" => 7, "node_id" => "PR_kw7"})
-
-        {"POST", "/graphql"} ->
-          Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{"pullRequest" => %{"isDraft" => false}}}})
-      end
-    end)
-
-    assert {:ok, %Task{stage: :ready_to_merge, pr_is_draft: false}} = Pipeline.enter_stage(task, :ready_to_merge)
-  end
-
-  test "a draft GitHub will not mark ready does not hold the task back", %{task: task} do
-    {:ok, task} = Pipeline.update_task(task, %{pr_number: 7, pr_is_draft: true})
-
-    Req.Test.expect(Client, fn conn ->
-      conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})
-    end)
-
-    assert ExUnit.CaptureLog.capture_log(fn ->
-             assert {:ok, %Task{stage: :ready_to_merge, pr_is_draft: true}} = Pipeline.enter_stage(task, :ready_to_merge)
-           end) =~ "Could not mark org/enter-stage#7 ready for review"
-  end
-
-  test "a task with no draft to mark ready asks GitHub nothing", %{task: task} do
-    Req.Test.stub(Client, fn _conn -> flunk("asked GitHub about a pull request that is not a draft") end)
-
-    assert {:ok, %Task{stage: :ready_to_merge}} = Pipeline.enter_stage(task, :ready_to_merge)
   end
 end

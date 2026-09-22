@@ -244,6 +244,17 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     refute Run.needs_attention?(running)
   end
 
+  test "a recorded demo is waiting on the change being merged" do
+    done = %Run{
+      status: :finished,
+      stage_outcome: :done,
+      role: %Role{stage: :demo},
+      task: %Task{stage: :demo, merged_at: nil}
+    }
+
+    assert Run.needs_attention?(done)
+  end
+
   test "a done product run is waiting on its ticket to be approved" do
     done = %Run{
       status: :finished,
@@ -299,12 +310,12 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     assert Run.needs_attention?(done)
   end
 
-  test "a done run past the stages a human signs off needs nothing" do
+  test "a done run at a stage no human signs off needs nothing" do
     done = %Run{
       status: :finished,
       stage_outcome: :done,
-      role: %Role{stage: :demo},
-      task: %Task{stage: :demo, merged_at: nil}
+      role: %Role{stage: :debugger},
+      task: %Task{stage: :debugger, merged_at: nil}
     }
 
     refute Run.needs_attention?(done)

@@ -200,7 +200,6 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
              "Review",
              "QA",
              "Demo",
-             "Ready to merge",
              "Merged",
              "Debugger"
            ]
