@@ -42,7 +42,6 @@ defmodule RailWeb.Live.QaStage do
   alias Rail.Pipeline.Schemas.QaReport
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Tools
 
   @impl true
   def update(assigns, socket) do
@@ -131,7 +130,6 @@ defmodule RailWeb.Live.QaStage do
                 task={@task}
                 checklist={@checklist}
                 current={@current}
-                frame={@frame}
                 driving={@driving}
                 shots={@shots}
                 target={@myself}
@@ -687,7 +685,6 @@ defmodule RailWeb.Live.QaStage do
 
   attr :checklist, :any, required: true
   attr :current, :any, required: true
-  attr :frame, :any, required: true
   attr :driving, :map, required: true
   attr :task, :any, required: true
   attr :shots, :list, required: true
@@ -740,15 +737,15 @@ defmodule RailWeb.Live.QaStage do
           <img
             id="qa-screencast"
             data-qa="qa_screencast"
-            phx-hook="QaScreencast"
+            phx-hook="BrowserScreencast"
             phx-update="ignore"
-            src={@frame && "data:image/jpeg;base64,#{@frame}"}
+            src={@driving.frame && "data:image/jpeg;base64,#{@driving.frame}"}
             alt="What the QA browser is looking at"
             class="peer absolute inset-0 size-full object-contain"
           />
 
           <div
-            :if={@frame == nil}
+            :if={@driving.frame == nil}
             data-qa="qa_screencast_waiting"
             class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-900 peer-data-[live=true]:hidden"
           >
@@ -761,8 +758,8 @@ defmodule RailWeb.Live.QaStage do
           data-qa="qa_doing"
           class="shrink-0 flex gap-2 px-3 py-2 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 font-mono text-[11.5px]"
         >
-          <span class="shrink-0 text-blue-600 dark:text-blue-400">{verb(@driving.doing)}</span>
-          <span class="min-w-0 truncate text-slate-600 dark:text-slate-300">{target(@driving.doing)}</span>
+          <span class="shrink-0 text-blue-600 dark:text-blue-400">{@driving.verb}</span>
+          <span class="min-w-0 truncate text-slate-600 dark:text-slate-300">{@driving.target}</span>
         </p>
       </div>
 
@@ -1139,7 +1136,6 @@ defmodule RailWeb.Live.QaStage do
     shots = Pipeline.list_qa_evidence(socket.assigns.task)
     running = Run.running?(socket.assigns.run)
     current = running && checklist && QaChecklist.current(checklist)
-    driving = driving(running, socket.assigns.run, socket.assigns.task)
 
     socket
     |> assign(:findings, findings)
@@ -1153,12 +1149,11 @@ defmodule RailWeb.Live.QaStage do
     |> assign(:reported, reported?(socket.assigns.run))
     |> assign(:report, report(socket.assigns.task))
     |> assign(:checklist, checklist)
-    |> assign(:frame, frame(driving, socket.assigns.task))
     |> assign(:shots, shots)
     |> assign(:shot, focused_shot(socket.assigns.focus, shots))
     |> assign(:check, focused_check(socket.assigns.focus, checklist))
     |> assign(:current, current)
-    |> assign(:driving, driving)
+    |> assign(:driving, browser_driving(socket.assigns.run, socket.assigns.task))
     |> pane()
   end
 
@@ -1215,41 +1210,6 @@ defmodule RailWeb.Live.QaStage do
   defp shots_for(shots, %QaCheck{key: key}) do
     shots |> Enum.filter(&(&1.check == key)) |> Enum.reverse()
   end
-
-  # A browser this pass has not touched yet has nothing to show, whatever is
-  # still painted in it: a Chrome left open by the pass before this one would
-  # otherwise read as this one's first page.
-  defp frame(%{doing: nil}, %Task{}), do: nil
-  defp frame(%{}, %Task{} = task), do: Tools.get_browser_frame(task)
-
-  # Where the browser is and the last thing Rail actually did to it, both off the
-  # run's own log. What is written there is what was executed rather than what the
-  # agent asked for, so a step that went to the wrong element reads as the wrong
-  # element.
-  defp driving(false, _run, _task), do: %{doing: nil, url: nil}
-
-  defp driving(true, %Run{} = run, %Task{} = task) do
-    lines =
-      run
-      |> Pipeline.list_run_events(order: :desc, limit: 60)
-      |> Enum.filter(&String.starts_with?(&1.line, "[qa] "))
-      |> Enum.map(&(&1.line |> String.replace_prefix("[qa] ", "") |> String.trim()))
-
-    %{doing: List.first(lines), url: Tools.get_browser_url(task) || Enum.find_value(lines, &opened/1)}
-  end
-
-  # `qa_goto` is the only thing that says where the browser went, and the newest
-  # one is where it is.
-  defp opened("goto " <> url), do: url
-  defp opened(_other), do: nil
-
-  # The log line reads as an instruction - `click "Save"` - so the word it starts
-  # with is what Rail did and the rest is what it did it to.
-  defp verb(nil), do: "idle"
-  defp verb(line), do: line |> String.split(" ", parts: 2) |> List.first()
-
-  defp target(nil), do: "Waiting for the first instruction."
-  defp target(line), do: line |> String.split(" ", parts: 2) |> Enum.at(1, "")
 
   # The verdict belongs to the pass rather than to any row, so it is read off the
   # report every time the panel draws rather than stored.

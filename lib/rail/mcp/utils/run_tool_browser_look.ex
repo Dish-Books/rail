@@ -1,4 +1,4 @@
-defmodule Rail.Mcp.Utils.RunToolQaLook do
+defmodule Rail.Mcp.Utils.RunToolBrowserLook do
   @moduledoc """
   Reads the current page as text: where it is, what it says, and what can be
   acted on.
@@ -18,7 +18,7 @@ defmodule Rail.Mcp.Utils.RunToolQaLook do
   Returns what `task`'s browser is looking at, in the order a reader would want
   it.
   """
-  def run_tool_qa_look(%Task{} = task, _arguments, opts) do
+  def run_tool_browser_look(%Task{} = task, _arguments, opts) do
     with {:ok, session} <- Tools.start_browser_session(task, opts),
          {:ok, page} <- Tools.observe_browser(session) do
       {:ok, page_text(page)}

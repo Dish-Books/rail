@@ -9,6 +9,8 @@ defmodule RailWeb.Live.RunConversation do
   """
   use RailWeb, :live_component
 
+  import Rail.Pipeline.Utils.DrivingLine
+
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Turn
@@ -776,7 +778,7 @@ defmodule RailWeb.Live.RunConversation do
   # Rail indents the steps it actually took under the instruction it was given,
   # so the shape of the line is already the difference between the two.
   defp driving_kind(text) do
-    if String.starts_with?(text, "[qa]  "), do: "step", else: "instruction"
+    if String.starts_with?(driving_line(text) || "", " "), do: "step", else: "instruction"
   end
 
   defp driving_verb(text), do: text |> driving_split() |> elem(0)
@@ -785,7 +787,7 @@ defmodule RailWeb.Live.RunConversation do
   # Every line starts with what happened - `do`, `goto`, `check`, `CLICK`,
   # `REFUSED` - and the rest is what it happened to.
   defp driving_split(text) do
-    case text |> String.replace_prefix("[qa] ", "") |> String.trim() |> String.split(" ", parts: 2) do
+    case (driving_line(text) || text) |> String.trim() |> String.split(" ", parts: 2) do
       [verb, rest] -> {verb, rest}
       [verb] -> {verb, ""}
     end

@@ -14,8 +14,13 @@ defmodule Rail.Pipeline do
   sends back from there goes to the engineer and comes round through review
   again before QA sees it a second time.
 
-  Demo and merge are stages a task can reach and nothing drives yet: a task
-  entering one parks there.
+  Demo drives the same application QA did, for the opposite reason: it records a
+  walkthrough of the change working, narrated a beat at a time, for somebody who
+  will watch two minutes of video and open nothing else. It is where a task
+  stops: nothing moves it on from there yet.
+
+  Merge is a stage a task can reach and nothing drives or reaches: a task put
+  there parks there.
   """
 
   alias Rail.Pipeline.Actions
@@ -62,6 +67,10 @@ defmodule Rail.Pipeline do
   defdelegate decide_qa_finding(finding, decision), to: Actions.DecideQaFinding
   defdelegate send_qa_findings_to_engineer(run), to: Actions.SendQaFindingsToEngineer
   defdelegate send_to_demo(run), to: Actions.SendToDemo
+
+  defdelegate start_demo_run(run), to: Actions.StartDemoRun
+  defdelegate read_demo(task), to: Actions.ReadDemo
+  defdelegate list_demo_beats(task), to: Actions.ListDemoBeats
 
   defdelegate create_task(issue, stage), to: Actions.CreateTask
   defdelegate list_tasks(opts \\ []), to: Actions.ListTasks

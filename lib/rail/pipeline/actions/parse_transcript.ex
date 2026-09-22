@@ -1,5 +1,8 @@
 defmodule Rail.Pipeline.Actions.ParseTranscript do
   @moduledoc false
+
+  import Rail.Pipeline.Utils.DrivingLine
+
   alias Rail.Pipeline.Turn
 
   @human_prefix ~r/^\[human\]\s*/
@@ -115,7 +118,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
   # What Rail did to the page: an instruction, then each step it actually took.
   # One turn each rather than a block of them, because they are separate things
   # that happened and a reader is counting them.
-  defp driving_line?(line), do: String.starts_with?(line, "[qa] ")
+  defp driving_line?(line), do: driving_line(line) != nil
 
   defp tool_line?(line) do
     String.starts_with?(line, "[tool ") or String.starts_with?(line, "[tool]") or

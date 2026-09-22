@@ -17,6 +17,11 @@
   // Inputs whose value is set rather than typed: the browser draws its own
   // segmented control and no keystroke reaches it.
   const PICKERS = ['date','datetime-local','month','week','time'];
+  const KEYS = [
+    ['press_enter','Enter','Press Enter, to commit the field being edited or submit the form'],
+    ['press_tab','Tab','Press Tab, to leave the field being edited and move to the next'],
+    ['press_escape','Escape','Press Escape, to close an open menu, dropdown or dialog']
+  ];
   // A dropdown's options are the choices in it, never a name for it: run
   // together they read as a label made of everything it could be.
   const SPOKEN_FOR = ['OPTION','OPTGROUP'];
@@ -146,6 +151,11 @@
   actions.forEach((a,i)=>a.id='e'+(i+1));
   // Where the page came from is somewhere it can be sent, and a form abandoned by
   // following a link is only recoverable this way.
+  // A key the page is listening for rather than a control it draws. Committing a
+  // grid cell, closing a menu, moving to the next field: all of them are a key
+  // press and none of them is anything a snapshot can see, so they are always
+  // offered and the page decides whether they meant anything.
+  for (const [id,key,label] of KEYS) actions.push({id,kind:'press',key,label});
   if (history.length>1) actions.push({id:'back',kind:'back',label:'Go back to the previous page'});
   if (scrollY+innerHeight<height-2) actions.push({id:'scroll_down',kind:'scroll',label:'Scroll down',delta:560});
   if (scrollY>0) actions.push({id:'scroll_up',kind:'scroll',label:'Scroll up',delta:-560});

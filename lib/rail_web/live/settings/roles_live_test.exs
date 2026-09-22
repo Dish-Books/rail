@@ -290,26 +290,26 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
     assert {:ok, %Role{id: role_id}} =
              Roles.create_role(scope, project, %{
-               name: "QA Lead",
-               description: "Coordinates QA",
-               stage: :qa_lead,
+               name: "Bug Hunter",
+               description: "Chases down defects",
+               stage: :debugger,
                backend_id: claude_backend.id,
                model: "claude-3-7-sonnet",
                reasoning_effort: :high,
-               system_prompt: "You verify quality."
+               system_prompt: "You chase down defects."
              })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 
     view |> element("#edit-role-button-#{role_id}") |> render_click()
-    assert has_element?(view, "#role-modal-title", "QA Lead")
-    assert has_element?(view, "#role-stage-pill", "stage: qa_lead")
+    assert has_element?(view, "#role-modal-title", "Bug Hunter")
+    assert has_element?(view, "#role-stage-pill", "stage: debugger")
     assert has_element?(view, "#copy-role-identifier[data-copy-text='#{role_id}']")
     assert has_element?(view, "#role-unsaved-changes", "No unsaved changes")
 
     # Tabs switch panels, and each tab summarises what it holds.
     assert has_element?(view, "#role-tab-summary-configuration", "Identity · claude-3-7-sonnet · high")
-    assert has_element?(view, "#role-tab-summary-prompt", "19 chars")
+    assert has_element?(view, "#role-tab-summary-prompt", "23 chars")
     assert has_element?(view, "#role-tab-summary-mcp_tools", "None enabled")
     assert has_element?(view, "#role-panel-prompt.hidden")
 
@@ -318,7 +318,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#role-panel-configuration.hidden")
 
     view |> element("#role-prompt-preview-button") |> render_click()
-    assert has_element?(view, "#role-prompt-preview", "You verify quality.")
+    assert has_element?(view, "#role-prompt-preview", "You chase down defects.")
     assert has_element?(view, "#role-prompt-input.hidden")
     view |> element("#role-prompt-preview-button") |> render_click()
     refute has_element?(view, "#role-prompt-preview")
@@ -326,13 +326,13 @@ defmodule RailWeb.Settings.RolesLiveTest do
     # Edits are counted as unsaved changes until saved or discarded.
     view
     |> element("#role-form")
-    |> render_change(%{"role" => %{"system_prompt" => "You verify quality twice.", "reasoning_effort" => "low"}})
+    |> render_change(%{"role" => %{"system_prompt" => "You chase down defects twice.", "reasoning_effort" => "low"}})
 
     assert has_element?(view, "#role-unsaved-changes", "2 unsaved changes · reasoning effort, prompt")
 
     view
     |> element("#role-form")
-    |> render_change(%{"role" => %{"system_prompt" => "You verify quality.", "reasoning_effort" => "high"}})
+    |> render_change(%{"role" => %{"system_prompt" => "You chase down defects.", "reasoning_effort" => "high"}})
 
     assert has_element?(view, "#role-unsaved-changes", "No unsaved changes")
 
@@ -349,8 +349,8 @@ defmodule RailWeb.Settings.RolesLiveTest do
     |> element("#role-form")
     |> render_submit(%{
       "role" => %{
-        "name" => "QA Lead",
-        "stage" => "qa_lead",
+        "name" => "Bug Hunter",
+        "stage" => "debugger",
         "backend_id" => claude_backend.id,
         "model_choice" => "claude-3-7-sonnet",
         "system_prompt" => ""
@@ -368,19 +368,19 @@ defmodule RailWeb.Settings.RolesLiveTest do
     |> element("#role-form")
     |> render_submit(%{
       "role" => %{
-        "name" => "Chief Quality Officer",
-        "description" => "Leads quality assurance",
-        "stage" => "qa_lead",
+        "name" => "Chief Bug Hunter",
+        "description" => "Leads the hunt",
+        "stage" => "debugger",
         "backend_id" => claude_backend.id,
         "model_choice" => "claude-3-7-sonnet",
         "reasoning_effort" => "xhigh",
-        "system_prompt" => "You are chief quality officer.",
+        "system_prompt" => "You are chief bug hunter.",
         "max_concurrent" => "1"
       }
     })
 
     refute has_element?(view, "#role-editor-modal")
-    assert has_element?(view, "#bound-role-name-qa_lead", "Chief Quality Officer")
+    assert has_element?(view, "#bound-role-name-debugger", "Chief Bug Hunter")
 
     # Cancel modal button check
     view |> element("#edit-role-button-#{role_id}") |> render_click()

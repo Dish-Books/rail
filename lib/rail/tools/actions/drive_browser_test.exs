@@ -361,6 +361,136 @@ defmodule Rail.Tools.Actions.DriveBrowserTest do
     assert length(executed) == 30
   end
 
+  # A dropdown offers every option but the one it is set to, so a decider stuck
+  # on it sets it one way and then back again. Every step changes the page and
+  # names a different option, so no single step looks stuck - the page coming
+  # back to where it has already been is what does.
+  test "a page set one way and back again is stopped as going in circles", %{
+    session: session,
+    answering: answering,
+    choosing: choosing
+  } do
+    {:ok, _added} =
+      BrowserSession.call(session, "Runtime.evaluate", %{
+        expression: """
+        document.body.insertAdjacentHTML('beforeend', `
+          <label for="location">Location</label>
+          <select id="location">
+            <option value="">Select a location</option>
+            <option value="memorial">Bori Memorial</option>
+            <option value="montrose">Bori Montrose</option>
+          </select>`);
+        """,
+        returnByValue: true
+      })
+
+    answering.(fn questions, _state ->
+      offered = questions["select_target"]["criteria"] |> Map.keys() |> Enum.sort() |> hd()
+
+      %{
+        "operation" => choosing.(questions, "operation", "SELECT"),
+        "select_target" => choosing.(questions, "select_target", offered),
+        "click_target" => choosing.(questions, "click_target", "1"),
+        "type_text_target" => choosing.(questions, "type_text_target", "1")
+      }
+    end)
+
+    assert {:ok, %{outcome: :going_in_circles, executed: executed}} =
+             Tools.drive_browser(session, "the line has a GL account")
+
+    assert length(executed) < 10
+    assert Enum.all?(executed, &(&1.operation == "SELECT"))
+  end
+
+  # A single value is for one field. Typed, it is used up: the decider choosing
+  # the next field along is how a price ends up in the notes.
+  test "a single value is typed into one field and no other", %{
+    session: session,
+    answering: answering,
+    choosing: choosing
+  } do
+    {:ok, _added} =
+      BrowserSession.call(session, "Runtime.evaluate", %{
+        expression: """
+        document.body.insertAdjacentHTML('beforeend', '<label for="notes">Notes</label><input id="notes" type="text">');
+        """,
+        returnByValue: true
+      })
+
+    answering.(fn questions, state ->
+      wanted = if state["already_done"] == [], do: "Amount", else: "Notes"
+      field = Enum.find(state["elements"], &(&1["label"] == wanted))
+
+      %{
+        "operation" => choosing.(questions, "operation", "TYPE_TEXT"),
+        "type_text_target" => choosing.(questions, "type_text_target", field["index"]),
+        "click_target" => choosing.(questions, "click_target", "1")
+      }
+    end)
+
+    assert {:ok, %{outcome: {:needs_text, "Notes"}, executed: [%{action: "Amount", text: "2724.04"}]}} =
+             Tools.drive_browser(session, "the unit price is 2724.04", text: "2724.04")
+
+    assert {:ok, %{"result" => %{"value" => ""}}} =
+             BrowserSession.call(session, "Runtime.evaluate", %{
+               expression: "document.getElementById('notes').value",
+               returnByValue: true
+             })
+  end
+
+  # Chosen again for the field it already went into, the typing is done rather
+  # than done twice.
+  test "a single value is typed once, however often its field is chosen", %{
+    session: session,
+    answering: answering,
+    choosing: choosing
+  } do
+    answering.(fn questions, state ->
+      amount = Enum.find(state["elements"], &(&1["label"] == "Amount"))
+
+      %{
+        "operation" => choosing.(questions, "operation", "TYPE_TEXT"),
+        "type_text_target" => choosing.(questions, "type_text_target", amount["index"]),
+        "click_target" => choosing.(questions, "click_target", "1")
+      }
+    end)
+
+    assert {:ok, %{outcome: :done, executed: [%{action: "Amount"}]}} =
+             Tools.drive_browser(session, "the amount is 2724.04", text: "2724.04")
+  end
+
+  # A caller that named every field is filling a form, and each field is looked
+  # up however many have been typed before it.
+  test "values fill one field after another", %{session: session, answering: answering, choosing: choosing} do
+    {:ok, _added} =
+      BrowserSession.call(session, "Runtime.evaluate", %{
+        expression: """
+        document.body.insertAdjacentHTML('beforeend', '<label for="notes">Notes</label><input id="notes" type="text">');
+        """,
+        returnByValue: true
+      })
+
+    answering.(fn questions, state ->
+      {operation, wanted} =
+        case length(state["already_done"]) do
+          0 -> {"TYPE_TEXT", "Amount"}
+          1 -> {"TYPE_TEXT", "Notes"}
+          _done -> {"DONE", "Amount"}
+        end
+
+      field = Enum.find(state["elements"], &(&1["label"] == wanted))
+
+      %{
+        "operation" => choosing.(questions, "operation", operation),
+        "type_text_target" => choosing.(questions, "type_text_target", field["index"]),
+        "click_target" => choosing.(questions, "click_target", "1")
+      }
+    end)
+
+    assert {:ok, %{outcome: :done, executed: [%{action: "Amount"}, %{action: "Notes"}]}} =
+             Tools.drive_browser(session, "the bill is filled in", values: %{"Amount" => "12", "Notes" => "Produce"})
+  end
+
   # The caller keys its values by the field as the page labels it, so one call
   # fills a form - and a label the page writes differently still matches.
   test "values are matched to the field they were keyed for", %{

@@ -41,7 +41,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       })
 
     roles =
-      Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead], fn stage ->
+      Map.new([:product, :design, :architect, :engineer, :review, :qa, :demo, :debugger], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
             backend_id: backend.id,
@@ -297,11 +297,11 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     task: task,
     exited: exited
   } do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :qa_lead})
-    {_run, os_process} = exited.(:qa_lead, %{})
+    {:ok, task} = Pipeline.update_task(task, %{stage: :debugger})
+    {_run, os_process} = exited.(:debugger, %{})
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert %Task{stage: :qa_lead} = Repo.reload!(task)
+    assert %Task{stage: :debugger} = Repo.reload!(task)
   end
 
   test "a QA run records what it found and leaves the task at QA", %{task: task, exited: exited} do
@@ -320,6 +320,23 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :qa} = Repo.reload!(task)
     assert [%{key: "total-unrounded", decision: nil}] = Pipeline.list_qa_findings(task)
+  end
+
+  # The demo settles the same way QA does: the recording is encoded, the write-up
+  # is read, and the task stays where it is for a human to watch it.
+  test "a demo run encodes what it filmed and leaves the task at demo", %{task: task, exited: exited} do
+    {:ok, _filming} = Pipeline.update_task(task, %{stage: :demo})
+    demo_dir = Path.join(task.scratch_path, "demo")
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+
+    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+
+    {_run, os_process} = exited.(:demo, %{})
+
+    assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :demo} = Repo.reload!(task)
   end
 
   test "a QA run that wrote no report says so and stays open", %{task: task, exited: exited} do

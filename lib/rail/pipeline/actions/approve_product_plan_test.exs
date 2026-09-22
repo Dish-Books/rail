@@ -38,7 +38,7 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
       })
 
     roles =
-      Map.new([:product, :design, :architect, :engineer, :review, :qa, :qa_lead, :demo], fn stage ->
+      Map.new([:product, :design, :architect, :engineer, :review, :qa, :demo], fn stage ->
         {:ok, role} =
           Roles.create_role(scope, project, %{
             backend_id: backend.id,

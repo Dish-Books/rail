@@ -89,6 +89,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   defp start_process(%Run{role: %Role{stage: :engineer}} = run), do: Pipeline.start_engineer_run(run)
   defp start_process(%Run{role: %Role{stage: :review}} = run), do: Pipeline.start_review_run(run)
   defp start_process(%Run{role: %Role{stage: :qa}} = run), do: Pipeline.start_qa_run(run)
+  defp start_process(%Run{role: %Role{stage: :demo}} = run), do: Pipeline.start_demo_run(run)
 
   defp start_process(%Run{task: %Task{} = task, role: %Role{} = role} = run) do
     prompt =

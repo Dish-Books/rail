@@ -6,6 +6,13 @@ This file contains the standards for how we write code for Rail. All standards a
 
 We use Mise to manage our development environment and ensure all developers are running on the same version of all tools.
 
+## System dependencies
+
+Two things Rail shells out to are not Mise's to manage, because they are browsers and codecs rather than language runtimes:
+
+- **Chrome**, which the QA and demo stages drive. Rail looks for Google Chrome or Chromium in the usual places.
+- **ffmpeg**, which encodes a demo recording's frames into the video the panel plays. Without it a demo still records, but the run reports that it could not be encoded. `brew install ffmpeg` on macOS; it is in the runner image's `apt-get` list for deploys.
+
 ## Contexts
 
 - We organize all functionality into contexts that are logically related. For example we have a projects context that manages projects and linear workspace settings, a pipeline context that manages tasks and stages, etc.

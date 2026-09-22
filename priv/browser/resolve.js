@@ -27,19 +27,46 @@
   if (!e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true})) return refused('hidden');
   if (action.kind === 'fill' && (e.readOnly || e.getAttribute('aria-readonly') === 'true')) return refused('read only');
 
-  const r = e.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
-  if (!r.width || !r.height) return refused('hidden');
-
   // A dropdown and a date are set here rather than clicked, so where they sit and
   // what is drawn over them decides nothing: a select styled with its own chevron
   // laid over it is still a select whose value can be set.
   const clicked = !(action.kind === 'select' || (action.kind === 'fill' && action.picker));
+
+  // An element below the fold, or under a sticky header or footer, is one the
+  // page will happily show if asked. Refusing it instead sends whoever is driving
+  // looking for another way to do something that was always possible.
+  if (clicked) {
+    const r0 = e.getBoundingClientRect();
+    if (r0.height && (r0.top < 0 || r0.bottom > innerHeight)) {
+      e.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'instant'});
+    }
+  }
+
+  const r = e.getBoundingClientRect();
+  if (!r.width || !r.height) return refused('hidden');
+
+  const x = r.x + r.width / 2, y = r.y + r.height / 2;
   if (clicked && (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight)) return refused('off screen');
 
-  // Something drawn over it would take the click instead, and which thing that is
-  // is the whole of what a person debugging this wants to know.
-  const at = clicked ? document.elementFromPoint(x, y) : null;
-  if (clicked && !e.contains(at)) return refused('covered', describe(at));
+  // Something drawn over the middle of it does not mean it cannot be clicked: a
+  // long dropdown option crossed by a sticky total bar is still reachable at
+  // either end. So the centre is tried first and then points inset from each
+  // edge, and only an element covered at every one of them is covered - with the
+  // thing over its centre named, because that is what a person debugging this is
+  // looking at.
+  if (clicked) {
+    const inset = Math.min(12, r.width / 4, r.height / 4);
+    const points = [
+      [x, y],
+      [r.x + inset, y], [r.right - inset, y],
+      [x, r.y + inset], [x, r.bottom - inset]
+    ].filter(([px, py]) => px >= 0 && py >= 0 && px < innerWidth && py < innerHeight);
+
+    const reachable = points.find(([px, py]) => e.contains(document.elementFromPoint(px, py)));
+    if (!reachable) return refused('covered', describe(document.elementFromPoint(x, y)));
+
+    return {x: reachable[0], y: reachable[1]};
+  }
 
   // A date or time input takes its value the way a dropdown does: set while the
   // element is still held, because the browser draws its own segmented control

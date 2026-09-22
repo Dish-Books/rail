@@ -22,7 +22,6 @@ defmodule Rail.Pipeline.Schemas.Task do
     :engineer,
     :review,
     :qa,
-    :qa_lead,
     :demo,
     :ready_to_merge,
     :merged,
@@ -111,7 +110,6 @@ defmodule Rail.Pipeline.Schemas.Task do
   def stage_label(:engineer), do: "Engineer"
   def stage_label(:review), do: "Review"
   def stage_label(:qa), do: "QA"
-  def stage_label(:qa_lead), do: "QA Lead"
   def stage_label(:demo), do: "Demo"
   def stage_label(:ready_to_merge), do: "Ready to merge"
   def stage_label(:merged), do: "Merged"

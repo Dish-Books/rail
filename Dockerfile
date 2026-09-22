@@ -51,6 +51,7 @@ FROM ${RUNNER_IMAGE} AS runner
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    ffmpeg \
     git \
     jq \
     libstdc++6 \

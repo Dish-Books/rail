@@ -1,4 +1,4 @@
-defmodule Rail.Mcp.Utils.RunToolQaProblems do
+defmodule Rail.Mcp.Utils.RunToolBrowserProblems do
   @moduledoc """
   Everything the browser complained about since it was last asked.
 
@@ -17,7 +17,7 @@ defmodule Rail.Mcp.Utils.RunToolQaProblems do
   @doc """
   Returns what `task`'s browser has complained about, and forgets it.
   """
-  def run_tool_qa_problems(%Task{} = task, _arguments, opts) do
+  def run_tool_browser_problems(%Task{} = task, _arguments, opts) do
     with {:ok, session} <- Tools.start_browser_session(task, opts) do
       drained(BrowserSession.drain_problems(session))
     end
