@@ -7,18 +7,13 @@ defmodule Rail.Git.Actions.CommitWorktree do
   could answer it differently. The commit is authored by the ticket's assignee and
   signed with the key they registered; a ticket with nobody on it commits as the
   Rail bot, unsigned.
-
-  Author and committer are set together with `-c user.*`, because GitHub verifies
-  an SSH signature against the account owning the **committer** email: splitting
-  them would publish a commit that never verifies.
   """
 
-  alias Rail.Issues.Schemas.Issue
+  import Rail.Git.Utils.WithCommitIdentity
+
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Repo
   alias Rail.Scope
   alias Rail.Tools
-  alias Rail.Users.Schemas.User
 
   @doc """
   Stages `task`'s worktree and commits it with `message`.
@@ -27,12 +22,8 @@ defmodule Rail.Git.Actions.CommitWorktree do
   nothing, or `{:error, output}` when git refused.
   """
   def commit_worktree(%Scope{}, %Task{} = task, message) when is_binary(message) do
-    # Forced, because who the ticket is assigned to may have changed since
-    # whatever loaded this task read it, and that is who the commit belongs to.
-    author = task |> Repo.preload([issue: :owner_user], force: true) |> Map.fetch!(:issue) |> author()
-
     with :ok <- stage(task.worktree_path),
-         :ok <- with_signing_key(author, &commit(task.worktree_path, author, message, &1)) do
+         :ok <- with_commit_identity(task, &commit(task.worktree_path, message, &1)) do
       head(task.worktree_path)
     end
   end
@@ -47,23 +38,12 @@ defmodule Rail.Git.Actions.CommitWorktree do
     end
   end
 
-  defp commit(worktree_path, author, message, signing_key_path) do
-    args =
-      ["-c", "user.name=#{author.name}", "-c", "user.email=#{author.email}"] ++
-        signing_args(signing_key_path) ++
-        ["commit", "-m", message]
-
-    case Tools.run("git", args, cd: worktree_path, stderr_to_stdout: true) do
+  defp commit(worktree_path, message, identity) do
+    case Tools.run("git", identity ++ ["commit", "-m", message], cd: worktree_path, stderr_to_stdout: true) do
       {_output, 0} -> :ok
       {output, _code} -> staged_nothing_or_error(output)
     end
   end
-
-  defp signing_args(path) when is_binary(path) do
-    ["-c", "gpg.format=ssh", "-c", "user.signingkey=#{path}", "-c", "commit.gpgsign=true"]
-  end
-
-  defp signing_args(_unsigned), do: []
 
   defp staged_nothing_or_error(output) do
     if String.contains?(output, "nothing to commit") do
@@ -83,44 +63,5 @@ defmodule Rail.Git.Actions.CommitWorktree do
         {:error, String.trim(output)}
         # coveralls-ignore-stop
     end
-  end
-
-  # The key never touches disk for longer than the commit takes. git reads the
-  # private half by path and wants the public half beside it, so both are written
-  # and both are removed.
-  defp with_signing_key(%{signing_key: key, signing_public_key: public}, run) when is_binary(key) and is_binary(public) do
-    path = Path.join(System.tmp_dir!(), UXID.generate!(prefix: "sig"))
-
-    try do
-      File.write!(path, key, [:exclusive])
-      File.chmod!(path, 0o600)
-      File.write!(path <> ".pub", public)
-      run.(path)
-    after
-      File.rm(path)
-      File.rm(path <> ".pub")
-    end
-  end
-
-  defp with_signing_key(_unsigned, run), do: run.(nil)
-
-  defp author(%Issue{owner_user: %User{} = user}) do
-    %{
-      name: user.name || user.login,
-      email: user.email,
-      signing_key: user.signing_key,
-      signing_public_key: user.signing_public_key
-    }
-  end
-
-  defp author(%Issue{}) do
-    config = Application.get_env(:rail, :git, [])
-
-    %{
-      name: Keyword.get(config, :bot_name, "Rail"),
-      email: Keyword.get(config, :bot_email, "rail[bot]@railai.dev"),
-      signing_key: nil,
-      signing_public_key: nil
-    }
   end
 end

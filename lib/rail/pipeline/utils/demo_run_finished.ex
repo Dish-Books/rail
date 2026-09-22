@@ -27,18 +27,16 @@ defmodule Rail.Pipeline.Utils.DemoRunFinished do
   there.
   """
 
-  alias Rail.GitHub.Client, as: GitHub
+  import Rail.Pipeline.Utils.MarkPullRequestReady
+
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Demo
   alias Rail.Pipeline.Schemas.DemoBeat
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Tools
-
-  require Logger
 
   @doc "Finishes `run` as the demo stage."
   def demo_run_finished(%Run{} = run, _opts) do
@@ -101,24 +99,6 @@ defmodule Rail.Pipeline.Utils.DemoRunFinished do
       nil -> fail(run, "The demo agent did not write #{write_up(task)}.")
     end
   end
-
-  # A pull request that will not come out of draft is not a reason to hold the demo.
-  defp mark_pull_request_ready(%Task{pr_number: number, pr_is_draft: true} = task) when is_integer(number) do
-    %Project{} = project = Repo.get!(Project, task.project_id)
-
-    with {:ok, token} <- GitHub.installation_token(project.github_installation_id),
-         {:ok, %{"node_id" => node_id}} <- GitHub.get_pull_request(token, project.github_repo, number),
-         :ok <- GitHub.mark_pull_request_ready(token, node_id) do
-      {:ok, task} = task |> Task.changeset(%{pr_is_draft: false}) |> Repo.update()
-      task
-    else
-      {:error, reason} ->
-        Logger.warning("Could not mark #{project.github_repo}##{number} ready for review: #{inspect(reason)}")
-        task
-    end
-  end
-
-  defp mark_pull_request_ready(%Task{} = task), do: task
 
   # ffmpeg says what went wrong in its last few lines and spends everything above
   # them listing how it was built.

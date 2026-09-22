@@ -91,7 +91,7 @@ defmodule RailWeb.Live.EngineerStage do
           </button>
 
           <button
-            :if={@approvable and @work? and not Run.running?(@run)}
+            :if={(@approvable or @changed_since_review?) and @work? and not Run.running?(@run)}
             type="button"
             id="send-to-review"
             data-qa="send_to_review"
@@ -340,6 +340,7 @@ defmodule RailWeb.Live.EngineerStage do
     |> assign(:unpushed?, unpushed?)
     |> assign(:ci, ci)
     |> assign(:show_run_ci?, show_run_ci?(ci, dirty?))
+    |> assign(:changed_since_review?, task.stage in [:review, :qa, :demo] and Pipeline.changed_since_review?(task))
   end
 
   # A commit waiting on CI is sent on by running it, not by pushing: CI pushes it
@@ -435,6 +436,7 @@ defmodule RailWeb.Live.EngineerStage do
   defp message_for(:unpushed_changes), do: "Push the engineer's commits before sending them to review."
   defp message_for(:nothing_to_commit), do: "There is nothing left to commit."
   defp message_for(:ci_not_passed), do: "CI has to pass on the latest commit before this goes to review."
+  defp message_for(:nothing_new_to_review), do: "Review has already seen this commit."
   defp message_for(reason) when is_binary(reason), do: reason
   defp message_for(reason), do: "Could not finish that: #{inspect(reason)}"
 end

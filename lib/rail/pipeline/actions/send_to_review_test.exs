@@ -159,7 +159,7 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
-  test "refuses a task that is not at engineer", %{task: task, run: run} do
+  test "refuses a task that has not reached engineer", %{task: task, run: run} do
     {:ok, _moved} = Pipeline.update_task(task, %{stage: :architect})
 
     assert {:error, {:invalid_stage, :architect}} = Pipeline.send_to_review(run)
@@ -208,5 +208,54 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
     |> Repo.insert!()
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.send_to_review(run)
+  end
+
+  test "a task past engineer goes back to review for what the engineer changed since", %{
+    backend: backend,
+    project: project,
+    task: task,
+    run: run,
+    worktree_path: worktree_path
+  } do
+    {:ok, review_role} =
+      Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
+        stage: :review,
+        name: "review role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the review agent."
+      })
+
+    reviewed = String.trim(git!(worktree_path, ["rev-parse", "HEAD"]))
+
+    {:ok, _review_run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: review_role.id,
+        status: :finished,
+        stage_outcome: :done,
+        stage_fingerprint_head_sha: reviewed,
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo})
+
+    assert {:error, :nothing_new_to_review} = Pipeline.send_to_review(run)
+    refute Pipeline.changed_since_review?(task)
+
+    File.write!(Path.join(worktree_path, "resolved.ex"), "both\n")
+    git!(worktree_path, ["add", "."])
+    git!(worktree_path, ["commit", "-m", "resolve the rebase"])
+    git!(worktree_path, ["push", "origin", "main"])
+
+    assert Pipeline.changed_since_review?(task)
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+    assert %Task{stage: :review} = Repo.reload!(task)
+  end
+
+  test "a task never reviewed has changed since review", %{task: task} do
+    assert Pipeline.changed_since_review?(task)
   end
 end

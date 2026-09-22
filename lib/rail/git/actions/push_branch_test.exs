@@ -104,4 +104,23 @@ defmodule Rail.Git.Actions.PushBranchTest do
 
     assert {:error, {:github_api_error, 404, _body}} = Git.push_branch(scope, task)
   end
+
+  test "pushes a branch that was rebased since it was last pushed", %{
+    scope: scope,
+    task: task,
+    repo: repo,
+    remote: remote
+  } do
+    Req.Test.expect(Client, 2, &Req.Test.json(&1, %{"token" => "ghs_installation_token"}))
+
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "feature"])
+    assert :ok = Git.push_branch(scope, task)
+
+    git!(repo, ["commit", "--amend", "-m", "feature, rewritten"])
+
+    assert :ok = Git.push_branch(scope, task)
+    assert git!(repo, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
+  end
 end

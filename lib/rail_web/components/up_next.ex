@@ -4,9 +4,8 @@ defmodule RailWeb.Components.UpNext do
 
   The first leads as a card and the rest follow as rows. Nothing here acts on a
   run: what the human does next — reading a ticket, answering a question — needs
-  the task in front of them, so every entry is only a way there. The one
-  exception is a change whose demo is recorded, which is ready to merge, and
-  whose entry goes to the pull request where that happens.
+  the task in front of them, so every entry is only a way there. A change whose
+  demo is recorded is ready to merge, and its entry opens on the demo.
   """
   use RailWeb, :html
 
@@ -99,10 +98,10 @@ defmodule RailWeb.Components.UpNext do
     """
   end
 
-  # Merging happens on GitHub, so a change ready for it opens its pull request.
+  # The demo is what the merge is decided on, so a change ready for it opens there.
   defp destination(run) do
     if ready_to_merge?(run),
-      do: [href: run.task.pr_url, target: "_blank", rel: "noopener noreferrer"],
+      do: [navigate: ~p"/tasks/#{run.task_id}?tab=#{run.role_id}"],
       else: [navigate: ~p"/tasks/#{run.task_id}"]
   end
 

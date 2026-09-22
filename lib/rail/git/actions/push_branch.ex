@@ -6,6 +6,10 @@ defmodule Rail.Git.Actions.PushBranch do
   than passed in: a token is not something a caller should be holding, and the
   installation is what keeps a branch pushable after whoever was assigned leaves.
 
+  Forced, because a rebased branch no longer extends what the remote has, but
+  only over what Rail has itself seen and built on: a push made outside Rail is
+  refused rather than overwritten.
+
   The repository's own pre-push hooks run. A project whose CI runs before Rail
   pushes leaves a record a hook can recognise, so they should cost nothing; one
   that still runs for longer than it may is stopped.
@@ -30,7 +34,7 @@ defmodule Rail.Git.Actions.PushBranch do
   end
 
   defp push(worktree_path, branch, env) do
-    case Tools.run("git", ["push", "--set-upstream", "origin", branch],
+    case Tools.run("git", ["push", "--force-with-lease", "--force-if-includes", "--set-upstream", "origin", branch],
            cd: worktree_path,
            env: env,
            stderr_to_stdout: true,

@@ -42,6 +42,10 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :pr_number, :integer
     field :pr_url, :string
     field :pr_is_draft, :boolean
+    # The engineer has been asked to rebase onto the default branch and has not yet.
+    field :is_rebasing, :boolean, default: false
+    # A person settled the demo stage as not needed rather than recording one.
+    field :demo_skipped_at, :utc_datetime_usec
 
     belongs_to :project, Project
     belongs_to :issue, Issue
@@ -66,7 +70,9 @@ defmodule Rail.Pipeline.Schemas.Task do
     :worktree_setup_at,
     :pr_number,
     :pr_url,
-    :pr_is_draft
+    :pr_is_draft,
+    :is_rebasing,
+    :demo_skipped_at
   ]
 
   @required_fields [
@@ -122,6 +128,11 @@ defmodule Rail.Pipeline.Schemas.Task do
   def running?(%__MODULE__{}), do: false
 
   def stages, do: @stages
+
+  @doc "True when the demo stage has a video on disk for `task`."
+  def demo_recorded?(%__MODULE__{scratch_path: scratch_path}) do
+    File.regular?(Path.join([scratch_path, "demo", "demo.webm"]))
+  end
 
   def stage_label(:product), do: "Product"
   def stage_label(:design), do: "Design"

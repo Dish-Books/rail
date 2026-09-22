@@ -8,8 +8,8 @@ defmodule Rail.Pipeline.Actions.SendToDemo do
   human decides what QA's verdict is worth, and the verdict itself gates
   nothing.
 
-  This is a one-way door. Demo has no brief of its own yet, so the stage's role
-  starts on what it was seeded with and writes nothing Rail reads.
+  This is a one-way door, and it only opens it: whether the change needs a demo
+  at all is the human's call, made on the demo tab.
   """
 
   alias Rail.Pipeline
@@ -28,7 +28,7 @@ defmodule Rail.Pipeline.Actions.SendToDemo do
 
     with :ok <- sendable(run.task) do
       {:ok, latched} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
-      {:ok, _next} = Pipeline.enter_stage(run.task, :demo)
+      {:ok, _task} = Pipeline.enter_stage(run.task, :demo, start: false)
 
       {:ok, %{latched | task: run.task, role: run.role}}
     end

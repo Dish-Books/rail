@@ -29,6 +29,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   import Rail.Pipeline.Utils.ProductRunFinished
   import Rail.Pipeline.Utils.QaRunFinished
   import Rail.Pipeline.Utils.QuestionQueue
+  import Rail.Pipeline.Utils.RebaseRunFinished
   import Rail.Pipeline.Utils.RegisterAskedQuestions
   import Rail.Pipeline.Utils.ReviewRunFinished
   import Rail.Pipeline.Utils.SetupRunFinished
@@ -110,6 +111,14 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   # A setup script asks no questions and concludes nothing about its stage.
   defp finish(%Run{} = run, %OsProcess{kind: :setup}, opts), do: setup_run_finished(run, opts)
   defp finish(%Run{} = run, %OsProcess{kind: :ci} = os_process, _opts), do: ci_run_finished(run, os_process)
+
+  # A rebase is judged by the branch, whatever the stage had already concluded.
+  defp finish(%Run{role: %Role{stage: :engineer}, task: %Task{is_rebasing: true}} = run, %OsProcess{} = os_process, _opts) do
+    case register_asked_questions(os_process, run) do
+      [] -> rebase_run_finished(run)
+      _asked -> run
+    end
+  end
 
   defp finish(%Run{} = run, %OsProcess{} = os_process, opts) do
     case register_asked_questions(os_process, run) do

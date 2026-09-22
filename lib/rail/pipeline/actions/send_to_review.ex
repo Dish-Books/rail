@@ -49,11 +49,15 @@ defmodule Rail.Pipeline.Actions.SendToReview do
     """
   end
 
-  defp sendable(%Task{stage: stage}) when stage != :engineer, do: {:error, {:invalid_stage, stage}}
+  # A task that has moved on past engineer goes back to review only for what the
+  # engineer has changed since, such as a rebase it resolved or a fix asked for.
+  defp sendable(%Task{stage: stage}) when stage not in [:engineer, :review, :qa, :demo],
+    do: {:error, {:invalid_stage, stage}}
 
   defp sendable(%Task{} = task) do
     cond do
       Task.running?(task) -> {:error, :stage_running}
+      task.stage != :engineer and not Pipeline.changed_since_review?(task) -> {:error, :nothing_new_to_review}
       Git.worktree_dirty?(task.worktree_path) -> {:error, :uncommitted_changes}
       Git.branch_unpushed?(task.worktree_path) -> {:error, :unpushed_changes}
       ci_required?(task) and not ci_passed?(task) -> {:error, :ci_not_passed}

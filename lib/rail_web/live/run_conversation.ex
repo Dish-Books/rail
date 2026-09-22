@@ -476,7 +476,7 @@ defmodule RailWeb.Live.RunConversation do
             <div
               id={"msg-#{@idx}"}
               data-qa="rail-event"
-              class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 font-mono text-[11px] my-1"
+              class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 font-mono text-[11px] mt-4 mb-1"
             >
               <.icon name="pi-info" class="h-3.5 w-3.5 shrink-0" />
               <span class="select-text">{@text}</span>
@@ -520,7 +520,7 @@ defmodule RailWeb.Live.RunConversation do
       id={"command-#{@idx}"}
       data-qa="command-block"
       class={[
-        "max-w-[720px] rounded-lg border bg-white dark:bg-slate-900 overflow-hidden",
+        "max-w-[720px] mt-4 rounded-lg border bg-white dark:bg-slate-900 overflow-hidden",
         @failed? && "border-red-500/40",
         not @failed? && "border-slate-200 dark:border-slate-700"
       ]}
@@ -535,8 +535,16 @@ defmodule RailWeb.Live.RunConversation do
         <.icon name="pi-terminal-window" class="h-3.5 w-3.5 shrink-0" />
         <span class="font-medium text-slate-700 dark:text-slate-300 shrink-0">{@label}</span>
         <span class="font-mono truncate">{@msg.process.command}</span>
-        <span :if={@msg.duration_seconds} class="font-mono shrink-0">
-          {format_duration(@msg.duration_seconds)}
+        <%!-- A command still running counts up in the browser, as the header does. --%>
+        <span
+          id={"command-elapsed-#{@msg.process.id}"}
+          phx-hook="Elapsed"
+          data-started-at={if @running?, do: DateTime.to_iso8601(@msg.process.started_at)}
+          data-elapsed-seconds={if @running?, do: 0, else: @msg.duration_seconds}
+          data-qa="command-elapsed"
+          class="font-mono shrink-0"
+        >
+          {format_duration(@msg.duration_seconds || 0)}
         </span>
         <span
           data-qa="command-status"

@@ -20,9 +20,9 @@ defmodule RailWeb.Live.DemoStage do
   the QA panel watches, with the beats landing underneath it as they are
   narrated. A recording that stalls stalls somewhere a person can see.
 
-  A demo gates nothing and concludes nothing, so there is no button here and no
-  verdict read off it. It is where a task stops, and what a person does with what
-  they watched is not yet Rail's to carry.
+  Entering the stage records nothing: not every change is worth a walkthrough,
+  so the tab asks. A demo can be recorded, recorded again once there is one, or
+  settled as not needed, which counts as done the same as a recording does.
   """
   use RailWeb, :live_component
 
@@ -37,13 +37,42 @@ defmodule RailWeb.Live.DemoStage do
   end
 
   @impl true
+  def handle_event("record_demo", _params, socket) do
+    socket.assigns.current_scope |> Pipeline.record_demo(socket.assigns.task) |> settled(socket)
+  end
+
+  def handle_event("skip_demo", _params, socket) do
+    socket.assigns.current_scope |> Pipeline.skip_demo(socket.assigns.task) |> settled(socket)
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <div id="demo-stage" data-qa="demo-stage" class="contents">
       <.task_layout task={@task} run={@run} title={@task.issue.title} flush>
         <:tabs>{render_slot(@tabs)}</:tabs>
 
-        <:actions>{render_slot(@actions)}</:actions>
+        <:actions>
+          {render_slot(@actions)}
+
+          <button
+            :if={@can_record? and @recorded}
+            type="button"
+            id="rerecord-demo"
+            data-qa="rerecord_demo"
+            phx-click="record_demo"
+            phx-target={@myself}
+            class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+          >
+            Re-record
+          </button>
+        </:actions>
+
+        <:alerts :if={@error}>
+          <p id="demo-error" data-qa="demo_error" class="text-xs text-red-600 dark:text-red-500">
+            {@error}
+          </p>
+        </:alerts>
 
         <div id="demo-stage-body" class="h-full flex flex-col min-h-0">
           <div class="flex-1 min-h-0 flex flex-col lg:flex-row">
@@ -54,7 +83,13 @@ defmodule RailWeb.Live.DemoStage do
 
               <.player :if={not @running and @recorded} task={@task} demo={@demo} beats={@beats} />
 
-              <.nothing_recorded :if={not @running and not @recorded} run={@run} />
+              <.nothing_recorded
+                :if={not @running and not @recorded}
+                run={@run}
+                skipped?={@task.demo_skipped_at != nil}
+                can_record?={@can_record?}
+                target={@myself}
+              />
             </div>
           </div>
         </div>
@@ -244,9 +279,12 @@ defmodule RailWeb.Live.DemoStage do
   end
 
   attr :run, :any, required: true
+  attr :skipped?, :boolean, required: true
+  attr :can_record?, :boolean, required: true
+  attr :target, :any, required: true
 
-  # Before the first recording, and after one that could not be encoded. The run
-  # carries why in both cases, and the header is already showing it.
+  # Before the first recording, after one settled as not needed, and after one
+  # that could not be encoded. A failed run carries why, and the header shows it.
   defp nothing_recorded(assigns) do
     ~H"""
     <div
@@ -254,10 +292,36 @@ defmodule RailWeb.Live.DemoStage do
       data-qa="demo_pending"
       class="flex-1 min-h-0 flex flex-col items-center justify-center gap-2 p-8 text-center"
     >
-      <p class="text-sm font-semibold text-slate-900 dark:text-slate-100">Nothing recorded yet.</p>
-      <p class="max-w-md text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-        {waiting_on(@run)}
+      <p class="text-sm font-semibold text-slate-900 dark:text-slate-100">
+        {if @skipped?, do: "No demo is needed for this change.", else: "Nothing recorded yet."}
       </p>
+      <p class="max-w-md text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+        {if @skipped?, do: "Record one anyway if it turns out to be worth it.", else: waiting_on(@run)}
+      </p>
+
+      <div :if={@can_record?} class="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          id="record-demo"
+          data-qa="record_demo"
+          phx-click="record_demo"
+          phx-target={@target}
+          class="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs"
+        >
+          Record a demo
+        </button>
+        <button
+          :if={not @skipped?}
+          type="button"
+          id="skip-demo"
+          data-qa="skip_demo"
+          phx-click="skip_demo"
+          phx-target={@target}
+          class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+        >
+          No demo needed
+        </button>
+      </div>
     </div>
     """
   end
@@ -268,20 +332,26 @@ defmodule RailWeb.Live.DemoStage do
     task = socket.assigns.task
 
     socket
+    |> assign_new(:error, fn -> nil end)
     |> assign(:running, Run.running?(socket.assigns.run))
+    |> assign(:can_record?, task.stage == :demo and not Run.running?(socket.assigns.run))
     |> assign(:demo, Pipeline.read_demo(task))
     |> assign(:beats, Pipeline.list_demo_beats(task))
-    |> assign(:recorded, recorded?(task))
+    |> assign(:recorded, Task.demo_recorded?(task))
     |> assign(:driving, browser_driving(socket.assigns.run, task))
   end
 
-  # There is a demo when there is a video to watch. The write-up is read for what
-  # it says about it, but a run that wrote one and could not encode has nothing
-  # to show.
-  defp recorded?(%Task{scratch_path: scratch_path}) do
-    File.regular?(Path.join([scratch_path, "demo", "demo.webm"]))
-  end
-
+  defp waiting_on(nil), do: "Record a walkthrough of the change, or settle the demo as not needed."
   defp waiting_on(%Run{error: error}) when is_binary(error), do: "The last recording did not produce a video."
   defp waiting_on(%Run{}), do: "The demo agent records a walkthrough of the change; it will appear here."
+
+  defp settled({:ok, _run_or_task}, socket) do
+    send(self(), :task_changed)
+    {:noreply, assign(socket, :error, nil)}
+  end
+
+  defp settled({:error, :stage_running}, socket),
+    do: {:noreply, assign(socket, :error, "Something is still running on this task.")}
+
+  defp settled({:error, reason}, socket), do: {:noreply, assign(socket, :error, "Could not do that: #{inspect(reason)}")}
 end

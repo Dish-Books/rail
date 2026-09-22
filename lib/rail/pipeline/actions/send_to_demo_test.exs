@@ -8,7 +8,6 @@ defmodule Rail.Pipeline.Actions.SendToDemoTest do
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
-  alias Rail.Tools.Schemas.OsProcess
 
   setup do
     scope = system_scope()
@@ -80,9 +79,8 @@ defmodule Rail.Pipeline.Actions.SendToDemoTest do
     assert %Task{stage: :demo} = Repo.reload!(task)
   end
 
-  # Demo has a role bound and no brief of its own, which is every stage nothing
-  # drives yet: the run starts on what the role was seeded with.
-  test "the demo role picks the task up", %{task: task, run: run} do
+  # Whether a change needs a demo at all is the human's call, made on the demo tab.
+  test "the demo is left to a person to start", %{task: task, run: run} do
     {:ok, demo} =
       Roles.create_role(system_scope(), Repo.get!(Rail.Projects.Schemas.Project, task.project_id), %{
         backend_id: Repo.one!(Rail.Tools.Schemas.Backend).id,
@@ -92,10 +90,11 @@ defmodule Rail.Pipeline.Actions.SendToDemoTest do
         system_prompt: "You are the demo agent."
       })
 
-    expect(Tools, :start_os_process, fn %Run{} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    reject(Tools, :start_os_process, 2)
 
     assert {:ok, %Run{}} = Pipeline.send_to_demo(run)
-    assert Repo.get_by!(Run, task_id: task.id, role_id: demo.id).status == :running
+    assert %Task{stage: :demo} = Repo.reload!(task)
+    assert Repo.get_by(Run, task_id: task.id, role_id: demo.id) == nil
   end
 
   test "a pass whose findings were all dismissed goes to demo too", %{task: task, run: run} do

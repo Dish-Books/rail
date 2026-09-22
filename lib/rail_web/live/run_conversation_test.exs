@@ -457,6 +457,7 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ "Stopped"
     assert html =~ "Timed out"
     assert html =~ "Running"
+    assert html =~ ~s(phx-hook="Elapsed" data-started-at="2026-09-09T10:00:00.000000Z")
     assert html =~ "still copying"
   end
 

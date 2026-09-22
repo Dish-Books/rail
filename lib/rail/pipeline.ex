@@ -47,7 +47,9 @@ defmodule Rail.Pipeline do
   defdelegate read_commit_message(task), to: Actions.ReadCommitMessage
   defdelegate commit_engineer_work(scope, task), to: Actions.CommitEngineerWork
   defdelegate send_to_review(run), to: Actions.SendToReview
+  defdelegate changed_since_review?(task), to: Actions.ChangedSinceReview
   defdelegate run_ci(scope, run), to: Actions.RunCi
+  defdelegate rebase_task(scope, task), to: Actions.RebaseTask
   defdelegate get_ci_status(run), to: Actions.GetCiStatus
 
   defdelegate start_review_run(run), to: Actions.StartReviewRun
@@ -69,6 +71,8 @@ defmodule Rail.Pipeline do
   defdelegate decide_qa_finding(finding, decision), to: Actions.DecideQaFinding
   defdelegate send_qa_findings_to_engineer(run), to: Actions.SendQaFindingsToEngineer
   defdelegate send_to_demo(run), to: Actions.SendToDemo
+  defdelegate record_demo(scope, task), to: Actions.RecordDemo
+  defdelegate skip_demo(scope, task), to: Actions.SkipDemo
 
   defdelegate start_demo_run(run), to: Actions.StartDemoRun
   defdelegate read_demo(task), to: Actions.ReadDemo

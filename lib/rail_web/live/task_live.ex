@@ -112,6 +112,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
@@ -137,6 +138,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
@@ -162,6 +164,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
@@ -189,6 +192,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
@@ -216,6 +220,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
@@ -242,6 +247,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
@@ -268,6 +274,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
@@ -292,6 +299,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <.issue_view
@@ -311,6 +319,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <div
@@ -394,6 +403,17 @@ defmodule RailWeb.TaskLive do
       |> start_async(:cleanup, fn -> Pipeline.cleanup_task(task) end)
 
     {:noreply, socket}
+  end
+
+  def handle_event("rebase", _params, socket) do
+    socket =
+      case Pipeline.rebase_task(socket.assigns.current_scope, socket.assigns.task) do
+        {:ok, _task} -> socket
+        {:error, reason} -> put_flash(socket, :error, rebase_error(reason))
+      end
+
+    # The rebase is the engineer's work, and its tab is where it shows.
+    {:noreply, push_patch(socket, to: ~p"/tasks/#{socket.assigns.task_id}?tab=#{socket.assigns.engineer_tab}")}
   end
 
   def handle_info({:run_events, run_id, events}, socket) do
@@ -486,6 +506,28 @@ defmodule RailWeb.TaskLive do
       |> refresh_task()
 
     {:noreply, socket}
+  end
+
+  attr :task, :any, required: true
+  attr :engineer_tab, :any, required: true
+
+  # Only a branch the engineer has built has anything to rebase, and only a task
+  # nothing is working on can be rebased under it.
+  defp rebase_button(assigns) do
+    ~H"""
+    <button
+      :if={@task.cleaned_up_at == nil and @engineer_tab != nil}
+      type="button"
+      id="rebase-task"
+      data-qa="rebase_task"
+      phx-click="rebase"
+      disabled={Task.running?(@task)}
+      title={"Rebase onto origin/#{@task.project.default_branch}"}
+      class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      {if @task.is_rebasing and Task.running?(@task), do: "Rebasing…", else: "Rebase"}
+    </button>
+    """
   end
 
   attr :task, :any, required: true
@@ -612,7 +654,7 @@ defmodule RailWeb.TaskLive do
 
   defp apply_task(socket, %Task{} = task) do
     roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []
-    started = started_roles(roles, task.runs)
+    started = started_roles(roles, task)
     {role, selected_run} = select_tab(started, task, socket.assigns.selected_tab, socket.assigns.tab_stage)
 
     questions = Pipeline.list_questions(task, status: :pending, order_by: [asc: :inserted_at, asc: :id])
@@ -658,11 +700,13 @@ defmodule RailWeb.TaskLive do
     issue
   end
 
-  # A role with no run has nothing to read, so it is not a tab yet.
-  defp started_roles(roles, runs) do
+  # A role with no run has nothing to read, so it is not a tab yet, unless its
+  # stage is where the task is: demo is entered without starting, and its tab is
+  # where the human decides whether it runs at all.
+  defp started_roles(roles, %Task{runs: runs, stage: stage}) do
     roles
     |> Enum.map(&{&1, role_run(runs, &1)})
-    |> Enum.reject(fn {_role, run} -> run == nil end)
+    |> Enum.reject(fn {role, run} -> run == nil and not (role.stage == :demo and stage == :demo) end)
   end
 
   # The tab in the URL is the one to open. Without one, it is the role for the
@@ -732,7 +776,7 @@ defmodule RailWeb.TaskLive do
           label: role.name,
           sublabel: role_status_label(role, run, task),
           tone: tab_tone(run),
-          badge: Map.get(counts, run.id, 0),
+          badge: Map.get(counts, run && run.id, 0),
           selected?: selected != nil and selected.id == role.id
         }
       end)
@@ -740,7 +784,7 @@ defmodule RailWeb.TaskLive do
     [issue_tab | role_tabs]
   end
 
-  defp tab_tone(%Run{} = run), do: Run.state(run)
+  defp tab_tone(run), do: Run.state(run)
 
   # A run can ask several things at once, so a blocked run shows the whole queue
   # as tabs, in the order they were asked.
@@ -808,4 +852,10 @@ defmodule RailWeb.TaskLive do
     |> assign(:selected_question_id, nil)
     |> refresh_task()
   end
+
+  defp rebase_error(:task_busy), do: "Stop the task's run before rebasing it"
+  defp rebase_error(:uncommitted_changes), do: "Commit the engineer's work before rebasing it"
+  defp rebase_error(:no_worktree), do: "The task's worktree is gone, so there is nothing to rebase"
+  defp rebase_error(reason) when is_binary(reason), do: "Could not rebase: #{reason}"
+  defp rebase_error(reason), do: "Could not rebase: #{inspect(reason)}"
 end
