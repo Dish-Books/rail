@@ -2,9 +2,12 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
   use Rail.DataCase, async: true
 
   alias Rail.Git
+  alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.RunEvent
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
@@ -58,6 +61,22 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     stub(Git, :push_branch, fn _scope, _task -> :ok end)
+
+    # Every push opens the task's pull request if it has none.
+    Req.Test.stub(Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/" <> _id} ->
+          Req.Test.json(conn, %{"token" => "ghs_token"})
+
+        {"GET", _pulls} ->
+          Req.Test.json(conn, [])
+
+        {"POST", _pulls} ->
+          conn
+          |> Plug.Conn.put_status(201)
+          |> Req.Test.json(%{"number" => 7, "html_url" => "https://github.com/org/repo/pull/7", "draft" => true})
+      end
+    end)
 
     # A project with CI runs it on the engineer's run.
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
@@ -222,5 +241,75 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
     expect(Git, :push_branch, fn _scope, _task -> :ok end)
 
     assert :ok = Pipeline.commit_engineer_work(scope, task)
+  end
+
+  test "the first push opens the task's pull request as a draft, and keeps it", %{scope: scope, task: task} do
+    Req.Test.expect(Client, 3, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/47011/access_tokens"} ->
+          Req.Test.json(conn, %{"token" => "ghs_token"})
+
+        {"GET", "/repos/org/commit-work/pulls"} ->
+          Req.Test.json(conn, [])
+
+        {"POST", "/repos/org/commit-work/pulls"} ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+          assert %{
+                   "title" => "CMW-1 Invoice filters",
+                   "head" => "cmw-1",
+                   "base" => "main",
+                   "draft" => true,
+                   "body" => "https://linear.app/rail/issue/CMW-1\n\nOpened by Rail as a draft." <> _rest
+                 } = Jason.decode!(body)
+
+          conn
+          |> Plug.Conn.put_status(201)
+          |> Req.Test.json(%{"number" => 12, "html_url" => "https://github.com/org/commit-work/pull/12", "draft" => true})
+      end
+    end)
+
+    assert :ok = Pipeline.commit_engineer_work(scope, task)
+
+    assert %Task{pr_number: 12, pr_url: "https://github.com/org/commit-work/pull/12", pr_is_draft: true} =
+             Repo.reload!(task)
+  end
+
+  test "an open pull request already on the branch is adopted, not opened twice", %{scope: scope, task: task} do
+    Req.Test.expect(Client, 2, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/" <> _id} ->
+          Req.Test.json(conn, %{"token" => "ghs_token"})
+
+        {"GET", "/repos/org/commit-work/pulls"} ->
+          Req.Test.json(conn, [
+            %{"number" => 9, "html_url" => "https://github.com/org/commit-work/pull/9", "draft" => false}
+          ])
+      end
+    end)
+
+    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert %Task{pr_number: 9, pr_is_draft: false} = Repo.reload!(task)
+  end
+
+  test "a task that has its pull request does not ask GitHub again", %{scope: scope, task: task} do
+    {:ok, task} = Pipeline.update_task(task, %{pr_number: 5, pr_url: "https://github.com/org/commit-work/pull/5"})
+    Req.Test.stub(Client, fn _conn -> flunk("asked GitHub about a pull request the task already has") end)
+
+    assert :ok = Pipeline.commit_engineer_work(scope, task)
+  end
+
+  test "a pull request that cannot be opened is said in the run's log, and the push still stands", %{
+    scope: scope,
+    task: task,
+    run: %Run{id: run_id}
+  } do
+    Req.Test.expect(Client, fn conn ->
+      conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})
+    end)
+
+    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert %Task{pr_number: nil} = Repo.reload!(task)
+    assert [%RunEvent{run_id: ^run_id, line: "[rail] Could not open the pull request: " <> _reason}] = Repo.all(RunEvent)
   end
 end

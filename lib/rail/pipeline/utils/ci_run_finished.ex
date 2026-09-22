@@ -7,6 +7,8 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   times in a row with nobody stepping in; then it waits for a person.
   """
 
+  import Rail.Pipeline.Utils.OpenPullRequest
+
   alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -22,8 +24,11 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   @doc "Finishes `run` after `os_process`, its CI, exited."
   def ci_run_finished(%Run{exit_code: 0, task: %Task{} = task} = run, %OsProcess{}) do
     case Git.push_branch(Scope.for_system(), task) do
-      :ok -> update(run, %{ci_failure_streak: 0, error: nil, stage_outcome: :done})
-      {:error, reason} -> update(run, %{error: "CI passed, but the branch could not be pushed: #{describe(reason)}"})
+      :ok ->
+        %{update(run, %{ci_failure_streak: 0, error: nil, stage_outcome: :done}) | task: open_pull_request(task, run)}
+
+      {:error, reason} ->
+        update(run, %{error: "CI passed, but the branch could not be pushed: #{describe(reason)}"})
     end
   end
 

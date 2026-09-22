@@ -955,6 +955,22 @@ defmodule RailWeb.TaskLiveTest do
 
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: repo})
 
+      # Every push opens the task's pull request if it has none.
+      Req.Test.stub(Client, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/" <> _id} ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          {"GET", _pulls} ->
+            Req.Test.json(conn, [])
+
+          {"POST", _pulls} ->
+            conn
+            |> Plug.Conn.put_status(201)
+            |> Req.Test.json(%{"number" => 7, "html_url" => "https://github.com/org/repo/pull/7", "draft" => true})
+        end
+      end)
+
       {:ok, engineer_run} =
         Pipeline.create_run(%{
           task_id: task.id,
@@ -1109,6 +1125,20 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "#ci-status", "CI failed")
       refute has_element?(view, "#ci-status", "of 3")
+    end
+
+    test "the header links the task's pull request, and says while it is a draft", %{conn: conn, task: task} do
+      {:ok, task} =
+        Pipeline.update_task(task, %{pr_number: 12, pr_url: "https://github.com/org/app/pull/12", pr_is_draft: true})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#task-pull-request[href='https://github.com/org/app/pull/12']", "Draft PR #12")
+
+      {:ok, _task} = Pipeline.update_task(task, %{pr_is_draft: false})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#task-pull-request", "PR #12")
+      refute has_element?(view, "#task-pull-request", "Draft")
     end
 
     test "says so when the engineer has changed nothing", %{conn: conn, task: task, repo: repo} do

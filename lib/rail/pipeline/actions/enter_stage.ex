@@ -16,6 +16,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   import Rail.Pipeline.Utils.PrepareWorktree
   import Rail.Pipeline.Utils.StartWorktreeSetup
 
+  alias Rail.GitHub.Client, as: GitHub
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -25,6 +26,8 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
 
+  require Logger
+
   @doc """
   Enters `stage` on `task` and spawns the role that stage belongs to.
 
@@ -33,10 +36,14 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   """
   def enter_stage(%Task{} = task, stage, _opts \\ []) when is_atom(stage) do
     {:ok, task} = claim_stage(task, stage)
+    task = if stage == :ready_to_merge, do: mark_pull_request_ready(task), else: task
 
-    case Roles.get_role(project_id: task.project_id, stage: stage) do
-      {:ok, %Role{} = role} -> start_role(task, role)
-      {:error, :role_not_found} -> {:ok, task}
+    # Ready to merge and merged are stages no role can be bound to.
+    with true <- stage in Role.canonical_stages(),
+         {:ok, %Role{} = role} <- Roles.get_role(project_id: task.project_id, stage: stage) do
+      start_role(task, role)
+    else
+      _no_role -> {:ok, task}
     end
   end
 
@@ -45,6 +52,25 @@ defmodule Rail.Pipeline.Actions.EnterStage do
     |> Task.changeset(%{stage: stage})
     |> Repo.update()
   end
+
+  # The draft was only ever there to keep people off it until Rail was done. A
+  # pull request that will not come out of draft is not a reason to hold the task.
+  defp mark_pull_request_ready(%Task{pr_number: number, pr_is_draft: true} = task) when is_integer(number) do
+    %Project{} = project = Repo.get!(Project, task.project_id)
+
+    with {:ok, token} <- GitHub.installation_token(project.github_installation_id),
+         {:ok, %{"node_id" => node_id}} <- GitHub.get_pull_request(token, project.github_repo, number),
+         :ok <- GitHub.mark_pull_request_ready(token, node_id) do
+      {:ok, task} = task |> Task.changeset(%{pr_is_draft: false}) |> Repo.update()
+      task
+    else
+      {:error, reason} ->
+        Logger.warning("Could not mark #{project.github_repo}##{number} ready for review: #{inspect(reason)}")
+        task
+    end
+  end
+
+  defp mark_pull_request_ready(%Task{} = task), do: task
 
   # The run is started before the spawn is attempted, because starting it is what
   # unlatches the stage. A worktree Rail cannot make is a failure to record on the

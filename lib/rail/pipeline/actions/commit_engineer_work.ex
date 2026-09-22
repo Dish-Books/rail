@@ -12,6 +12,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWork do
 
   import Rail.Pipeline.Utils.CiPassed
   import Rail.Pipeline.Utils.CommitMessage
+  import Rail.Pipeline.Utils.OpenPullRequest
   import Rail.Pipeline.Utils.StartCi
 
   alias Rail.Git
@@ -45,17 +46,26 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWork do
 
   # A commit CI has not passed is not pushed: CI's finish pushes it.
   defp send_on(%Scope{} = scope, %Task{project: %Project{ci_command: command}} = task) do
-    if command in [nil, ""] or ci_passed?(task), do: Git.push_branch(scope, task), else: start_engineer_ci(task)
+    if command in [nil, ""] or ci_passed?(task), do: push(scope, task), else: start_engineer_ci(task)
+  end
+
+  defp push(%Scope{} = scope, %Task{} = task) do
+    with :ok <- Git.push_branch(scope, task) do
+      _task = open_pull_request(task, engineer_run(task))
+      :ok
+    end
   end
 
   defp start_engineer_ci(%Task{} = task) do
-    {:ok, %Role{id: role_id}} = Roles.get_role(project_id: task.project_id, stage: :engineer)
-    run = Run |> Repo.get_by!(task_id: task.id, role_id: role_id) |> Repo.preload([:task, role: :backend])
-
-    case start_ci(run) do
+    case start_ci(engineer_run(task)) do
       {:ok, _os_process} -> :ok
       {:error, %Run{error: error}} -> {:error, error}
     end
+  end
+
+  defp engineer_run(%Task{} = task) do
+    {:ok, %Role{id: role_id}} = Roles.get_role(project_id: task.project_id, stage: :engineer)
+    Run |> Repo.get_by!(task_id: task.id, role_id: role_id) |> Repo.preload([:task, role: :backend])
   end
 
   # A push that failed leaves a commit that was made and never sent, so running

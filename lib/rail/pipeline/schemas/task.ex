@@ -39,6 +39,10 @@ defmodule Rail.Pipeline.Schemas.Task do
     # A block of ports on this machine, unique across every project's tasks.
     field :worktree_slot, :integer
     field :worktree_setup_at, :utc_datetime_usec
+    # The pull request Rail opened, as a draft, the first time the branch was pushed.
+    field :pr_number, :integer
+    field :pr_url, :string
+    field :pr_is_draft, :boolean
 
     belongs_to :project, Project
     belongs_to :issue, Issue
@@ -60,7 +64,10 @@ defmodule Rail.Pipeline.Schemas.Task do
     :merged_at,
     :cleaned_up_at,
     :worktree_slot,
-    :worktree_setup_at
+    :worktree_setup_at,
+    :pr_number,
+    :pr_url,
+    :pr_is_draft
   ]
 
   @required_fields [

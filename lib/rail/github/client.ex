@@ -100,6 +100,74 @@ defmodule Rail.GitHub.Client do
     end
   end
 
+  @doc """
+  Finds the open pull request from `branch` in `repo` (`owner/name`), or nil.
+  """
+  def find_pull_request(token, repo, branch, opts \\ []) do
+    [owner, _name] = String.split(repo, "/", parts: 2)
+
+    opts
+    |> build_req()
+    |> Req.get(
+      url: "/repos/#{repo}/pulls",
+      params: [head: "#{owner}:#{branch}", state: "open"],
+      auth: {:bearer, token},
+      headers: headers()
+    )
+    |> case do
+      {:ok, %{status: 200, body: [pull_request | _rest]}} -> {:ok, pull_request}
+      {:ok, %{status: 200, body: []}} -> {:ok, nil}
+      {:ok, %{status: status, body: body}} -> {:error, {:github_api_error, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Opens a pull request in `repo` from the attrs GitHub takes: `title`, `head`,
+  `base`, `body` and `draft`.
+  """
+  def create_pull_request(token, repo, attrs, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.post(url: "/repos/#{repo}/pulls", auth: {:bearer, token}, headers: headers(), json: attrs)
+    |> case do
+      {:ok, %{status: 201, body: %{"number" => _number} = pull_request}} -> {:ok, pull_request}
+      {:ok, %{status: status, body: body}} -> {:error, {:github_api_error, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Takes a draft pull request out of draft. REST cannot, so this is GraphQL, by
+  the pull request's node id.
+  """
+  def mark_pull_request_ready(token, node_id, opts \\ []) do
+    query = """
+    mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { isDraft } } }
+    """
+
+    opts
+    |> build_req()
+    |> Req.post(url: "/graphql", auth: {:bearer, token}, json: %{query: query, variables: %{id: node_id}})
+    |> case do
+      {:ok, %{status: 200, body: %{"data" => %{"markPullRequestReadyForReview" => %{}}}}} -> :ok
+      {:ok, %{status: status, body: body}} -> {:error, {:github_api_error, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc "Reads one pull request in `repo` by its number."
+  def get_pull_request(token, repo, number, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.get(url: "/repos/#{repo}/pulls/#{number}", auth: {:bearer, token}, headers: headers())
+    |> case do
+      {:ok, %{status: 200, body: %{"number" => _number} = pull_request}} -> {:ok, pull_request}
+      {:ok, %{status: status, body: body}} -> {:error, {:github_api_error, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   defp app_id do
     case config()[:app_id] do
       id when is_binary(id) and id != "" -> {:ok, id}

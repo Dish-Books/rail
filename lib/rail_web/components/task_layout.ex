@@ -58,6 +58,18 @@ defmodule RailWeb.Components.TaskLayout do
             {@task.issue.identifier}
           </span>
           <span data-qa="task_branch_name" class="font-mono">{@task.worktree_name}</span>
+          <a
+            :if={@task.pr_url}
+            href={@task.pr_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            id="task-pull-request"
+            data-qa="task_pull_request"
+            class="inline-flex items-center gap-1 font-mono text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            <.icon name="pi-git-pull-request" class="size-4" />
+            {if @task.pr_is_draft, do: "Draft PR ##{@task.pr_number}", else: "PR ##{@task.pr_number}"}
+          </a>
 
           {render_slot(@meta)}
 

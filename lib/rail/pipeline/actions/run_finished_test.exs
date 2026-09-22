@@ -107,6 +107,22 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       {run, os_process}
     end
 
+    # Every push opens the task's pull request if it has none.
+    Req.Test.stub(Rail.GitHub.Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/" <> _id} ->
+          Req.Test.json(conn, %{"token" => "ghs_token"})
+
+        {"GET", _pulls} ->
+          Req.Test.json(conn, [])
+
+        {"POST", _pulls} ->
+          conn
+          |> Plug.Conn.put_status(201)
+          |> Req.Test.json(%{"number" => 7, "html_url" => "https://github.com/org/repo/pull/7", "draft" => true})
+      end
+    end)
+
     %{project: project, task: task, roles: roles, exited: exited}
   end
 
