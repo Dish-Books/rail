@@ -83,8 +83,10 @@ defmodule Rail.Tools.FollowerSupervisorTest do
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["10"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
 
+    # Nothing here is about what the Follower reads, so its first tick, which
+    # reads the row, is put past the test: this Follower has no sandbox.
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run})
+      FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run}, tail_interval_ms: 60_000)
 
     assert is_pid(follower_pid)
     assert Process.alive?(follower_pid)
@@ -109,7 +111,7 @@ defmodule Rail.Tools.FollowerSupervisorTest do
     {:ok, port, os_pid} = Tools.spawn_os_process("/bin/sleep", ["10"], stdout_path: stream_path)
 
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(%{os_process | os_pid: os_pid, run: run}, port: port)
+      FollowerSupervisor.start_follower(%{os_process | os_pid: os_pid, run: run}, port: port, tail_interval_ms: 60_000)
 
     assert Port.info(port, :connected) == {:connected, follower_pid}
     {:links, links} = Process.info(self(), :links)

@@ -9,6 +9,9 @@ defmodule Rail.Tools.Utils.GetFollowerPidTest do
   alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.OsProcess
 
+  # A Follower is only registered if a real one starts.
+  @moduletag :real_spawn
+
   test "returns nil when no follower is registered" do
     assert is_nil(get_follower_pid("osp_nonexistent"))
   end
@@ -68,8 +71,10 @@ defmodule Rail.Tools.Utils.GetFollowerPidTest do
       })
       |> Repo.insert!()
 
+    # The Follower is only looked up, so its first tick is put past the test: that
+    # tick reads the row, and this Follower has no sandbox to read it from.
     {:ok, follower_pid} =
-      FollowerSupervisor.start_follower(%{os_process | run: run})
+      FollowerSupervisor.start_follower(%{os_process | run: run}, tail_interval_ms: 60_000)
 
     on_exit(fn -> FollowerSupervisor.stop_follower(follower_pid) end)
 
