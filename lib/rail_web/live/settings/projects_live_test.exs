@@ -249,6 +249,31 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert %Project{worktree_setup_script: "scripts/setup-worktree.sh"} = Repo.get!(Project, project_id)
   end
 
+  test "sets the command a project's CI runs, and how long it may take", %{admin_conn: conn, admin_user: admin} do
+    assert {:ok, %Project{id: project_id}} =
+             Projects.create_project(Scope.for_user(admin), %{
+               name: "CI App",
+               github_repo: "example/ci-#{System.unique_integer([:positive])}",
+               github_installation_id: 335,
+               linear_team_key: "CIA",
+               default_branch: "main",
+               clone_path: "/tmp/ci"
+             })
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#edit-project-#{project_id}") |> render_click()
+
+    assert view
+           |> form("#project-form", %{"project" => %{"ci_command" => "mise run ci", "ci_timeout_minutes" => "0"}})
+           |> render_submit() =~ "must be at least a minute"
+
+    view
+    |> form("#project-form", %{"project" => %{"ci_command" => "mise run ci", "ci_timeout_minutes" => "45"}})
+    |> render_submit()
+
+    assert %Project{ci_command: "mise run ci", ci_timeout_minutes: 45} = Repo.get!(Project, project_id)
+  end
+
   test "editing a project's Linear workspace updates the workspace it already has", %{
     admin_conn: conn,
     admin_user: admin

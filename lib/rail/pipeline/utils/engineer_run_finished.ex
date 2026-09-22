@@ -4,8 +4,9 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinished do
 
   The engineer produces no artifact a human reads at a glance, so what it leaves
   is the worktree, and the commit message it wrote is its word that the worktree
-  is finished. That word is what this acts on: commit the tree, push the branch,
-  and stop. Nothing moves — a human reads the diff and sends it to review.
+  is finished. That word is what this acts on: commit the tree, push the branch
+  or start CI on it, and stop. Nothing moves — a human reads the diff and sends
+  it to review.
 
   What an engineer run can get wrong is exiting cleanly having written no
   message, or having changed nothing at all, and both are recorded on the run so
@@ -41,10 +42,14 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinished do
   # leave the page reporting a failure that has just been committed.
   defp commit(%Run{} = run, %Task{} = task) do
     case Pipeline.commit_engineer_work(Scope.for_system(), task) do
-      :ok -> clear(run)
+      :ok -> run |> reload() |> clear()
       {:error, reason} -> fail(run, "Could not commit the engineer's work: #{describe(reason)}")
     end
   end
+
+  # Starting CI moved the run on underneath this one, and it is the run as CI
+  # left it that must not be latched done.
+  defp reload(%Run{} = run), do: %{Repo.get!(Run, run.id) | task: run.task, role: run.role}
 
   defp clear(%Run{error: nil} = run), do: run
 

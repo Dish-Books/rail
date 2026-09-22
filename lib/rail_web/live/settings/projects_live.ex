@@ -319,6 +319,52 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </span>
               </div>
 
+              <div class="grid grid-cols-3 gap-4">
+                <div class="col-span-2">
+                  <label
+                    for="project-ci-command-input"
+                    class="block text-sm font-medium text-slate-900 dark:text-slate-100"
+                  >
+                    CI Command
+                  </label>
+                  <input
+                    type="text"
+                    name="project[ci_command]"
+                    id="project-ci-command-input"
+                    value={Ecto.Changeset.get_field(@changeset, :ci_command)}
+                    placeholder="mise run ci"
+                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm font-mono focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                </div>
+                <div>
+                  <label
+                    for="project-ci-timeout-input"
+                    class="block text-sm font-medium text-slate-900 dark:text-slate-100"
+                  >
+                    Timeout (minutes)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    name="project[ci_timeout_minutes]"
+                    id="project-ci-timeout-input"
+                    value={Ecto.Changeset.get_field(@changeset, :ci_timeout_minutes)}
+                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  />
+                </div>
+                <p class="col-span-3 -mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  Runs in the worktree on every commit the engineer finishes. A failure goes back to the engineer,
+                  and a change goes to review only once it passes. Leave empty to skip CI.
+                </p>
+                <span
+                  :if={@changeset.errors[:ci_timeout_minutes]}
+                  class="col-span-3 text-xs text-red-600"
+                  id="project-ci-timeout-error"
+                >
+                  {elem(@changeset.errors[:ci_timeout_minutes], 0)}
+                </span>
+              </div>
+
               <div class="flex items-center space-x-2 pt-2">
                 <input type="hidden" name="project[active]" value="false" />
                 <input

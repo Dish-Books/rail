@@ -15,7 +15,7 @@ defmodule Rail.Tools.Schemas.OsProcess do
 
   # An agent's CLI writes NDJSON for its backend to read; a setup script writes
   # plain text for a person to read, and says how it went with its exit status.
-  @kinds [:agent, :setup]
+  @kinds [:agent, :setup, :ci]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "proc"}
   schema "os_processes" do
@@ -33,6 +33,8 @@ defmodule Rail.Tools.Schemas.OsProcess do
     field :command, :string
     field :exit_code, :integer
     field :deadline_at, :utc_datetime_usec
+    # The commit a CI process was run against.
+    field :head_sha, :string
 
     belongs_to :task, Task
     belongs_to :run, Run
@@ -52,7 +54,8 @@ defmodule Rail.Tools.Schemas.OsProcess do
     :kind,
     :command,
     :exit_code,
-    :deadline_at
+    :deadline_at,
+    :head_sha
   ]
 
   @required_fields [

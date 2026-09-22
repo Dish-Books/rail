@@ -977,6 +977,140 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#commit-work")
     end
 
+    test "with CI, the change waits on a pass before it can go to review", %{
+      conn: conn,
+      project: project,
+      task: task,
+      engineer_run: run
+    } do
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+      stub(Git, :credential_env, fn _project -> {:ok, %{}} end)
+
+      expect(Tools, :start_command_process, fn spawned, :ci, "mise run ci", _opts ->
+        {:ok, %OsProcess{kind: :ci, run: spawned}}
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#ci-status", "CI not run")
+      assert has_element?(view, "#send-to-review[disabled]")
+      refute has_element?(view, "#commit-work")
+
+      view |> with_target("#engineer-stage") |> render_click("send_to_review", %{})
+      assert has_element?(view, "#engineer-error", "CI has to pass on the latest commit before this goes to review.")
+
+      view |> element("#run-ci", "Run CI") |> render_click()
+
+      assert %Run{status: :running, ci_failure_streak: 0} = Repo.reload!(run)
+    end
+
+    test "with CI, a pass on the latest commit lets the change go to review", %{
+      conn: conn,
+      project: project,
+      task: task,
+      engineer_run: run,
+      repo: repo
+    } do
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        kind: :ci,
+        command: "mise run ci",
+        exit_code: 0,
+        head_sha: String.trim(git!(repo, ["rev-parse", "HEAD"])),
+        stream_path: "/tmp/#{run.id}.log",
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#ci-status[title='mise run ci']", "CI passed")
+      assert has_element?(view, "#send-to-review")
+      refute has_element?(view, "#send-to-review[disabled]")
+      refute has_element?(view, "#run-ci")
+    end
+
+    test "with CI, a failure says how many times it has gone back, and can be run again", %{
+      conn: conn,
+      project: project,
+      task: task,
+      engineer_run: run
+    } do
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+      {:ok, run} = Pipeline.update_run(run, %{ci_failure_streak: 2})
+
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        kind: :ci,
+        exit_code: 1,
+        stream_path: "/tmp/#{run.id}.log",
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+      stub(Git, :credential_env, fn _project -> {:error, {:github_api_error, 401, %{}}} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#ci-status", "CI failed · 2 of 3")
+      view |> element("#run-ci", "Run CI again") |> render_click()
+
+      assert has_element?(view, "#engineer-error", "Could not start CI: {:github_api_error, 401, %{}}")
+    end
+
+    test "with CI running, the pane says so", %{conn: conn, project: project, task: task, engineer_run: run} do
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        kind: :ci,
+        stream_path: "/tmp/#{run.id}.log",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#ci-status", "CI running")
+    end
+
+    test "with CI failed and nobody sent back yet, it just says it failed", %{
+      conn: conn,
+      project: project,
+      task: task,
+      engineer_run: run
+    } do
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        kind: :ci,
+        exit_code: 2,
+        stream_path: "/tmp/#{run.id}.log",
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#ci-status", "CI failed")
+      refute has_element?(view, "#ci-status", "of 3")
+    end
+
     test "says so when the engineer has changed nothing", %{conn: conn, task: task, repo: repo} do
       git!(repo, ["checkout", "main"])
       {:ok, _reset} = Pipeline.update_task(task, %{worktree_path: repo})

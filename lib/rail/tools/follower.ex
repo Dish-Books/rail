@@ -330,8 +330,9 @@ defmodule Rail.Tools.Follower do
     end
   end
 
+  # 124, as `timeout(1)` has it: what ran out was time, not a stop someone asked for.
   defp settle_exit(%__MODULE__{timed_out?: true}, %OsProcess{}, _event_state, _raw_stderr) do
-    {-1, "Timed out, so it was stopped."}
+    {124, "Timed out, so it was stopped."}
   end
 
   # A command's output is its log, not an error, so all it has to say about its

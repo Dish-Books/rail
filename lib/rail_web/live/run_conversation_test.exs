@@ -351,6 +351,37 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ ~s(data-qa="rail-event")
   end
 
+  test "a CI run reads as CI", %{task: task, roles: roles, roles_map: roles_map} do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+
+    ci =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        kind: :ci,
+        command: "mise run ci",
+        exit_code: 0,
+        stream_path: "/tmp/#{run.id}.log",
+        status: :finished,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    Pipeline.append_run_events(run.id, ci.id, ["all gates passed"])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert html =~ ~r/>\s*CI\s*</
+    assert html =~ "mise run ci"
+  end
+
   test "a setup script that passed keeps its output folded away until asked", %{
     task: task,
     roles: roles,
@@ -399,7 +430,11 @@ defmodule RailWeb.Live.RunConversationTest do
         started_at: ~U[2026-09-09 10:00:00.000000Z]
       })
 
-    for {status, exit_code, line} <- [{:finished, -1, "was stopped"}, {:running, nil, "still copying"}] do
+    for {status, exit_code, line} <- [
+          {:finished, -1, "was stopped"},
+          {:finished, 124, "ran out of time"},
+          {:running, nil, "still copying"}
+        ] do
       setup =
         %OsProcess{}
         |> OsProcess.changeset(%{
@@ -420,6 +455,7 @@ defmodule RailWeb.Live.RunConversationTest do
     html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
 
     assert html =~ "Stopped"
+    assert html =~ "Timed out"
     assert html =~ "Running"
     assert html =~ "still copying"
   end

@@ -19,6 +19,9 @@ defmodule Rail.Projects.Schemas.Project do
     field :active, :boolean, default: true
     # Run once in each new worktree, from its root, before any agent works there.
     field :worktree_setup_script, :string
+    # Run on every commit the engineer finishes, before it is pushed or reviewed.
+    field :ci_command, :string
+    field :ci_timeout_minutes, :integer, default: 30
 
     has_one :linear_workspace, LinearWorkspace, on_replace: :update
 
@@ -34,7 +37,9 @@ defmodule Rail.Projects.Schemas.Project do
     :linear_state_ids,
     :clone_path,
     :active,
-    :worktree_setup_script
+    :worktree_setup_script,
+    :ci_command,
+    :ci_timeout_minutes
   ]
 
   @required_fields [
@@ -52,6 +57,7 @@ defmodule Rail.Projects.Schemas.Project do
     |> validate_required(@required_fields)
     |> validate_change(:clone_path, &validate_clone_path/2)
     |> validate_change(:worktree_setup_script, &validate_worktree_setup_script/2)
+    |> validate_number(:ci_timeout_minutes, greater_than: 0, message: "must be at least a minute")
     |> cast_assoc(:linear_workspace)
     |> unique_constraint(:github_repo)
     |> put_linear_team_id()

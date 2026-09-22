@@ -1194,9 +1194,11 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   defp command_label(%OsProcess{kind: :setup}), do: "Worktree setup"
+  defp command_label(%OsProcess{kind: :ci}), do: "CI"
 
   defp command_status(%OsProcess{}, true), do: "Running"
   defp command_status(%OsProcess{exit_code: 0}, false), do: "Passed"
+  defp command_status(%OsProcess{exit_code: 124}, false), do: "Timed out"
   defp command_status(%OsProcess{exit_code: code}, false) when is_integer(code) and code > 0, do: "Failed · exit #{code}"
   defp command_status(%OsProcess{}, false), do: "Stopped"
 end

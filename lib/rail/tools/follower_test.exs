@@ -1103,7 +1103,7 @@ defmodule Rail.Tools.FollowerTest do
     Sandbox.allow(Repo, self(), follower_pid)
     Process.unlink(port)
 
-    assert_receive {:os_process_finished, _finished, %{error: "Timed out, so it was stopped."}}, 5_000
+    assert_receive {:os_process_finished, %OsProcess{exit_code: 124}, %{error: "Timed out, so it was stopped."}}, 5_000
     eventually(fn -> refute Tools.os_process_alive?(child_pid) end)
   end
 end

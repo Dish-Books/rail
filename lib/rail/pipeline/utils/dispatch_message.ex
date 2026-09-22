@@ -98,6 +98,8 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
       run
       |> Run.changeset(%{
         pending_chat: nil,
+        # A person stepping in is what lets CI send its failures back again.
+        ci_failure_streak: 0,
         status: :running,
         error: nil,
         exit_code: nil,

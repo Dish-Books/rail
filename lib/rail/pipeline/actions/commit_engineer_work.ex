@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.CommitEngineerWork do
   @moduledoc """
-  Commits and pushes what the engineer left in its worktree.
+  Commits what the engineer left in its worktree and sends it on: pushed, or for
+  a project with CI, run through CI first, which pushes it once it passes.
 
   Rail commits rather than the agent, because who a commit belongs to and what it
   is signed with are not decisions to leave to a prompt. What this stage owns is
@@ -9,29 +10,51 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWork do
   `Rail.Git`'s to answer.
   """
 
+  import Rail.Pipeline.Utils.CiPassed
   import Rail.Pipeline.Utils.CommitMessage
+  import Rail.Pipeline.Utils.StartCi
 
   alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Roles
+  alias Rail.Roles.Schemas.Role
   alias Rail.Scope
 
   @doc """
-  Commits everything in `task`'s worktree and pushes the branch.
+  Commits everything in `task`'s worktree, then pushes the branch or starts CI
+  on the engineer's run.
 
-  Returns `:ok`, or `{:error, reason}` when git or GitHub refused. Safe to run
-  again after either half failed: it is the outstanding work it acts on, not a
-  fixed pair of steps.
+  Returns `:ok`, or `{:error, reason}` when git, GitHub or CI refused. Safe to
+  run again after either half failed: it is the outstanding work it acts on, not
+  a fixed pair of steps.
   """
   def commit_engineer_work(%Scope{} = scope, %Task{} = task) do
-    task = Repo.preload(task, :issue)
+    task = Repo.preload(task, [:issue, :project])
 
     with {:ok, _sha} <- commit(scope, task),
-         :ok <- Git.push_branch(scope, task) do
+         :ok <- send_on(scope, task) do
       drop_message_file(task)
       :ok
+    end
+  end
+
+  # A commit CI has not passed is not pushed: CI's finish pushes it.
+  defp send_on(%Scope{} = scope, %Task{project: %Project{ci_command: command}} = task) do
+    if command in [nil, ""] or ci_passed?(task), do: Git.push_branch(scope, task), else: start_engineer_ci(task)
+  end
+
+  defp start_engineer_ci(%Task{} = task) do
+    {:ok, %Role{id: role_id}} = Roles.get_role(project_id: task.project_id, stage: :engineer)
+    run = Run |> Repo.get_by!(task_id: task.id, role_id: role_id) |> Repo.preload([:task, role: :backend])
+
+    case start_ci(run) do
+      {:ok, _os_process} -> :ok
+      {:error, %Run{error: error}} -> {:error, error}
     end
   end
 

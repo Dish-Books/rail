@@ -26,6 +26,7 @@ defmodule Rail.Git do
   defdelegate branch_unpushed?(worktree_path), to: Actions.BranchUnpushed
   defdelegate commit_worktree(scope, task, message), to: Actions.CommitWorktree
   defdelegate push_branch(scope, task), to: Actions.PushBranch
+  defdelegate credential_env(project), to: Actions.CredentialEnv
 
   defdelegate load_diff(scope, task, filter \\ :branch), to: Actions.LoadDiff
   defdelegate load_diff_hunk(scope, task, path, line \\ nil), to: Actions.LoadDiffHunk

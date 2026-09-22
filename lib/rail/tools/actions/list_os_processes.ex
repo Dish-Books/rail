@@ -10,7 +10,8 @@ defmodule Rail.Tools.Actions.ListOsProcesses do
   Lists os processes matching criteria.
   """
   def list_os_processes(opts \\ []) do
-    query = from(r in OsProcess, order_by: [desc: r.inserted_at])
+    # Ids are time-ordered, so they settle two rows written in the same microsecond.
+    query = from(r in OsProcess, order_by: [desc: r.inserted_at, desc: r.id])
 
     query =
       Enum.reduce(opts, query, fn

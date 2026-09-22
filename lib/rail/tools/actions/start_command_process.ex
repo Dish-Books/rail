@@ -21,12 +21,13 @@ defmodule Rail.Tools.Actions.StartCommandProcess do
   Runs `command` through `/bin/sh` in `run`'s worktree as an OS process of `kind`,
   followed like an agent's and settled by `run_finished/3` when it exits.
 
-  Takes `:timeout_ms`, after which it is stopped, and `:env`. Returns
+  Takes `:timeout_ms`, after which it is stopped, `:env`, and `:head_sha`, the
+  commit it is being run against. Returns
   `{:ok, os_process}` with `:run` and `:task` loaded, or `{:error, reason}`.
   """
   def start_command_process(%Run{} = run, kind, command, opts \\ []) when is_binary(command) do
     %Run{task: %Task{} = task} = run = Repo.preload(run, [:task, role: :backend])
-    os_process = insert_os_process(run, kind, command, Keyword.get(opts, :timeout_ms, @default_timeout_ms))
+    os_process = insert_os_process(run, kind, command, opts)
 
     env =
       task
@@ -64,7 +65,7 @@ defmodule Rail.Tools.Actions.StartCommandProcess do
     "(\n#{command}\n)\nstatus=$?\necho $status > \"$#{@exit_var}\"\nexit $status\n"
   end
 
-  defp insert_os_process(%Run{} = run, kind, command, timeout_ms) do
+  defp insert_os_process(%Run{} = run, kind, command, opts) do
     id = UXID.generate!(prefix: "proc")
     stream_path = Path.join([run.task.scratch_path, "streams", "#{id}.log"])
     stream_path |> Path.dirname() |> File.mkdir_p!()
@@ -80,7 +81,8 @@ defmodule Rail.Tools.Actions.StartCommandProcess do
       stream_path: stream_path,
       status: :starting,
       started_at: now,
-      deadline_at: DateTime.add(now, timeout_ms, :millisecond)
+      head_sha: Keyword.get(opts, :head_sha),
+      deadline_at: DateTime.add(now, Keyword.get(opts, :timeout_ms, @default_timeout_ms), :millisecond)
     })
     |> Repo.insert!()
   end

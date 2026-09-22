@@ -4,7 +4,11 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
   alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
+  alias Rail.Roles
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
 
   setup do
     scope = system_scope()
@@ -55,7 +59,29 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
 
     stub(Git, :push_branch, fn _scope, _task -> :ok end)
 
-    %{scope: scope, task: task, repo: repo, message_path: Path.join(task.scratch_path, "commits/CMW-1.md")}
+    # A project with CI runs it on the engineer's run.
+    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
+
+    {:ok, role} =
+      Roles.create_role(scope, project, %{
+        backend_id: backend.id,
+        stage: :engineer,
+        name: "engineer role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the engineer."
+      })
+
+    {:ok, run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})
+
+    %{
+      run: run,
+      scope: scope,
+      project: project,
+      task: task,
+      repo: repo,
+      message_path: Path.join(task.scratch_path, "commits/CMW-1.md")
+    }
   end
 
   test "commits what the engineer wrote, under the trailers naming the ticket and Rail", %{
@@ -143,6 +169,58 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
   end
 
   test "a clean worktree with nothing left to push is still nothing to do", %{scope: scope, task: task} do
+    assert :ok = Pipeline.commit_engineer_work(scope, task)
+  end
+
+  test "a project with CI runs it on the commit instead of pushing it", %{
+    scope: scope,
+    project: project,
+    run: run,
+    task: task,
+    repo: repo,
+    message_path: message_path
+  } do
+    {:ok, _project} = Projects.update_project(scope, project, %{ci_command: "mise run ci"})
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+    File.write!(message_path, "CMW-1: add the vendor filter\n")
+
+    reject(&Git.push_branch/2)
+    stub(Git, :credential_env, fn _project -> {:ok, %{}} end)
+
+    expect(Tools, :start_command_process, fn spawned, :ci, "mise run ci", _opts ->
+      {:ok, %OsProcess{kind: :ci, run: spawned}}
+    end)
+
+    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    refute File.exists?(message_path)
+    assert %Run{status: :running} = Repo.reload!(run)
+  end
+
+  test "a commit CI has already passed is pushed without running CI again", %{
+    scope: scope,
+    project: project,
+    run: run,
+    task: task,
+    repo: repo
+  } do
+    {:ok, _project} = Projects.update_project(scope, project, %{ci_command: "mise run ci"})
+
+    %OsProcess{}
+    |> OsProcess.changeset(%{
+      run_id: run.id,
+      task_id: task.id,
+      kind: :ci,
+      exit_code: 0,
+      head_sha: String.trim(git!(repo, ["rev-parse", "HEAD"])),
+      stream_path: "/tmp/cmw-ci.log",
+      status: :finished,
+      started_at: DateTime.utc_now()
+    })
+    |> Repo.insert!()
+
+    reject(Tools, :start_command_process, 4)
+    expect(Git, :push_branch, fn _scope, _task -> :ok end)
+
     assert :ok = Pipeline.commit_engineer_work(scope, task)
   end
 end

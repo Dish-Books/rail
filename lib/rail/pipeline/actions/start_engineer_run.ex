@@ -76,7 +76,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     MSG
 
     - A heredoc into #{file}, never an inline string.
-    - Write it only when the work is actually finished and the project's own checks pass. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you rather than committing half a change.
+    - Write it only when the work is actually finished and the project's own checks pass. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you rather than committing half a change.#{ci(task)}
     - Run every command in the foreground and wait for it, however long it takes, the project's own test and coverage runs included. Never start one in the background meaning to read it when it finishes: your turn ends the moment you stop writing, the CLI carrying you exits, and it kills whatever you left running. Nothing wakes you when it is done, so "I have started X and will check it shortly" is the end of the round with X unread and the work unfinished.
     - Review and QA findings come back as further turns of this same conversation. Each round writes the file again and becomes a commit of its own, so describe that round's change, not the whole ticket over again.
     - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each `[QUESTION: ...]` on a line of its own. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or a named assumption is not a question.
@@ -90,6 +90,12 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
 
     #{format_comments(issue.comments)}
     """)
+  end
+
+  defp ci(%Task{project: %Project{ci_command: command}}) when command in [nil, ""], do: ""
+
+  defp ci(%Task{project: %Project{ci_command: command}}) do
+    "\n- Once your commit is made, Rail runs `#{command}` on it before anything else sees it. If that fails, its output comes back to you as the next turn of this conversation."
   end
 
   defp workspace(%Task{worktree_path: worktree_path, worktree_name: branch, project: %Project{} = project}) do

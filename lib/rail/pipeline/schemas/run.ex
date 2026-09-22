@@ -36,6 +36,8 @@ defmodule Rail.Pipeline.Schemas.Run do
     field :pending_chat, :string
     field :stage_fingerprint_head_sha, :string
     field :stage_fingerprint_dirty_digest, :string
+    # CI failures in a row that went back to the engineer on their own.
+    field :ci_failure_streak, :integer, default: 0
 
     # What the agent has spent getting this far, by kind of token. What that
     # costs is a question for the backend's own billing, not for a run.
@@ -69,7 +71,8 @@ defmodule Rail.Pipeline.Schemas.Run do
     :pending_answer,
     :pending_chat,
     :stage_fingerprint_head_sha,
-    :stage_fingerprint_dirty_digest
+    :stage_fingerprint_dirty_digest,
+    :ci_failure_streak
   ]
 
   @usage_fields [

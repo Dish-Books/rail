@@ -90,13 +90,14 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
     assert output =~ "20400"
   end
 
-  test "is given a deadline as far off as its timeout", %{run: run} do
+  test "is given a deadline as far off as its timeout, and the commit it runs against", %{run: run} do
     expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
 
     assert {:ok, %OsProcess{started_at: started_at, deadline_at: deadline_at} = os_process} =
-             Tools.start_command_process(run, :setup, "sleep 0.1", timeout_ms: 90_000)
+             Tools.start_command_process(run, :ci, "sleep 0.1", timeout_ms: 90_000, head_sha: "abc123")
 
     assert DateTime.diff(deadline_at, started_at, :millisecond) == 90_000
+    assert %OsProcess{kind: :ci, head_sha: "abc123"} = os_process
     eventually(fn -> assert File.exists?(OsProcess.exit_path(os_process)) end)
   end
 

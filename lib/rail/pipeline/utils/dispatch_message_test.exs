@@ -94,6 +94,15 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
 
   # How the last turn ended is not how this one has ended, and a run left wearing
   # an error is a run nothing will ever latch as done.
+  test "a person's message starts the count of CI failures sent back over", %{run: run} do
+    {:ok, run} = Pipeline.update_run(run, %{ci_failure_streak: 3})
+
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+    assert %Run{ci_failure_streak: 0} = Repo.reload!(run)
+  end
+
   test "the turn before this one takes its error with it", %{run: run} do
     {:ok, failed} = run |> Run.changeset(%{error: "Error: empty prompt", exit_code: 1}) |> Repo.update()
 

@@ -1,6 +1,7 @@
 defmodule RailWeb.Live.EngineerStage do
   @moduledoc """
-  The change the engineer made, and the two decisions a human takes on it.
+  The change the engineer made, where CI stands on it, and the two decisions a
+  human takes on it.
 
   The diff is read off the worktree every time, because it is the worktree that
   moved and no row records that. Two views of it: everything on the branch, which
@@ -45,8 +46,37 @@ defmodule RailWeb.Live.EngineerStage do
         <:actions>
           {render_slot(@actions)}
 
+          <span
+            :if={@ci}
+            id="ci-status"
+            data-qa="ci_status"
+            title={ci_title(@ci)}
+            class={[
+              "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold",
+              ci_tone(@ci.state)
+            ]}
+          >
+            <.icon
+              name={ci_icon(@ci.state)}
+              class={["size-3.5", @ci.state == :running && "motion-safe:animate-spin"]}
+            />
+            {ci_label(@ci)}
+          </span>
+
           <button
-            :if={@dirty? or @unpushed? or @committing}
+            :if={@show_run_ci? and not Run.running?(@run)}
+            type="button"
+            id="run-ci"
+            data-qa="run_ci"
+            phx-click="run_ci"
+            phx-target={@myself}
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+          >
+            {if @ci.state == :failed, do: "Run CI again", else: "Run CI"}
+          </button>
+
+          <button
+            :if={(@dirty? or @unpushed? or @committing) and not @show_run_ci?}
             type="button"
             id="commit-work"
             data-qa="commit_work"
@@ -67,7 +97,8 @@ defmodule RailWeb.Live.EngineerStage do
             data-qa="send_to_review"
             phx-click="send_to_review"
             phx-target={@myself}
-            disabled={@committing}
+            disabled={@committing or not ci_passed?(@ci)}
+            title={if not ci_passed?(@ci), do: "CI has to pass on the latest commit first"}
             class="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Send to review
@@ -189,6 +220,17 @@ defmodule RailWeb.Live.EngineerStage do
     {:noreply, socket}
   end
 
+  def handle_event("run_ci", _params, socket) do
+    case Pipeline.run_ci(socket.assigns.current_scope, socket.assigns.run) do
+      {:ok, _run} ->
+        send(self(), :task_changed)
+        {:noreply, assign(socket, :error, nil)}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, :error, message_for(reason))}
+    end
+  end
+
   def handle_event("send_to_review", _params, socket) do
     case Pipeline.send_to_review(socket.assigns.run) do
       {:ok, _run} ->
@@ -286,13 +328,46 @@ defmodule RailWeb.Live.EngineerStage do
     files = diff(scope, task, filter)
     present? = Task.worktree_present?(task)
 
+    dirty? = present? and Git.worktree_dirty?(task.worktree_path)
+    unpushed? = present? and Git.branch_unpushed?(task.worktree_path)
+    ci = Pipeline.get_ci_status(socket.assigns.run)
+
     socket
     |> fold_away_read_files(files)
     |> assign(:files, files)
     |> assign(:work?, work?(scope, task, filter, files))
-    |> assign(:dirty?, present? and Git.worktree_dirty?(task.worktree_path))
-    |> assign(:unpushed?, present? and Git.branch_unpushed?(task.worktree_path))
+    |> assign(:dirty?, dirty?)
+    |> assign(:unpushed?, unpushed?)
+    |> assign(:ci, ci)
+    |> assign(:show_run_ci?, show_run_ci?(ci, dirty?))
   end
+
+  # A commit waiting on CI is sent on by running it, not by pushing: CI pushes it
+  # once it passes. Anything uncommitted is committed first, which runs CI anyway.
+  defp show_run_ci?(%{state: state}, false) when state in [:pending, :failed], do: true
+  defp show_run_ci?(_ci, _dirty?), do: false
+
+  defp ci_passed?(nil), do: true
+  defp ci_passed?(%{state: state}), do: state == :passed
+
+  defp ci_label(%{state: :running}), do: "CI running"
+  defp ci_label(%{state: :passed}), do: "CI passed"
+  defp ci_label(%{state: :failed, failures: failures}) when failures > 0, do: "CI failed · #{failures} of 3"
+  defp ci_label(%{state: :failed}), do: "CI failed"
+  defp ci_label(%{state: :pending}), do: "CI not run"
+
+  defp ci_title(%{os_process: %{command: command}}), do: command
+  defp ci_title(_never_run), do: nil
+
+  defp ci_tone(:running), do: "bg-blue-500/10 text-blue-700 dark:text-blue-300"
+  defp ci_tone(:passed), do: "bg-green-500/10 text-green-700 dark:text-green-300"
+  defp ci_tone(:failed), do: "bg-red-500/10 text-red-700 dark:text-red-300"
+  defp ci_tone(:pending), do: "bg-slate-500/10 text-slate-600 dark:text-slate-300"
+
+  defp ci_icon(:running), do: "pi-circle-notch"
+  defp ci_icon(:passed), do: "pi-check-circle"
+  defp ci_icon(:failed), do: "pi-x-circle"
+  defp ci_icon(:pending), do: "pi-clock"
 
   # A file already read is folded away the first time it is seen that way, and
   # only then: a reader who opens one again has it stay open. The engineer
@@ -359,6 +434,7 @@ defmodule RailWeb.Live.EngineerStage do
   defp message_for(:uncommitted_changes), do: "Commit the engineer's work before sending it to review."
   defp message_for(:unpushed_changes), do: "Push the engineer's commits before sending them to review."
   defp message_for(:nothing_to_commit), do: "There is nothing left to commit."
+  defp message_for(:ci_not_passed), do: "CI has to pass on the latest commit before this goes to review."
   defp message_for(reason) when is_binary(reason), do: reason
   defp message_for(reason), do: "Could not finish that: #{inspect(reason)}"
 end
