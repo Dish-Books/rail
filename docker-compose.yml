@@ -1,43 +1,79 @@
+# The rail VM's stack (dishbooks .devops/terraform/shared/rail.tf); scripts/deploy.sh brings it up.
+# Host networking, so agents reach worktree apps and the shared services on localhost.
+# /srv/rail is mounted at the same path everywhere: worktree and scratch paths live in the DB.
+# Agents get no docker socket; a project's other services are started on the host, outside this stack.
+
+x-rail-env: &rail-env
+  DATABASE_URL: ecto://postgres:postgres@localhost:5432/rail_prod
+  PHX_HOST: rail.dishbooks.com
+  RAIL_SCRATCH_ROOT: /srv/rail/scratch
+  RAIL_BACKENDS_ROOT: /srv/rail/backends
+  MISE_DATA_DIR: /srv/rail/mise
+  MISE_TRUSTED_CONFIG_PATHS: /srv/rail/projects
+
 services:
+  # One Postgres for rail and every project worktree. postgres/postgres because project dev
+  # configs hardcode it; it listens on localhost only. Settings match dishbooks' init.sql.
   db:
-    image: postgres:17-alpine
+    image: postgres:17
     restart: unless-stopped
+    network_mode: host
+    user: "1000:1000"
+    command:
+      - postgres
+      - -c
+      - listen_addresses=localhost
+      - -c
+      - max_connections=500
+      - -c
+      - wal_level=logical
+      - -c
+      - max_wal_senders=64
+      - -c
+      - max_replication_slots=64
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: rail_prod
-    ports:
-      - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - /srv/rail/postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d rail_prod"]
+      test: ["CMD-SHELL", "pg_isready -h localhost -U postgres -d rail_prod"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  rail:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    ports:
-      - "4000:4000"
-    environment:
-      DATABASE_URL: ecto://postgres:postgrespassword@db:5432/rail_prod
-      SECRET_KEY_BASE: 0B3yT32mC7eE8y9F5v0D2a4B6c8E0f2A4b6C8d0E2f4A6b8C0d2E4f6A8b0C2d4E
-      CLOAK_KEY_V1: L2zKQh+tDxkUH94a2O+oa8Mae3mryHitrR/LrYABeNA=
-      PHX_HOST: localhost
-      PORT: "4000"
-      PHX_SERVER: "true"
-    volumes:
-      - worktrees:/var/rail/worktrees
-      - scratch:/var/rail/scratch
+  migrate:
+    image: rail:latest
+    pull_policy: never
+    network_mode: host
+    env_file: .env
+    environment: *rail-env
+    command: ["eval", "Rail.Release.migrate()"]
+    restart: "no"
     depends_on:
       db:
         condition: service_healthy
 
-volumes:
-  pgdata:
-  worktrees:
-  scratch:
+  rail:
+    build: .
+    image: rail:latest
+    restart: unless-stopped
+    network_mode: host
+    env_file: .env
+    environment: *rail-env
+    # Reaps the agent CLIs and Chrome that rail spawns detached.
+    init: true
+    shm_size: 4gb
+    volumes:
+      - /srv/rail:/srv/rail
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    network_mode: host
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
