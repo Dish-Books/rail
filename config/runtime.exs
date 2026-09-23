@@ -57,4 +57,8 @@ if config_env() == :prod do
     http: [ip: {0, 0, 0, 0, 0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT", "4000"))],
     secret_key_base: System.fetch_env!("SECRET_KEY_BASE"),
     server: System.get_env("PHX_SERVER") != nil
+
+  # The release bakes scratch_root in at build time; a host that keeps state elsewhere points both here.
+  if scratch_root = System.get_env("RAIL_SCRATCH_ROOT"), do: config(:rail, scratch_root: scratch_root)
+  if backends_root = System.get_env("RAIL_BACKENDS_ROOT"), do: config(:rail, backends_root: backends_root)
 end
