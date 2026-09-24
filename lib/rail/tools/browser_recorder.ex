@@ -48,7 +48,15 @@ defmodule Rail.Tools.BrowserRecorder do
   @doc """
   Stops recording and returns the directory holding the frames and their timings.
   """
-  def finish(pid), do: GenServer.call(pid, :finish)
+  def finish(pid) do
+    ref = Process.monitor(pid)
+    directory = GenServer.call(pid, :finish)
+
+    # The reply lands before the exit, and a take started in between would find this one still running.
+    receive do
+      {:DOWN, ^ref, :process, ^pid, _reason} -> directory
+    end
+  end
 
   @impl true
   def init(opts) do

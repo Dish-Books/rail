@@ -66,7 +66,9 @@ defmodule Rail.Tools.ClaudeTest do
            } = Claude.probe(backend)
   end
 
-  test "warms the usage cache before reading the config, and survives that raising", %{backend: backend} do
+  test "warms the usage cache before reading the config, and survives that raising", %{
+    backend: %Backend{executable_path: executable} = backend
+  } do
     test_pid = self()
 
     stub(Tools, :run, fn _exe, args, _opts ->
@@ -81,7 +83,7 @@ defmodule Rail.Tools.ClaudeTest do
     assert %{status: :ready} = Claude.probe(backend)
     # Run with no stdin, so the CLI does not sit waiting for input first.
     assert_received {:warmed,
-                     ["-c", ~s(exec "$0" "$@" </dev/null), "/bin/sh" <> _, "-p", "/usage", "--output-format", "json"]}
+                     ["-c", ~s(exec "$0" "$@" </dev/null), ^executable, "-p", "/usage", "--output-format", "json"]}
 
     # A warm up that blows up must not take the probe down with it.
     stub(Tools, :run, fn _exe, args, _opts ->

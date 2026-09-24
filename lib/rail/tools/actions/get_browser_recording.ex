@@ -14,9 +14,7 @@ defmodule Rail.Tools.Actions.GetBrowserRecording do
   Returns the recorder process for `task`, or nil.
   """
   def get_browser_recording(%Task{id: task_id}) do
-    case Registry.lookup(RecorderRegistry, task_id) do
-      [{pid, _value}] -> pid
-      [] -> nil
-    end
+    # Not `Registry.lookup/2`: it still names a recorder that exited until the registry hears of it.
+    GenServer.whereis({:via, Registry, {RecorderRegistry, task_id}})
   end
 end

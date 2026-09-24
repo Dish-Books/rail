@@ -9,6 +9,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Users
 
   setup %{project: project} do
     {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
@@ -79,6 +80,42 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
              })
 
     refute_enqueued(worker: SyncIssue)
+  end
+
+  test "an issue update sets its owner to the Rail user linked to the assignee, and unassigning clears it", %{
+    project: project,
+    workspace: workspace
+  } do
+    {:ok, %{id: user_id} = user} =
+      Users.register_oauth_user(%{github_id: "gh_wh_assignee", login: "wh_assignee", email: "wh_assignee@example.com"})
+
+    user |> Ecto.Changeset.change(linear_user_id: "lin_usr_wh_assignee") |> Repo.update!()
+
+    %Issue{}
+    |> Issue.linear_changeset(%{
+      project_id: project.id,
+      external_id: "lin_wh_owner",
+      identifier: "HWH-9",
+      title: "Owner Issue",
+      state: :triage
+    })
+    |> Repo.insert!()
+
+    data = %{"id" => "lin_wh_owner", "teamId" => "lin_team_id", "identifier" => "HWH-9", "title" => "Owner Issue"}
+
+    assert {:ok, %Issue{owner_user_id: ^user_id}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "update",
+               "data" => Map.put(data, "assigneeId", "lin_usr_wh_assignee")
+             })
+
+    assert {:ok, %Issue{owner_user_id: nil}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "update",
+               "data" => Map.put(data, "assigneeId", nil)
+             })
   end
 
   test "an issue remove deletes the row, and one Rail never had is fine", %{project: project, workspace: workspace} do

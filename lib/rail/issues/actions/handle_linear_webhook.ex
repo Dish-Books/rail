@@ -6,6 +6,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   Linear, so nothing is pushed back to it.
   """
 
+  import Ecto.Query
   import Rail.Issues.Utils.FormatLinearIssue
   import Rail.Issues.Utils.UpsertLinearComment
 
@@ -14,6 +15,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Users.Schemas.User
 
   @doc """
   Applies `payload` for `workspace`, its projects preloaded. Issue creates and
@@ -28,7 +30,10 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
       when action in ["create", "update"] do
     case Enum.find(projects, &(&1.linear_team_id == team_id)) do
       %Project{id: project_id} ->
-        attrs = data |> format_linear_issue() |> Map.put(:project_id, project_id)
+        attrs =
+          data
+          |> format_linear_issue()
+          |> Map.merge(%{project_id: project_id, owner_user_id: owner_user_id(data["assigneeId"])})
 
         (Repo.get_by(Issue, external_id: external_id) || %Issue{})
         |> Issue.linear_changeset(attrs)
@@ -81,4 +86,11 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   end
 
   def handle_linear_webhook(%LinearWorkspace{}, _payload), do: :ok
+
+  # An assignee with no linked Rail user leaves the issue unowned, as the full sync does.
+  defp owner_user_id(linear_user_id) when is_binary(linear_user_id) do
+    Repo.one(from(u in User, where: u.linear_user_id == ^linear_user_id, select: u.id))
+  end
+
+  defp owner_user_id(nil), do: nil
 end
