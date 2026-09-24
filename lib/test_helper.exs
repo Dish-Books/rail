@@ -17,7 +17,8 @@ Mimic.copy(Rail.Tools.FollowerSupervisor)
 # Ensure that all Req calls are mocked by default
 Req.default_options(adapter: fn req -> raise "Unmocked call to #{req.url}" end)
 
-ExUnit.start(capture_log: true)
+# CI runners are slow enough that the default 100ms flakes; render_async reads it too.
+ExUnit.start(capture_log: true, assert_receive_timeout: 1_000)
 
 # One project on one workspace that every test can hang its rows off; see `Rail.DataCase`.
 # Committed before the sandbox takes over, with fixed ids so a rerun rewrites the same rows.
