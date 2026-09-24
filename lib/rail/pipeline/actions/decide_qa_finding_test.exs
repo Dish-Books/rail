@@ -4,35 +4,13 @@ defmodule Rail.Pipeline.Actions.DecideQaFindingTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.QaFinding
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Decide Qa Project",
-        github_repo: "org/decide-qa",
-        github_installation_id: 47_033,
-        linear_workspace: %{
-          name: "Decide Qa Workspace",
-          external_id: "lin_ws_decide_qa",
-          token: "lin_api_token_decide_qa",
-          webhook_secret: "whsec_decide_qa"
-        },
-        linear_team_key: "DCQ",
-        default_branch: "main",
-        clone_path: "/tmp/repos/decide-qa",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{

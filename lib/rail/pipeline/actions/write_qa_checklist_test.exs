@@ -3,31 +3,9 @@ defmodule Rail.Pipeline.Actions.WriteQaChecklistTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Write Checklist Project",
-        github_repo: "org/write-checklist",
-        github_installation_id: 47_044,
-        linear_workspace: %{
-          name: "Write Checklist Workspace",
-          external_id: "lin_ws_write_checklist",
-          token: "lin_api_token_write_checklist",
-          webhook_secret: "whsec_write_checklist"
-        },
-        linear_team_key: "WCL",
-        default_branch: "main",
-        clone_path: "/tmp/repos/write-checklist",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

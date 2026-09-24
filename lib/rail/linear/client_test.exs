@@ -252,32 +252,12 @@ defmodule Rail.Linear.ClientTest do
 
     test "the workspace token is looked up when the project did not bring it" do
       Req.Test.expect(Linear, fn conn ->
-        Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-      end)
-
-      {:ok, project} =
-        Rail.Projects.create_project(system_scope(), %{
-          name: "Client Lookup Project",
-          github_repo: "org/client-lookup",
-          github_installation_id: 5311,
-          linear_workspace: %{
-            name: "Client Lookup Workspace",
-            external_id: "lin_ws_client_lookup",
-            token: "looked_up_token",
-            webhook_secret: "whsec_client_lookup"
-          },
-          linear_team_key: "CLK",
-          default_branch: "main",
-          clone_path: "/tmp/repos/client-lookup"
-        })
-
-      Req.Test.expect(Linear, fn conn ->
-        assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer looked_up_token"]
+        assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_test_seed"]
         Req.Test.json(conn, %{"data" => %{"issues" => %{"nodes" => []}}})
       end)
 
       assert {:ok, %{"issues" => %{"nodes" => []}}} =
-               Client.issues(%Project{linear_workspace_id: project.linear_workspace_id, linear_team_key: "CLK"})
+               Client.issues(%Project{linear_workspace_id: "lw_test_seed", linear_team_key: "CLK"})
     end
 
     test "no workspace token means no request" do

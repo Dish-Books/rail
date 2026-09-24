@@ -18,7 +18,8 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
-  setup do
+  # Its own project, because starting a run adds a worktree to a real clone.
+  setup %{project: %{linear_workspace_id: workspace_id}} do
     {:ok, backend} =
       Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
@@ -30,22 +31,14 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
 
     {:ok, project} =
       Projects.create_project(scope, %{
-        name: "Start Product Project 7001",
-        github_repo: "org/start-product-7001",
+        name: "Start Product Project",
+        github_repo: "org/start-product",
         github_installation_id: 7001,
-        linear_workspace: %{
-          name: "Start Product Workspace",
-          external_id: "lin_ws_start_product",
-          token: "lin_api_token_start_product",
-          webhook_secret: "whsec_start_product"
-        },
-        linear_team_key: "P7001",
+        linear_team_key: "SPT",
         default_branch: "main",
         clone_path: create_temp_git_repo(),
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "in_progress" => "st_in_progress"
-        }
+        linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"},
+        linear_workspace_id: workspace_id
       })
 
     {:ok, role} =

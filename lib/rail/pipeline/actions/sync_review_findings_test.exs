@@ -4,31 +4,9 @@ defmodule Rail.Pipeline.Actions.SyncReviewFindingsTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ReviewFinding
-  alias Rail.Projects
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Sync Findings Project",
-        github_repo: "org/sync-findings",
-        github_installation_id: 47_021,
-        linear_workspace: %{
-          name: "Sync Findings Workspace",
-          external_id: "lin_ws_sync_findings",
-          token: "lin_api_token_sync_findings",
-          webhook_secret: "whsec_sync_findings"
-        },
-        linear_team_key: "SYN",
-        default_branch: "main",
-        clone_path: "/tmp/repos/sync-findings",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

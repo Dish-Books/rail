@@ -3,7 +3,6 @@ defmodule Rail.Tools.Actions.ObserveBrowserTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
   alias Rail.Tools
   alias Rail.Tools.BrowserSession
 
@@ -11,29 +10,8 @@ defmodule Rail.Tools.Actions.ObserveBrowserTest do
   # once measures contention rather than the browser.
   @moduletag :browser
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Observe Browser Project",
-        github_repo: "org/observe-browser",
-        github_installation_id: 47_048,
-        linear_workspace: %{
-          name: "Observe Browser Workspace",
-          external_id: "lin_ws_observe_browser",
-          token: "lin_api_token_observe_browser",
-          webhook_secret: "whsec_observe_browser"
-        },
-        linear_team_key: "OBB",
-        default_branch: "main",
-        clone_path: "/tmp/repos/observe-browser",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

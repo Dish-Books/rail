@@ -41,6 +41,6 @@ defmodule RailWeb.ConnCase do
   setup tags do
     Rail.DataCase.setup_sandbox(tags)
     conn = Phoenix.ConnTest.init_test_session(Phoenix.ConnTest.build_conn(), %{})
-    {:ok, conn: conn}
+    {:ok, conn: conn, project: :persistent_term.get({RailTest, :project})}
   end
 end

@@ -4,32 +4,10 @@ defmodule Rail.Git.Actions.LoadDiffTest do
   alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
   alias Rail.Users
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Load Diff Project",
-        github_repo: "org/load-diff",
-        github_installation_id: 47_014,
-        linear_workspace: %{
-          name: "Load Diff Workspace",
-          external_id: "lin_ws_load_diff",
-          token: "lin_api_token_load_diff",
-          webhook_secret: "whsec_load_diff"
-        },
-        linear_team_key: "LDF",
-        default_branch: "main",
-        clone_path: "/tmp/repos/load-diff",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

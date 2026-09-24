@@ -5,31 +5,9 @@ defmodule Rail.Mcp.Utils.RunToolQaPlanTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Qa Plan Project",
-        github_repo: "org/qa-plan",
-        github_installation_id: 47_051,
-        linear_workspace: %{
-          name: "Qa Plan Workspace",
-          external_id: "lin_ws_qa_plan",
-          token: "lin_api_token_qa_plan",
-          webhook_secret: "whsec_qa_plan"
-        },
-        linear_team_key: "QPL",
-        default_branch: "main",
-        clone_path: "/tmp/repos/qa-plan",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

@@ -3,7 +3,6 @@ defmodule Rail.Tools.BrowserSessionTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
   alias Rail.Tools
   alias Rail.Tools.Browser
   alias Rail.Tools.BrowserSession
@@ -13,29 +12,8 @@ defmodule Rail.Tools.BrowserSessionTest do
   # once measures contention rather than the browser.
   @moduletag :browser
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Browser Session Project",
-        github_repo: "org/browser-session",
-        github_installation_id: 47_041,
-        linear_workspace: %{
-          name: "Browser Session Workspace",
-          external_id: "lin_ws_browser_session",
-          token: "lin_api_token_browser_session",
-          webhook_secret: "whsec_browser_session"
-        },
-        linear_team_key: "BRS",
-        default_branch: "main",
-        clone_path: "/tmp/repos/browser-session",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

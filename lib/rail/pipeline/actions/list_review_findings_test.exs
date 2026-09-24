@@ -3,31 +3,9 @@ defmodule Rail.Pipeline.Actions.ListReviewFindingsTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "List Findings Project",
-        github_repo: "org/list-findings",
-        github_installation_id: 47_024,
-        linear_workspace: %{
-          name: "List Findings Workspace",
-          external_id: "lin_ws_list_findings",
-          token: "lin_api_token_list_findings",
-          webhook_secret: "whsec_list_findings"
-        },
-        linear_team_key: "LSF",
-        default_branch: "main",
-        clone_path: "/tmp/repos/list-findings",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

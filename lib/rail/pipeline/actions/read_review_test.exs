@@ -3,31 +3,9 @@ defmodule Rail.Pipeline.Actions.ReadReviewTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Read Review Project",
-        github_repo: "org/read-review",
-        github_installation_id: 47_020,
-        linear_workspace: %{
-          name: "Read Review Workspace",
-          external_id: "lin_ws_read_review",
-          token: "lin_api_token_read_review",
-          webhook_secret: "whsec_read_review"
-        },
-        linear_team_key: "RDR",
-        default_branch: "main",
-        clone_path: "/tmp/repos/read-review",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

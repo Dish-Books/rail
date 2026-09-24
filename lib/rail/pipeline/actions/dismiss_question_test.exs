@@ -8,43 +8,15 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
-  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Tools
 
-  setup do
+  setup %{project: project} do
     {:ok, backend} =
       Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Dismiss Question Project 6701",
-        github_repo: "org/dismiss-question-6701",
-        github_installation_id: 6701,
-        linear_workspace: %{
-          name: "Dismiss Question Workspace",
-          external_id: "lin_ws_dismiss_question",
-          token: "lin_api_token_dismiss_question",
-          webhook_secret: "whsec_dismiss_question"
-        },
-        linear_team_key: "P6701",
-        default_branch: "main",
-        clone_path: "/tmp/repos/dismiss-question-6701",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

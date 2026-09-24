@@ -8,35 +8,13 @@ defmodule Rail.Pipeline.Utils.QaRunFinishedTest do
   alias Rail.Pipeline.Schemas.QaFinding
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Qa Finished Project",
-        github_repo: "org/qa-finished",
-        github_installation_id: 47_037,
-        linear_workspace: %{
-          name: "Qa Finished Workspace",
-          external_id: "lin_ws_qa_finished",
-          token: "lin_api_token_qa_finished",
-          webhook_secret: "whsec_qa_finished"
-        },
-        linear_team_key: "QFN",
-        default_branch: "main",
-        clone_path: "/tmp/repos/qa-finished",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{

@@ -4,35 +4,13 @@ defmodule Rail.Pipeline.Actions.DecideReviewFindingTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ReviewFinding
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Decide Finding Project",
-        github_repo: "org/decide-finding",
-        github_installation_id: 47_025,
-        linear_workspace: %{
-          name: "Decide Finding Workspace",
-          external_id: "lin_ws_decide_finding",
-          token: "lin_api_token_decide_finding",
-          webhook_secret: "whsec_decide_finding"
-        },
-        linear_team_key: "DCF",
-        default_branch: "main",
-        clone_path: "/tmp/repos/decide-finding",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{

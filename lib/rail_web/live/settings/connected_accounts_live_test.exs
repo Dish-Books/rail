@@ -93,23 +93,21 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
   end
 
   test "counts the repositories Rail can reach as the projects it is configured for", %{authed_conn: conn} do
-    Req.Test.expect(Rail.Linear, fn req_conn ->
-      Req.Test.json(req_conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
+    assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+    assert has_element?(view, "#capability-repositories", "Read and write on 1 repository.")
 
     {:ok, _project} =
       Rail.Projects.create_project(system_scope(), %{
-        name: "Only Project",
-        github_repo: "org/only-project",
+        name: "Second Project",
+        github_repo: "org/second-project",
         github_installation_id: 47_030,
-        linear_team_key: "ONE",
+        linear_team_key: "TWO",
         default_branch: "main",
-        clone_path: "/tmp/repos/only-project"
+        clone_path: "/tmp/repos/second-project"
       })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
-
-    assert has_element?(view, "#capability-repositories", "Read and write on 1 repository.")
+    assert has_element?(view, "#capability-repositories", "Read and write on 2 repositories.")
   end
 
   test "renders connected Linear section when user is linked", %{

@@ -6,36 +6,14 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
   alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Answer Question Project",
-        github_repo: "org/answer-question",
-        github_installation_id: 46_001,
-        linear_workspace: %{
-          name: "Answer Question Workspace",
-          external_id: "lin_ws_answer_question",
-          token: "lin_api_token_answer_question",
-          webhook_secret: "whsec_answer_question"
-        },
-        linear_team_key: "ANS",
-        default_branch: "main",
-        clone_path: "/tmp/repos/answer-question",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{

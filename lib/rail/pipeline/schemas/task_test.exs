@@ -8,34 +8,12 @@ defmodule Rail.Pipeline.Schemas.TaskTest do
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
 
-  setup do
+  setup %{project: project} do
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Task Schema Project 12601",
-        github_repo: "org/task-schema-12601",
-        github_installation_id: 12_601,
-        linear_workspace: %{
-          name: "Task Schema Workspace",
-          external_id: "lin_ws_task_schema",
-          token: "lin_api_token_task_schema",
-          webhook_secret: "whsec_task_schema"
-        },
-        linear_team_key: "P12601",
-        default_branch: "main",
-        clone_path: "/tmp/repos/task-schema-12601",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, role} =
       Roles.create_role(system_scope(), project, %{

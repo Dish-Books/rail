@@ -2,36 +2,14 @@ defmodule RailWeb.IssueAssetControllerTest do
   use RailWeb.ConnCase, async: true
 
   alias Rail.Issues
-  alias Rail.Projects
   alias Rail.Users
 
-  setup %{conn: conn} do
+  setup %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_issue_asset",
         login: "issue_asset_user",
         email: "issue_asset_user@example.com"
-      })
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Issue Asset Project",
-        github_repo: "org/issue-asset",
-        github_installation_id: 47_010,
-        linear_workspace: %{
-          name: "Issue Asset Workspace",
-          external_id: "lin_ws_issue_asset",
-          token: "lin_api_token_issue_asset",
-          webhook_secret: "whsec_issue_asset"
-        },
-        linear_team_key: "IAS",
-        default_branch: "main",
-        clone_path: "/tmp/repos/issue-asset",
-        linear_state_ids: %{"triage" => "st_triage"}
       })
 
     Req.Test.expect(Rail.Linear, fn conn ->

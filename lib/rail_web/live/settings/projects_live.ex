@@ -3,17 +3,18 @@ defmodule RailWeb.Settings.ProjectsLive do
   use RailWeb, :live_view
 
   alias Rail.Projects
-  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
 
   def mount(_params, _session, socket) do
     projects = Projects.list_projects()
+    linear_workspaces = Projects.list_linear_workspaces()
 
     socket =
       socket
       |> assign(:page_title, "Projects")
       |> assign(:current_section, :projects)
       |> assign(:projects, projects)
+      |> assign(:linear_workspaces, linear_workspaces)
       |> assign(:show_modal, nil)
       |> assign(:modal_title, nil)
       |> assign(:selected_project, nil)
@@ -383,92 +384,46 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </label>
               </div>
 
-              <fieldset class="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-700">
-                <legend class="text-sm font-medium text-slate-900 dark:text-slate-100">
+              <div class="pt-4 border-t border-slate-200 dark:border-slate-700">
+                <label
+                  for="project-linear-workspace-input"
+                  class="block text-sm font-medium text-slate-900 dark:text-slate-100"
+                >
                   Linear Workspace
-                </legend>
-                <p class="text-xs text-slate-500 dark:text-slate-400">
-                  Credentials used for system-level sync, webhook verification, and asset uploads. Projects with the same External Workspace ID share one workspace, and saving here updates it for all of them.
+                </label>
+                <select
+                  name="project[linear_workspace_id]"
+                  id="project-linear-workspace-input"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                >
+                  <option value="">None</option>
+                  <option
+                    :for={workspace <- @linear_workspaces}
+                    value={workspace.id}
+                    selected={
+                      Ecto.Changeset.get_field(@changeset, :linear_workspace_id) == workspace.id
+                    }
+                  >
+                    {workspace.name}
+                  </option>
+                </select>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Its credentials sync this project's team.
+                  <.link
+                    navigate={~p"/settings/linear-workspaces"}
+                    class="text-indigo-600 hover:underline"
+                  >
+                    Manage Linear workspaces
+                  </.link>
                 </p>
-
-                <div class="grid grid-cols-2 gap-4">
-                  <div>
-                    <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Workspace Name</label>
-                    <input
-                      type="text"
-                      name="project[linear_workspace][name]"
-                      id="workspace-name-input"
-                      value={workspace_field(@changeset, :name)}
-                      placeholder="e.g. Acme Corp"
-                      class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    />
-                    <span
-                      :if={workspace_error(@changeset, :name)}
-                      class="text-xs text-red-600"
-                      id="workspace-name-error"
-                    >
-                      {workspace_error(@changeset, :name)}
-                    </span>
-                  </div>
-
-                  <div>
-                    <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">External Workspace ID</label>
-                    <input
-                      type="text"
-                      name="project[linear_workspace][external_id]"
-                      id="workspace-external-id-input"
-                      value={workspace_field(@changeset, :external_id)}
-                      placeholder="e.g. lin_ws_12345"
-                      class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    />
-                    <span
-                      :if={workspace_error(@changeset, :external_id)}
-                      class="text-xs text-red-600"
-                      id="workspace-external-id-error"
-                    >
-                      {workspace_error(@changeset, :external_id)}
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Linear API Token</label>
-                  <input
-                    type="password"
-                    name="project[linear_workspace][token]"
-                    id="workspace-token-input"
-                    value={workspace_field(@changeset, :token)}
-                    placeholder="lin_api_..."
-                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-mono"
-                  />
-                  <span
-                    :if={workspace_error(@changeset, :token)}
-                    class="text-xs text-red-600"
-                    id="workspace-token-error"
-                  >
-                    {workspace_error(@changeset, :token)}
-                  </span>
-                </div>
-
-                <div>
-                  <label class="block text-sm font-medium text-slate-900 dark:text-slate-100">Webhook Signing Secret</label>
-                  <input
-                    type="password"
-                    name="project[linear_workspace][webhook_secret]"
-                    id="workspace-webhook-secret-input"
-                    value={workspace_field(@changeset, :webhook_secret)}
-                    placeholder="whsec_..."
-                    class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-mono"
-                  />
-                  <span
-                    :if={workspace_error(@changeset, :webhook_secret)}
-                    class="text-xs text-red-600"
-                    id="workspace-webhook-secret-error"
-                  >
-                    {workspace_error(@changeset, :webhook_secret)}
-                  </span>
-                </div>
-              </fieldset>
+                <span
+                  :if={@changeset.errors[:linear_workspace_id]}
+                  class="text-xs text-red-600"
+                  id="project-linear-workspace-error"
+                >
+                  {elem(@changeset.errors[:linear_workspace_id], 0)}
+                </span>
+              </div>
 
               <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <.button phx-click="close_modal" id="cancel-project-button">
@@ -534,7 +489,7 @@ defmodule RailWeb.Settings.ProjectsLive do
 
     changeset =
       target
-      |> Project.changeset(drop_blank_workspace(params))
+      |> Project.changeset(params)
       |> Map.put(:action, :validate)
 
     socket = assign(socket, :changeset, changeset)
@@ -546,7 +501,7 @@ defmodule RailWeb.Settings.ProjectsLive do
 
     case socket.assigns.show_modal do
       :new ->
-        case Projects.create_project(scope, drop_blank_workspace(params)) do
+        case Projects.create_project(scope, params) do
           {:ok, project} ->
             projects = update_list_item(socket.assigns.projects, project)
 
@@ -568,7 +523,7 @@ defmodule RailWeb.Settings.ProjectsLive do
       :edit ->
         project = socket.assigns.selected_project
 
-        case Projects.update_project(scope, project, drop_blank_workspace(params)) do
+        case Projects.update_project(scope, project, params) do
           {:ok, updated_project} ->
             projects = update_list_item(socket.assigns.projects, updated_project)
 
@@ -591,32 +546,6 @@ defmodule RailWeb.Settings.ProjectsLive do
         {:noreply, socket}
     end
   end
-
-  defp workspace_field(changeset, field) do
-    case Ecto.Changeset.get_field(changeset, :linear_workspace) do
-      %LinearWorkspace{} = workspace -> Map.fetch!(workspace, field)
-      _other -> nil
-    end
-  end
-
-  defp workspace_error(changeset, field) do
-    with %Ecto.Changeset{} = workspace_changeset <- changeset.changes[:linear_workspace],
-         {message, _opts} <- workspace_changeset.errors[field] do
-      message
-    else
-      _other -> nil
-    end
-  end
-
-  defp drop_blank_workspace(%{"linear_workspace" => workspace} = params) when is_map(workspace) do
-    if Enum.all?(Map.values(workspace), &(&1 in ["", nil])) do
-      Map.delete(params, "linear_workspace")
-    else
-      params
-    end
-  end
-
-  defp drop_blank_workspace(params), do: params
 
   defp update_list_item(items, %{id: id} = item) do
     if Enum.any?(items, fn current -> current.id == id end) do

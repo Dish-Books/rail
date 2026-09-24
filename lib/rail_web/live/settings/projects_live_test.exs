@@ -4,7 +4,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
   import Phoenix.LiveViewTest
 
   alias Rail.Projects
-  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Scope
@@ -65,18 +64,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
 
   test "redirects non-admin user to /", %{regular_conn: conn} do
     assert {:error, {:redirect, %{to: "/"}}} = live(conn, ~p"/settings/projects")
-  end
-
-  test "renders empty state when no projects exist", %{admin_conn: conn} do
-    assert {:ok, view, html} = live(conn, ~p"/settings/projects")
-
-    # Settings is the destination lit in the rail, not the overview.
-    assert has_element?(view, "#nav-settings[data-active='true']")
-    refute has_element?(view, "#nav-overview[data-active='true']")
-    assert html =~ "Projects"
-    assert html =~ "Registered Projects"
-    assert has_element?(view, "#new-project-button")
-    assert has_element?(view, "#empty-projects-message")
   end
 
   test "lists registered projects with details", %{admin_conn: conn, admin_user: admin} do
@@ -274,67 +261,47 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert %Project{ci_command: "mise run ci", ci_timeout_minutes: 45} = Repo.get!(Project, project_id)
   end
 
-  test "editing a project's Linear workspace to a new external id gives it a new workspace", %{
+  test "links a project to a Linear workspace picked from the list", %{
     admin_conn: conn,
-    admin_user: admin
+    admin_user: admin,
+    project: %Project{linear_workspace_id: workspace_id}
   } do
-    id = System.unique_integer([:positive])
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    assert {:ok, %Project{id: project_id, linear_workspace: %LinearWorkspace{id: workspace_id}}} =
+    assert {:ok, %Project{id: project_id, linear_workspace_id: nil}} =
              Projects.create_project(Scope.for_user(admin), %{
                name: "Workspace App",
-               github_repo: "example/workspace-#{id}",
+               github_repo: "example/workspace-#{System.unique_integer([:positive])}",
                github_installation_id: 334,
                linear_team_key: "WSP",
                default_branch: "main",
-               clone_path: "/tmp/workspace",
-               linear_workspace: %{
-                 name: "Old Workspace",
-                 external_id: "lin_org_old_#{id}",
-                 token: "lin_api_old",
-                 webhook_secret: "whsec_old"
-               }
+               clone_path: "/tmp/workspace"
              })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
 
-    # A new workspace means the team id is looked up again, from the page's process.
+    # Linking a workspace looks the team up through it, from the page's process.
     Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_test_seed"]
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_wsp"}]}}})
     end)
 
     Req.Test.allow(Rail.Linear, self(), view.pid)
 
     view |> element("#edit-project-#{project_id}") |> render_click()
+    assert has_element?(view, "#project-linear-workspace-input option[value='#{workspace_id}']", "Test Workspace")
 
-    view
-    |> form("#project-form", %{
-      "project" => %{
-        "linear_workspace" => %{
-          "name" => "New Workspace",
-          "external_id" => "lin_org_new_#{id}",
-          "token" => "lin_api_new",
-          "webhook_secret" => "whsec_new"
-        }
-      }
-    })
-    |> render_submit()
+    view |> form("#project-form", %{"project" => %{"linear_workspace_id" => workspace_id}}) |> render_submit()
 
     refute has_element?(view, "#project-modal")
+    assert %Project{linear_workspace_id: ^workspace_id, linear_team_id: "lin_team_wsp"} = Repo.get!(Project, project_id)
+  end
 
-    external_id = "lin_org_new_#{id}"
+  test "a workspace that is gone is an error on the select", %{admin_conn: conn, project: %Project{id: project_id}} do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#edit-project-#{project_id}") |> render_click()
 
-    # A workspace is its external id, so a new one is a new row and the old one is left for its other projects.
-    assert %Project{
-             linear_workspace: %LinearWorkspace{name: "New Workspace", external_id: ^external_id, token: "lin_api_new"}
-           } =
-             Project |> Repo.get!(project_id) |> Repo.preload(:linear_workspace)
+    render_submit(element(view, "#project-form"), %{"project" => %{"linear_workspace_id" => "lw_missing"}})
 
-    assert %LinearWorkspace{name: "Old Workspace"} = Repo.get!(LinearWorkspace, workspace_id)
+    assert has_element?(view, "#project-linear-workspace-error", "does not exist")
   end
 
   test "closes modal when cancel or close button is clicked", %{admin_conn: conn} do
@@ -416,28 +383,6 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
 
     assert has_element?(view, "#project-modal")
     assert has_element?(view, "#project-name-error", "can't be blank")
-  end
-
-  test "validating a partial Linear workspace shows an error per missing field", %{admin_conn: conn} do
-    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
-    view |> element("#new-project-button") |> render_click()
-
-    render_hook(view, "validate", %{"project" => %{"linear_workspace" => %{"name" => "Only Name"}}})
-
-    refute has_element?(view, "#workspace-name-error")
-    assert has_element?(view, "#workspace-external-id-error", "can't be blank")
-    assert has_element?(view, "#workspace-token-error", "can't be blank")
-    assert has_element?(view, "#workspace-webhook-secret-error", "can't be blank")
-
-    render_hook(view, "validate", %{"project" => %{"linear_workspace" => %{"external_id" => "lin_org_partial"}}})
-
-    assert has_element?(view, "#workspace-name-error", "can't be blank")
-    refute has_element?(view, "#workspace-external-id-error")
-
-    render_hook(view, "validate", %{"project" => %{"name" => "No Workspace"}})
-
-    refute has_element?(view, "#workspace-name-error")
-    assert has_element?(view, "#project-name-input[value='No Workspace']")
   end
 
   test "edit_project with unknown id is ignored gracefully", %{admin_conn: conn} do

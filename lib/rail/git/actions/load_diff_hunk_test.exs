@@ -4,32 +4,10 @@ defmodule Rail.Git.Actions.LoadDiffHunkTest do
   alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
   alias Rail.Users
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Diff Hunk Project",
-        github_repo: "org/diff-hunk",
-        github_installation_id: 47_029,
-        linear_workspace: %{
-          name: "Diff Hunk Workspace",
-          external_id: "lin_ws_diff_hunk",
-          token: "lin_api_token_diff_hunk",
-          webhook_secret: "whsec_diff_hunk"
-        },
-        linear_team_key: "DHK",
-        default_branch: "main",
-        clone_path: "/tmp/repos/diff-hunk",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

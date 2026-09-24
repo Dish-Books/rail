@@ -3,7 +3,6 @@ defmodule Rail.Tools.Actions.DriveBrowserTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
   alias Rail.Tools
   alias Rail.Tools.BrowserSession
 
@@ -11,29 +10,8 @@ defmodule Rail.Tools.Actions.DriveBrowserTest do
   # once measures contention rather than the browser.
   @moduletag :browser
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Drive Browser Project",
-        github_repo: "org/drive-browser",
-        github_installation_id: 47_042,
-        linear_workspace: %{
-          name: "Drive Browser Workspace",
-          external_id: "lin_ws_drive_browser",
-          token: "lin_api_token_drive_browser",
-          webhook_secret: "whsec_drive_browser"
-        },
-        linear_team_key: "DRB",
-        default_branch: "main",
-        clone_path: "/tmp/repos/drive-browser",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

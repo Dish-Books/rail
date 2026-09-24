@@ -4,36 +4,14 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Stop Run Project",
-        github_repo: "org/stop-run",
-        github_installation_id: 42_001,
-        linear_workspace: %{
-          name: "Stop Run Workspace",
-          external_id: "lin_ws_stop_run",
-          token: "lin_api_token_stop_run",
-          webhook_secret: "whsec_stop_run"
-        },
-        linear_team_key: "STP",
-        default_branch: "main",
-        clone_path: "/tmp/repos/stop-run",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{

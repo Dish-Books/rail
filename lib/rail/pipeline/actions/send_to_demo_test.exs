@@ -5,35 +5,13 @@ defmodule Rail.Pipeline.Actions.SendToDemoTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Send To Demo Project",
-        github_repo: "org/send-to-demo",
-        github_installation_id: 47_035,
-        linear_workspace: %{
-          name: "Send To Demo Workspace",
-          external_id: "lin_ws_send_to_demo",
-          token: "lin_api_token_send_to_demo",
-          webhook_secret: "whsec_send_to_demo"
-        },
-        linear_team_key: "STD",
-        default_branch: "main",
-        clone_path: "/tmp/repos/send-to-demo",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{

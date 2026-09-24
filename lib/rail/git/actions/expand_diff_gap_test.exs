@@ -4,31 +4,9 @@ defmodule Rail.Git.Actions.ExpandDiffGapTest do
   alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Expand Gap Project",
-        github_repo: "org/expand-gap",
-        github_installation_id: 47_016,
-        linear_workspace: %{
-          name: "Expand Gap Workspace",
-          external_id: "lin_ws_expand_gap",
-          token: "lin_api_token_expand_gap",
-          webhook_secret: "whsec_expand_gap"
-        },
-        linear_team_key: "EXG",
-        default_branch: "main",
-        clone_path: "/tmp/repos/expand-gap",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

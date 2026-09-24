@@ -5,27 +5,7 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
   alias Rail.Projects
   alias Rail.Scope
 
-  test "upload_asset/4 uploads to Linear and returns the asset URL, for a project or its workspace" do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(Scope.for_system(), %{
-        name: "Upload Asset Project",
-        github_repo: "org/upload-asset",
-        github_installation_id: 5201,
-        linear_workspace: %{
-          name: "Upload Asset Workspace",
-          external_id: "lin_ws_upload_asset",
-          token: "lin_api_token_upload_asset",
-          webhook_secret: "whsec_upload_asset"
-        },
-        linear_team_key: "UPA",
-        default_branch: "main",
-        clone_path: "/tmp/repos/upload-asset"
-      })
-
+  test "upload_asset/4 uploads to Linear and returns the asset URL, for a project or its workspace", %{project: project} do
     for {target, name} <- [{project, "screenshot.png"}, {project.linear_workspace, "ws.png"}] do
       Req.Test.expect(Rail.Linear, fn conn ->
         Req.Test.json(conn, %{
@@ -52,27 +32,7 @@ defmodule Rail.Issues.Actions.UploadAssetTest do
     end
   end
 
-  test "upload_asset/4 returns an error when Linear gives nowhere to upload to" do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(Scope.for_system(), %{
-        name: "Upload Asset Refused",
-        github_repo: "org/upload-asset-refused",
-        github_installation_id: 5203,
-        linear_workspace: %{
-          name: "Upload Asset Refused Workspace",
-          external_id: "lin_ws_upload_asset_refused",
-          token: "lin_api_token_upload_asset",
-          webhook_secret: "whsec_upload_asset"
-        },
-        linear_team_key: "UPR",
-        default_branch: "main",
-        clone_path: "/tmp/repos/upload-asset-refused"
-      })
-
+  test "upload_asset/4 returns an error when Linear gives nowhere to upload to", %{project: project} do
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{"data" => %{"fileUpload" => %{"success" => false}}})
     end)

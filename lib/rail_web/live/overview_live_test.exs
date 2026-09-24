@@ -91,7 +91,7 @@ defmodule RailWeb.OverviewLiveTest do
 
     # Initial state: All projects
     assert has_element?(view, "#selected-project-name", "All projects")
-    assert has_element?(view, "#active-project-count", "2")
+    assert has_element?(view, "#active-project-count", "3")
     refute has_element?(view, "#project-switcher-dialog")
 
     # Open project switcher
@@ -235,7 +235,7 @@ defmodule RailWeb.OverviewLiveTest do
   end
 
   describe "the overview, which reads runs and the tasks they belong to" do
-    setup %{conn: conn} do
+    setup %{conn: conn, project: project} do
       {:ok, user} =
         Users.register_oauth_user(%{
           github_id: "gh_overview_queue",
@@ -245,28 +245,6 @@ defmodule RailWeb.OverviewLiveTest do
         })
 
       scope = Scope.for_user(user)
-
-      Req.Test.expect(Rail.Linear, fn conn ->
-        Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-      end)
-
-      {:ok, project} =
-        Projects.create_project(scope, %{
-          name: "Queue App",
-          github_repo: "example/queue",
-          github_installation_id: 909,
-          linear_workspace: %{
-            name: "Overview Queue Workspace",
-            external_id: "lin_ws_overview_queue",
-            token: "lin_api_token_overview_queue",
-            webhook_secret: "whsec_overview_queue"
-          },
-          linear_team_key: "QUE",
-          default_branch: "main",
-          clone_path: "/tmp/queue",
-          active: true,
-          linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
-        })
 
       {:ok, backend} =
         Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
@@ -364,7 +342,7 @@ defmodule RailWeb.OverviewLiveTest do
       assert view |> render() |> :binary.matches("data-qa=\"throughput-bar\"") |> length() == 30
 
       # Unfiltered, the roster names the project each group of roles belongs to.
-      assert has_element?(view, "[data-qa='roster-project-header']", "Queue App")
+      assert has_element?(view, "[data-qa='roster-project-header']", "Test Project")
     end
 
     test "up next leads with the longest-waiting run, and every entry only links to its task", %{

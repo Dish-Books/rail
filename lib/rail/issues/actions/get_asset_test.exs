@@ -6,28 +6,7 @@ defmodule Rail.Issues.Actions.GetAssetTest do
   alias Rail.Projects
   alias Rail.Repo
 
-  setup do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Get Asset Project",
-        github_repo: "org/get-asset",
-        github_installation_id: 5301,
-        linear_workspace: %{
-          name: "Get Asset Workspace",
-          external_id: "lin_ws_get_asset",
-          token: "lin_api_token_get_asset",
-          webhook_secret: "whsec_get_asset"
-        },
-        linear_team_key: "GAS",
-        default_branch: "main",
-        clone_path: "/tmp/repos/get-asset",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
-
+  setup %{project: project} do
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
         "data" => %{
@@ -47,7 +26,7 @@ defmodule Rail.Issues.Actions.GetAssetTest do
   test "get_asset/2 fetches the file as the workspace that can read it", %{issue: issue} do
     Req.Test.expect(Rail.Linear, fn conn ->
       assert conn.request_path == "/ws/img/screenshot.png"
-      assert ["Bearer lin_api_token_get_asset"] = Plug.Conn.get_req_header(conn, "authorization")
+      assert ["Bearer lin_api_test_seed"] = Plug.Conn.get_req_header(conn, "authorization")
 
       conn
       |> Plug.Conn.put_resp_content_type("image/png")

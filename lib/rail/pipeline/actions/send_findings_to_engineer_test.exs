@@ -5,36 +5,14 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Send Findings Project",
-        github_repo: "org/send-findings",
-        github_installation_id: 47_026,
-        linear_workspace: %{
-          name: "Send Findings Workspace",
-          external_id: "lin_ws_send_findings",
-          token: "lin_api_token_send_findings",
-          webhook_secret: "whsec_send_findings"
-        },
-        linear_team_key: "SFE",
-        default_branch: "main",
-        clone_path: "/tmp/repos/send-findings",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     roles =
       Map.new([:engineer, :review], fn stage ->

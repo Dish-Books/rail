@@ -4,36 +4,14 @@ defmodule Rail.Pipeline.Actions.StartArchitectRunTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Start Architect Project",
-        github_repo: "org/start-architect",
-        github_installation_id: 47_008,
-        linear_workspace: %{
-          name: "Start Architect Workspace",
-          external_id: "lin_ws_start_architect",
-          token: "lin_api_token_start_architect",
-          webhook_secret: "whsec_start_architect"
-        },
-        linear_team_key: "SAR",
-        default_branch: "main",
-        clone_path: "/tmp/repos/start-architect",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, _created} =
       Roles.create_role(scope, project, %{

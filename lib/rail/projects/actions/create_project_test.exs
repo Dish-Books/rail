@@ -54,38 +54,48 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
            } = errors_on(changeset)
   end
 
-  test "a second project on the same Linear workspace shares its row, and its credentials" do
+  test "projects link to a saved Linear workspace by id, and an unknown id is an error on it" do
     scope = Scope.for_user(%{admin: true})
 
-    Req.Test.expect(Rail.Linear, 2, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_linked"]
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_linked"}]}}})
     end)
 
-    attrs = fn key, token ->
-      %{
-        name: "Shared Workspace #{key}",
-        github_repo: "example/shared-workspace-#{key}",
-        github_installation_id: 12_346,
-        linear_team_key: key,
-        default_branch: "main",
-        clone_path: "/tmp/shared-workspace",
-        linear_workspace: %{
-          name: "Shared Workspace",
-          external_id: "lin_org_shared_workspace",
-          token: token,
-          webhook_secret: "whsec_shared_workspace"
-        }
-      }
-    end
+    {:ok, %LinearWorkspace{id: workspace_id}} =
+      Projects.create_linear_workspace(scope, %{
+        name: "Linked Workspace",
+        external_id: "lin_org_linked",
+        token: "lin_api_linked",
+        webhook_secret: "whsec_linked"
+      })
 
-    assert {:ok, %Project{linear_workspace_id: workspace_id}} =
-             Projects.create_project(scope, attrs.("ONE", "lin_api_one"))
+    attrs = %{
+      name: "Linked Project",
+      github_repo: "example/linked-#{System.unique_integer([:positive])}",
+      github_installation_id: 12_346,
+      linear_team_key: "LNK",
+      default_branch: "main",
+      clone_path: "/tmp/linked"
+    }
 
-    assert {:ok, %Project{linear_workspace_id: ^workspace_id}} =
-             Projects.create_project(scope, attrs.("TWO", "lin_api_two"))
+    assert {:ok,
+            %Project{
+              linear_team_id: "lin_team_linked",
+              linear_workspace: %LinearWorkspace{id: ^workspace_id}
+            }} = Projects.create_project(scope, Map.put(attrs, :linear_workspace_id, workspace_id))
 
-    assert [%LinearWorkspace{id: ^workspace_id, token: "lin_api_two"}] =
-             Repo.all(from w in LinearWorkspace, where: w.external_id == "lin_org_shared_workspace")
+    assert {:error, changeset} =
+             Projects.create_project(
+               scope,
+               Map.put(
+                 %{attrs | github_repo: "example/unlinked", linear_team_key: "UNL"},
+                 :linear_workspace_id,
+                 "lw_missing"
+               )
+             )
+
+    assert %{linear_workspace_id: ["does not exist"]} = errors_on(changeset)
   end
 
   test "rejects a clone_path that is not a git repository" do

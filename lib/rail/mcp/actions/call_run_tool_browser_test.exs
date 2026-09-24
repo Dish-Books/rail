@@ -5,7 +5,6 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   alias Rail.Mcp
   alias Rail.Mcp.RunContext
   alias Rail.Pipeline
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
@@ -15,31 +14,10 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   # proxied half is in `call_run_tool_test.exs` and runs with everything else.
   @moduletag :browser
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Qa Tools Project",
-        github_repo: "org/qa-tools",
-        github_installation_id: 47_043,
-        linear_workspace: %{
-          name: "Qa Tools Workspace",
-          external_id: "lin_ws_qa_tools",
-          token: "lin_api_token_qa_tools",
-          webhook_secret: "whsec_qa_tools"
-        },
-        linear_team_key: "QAT",
-        default_branch: "main",
-        clone_path: "/tmp/repos/qa-tools",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     roles =
       Map.new([:qa, :demo, :review], fn stage ->

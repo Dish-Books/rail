@@ -28,42 +28,47 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
              })
   end
 
-  test "naming a saved workspace moves the project onto it and leaves its old one as it was" do
+  test "moving a project to another workspace looks its team up through that one" do
     admin_scope = Scope.for_user(%{admin: true})
 
-    Req.Test.expect(Rail.Linear, 3, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_old"]
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_old"}]}}})
     end)
 
-    workspace = fn external_id ->
-      %{name: "Workspace", external_id: external_id, token: "lin_api_same", webhook_secret: "whsec_same"}
+    workspace = fn key ->
+      {:ok, workspace} =
+        Projects.create_linear_workspace(admin_scope, %{
+          name: key,
+          external_id: "lin_org_#{key}",
+          token: "lin_api_#{key}",
+          webhook_secret: "wh"
+        })
+
+      workspace
     end
 
-    project = fn key, external_id ->
-      %{
-        name: "Move #{key}",
-        github_repo: "example/move-workspace-#{key}",
-        github_installation_id: 55_668,
-        linear_team_key: key,
-        default_branch: "main",
-        clone_path: "/tmp/move",
-        linear_workspace: workspace.(external_id)
-      }
-    end
+    %LinearWorkspace{id: old_id} = workspace.("old")
+    %LinearWorkspace{id: new_id} = workspace.("new")
 
-    assert {:ok, %Project{linear_workspace_id: target_id}} =
-             Projects.create_project(admin_scope, project.("MVA", "lin_org_move_target"))
+    assert {:ok, %Project{linear_team_id: "lin_team_old"} = project} =
+             Projects.create_project(admin_scope, %{
+               name: "Moving Project",
+               github_repo: "example/moving-#{System.unique_integer([:positive])}",
+               github_installation_id: 55_668,
+               linear_team_key: "MOV",
+               default_branch: "main",
+               clone_path: "/tmp/move",
+               linear_workspace_id: old_id
+             })
 
-    assert {:ok, %Project{linear_workspace_id: old_id} = moving} =
-             Projects.create_project(admin_scope, project.("MVB", "lin_org_move_old"))
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_new"]
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_new"}]}}})
+    end)
 
-    {:ok, moving} = Projects.get_project(moving.id)
-
-    # The form sends the saved workspace exactly as it is, so only the project's pointer changes.
-    assert {:ok, %Project{linear_workspace_id: ^target_id}} =
-             Projects.update_project(admin_scope, moving, %{linear_workspace: workspace.("lin_org_move_target")})
-
-    assert %LinearWorkspace{external_id: "lin_org_move_old"} = Repo.get!(LinearWorkspace, old_id)
+    assert {:ok, %Project{linear_team_id: "lin_team_new", linear_workspace: %LinearWorkspace{id: ^new_id}}} =
+             Projects.update_project(admin_scope, project, %{linear_workspace_id: new_id})
   end
 
   test "returns validation error changeset for invalid attributes" do

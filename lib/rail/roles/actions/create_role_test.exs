@@ -1,25 +1,14 @@
 defmodule Rail.Roles.Actions.CreateRoleTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
 
-  setup do
+  setup %{project: project} do
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Create Role Project",
-        github_repo: "org/create-role",
-        github_installation_id: 4101,
-        linear_team_key: "CRR",
-        default_branch: "main",
-        clone_path: "/tmp/repos/create-role"
-      })
 
     %{project: project, backend: backend}
   end

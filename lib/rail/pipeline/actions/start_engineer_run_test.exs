@@ -10,31 +10,10 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Start Engineer Project",
-        github_repo: "org/start-engineer",
-        github_installation_id: 47_009,
-        linear_workspace: %{
-          name: "Start Engineer Workspace",
-          external_id: "lin_ws_start_engineer",
-          token: "lin_api_token_start_engineer",
-          webhook_secret: "whsec_start_engineer"
-        },
-        linear_team_key: "SEN",
-        default_branch: "main",
-        clone_path: "/tmp/repos/start-engineer",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, _created} =
       Roles.create_role(scope, project, %{

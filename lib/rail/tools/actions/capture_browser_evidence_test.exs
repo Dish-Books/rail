@@ -3,33 +3,11 @@ defmodule Rail.Tools.Actions.CaptureBrowserEvidenceTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
   alias Rail.Tools
   alias Rail.Tools.BrowserSession
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Capture Evidence Project",
-        github_repo: "org/capture-evidence",
-        github_installation_id: 47_050,
-        linear_workspace: %{
-          name: "Capture Evidence Workspace",
-          external_id: "lin_ws_capture_evidence",
-          token: "lin_api_token_capture_evidence",
-          webhook_secret: "whsec_capture_evidence"
-        },
-        linear_team_key: "CPE",
-        default_branch: "main",
-        clone_path: "/tmp/repos/capture-evidence",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

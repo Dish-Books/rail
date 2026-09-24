@@ -4,36 +4,14 @@ defmodule Rail.Pipeline.Actions.StartDesignRunTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Start Design Project",
-        github_repo: "org/start-design",
-        github_installation_id: 47_001,
-        linear_workspace: %{
-          name: "Start Design Workspace",
-          external_id: "lin_ws_start_design",
-          token: "lin_api_token_start_design",
-          webhook_secret: "whsec_start_design"
-        },
-        linear_team_key: "SDR",
-        default_branch: "main",
-        clone_path: "/tmp/repos/start-design",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, _role} =
       Roles.create_role(scope, project, %{

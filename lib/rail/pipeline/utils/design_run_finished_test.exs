@@ -7,35 +7,13 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Design Finished Project",
-        github_repo: "org/design-finished",
-        github_installation_id: 47_002,
-        linear_workspace: %{
-          name: "Design Finished Workspace",
-          external_id: "lin_ws_design_finished",
-          token: "lin_api_token_design_finished",
-          webhook_secret: "whsec_design_finished"
-        },
-        linear_team_key: "DFN",
-        default_branch: "main",
-        clone_path: "/tmp/repos/design-finished",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{

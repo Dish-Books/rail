@@ -12,31 +12,10 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Dispatch Message Project",
-        github_repo: "org/dispatch-message",
-        github_installation_id: 47_001,
-        linear_workspace: %{
-          name: "Dispatch Message Workspace",
-          external_id: "lin_ws_dispatch_message",
-          token: "lin_api_token_dispatch_message",
-          webhook_secret: "whsec_dispatch_message"
-        },
-        linear_team_key: "DSP",
-        default_branch: "main",
-        clone_path: "/tmp/repos/dispatch-message",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{

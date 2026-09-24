@@ -14,29 +14,8 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users.Schemas.User
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Commit Work Project",
-        github_repo: "org/commit-work",
-        github_installation_id: 47_011,
-        linear_workspace: %{
-          name: "Commit Work Workspace",
-          external_id: "lin_ws_commit_work",
-          token: "lin_api_token_commit_work",
-          webhook_secret: "whsec_commit_work"
-        },
-        linear_team_key: "CMW",
-        default_branch: "main",
-        clone_path: "/tmp/repos/commit-work",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -248,13 +227,13 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
   test "the first push opens the task's pull request as a draft, and keeps it", %{scope: scope, task: task} do
     Req.Test.expect(Client, 3, fn conn ->
       case {conn.method, conn.request_path} do
-        {"POST", "/app/installations/47011/access_tokens"} ->
+        {"POST", "/app/installations/1/access_tokens"} ->
           Req.Test.json(conn, %{"token" => "ghs_token"})
 
-        {"GET", "/repos/org/commit-work/pulls"} ->
+        {"GET", "/repos/example/test-seed/pulls"} ->
           Req.Test.json(conn, [])
 
-        {"POST", "/repos/org/commit-work/pulls"} ->
+        {"POST", "/repos/example/test-seed/pulls"} ->
           {:ok, body, conn} = Plug.Conn.read_body(conn)
 
           assert %{
@@ -267,13 +246,17 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
 
           conn
           |> Plug.Conn.put_status(201)
-          |> Req.Test.json(%{"number" => 12, "html_url" => "https://github.com/org/commit-work/pull/12", "draft" => true})
+          |> Req.Test.json(%{
+            "number" => 12,
+            "html_url" => "https://github.com/example/test-seed/pull/12",
+            "draft" => true
+          })
       end
     end)
 
     assert :ok = Pipeline.commit_engineer_work(scope, task)
 
-    assert %Task{pr_number: 12, pr_url: "https://github.com/org/commit-work/pull/12", pr_is_draft: true} =
+    assert %Task{pr_number: 12, pr_url: "https://github.com/example/test-seed/pull/12", pr_is_draft: true} =
              Repo.reload!(task)
   end
 
@@ -283,9 +266,9 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
         {"POST", "/app/installations/" <> _id} ->
           Req.Test.json(conn, %{"token" => "ghs_token"})
 
-        {"GET", "/repos/org/commit-work/pulls"} ->
+        {"GET", "/repos/example/test-seed/pulls"} ->
           Req.Test.json(conn, [
-            %{"number" => 9, "html_url" => "https://github.com/org/commit-work/pull/9", "draft" => false}
+            %{"number" => 9, "html_url" => "https://github.com/example/test-seed/pull/9", "draft" => false}
           ])
       end
     end)
@@ -295,7 +278,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
   end
 
   test "a task that has its pull request does not ask GitHub again", %{scope: scope, task: task} do
-    {:ok, task} = Pipeline.update_task(task, %{pr_number: 5, pr_url: "https://github.com/org/commit-work/pull/5"})
+    {:ok, task} = Pipeline.update_task(task, %{pr_number: 5, pr_url: "https://github.com/example/test-seed/pull/5"})
     Req.Test.stub(Client, fn _conn -> flunk("asked GitHub about a pull request the task already has") end)
 
     assert :ok = Pipeline.commit_engineer_work(scope, task)
@@ -334,13 +317,13 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
         {"POST", "/app/installations/" <> _id, _auth} ->
           Req.Test.json(conn, %{"token" => "ghs_app"})
 
-        {"GET", "/repos/org/commit-work/pulls", ["Bearer ghs_app"]} ->
+        {"GET", "/repos/example/test-seed/pulls", ["Bearer ghs_app"]} ->
           Req.Test.json(conn, [])
 
-        {"POST", "/repos/org/commit-work/pulls", ["Bearer gho_ada"]} ->
+        {"POST", "/repos/example/test-seed/pulls", ["Bearer gho_ada"]} ->
           conn
           |> Plug.Conn.put_status(201)
-          |> Req.Test.json(%{"number" => 21, "html_url" => "https://github.com/org/commit-work/pull/21"})
+          |> Req.Test.json(%{"number" => 21, "html_url" => "https://github.com/example/test-seed/pull/21"})
       end
     end)
 
@@ -365,16 +348,16 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
         {"POST", "/app/installations/" <> _id, _auth} ->
           Req.Test.json(conn, %{"token" => "ghs_app"})
 
-        {"GET", "/repos/org/commit-work/pulls", _auth} ->
+        {"GET", "/repos/example/test-seed/pulls", _auth} ->
           Req.Test.json(conn, [])
 
-        {"POST", "/repos/org/commit-work/pulls", ["Bearer gho_bo"]} ->
+        {"POST", "/repos/example/test-seed/pulls", ["Bearer gho_bo"]} ->
           conn |> Plug.Conn.put_status(403) |> Req.Test.json(%{"message" => "Resource not accessible"})
 
-        {"POST", "/repos/org/commit-work/pulls", ["Bearer ghs_app"]} ->
+        {"POST", "/repos/example/test-seed/pulls", ["Bearer ghs_app"]} ->
           conn
           |> Plug.Conn.put_status(201)
-          |> Req.Test.json(%{"number" => 22, "html_url" => "https://github.com/org/commit-work/pull/22"})
+          |> Req.Test.json(%{"number" => 22, "html_url" => "https://github.com/example/test-seed/pull/22"})
       end
     end)
 

@@ -6,31 +6,10 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.LinearSync
   alias Rail.Issues.Workers.SyncIssue
-  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Users
 
-  setup do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Sync Project Issues Project",
-        github_repo: "org/sync-project-issues",
-        github_installation_id: 5511,
-        linear_workspace: %{
-          name: "Sync Project Issues Workspace",
-          external_id: "lin_ws_sync_project_issues",
-          token: "lin_api_token_sync_project_issues",
-          webhook_secret: "whsec_sync_project_issues"
-        },
-        linear_team_key: "SPI",
-        default_branch: "main",
-        clone_path: "/tmp/repos/sync-project-issues"
-      })
-
+  setup %{project: project} do
     %{project: project}
   end
 
@@ -53,7 +32,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
 
     Req.Test.expect(Rail.Linear, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
-      assert %{"teamKey" => "SPI", "after" => nil} = Jason.decode!(body)["variables"]
+      assert %{"teamKey" => "TST", "after" => nil} = Jason.decode!(body)["variables"]
 
       Req.Test.json(conn, %{
         "data" => %{

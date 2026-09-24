@@ -3,31 +3,9 @@ defmodule Rail.Pipeline.Actions.ReadPlanTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Read Plan Project",
-        github_repo: "org/read-plan",
-        github_installation_id: 47_005,
-        linear_workspace: %{
-          name: "Read Plan Workspace",
-          external_id: "lin_ws_read_plan",
-          token: "lin_api_token_read_plan",
-          webhook_secret: "whsec_read_plan"
-        },
-        linear_team_key: "RDP",
-        default_branch: "main",
-        clone_path: "/tmp/repos/read-plan",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

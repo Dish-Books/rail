@@ -6,7 +6,6 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
   alias Rail.Mcp.RunContext
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
@@ -14,7 +13,7 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
     unique = System.unique_integer([:positive])
 
@@ -23,16 +22,6 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
         github_id: "art_gh_#{unique}",
         login: "art_#{unique}",
         email: "art_#{unique}@example.com"
-      })
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Run Token Project #{unique}",
-        github_repo: "org/run-token-#{unique}",
-        github_installation_id: unique,
-        linear_team_key: "RT#{unique}",
-        default_branch: "main",
-        clone_path: "/tmp/repos/run-token-#{unique}"
       })
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})

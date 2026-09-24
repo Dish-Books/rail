@@ -10,30 +10,10 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
 
-  setup do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
+  setup %{project: project} do
+    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
 
-    {:ok, %Project{linear_workspace_id: workspace_id} = project} =
-      Projects.create_project(system_scope(), %{
-        name: "Handle Webhook Project",
-        github_repo: "org/handle-webhook",
-        github_installation_id: 12_950,
-        linear_team_key: "HWH",
-        default_branch: "main",
-        clone_path: "/tmp/repos/handle-webhook",
-        linear_workspace: %{
-          name: "Handle Webhook Workspace",
-          external_id: "lin_ws_handle_webhook",
-          token: "lin_api_token_handle_webhook",
-          webhook_secret: "whsec_handle_webhook"
-        }
-      })
-
-    {:ok, workspace} = Projects.get_linear_workspace(id: workspace_id)
-
-    %{project: project, workspace: workspace}
+    %{workspace: workspace}
   end
 
   test "an issue create mirrors the issue onto the workspace's project", %{
@@ -119,7 +99,10 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     assert :ok = Issues.handle_linear_webhook(workspace, remove)
   end
 
-  test "an issue goes to the project on its team when the workspace has several", %{project: %Project{id: project_id}} do
+  test "an issue goes to the project on its team when the workspace has several", %{
+    project: %Project{id: project_id},
+    workspace: %{id: workspace_id}
+  } do
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_other"}]}}})
     end)
@@ -132,15 +115,10 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
         linear_team_key: "OTH",
         default_branch: "main",
         clone_path: "/tmp/repos/other-team",
-        linear_workspace: %{
-          name: "Handle Webhook Workspace",
-          external_id: "lin_ws_handle_webhook",
-          token: "lin_api_token_handle_webhook",
-          webhook_secret: "whsec_handle_webhook"
-        }
+        linear_workspace_id: workspace_id
       })
 
-    {:ok, workspace} = Projects.get_linear_workspace(external_id: "lin_ws_handle_webhook")
+    {:ok, workspace} = Projects.get_linear_workspace(id: workspace_id)
 
     issue = fn id, team_id ->
       %{

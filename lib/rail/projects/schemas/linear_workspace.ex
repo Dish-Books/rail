@@ -16,7 +16,10 @@ defmodule Rail.Projects.Schemas.LinearWorkspace do
     timestamps()
   end
 
+  # The form never shows a stored secret, so leaving one blank keeps it.
   def changeset(linear_workspace, attrs) do
+    attrs = Map.reject(attrs, fn {key, value} -> to_string(key) in ["token", "webhook_secret"] and value in ["", nil] end)
+
     linear_workspace
     |> cast(attrs, [:name, :external_id, :token, :webhook_secret])
     |> validate_required([:name, :external_id, :token, :webhook_secret])

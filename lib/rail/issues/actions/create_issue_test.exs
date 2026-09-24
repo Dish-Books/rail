@@ -5,41 +5,6 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects
 
-  setup do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "teams" => %{
-            "nodes" => [
-              %{
-                "id" => "lin_team_id",
-                "states" => %{"nodes" => [%{"id" => "st_triage_1", "type" => "triage", "position" => 0}]}
-              }
-            ]
-          }
-        }
-      })
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Create Issue Project 6101",
-        github_repo: "org/create-issue-6101",
-        github_installation_id: 6101,
-        linear_workspace: %{
-          name: "Create Issue Workspace",
-          external_id: "lin_ws_create_issue",
-          token: "lin_api_token_create_issue",
-          webhook_secret: "whsec_create_issue"
-        },
-        linear_team_key: "CI1",
-        default_branch: "main",
-        clone_path: "/tmp/repos/create-issue-6101"
-      })
-
-    %{project: project}
-  end
-
   test "create_issue/2 opens the ticket in triage with the title and description given", %{
     project: %{id: project_id} = project
   } do
@@ -51,7 +16,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
                  "teamId" => "lin_team_id",
                  "title" => "Short title",
                  "description" => "More details here",
-                 "stateId" => "st_triage_1",
+                 "stateId" => "st_triage",
                  "priority" => 2
                }
              } = Jason.decode!(body)["variables"]
@@ -66,7 +31,7 @@ defmodule Rail.Issues.Actions.CreateIssueTest do
               "title" => "Short title",
               "description" => "More details here",
               "priority" => 2,
-              "state" => %{"id" => "st_triage_1", "name" => "Triage", "type" => "triage"},
+              "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"},
               "branchName" => "eng-301-branch",
               "url" => "https://linear.app/issue/ENG-301"
             }

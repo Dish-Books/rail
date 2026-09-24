@@ -37,9 +37,10 @@ defmodule Rail.DataCase do
     end
   end
 
+  # The project lib/test_helper.exs seeds, for any test that needs one but not a particular one.
   setup tags do
     Rail.DataCase.setup_sandbox(tags)
-    :ok
+    %{project: :persistent_term.get({RailTest, :project})}
   end
 
   @doc """

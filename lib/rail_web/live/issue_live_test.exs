@@ -11,30 +11,19 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
-  setup %{conn: conn} do
+  setup %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_issue_live",
         login: "issue_live_user",
         name: "Issue Live",
         email: "issue_live_user@example.com"
-      })
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Issue Page Project",
-        github_repo: "org/issue-page",
-        github_installation_id: 5301,
-        linear_team_key: "IPG",
-        default_branch: "main",
-        clone_path: "/tmp/repos/issue-page"
       })
 
     %{conn: log_in_user(conn, user), user: user, project: project}
@@ -68,7 +57,7 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-priority", "High")
     assert has_element?(view, "#issue-owner", "Issue Live")
     assert has_element?(view, "#issue-estimate", "2 Points")
-    assert has_element?(view, "#issue-project", "Issue Page Project")
+    assert has_element?(view, "#issue-project", "Test Project")
     assert has_element?(view, "#issue-linear-link[href='https://linear.app/issue/IPG-7']")
     assert has_element?(view, "#issue-branch[phx-hook='CopyText'][data-copy-text='ipg-7-ap-aging']")
   end
@@ -233,27 +222,7 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#comment-#{late_id}", "Arrived by webhook")
   end
 
-  test "posting a comment and a reply sends them to Linear and shows them", %{conn: conn} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Issue Comment Project",
-        github_repo: "org/issue-comment",
-        github_installation_id: 5302,
-        linear_team_key: "ICP",
-        default_branch: "main",
-        clone_path: "/tmp/repos/issue-comment",
-        linear_workspace: %{
-          name: "Issue Comment Workspace",
-          external_id: "lin_ws_issue_comment",
-          token: "lin_api_token_issue_comment",
-          webhook_secret: "whsec_issue_comment"
-        }
-      })
-
+  test "posting a comment and a reply sends them to Linear and shows them", %{conn: conn, project: project} do
     issue =
       %Issue{}
       |> Issue.linear_changeset(%{

@@ -4,31 +4,9 @@ defmodule Rail.Pipeline.Actions.GetImplementationPlanTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ImplementationPlan
-  alias Rail.Projects
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Get Plan Project",
-        github_repo: "org/get-plan",
-        github_installation_id: 47_007,
-        linear_workspace: %{
-          name: "Get Plan Workspace",
-          external_id: "lin_ws_get_plan",
-          token: "lin_api_token_get_plan",
-          webhook_secret: "whsec_get_plan"
-        },
-        linear_team_key: "GTP",
-        default_branch: "main",
-        clone_path: "/tmp/repos/get-plan",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

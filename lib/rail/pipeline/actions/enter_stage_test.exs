@@ -12,31 +12,10 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Enter Stage Project",
-        github_repo: "org/enter-stage",
-        github_installation_id: 44_001,
-        linear_workspace: %{
-          name: "Enter Stage Workspace",
-          external_id: "lin_ws_enter_stage",
-          token: "lin_api_token_enter_stage",
-          webhook_secret: "whsec_enter_stage"
-        },
-        linear_team_key: "ENT",
-        default_branch: "main",
-        clone_path: "/tmp/repos/enter-stage",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     roles =
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :demo, :debugger], fn stage ->

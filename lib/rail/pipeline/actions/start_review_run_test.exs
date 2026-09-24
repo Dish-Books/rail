@@ -5,36 +5,14 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Run
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Start Review Project",
-        github_repo: "org/start-review",
-        github_installation_id: 47_023,
-        linear_workspace: %{
-          name: "Start Review Workspace",
-          external_id: "lin_ws_start_review",
-          token: "lin_api_token_start_review",
-          webhook_secret: "whsec_start_review"
-        },
-        linear_team_key: "SRV",
-        default_branch: "main",
-        clone_path: "/tmp/repos/start-review",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, _created} =
       Roles.create_role(scope, project, %{

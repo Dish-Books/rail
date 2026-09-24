@@ -60,18 +60,8 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
     assert {:ok, %Project{id: project_id, name: project_name}} =
              Projects.create_project(scope, %{
-               linear_workspace: %{
-                 name: "Issues Live Workspace 13212",
-                 external_id: "lin_ws_issues_live_13212_x7",
-                 token: "lin_api_token_issues_live_13212",
-                 webhook_secret: "whsec_issues_live_13212"
-               },
                name: "Issues Project",
                github_repo: "example/issues-project",
                github_installation_id: 601,
@@ -118,7 +108,8 @@ defmodule RailWeb.IssuesLiveTest do
   end
 
   test "renders an issue as a row with its identifier, title, priority, status, points, assignee and links", %{
-    conn: conn
+    conn: conn,
+    project: %Project{id: _project_id} = project
   } do
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -129,29 +120,6 @@ defmodule RailWeb.IssuesLiveTest do
       })
 
     authed_conn = log_in_user(conn, user)
-    scope = Scope.for_user(user)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    assert {:ok, %Project{id: _project_id} = project} =
-             Projects.create_project(scope, %{
-               linear_workspace: %{
-                 name: "Issues Live Workspace 13212",
-                 external_id: "lin_ws_issues_live_13212_x8",
-                 token: "lin_api_token_issues_live_13212",
-                 webhook_secret: "whsec_issues_live_13212"
-               },
-               name: "Demo Project",
-               github_repo: "example/demo-project",
-               github_installation_id: 701,
-               linear_team_key: "DEMO",
-               default_branch: "main",
-               clone_path: "/tmp/demo-project",
-               active: true,
-               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
-             })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -201,7 +169,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert {:error, {:live_redirect, %{to: ^issue_path}}} = view |> element("#issue-card-#{issue.id}") |> render_click()
   end
 
-  test "filters by priority chips and updates chip counts", %{conn: conn} do
+  test "filters by priority chips and updates chip counts", %{conn: conn, project: %Project{id: _project_id} = project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_issues_live_5",
@@ -211,29 +179,6 @@ defmodule RailWeb.IssuesLiveTest do
       })
 
     authed_conn = log_in_user(conn, user)
-    scope = Scope.for_user(user)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    assert {:ok, %Project{id: _project_id} = project} =
-             Projects.create_project(scope, %{
-               linear_workspace: %{
-                 name: "Issues Live Workspace 13212",
-                 external_id: "lin_ws_issues_live_13212_x9",
-                 token: "lin_api_token_issues_live_13212",
-                 webhook_secret: "whsec_issues_live_13212"
-               },
-               name: "Priority Project",
-               github_repo: "example/priority-project",
-               github_installation_id: 702,
-               linear_team_key: "PRIO",
-               default_branch: "main",
-               clone_path: "/tmp/priority-project",
-               active: true,
-               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
-             })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -372,24 +317,13 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#issue-card-#{issue_high_1.id}")
   end
 
-  test "My issues shows only the issues the signed-in user owns", %{conn: conn} do
+  test "My issues shows only the issues the signed-in user owns", %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_issues_live_mine",
         login: "issues_live_user_mine",
         email: "issues_live_user_mine@example.com",
         admin: true
-      })
-
-    {:ok, project} =
-      Projects.create_project(Scope.for_user(user), %{
-        name: "Mine Project",
-        github_repo: "example/mine-project",
-        github_installation_id: 709,
-        linear_team_key: "MIN",
-        default_branch: "main",
-        clone_path: "/tmp/mine-project",
-        active: true
       })
 
     mine =
@@ -429,7 +363,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#issue-card-#{theirs.id}")
   end
 
-  test "toggles Show finished filter chip", %{conn: conn} do
+  test "toggles Show finished filter chip", %{conn: conn, project: %Project{id: _project_id} = project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_issues_live_6",
@@ -439,29 +373,6 @@ defmodule RailWeb.IssuesLiveTest do
       })
 
     authed_conn = log_in_user(conn, user)
-    scope = Scope.for_user(user)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    assert {:ok, %Project{id: _project_id} = project} =
-             Projects.create_project(scope, %{
-               linear_workspace: %{
-                 name: "Issues Live Workspace 13212",
-                 external_id: "lin_ws_issues_live_13212_x10",
-                 token: "lin_api_token_issues_live_13212",
-                 webhook_secret: "whsec_issues_live_13212"
-               },
-               name: "Finished Project",
-               github_repo: "example/finished-project",
-               github_installation_id: 703,
-               linear_team_key: "FIN",
-               default_branch: "main",
-               clone_path: "/tmp/finished-project",
-               active: true,
-               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
-             })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -528,7 +439,7 @@ defmodule RailWeb.IssuesLiveTest do
     refute has_element?(view, "#issue-card-#{done_issue.id}")
   end
 
-  test "an issue with a task links to it from its row", %{conn: conn} do
+  test "an issue with a task links to it from its row", %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_issues_live_7",
@@ -538,29 +449,6 @@ defmodule RailWeb.IssuesLiveTest do
       })
 
     authed_conn = log_in_user(conn, user)
-    scope = Scope.for_user(user)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    assert {:ok, %Project{id: _project_id} = project} =
-             Projects.create_project(scope, %{
-               name: "Bring Local Project",
-               github_repo: "example/bring-local",
-               github_installation_id: 704,
-               linear_workspace: %{
-                 name: "Issues Live Workspace 13212",
-                 external_id: "lin_ws_issues_live_13212",
-                 token: "lin_api_token_issues_live_13212",
-                 webhook_secret: "whsec_issues_live_13212"
-               },
-               linear_team_key: "BL",
-               linear_state_ids: %{"in_progress" => "st_in_prog_bl"},
-               default_branch: "main",
-               clone_path: "/tmp/bring-local-proj",
-               active: true
-             })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -589,7 +477,10 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#task-link-#{issue.id}[href='/tasks/#{task.id}']")
   end
 
-  test "sync_issues button triggers sync on current project or all projects", %{conn: conn} do
+  test "sync_issues button triggers sync on current project or all projects", %{
+    conn: conn,
+    project: %Project{id: project_id}
+  } do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_issues_live_10",
@@ -599,29 +490,6 @@ defmodule RailWeb.IssuesLiveTest do
       })
 
     authed_conn = log_in_user(conn, user)
-    scope = Scope.for_user(user)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    assert {:ok, %Project{id: project_id}} =
-             Projects.create_project(scope, %{
-               name: "Sync Project",
-               github_repo: "example/sync-proj",
-               github_installation_id: 707,
-               linear_workspace: %{
-                 name: "Issues Live Workspace 13215",
-                 external_id: "lin_ws_issues_live_13215",
-                 token: "lin_api_token_issues_live_13215",
-                 webhook_secret: "whsec_issues_live_13215"
-               },
-               linear_team_key: "SYNC",
-               default_branch: "main",
-               clone_path: "/tmp/sync-proj",
-               active: true,
-               linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
-             })
 
     # No Linear stub is queued: the click only queues the pull.
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues?project=#{project_id}")
@@ -658,7 +526,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view_all, "[data-qa='issue-title']", "Synced")
   end
 
-  test "searches issues from the URL and pages through them", %{conn: conn} do
+  test "searches issues from the URL and pages through them", %{conn: conn, project: %Project{id: project_id}} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_issues_live_13",
@@ -668,27 +536,6 @@ defmodule RailWeb.IssuesLiveTest do
       })
 
     authed_conn = log_in_user(conn, user)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    assert {:ok, %Project{id: project_id}} =
-             Projects.create_project(Scope.for_user(user), %{
-               name: "Paging Project",
-               github_repo: "example/paging-proj",
-               github_installation_id: 708,
-               linear_workspace: %{
-                 name: "Issues Live Workspace 13216",
-                 external_id: "lin_ws_issues_live_13216",
-                 token: "lin_api_token_issues_live_13216",
-                 webhook_secret: "whsec_issues_live_13216"
-               },
-               linear_team_key: "PAGE",
-               default_branch: "main",
-               clone_path: "/tmp/paging-proj",
-               active: true
-             })
 
     [oldest | _rest] =
       issues =
@@ -761,18 +608,8 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
     scope = Scope.for_user(user)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
     assert {:ok, %Project{id: p_id, name: p_name}} =
              Projects.create_project(scope, %{
-               linear_workspace: %{
-                 name: "Issues Live Workspace 13212",
-                 external_id: "lin_ws_issues_live_13212_x11",
-                 token: "lin_api_token_issues_live_13212",
-                 webhook_secret: "whsec_issues_live_13212"
-               },
                name: "With Key Project",
                github_repo: "example/with-key",
                github_installation_id: 801,

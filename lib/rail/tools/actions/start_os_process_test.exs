@@ -5,7 +5,6 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Tools
@@ -16,7 +15,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
   # These tests are about the spawn itself, so they run real children.
   @moduletag :real_spawn
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
     unique = System.unique_integer([:positive])
 
@@ -26,26 +25,6 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     File.mkdir_p!(worktree_path)
     File.mkdir_p!(scratch_path)
     on_exit(fn -> File.rm_rf(tmp_dir) end)
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Start Run Project #{unique}",
-        github_repo: "org/start-run-#{unique}",
-        github_installation_id: unique,
-        linear_workspace: %{
-          name: "Start Run Workspace #{unique}",
-          external_id: "lin_ws_start_run_#{unique}",
-          token: "lin_api_token_start_run_#{unique}",
-          webhook_secret: "whsec_start_run_#{unique}"
-        },
-        linear_team_key: "SR#{unique}",
-        default_branch: "main",
-        clone_path: Path.join(tmp_dir, "clone")
-      })
 
     # The executable is whatever the role's backend points at, so a test that
     # wants to spawn something else repoints this row before calling start_os_process.

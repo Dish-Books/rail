@@ -5,36 +5,14 @@ defmodule RailWeb.Live.RunConversationTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools.Schemas.OsProcess
   alias RailWeb.Live.RunConversation
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Conversation Project",
-        github_repo: "org/conversation",
-        github_installation_id: 22_101,
-        linear_workspace: %{
-          name: "Conversation Workspace",
-          external_id: "lin_ws_conversation",
-          token: "lin_api_token_conversation",
-          webhook_secret: "whsec_conversation"
-        },
-        linear_team_key: "CNV",
-        default_branch: "main",
-        clone_path: "/tmp/repos/conversation",
-        linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
-      })
 
     roles =
       Map.new([:architect, :engineer], fn stage ->
