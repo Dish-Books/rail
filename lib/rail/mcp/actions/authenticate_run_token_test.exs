@@ -8,7 +8,6 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
-  alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
   alias Rail.Users.Schemas.User
@@ -24,17 +23,8 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
         email: "art_#{unique}@example.com"
       })
 
-    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    {:ok, %{id: role_id} = role} =
-      Roles.create_role(scope, project, %{
-        backend_id: backend.id,
-        stage: :engineer,
-        name: "Engineer",
-        model: "claude-sonnet-5",
-        system_prompt: "You are the engineer.",
-        mcp_tools: ["linear__*"]
-      })
+    {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
+    {:ok, %{id: role_id} = role} = Roles.update_role(scope, engineer, %{mcp_tools: ["linear__*"]})
 
     issue =
       %Issue{}

@@ -26,12 +26,15 @@ defmodule Rail.Pipeline.Utils.SendBack do
   at the change again.
   """
   def send_back(%Task{} = task, stage, note) when is_atom(stage) and is_binary(note) do
-    with {:ok, %Role{id: role_id}} <- Roles.get_role(project_id: task.project_id, stage: stage),
-         %Run{} = run <- Repo.get_by(Run, task_id: task.id, role_id: role_id) do
-      lines = note |> String.trim() |> String.split("\n") |> Enum.map(&"[human] #{&1}")
-      Pipeline.append_run_events(run.id, nil, lines)
-    else
-      _never_run -> :ok
+    {:ok, %Role{id: role_id}} = Roles.get_role(project_id: task.project_id, stage: stage)
+
+    case Repo.get_by(Run, task_id: task.id, role_id: role_id) do
+      %Run{} = run ->
+        lines = note |> String.trim() |> String.split("\n") |> Enum.map(&"[human] #{&1}")
+        Pipeline.append_run_events(run.id, nil, lines)
+
+      nil ->
+        :ok
     end
   end
 end

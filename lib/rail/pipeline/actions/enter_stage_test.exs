@@ -9,25 +9,14 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Roles
+  alias Rail.Roles.Schemas.Role
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
-    scope = system_scope()
-
-    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
     roles =
-      Map.new([:product, :design, :architect, :engineer, :review, :qa, :demo, :debugger], fn stage ->
-        {:ok, role} =
-          Roles.create_role(scope, project, %{
-            backend_id: backend.id,
-            stage: stage,
-            name: "#{stage} role",
-            model: "claude-3-7-sonnet",
-            system_prompt: "You are the #{stage} agent."
-          })
-
+      Map.new(Role.canonical_stages(), fn stage ->
+        {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
         {stage, role}
       end)
 

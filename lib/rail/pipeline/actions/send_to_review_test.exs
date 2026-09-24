@@ -15,14 +15,7 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, role} =
-      Roles.create_role(scope, project, %{
-        backend_id: backend.id,
-        stage: :engineer,
-        name: "engineer role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the engineer agent."
-      })
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -71,15 +64,8 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
   # The brief the reviewer is spawned with never reaches its log, so without this
   # the change comes back round with nothing in the conversation marking that it
   # did.
-  test "the reviewer's log says the change came back", %{backend: backend, project: project, task: task, run: run} do
-    {:ok, review_role} =
-      Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
-        stage: :review,
-        name: "review role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the review agent."
-      })
+  test "the reviewer's log says the change came back", %{project: project, task: task, run: run} do
+    {:ok, review_role} = Roles.get_role(project_id: project.id, stage: :review)
 
     {:ok, review_run} =
       Pipeline.create_run(%{
@@ -105,7 +91,6 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
   test "a reviewer that has never run gets no such line", %{run: run} do
     assert {:ok, %Run{}} = Pipeline.send_to_review(run)
 
-    assert [%Run{}] = Repo.all(Run)
     assert Repo.all(Rail.Pipeline.Schemas.RunEvent) == []
   end
 
@@ -190,20 +175,12 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
   end
 
   test "a task past engineer goes back to review for what the engineer changed since", %{
-    backend: backend,
     project: project,
     task: task,
     run: run,
     worktree_path: worktree_path
   } do
-    {:ok, review_role} =
-      Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
-        stage: :review,
-        name: "review role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the review agent."
-      })
+    {:ok, review_role} = Roles.get_role(project_id: project.id, stage: :review)
 
     reviewed = String.trim(git!(worktree_path, ["rev-parse", "HEAD"]))
 

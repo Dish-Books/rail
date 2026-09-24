@@ -2,11 +2,24 @@ defmodule Rail.Roles.Actions.ListRolesTest do
   use Rail.DataCase, async: true
 
   alias Rail.Projects
+  alias Rail.Projects.Schemas.Project
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
 
-  setup %{project: project} do
+  setup do
+    project =
+      %Project{}
+      |> Project.changeset(%{
+        name: "List Roles Project",
+        github_repo: "org/list-roles",
+        github_installation_id: 4201,
+        linear_team_key: "LR1",
+        default_branch: "main",
+        clone_path: "/tmp/repos/list-roles"
+      })
+      |> Repo.insert!()
+
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
@@ -19,7 +32,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
         backend_id: backend.id,
         name: "Second Role",
         position: 2,
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are an expert agent."
       })
 
@@ -28,7 +41,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
         backend_id: backend.id,
         name: "First Role",
         position: 1,
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are an expert agent."
       })
 
@@ -37,7 +50,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
         backend_id: backend.id,
         name: "Third Role",
         position: 2,
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are an expert agent."
       })
 
@@ -52,7 +65,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
       Roles.create_role(scope, project, %{
         backend_id: backend.id,
         name: "Engineer",
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are an expert agent."
       })
 
@@ -76,7 +89,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
       Roles.create_role(scope, project_a, %{
         backend_id: backend.id,
         name: "Role in Project A",
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are an expert agent."
       })
 
@@ -84,7 +97,7 @@ defmodule Rail.Roles.Actions.ListRolesTest do
       Roles.create_role(scope, project_b, %{
         backend_id: backend.id,
         name: "Role in Project B",
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are an expert agent."
       })
 

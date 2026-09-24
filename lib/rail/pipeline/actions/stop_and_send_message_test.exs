@@ -9,18 +9,7 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessageTest do
   alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
-    scope = system_scope()
-
-    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    {:ok, role} =
-      Roles.create_role(scope, project, %{
-        backend_id: backend.id,
-        stage: :engineer,
-        name: "engineer role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the engineer."
-      })
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

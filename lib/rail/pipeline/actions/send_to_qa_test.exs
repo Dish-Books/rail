@@ -6,21 +6,11 @@ defmodule Rail.Pipeline.Actions.SendToQaTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
-  alias Rail.Tools
 
   setup %{project: project} do
     scope = system_scope()
 
-    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    {:ok, role} =
-      Roles.create_role(scope, project, %{
-        backend_id: backend.id,
-        stage: :review,
-        name: "review role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the review agent."
-      })
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :review)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -35,6 +25,8 @@ defmodule Rail.Pipeline.Actions.SendToQaTest do
 
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Send To QA"})
     {:ok, task} = Pipeline.create_task(issue, :review)
+    # Going on to QA starts its run, which works in the worktree.
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
     {:ok, run} =

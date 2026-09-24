@@ -43,7 +43,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
         backend_id: backend.id,
         stage: :product,
         name: "Source PM",
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "Source PM prompt"
       })
 
@@ -52,7 +52,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
         backend_id: backend.id,
         stage: :engineer,
         name: "Source Engineer",
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "Source Engineer prompt"
       })
 
@@ -77,7 +77,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
         backend_id: backend.id,
         stage: :engineer,
         name: "Old Target Engineer",
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are an expert engineer."
       })
 
@@ -86,7 +86,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
         backend_id: backend.id,
         stage: :engineer,
         name: "New Copied Engineer",
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are an expert engineer."
       })
 
@@ -104,7 +104,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
       Roles.create_role(system_scope(), target, %{
         backend_id: backend.id,
         name: "Existing Target Role",
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are an expert agent."
       })
 
@@ -112,7 +112,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
       Roles.create_role(system_scope(), source, %{
         backend_id: backend.id,
         name: "Copied Source Role",
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are an expert agent."
       })
 
@@ -136,7 +136,7 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
       Roles.create_role(scope, source, %{
         backend_id: backend.id,
         name: "Source PM",
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are an expert agent."
       })
 

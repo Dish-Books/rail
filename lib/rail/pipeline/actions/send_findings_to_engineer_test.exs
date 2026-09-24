@@ -12,18 +12,9 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
   setup %{project: project} do
     scope = system_scope()
 
-    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
     roles =
       Map.new([:engineer, :review], fn stage ->
-        {:ok, role} =
-          Roles.create_role(scope, project, %{
-            backend_id: backend.id,
-            stage: stage,
-            name: "#{stage} role",
-            model: "claude-3-7-sonnet",
-            system_prompt: "You are the #{stage} agent."
-          })
+        {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {stage, role}
       end)
@@ -215,13 +206,6 @@ defmodule Rail.Pipeline.Actions.SendFindingsToEngineerTest do
       ])
 
     assert {:error, :findings_undecided} = Pipeline.send_findings_to_engineer(run)
-  end
-
-  test "a project with nobody to send to says so", %{review_run: run} do
-    {:ok, engineer_role} = Roles.get_role(project_id: run.task.project_id, stage: :engineer)
-    {:ok, _deleted} = Roles.delete_role(system_scope(), engineer_role)
-
-    assert {:error, :no_engineer_role} = Pipeline.send_findings_to_engineer(run)
   end
 
   test "an engineer that never ran is still entered, with nothing to resume", %{

@@ -33,14 +33,7 @@ defmodule RailWeb.TaskLiveTest do
 
     {:ok, backend} = Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, role} =
-      Roles.create_role(scope, project, %{
-        backend_id: backend.id,
-        stage: :product,
-        name: "product role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the product agent."
-      })
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :product)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -148,6 +141,8 @@ defmodule RailWeb.TaskLiveTest do
   end
 
   test "the product stage renders the ticket and approving hands the task on", %{conn: conn, task: task} do
+    {:ok, task} = Pipeline.update_task(task, %{worktree_path: create_temp_git_repo()})
+
     File.write!(
       Path.join([task.scratch_path, "tickets", "TLV-1.md"]),
       "---\ntitle: A better ticket\npriority: high\nestimate: 2\n---\n\nThe body the agent wrote."
@@ -235,17 +230,9 @@ defmodule RailWeb.TaskLiveTest do
   test "a run that failed before starting a conversation is retried by entering its stage again", %{
     conn: conn,
     task: task,
-    project: project,
-    backend: backend
+    project: project
   } do
-    {:ok, engineer} =
-      Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
-        stage: :engineer,
-        name: "engineer role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the engineer agent."
-      })
+    {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 
@@ -427,19 +414,11 @@ defmodule RailWeb.TaskLiveTest do
       conn: conn,
       task: task,
       role: role,
-      project: project,
-      backend: backend
+      project: project
     } do
       File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "The ticket as approved.")
 
-      {:ok, architect} =
-        Roles.create_role(system_scope(), project, %{
-          backend_id: backend.id,
-          stage: :architect,
-          name: "architect role",
-          model: "claude-3-7-sonnet",
-          system_prompt: "You are the architect agent."
-        })
+      {:ok, architect} = Roles.get_role(project_id: project.id, stage: :architect)
 
       {:ok, task} = Pipeline.update_task(task, %{stage: :architect})
 
@@ -462,17 +441,9 @@ defmodule RailWeb.TaskLiveTest do
     test "a role with no stage of its own has only its conversation", %{
       conn: conn,
       task: task,
-      project: project,
-      backend: backend
+      project: project
     } do
-      {:ok, debugger} =
-        Roles.create_role(system_scope(), project, %{
-          backend_id: backend.id,
-          stage: :debugger,
-          name: "debugger role",
-          model: "claude-3-7-sonnet",
-          system_prompt: "You are the debugger."
-        })
+      {:ok, debugger} = Roles.get_role(project_id: project.id, stage: :debugger)
 
       {:ok, _testing} =
         Pipeline.create_run(%{
@@ -490,15 +461,8 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='conversation-tab']")
     end
 
-    test "a role that has not run has no tab yet", %{conn: conn, task: task, project: project, backend: backend} do
-      {:ok, architect} =
-        Roles.create_role(system_scope(), project, %{
-          backend_id: backend.id,
-          stage: :architect,
-          name: "architect role",
-          model: "claude-3-7-sonnet",
-          system_prompt: "You are the architect agent."
-        })
+    test "a role that has not run has no tab yet", %{conn: conn, task: task, project: project} do
+      {:ok, architect} = Roles.get_role(project_id: project.id, stage: :architect)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -531,17 +495,9 @@ defmodule RailWeb.TaskLiveTest do
       conn: conn,
       task: task,
       role: role,
-      project: project,
-      backend: backend
+      project: project
     } do
-      {:ok, architect} =
-        Roles.create_role(system_scope(), project, %{
-          backend_id: backend.id,
-          stage: :architect,
-          name: "architect role",
-          model: "claude-3-7-sonnet",
-          system_prompt: "You are the architect agent."
-        })
+      {:ok, architect} = Roles.get_role(project_id: project.id, stage: :architect)
 
       {:ok, _planning} =
         Pipeline.create_run(%{
@@ -563,15 +519,8 @@ defmodule RailWeb.TaskLiveTest do
   end
 
   describe "the design stage" do
-    setup %{backend: backend, project: project, task: task} do
-      {:ok, design_role} =
-        Roles.create_role(system_scope(), project, %{
-          backend_id: backend.id,
-          stage: :design,
-          name: "design role",
-          model: "claude-3-7-sonnet",
-          system_prompt: "You are the design agent."
-        })
+    setup %{project: project, task: task} do
+      {:ok, design_role} = Roles.get_role(project_id: project.id, stage: :design)
 
       {:ok, task} = Pipeline.update_task(task, %{stage: :design, worktree_path: create_temp_git_repo()})
 
@@ -832,17 +781,10 @@ defmodule RailWeb.TaskLiveTest do
   end
 
   describe "the architect stage" do
-    setup %{backend: backend, project: project, task: task} do
+    setup %{project: project, task: task} do
       roles =
         Map.new([:architect, :engineer], fn stage ->
-          {:ok, role} =
-            Roles.create_role(system_scope(), project, %{
-              backend_id: backend.id,
-              stage: stage,
-              name: "#{stage} role",
-              model: "claude-3-7-sonnet",
-              system_prompt: "You are the #{stage} agent."
-            })
+          {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
           {stage, role}
         end)
@@ -959,15 +901,8 @@ defmodule RailWeb.TaskLiveTest do
   end
 
   describe "the engineer stage" do
-    setup %{backend: backend, project: project, task: task} do
-      {:ok, role} =
-        Roles.create_role(system_scope(), project, %{
-          backend_id: backend.id,
-          stage: :engineer,
-          name: "engineer role",
-          model: "claude-3-7-sonnet",
-          system_prompt: "You are the engineer agent."
-        })
+    setup %{project: project, task: task} do
+      {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
       # The pane's buttons are about what is outstanding, so the worktree starts
       # where a finished round leaves it: committed and pushed.
@@ -976,6 +911,7 @@ defmodule RailWeb.TaskLiveTest do
 
       repo = create_temp_git_repo()
       git!(repo, ["remote", "add", "origin", remote])
+      git!(repo, ["push", "origin", "main"])
       git!(repo, ["checkout", "-b", "feature"])
       File.write!(Path.join(repo, "shipped.ex"), "committed\n")
       git!(repo, ["add", "."])
@@ -1234,20 +1170,12 @@ defmodule RailWeb.TaskLiveTest do
 
     test "a task past engineer with nothing new is not offered review again", %{
       conn: conn,
-      backend: backend,
       project: project,
       task: task,
       role: role,
       repo: repo
     } do
-      {:ok, review_role} =
-        Roles.create_role(system_scope(), project, %{
-          backend_id: backend.id,
-          stage: :review,
-          name: "review role",
-          model: "claude-3-7-sonnet",
-          system_prompt: "You are the review agent."
-        })
+      {:ok, review_role} = Roles.get_role(project_id: project.id, stage: :review)
 
       {:ok, _review_run} =
         Pipeline.create_run(%{
@@ -1647,15 +1575,8 @@ defmodule RailWeb.TaskLiveTest do
   end
 
   describe "the conversation, which the page hosts and feeds" do
-    setup %{backend: backend, project: project, task: task, run: run} do
-      {:ok, other_role} =
-        Roles.create_role(system_scope(), project, %{
-          backend_id: backend.id,
-          stage: :design,
-          name: "design role",
-          model: "claude-3-7-sonnet",
-          system_prompt: "You are the design agent."
-        })
+    setup %{project: project, task: task, run: run} do
+      {:ok, other_role} = Roles.get_role(project_id: project.id, stage: :design)
 
       {:ok, other_run} =
         Pipeline.create_run(%{
@@ -1967,24 +1888,10 @@ defmodule RailWeb.TaskLiveTest do
   end
 
   describe "the review stage" do
-    setup %{backend: backend, project: project, task: task} do
-      {:ok, role} =
-        Roles.create_role(system_scope(), project, %{
-          backend_id: backend.id,
-          stage: :review,
-          name: "review role",
-          model: "claude-3-7-sonnet",
-          system_prompt: "You are the review agent."
-        })
+    setup %{project: project, task: task} do
+      {:ok, role} = Roles.get_role(project_id: project.id, stage: :review)
 
-      {:ok, engineer_role} =
-        Roles.create_role(system_scope(), project, %{
-          backend_id: backend.id,
-          stage: :engineer,
-          name: "engineer role",
-          model: "claude-3-7-sonnet",
-          system_prompt: "You are the engineer agent."
-        })
+      {:ok, engineer_role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
       {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
 
@@ -2121,6 +2028,7 @@ defmodule RailWeb.TaskLiveTest do
 
       git!(task.worktree_path, ["add", "."])
       git!(task.worktree_path, ["commit", "-m", "before"])
+      git!(task.worktree_path, ["update-ref", "refs/remotes/origin/main", "HEAD"])
       git!(task.worktree_path, ["checkout", "-b", "feature"])
 
       File.write!(
@@ -2349,24 +2257,6 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#review-error", "This task is at QA, not review.")
     end
 
-    test "a project with no engineer says so rather than losing the findings", %{
-      conn: conn,
-      task: task,
-      project: project,
-      decide_as_advised: decide_as_advised
-    } do
-      _decided = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      {:ok, engineer_role} = Roles.get_role(project_id: project.id, stage: :engineer)
-      {:ok, _deleted} = Roles.delete_role(system_scope(), engineer_role)
-
-      view |> element("#send-findings-to-engineer") |> render_click()
-
-      assert has_element?(view, "#review-error", "no engineer to send the findings to")
-    end
-
     # Only a window around the line the finding names is shown, so the pane has
     # to say what it left out rather than let the reader take it for the whole
     # change.
@@ -2376,6 +2266,7 @@ defmodule RailWeb.TaskLiveTest do
       File.write!(Path.join(task.worktree_path, "lib/rail/example.ex"), before)
       git!(task.worktree_path, ["add", "."])
       git!(task.worktree_path, ["commit", "-m", "before"])
+      git!(task.worktree_path, ["update-ref", "refs/remotes/origin/main", "HEAD"])
       git!(task.worktree_path, ["checkout", "-b", "feature"])
 
       after_change =
@@ -2471,24 +2362,10 @@ defmodule RailWeb.TaskLiveTest do
   end
 
   describe "the qa stage" do
-    setup %{backend: backend, project: project, task: task} do
-      {:ok, role} =
-        Roles.create_role(system_scope(), project, %{
-          backend_id: backend.id,
-          stage: :qa,
-          name: "qa role",
-          model: "claude-3-7-sonnet",
-          system_prompt: "You are the QA agent."
-        })
+    setup %{project: project, task: task} do
+      {:ok, role} = Roles.get_role(project_id: project.id, stage: :qa)
 
-      {:ok, engineer_role} =
-        Roles.create_role(system_scope(), project, %{
-          backend_id: backend.id,
-          stage: :engineer,
-          name: "engineer role",
-          model: "claude-3-7-sonnet",
-          system_prompt: "You are the engineer agent."
-        })
+      {:ok, engineer_role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
       {:ok, task} = Pipeline.update_task(task, %{stage: :qa, worktree_path: create_temp_git_repo()})
 
@@ -3146,25 +3023,6 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#qa-error", "still running on this task")
     end
 
-    test "a project with no engineer has nowhere to send the findings", %{
-      conn: conn,
-      task: task,
-      decide_as_advised: decide_as_advised
-    } do
-      _decided = decide_as_advised.()
-
-      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-
-      task.project_id
-      |> Roles.list_roles()
-      |> Enum.filter(&(&1.stage == :engineer))
-      |> Enum.each(fn role -> {:ok, _deleted} = Roles.delete_role(system_scope(), role) end)
-
-      view |> element("#send-qa-findings-to-engineer") |> render_click()
-
-      assert has_element?(view, "#qa-error", "no engineer to send the findings to")
-    end
-
     test "a task that moved on under the reader refuses the ruling", %{
       conn: conn,
       task: task,
@@ -3195,15 +3053,8 @@ defmodule RailWeb.TaskLiveTest do
   end
 
   describe "the demo stage" do
-    setup %{backend: backend, project: project, task: task} do
-      {:ok, role} =
-        Roles.create_role(system_scope(), project, %{
-          backend_id: backend.id,
-          stage: :demo,
-          name: "demo role",
-          model: "claude-3-7-sonnet",
-          system_prompt: "You are the demo agent."
-        })
+    setup %{project: project, task: task} do
+      {:ok, role} = Roles.get_role(project_id: project.id, stage: :demo)
 
       {:ok, task} = Pipeline.update_task(task, %{stage: :demo, worktree_path: create_temp_git_repo()})
 

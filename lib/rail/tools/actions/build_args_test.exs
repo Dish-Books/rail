@@ -23,7 +23,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
     opts = [
       backend: %Backend{name: :claude},
       prompt: "Fix the bug",
-      model: "claude-3-7-sonnet-20250219",
+      model: "claude-opus-5-5-20250219",
       effort: "high"
     ]
 
@@ -33,7 +33,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
              "-p",
              "Fix the bug",
              "--model",
-             "claude-3-7-sonnet-20250219",
+             "claude-opus-5-5-20250219",
              "--effort",
              "high",
              "--dangerously-skip-permissions",
@@ -101,7 +101,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
     opts = [
       backend: %Backend{name: :claude},
       prompt: "Do work",
-      model: "claude-3-7-sonnet",
+      model: "claude-opus-5-5",
       system_prompt: "Act as QA engineer.",
       conversation_id: "sess-abc-123"
     ]
@@ -122,7 +122,7 @@ defmodule Rail.Tools.Actions.BuildArgsTest do
     opts = [
       backend: %Backend{name: :claude},
       prompt: "Run",
-      model: "claude-3-7-sonnet",
+      model: "claude-opus-5-5",
       system_prompt: "   ",
       conversation_id: nil
     ]

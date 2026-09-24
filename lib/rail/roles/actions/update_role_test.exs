@@ -1,11 +1,24 @@
 defmodule Rail.Roles.Actions.UpdateRoleTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Projects.Schemas.Project
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
 
-  setup %{project: project} do
+  setup do
+    project =
+      %Project{}
+      |> Project.changeset(%{
+        name: "Update Role Project",
+        github_repo: "org/update-role",
+        github_installation_id: 4405,
+        linear_team_key: "URL",
+        default_branch: "main",
+        clone_path: "/tmp/repos/update-role"
+      })
+      |> Repo.insert!()
+
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
@@ -16,7 +29,7 @@ defmodule Rail.Roles.Actions.UpdateRoleTest do
         backend_id: backend.id,
         name: "Old Name",
         stage: :engineer,
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "Old prompt"
       })
 

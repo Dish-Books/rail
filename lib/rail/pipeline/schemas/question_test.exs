@@ -13,8 +13,6 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
-    scope = system_scope()
-
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
         "data" => %{
@@ -34,14 +32,7 @@ defmodule Rail.Pipeline.Schemas.QuestionTest do
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
-    {:ok, role} =
-      Roles.create_role(scope, project, %{
-        backend_id: backend.id,
-        stage: :product,
-        name: "product role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the product agent."
-      })
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :product)
 
     {:ok, run} =
       Pipeline.create_run(%{

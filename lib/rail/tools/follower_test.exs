@@ -27,19 +27,10 @@ defmodule Rail.Tools.FollowerTest do
   @moduletag :real_spawn
 
   setup %{project: project} do
-    {:ok, backend} =
-      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
     # The Follower reads the stream in its backend's format, and the backend comes
     # off the run's role.
-    {:ok, role} =
-      Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
-        stage: :engineer,
-        name: "follower role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the engineer."
-      })
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
+    %{backend: backend} = Repo.preload(role, :backend)
 
     tmp_dir = Path.join(System.tmp_dir!(), "follower_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp_dir)
@@ -680,7 +671,7 @@ defmodule Rail.Tools.FollowerTest do
     tmp_dir: tmp_dir,
     project: %{linear_workspace_id: workspace_id}
   } do
-    # Its own project, since setup already gave the shared one an engineer role.
+    # Its own project, since the shared one already has an engineer role.
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
     end)
@@ -707,7 +698,7 @@ defmodule Rail.Tools.FollowerTest do
       Roles.create_role(system_scope(), project, %{
         backend_id: backend.id,
         name: "Role 12503",
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are an expert agent for role 12503.",
         stage: :engineer
       })

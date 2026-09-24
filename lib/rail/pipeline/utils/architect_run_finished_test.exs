@@ -8,21 +8,11 @@ defmodule Rail.Pipeline.Utils.ArchitectRunFinishedTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
-  alias Rail.Tools
 
   setup %{project: project} do
     scope = system_scope()
 
-    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    {:ok, role} =
-      Roles.create_role(scope, project, %{
-        backend_id: backend.id,
-        stage: :architect,
-        name: "architect role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the architect agent."
-      })
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :architect)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

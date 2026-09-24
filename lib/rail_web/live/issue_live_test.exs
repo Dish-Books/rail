@@ -12,7 +12,6 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
@@ -119,18 +118,6 @@ defmodule RailWeb.IssueLiveTest do
       })
       |> Repo.insert!()
 
-    {:ok, backend} =
-      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
-    {:ok, _role} =
-      Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
-        stage: :product,
-        name: "product role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the product agent."
-      })
-
     expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
 
     expect(Tools, :start_os_process, fn %Run{} = run, _argv ->
@@ -163,18 +150,6 @@ defmodule RailWeb.IssueLiveTest do
       })
       |> Repo.insert!()
 
-    {:ok, backend} =
-      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
-    {:ok, _role} =
-      Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
-        stage: :design,
-        name: "design role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the designer."
-      })
-
     expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
 
     expect(Tools, :start_os_process, fn %Run{} = run, _argv ->
@@ -191,30 +166,6 @@ defmodule RailWeb.IssueLiveTest do
     assert_redirect(view, ~p"/tasks/#{task_id}")
   end
 
-  test "starting at a stage the project has no role for names that stage and keeps no task", %{
-    conn: conn,
-    project: project
-  } do
-    issue =
-      %Issue{}
-      |> Issue.linear_changeset(%{
-        project_id: project.id,
-        external_id: "lin_page_18",
-        identifier: "IPG-18",
-        title: "No architect role",
-        state: :todo
-      })
-      |> Repo.insert!()
-
-    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
-
-    view |> element("#issue-start-architect") |> render_click()
-
-    assert has_element?(view, "#flash-error", "This project has no architect role.")
-    assert has_element?(view, "#issue-start-architect")
-    refute Repo.get_by(Task, issue_id: issue.id)
-  end
-
   test "an issue that cannot be started says why and keeps no task", %{conn: conn, project: project} do
     issue =
       %Issue{}
@@ -222,16 +173,19 @@ defmodule RailWeb.IssueLiveTest do
         project_id: project.id,
         external_id: "lin_page_6",
         identifier: "IPG-11",
-        title: "No product role",
+        title: "No checkout",
         state: :todo
       })
       |> Repo.insert!()
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
 
+    expect(Git, :get_or_create_worktree, fn _project, _task -> {:error, "no checkout"} end)
+    allow(Git, self(), view.pid)
+
     view |> element("#issue-start-product") |> render_click()
 
-    assert has_element?(view, "#flash-error", "This project has no product role.")
+    assert has_element?(view, "#flash-error", "Could not create the worktree: no checkout")
     assert has_element?(view, "#issue-start-product")
     refute has_element?(view, "#issue-task-link")
     refute Repo.get_by(Task, issue_id: issue.id)
@@ -367,18 +321,6 @@ defmodule RailWeb.IssueLiveTest do
         })
         |> Repo.insert!()
       end
-
-    {:ok, backend} =
-      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
-    {:ok, _role} =
-      Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
-        stage: :product,
-        name: "product role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the product agent."
-      })
 
     expect(Git, :get_or_create_worktree, fn _project, _task -> {:error, "no checkout"} end)
     expect(Git, :get_or_create_worktree, 3, fn _project, task -> {:ok, task.worktree_path} end)

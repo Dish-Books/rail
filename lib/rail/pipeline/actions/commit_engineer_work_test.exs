@@ -59,16 +59,8 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
     end)
 
     # A project with CI runs it on the engineer's run.
-    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
 
-    {:ok, role} =
-      Roles.create_role(scope, project, %{
-        backend_id: backend.id,
-        stage: :engineer,
-        name: "engineer role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the engineer."
-      })
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     {:ok, run} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})

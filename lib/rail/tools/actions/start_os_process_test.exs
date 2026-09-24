@@ -30,14 +30,8 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     # wants to spawn something else repoints this row before calling start_os_process.
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/bin/sleep"})
 
-    {:ok, role} =
-      Roles.create_role(scope, project, %{
-        backend_id: backend.id,
-        stage: :engineer,
-        name: "engineer role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the engineer."
-      })
+    {:ok, seeded_role} = Roles.get_role(project_id: project.id, stage: :engineer)
+    {:ok, role} = Roles.update_role(scope, seeded_role, %{backend_id: backend.id})
 
     issue =
       %Issue{}

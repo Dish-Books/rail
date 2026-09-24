@@ -11,8 +11,8 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
+  alias Rail.Roles.Schemas.Role
   alias Rail.Scope
-  alias Rail.Tools
   alias Rail.Users
 
   test "redirects an unauthenticated user to the sign-in page", %{conn: conn} do
@@ -244,22 +244,9 @@ defmodule RailWeb.OverviewLiveTest do
           admin: true
         })
 
-      scope = Scope.for_user(user)
-
-      {:ok, backend} =
-        Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
       roles =
-        Map.new([:product, :design, :architect, :engineer, :qa], fn stage ->
-          {:ok, role} =
-            Roles.create_role(scope, project, %{
-              backend_id: backend.id,
-              stage: stage,
-              name: "#{stage} role",
-              model: "claude-3-7-sonnet",
-              system_prompt: "You are the #{stage} agent."
-            })
-
+        Map.new(Role.canonical_stages(), fn stage ->
+          {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
           {stage, role}
         end)
 
@@ -302,7 +289,7 @@ defmodule RailWeb.OverviewLiveTest do
       refute has_element?(view, "#stat-oldest-waiting")
       assert has_element?(view, "#up-next-empty", "Nothing is waiting on you.")
       assert has_element?(view, "#activity-feed-empty")
-      assert has_element?(view, "#roster-running-count", "0 / 5 running")
+      assert has_element?(view, "#roster-running-count", "0 / 8 running")
       assert has_element?(view, "#role-row-#{roles[:qa].id}[data-tone='idle']", "Idle · no work assigned")
       assert has_element?(view, "#throughput-total", "0 total")
       refute has_element?(view, "[data-qa='roster-project-header']")
@@ -376,10 +363,10 @@ defmodule RailWeb.OverviewLiveTest do
             started_at: DateTime.shift(stopped_at, minute: -30)
           })
 
-        for prompt <- prompts do
+        Enum.each(prompts, fn prompt ->
           {:ok, _question} =
             Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: prompt})
-        end
+        end)
 
         {:ok, blocked} = Pipeline.get_run(run.id)
         {:ok, stopped} = Pipeline.update_run(blocked, %{completed_at: stopped_at})
@@ -621,7 +608,7 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert positions == Enum.sort(positions)
 
-      assert has_element?(view, "#roster-running-count", "1 / 5 running")
+      assert has_element?(view, "#roster-running-count", "1 / 8 running")
       assert has_element?(view, "#role-row-#{roles[:engineer].id}[data-tone='running']", "Running")
       assert has_element?(view, "#role-row-#{roles[:qa].id}[data-tone='failed']", "Failed 4h 0m ago")
       assert has_element?(view, "#role-row-#{roles[:architect].id}[data-tone='failed']", "Stopped 3h 0m ago")
@@ -646,19 +633,36 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#up-next-empty")
     end
 
-    test "the dispatch banner shows while dispatch is switched off", %{conn: conn} do
-      previous = Application.get_env(:rail, :no_dispatch)
-      Application.put_env(:rail, :no_dispatch, true)
-      on_exit(fn -> Application.put_env(:rail, :no_dispatch, previous) end)
-
-      assert {:ok, view, _html} = live(conn, ~p"/")
-      assert render(view) =~ "RAIL_NO_DISPATCH=1 is set"
-    end
-
     test "a project that no longer exists shows no roster", %{conn: conn, roles: roles} do
       assert {:ok, view, _html} = live(conn, ~p"/?project=prj_missing")
 
       refute has_element?(view, "#role-row-#{roles[:product].id}")
     end
+  end
+end
+
+defmodule RailWeb.OverviewLiveDispatchTest do
+  # Serial: switching dispatch off is global, and would refuse async tests' spawns.
+  use RailWeb.ConnCase, async: false
+
+  import Phoenix.LiveViewTest
+
+  alias Rail.Users
+
+  test "the dispatch banner shows while dispatch is switched off", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_dispatch",
+        login: "overview_dispatch_user",
+        email: "overview_dispatch_user@example.com",
+        admin: true
+      })
+
+    previous = Application.get_env(:rail, :no_dispatch)
+    Application.put_env(:rail, :no_dispatch, true)
+    on_exit(fn -> Application.put_env(:rail, :no_dispatch, previous) end)
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/")
+    assert render(view) =~ "RAIL_NO_DISPATCH=1 is set"
   end
 end

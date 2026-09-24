@@ -37,13 +37,10 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineer do
     run = Repo.preload(run, [task: [:issue, :runs]], force: true)
 
     with :ok <- sendable(run.task),
-         {:ok, findings} <- outstanding(run.task),
-         {:ok, %Role{} = role} <- Roles.get_role(project_id: run.task.project_id, stage: :engineer) do
+         {:ok, findings} <- outstanding(run.task) do
+      {:ok, %Role{} = role} = Roles.get_role(project_id: run.task.project_id, stage: :engineer)
       brief_engineer(run.task, role, findings)
       enter_next(run)
-    else
-      {:error, :role_not_found} -> {:error, :no_engineer_role}
-      {:error, reason} -> {:error, reason}
     end
   end
 

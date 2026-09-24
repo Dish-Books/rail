@@ -13,18 +13,9 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
   setup %{project: project} do
     scope = system_scope()
 
-    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
     roles =
       Map.new([:architect, :engineer], fn stage ->
-        {:ok, role} =
-          Roles.create_role(scope, project, %{
-            backend_id: backend.id,
-            stage: stage,
-            name: "#{stage} role",
-            model: "claude-3-7-sonnet",
-            system_prompt: "You are the #{stage} agent."
-          })
+        {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {stage, role}
       end)

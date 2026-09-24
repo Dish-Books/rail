@@ -1,5 +1,7 @@
 alias Rail.Projects.Schemas.LinearWorkspace
 alias Rail.Projects.Schemas.Project
+alias Rail.Roles.Schemas.Role
+alias Rail.Tools.Schemas.Backend
 
 Mimic.copy(Date)
 Mimic.copy(DateTime)
@@ -20,7 +22,8 @@ Req.default_options(adapter: fn req -> raise "Unmocked call to #{req.url}" end)
 # CI runners are slow enough that the default 100ms flakes; render_async reads it too.
 ExUnit.start(capture_log: true, assert_receive_timeout: 1_000)
 
-# One project on one workspace that every test can hang its rows off; see `Rail.DataCase`.
+# One project on one workspace, with a role for every stage, that every test can hang its
+# rows off; see `Rail.DataCase`. Tests only read the roles, so none races another inserting one.
 # Committed before the sandbox takes over, with fixed ids so a rerun rewrites the same rows.
 upsert = [on_conflict: {:replace_all_except, [:id, :inserted_at]}, conflict_target: :id]
 
@@ -58,6 +61,24 @@ project =
     },
     upsert
   )
+
+backend =
+  Rail.Repo.insert!(%Backend{id: "bkd_test_seed", name: :claude, executable_path: "/usr/bin/true"}, upsert)
+
+Enum.each(Role.canonical_stages(), fn stage ->
+  Rail.Repo.insert!(
+    %Role{
+      id: "rol_test_seed_#{stage}",
+      project_id: project.id,
+      backend_id: backend.id,
+      stage: stage,
+      name: "#{stage} role",
+      model: "claude-opus-5-5",
+      system_prompt: "You are the #{stage} agent."
+    },
+    upsert
+  )
+end)
 
 :persistent_term.put({RailTest, :project}, %{project | linear_workspace: workspace})
 

@@ -33,7 +33,7 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
         backend_id: backend.id,
         stage: :engineer,
         name: "engineer role",
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are the engineer."
       })
 

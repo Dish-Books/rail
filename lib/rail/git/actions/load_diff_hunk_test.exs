@@ -30,6 +30,8 @@ defmodule Rail.Git.Actions.LoadDiffHunkTest do
     File.write!(Path.join(repo, "lib/example.ex"), lines)
     git!(repo, ["add", "."])
     git!(repo, ["commit", "-m", "the file before"])
+    # The diff forks from `origin/main`; this stands in for the fetch.
+    git!(repo, ["update-ref", "refs/remotes/origin/main", "HEAD"])
     git!(repo, ["checkout", "-b", "feature"])
 
     changed =
@@ -113,6 +115,7 @@ defmodule Rail.Git.Actions.LoadDiffHunkTest do
     File.write!(script, "echo hello\n")
     git!(repo, ["add", "."])
     git!(repo, ["commit", "-m", "the script"])
+    git!(repo, ["update-ref", "refs/remotes/origin/main", "HEAD"])
     git!(repo, ["checkout", "-b", "feature"])
     File.chmod!(script, 0o755)
     git!(repo, ["add", "."])

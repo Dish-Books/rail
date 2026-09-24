@@ -13,16 +13,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
   setup %{project: project} do
     scope = system_scope()
 
-    {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    {:ok, role} =
-      Roles.create_role(scope, project, %{
-        backend_id: backend.id,
-        stage: :design,
-        name: "design role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the design agent."
-      })
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :design)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

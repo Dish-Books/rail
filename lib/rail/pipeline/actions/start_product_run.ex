@@ -23,9 +23,8 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
   @doc """
   Creates the task for `issue` and starts its product stage.
 
-  The task is only kept once its run is recorded: a project with no product role,
-  or a checkout no worktree can be made in, leaves the issue without a task so it
-  can be started again. A run that is recorded but fails to spawn keeps its task,
+  The task is only kept once its run is recorded: a checkout no worktree can be
+  made in leaves the issue without a task so it can be started again. A run that is recorded but fails to spawn keeps its task,
   with the failure on the run.
 
   Returns `{:ok, os_process}` with its `:run` and `:task` loaded.
@@ -33,8 +32,9 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
   def start_product_run(%Issue{} = issue) do
     %Issue{project: %Project{} = project} = issue = Repo.preload(issue, :project)
 
-    with {:ok, %Role{} = role} <- Roles.get_role(project_id: project.id, stage: :product),
-         {:ok, {task, run, worktree_path}} <- record_run(issue, project, role) do
+    {:ok, %Role{} = role} = Roles.get_role(project_id: project.id, stage: :product)
+
+    with {:ok, {task, run, worktree_path}} <- record_run(issue, project, role) do
       write_scratch(task)
       spawn_os_process(task, role, run, worktree_path)
     end

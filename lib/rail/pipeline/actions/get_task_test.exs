@@ -39,19 +39,11 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
   end
 
   test "loads the project, the issue and the runs with their roles", %{
-    backend: backend,
     project: %{id: project_id} = project,
     issue: %{id: issue_id},
     task: %Task{id: task_id} = task
   } do
-    {:ok, role} =
-      Roles.create_role(system_scope(), project, %{
-        backend_id: backend.id,
-        stage: :product,
-        name: "product role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the product agent."
-      })
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :product)
 
     {:ok, %Run{id: run_id}} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})

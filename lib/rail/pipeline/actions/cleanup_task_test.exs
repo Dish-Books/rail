@@ -8,24 +8,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   alias Rail.Roles
 
   setup %{project: project} do
-    {:ok, backend} =
-      Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
-    scope = system_scope()
-
-    roles =
-      Map.new([:product, :design, :architect, :engineer, :review, :qa, :demo], fn stage ->
-        {:ok, role} =
-          Roles.create_role(scope, project, %{
-            backend_id: backend.id,
-            stage: stage,
-            name: "#{stage} role",
-            model: "claude-3-7-sonnet",
-            system_prompt: "You are the #{stage} agent."
-          })
-
-        {stage, role}
-      end)
+    {:ok, engineer_role} = Roles.get_role(project_id: project.id, stage: :engineer)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -46,16 +29,19 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
 
     {:ok, task} = Pipeline.create_task(issue, :product)
 
-    %{project: project, issue: issue, task: task, roles: roles}
+    %{project: project, issue: issue, task: task, engineer_role: engineer_role}
   end
 
-  test "refuses to clean up while the stage's run is still working", %{task: task, roles: roles} do
+  test "refuses to clean up while the stage's run is still working", %{
+    task: task,
+    engineer_role: engineer_role
+  } do
     {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
 
     {:ok, _running} =
       Pipeline.create_run(%{
         task_id: task.id,
-        role_id: roles[:engineer].id,
+        role_id: engineer_role.id,
         status: :running,
         started_at: DateTime.utc_now()
       })

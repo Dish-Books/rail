@@ -1,6 +1,9 @@
 defmodule Rail.Tools.Actions.RefreshUsageTest do
   use Rail.DataCase, async: true
 
+  # The backend lib/test_helper.exs seeds for the shared project's roles is the oldest, so
+  # it heads every list as `_seeded`.
+
   alias Rail.Repo
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
@@ -19,6 +22,9 @@ defmodule Rail.Tools.Actions.RefreshUsageTest do
 
       ^agy, _args, _opts ->
         {~s({"status":"SUCCESS"}), 0}
+
+      _seeded, _args, _opts ->
+        {~s({"loggedIn":false}), 0}
     end)
 
     agy_log = "2026-09-09T15:00:00.123Z INFO [Auth] applyAuthResult: email=agy@example.com, authMethod=oauth\n"
@@ -34,12 +40,13 @@ defmodule Rail.Tools.Actions.RefreshUsageTest do
 
     assert {:ok,
             [
+              _seeded,
               %Backend{id: claude_id, name: :claude, account_label: "claude@example.com", status: :ready},
               %Backend{id: agy_id, name: :agy, account_label: "agy@example.com", status: :ready}
             ]} = Tools.refresh_usage()
 
     # Refreshing again updates the same rows rather than inserting new ones.
-    assert {:ok, [%Backend{id: ^claude_id}, %Backend{id: ^agy_id}]} = Tools.refresh_usage()
+    assert {:ok, [_seeded, %Backend{id: ^claude_id}, %Backend{id: ^agy_id}]} = Tools.refresh_usage()
 
     # The config the user owns survives a refresh.
     assert %Backend{executable_path: ^claude, status: :ready} = Repo.get!(Backend, claude_id)
@@ -65,6 +72,7 @@ defmodule Rail.Tools.Actions.RefreshUsageTest do
 
     assert {:ok,
             [
+              _seeded,
               %Backend{id: ^home_id, account_label: "home@example.com"},
               %Backend{id: ^work_id, account_label: "work@example.com"}
             ]} = Tools.refresh_usage()
@@ -79,19 +87,20 @@ defmodule Rail.Tools.Actions.RefreshUsageTest do
 
     assert {:ok,
             [
+              _seeded,
               %Backend{name: :claude, status: :not_configured, unavailable_reason: ^claude_reason},
               %Backend{name: :agy, status: :not_configured, unavailable_reason: ^agy_reason}
             ]} = Tools.refresh_usage()
   end
 
   test "skips a backend that has not been configured, or that nothing can probe" do
-    assert {:ok, []} = Tools.refresh_usage()
+    assert {:ok, [_seeded]} = Tools.refresh_usage()
 
     Repo.insert!(Backend.changeset(%Backend{}, %{name: :codex, executable_path: "/non/existent/codex"}))
-    assert {:ok, []} = Tools.refresh_usage()
+    assert {:ok, [_seeded]} = Tools.refresh_usage()
 
     Repo.insert!(Backend.changeset(%Backend{}, %{name: :claude, executable_path: "/non/existent/claude"}))
 
-    assert {:ok, [%Backend{name: :claude, status: :not_configured}]} = Tools.refresh_usage()
+    assert {:ok, [_seeded, %Backend{name: :claude, status: :not_configured}]} = Tools.refresh_usage()
   end
 end

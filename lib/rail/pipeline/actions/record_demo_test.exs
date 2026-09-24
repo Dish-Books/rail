@@ -32,7 +32,7 @@ defmodule Rail.Pipeline.Actions.RecordDemoTest do
         backend_id: backend.id,
         stage: :demo,
         name: "demo role",
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are the demo agent."
       })
 

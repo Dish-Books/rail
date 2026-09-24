@@ -3,6 +3,9 @@ defmodule RailWeb.Settings.BackendsLiveTest do
 
   import Phoenix.LiveViewTest
 
+  # The backend lib/test_helper.exs seeds for the shared project's roles is the oldest, so
+  # it heads every list as `_seeded`.
+
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Tools
@@ -39,6 +42,9 @@ defmodule RailWeb.Settings.BackendsLiveTest do
   end
 
   test "starts empty and adds an unsaved card per kind", %{conn: conn} do
+    # The backend lib/test_helper.exs seeds would otherwise fill the empty page.
+    stub(Tools, :list_backends, fn -> [] end)
+
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_backends_live_3",
@@ -111,6 +117,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     })
 
     assert [
+             _seeded,
              %Backend{
                id: id,
                name: :claude,
@@ -156,7 +163,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     |> element("[id^='backend-form-new-']")
     |> render_submit(%{"label" => "personal", "executable_path" => "/bin/claude", "models" => %{}})
 
-    assert [%Backend{label: nil}, %Backend{id: id, name: :claude, label: "personal"}] = Tools.list_backends()
+    assert [_seeded, %Backend{label: nil}, %Backend{id: id, name: :claude, label: "personal"}] = Tools.list_backends()
     assert has_element?(view, "#backend-label-#{id}", "personal")
   end
 
@@ -343,7 +350,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
       "models" => %{"0" => %{"id" => "gemini-3.8-flash-high", "display_name" => ""}}
     })
 
-    assert [%{name: :agy, models: [%{display_name: "gemini-3.8-flash-high"}]}] = Tools.list_backends()
+    assert [_seeded, %{name: :agy, models: [%{display_name: "gemini-3.8-flash-high"}]}] = Tools.list_backends()
   end
 
   test "updates an existing backend rather than inserting a second row", %{conn: conn} do
@@ -377,7 +384,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     assert {:ok, %{executable_path: "/new/claude", models: [%{id: "new-model"}]}} =
              Tools.get_backend(backend.id)
 
-    assert length(Tools.list_backends()) == 1
+    assert [_seeded, _updated] = Tools.list_backends()
   end
 
   test "removing a model row drops it from the saved models", %{conn: conn} do
@@ -434,7 +441,7 @@ defmodule RailWeb.Settings.BackendsLiveTest do
     |> render_submit(%{"executable_path" => "", "models" => %{}})
 
     assert has_element?(view, "#backends-save-error", "executable_path")
-    assert [] = Tools.list_backends()
+    assert [_seeded] = Tools.list_backends()
   end
 
   test "renders account status, quota windows, and banners", %{conn: conn} do
@@ -867,6 +874,9 @@ defmodule RailWeb.Settings.BackendsLiveTest do
   end
 
   test "discards a backend that was never saved", %{conn: conn} do
+    # The backend lib/test_helper.exs seeds would otherwise fill the empty page.
+    stub(Tools, :list_backends, fn -> [] end)
+
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_backends_live_18",

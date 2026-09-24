@@ -6,7 +6,19 @@ defmodule Rail.Roles.Schemas.RoleTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
 
-  setup %{project: project} do
+  setup do
+    project =
+      %Project{}
+      |> Project.changeset(%{
+        name: "Role Schema Project",
+        github_repo: "org/role-schema",
+        github_installation_id: 4401,
+        linear_team_key: "RSC",
+        default_branch: "main",
+        clone_path: "/tmp/repos/role-schema"
+      })
+      |> Repo.insert!()
+
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
@@ -17,7 +29,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
         backend_id: backend.id,
         name: "Engineer",
         stage: :engineer,
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are an expert engineer."
       })
 
@@ -49,7 +61,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
   test "changeset accepts valid attributes and sets defaults", %{backend: backend, project: project} do
     attrs = %{
       name: "Architect Agent",
-      model: "claude-3-7-sonnet",
+      model: "claude-opus-5-5",
       system_prompt: "You design systems.",
       backend_id: backend.id
     }
@@ -64,7 +76,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
   test "changeset requires a backend", %{project: project} do
     attrs = %{
       name: "Architect Agent",
-      model: "claude-3-7-sonnet",
+      model: "claude-opus-5-5",
       system_prompt: "You design systems."
     }
 
@@ -77,7 +89,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
   test "changeset validates numeric bounds", %{project: project} do
     attrs = %{
       name: "Role with Invalid Bounds",
-      model: "claude-3-7-sonnet",
+      model: "claude-opus-5-5",
       system_prompt: "System prompt",
       max_concurrent: 0,
       position: -1
@@ -115,7 +127,7 @@ defmodule Rail.Roles.Schemas.RoleTest do
                project_id: project.id,
                name: "Engineer 2",
                stage: :engineer,
-               model: "claude-3-7-sonnet",
+               model: "claude-opus-5-5",
                system_prompt: "Code 2",
                backend_id: backend.id
              })

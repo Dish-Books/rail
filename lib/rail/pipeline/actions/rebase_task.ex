@@ -54,11 +54,11 @@ defmodule Rail.Pipeline.Actions.RebaseTask do
   end
 
   defp engineer_run(%Task{} = task) do
-    with {:ok, %Role{id: role_id}} <- Roles.get_role(project_id: task.project_id, stage: :engineer),
-         %Run{} = run <- Repo.get_by(Run, task_id: task.id, role_id: role_id) do
-      {:ok, Repo.preload(run, role: :backend)}
-    else
-      _never_built -> {:error, :no_engineer_run}
+    {:ok, %Role{id: role_id}} = Roles.get_role(project_id: task.project_id, stage: :engineer)
+
+    case Repo.get_by(Run, task_id: task.id, role_id: role_id) do
+      %Run{} = run -> {:ok, Repo.preload(run, role: :backend)}
+      nil -> {:error, :no_engineer_run}
     end
   end
 end

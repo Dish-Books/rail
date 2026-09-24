@@ -49,7 +49,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
         backend_id: backend.id,
         stage: :product,
         name: "product role",
-        model: "claude-3-7-sonnet",
+        model: "claude-opus-5-5",
         system_prompt: "You are the product agent."
       })
 
@@ -86,7 +86,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
     })
 
     expect(Tools, :start_os_process, fn %Run{role_id: ^role_id, status: :running} = run, argv ->
-      assert ["-p", prompt, "--model", "claude-3-7-sonnet", "--effort", "high" | _flags] = argv
+      assert ["-p", prompt, "--model", "claude-opus-5-5", "--effort", "high" | _flags] = argv
       assert prompt =~ "tickets/#{issue.identifier}.md"
       assert prompt =~ ~s(<comment author="Ana")
       assert prompt =~ "It only happens on Sysco bills."
@@ -135,14 +135,6 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
 
     # The owner lives on the issue; the task only links to it.
     assert %Issue{owner_user_id: ^user_id} = Repo.get!(Issue, task.issue_id)
-  end
-
-  test "keeps no task when the project has no product role", %{role: role, issue: issue} do
-    {:ok, _deleted} = Roles.delete_role(system_scope(), role)
-
-    assert {:error, :role_not_found} = Pipeline.start_product_run(issue)
-
-    refute Repo.exists?(from t in Task, where: t.issue_id == ^issue.id)
   end
 
   test "keeps no task when the worktree cannot be created", %{project: project, issue: issue} do

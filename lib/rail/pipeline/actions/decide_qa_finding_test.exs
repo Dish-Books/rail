@@ -5,21 +5,11 @@ defmodule Rail.Pipeline.Actions.DecideQaFindingTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.QaFinding
   alias Rail.Roles
-  alias Rail.Tools
 
   setup %{project: project} do
     scope = system_scope()
 
-    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    {:ok, role} =
-      Roles.create_role(scope, project, %{
-        backend_id: backend.id,
-        stage: :qa,
-        name: "qa role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the QA agent."
-      })
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :qa)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

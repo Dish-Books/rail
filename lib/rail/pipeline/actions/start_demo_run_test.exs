@@ -12,17 +12,6 @@ defmodule Rail.Pipeline.Actions.StartDemoRunTest do
   setup %{project: project} do
     scope = system_scope()
 
-    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    {:ok, _created} =
-      Roles.create_role(scope, project, %{
-        backend_id: backend.id,
-        stage: :demo,
-        name: "demo role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the demo agent."
-      })
-
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :demo)
 
     Req.Test.expect(Rail.Linear, fn conn ->

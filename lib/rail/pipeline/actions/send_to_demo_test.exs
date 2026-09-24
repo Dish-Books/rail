@@ -11,16 +11,7 @@ defmodule Rail.Pipeline.Actions.SendToDemoTest do
   setup %{project: project} do
     scope = system_scope()
 
-    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    {:ok, role} =
-      Roles.create_role(scope, project, %{
-        backend_id: backend.id,
-        stage: :qa,
-        name: "qa role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the QA agent."
-      })
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :qa)
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -59,14 +50,7 @@ defmodule Rail.Pipeline.Actions.SendToDemoTest do
 
   # Whether a change needs a demo at all is the human's call, made on the demo tab.
   test "the demo is left to a person to start", %{task: task, run: run} do
-    {:ok, demo} =
-      Roles.create_role(system_scope(), Repo.get!(Rail.Projects.Schemas.Project, task.project_id), %{
-        backend_id: Repo.one!(Rail.Tools.Schemas.Backend).id,
-        stage: :demo,
-        name: "demo role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the demo agent."
-      })
+    {:ok, demo} = Roles.get_role(project_id: task.project_id, stage: :demo)
 
     reject(Tools, :start_os_process, 2)
 

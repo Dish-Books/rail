@@ -1390,7 +1390,6 @@ defmodule RailWeb.Live.QaStage do
   defp message_for(:nothing_outstanding), do: "There is nothing left for the engineer to fix."
   defp message_for(:findings_outstanding), do: "Some findings are still outstanding. Fix them or dismiss them first."
   defp message_for(:findings_undecided), do: "Some findings have no decision yet. Rule on every one before sending."
-  defp message_for(:no_engineer_role), do: "This project has no engineer to send the findings to."
   # coveralls-ignore-start (a refusal nobody has written a sentence for yet)
   defp message_for(reason), do: "Could not finish that: #{inspect(reason)}"
   # coveralls-ignore-stop

@@ -12,18 +12,9 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineerTest do
   setup %{project: project} do
     scope = system_scope()
 
-    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
     roles =
       Map.new([:engineer, :qa], fn stage ->
-        {:ok, role} =
-          Roles.create_role(scope, project, %{
-            backend_id: backend.id,
-            stage: stage,
-            name: "#{stage} role",
-            model: "claude-3-7-sonnet",
-            system_prompt: "You are the #{stage} agent."
-          })
+        {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {stage, role}
       end)
@@ -225,14 +216,6 @@ defmodule Rail.Pipeline.Actions.SendQaFindingsToEngineerTest do
 
     assert {:error, :stage_running} = Pipeline.send_qa_findings_to_engineer(Repo.reload!(run))
     assert %Task{stage: :qa} = Repo.reload!(task)
-  end
-
-  test "a project with no engineer has nobody to send them to", %{qa_run: run, task: task} do
-    {:ok, engineer} = Roles.get_role(project_id: task.project_id, stage: :engineer)
-    Repo.delete_all(from r in Run, where: r.role_id == ^engineer.id)
-    {:ok, _deleted} = Roles.delete_role(system_scope(), engineer)
-
-    assert {:error, :no_engineer_role} = Pipeline.send_qa_findings_to_engineer(run)
   end
 
   # The engineer may never have run: a task can reach QA with the change pushed

@@ -13,11 +13,6 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
   alias Rail.Tools
 
   setup %{project: project} do
-    {:ok, backend} =
-      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
-    scope = system_scope()
-
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
         "data" => %{
@@ -43,14 +38,7 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
 
     roles =
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :demo], fn stage ->
-        {:ok, role} =
-          Roles.create_role(scope, project, %{
-            backend_id: backend.id,
-            stage: stage,
-            name: "#{stage} role",
-            model: "claude-3-7-sonnet",
-            system_prompt: "You are the #{stage} agent."
-          })
+        {:ok, role} = Roles.get_role(project_id: project.id, stage: stage)
 
         {stage, role}
       end)

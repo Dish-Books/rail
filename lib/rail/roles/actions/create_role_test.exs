@@ -6,7 +6,19 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
 
-  setup %{project: project} do
+  setup do
+    project =
+      %Project{}
+      |> Project.changeset(%{
+        name: "Create Role Project",
+        github_repo: "org/create-role",
+        github_installation_id: 4402,
+        linear_team_key: "CRL",
+        default_branch: "main",
+        clone_path: "/tmp/repos/create-role"
+      })
+      |> Repo.insert!()
+
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
@@ -23,7 +35,7 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
       backend_id: backend.id,
       name: "Product Agent",
       stage: :product,
-      model: "claude-3-7-sonnet",
+      model: "claude-opus-5-5",
       system_prompt: "Write PRDs."
     }
 
@@ -38,7 +50,7 @@ defmodule Rail.Roles.Actions.CreateRoleTest do
       backend_id: backend.id,
       name: "QA Agent",
       stage: :qa,
-      model: "claude-3-7-sonnet",
+      model: "claude-opus-5-5",
       system_prompt: "Test everything."
     }
 

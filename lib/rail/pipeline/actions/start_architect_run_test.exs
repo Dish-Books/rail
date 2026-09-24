@@ -11,17 +11,6 @@ defmodule Rail.Pipeline.Actions.StartArchitectRunTest do
   setup %{project: project} do
     scope = system_scope()
 
-    {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    {:ok, _created} =
-      Roles.create_role(scope, project, %{
-        backend_id: backend.id,
-        stage: :architect,
-        name: "architect role",
-        model: "claude-3-7-sonnet",
-        system_prompt: "You are the architect agent."
-      })
-
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :architect)
 
     Req.Test.expect(Rail.Linear, fn conn ->

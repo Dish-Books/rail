@@ -13,12 +13,14 @@ defmodule Rail.Pipeline.Actions.ChangedSinceReview do
   it has never been reviewed, or the engineer has changed it since.
   """
   def changed_since_review?(%Task{} = task) do
-    with {:ok, %Role{id: role_id}} <- Roles.get_role(project_id: task.project_id, stage: :review),
-         %Run{stage_fingerprint_head_sha: reviewed} when is_binary(reviewed) <-
-           Repo.get_by(Run, task_id: task.id, role_id: role_id) do
-      not match?(%{head_sha: ^reviewed}, Git.branch_fingerprint(task.worktree_path))
-    else
-      _never_reviewed -> true
+    {:ok, %Role{id: role_id}} = Roles.get_role(project_id: task.project_id, stage: :review)
+
+    case Repo.get_by(Run, task_id: task.id, role_id: role_id) do
+      %Run{stage_fingerprint_head_sha: reviewed} when is_binary(reviewed) ->
+        not match?(%{head_sha: ^reviewed}, Git.branch_fingerprint(task.worktree_path))
+
+      _never_reviewed ->
+        true
     end
   end
 end

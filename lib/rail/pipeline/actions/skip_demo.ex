@@ -22,8 +22,8 @@ defmodule Rail.Pipeline.Actions.SkipDemo do
     # Read again, because the stage and its runs are what this decides on.
     task = Task |> Repo.get!(task.id) |> Repo.preload(:runs)
 
-    with :ok <- skippable(task),
-         {:ok, %Role{} = role} <- Roles.get_role(project_id: task.project_id, stage: :demo) do
+    with :ok <- skippable(task) do
+      {:ok, %Role{} = role} = Roles.get_role(project_id: task.project_id, stage: :demo)
       now = DateTime.utc_now()
       attrs = %{status: :finished, stage_outcome: :done, error: nil, completed_at: now}
 

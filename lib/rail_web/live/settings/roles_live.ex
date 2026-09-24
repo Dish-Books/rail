@@ -10,7 +10,7 @@ defmodule RailWeb.Settings.RolesLive do
   alias Rail.Tools.Schemas.Backend
 
   @default_models %{
-    claude: "claude-3-7-sonnet",
+    claude: "claude-opus-5-5",
     agy: "gemini-3.8-flash-high"
   }
 

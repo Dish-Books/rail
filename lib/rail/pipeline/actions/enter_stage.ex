@@ -28,19 +28,18 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   @doc """
   Enters `stage` on `task` and spawns the role that stage belongs to.
 
-  Returns `{:ok, run}` with the run left executing, or `{:ok, task}` when the
-  project has bound no role to that stage, which records the move and stops there.
-  `start: false` records the move and stops there too, for a stage a person
+  Returns `{:ok, run}` with the run left executing, or `{:ok, task}` under
+  `start: false`, which records the move and stops there, for a stage a person
   decides whether to run at all.
   """
   def enter_stage(%Task{} = task, stage, opts \\ []) when is_atom(stage) do
     {:ok, task} = claim_stage(task, stage)
 
-    with true <- Keyword.get(opts, :start, true),
-         {:ok, %Role{} = role} <- Roles.get_role(project_id: task.project_id, stage: stage) do
+    if Keyword.get(opts, :start, true) do
+      {:ok, %Role{} = role} = Roles.get_role(project_id: task.project_id, stage: stage)
       start_role(task, role)
     else
-      _not_started -> {:ok, task}
+      {:ok, task}
     end
   end
 
