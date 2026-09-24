@@ -3,6 +3,14 @@ alias Rail.Projects.Schemas.Project
 alias Rail.Roles.Schemas.Role
 alias Rail.Tools.Schemas.Backend
 
+# `System.unique_integer/1` starts over every boot, so a temp path built from it can be one an
+# earlier run, or another suite on the same machine, left behind. Each run gets its own; kept short for socket paths.
+run_tmp_dir = Path.join(System.tmp_dir!(), "rt#{System.pid()}")
+File.rm_rf!(run_tmp_dir)
+File.mkdir_p!(run_tmp_dir)
+System.put_env("TMPDIR", run_tmp_dir)
+ExUnit.after_suite(fn _result -> File.rm_rf(run_tmp_dir) end)
+
 Mimic.copy(Date)
 Mimic.copy(DateTime)
 Mimic.copy(File)
