@@ -217,6 +217,30 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert Tools.get_browser_session(task) == nil
   end
 
+  # Chrome's log is the only account of why it never answered, and a CI runner
+  # discards the profile it is written in.
+  test "a browser that never answers says what Chrome logged", %{task: task} do
+    set_mimic_global()
+    stub(Tools, :terminate_os_process, fn _os_pid, _opts -> :ok end)
+
+    stub(Tools, :spawn_os_process, fn _executable, _args, opts ->
+      File.write!(opts[:stdout_path], "starting\nNo usable sandbox!\n")
+      {:ok, nil, System.unique_integer([:positive])}
+    end)
+
+    assert {:error, {:browser_unavailable, {:devtools_never_answered, "starting\nNo usable sandbox!"}}} =
+             Tools.start_browser_session(task, ready_timeout_ms: 200)
+  end
+
+  test "a browser that never answers or logs says the log is missing", %{task: task} do
+    set_mimic_global()
+    stub(Tools, :terminate_os_process, fn _os_pid, _opts -> :ok end)
+    stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, System.unique_integer([:positive])} end)
+
+    assert {:error, {:browser_unavailable, {:devtools_never_answered, "chrome.log unreadable: enoent"}}} =
+             Tools.start_browser_session(task, ready_timeout_ms: 200)
+  end
+
   # The snapshot is what every decision is made from, so it has to survive a real
   # page rather than only a fixture.
   test "reads the page into an indexed table of what can be done to it", %{task: task, page: page} do

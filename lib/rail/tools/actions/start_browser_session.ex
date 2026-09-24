@@ -24,8 +24,9 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
   @doc """
   Returns `{:ok, pid}` for `task`'s browser session.
 
-  `opts` are passed to the session: `:headless` to watch it work, and
-  `:subscribe` for a process that should receive the browser's own events.
+  `opts` are passed to the session: `:headless` to watch it work,
+  `:subscribe` for a process that should receive the browser's own events, and
+  `:ready_timeout_ms` for how long Chrome gets to answer.
   """
   def start_browser_session(%Task{} = task, opts \\ []) do
     case Tools.get_browser_session(task) do

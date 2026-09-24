@@ -120,7 +120,7 @@ defmodule Rail.Tools.BrowserSession do
 
     # Launching here rather than in a continue, so that a caller holding the pid
     # holds a browser it can drive. A session still opening its tab is not a
-    # session anyone can use, and `await_devtools/1` bounds how long this can take.
+    # session anyone can use, and `await_devtools/2` bounds how long this can take.
     case launch(state, opts) do
       {:ok, state} -> {:ok, state}
       {:error, reason} -> {:stop, {:browser_unavailable, reason}}
@@ -237,7 +237,7 @@ defmodule Rail.Tools.BrowserSession do
          profile = profile_path(state.session_id),
          {:ok, _port, os_pid} <- spawn_chrome(executable, profile, opts),
          state = %{state | os_pid: os_pid, profile_path: profile},
-         {:ok, port, url} <- await_devtools(profile),
+         {:ok, port, url} <- await_devtools(profile, Keyword.get(opts, :ready_timeout_ms, @ready_timeout_ms)),
          {:ok, browser} <- Browser.start_link(url: url, subscribe: [self() | List.wrap(opts[:subscribe])]),
          {:ok, %{"targetId" => target}} <- Browser.call(browser, "Target.createTarget", %{url: "about:blank"}),
          {:ok, %{"sessionId" => cdp}} <-
@@ -321,9 +321,9 @@ defmodule Rail.Tools.BrowserSession do
   # `DevToolsActivePort` once it is listening, which is both how its address is
   # learned and how "up" is known. Reading a file beats asking over HTTP: there is
   # nothing to mock in a test, and nothing to race.
-  defp await_devtools(profile), do: await_devtools(profile, System.monotonic_time(:millisecond) + @ready_timeout_ms)
+  defp await_devtools(profile, timeout_ms), do: poll_devtools(profile, System.monotonic_time(:millisecond) + timeout_ms)
 
-  defp await_devtools(profile, deadline) do
+  defp poll_devtools(profile, deadline) do
     case File.read(Path.join(profile, "DevToolsActivePort")) do
       {:ok, contents} ->
         case String.split(String.trim(contents), "\n") do
@@ -344,9 +344,17 @@ defmodule Rail.Tools.BrowserSession do
   defp retry(profile, deadline) do
     if System.monotonic_time(:millisecond) < deadline do
       Process.sleep(@poll_interval_ms)
-      await_devtools(profile, deadline)
+      poll_devtools(profile, deadline)
     else
-      {:error, :devtools_never_answered}
+      {:error, {:devtools_never_answered, last_words(profile)}}
+    end
+  end
+
+  # Chrome's log says why it never came up, and a CI runner discards the profile it is in.
+  defp last_words(profile) do
+    case File.read(Path.join(profile, "chrome.log")) do
+      {:ok, log} -> log |> String.split("\n", trim: true) |> Enum.take(-20) |> Enum.join("\n")
+      {:error, reason} -> "chrome.log unreadable: #{reason}"
     end
   end
 
