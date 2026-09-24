@@ -143,7 +143,11 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     {:ok, workspace} = Projects.get_linear_workspace(external_id: "lin_ws_handle_webhook")
 
     issue = fn id, team_id ->
-      %{"type" => "Issue", "action" => "create", "data" => %{"id" => id, "identifier" => id, "title" => id, "teamId" => team_id}}
+      %{
+        "type" => "Issue",
+        "action" => "create",
+        "data" => %{"id" => id, "identifier" => id, "title" => id, "teamId" => team_id}
+      }
     end
 
     assert {:ok, %Issue{project_id: ^project_id}} =
