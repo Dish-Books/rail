@@ -16,12 +16,22 @@ defmodule RailWeb.OverviewLive do
       socket
       |> assign(:page_title, "Overview")
       |> assign(:current_section, :overview)
-      |> load_overview_state(socket.assigns.current_project_id)
 
     {:ok, socket}
   end
 
-  def handle_params(_params, _uri, socket), do: {:noreply, socket}
+  # Whose work is in the URL, so it can be linked to and survive a reload; the
+  # project is the switcher's.
+  def handle_params(params, _uri, socket) do
+    everyone = params["everyone"] == "true"
+
+    socket =
+      socket
+      |> assign(:everyone, everyone)
+      |> load_overview_state(socket.assigns.current_project_id, everyone)
+
+    {:noreply, socket}
+  end
 
   def render(assigns) do
     ~H"""
@@ -42,6 +52,35 @@ defmodule RailWeb.OverviewLive do
         class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]"
       >
         <div id="overview-main" class="min-w-0 space-y-8">
+          <div
+            id="overview-view-filter"
+            data-qa="overview-view-filter"
+            class="inline-flex rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5"
+          >
+            <button
+              :for={
+                {view, label, pressed} <- [
+                  {:mine, "My work", not @everyone},
+                  {:everyone, "Everyone", @everyone}
+                ]
+              }
+              type="button"
+              id={"overview-view-#{view}"}
+              data-qa="overview-view-option"
+              phx-click="select_view"
+              phx-value-view={view}
+              aria-pressed={to_string(pressed)}
+              class={[
+                "px-3 py-1 rounded-md text-xs font-semibold cursor-pointer",
+                pressed && "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-xs",
+                not pressed &&
+                  "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+              ]}
+            >
+              {label}
+            </button>
+          </div>
+
           <.dispatch_banner :if={@dispatch_disabled} visible={@dispatch_disabled} />
 
           <.overview_stats stats={@stats} />
@@ -84,13 +123,22 @@ defmodule RailWeb.OverviewLive do
     """
   end
 
+  def handle_event("select_view", %{"view" => view}, socket) do
+    {:noreply, push_patch(socket, to: overview_path(socket.assigns, everyone: view == "everyone"))}
+  end
+
   # The overview is a list of runs and the tasks they belong to. What each run is
   # doing it says itself, so nothing here has to work out which run a task means.
-  defp load_overview_state(socket, project_id) do
+  defp load_overview_state(socket, project_id, everyone) do
     now = DateTime.utc_now()
+    # A nil owner means no filter, so the own view must always name the user.
+    owner_user_id = if everyone, do: nil, else: socket.assigns.current_scope.user.id
+    preload = [:role, :questions, task: [:project, :issue]]
 
-    runs = Pipeline.list_runs(project_id: project_id, preload: [:role, :questions, task: [:project, :issue]])
-    tasks = Pipeline.list_tasks(project_id: project_id, preload: [:issue])
+    runs = Pipeline.list_runs(project_id: project_id, owner_user_id: owner_user_id, preload: preload)
+    tasks = Pipeline.list_tasks(project_id: project_id, owner_user_id: owner_user_id, preload: [:issue])
+    # The roster says what every agent is doing, whoever owns the work.
+    all_runs = if everyone, do: runs, else: Pipeline.list_runs(project_id: project_id, preload: preload)
     # A task waits on a human once, whatever its stage: the run of the stage it is
     # in is the one thing to do about it.
     waiting =
@@ -102,16 +150,34 @@ defmodule RailWeb.OverviewLive do
     # Shipped means Linear completed the issue. Sixty days covers this month's
     # count and the month it is compared with.
     %{issues: completed} =
-      Issues.list_issues(project_id: project_id, show_finished: true, completed_after: DateTime.shift(now, day: -60))
+      Issues.list_issues(
+        project_id: project_id,
+        owner_user_id: owner_user_id,
+        show_finished: true,
+        completed_after: DateTime.shift(now, day: -60)
+      )
 
     socket
     |> assign(:waiting, waiting)
     |> assign(:stats, stats(tasks, completed, waiting, now))
     |> assign(:activity, activity(runs, completed, DateTime.shift(now, day: -1)))
-    |> assign(:running_count, Enum.count(runs, &Run.running?/1))
-    |> assign(:roster_groups, build_roster_groups(project_id, runs, now))
+    |> assign(:running_count, Enum.count(all_runs, &Run.running?/1))
+    |> assign(:roster_groups, build_roster_groups(project_id, all_runs, now))
     |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
     |> assign(:dispatch_disabled, Application.get_env(:rail, :no_dispatch, false))
+  end
+
+  # Defaults stay out of the URL, so the user's own work is still just /.
+  defp overview_path(assigns, changes) do
+    params =
+      [everyone: assigns.everyone]
+      |> Keyword.merge(changes)
+      |> Enum.reject(fn {_key, value} -> value in [nil, "", false] end)
+
+    case params do
+      [] -> ~p"/"
+      params -> ~p"/?#{params}"
+    end
   end
 
   defp stats(tasks, completed, waiting, now) do

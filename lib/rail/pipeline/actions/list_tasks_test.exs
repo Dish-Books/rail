@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Users
 
   setup %{project: project} do
     Req.Test.expect(Rail.Linear, fn conn ->
@@ -193,5 +194,37 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
 
     assert [%Task{id: ^id1, project: %Project{id: ^expected_project_id}}] =
              Pipeline.list_tasks(project_id: expected_project_id, preload: [:project])
+  end
+
+  test "filters tasks to the ones on issues a user owns", %{project: project, task: %Task{id: unowned_id}} do
+    {:ok, %{id: user_id}} =
+      Users.register_oauth_user(%{github_id: "gh_list_tasks_owner", login: "list_tasks_owner", email: "lto@example.com"})
+
+    {:ok, %{id: rival_id}} =
+      Users.register_oauth_user(%{github_id: "gh_list_tasks_rival", login: "list_tasks_rival", email: "ltr@example.com"})
+
+    [%Task{id: mine_id}, %Task{id: theirs_id}] =
+      for {owner_id, n} <- [{user_id, 7110}, {rival_id, 7111}] do
+        Req.Test.expect(Rail.Linear, fn conn ->
+          Req.Test.json(conn, %{
+            "data" => %{
+              "issueCreate" => %{
+                "success" => true,
+                "issue" => %{"id" => "lin_task_list_tasks_#{n}", "identifier" => "TSK-#{n}", "title" => "Task #{n}"}
+              }
+            }
+          })
+        end)
+
+        {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Task #{n}"})
+        {:ok, issue} = Issues.update_issue(issue, %{owner_user_id: owner_id})
+        {:ok, task} = Pipeline.create_task(issue, :product)
+        task
+      end
+
+    assert [%Task{id: ^mine_id}] = Pipeline.list_tasks(project_id: project.id, owner_user_id: user_id)
+
+    assert [project_id: project.id] |> Pipeline.list_tasks() |> Enum.map(& &1.id) |> Enum.sort() ==
+             Enum.sort([unowned_id, mine_id, theirs_id])
   end
 end
