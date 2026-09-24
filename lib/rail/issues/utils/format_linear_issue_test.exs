@@ -43,10 +43,10 @@ defmodule Rail.Issues.Utils.FormatLinearIssueTest do
   end
 
   test "maps Linear's state types, with anything else as backlog" do
-    types = ["triage", "backlog", "unstarted", "started", "completed", "canceled", "weird"]
+    types = ["triage", "backlog", "unstarted", "started", "completed", "canceled", "duplicate", "weird"]
 
     assert Enum.map(types, &format_linear_issue(%{"state" => %{"type" => &1}}).state) ==
-             [:triage, :backlog, :backlog, :in_progress, :done, :canceled, :backlog]
+             [:triage, :backlog, :backlog, :in_progress, :done, :canceled, :duplicate, :backlog]
 
     assert %{state: :backlog, state_name: nil} = format_linear_issue(%{})
   end

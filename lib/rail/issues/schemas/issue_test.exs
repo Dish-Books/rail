@@ -102,7 +102,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
   describe "enums, labels, and helper functions" do
     test "priorities/0 and states/0 return expected lists" do
       assert Issue.priorities() == [:urgent, :high, :medium, :low]
-      assert Issue.states() == [:backlog, :triage, :todo, :in_progress, :in_review, :done, :canceled]
+      assert Issue.states() == [:backlog, :triage, :todo, :in_progress, :in_review, :done, :canceled, :duplicate]
     end
 
     test "priority_label/1 returns correct human readable labels" do
@@ -123,14 +123,17 @@ defmodule Rail.Issues.Schemas.IssueTest do
       assert Issue.state_label(:in_review) == "In Review"
       assert Issue.state_label(:done) == "Done"
       assert Issue.state_label(:canceled) == "Canceled"
+      assert Issue.state_label(:duplicate) == "Duplicate"
       assert is_nil(Issue.state_label(:invalid))
       assert is_nil(Issue.state_label(nil))
       assert is_nil(Issue.state_label(123))
     end
 
     test "finished_state?/1, finished?/1, and closed?/1 identify terminal states" do
+      assert Issue.finished_states() == [:done, :canceled, :duplicate]
       assert Issue.finished_state?(:done)
       assert Issue.finished_state?(:canceled)
+      assert Issue.finished_state?(:duplicate)
       refute Issue.finished_state?(:in_progress)
       refute Issue.finished_state?(:triage)
       refute Issue.finished_state?(:invalid)
@@ -151,6 +154,7 @@ defmodule Rail.Issues.Schemas.IssueTest do
 
       refute Issue.active?(:done)
       refute Issue.active?(:canceled)
+      refute Issue.active?(:duplicate)
       refute Issue.active?(:invalid)
       refute Issue.active?(nil)
       refute Issue.active?("todo")

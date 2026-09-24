@@ -50,5 +50,6 @@ defmodule Rail.Issues.Utils.FormatLinearIssue do
   defp state("started"), do: :in_progress
   defp state("completed"), do: :done
   defp state("canceled"), do: :canceled
+  defp state("duplicate"), do: :duplicate
   defp state(_other), do: :backlog
 end

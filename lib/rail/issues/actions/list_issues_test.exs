@@ -59,17 +59,36 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
     })
     |> Repo.insert!()
 
-    assert %{issues: [%Issue{id: ^triage_id}], total: 1} = Issues.list_issues(project_id: project_id)
+    %Issue{id: duplicate_id} =
+      %Issue{}
+      |> Issue.changeset(%{
+        project_id: project_id,
+        external_id: "lin_l4",
+        identifier: "LI1-3",
+        title: "Duplicate",
+        priority: :urgent,
+        state: :duplicate
+      })
+      |> Repo.insert!()
 
-    assert %{issues: [%Issue{id: ^done_id}, %Issue{id: ^triage_id}], total: 2} =
-             Issues.list_issues(project_id: project_id, show_finished: true)
+    # Pinned so the Duplicate issue's urgent priority is not counted.
+    only_medium = %{medium: 1}
+
+    assert %{issues: [%Issue{id: ^triage_id}], total: 1, priority_counts: ^only_medium} =
+             Issues.list_issues(project_id: project_id)
+
+    assert %{
+             issues: [%Issue{id: ^duplicate_id}, %Issue{id: ^done_id}, %Issue{id: ^triage_id}],
+             total: 3,
+             priority_counts: %{urgent: 1, medium: 2}
+           } = Issues.list_issues(project_id: project_id, show_finished: true)
 
     assert %{issues: [%Issue{id: ^triage_id}]} = Issues.list_issues(project_id: project_id, state: :triage)
 
     assert %{issues: [%Issue{id: ^triage_id, project: %Project{id: ^project_id}}]} =
              Issues.list_issues(project_id: project_id, preload: [:project])
 
-    assert %{total: 3} = Issues.list_issues(show_finished: true)
+    assert %{total: 4} = Issues.list_issues(show_finished: true)
     assert %{total: 2} = Issues.list_issues()
   end
 

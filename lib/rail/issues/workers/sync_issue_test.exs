@@ -3,6 +3,7 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
   use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Repo
   alias Rail.Users
@@ -45,6 +46,24 @@ defmodule Rail.Issues.Workers.SyncIssueTest do
           }
         }
       })
+    end)
+
+    assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["title"]})
+  end
+
+  test "editing a Duplicate issue leaves its Linear state alone", %{issue: issue} do
+    issue = issue |> Issue.linear_changeset(%{state: :duplicate, state_name: "Duplicate"}) |> Repo.update!()
+    {:ok, issue} = Issues.update_issue(issue, %{title: "Renamed"})
+
+    # Pinned so a stateId in the input fails the match.
+    title_only = %{"title" => "Renamed"}
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{"id" => "lin_sync_1", "input" => ^title_only} = Jason.decode!(body)["variables"]
+
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
     end)
 
     assert :ok = perform_job(SyncIssue, %{issue_id: issue.id, fields: ["title"]})

@@ -56,7 +56,7 @@ defmodule Rail.Issues.Actions.ListIssues do
   defp filter_state(query, state), do: where(query, [i], i.state == ^state)
 
   defp filter_finished(query, true), do: query
-  defp filter_finished(query, false), do: where(query, [i], i.state not in [:done, :canceled])
+  defp filter_finished(query, false), do: where(query, [i], i.state not in ^Issue.finished_states())
 
   defp filter_search(query, search) when is_binary(search) do
     case String.trim(search) do

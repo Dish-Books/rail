@@ -166,6 +166,25 @@ defmodule RailWeb.IssueLiveTest do
     assert_redirect(view, ~p"/tasks/#{task_id}")
   end
 
+  test "a Duplicate issue reads as Duplicate and offers no start", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_dup",
+        identifier: "IPG-20",
+        title: "Same as IPG-7",
+        state: :duplicate,
+        state_name: "Duplicate"
+      })
+      |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    assert has_element?(view, "#issue-status", "Duplicate")
+    refute has_element?(view, "#issue-start")
+  end
+
   test "an issue that cannot be started says why and keeps no task", %{conn: conn, project: project} do
     issue =
       %Issue{}

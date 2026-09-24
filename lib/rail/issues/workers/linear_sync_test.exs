@@ -2,6 +2,7 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
   use Rail.DataCase, async: true
   use Oban.Testing, repo: Rail.Repo
 
+  alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.LinearSync
@@ -194,7 +195,8 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
   test "maps Linear's state types onto Rail's", %{project: project} do
     Req.Test.expect(Rail.Linear, fn conn ->
       nodes =
-        for {type, n} <- Enum.with_index(["triage", "backlog", "unstarted", "started", "completed", "canceled", "odd"]) do
+        for {type, n} <-
+              Enum.with_index(["triage", "backlog", "unstarted", "started", "completed", "canceled", "duplicate", "odd"]) do
           %{
             "id" => "lin_state_#{n}",
             "identifier" => "SPI-#{100 + n}",
@@ -215,8 +217,51 @@ defmodule Rail.Issues.Workers.LinearSyncTest do
              "State started" => :in_progress,
              "State completed" => :done,
              "State canceled" => :canceled,
+             "State duplicate" => :duplicate,
              "State odd" => :backlog
            } = Issue |> Repo.all() |> Map.new(&{&1.title, &1.state})
+  end
+
+  test "an issue synced as Backlog before Rail knew Duplicate is corrected and leaves the default list", %{
+    project: project
+  } do
+    %Issue{id: issue_id} =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_was_backlog",
+        identifier: "SPI-50",
+        title: "Marked duplicate",
+        state: :backlog,
+        state_name: "Duplicate"
+      })
+      |> Repo.insert!()
+
+    assert %{issues: [%Issue{id: ^issue_id}]} = Issues.list_issues(project_id: project.id)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issues" => %{
+            "nodes" => [
+              %{
+                "id" => "lin_was_backlog",
+                "identifier" => "SPI-50",
+                "title" => "Marked duplicate",
+                "state" => %{"id" => "st_dup", "name" => "Duplicate", "type" => "duplicate"}
+              }
+            ]
+          }
+        }
+      })
+    end)
+
+    assert :ok = perform_job(LinearSync, %{project_id: project.id})
+
+    assert %Issue{id: ^issue_id, state: :duplicate, state_name: "Duplicate"} =
+             Repo.get_by(Issue, external_id: "lin_was_backlog")
+
+    assert %{issues: [], total: 0} = Issues.list_issues(project_id: project.id)
   end
 
   test "a Linear failure fails the job so the page is retried", %{project: project} do

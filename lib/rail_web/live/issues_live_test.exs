@@ -418,18 +418,32 @@ defmodule RailWeb.IssuesLiveTest do
         state: :done
       })
 
+    duplicate_issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_issues_live_13208",
+        identifier: "FIN-3",
+        title: "Duplicate task",
+        state: :duplicate,
+        state_name: "Duplicate"
+      })
+      |> Repo.insert!()
+
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
     # By default, show_finished is false -> only active_issue visible
     assert has_element?(view, "#issue-card-#{active_issue.id}")
     refute has_element?(view, "#issue-card-#{done_issue.id}")
+    refute has_element?(view, "#issue-card-#{duplicate_issue.id}")
     assert has_element?(view, "#filter-priority-all", "All (1)")
 
     # Toggle show finished on
     view |> element("#issues-show-finished") |> render_click()
     assert has_element?(view, "#issue-card-#{active_issue.id}")
     assert has_element?(view, "#issue-card-#{done_issue.id}")
-    assert has_element?(view, "#filter-priority-all", "All (2)")
+    assert has_element?(view, "#issue-card-#{duplicate_issue.id}")
+    assert has_element?(view, "#filter-priority-all", "All (3)")
 
     refute has_element?(view, "#task-link-#{done_issue.id}")
 

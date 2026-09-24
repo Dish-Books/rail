@@ -9,7 +9,8 @@ defmodule Rail.Issues.Schemas.Issue do
   alias Rail.Users.Schemas.User
 
   @priorities [:urgent, :high, :medium, :low]
-  @states [:backlog, :triage, :todo, :in_progress, :in_review, :done, :canceled]
+  @states [:backlog, :triage, :todo, :in_progress, :in_review, :done, :canceled, :duplicate]
+  @finished_states [:done, :canceled, :duplicate]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "iss"}
   schema "issues" do
@@ -81,6 +82,7 @@ defmodule Rail.Issues.Schemas.Issue do
 
   def priorities, do: @priorities
   def states, do: @states
+  def finished_states, do: @finished_states
 
   def priority_label(:urgent), do: "Urgent"
   def priority_label(:high), do: "High"
@@ -95,9 +97,10 @@ defmodule Rail.Issues.Schemas.Issue do
   def state_label(:in_review), do: "In Review"
   def state_label(:done), do: "Done"
   def state_label(:canceled), do: "Canceled"
+  def state_label(:duplicate), do: "Duplicate"
   def state_label(_other), do: nil
 
-  def finished_state?(state) when is_atom(state), do: state in [:done, :canceled]
+  def finished_state?(state) when is_atom(state), do: state in @finished_states
   def finished_state?(_other), do: false
 
   def finished?(state), do: finished_state?(state)

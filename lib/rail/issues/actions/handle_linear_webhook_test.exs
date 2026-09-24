@@ -82,6 +82,40 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     refute_enqueued(worker: SyncIssue)
   end
 
+  test "an issue marked Duplicate in Linear leaves the default list, as a canceled one does", %{
+    project: project,
+    workspace: workspace
+  } do
+    %Issue{id: issue_id} =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_wh_dup",
+        identifier: "HWH-9",
+        title: "Same as HWH-2",
+        state: :triage
+      })
+      |> Repo.insert!()
+
+    assert %{issues: [%Issue{id: ^issue_id}]} = Issues.list_issues(project_id: project.id)
+
+    assert {:ok, %Issue{id: ^issue_id, state: :duplicate, state_name: "Duplicate"}} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "update",
+               "data" => %{
+                 "id" => "lin_wh_dup",
+                 "teamId" => "lin_team_id",
+                 "identifier" => "HWH-9",
+                 "title" => "Same as HWH-2",
+                 "state" => %{"id" => "st_dup", "name" => "Duplicate", "type" => "duplicate"}
+               }
+             })
+
+    assert %{issues: [], total: 0} = Issues.list_issues(project_id: project.id)
+    refute_enqueued(worker: SyncIssue)
+  end
+
   test "an issue update sets its owner to the Rail user linked to the assignee, and unassigning clears it", %{
     project: project,
     workspace: workspace
