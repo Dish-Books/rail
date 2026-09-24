@@ -109,7 +109,7 @@ lane_dev() {
   gate format mix format --check-formatted
   gate credo mix credo --strict
   gate deps.audit mix deps.audit
-  gate sobelow mix sobelow --skip
+  gate sobelow mix sobelow --skip --private
 }
 
 lane_tests() {

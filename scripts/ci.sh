@@ -71,7 +71,7 @@ lane_dev() {
   sub_gate "format" mix format --check-formatted
   sub_gate "credo" mix credo --strict
   sub_gate "deps.audit" mix deps.audit
-  sub_gate "sobelow" mix sobelow --skip
+  sub_gate "sobelow" mix sobelow --skip --private
 }
 
 lane_tests() {
