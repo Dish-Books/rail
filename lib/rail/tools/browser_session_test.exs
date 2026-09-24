@@ -232,6 +232,30 @@ defmodule Rail.Tools.BrowserSessionTest do
              Tools.start_browser_session(task, ready_timeout_ms: 200)
   end
 
+  # Chrome now and then hangs before it listens, so a hung one is killed with its
+  # children and started once more before the session gives up.
+  test "a browser that hangs on its way up is killed and started again", %{task: task} do
+    set_mimic_global()
+    test_pid = self()
+
+    stub(Tools, :spawn_os_process, fn _executable, _args, _opts ->
+      os_pid = System.unique_integer([:positive])
+      send(test_pid, {:spawned, os_pid})
+      {:ok, nil, os_pid}
+    end)
+
+    stub(Tools, :terminate_os_process, fn os_pid, opts -> send(test_pid, {:terminated, os_pid, opts}) && :ok end)
+
+    assert {:error, {:browser_unavailable, {:devtools_never_answered, _log}}} =
+             Tools.start_browser_session(task, ready_timeout_ms: 200)
+
+    assert_received {:spawned, first}
+    assert_received {:terminated, ^first, [group: true]}
+    assert_received {:spawned, second}
+    assert_received {:terminated, ^second, [group: true]}
+    refute_received {:spawned, _third}
+  end
+
   test "a browser that never answers or logs says the log is missing", %{task: task} do
     set_mimic_global()
     stub(Tools, :terminate_os_process, fn _os_pid, _opts -> :ok end)

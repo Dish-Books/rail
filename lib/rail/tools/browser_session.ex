@@ -46,6 +46,7 @@ defmodule Rail.Tools.BrowserSession do
 
   @screencast %{format: "jpeg", quality: 80, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1}
   @ready_timeout_ms 15_000
+  @launch_attempts 2
   @poll_interval_ms 100
 
   defstruct [
@@ -235,9 +236,8 @@ defmodule Rail.Tools.BrowserSession do
   defp launch(%__MODULE__{} = state, opts) do
     with {:ok, executable} <- executable(),
          profile = profile_path(state.session_id),
-         {:ok, _port, os_pid} <- spawn_chrome(executable, profile, opts),
+         {:ok, os_pid, port, url} <- start_chrome(executable, profile, opts, @launch_attempts),
          state = %{state | os_pid: os_pid, profile_path: profile},
-         {:ok, port, url} <- await_devtools(profile, Keyword.get(opts, :ready_timeout_ms, @ready_timeout_ms)),
          {:ok, browser} <- Browser.start_link(url: url, subscribe: [self() | List.wrap(opts[:subscribe])]),
          {:ok, %{"targetId" => target}} <- Browser.call(browser, "Target.createTarget", %{url: "about:blank"}),
          {:ok, %{"sessionId" => cdp}} <-
@@ -282,6 +282,25 @@ defmodule Rail.Tools.BrowserSession do
   # where the process cannot call itself, so it goes straight to the connection.
   defp command(%__MODULE__{} = state, method, params) do
     Browser.call(state.browser, method, Map.put(Map.new(params), :session, state.cdp_session_id))
+  end
+
+  # Chrome now and then hangs before it listens, a forked child stuck on a lock it
+  # inherited, so one that never answers is killed with its children and started again.
+  defp start_chrome(executable, profile, opts, attempts_left) do
+    with {:ok, _port, os_pid} <- spawn_chrome(executable, profile, opts) do
+      case await_devtools(profile, Keyword.get(opts, :ready_timeout_ms, @ready_timeout_ms)) do
+        {:ok, port, url} ->
+          {:ok, os_pid, port, url}
+
+        {:error, _never_answered} when attempts_left > 1 ->
+          Tools.terminate_os_process(os_pid, group: true)
+          start_chrome(executable, profile, opts, attempts_left - 1)
+
+        {:error, reason} ->
+          Tools.terminate_os_process(os_pid, group: true)
+          {:error, reason}
+      end
+    end
   end
 
   defp spawn_chrome(executable, profile, opts) do
