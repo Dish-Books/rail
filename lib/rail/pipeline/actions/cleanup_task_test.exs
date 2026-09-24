@@ -1,7 +1,6 @@
 defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task

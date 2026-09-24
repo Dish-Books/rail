@@ -76,6 +76,16 @@ defmodule Rail.Git.Actions.GetOrCreateWorktreeTest do
     refute File.dir?(wt_path)
   end
 
+  test "says what git said when the branch cannot be created", %{repo: repo, project: project} do
+    wt_path = Path.join(repo, ".worktrees/bad-name")
+
+    assert {:error, reason} =
+             Git.get_or_create_worktree(project, %Task{worktree_path: wt_path, worktree_name: "bad..name"})
+
+    assert reason =~ "Failed to create worktree at #{wt_path}"
+    assert reason =~ "not a valid branch name"
+  end
+
   test "creates new worktree from the project's non-main default branch", %{
     remote: remote,
     repo: repo,
