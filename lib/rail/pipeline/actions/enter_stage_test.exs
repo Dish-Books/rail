@@ -153,6 +153,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert {:ok, %Run{error: "No such CLI binary"}} = Pipeline.enter_stage(task, :review)
   end
 
+  @tag :real_worktree_slot
   test "claims the task the lowest worktree slot no other task holds, whatever its project", %{task: task} do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 

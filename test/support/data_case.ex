@@ -7,6 +7,7 @@ defmodule Rail.DataCase do
   use ExUnit.CaseTemplate
 
   alias Ecto.Adapters.SQL.Sandbox
+  alias Rail.Pipeline.Schemas.Task
 
   using do
     quote do
@@ -23,6 +24,7 @@ defmodule Rail.DataCase do
       setup :verify_on_exit!
       setup :stub_agent_spawn
       setup :stub_git_repo_check
+      setup :stub_worktree_slot
     end
   end
 
@@ -79,6 +81,31 @@ defmodule Rail.DataCase do
   """
   def stub_git_repo_check(_context) do
     Mimic.stub(Rail.Git, :git_repo?, fn _path -> true end)
+
+    :ok
+  end
+
+  @doc """
+  Gives a task with no worktree slot one no other test holds, before its worktree is made.
+
+  Slots are unique across tasks and a test's claim is uncommitted until it ends, so two
+  tests claiming the lowest free slot wait on each other. `@tag :real_worktree_slot` opts out.
+  """
+  def stub_worktree_slot(%{real_worktree_slot: true}), do: :ok
+
+  def stub_worktree_slot(_context) do
+    # Named once, since a util is imported rather than aliased and Mimic needs the module.
+    module = Rail.Pipeline.Utils.PrepareWorktree
+
+    Mimic.stub(module, :prepare_worktree, fn project, %Task{} = task ->
+      task =
+        if task.worktree_slot,
+          do: task,
+          else:
+            task |> Task.changeset(%{worktree_slot: 1_000 + System.unique_integer([:positive])}) |> Rail.Repo.update!()
+
+      Mimic.call_original(module, :prepare_worktree, [project, task])
+    end)
 
     :ok
   end

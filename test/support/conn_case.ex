@@ -24,6 +24,7 @@ defmodule RailWeb.ConnCase do
 
       setup :verify_on_exit!
       setup {Rail.DataCase, :stub_git_repo_check}
+      setup {Rail.DataCase, :stub_worktree_slot}
     end
   end
 
