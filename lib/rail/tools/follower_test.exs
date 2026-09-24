@@ -9,6 +9,7 @@ defmodule Rail.Tools.FollowerTest do
   import Rail.Pipeline.Utils.QuestionQueue
 
   alias Ecto.Adapters.SQL.Sandbox
+  alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -1005,6 +1006,7 @@ defmodule Rail.Tools.FollowerTest do
     stream = Path.join(tmp_dir, "resumed_command.log")
     File.write!(stream, "setting up\n")
     File.write!("#{stream}.exit", "0\n")
+    Req.Test.stub(Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
 
     port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["0.05"]])
     {:os_pid, pid} = Port.info(port, :os_pid)
@@ -1030,6 +1032,7 @@ defmodule Rail.Tools.FollowerTest do
       )
 
     Sandbox.allow(Repo, self(), follower_pid)
+    Req.Test.allow(Client, self(), follower_pid)
 
     assert_receive {:os_process_finished, %OsProcess{exit_code: 0}, %{exit_code: 0, error: nil}}, 5_000
   end

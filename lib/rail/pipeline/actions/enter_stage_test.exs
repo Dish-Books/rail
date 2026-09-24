@@ -134,6 +134,7 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
   end
 
   test "a worktree Rail cannot make is recorded on the run, not swallowed", %{task: task} do
+    Req.Test.stub(Rail.GitHub.Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: "/tmp/rail-no-such-worktree"})
 
     assert {:ok, %Run{status: :failed, error: error}} = Pipeline.enter_stage(task, :review)

@@ -6,7 +6,6 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
-  alias Rail.Projects.Schemas.Project
   alias Rail.Roles
 
   setup %{project: project} do
@@ -71,13 +70,8 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     task: _task
   } do
     clone_path = create_temp_git_repo(prefix: "rail_cleanup_main")
-    wt_dir = Path.join(System.tmp_dir!(), "rail_cleanup_wt_#{System.unique_integer([:positive])}")
-
-    {:ok, worktree_path} =
-      Git.get_or_create_worktree(%Project{clone_path: clone_path, default_branch: "main"}, %Task{
-        worktree_path: wt_dir,
-        worktree_name: "cleanup-branch"
-      })
+    worktree_path = Path.join(System.tmp_dir!(), "rail_cleanup_wt_#{System.unique_integer([:positive])}")
+    git!(clone_path, ["worktree", "add", "-b", "cleanup-branch", worktree_path])
 
     scratch_dir = Path.join(System.tmp_dir!(), "rail_cleanup_scratch_#{System.unique_integer([:positive])}")
     File.mkdir_p!(scratch_dir)

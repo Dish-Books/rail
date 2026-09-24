@@ -24,6 +24,9 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
       Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     scope = system_scope()
+    clone_path = create_temp_git_repo()
+    git!(clone_path, ["remote", "add", "origin", create_temp_git_repo(prefix: "rail_start_product_remote")])
+    Req.Test.stub(Rail.GitHub.Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
@@ -36,7 +39,7 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
         github_installation_id: 7001,
         linear_team_key: "SPT",
         default_branch: "main",
-        clone_path: create_temp_git_repo(),
+        clone_path: clone_path,
         linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"},
         linear_workspace_id: workspace_id
       })
