@@ -81,6 +81,7 @@ defmodule RailWeb.Router do
     pipe_through [:browser, :require_authenticated_user]
 
     get "/settings", SettingsRedirectController, :index
+    get "/project-selection", ProjectSelectionController, :select
     get "/issues/:issue_id/assets/*path", IssueAssetController, :show
     get "/tasks/:task_id/design/:key", DesignController, :show
     get "/tasks/:task_id/design/:key/screenshot", DesignController, :screenshot

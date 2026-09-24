@@ -22,7 +22,7 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:page_title, "Agent Roles")
       |> assign(:current_section, :roles)
       |> assign(:projects, projects)
-      |> assign(:current_project_id, nil)
+      |> assign(:roles_project_id, nil)
       |> assign(:current_project, nil)
       |> assign(:roles, [])
       |> assign(:backends, Tools.list_backends())
@@ -41,26 +41,22 @@ defmodule RailWeb.Settings.RolesLive do
     {:ok, socket}
   end
 
-  def handle_params(params, _uri, socket) do
+  def handle_params(_params, _uri, socket) do
     projects = socket.assigns.projects
 
-    selected_project_id =
-      case Map.get(params, "project") do
-        id when is_binary(id) and id != "" ->
-          id
+    # The page always edits one project, so with none selected it takes the first.
+    current_project =
+      Enum.find(projects, &(&1.id == socket.assigns.current_project_id)) ||
+        Enum.find(projects, & &1.active) || List.first(projects)
 
-        _other ->
-          with %{id: id} <- Enum.find(projects, & &1.active) || List.first(projects), do: id
-      end
-
-    current_project = Enum.find(projects, &(&1.id == selected_project_id))
+    selected_project_id = current_project && current_project.id
     roles = if selected_project_id, do: Roles.list_roles(selected_project_id), else: []
 
     socket =
       socket
       |> assign(:page_title, "Agent Roles")
       |> assign(:current_section, :roles)
-      |> assign(:current_project_id, selected_project_id)
+      |> assign(:roles_project_id, selected_project_id)
       |> assign(:current_project, current_project)
       |> assign(:roles, roles)
 
@@ -116,7 +112,7 @@ defmodule RailWeb.Settings.RolesLive do
                 <option
                   :for={project <- @projects}
                   value={project.id}
-                  selected={project.id == @current_project_id}
+                  selected={project.id == @roles_project_id}
                 >
                   {project.name}
                 </option>
@@ -129,7 +125,7 @@ defmodule RailWeb.Settings.RolesLive do
               size="sm"
               phx-click="open_copy_modal"
               id="copy-roles-button"
-              disabled={is_nil(@current_project_id) or length(@projects) < 2}
+              disabled={is_nil(@roles_project_id) or length(@projects) < 2}
             >
               <.icon name="pi-copy" class="h-3.5 w-3.5" /> Copy From...
             </.button>
@@ -140,10 +136,10 @@ defmodule RailWeb.Settings.RolesLive do
               phx-click="open_create_modal"
               id="add-custom-role-button"
               disabled={
-                is_nil(@current_project_id) or Enum.empty?(unbound_stages(@canonical_stages, @roles))
+                is_nil(@roles_project_id) or Enum.empty?(unbound_stages(@canonical_stages, @roles))
               }
               title={
-                if @current_project_id && Enum.empty?(unbound_stages(@canonical_stages, @roles)),
+                if @roles_project_id && Enum.empty?(unbound_stages(@canonical_stages, @roles)),
                   do: "Every stage already has a role",
                   else: nil
               }
@@ -154,7 +150,7 @@ defmodule RailWeb.Settings.RolesLive do
         </div>
 
         <div
-          :if={is_nil(@current_project_id)}
+          :if={is_nil(@roles_project_id)}
           class="p-8 text-center text-slate-500 dark:text-slate-400 text-sm bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700"
           id="no-projects-message"
         >
@@ -163,7 +159,7 @@ defmodule RailWeb.Settings.RolesLive do
 
         <!-- Pipeline Stage List Section -->
         <section
-          :if={@current_project_id}
+          :if={@roles_project_id}
           class="bg-slate-50 dark:bg-slate-800 shadow rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
           id="pipeline-stages-section"
         >
@@ -757,7 +753,7 @@ defmodule RailWeb.Settings.RolesLive do
                   class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 >
                   <option
-                    :for={project <- Enum.filter(@projects, &(&1.id != @current_project_id))}
+                    :for={project <- Enum.filter(@projects, &(&1.id != @roles_project_id))}
                     value={project.id}
                   >
                     {project.name}
@@ -894,7 +890,7 @@ defmodule RailWeb.Settings.RolesLive do
 
     if role do
       {:ok, _role} = Roles.delete_role(scope, role)
-      refreshed = Roles.list_roles(socket.assigns.current_project_id)
+      refreshed = Roles.list_roles(socket.assigns.roles_project_id)
 
       socket =
         socket
@@ -919,7 +915,7 @@ defmodule RailWeb.Settings.RolesLive do
 
   def handle_event("copy_roles", %{"source_project_id" => source_id} = params, socket) do
     scope = socket.assigns.current_scope
-    target_id = socket.assigns.current_project_id
+    target_id = socket.assigns.roles_project_id
     replace_all = params["replace_all"] in ["true", true]
 
     case Roles.copy_roles(scope, target_id, source_id, replace_all: replace_all) do
@@ -970,7 +966,7 @@ defmodule RailWeb.Settings.RolesLive do
 
   def handle_event("save_role", %{"role" => role_params}, socket) do
     scope = socket.assigns.current_scope
-    project_id = socket.assigns.current_project_id
+    project_id = socket.assigns.roles_project_id
     modal = socket.assigns.active_modal
     existing_role = socket.assigns.modal_role
 

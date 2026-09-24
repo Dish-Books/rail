@@ -48,7 +48,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#section-title", "Issues")
   end
 
-  test "handles ?project=<id> param and updates subtitle and switcher", %{conn: conn} do
+  test "the selected project sets the subtitle and switcher", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_issues_live_2",
@@ -72,17 +72,16 @@ defmodule RailWeb.IssuesLiveTest do
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    assert {:ok, view, _html} = live(authed_conn, ~p"/issues?project=#{project_id}")
+    authed_conn = init_test_session(authed_conn, %{selected_project_id: project_id})
+
+    assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
     assert has_element?(view, "#selected-project-name", project_name)
     assert has_element?(view, "#issues-subtitle", "Linear issues in ISS (#{project_name})")
 
-    # Patch without project
     view |> element("#project-switcher-button") |> render_click()
     view |> element("#project-option-all") |> render_click()
 
-    assert_patched(view, ~p"/issues")
-    assert has_element?(view, "#selected-project-name", "All projects")
-    assert has_element?(view, "#issues-subtitle", "Linear issues across all projects")
+    assert_redirect(view, ~p"/project-selection?#{[project_id: "", return_to: "/issues"]}")
   end
 
   test "renders empty state when there are no issues", %{conn: conn} do
@@ -492,7 +491,7 @@ defmodule RailWeb.IssuesLiveTest do
     authed_conn = log_in_user(conn, user)
 
     # No Linear stub is queued: the click only queues the pull.
-    assert {:ok, view, _html} = live(authed_conn, ~p"/issues?project=#{project_id}")
+    assert {:ok, view, _html} = live(init_test_session(authed_conn, %{selected_project_id: project_id}), ~p"/issues")
 
     view |> element("#sync-issues-button") |> render_click()
     assert_enqueued(worker: LinearSync, args: %{project_id: project_id})
@@ -620,11 +619,13 @@ defmodule RailWeb.IssuesLiveTest do
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    assert {:ok, view, _html} = live(authed_conn, ~p"/issues?project=#{p_id}")
+    assert {:ok, view, _html} = live(init_test_session(authed_conn, %{selected_project_id: p_id}), ~p"/issues")
     assert has_element?(view, "#issues-subtitle", "Linear issues in KEY (#{p_name})")
 
     # Nonexistent project ID
-    assert {:ok, view_bad, _html} = live(authed_conn, ~p"/issues?project=prj_nonexistent")
+    assert {:ok, view_bad, _html} =
+             live(init_test_session(authed_conn, %{selected_project_id: "prj_nonexistent"}), ~p"/issues")
+
     assert has_element?(view_bad, "#issues-subtitle", "Linear issues across all projects")
   end
 end

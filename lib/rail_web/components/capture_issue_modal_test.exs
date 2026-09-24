@@ -49,7 +49,8 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         admin: true
       })
 
-    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues?project=#{project2.id}")
+    assert {:ok, view, _html} =
+             live(init_test_session(log_in_user(conn, user), %{selected_project_id: project2.id}), ~p"/issues")
 
     refute has_element?(view, "#capture-idea-dialog")
 

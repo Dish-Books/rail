@@ -45,7 +45,6 @@ defmodule RailWeb.TaskLive do
       |> assign(:task_id, nil)
       |> assign(:page_title, "Task")
       |> assign(:current_section, :tasks)
-      |> assign(:current_project_id, nil)
       |> assign(:selected_tab, nil)
       |> assign(:url_tab, nil)
       |> assign(:tab_stage, nil)
@@ -701,7 +700,6 @@ defmodule RailWeb.TaskLive do
     socket
     |> assign(:task, task)
     |> assign(:page_title, task.issue.title)
-    |> assign(:current_project_id, task.project_id)
     |> assign(:roles_map, Map.new(roles, &{&1.id, &1}))
     |> assign(:selected_tab, (role && role.id) || @issue_tab)
     |> assign(:tab_stage, task.stage)

@@ -49,7 +49,7 @@ defmodule RailWeb.OverviewLiveTest do
     assert has_element?(view, "#theme-toggle-button")
   end
 
-  test "project switcher displays active projects count and switches projects via handle_params", %{
+  test "project switcher displays active projects count and sends a pick to be stored", %{
     conn: conn
   } do
     {:ok, user} =
@@ -100,23 +100,18 @@ defmodule RailWeb.OverviewLiveTest do
     assert has_element?(view, "#project-option-#{p1_id}", p1_name)
     assert has_element?(view, "#project-option-#{p2_id}", p2_name)
 
-    # Select Project One
     view |> element("#project-option-#{p1_id}") |> render_click()
+    assert_redirect(view, ~p"/project-selection?#{[project_id: p1_id, return_to: "/"]}")
 
-    # URL updated to ?project=p1_id via push_patch and handle_params
-    assert_patched(view, ~p"/?project=#{p1_id}")
-    refute has_element?(view, "#project-switcher-dialog")
+    assert {:ok, view, _html} = live(init_test_session(authed_conn, %{selected_project_id: p1_id}), ~p"/")
     assert has_element?(view, "#selected-project-name", p1_name)
 
-    # Switch back to All projects
     view |> element("#project-switcher-button") |> render_click()
     view |> element("#project-option-all") |> render_click()
-
-    assert_patched(view, ~p"/")
-    assert has_element?(view, "#selected-project-name", "All projects")
+    assert_redirect(view, ~p"/project-selection?#{[project_id: "", return_to: "/"]}")
   end
 
-  test "mount with ?project=<id> in query params sets current_project_id", %{conn: conn} do
+  test "the selected project sets current_project_id", %{conn: conn} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_overview_live_3",
@@ -140,7 +135,7 @@ defmodule RailWeb.OverviewLiveTest do
                linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
              })
 
-    assert {:ok, view, _html} = live(authed_conn, ~p"/?project=#{project_id}")
+    assert {:ok, view, _html} = live(init_test_session(authed_conn, %{selected_project_id: project_id}), ~p"/")
     assert has_element?(view, "#selected-project-name", project_name)
   end
 
@@ -282,7 +277,7 @@ defmodule RailWeb.OverviewLiveTest do
       project: project,
       roles: roles
     } do
-      assert {:ok, view, _html} = live(conn, ~p"/?project=#{project.id}")
+      assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/")
 
       assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "0")
       assert has_element?(view, "#stat-shipped-delta", "same as prior 30")
@@ -634,7 +629,7 @@ defmodule RailWeb.OverviewLiveTest do
     end
 
     test "a project that no longer exists shows no roster", %{conn: conn, roles: roles} do
-      assert {:ok, view, _html} = live(conn, ~p"/?project=prj_missing")
+      assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: "prj_missing"}), ~p"/")
 
       refute has_element?(view, "#role-row-#{roles[:product].id}")
     end

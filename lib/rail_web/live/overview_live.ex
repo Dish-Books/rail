@@ -16,24 +16,12 @@ defmodule RailWeb.OverviewLive do
       socket
       |> assign(:page_title, "Overview")
       |> assign(:current_section, :overview)
-      |> assign(:current_project_id, nil)
 
     {:ok, socket}
   end
 
-  def handle_params(params, _uri, socket) do
-    project_id =
-      case Map.get(params, "project") do
-        id when is_binary(id) and id != "" -> id
-        _other -> nil
-      end
-
-    socket =
-      socket
-      |> assign(:current_project_id, project_id)
-      |> load_overview_state(project_id)
-
-    {:noreply, socket}
+  def handle_params(_params, _uri, socket) do
+    {:noreply, load_overview_state(socket, socket.assigns.current_project_id)}
   end
 
   def render(assigns) do

@@ -18,7 +18,6 @@ defmodule Rail.Users.Schemas.User do
     field :linear_access_token, EncryptedBinary, redact: true
     field :linear_refresh_token, EncryptedBinary, redact: true
     field :linear_token_expires_at, :utc_datetime_usec
-    field :last_project_filter, :string
     field :signing_key, EncryptedBinary, redact: true
     field :signing_public_key, :string
     field :signing_key_github_id, :integer
@@ -41,7 +40,6 @@ defmodule Rail.Users.Schemas.User do
     :linear_access_token,
     :linear_refresh_token,
     :linear_token_expires_at,
-    :last_project_filter,
     :signing_key,
     :signing_public_key,
     :signing_key_github_id
