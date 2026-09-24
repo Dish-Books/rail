@@ -3,7 +3,8 @@ defmodule Rail.Pipeline.Utils.StartCi do
   Runs the project's CI command against the commit the engineer's worktree is on.
 
   It gets the same credentials Rail pushes with, since a CI that records its
-  result somewhere, as a pushed ref, has to be able to reach the remote.
+  result somewhere, as a pushed ref, has to be able to reach the remote, and the
+  ticket owner's git identity, since recording it may mean a commit.
   """
 
   alias Rail.Git
@@ -26,7 +27,7 @@ defmodule Rail.Pipeline.Utils.StartCi do
       head_sha: Git.branch_fingerprint(task.worktree_path)[:head_sha]
     ]
 
-    with {:ok, env} <- Git.credential_env(project),
+    with {:ok, env} <- Git.ci_env(project, task),
          {:ok, os_process} <- Tools.start_command_process(running, :ci, project.ci_command, [{:env, env} | opts]) do
       {:ok, os_process}
     else

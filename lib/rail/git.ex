@@ -27,6 +27,7 @@ defmodule Rail.Git do
   defdelegate commit_worktree(scope, task, message), to: Actions.CommitWorktree
   defdelegate push_branch(scope, task), to: Actions.PushBranch
   defdelegate credential_env(project), to: Actions.CredentialEnv
+  defdelegate ci_env(project, task), to: Actions.CiEnv
   defdelegate fetch_default_branch(project, worktree_path), to: Actions.FetchDefaultBranch
   defdelegate rebased_onto?(worktree_path, base_branch), to: Actions.RebasedOnto
   defdelegate rebase_in_progress?(worktree_path), to: Actions.RebaseInProgress

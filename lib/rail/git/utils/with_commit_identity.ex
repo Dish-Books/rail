@@ -1,10 +1,9 @@
 defmodule Rail.Git.Utils.WithCommitIdentity do
   @moduledoc false
 
-  alias Rail.Issues.Schemas.Issue
+  import Rail.Git.Utils.CommitAuthor
+
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Repo
-  alias Rail.Users.Schemas.User
 
   @doc """
   Calls `run` with the `-c` arguments that have git commit as the person `task`'s
@@ -15,9 +14,7 @@ defmodule Rail.Git.Utils.WithCommitIdentity do
   them would publish a commit that never verifies.
   """
   def with_commit_identity(%Task{} = task, run) when is_function(run, 1) do
-    # Forced, because who the ticket is assigned to may have changed since
-    # whatever loaded this task read it, and that is who the commit belongs to.
-    author = task |> Repo.preload([issue: :owner_user], force: true) |> Map.fetch!(:issue) |> author()
+    author = commit_author(task)
     identity = ["-c", "user.name=#{author.name}", "-c", "user.email=#{author.email}"]
 
     with_signing_key(author, &run.(identity ++ signing_args(&1)))
@@ -47,24 +44,4 @@ defmodule Rail.Git.Utils.WithCommitIdentity do
   end
 
   defp with_signing_key(_unsigned, run), do: run.(nil)
-
-  defp author(%Issue{owner_user: %User{} = user}) do
-    %{
-      name: user.name || user.login,
-      email: user.email,
-      signing_key: user.signing_key,
-      signing_public_key: user.signing_public_key
-    }
-  end
-
-  defp author(%Issue{}) do
-    config = Application.get_env(:rail, :git, [])
-
-    %{
-      name: Keyword.get(config, :bot_name, "Rail"),
-      email: Keyword.get(config, :bot_email, "rail[bot]@railai.dev"),
-      signing_key: nil,
-      signing_public_key: nil
-    }
-  end
 end
