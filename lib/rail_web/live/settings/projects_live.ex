@@ -388,7 +388,7 @@ defmodule RailWeb.Settings.ProjectsLive do
                   Linear Workspace
                 </legend>
                 <p class="text-xs text-slate-500 dark:text-slate-400">
-                  Credentials used for system-level sync, webhook verification, and asset uploads.
+                  Credentials used for system-level sync, webhook verification, and asset uploads. Projects with the same External Workspace ID share one workspace, and saving here updates it for all of them.
                 </p>
 
                 <div class="grid grid-cols-2 gap-4">

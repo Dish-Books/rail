@@ -274,7 +274,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert %Project{ci_command: "mise run ci", ci_timeout_minutes: 45} = Repo.get!(Project, project_id)
   end
 
-  test "editing a project's Linear workspace updates the workspace it already has", %{
+  test "editing a project's Linear workspace to a new external id gives it a new workspace", %{
     admin_conn: conn,
     admin_user: admin
   } do
@@ -328,8 +328,13 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
 
     external_id = "lin_org_new_#{id}"
 
-    assert %LinearWorkspace{id: ^workspace_id, name: "New Workspace", external_id: ^external_id, token: "lin_api_new"} =
-             Repo.get_by(LinearWorkspace, project_id: project_id)
+    # A workspace is its external id, so a new one is a new row and the old one is left for its other projects.
+    assert %Project{
+             linear_workspace: %LinearWorkspace{name: "New Workspace", external_id: ^external_id, token: "lin_api_new"}
+           } =
+             Project |> Repo.get!(project_id) |> Repo.preload(:linear_workspace)
+
+    assert %LinearWorkspace{name: "Old Workspace"} = Repo.get!(LinearWorkspace, workspace_id)
   end
 
   test "closes modal when cancel or close button is clicked", %{admin_conn: conn} do

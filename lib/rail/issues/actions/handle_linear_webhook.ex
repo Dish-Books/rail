@@ -12,23 +12,31 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Projects.Schemas.LinearWorkspace
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
 
   @doc """
-  Applies `payload` for `workspace`. Issue creates and updates are upserted onto
-  the workspace's project, removes delete the issue, and anything else is ignored.
+  Applies `payload` for `workspace`, its projects preloaded. Issue creates and
+  updates are upserted onto the project on the issue's team, removes delete the
+  issue, and anything else, including a team no project is on, is ignored.
   """
-  def handle_linear_webhook(%LinearWorkspace{project_id: project_id}, %{
+  def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
         "type" => "Issue",
         "action" => action,
-        "data" => %{"id" => external_id} = data
+        "data" => %{"id" => external_id, "teamId" => team_id} = data
       })
-      when action in ["create", "update"] and is_binary(project_id) do
-    attrs = data |> format_linear_issue() |> Map.put(:project_id, project_id)
+      when action in ["create", "update"] do
+    case Enum.find(projects, &(&1.linear_team_id == team_id)) do
+      %Project{id: project_id} ->
+        attrs = data |> format_linear_issue() |> Map.put(:project_id, project_id)
 
-    (Repo.get_by(Issue, external_id: external_id) || %Issue{})
-    |> Issue.linear_changeset(attrs)
-    |> Repo.insert_or_update()
+        (Repo.get_by(Issue, external_id: external_id) || %Issue{})
+        |> Issue.linear_changeset(attrs)
+        |> Repo.insert_or_update()
+
+      nil ->
+        :ok
+    end
   end
 
   def handle_linear_webhook(%LinearWorkspace{}, %{

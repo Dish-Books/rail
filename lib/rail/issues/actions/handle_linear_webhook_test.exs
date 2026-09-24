@@ -15,7 +15,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
       Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
     end)
 
-    {:ok, %Project{linear_workspace: workspace} = project} =
+    {:ok, %Project{linear_workspace_id: workspace_id} = project} =
       Projects.create_project(system_scope(), %{
         name: "Handle Webhook Project",
         github_repo: "org/handle-webhook",
@@ -31,6 +31,8 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
         }
       })
 
+    {:ok, workspace} = Projects.get_linear_workspace(id: workspace_id)
+
     %{project: project, workspace: workspace}
   end
 
@@ -44,6 +46,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
                "action" => "create",
                "data" => %{
                  "id" => "lin_wh_1",
+                 "teamId" => "lin_team_id",
                  "identifier" => "HWH-1",
                  "title" => "Webhook Issue",
                  "description" => "Created via webhook",
@@ -88,6 +91,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
                "action" => "update",
                "data" => %{
                  "id" => "lin_wh_2",
+                 "teamId" => "lin_team_id",
                  "identifier" => "HWH-2",
                  "title" => "Updated Title",
                  "state" => %{"id" => "st_done", "name" => "Done", "type" => "completed"}
@@ -115,14 +119,51 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
     assert :ok = Issues.handle_linear_webhook(workspace, remove)
   end
 
-  test "a workspace without a project and events that are not issues change nothing", %{workspace: workspace} do
+  test "an issue goes to the project on its team when the workspace has several", %{project: %Project{id: project_id}} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_other"}]}}})
+    end)
+
+    {:ok, %Project{id: other_project_id}} =
+      Projects.create_project(system_scope(), %{
+        name: "Other Team Project",
+        github_repo: "org/other-team",
+        github_installation_id: 12_951,
+        linear_team_key: "OTH",
+        default_branch: "main",
+        clone_path: "/tmp/repos/other-team",
+        linear_workspace: %{
+          name: "Handle Webhook Workspace",
+          external_id: "lin_ws_handle_webhook",
+          token: "lin_api_token_handle_webhook",
+          webhook_secret: "whsec_handle_webhook"
+        }
+      })
+
+    {:ok, workspace} = Projects.get_linear_workspace(external_id: "lin_ws_handle_webhook")
+
+    issue = fn id, team_id ->
+      %{"type" => "Issue", "action" => "create", "data" => %{"id" => id, "identifier" => id, "title" => id, "teamId" => team_id}}
+    end
+
+    assert {:ok, %Issue{project_id: ^project_id}} =
+             Issues.handle_linear_webhook(workspace, issue.("HWH-5", "lin_team_id"))
+
+    assert {:ok, %Issue{project_id: ^other_project_id}} =
+             Issues.handle_linear_webhook(workspace, issue.("OTH-1", "lin_team_other"))
+
+    assert :ok = Issues.handle_linear_webhook(workspace, issue.("NOP-1", "lin_team_unclaimed"))
+    assert Repo.get_by(Issue, external_id: "NOP-1") == nil
+  end
+
+  test "an issue on a team no project is on and events that are not issues change nothing", %{workspace: workspace} do
     event = %{
       "type" => "Issue",
       "action" => "create",
-      "data" => %{"id" => "lin_wh_4", "identifier" => "HWH-4", "title" => "Orphan"}
+      "data" => %{"id" => "lin_wh_4", "identifier" => "HWH-4", "title" => "Orphan", "teamId" => "lin_team_unclaimed"}
     }
 
-    assert :ok = Issues.handle_linear_webhook(%{workspace | project_id: nil}, event)
+    assert :ok = Issues.handle_linear_webhook(workspace, event)
     assert :ok = Issues.handle_linear_webhook(workspace, %{"type" => "Project", "action" => "create", "data" => %{}})
     assert Repo.get_by(Issue, external_id: "lin_wh_4") == nil
   end

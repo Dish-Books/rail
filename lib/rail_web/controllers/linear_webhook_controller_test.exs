@@ -95,7 +95,7 @@ defmodule RailWeb.LinearWebhookControllerTest do
         "identifier" => "ENG-777",
         "title" => "Webhook Issue",
         "description" => "Created via webhook",
-        "teamId" => "team_wh_1",
+        "teamId" => "lin_team_id",
         "state" => %{"id" => "st_started", "name" => "In Progress", "type" => "started"},
         "branchName" => "eng-777-webhook",
         "url" => "https://linear.app/issue/ENG-777",

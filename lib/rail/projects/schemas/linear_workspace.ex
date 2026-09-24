@@ -11,7 +11,7 @@ defmodule Rail.Projects.Schemas.LinearWorkspace do
     field :token, EncryptedBinary, redact: true
     field :webhook_secret, EncryptedBinary, redact: true
 
-    belongs_to :project, Rail.Projects.Schemas.Project
+    has_many :projects, Rail.Projects.Schemas.Project
 
     timestamps()
   end
@@ -21,6 +21,5 @@ defmodule Rail.Projects.Schemas.LinearWorkspace do
     |> cast(attrs, [:name, :external_id, :token, :webhook_secret])
     |> validate_required([:name, :external_id, :token, :webhook_secret])
     |> unique_constraint(:external_id)
-    |> unique_constraint(:project_id)
   end
 end

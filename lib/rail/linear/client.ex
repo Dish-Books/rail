@@ -355,8 +355,8 @@ defmodule Rail.Linear.Client do
     {:ok, token}
   end
 
-  defp workspace_token(%Project{id: project_id}) when is_binary(project_id) do
-    case Repo.get_by(LinearWorkspace, project_id: project_id) do
+  defp workspace_token(%Project{linear_workspace_id: workspace_id}) when is_binary(workspace_id) do
+    case Repo.get(LinearWorkspace, workspace_id) do
       %LinearWorkspace{token: token} when is_binary(token) and token != "" -> {:ok, token}
       _other -> {:error, :no_workspace_token}
     end

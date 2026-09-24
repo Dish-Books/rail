@@ -70,7 +70,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
     assert %{github_repo: ["has already been taken"]} = errors_on(changeset)
   end
 
-  test "has one linear_workspace created through the project changeset" do
+  test "belongs to a linear_workspace created through the project changeset" do
     ext_id = "lin_ext_#{System.unique_integer([:positive])}"
     repo = "example/repo-ws-#{System.unique_integer([:positive])}"
 
@@ -96,8 +96,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
              })
              |> Repo.insert()
 
-    assert %LinearWorkspace{id: ^workspace_id, project_id: ^project_id} =
-             Repo.get_by(LinearWorkspace, project_id: project_id)
+    assert %Project{linear_workspace_id: ^workspace_id} = Repo.get!(Project, project_id)
   end
 
   test "looks the Linear team and its states up from the key, through the workspace, as the row is written" do

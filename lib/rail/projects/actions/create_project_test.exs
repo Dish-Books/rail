@@ -2,6 +2,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
   use Rail.DataCase, async: true
 
   alias Rail.Projects
+  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Scope
 
@@ -51,6 +52,40 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
              linear_team_key: ["can't be blank"],
              clone_path: ["can't be blank"]
            } = errors_on(changeset)
+  end
+
+  test "a second project on the same Linear workspace shares its row, and its credentials" do
+    scope = Scope.for_user(%{admin: true})
+
+    Req.Test.expect(Rail.Linear, 2, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
+    attrs = fn key, token ->
+      %{
+        name: "Shared Workspace #{key}",
+        github_repo: "example/shared-workspace-#{key}",
+        github_installation_id: 12_346,
+        linear_team_key: key,
+        default_branch: "main",
+        clone_path: "/tmp/shared-workspace",
+        linear_workspace: %{
+          name: "Shared Workspace",
+          external_id: "lin_org_shared_workspace",
+          token: token,
+          webhook_secret: "whsec_shared_workspace"
+        }
+      }
+    end
+
+    assert {:ok, %Project{linear_workspace_id: workspace_id}} =
+             Projects.create_project(scope, attrs.("ONE", "lin_api_one"))
+
+    assert {:ok, %Project{linear_workspace_id: ^workspace_id}} =
+             Projects.create_project(scope, attrs.("TWO", "lin_api_two"))
+
+    assert [%LinearWorkspace{id: ^workspace_id, token: "lin_api_two"}] =
+             Repo.all(from w in LinearWorkspace, where: w.external_id == "lin_org_shared_workspace")
   end
 
   test "rejects a clone_path that is not a git repository" do

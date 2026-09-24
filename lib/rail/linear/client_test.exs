@@ -277,7 +277,7 @@ defmodule Rail.Linear.ClientTest do
       end)
 
       assert {:ok, %{"issues" => %{"nodes" => []}}} =
-               Client.issues(%Project{id: project.id, linear_team_key: "CLK"})
+               Client.issues(%Project{linear_workspace_id: project.linear_workspace_id, linear_team_key: "CLK"})
     end
 
     test "no workspace token means no request" do

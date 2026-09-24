@@ -2,6 +2,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
   use Rail.DataCase, async: true
 
   alias Rail.Projects
+  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Scope
 
@@ -25,6 +26,44 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                active: false,
                default_branch: "develop"
              })
+  end
+
+  test "naming a saved workspace moves the project onto it and leaves its old one as it was" do
+    admin_scope = Scope.for_user(%{admin: true})
+
+    Req.Test.expect(Rail.Linear, 3, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
+    end)
+
+    workspace = fn external_id ->
+      %{name: "Workspace", external_id: external_id, token: "lin_api_same", webhook_secret: "whsec_same"}
+    end
+
+    project = fn key, external_id ->
+      %{
+        name: "Move #{key}",
+        github_repo: "example/move-workspace-#{key}",
+        github_installation_id: 55_668,
+        linear_team_key: key,
+        default_branch: "main",
+        clone_path: "/tmp/move",
+        linear_workspace: workspace.(external_id)
+      }
+    end
+
+    assert {:ok, %Project{linear_workspace_id: target_id}} =
+             Projects.create_project(admin_scope, project.("MVA", "lin_org_move_target"))
+
+    assert {:ok, %Project{linear_workspace_id: old_id} = moving} =
+             Projects.create_project(admin_scope, project.("MVB", "lin_org_move_old"))
+
+    {:ok, moving} = Projects.get_project(moving.id)
+
+    # The form sends the saved workspace exactly as it is, so only the project's pointer changes.
+    assert {:ok, %Project{linear_workspace_id: ^target_id}} =
+             Projects.update_project(admin_scope, moving, %{linear_workspace: workspace.("lin_org_move_target")})
+
+    assert %LinearWorkspace{external_id: "lin_org_move_old"} = Repo.get!(LinearWorkspace, old_id)
   end
 
   test "returns validation error changeset for invalid attributes" do
