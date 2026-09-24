@@ -48,7 +48,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
       show_project_switcher={@show_project_switcher}
     >
       <div
-        class="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-8"
+        class="max-w-[90rem] mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-10"
         id="connected-accounts-settings"
       >
         <div>
