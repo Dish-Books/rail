@@ -76,7 +76,8 @@ defmodule Rail.Git.Actions.CommitWorktreeTest do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
 
     assert {:ok, _sha} = Git.commit_worktree(scope, task, "CWT-1: signed")
-    assert git!(repo, ["log", "-1", "--pretty=%GT"]) =~ "ssh"
+    # The signature is read rather than verified: verifying needs the machine's own `gpg.ssh.allowedSignersFile`.
+    assert git!(repo, ["cat-file", "commit", "HEAD"]) =~ "-----BEGIN SSH SIGNATURE-----"
   end
 
   test "leaves the agents' own .rail scratch out of the commit", %{scope: scope, task: task, repo: repo} do
