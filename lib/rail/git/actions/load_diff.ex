@@ -88,9 +88,10 @@ defmodule Rail.Git.Actions.LoadDiff do
   defp tracked(worktree_path, :uncommitted, _base), do: diff(worktree_path, ["diff", "HEAD"])
 
   # Diffing from the merge base rather than from the base branch's tip keeps the
-  # base moving ahead out of the picture: what shows is what this branch did.
+  # base moving ahead out of the picture: what shows is what this branch did. The
+  # base is `origin/`'s, the one rebases land on; the clone's own copy never moves.
   defp tracked(worktree_path, :branch, base) do
-    case Tools.run("git", ["merge-base", base, "HEAD"], cd: worktree_path, stderr_to_stdout: true) do
+    case Tools.run("git", ["merge-base", "origin/#{base}", "HEAD"], cd: worktree_path, stderr_to_stdout: true) do
       {output, 0} -> diff(worktree_path, ["diff", String.trim(output)])
       _no_merge_base -> diff(worktree_path, ["diff", "HEAD"])
     end

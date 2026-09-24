@@ -23,7 +23,11 @@ defmodule Rail.Git.Actions.LoadDiffTest do
     {:ok, issue} = Issues.create_issue(scope, project, %{description: "Load Diff"})
     {:ok, task} = Pipeline.create_task(issue, :engineer)
 
+    remote = create_temp_git_repo(prefix: "rail_load_diff_remote")
     repo = create_temp_git_repo()
+    git!(repo, ["remote", "add", "origin", remote])
+    git!(repo, ["fetch", "origin", "main"])
+    git!(repo, ["reset", "--hard", "origin/main"])
     git!(repo, ["checkout", "-b", "feature"])
     File.write!(Path.join(repo, "shipped.ex"), "committed\n")
     git!(repo, ["add", "."])
@@ -36,10 +40,28 @@ defmodule Rail.Git.Actions.LoadDiffTest do
     {:ok, reader} =
       Users.register_oauth_user(%{github_id: "gh_load_diff", login: "reader", email: "reader@example.com"})
 
-    %{scope: user_scope(user: reader), task: task, repo: repo}
+    %{scope: user_scope(user: reader), task: task, repo: repo, remote: remote}
   end
 
   test "the branch view carries everything the branch did", %{scope: scope, task: task} do
+    assert {:ok, files} = Git.load_diff(scope, task, :branch)
+
+    assert files |> Enum.map(& &1.path) |> Enum.sort() == ["shipped.ex", "wip.ex"]
+  end
+
+  # The clone's own main stays where the branch forked; only origin's moves on.
+  test "a branch rebased onto a newer main shows only what the branch did", %{
+    scope: scope,
+    task: task,
+    repo: repo,
+    remote: remote
+  } do
+    File.write!(Path.join(remote, "upstream.ex"), "theirs\n")
+    git!(remote, ["add", "."])
+    git!(remote, ["commit", "-m", "upstream change"])
+    git!(repo, ["fetch", "origin", "main"])
+    git!(repo, ["rebase", "origin/main"])
+
     assert {:ok, files} = Git.load_diff(scope, task, :branch)
 
     assert files |> Enum.map(& &1.path) |> Enum.sort() == ["shipped.ex", "wip.ex"]
