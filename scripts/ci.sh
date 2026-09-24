@@ -76,12 +76,15 @@ lane_dev() {
 
 lane_tests() {
   export MIX_ENV=test
+  # rail's VM runs several suites at once, so each gets half the cores; elsewhere, ExUnit's default.
+  unset MAX_CASES
+  if [ -n "${RAIL_WORKTREE_SLOT:-}" ]; then export MAX_CASES=$(( $(getconf _NPROCESSORS_ONLN) * 2 / 4 )); fi
   sub_gate "tests" bash -c '
     set -e
     mix compile
     mix ecto.create --quiet
     mix ecto.migrate --quiet
-    mix coveralls.json --max-cases 4 --warnings-as-errors
+    mix coveralls.json ${MAX_CASES:+--max-cases "$MAX_CASES"} --warnings-as-errors
     scripts/ci-coverage-100.sh cover/excoveralls.json app'
 }
 
