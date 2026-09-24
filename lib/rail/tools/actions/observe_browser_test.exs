@@ -41,6 +41,9 @@ defmodule Rail.Tools.Actions.ObserveBrowserTest do
     {:ok, session} = Tools.start_browser_session(task)
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: "file://#{page}"})
 
+    # `Page.navigate` answers before the document exists, and a slow machine is still loading when the test starts.
+    eventually(fn -> assert {:ok, %{"title" => "New bill"}} = Tools.observe_browser(session) end, 5_000)
+
     # Killing the process rather than going through `stop_browser_session/1`: an
     # `on_exit` runs in a process of its own with no sandbox connection, and the
     # row it would settle is rolled back with the test anyway. What must not

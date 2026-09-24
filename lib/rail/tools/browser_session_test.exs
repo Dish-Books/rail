@@ -68,8 +68,10 @@ defmodule Rail.Tools.BrowserSessionTest do
 
     assert {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
 
-    assert {:ok, %{"result" => %{"value" => "Bill"}}} =
-             BrowserSession.call(session, "Runtime.evaluate", %{expression: "document.title", returnByValue: true})
+    eventually(fn ->
+      assert {:ok, %{"result" => %{"value" => "Bill"}}} =
+               BrowserSession.call(session, "Runtime.evaluate", %{expression: "document.title", returnByValue: true})
+    end)
   end
 
   # The tab is a fixed size, so a check written for a narrow viewport means the

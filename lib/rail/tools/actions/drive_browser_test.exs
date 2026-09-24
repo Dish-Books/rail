@@ -40,17 +40,7 @@ defmodule Rail.Tools.Actions.DriveBrowserTest do
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: "file://#{page}"})
 
     # `Page.navigate` answers before the document exists, and a slow machine is still loading when the test starts.
-    {:ok, _page} =
-      Enum.find_value(1..50, fn _attempt ->
-        case Tools.observe_browser(session) do
-          {:ok, page} ->
-            {:ok, page}
-
-          {:error, :navigating} ->
-            Process.sleep(100)
-            nil
-        end
-      end)
+    eventually(fn -> assert {:ok, %{"title" => "New bill"}} = Tools.observe_browser(session) end, 5_000)
 
     # Killing the process rather than going through `stop_browser_session/1`: an
     # `on_exit` runs in a process of its own with no sandbox connection, and the
