@@ -11,34 +11,7 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
 
-  setup do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "List Tasks Project 7101",
-        github_repo: "org/list-tasks-7101",
-        github_installation_id: 7101,
-        linear_workspace: %{
-          name: "List Tasks Workspace",
-          external_id: "lin_ws_list_tasks",
-          token: "lin_api_token_list_tasks",
-          webhook_secret: "whsec_list_tasks"
-        },
-        linear_team_key: "P7101",
-        default_branch: "main",
-        clone_path: "/tmp/repos/list-tasks-7101",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
-
+  setup %{project: project} do
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
         "data" => %{
@@ -154,46 +127,14 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
              Pipeline.list_tasks(project_id: project.id, order_by: [desc: :inserted_at])
   end
 
-  test "lists tasks across all projects when project_id is nil", %{task: task} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, _p1} =
-      Projects.create_project(system_scope(), %{
-        linear_workspace: %{
-          name: "List Tasks Workspace",
-          external_id: "lin_ws_list_tasks_x4",
-          token: "lin_api_token_list_tasks",
-          webhook_secret: "whsec_list_tasks"
-        },
-        name: "List Tasks Project 7107",
-        github_repo: "org/list-tasks-7107",
-        github_installation_id: 7107,
-        linear_team_key: "P7107",
-        default_branch: "main",
-        clone_path: "/tmp/repos/list-tasks-7107",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
-
+  test "lists tasks across all projects when project_id is nil", %{project: project, task: task} do
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
     end)
 
     {:ok, p2} =
       Projects.create_project(system_scope(), %{
-        linear_workspace: %{
-          name: "List Tasks Workspace",
-          external_id: "lin_ws_list_tasks_x5",
-          token: "lin_api_token_list_tasks",
-          webhook_secret: "whsec_list_tasks"
-        },
+        linear_workspace_id: project.linear_workspace_id,
         name: "List Tasks Project 7108",
         github_repo: "org/list-tasks-7108",
         github_installation_id: 7108,

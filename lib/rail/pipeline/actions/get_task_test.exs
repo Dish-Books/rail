@@ -5,34 +5,12 @@ defmodule Rail.Pipeline.Actions.GetTaskTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Roles
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Get Task Project",
-        github_repo: "org/get-task",
-        github_installation_id: 6401,
-        linear_workspace: %{
-          name: "Get Task Workspace",
-          external_id: "lin_ws_get_task",
-          token: "lin_api_token_get_task",
-          webhook_secret: "whsec_get_task"
-        },
-        linear_team_key: "GTK",
-        default_branch: "main",
-        clone_path: "/tmp/repos/get-task",
-        linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_in_progress"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

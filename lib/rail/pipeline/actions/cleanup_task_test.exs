@@ -9,38 +9,11 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
   alias Rail.Projects.Schemas.Project
   alias Rail.Roles
 
-  setup do
+  setup %{project: project} do
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Cleanup Task Project 8701",
-        github_repo: "org/cleanup-task-8701",
-        github_installation_id: 8701,
-        linear_workspace: %{
-          name: "Cleanup Task Workspace",
-          external_id: "lin_ws_cleanup_task",
-          token: "lin_api_token_cleanup_task",
-          webhook_secret: "whsec_cleanup_task"
-        },
-        linear_team_key: "P8701",
-        default_branch: "main",
-        clone_path: "/tmp/repos/cleanup-task-8701",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
 
     roles =
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :demo], fn stage ->
@@ -92,8 +65,9 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert {:error, :task_busy} = Pipeline.cleanup_task(task)
   end
 
+  # Its own project, because cleanup removes the worktree from a real clone.
   test "cleans up worktree, branch and scratch directory, and broadcasts", %{
-    project: _project,
+    project: %{linear_workspace_id: workspace_id},
     task: _task
   } do
     clone_path = create_temp_git_repo(prefix: "rail_cleanup_main")
@@ -105,36 +79,24 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
         worktree_name: "cleanup-branch"
       })
 
+    scratch_dir = Path.join(System.tmp_dir!(), "rail_cleanup_scratch_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(scratch_dir)
+    File.write!(Path.join(scratch_dir, "scratch.txt"), "temporary content")
+
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
     end)
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
-        linear_workspace: %{
-          name: "Cleanup Task Workspace",
-          external_id: "lin_ws_cleanup_task_x4",
-          token: "lin_api_token_cleanup_task",
-          webhook_secret: "whsec_cleanup_task"
-        },
-        name: "Cleanup Task Project 8705",
-        github_repo: "org/cleanup-task-8705",
+        name: "Cleanup Task Project",
+        github_repo: "org/cleanup-task",
         github_installation_id: 8705,
-        linear_team_key: "P8705",
+        linear_team_key: "CLN",
         default_branch: "main",
         clone_path: clone_path,
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
+        linear_workspace_id: workspace_id
       })
-
-    scratch_dir = Path.join(System.tmp_dir!(), "rail_cleanup_scratch_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(scratch_dir)
-    File.write!(Path.join(scratch_dir, "scratch.txt"), "temporary content")
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -181,34 +143,7 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert %{task: %Task{id: ^new_id}} = Repo.preload(issue, :task, force: true)
   end
 
-  test "handles cleanup gracefully when worktree_path is already nil", %{project: _project, task: _task} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        linear_workspace: %{
-          name: "Cleanup Task Workspace",
-          external_id: "lin_ws_cleanup_task_x5",
-          token: "lin_api_token_cleanup_task",
-          webhook_secret: "whsec_cleanup_task"
-        },
-        name: "Cleanup Task Project 8708",
-        github_repo: "org/cleanup-task-8708",
-        github_installation_id: 8708,
-        linear_team_key: "P8708",
-        default_branch: "main",
-        clone_path: "/tmp/repos/cleanup-task-8708",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
-
+  test "handles cleanup gracefully when worktree_path is already nil", %{project: project, task: _task} do
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
         "data" => %{

@@ -6,19 +6,9 @@ defmodule Rail.Roles.Actions.ListRolesTest do
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
 
-  setup do
+  setup %{project: project} do
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "List Roles Project",
-        github_repo: "org/list-roles",
-        github_installation_id: 4201,
-        linear_team_key: "LR1",
-        default_branch: "main",
-        clone_path: "/tmp/repos/list-roles"
-      })
 
     %{backend: backend, project: project}
   end

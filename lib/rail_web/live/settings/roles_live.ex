@@ -50,10 +50,7 @@ defmodule RailWeb.Settings.RolesLive do
           id
 
         _other ->
-          case Enum.find(projects, & &1.active) || List.first(projects) do
-            %{id: id} -> id
-            nil -> nil
-          end
+          with %{id: id} <- Enum.find(projects, & &1.active) || List.first(projects), do: id
       end
 
     current_project = Enum.find(projects, &(&1.id == selected_project_id))

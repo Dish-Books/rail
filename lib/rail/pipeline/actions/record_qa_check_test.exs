@@ -3,31 +3,9 @@ defmodule Rail.Pipeline.Actions.RecordQaCheckTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Record Check Project",
-        github_repo: "org/record-check",
-        github_installation_id: 47_046,
-        linear_workspace: %{
-          name: "Record Check Workspace",
-          external_id: "lin_ws_record_check",
-          token: "lin_api_token_record_check",
-          webhook_secret: "whsec_record_check"
-        },
-        linear_team_key: "RCK",
-        default_branch: "main",
-        clone_path: "/tmp/repos/record-check",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

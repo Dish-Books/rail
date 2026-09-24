@@ -4,32 +4,11 @@ defmodule Rail.Issues.Actions.CommentTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Scope
   alias Rail.Users
 
-  setup do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Comment Project",
-        github_repo: "org/comment",
-        github_installation_id: 5401,
-        linear_workspace: %{
-          name: "Comment Workspace",
-          external_id: "lin_ws_comment",
-          token: "lin_api_token_comment",
-          webhook_secret: "whsec_comment"
-        },
-        linear_team_key: "CMT",
-        default_branch: "main",
-        clone_path: "/tmp/repos/comment"
-      })
-
+  setup %{project: project} do
     issue =
       %Issue{}
       |> Issue.linear_changeset(%{
@@ -132,7 +111,7 @@ defmodule Rail.Issues.Actions.CommentTest do
 
   test "comment/3 posts as the workspace for the system", %{issue: issue} do
     Req.Test.expect(Rail.Linear, fn conn ->
-      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_token_comment"]
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_test_seed"]
 
       Req.Test.json(conn, %{
         "data" => %{

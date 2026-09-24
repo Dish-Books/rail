@@ -2,6 +2,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
   use Rail.DataCase, async: true
 
   alias Rail.Projects
+  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Scope
 
@@ -25,6 +26,49 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
                active: false,
                default_branch: "develop"
              })
+  end
+
+  test "moving a project to another workspace looks its team up through that one" do
+    admin_scope = Scope.for_user(%{admin: true})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_old"]
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_old"}]}}})
+    end)
+
+    workspace = fn key ->
+      {:ok, workspace} =
+        Projects.create_linear_workspace(admin_scope, %{
+          name: key,
+          external_id: "lin_org_#{key}",
+          token: "lin_api_#{key}",
+          webhook_secret: "wh"
+        })
+
+      workspace
+    end
+
+    %LinearWorkspace{id: old_id} = workspace.("old")
+    %LinearWorkspace{id: new_id} = workspace.("new")
+
+    assert {:ok, %Project{linear_team_id: "lin_team_old"} = project} =
+             Projects.create_project(admin_scope, %{
+               name: "Moving Project",
+               github_repo: "example/moving-#{System.unique_integer([:positive])}",
+               github_installation_id: 55_668,
+               linear_team_key: "MOV",
+               default_branch: "main",
+               clone_path: "/tmp/move",
+               linear_workspace_id: old_id
+             })
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_new"]
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_new"}]}}})
+    end)
+
+    assert {:ok, %Project{linear_team_id: "lin_team_new", linear_workspace: %LinearWorkspace{id: ^new_id}}} =
+             Projects.update_project(admin_scope, project, %{linear_workspace_id: new_id})
   end
 
   test "returns validation error changeset for invalid attributes" do

@@ -2,7 +2,6 @@ defmodule RailWeb.LinearWebhookControllerTest do
   use RailWeb.ConnCase, async: true
 
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
@@ -19,27 +18,10 @@ defmodule RailWeb.LinearWebhookControllerTest do
     assert json_response(conn, 404)["error"] == "Workspace not found"
   end
 
-  test "returns 401 when signature is missing or invalid", %{conn: conn} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, %Project{linear_workspace: %LinearWorkspace{external_id: external_id}}} =
-      Projects.create_project(system_scope(), %{
-        name: "Webhook Project 12900",
-        github_repo: "org/webhook-12900",
-        github_installation_id: 12_900,
-        linear_team_key: "P12900",
-        default_branch: "main",
-        clone_path: "/tmp/repos/webhook-12900",
-        linear_workspace: %{
-          name: "Webhook Workspace 12900",
-          external_id: "lin_ws_webhook_12900",
-          token: "lin_api_token_webhook_12900",
-          webhook_secret: "whsec_webhook_12900"
-        }
-      })
-
+  test "returns 401 when signature is missing or invalid", %{
+    conn: conn,
+    project: %Project{linear_workspace: %LinearWorkspace{external_id: external_id}}
+  } do
     body = Jason.encode!(%{"type" => "Issue", "action" => "create", "organizationId" => external_id})
 
     conn_no_sig =
@@ -58,34 +40,13 @@ defmodule RailWeb.LinearWebhookControllerTest do
     assert json_response(conn_bad_sig, 401)["error"] == "Invalid signature"
   end
 
-  test "accepts a signed Issue event and mirrors the issue locally", %{conn: conn} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, %Project{id: project_id, linear_workspace: %LinearWorkspace{external_id: external_id, webhook_secret: secret}}} =
-      Projects.create_project(system_scope(), %{
-        name: "Webhook Project 12903",
-        github_repo: "org/webhook-12903",
-        github_installation_id: 12_903,
-        linear_team_key: "P12903",
-        default_branch: "main",
-        clone_path: "/tmp/repos/webhook-12903",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        },
-        linear_workspace: %{
-          name: "Webhook Workspace 12903",
-          external_id: "lin_ws_webhook_12903",
-          token: "lin_api_token_webhook_12903",
-          webhook_secret: "whsec_webhook_12903"
-        }
-      })
-
+  test "accepts a signed Issue event and mirrors the issue locally", %{
+    conn: conn,
+    project: %Project{
+      id: project_id,
+      linear_workspace: %LinearWorkspace{external_id: external_id, webhook_secret: secret}
+    }
+  } do
     payload = %{
       "type" => "Issue",
       "action" => "create",
@@ -95,7 +56,7 @@ defmodule RailWeb.LinearWebhookControllerTest do
         "identifier" => "ENG-777",
         "title" => "Webhook Issue",
         "description" => "Created via webhook",
-        "teamId" => "team_wh_1",
+        "teamId" => "lin_team_id",
         "state" => %{"id" => "st_started", "name" => "In Progress", "type" => "started"},
         "branchName" => "eng-777-webhook",
         "url" => "https://linear.app/issue/ENG-777",

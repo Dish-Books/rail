@@ -4,31 +4,9 @@ defmodule Rail.Pipeline.Actions.ReadQaReportTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.QaReport
-  alias Rail.Projects
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Read Qa Project",
-        github_repo: "org/read-qa",
-        github_installation_id: 47_030,
-        linear_workspace: %{
-          name: "Read Qa Workspace",
-          external_id: "lin_ws_read_qa",
-          token: "lin_api_token_read_qa",
-          webhook_secret: "whsec_read_qa"
-        },
-        linear_team_key: "RDQ",
-        default_branch: "main",
-        clone_path: "/tmp/repos/read-qa",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

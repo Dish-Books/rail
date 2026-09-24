@@ -10,31 +10,10 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Send To Review Project",
-        github_repo: "org/send-to-review",
-        github_installation_id: 47_013,
-        linear_workspace: %{
-          name: "Send To Review Workspace",
-          external_id: "lin_ws_send_to_review",
-          token: "lin_api_token_send_to_review",
-          webhook_secret: "whsec_send_to_review"
-        },
-        linear_team_key: "STR",
-        default_branch: "main",
-        clone_path: "/tmp/repos/send-to-review",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{

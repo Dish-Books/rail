@@ -5,32 +5,10 @@ defmodule Rail.Git.Actions.SetFileViewedTest do
   alias Rail.Git.Schemas.ViewedFile
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
   alias Rail.Users
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Viewed Files Project",
-        github_repo: "org/viewed-files",
-        github_installation_id: 47_015,
-        linear_workspace: %{
-          name: "Viewed Files Workspace",
-          external_id: "lin_ws_viewed_files",
-          token: "lin_api_token_viewed_files",
-          webhook_secret: "whsec_viewed_files"
-        },
-        linear_team_key: "VWF",
-        default_branch: "main",
-        clone_path: "/tmp/repos/viewed-files",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

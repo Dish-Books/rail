@@ -3,36 +3,14 @@ defmodule RailWeb.DesignControllerTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
   alias Rail.Users
 
-  setup %{conn: conn} do
+  setup %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_design_controller",
         login: "design_controller_user",
         email: "design_controller_user@example.com"
-      })
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Design Controller Project",
-        github_repo: "org/design-controller",
-        github_installation_id: 47_005,
-        linear_workspace: %{
-          name: "Design Controller Workspace",
-          external_id: "lin_ws_design_controller",
-          token: "lin_api_token_design_controller",
-          webhook_secret: "whsec_design_controller"
-        },
-        linear_team_key: "DCT",
-        default_branch: "main",
-        clone_path: "/tmp/repos/design-controller",
-        linear_state_ids: %{"triage" => "st_triage"}
       })
 
     Req.Test.expect(Rail.Linear, fn conn ->

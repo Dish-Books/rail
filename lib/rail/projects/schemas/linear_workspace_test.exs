@@ -27,6 +27,20 @@ defmodule Rail.Projects.Schemas.LinearWorkspaceTest do
     assert changeset.valid?
   end
 
+  test "a blank secret keeps the one saved" do
+    workspace = %LinearWorkspace{
+      name: "Saved",
+      external_id: "lin_ws_saved",
+      token: "lin_api_saved",
+      webhook_secret: "whsec_saved"
+    }
+
+    changeset = LinearWorkspace.changeset(workspace, %{"name" => "Renamed", "token" => "", "webhook_secret" => nil})
+
+    assert changeset.valid?
+    assert changeset.changes == %{name: "Renamed"}
+  end
+
   test "changeset enforces uniqueness on external_id" do
     ext_id = "lin_ext_#{System.unique_integer([:positive])}"
 

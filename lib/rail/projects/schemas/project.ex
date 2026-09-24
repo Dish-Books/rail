@@ -23,7 +23,8 @@ defmodule Rail.Projects.Schemas.Project do
     field :ci_command, :string
     field :ci_timeout_minutes, :integer, default: 30
 
-    has_one :linear_workspace, LinearWorkspace, on_replace: :update
+    # Shared by every project on the same Linear workspace; each project is one team in it.
+    belongs_to :linear_workspace, LinearWorkspace
 
     timestamps()
   end
@@ -35,6 +36,7 @@ defmodule Rail.Projects.Schemas.Project do
     :default_branch,
     :linear_team_key,
     :linear_state_ids,
+    :linear_workspace_id,
     :clone_path,
     :active,
     :worktree_setup_script,
@@ -58,7 +60,7 @@ defmodule Rail.Projects.Schemas.Project do
     |> validate_change(:clone_path, &validate_clone_path/2)
     |> validate_change(:worktree_setup_script, &validate_worktree_setup_script/2)
     |> validate_number(:ci_timeout_minutes, greater_than: 0, message: "must be at least a minute")
-    |> cast_assoc(:linear_workspace)
+    |> foreign_key_constraint(:linear_workspace_id)
     |> unique_constraint(:github_repo)
     |> put_linear_team_id()
   end
@@ -81,7 +83,7 @@ defmodule Rail.Projects.Schemas.Project do
   # filled in never calls Linear. With no workspace to ask through there is
   # nothing to look up yet.
   defp put_linear_team_id(%Ecto.Changeset{valid?: true} = changeset) do
-    if changed?(changeset, :linear_team_key) or changed?(changeset, :linear_workspace) do
+    if changed?(changeset, :linear_team_key) or changed?(changeset, :linear_workspace_id) do
       prepare_changes(changeset, &look_up_linear_team_id/1)
     else
       changeset
@@ -91,7 +93,9 @@ defmodule Rail.Projects.Schemas.Project do
   defp put_linear_team_id(changeset), do: changeset
 
   defp look_up_linear_team_id(changeset) do
-    case Linear.team(apply_changes(changeset)) do
+    project = changeset |> apply_changes() |> changeset.repo.preload(:linear_workspace, force: true)
+
+    case Linear.team(project) do
       {:ok, %{"teams" => %{"nodes" => [%{"id" => team_id} = team]}}} ->
         changeset
         |> put_change(:linear_team_id, team_id)

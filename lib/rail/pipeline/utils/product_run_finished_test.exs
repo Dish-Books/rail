@@ -7,42 +7,14 @@ defmodule Rail.Pipeline.Utils.ProductRunFinishedTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
 
-  setup do
+  setup %{project: project} do
     {:ok, backend} =
       Rail.Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
 
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Settle Product Project 14601",
-        github_repo: "org/settle-product-14601",
-        github_installation_id: 14_601,
-        linear_workspace: %{
-          name: "Settle Product Workspace",
-          external_id: "lin_ws_settle_product",
-          token: "lin_api_token_settle_product",
-          webhook_secret: "whsec_settle_product"
-        },
-        linear_team_key: "P14601",
-        default_branch: "main",
-        clone_path: "/tmp/repos/settle-product-14601",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
 
     roles =
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :demo], fn stage ->

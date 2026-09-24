@@ -3,36 +3,14 @@ defmodule RailWeb.DemoControllerTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
   alias Rail.Users
 
-  setup %{conn: conn} do
+  setup %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_demo_controller",
         login: "demo_controller_user",
         email: "demo_controller_user@example.com"
-      })
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Demo Controller Project",
-        github_repo: "org/demo-controller",
-        github_installation_id: 47_054,
-        linear_workspace: %{
-          name: "Demo Controller Workspace",
-          external_id: "lin_ws_demo_controller",
-          token: "lin_api_token_demo_controller",
-          webhook_secret: "whsec_demo_controller"
-        },
-        linear_team_key: "DCT",
-        default_branch: "main",
-        clone_path: "/tmp/repos/demo-controller",
-        linear_state_ids: %{"triage" => "st_triage"}
       })
 
     Req.Test.expect(Rail.Linear, fn conn ->

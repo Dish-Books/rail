@@ -11,42 +11,14 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools.Schemas.OsProcess
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} =
       Rail.Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Run Finished Project 3301",
-        github_repo: "org/run-finished-3301",
-        github_installation_id: 3301,
-        linear_workspace: %{
-          name: "Run Finished Workspace",
-          external_id: "lin_ws_run_finished",
-          token: "lin_api_token_run_finished",
-          webhook_secret: "whsec_run_finished"
-        },
-        linear_team_key: "P3301",
-        default_branch: "main",
-        clone_path: "/tmp/repos/run-finished-3301",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{

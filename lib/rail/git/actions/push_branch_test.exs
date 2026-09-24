@@ -5,31 +5,9 @@ defmodule Rail.Git.Actions.PushBranchTest do
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Push Branch Project",
-        github_repo: "org/push-branch",
-        github_installation_id: 47_021,
-        linear_workspace: %{
-          name: "Push Branch Workspace",
-          external_id: "lin_ws_push_branch",
-          token: "lin_api_token_push_branch",
-          webhook_secret: "whsec_push_branch"
-        },
-        linear_team_key: "PSH",
-        default_branch: "main",
-        clone_path: "/tmp/repos/push-branch",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
@@ -61,7 +39,7 @@ defmodule Rail.Git.Actions.PushBranchTest do
 
   test "mints its own token and pushes the branch", %{scope: scope, task: task, repo: repo, remote: remote} do
     Req.Test.expect(Client, fn conn ->
-      assert conn.request_path == "/app/installations/47021/access_tokens"
+      assert conn.request_path == "/app/installations/1/access_tokens"
       Req.Test.json(conn, %{"token" => "ghs_installation_token"})
     end)
 

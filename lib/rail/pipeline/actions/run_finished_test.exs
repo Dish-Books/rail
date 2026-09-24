@@ -15,31 +15,10 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Run Finished Project",
-        github_repo: "org/run-finished",
-        github_installation_id: 43_001,
-        linear_workspace: %{
-          name: "Run Finished Workspace",
-          external_id: "lin_ws_run_finished",
-          token: "lin_api_token_run_finished",
-          webhook_secret: "whsec_run_finished"
-        },
-        linear_team_key: "RUN",
-        default_branch: "main",
-        clone_path: "/tmp/repos/run-finished",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     roles =
       Map.new([:product, :design, :architect, :engineer, :review, :qa, :demo, :debugger], fn stage ->
@@ -367,10 +346,10 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     Req.Test.expect(Client, 3, fn conn ->
       case {conn.method, conn.request_path} do
-        {"POST", "/app/installations/43001/access_tokens"} ->
+        {"POST", "/app/installations/1/access_tokens"} ->
           Req.Test.json(conn, %{"token" => "ghs_token"})
 
-        {"GET", "/repos/org/run-finished/pulls/7"} ->
+        {"GET", "/repos/example/test-seed/pulls/7"} ->
           Req.Test.json(conn, %{"number" => 7, "node_id" => "PR_kw7"})
 
         {"POST", "/graphql"} ->
@@ -440,10 +419,10 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
         {"POST", "/app/installations/" <> _id} ->
           Req.Test.json(conn, %{"token" => "ghs_token"})
 
-        {"GET", "/repos/org/run-finished/pulls/7"} ->
+        {"GET", "/repos/example/test-seed/pulls/7"} ->
           Req.Test.json(conn, %{"number" => 7, "body" => "Opened by Rail.\n\n## Demo\n\n[Watch the demo](old)"})
 
-        {"PATCH", "/repos/org/run-finished/pulls/7"} ->
+        {"PATCH", "/repos/example/test-seed/pulls/7"} ->
           {:ok, body, conn} = Plug.Conn.read_body(conn)
 
           assert %{
@@ -545,7 +524,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert ExUnit.CaptureLog.capture_log(fn ->
              assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-           end) =~ "Could not mark org/run-finished#7 ready for review"
+           end) =~ "Could not mark example/test-seed#7 ready for review"
 
     assert %Task{pr_is_draft: true} = Repo.reload!(task)
   end

@@ -19,7 +19,7 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
-  setup %{conn: conn} do
+  setup %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_task_live",
@@ -31,28 +31,6 @@ defmodule RailWeb.TaskLiveTest do
     scope = Scope.for_user(user)
 
     {:ok, backend} = Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Task Live Project",
-        github_repo: "org/task-live",
-        github_installation_id: 46_001,
-        linear_workspace: %{
-          name: "Task Live Workspace",
-          external_id: "lin_ws_task_live",
-          token: "lin_api_token_task_live",
-          webhook_secret: "whsec_task_live"
-        },
-        linear_team_key: "TLV",
-        default_branch: "main",
-        clone_path: "/tmp/repos/task-live",
-        active: true,
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{

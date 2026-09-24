@@ -1,29 +1,43 @@
 #!/usr/bin/env bash
-# Runs every CI gate locally.
+# Runs every gate .github/workflows/tests.yaml runs, then writes a signed receipt
+# so pr.yaml can verify instead of repeat. docs/local-ci.md.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+source scripts/ci-receipt.sh
 source scripts/ci-postgres.sh
 
+# `mise run ci` puts the pinned toolchain on PATH; a direct invocation may not.
 if ! command -v elixir >/dev/null 2>&1; then
   exec mise exec -- bash "${BASH_SOURCE[0]}" "$@"
 fi
 
 FAST=0
+PUSH=1
 SERIAL=0
 for arg in "$@"; do
   case "$arg" in
     --fast) FAST=1 ;;
+    --no-push) PUSH=0 ;;
     --serial) SERIAL=1 ;;
-    *) ;;
+    *) echo "usage: mise run ci [--fast] [--no-push] [--serial]" >&2; exit 2 ;;
   esac
 done
+
+# A receipt attests to HEAD's tree, so anything uncommitted would sign a tree we
+# never tested. --fast writes no receipt, so it doesn't care.
+if [[ $FAST -eq 0 && -n "$(git status --porcelain)" ]]; then
+  echo "error: working tree is dirty — commit first, or run with --fast" >&2
+  git status --short >&2
+  exit 1
+fi
 
 LANEDIR=$(mktemp -d)
 trap 'rm -rf "$LANEDIR"' EXIT
 
 slug() { printf '%s' "$1" | tr -cs 'a-zA-Z0-9' '_'; }
 
+# Output is buffered per gate and replayed in lane order at the end.
 sub_gate() {
   local name=$1
   shift
@@ -40,11 +54,14 @@ skip_gate() {
 }
 
 # ── lanes ───────────────────────────────────────────────────────────────────
+# The build lock is per _build/<env>, so dev and test never block each other; the
+# deps lock is shared, hence the single deps.get in the prelude.
 
 lane_dev() {
   export MIX_ENV=dev
   if [[ $FAST -eq 0 ]]; then
-    mix clean --only dev >/dev/null 2>&1 || true
+    # --only, or mix cleans every environment and wipes the test lane's build.
+    mix clean --only dev >/dev/null
   fi
   sub_gate "compile (no warnings)" mix compile --warnings-as-errors
   if grep -q '^FAIL' "$LANEDIR/results.$LANE"; then
@@ -82,6 +99,9 @@ lane_credo() {
 }
 
 LANES="dev tests credo"
+
+# The gate set, as `receipt id:display label`. The summary, the completeness check
+# and the receipt's gate list all derive from it.
 
 GATES='compile:compile (no warnings)
 format:format
@@ -135,6 +155,8 @@ while read -r status name; do
   esac
 done <<<"$SUMMARY"
 
+# A lane that dies outside a gate leaves no result line, which would otherwise
+# read as a pass by absence.
 while IFS=: read -r _id label; do
   [[ -n $label ]] || continue
   if grep -qxF "pass $label" <<<"$SUMMARY"; then
@@ -147,9 +169,53 @@ while IFS=: read -r _id label; do
 done <<<"$GATES"
 
 if [[ $FAILED -eq 1 ]]; then
-  echo -e "\nci failed" >&2
+  echo -e "\nno receipt written" >&2
   exit 1
 fi
 
-echo -e "\nall gates passed"
-exit 0
+if [[ $FAST -eq 1 ]]; then
+  echo -e "\nall gates passed — no receipt (--fast skips the clean rebuild)"
+  exit 0
+fi
+
+# ── receipt ─────────────────────────────────────────────────────────────────
+TREE=$(receipt_tree)
+IFS='|' read -r ELIXIR_V OTP_V NODE_V PNPM_V <<<"$(receipt_tool_versions)"
+
+# jq, not a heredoc: ran_by comes from git config, and one quote in it would
+# produce a payload that only fails verification after it is pushed.
+jq -n \
+  --argjson spec "$RECEIPT_SPEC_VERSION" \
+  --arg tree "$TREE" \
+  --arg commit "$(git rev-parse HEAD)" \
+  --arg ran_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg ran_by "$(git config user.email)" \
+  --arg elixir "$ELIXIR_V" \
+  --arg otp "$OTP_V" \
+  --arg node "$NODE_V" \
+  --arg pnpm "$PNPM_V" \
+  --arg gates "$(cut -d: -f1 <<<"$GATES")" \
+  '{spec: $spec, tree: $tree, commit: $commit, ran_at: $ran_at, ran_by: $ran_by,
+    tools: {elixir: $elixir, otp: $otp, node: $node, pnpm: $pnpm},
+    gates: ($gates | split("\n") | map(select(length > 0)))}' >"$LANEDIR/payload.json"
+
+receipt_hmac <"$LANEDIR/payload.json" >"$LANEDIR/sig"
+
+# A commit, not a bare blob — GitHub only reliably accepts commit objects at a ref.
+PAYLOAD_BLOB=$(git hash-object -w "$LANEDIR/payload.json")
+SIG_BLOB=$(git hash-object -w "$LANEDIR/sig")
+RECEIPT_TREE=$(printf '100644 blob %s\tpayload.json\n100644 blob %s\tsig\n' \
+  "$PAYLOAD_BLOB" "$SIG_BLOB" | git mktree)
+RECEIPT_COMMIT=$(git commit-tree "$RECEIPT_TREE" -m "ci receipt for tree $TREE")
+
+# The ref goes in first either way, so a push that never lands doesn't cost the
+# whole suite on the next attempt.
+git update-ref "$RECEIPT_REF_PREFIX/$TREE" "$RECEIPT_COMMIT"
+
+if [[ $PUSH -eq 1 ]]; then
+  # --no-verify: this push is what puts the receipt on origin, so no receipt there can cover it.
+  git push --no-verify --force origin "$RECEIPT_COMMIT:$RECEIPT_REF_PREFIX/$TREE"
+  echo -e "\nall gates passed — receipt pushed for tree $TREE"
+else
+  echo -e "\nall gates passed — receipt written locally (not pushed)"
+fi

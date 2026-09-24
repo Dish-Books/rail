@@ -4,31 +4,9 @@ defmodule Rail.Pipeline.Actions.SyncQaFindingsTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.QaFinding
-  alias Rail.Projects
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Sync Qa Project",
-        github_repo: "org/sync-qa",
-        github_installation_id: 47_031,
-        linear_workspace: %{
-          name: "Sync Qa Workspace",
-          external_id: "lin_ws_sync_qa",
-          token: "lin_api_token_sync_qa",
-          webhook_secret: "whsec_sync_qa"
-        },
-        linear_team_key: "SYQ",
-        default_branch: "main",
-        clone_path: "/tmp/repos/sync-qa",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

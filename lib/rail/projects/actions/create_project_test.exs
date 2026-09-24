@@ -2,6 +2,7 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
   use Rail.DataCase, async: true
 
   alias Rail.Projects
+  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Scope
 
@@ -51,6 +52,50 @@ defmodule Rail.Projects.Actions.CreateProjectTest do
              linear_team_key: ["can't be blank"],
              clone_path: ["can't be blank"]
            } = errors_on(changeset)
+  end
+
+  test "projects link to a saved Linear workspace by id, and an unknown id is an error on it" do
+    scope = Scope.for_user(%{admin: true})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_linked"]
+      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_linked"}]}}})
+    end)
+
+    {:ok, %LinearWorkspace{id: workspace_id}} =
+      Projects.create_linear_workspace(scope, %{
+        name: "Linked Workspace",
+        external_id: "lin_org_linked",
+        token: "lin_api_linked",
+        webhook_secret: "whsec_linked"
+      })
+
+    attrs = %{
+      name: "Linked Project",
+      github_repo: "example/linked-#{System.unique_integer([:positive])}",
+      github_installation_id: 12_346,
+      linear_team_key: "LNK",
+      default_branch: "main",
+      clone_path: "/tmp/linked"
+    }
+
+    assert {:ok,
+            %Project{
+              linear_team_id: "lin_team_linked",
+              linear_workspace: %LinearWorkspace{id: ^workspace_id}
+            }} = Projects.create_project(scope, Map.put(attrs, :linear_workspace_id, workspace_id))
+
+    assert {:error, changeset} =
+             Projects.create_project(
+               scope,
+               Map.put(
+                 %{attrs | github_repo: "example/unlinked", linear_team_key: "UNL"},
+                 :linear_workspace_id,
+                 "lw_missing"
+               )
+             )
+
+    assert %{linear_workspace_id: ["does not exist"]} = errors_on(changeset)
   end
 
   test "rejects a clone_path that is not a git repository" do

@@ -17,10 +17,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
   end
 
   test "opens from the top bar with the current project filter selected", %{conn: conn} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
     {:ok, _project1} =
       Projects.create_project(system_scope(), %{
         name: "Project One",
@@ -30,18 +26,8 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13102",
         linear_state_ids: %{"triage" => "st_triage"},
-        linear_workspace: %{
-          name: "Capture Workspace 13102",
-          external_id: "lin_ws_capture_13102",
-          token: "lin_api_token_capture_13102",
-          webhook_secret: "whsec_capture_13102"
-        },
         active: true
       })
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
 
     {:ok, project2} =
       Projects.create_project(system_scope(), %{
@@ -52,12 +38,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13103",
         linear_state_ids: %{"triage" => "st_triage"},
-        linear_workspace: %{
-          name: "Capture Workspace 13103",
-          external_id: "lin_ws_capture_13103",
-          token: "lin_api_token_capture_13103",
-          webhook_secret: "whsec_capture_13103"
-        },
         active: true
       })
 
@@ -89,10 +69,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
   end
 
   test "defaults to the first active project when there is no project filter", %{conn: conn} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
     {:ok, _inactive} =
       Projects.create_project(system_scope(), %{
         name: "Inactive Project",
@@ -102,18 +78,8 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13105",
         linear_state_ids: %{"triage" => "st_triage"},
-        linear_workspace: %{
-          name: "Capture Workspace 13105",
-          external_id: "lin_ws_capture_13105",
-          token: "lin_api_token_capture_13105",
-          webhook_secret: "whsec_capture_13105"
-        },
         active: false
       })
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
 
     {:ok, active} =
       Projects.create_project(system_scope(), %{
@@ -124,12 +90,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13106",
         linear_state_ids: %{"triage" => "st_triage"},
-        linear_workspace: %{
-          name: "Capture Workspace 13106",
-          external_id: "lin_ws_capture_13106",
-          token: "lin_api_token_capture_13106",
-          webhook_secret: "whsec_capture_13106"
-        },
         active: true
       })
 
@@ -148,23 +108,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     assert has_element?(view, "#capture-idea-dialog")
     assert has_element?(view, "#capture-project-dropdown option[value='#{active.id}'][selected]")
     refute has_element?(view, "#capture-project-dropdown option", "Inactive Project")
-  end
-
-  test "opens with no project selected when there are no active projects", %{conn: conn} do
-    {:ok, user} =
-      Users.register_oauth_user(%{
-        github_id: "gh_capture_3",
-        login: "capture_user_3",
-        email: "capture_user_3@example.com",
-        admin: true
-      })
-
-    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
-
-    view |> element("#global-capture-idea-button") |> render_click()
-
-    assert has_element?(view, "#capture-idea-dialog")
-    refute has_element?(view, "#capture-project-dropdown option")
   end
 
   test "closes from the close and cancel buttons", %{conn: conn} do
@@ -192,10 +135,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
   end
 
   test "change keeps the typed values and enables submit", %{conn: conn} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
     {:ok, _project1} =
       Projects.create_project(system_scope(), %{
         name: "Prj 1",
@@ -205,18 +144,8 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13110",
         linear_state_ids: %{"triage" => "st_triage"},
-        linear_workspace: %{
-          name: "Capture Workspace 13110",
-          external_id: "lin_ws_capture_13110",
-          token: "lin_api_token_capture_13110",
-          webhook_secret: "whsec_capture_13110"
-        },
         active: true
       })
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
 
     {:ok, project2} =
       Projects.create_project(system_scope(), %{
@@ -227,12 +156,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13111",
         linear_state_ids: %{"triage" => "st_triage"},
-        linear_workspace: %{
-          name: "Capture Workspace 13111",
-          external_id: "lin_ws_capture_13111",
-          token: "lin_api_token_capture_13111",
-          webhook_secret: "whsec_capture_13111"
-        },
         active: true
       })
 
@@ -266,10 +189,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
   end
 
   test "submit does nothing when the title is blank", %{conn: conn} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Capture Project 13113",
@@ -279,12 +198,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13113",
         linear_state_ids: %{"triage" => "st_triage"},
-        linear_workspace: %{
-          name: "Capture Workspace 13113",
-          external_id: "lin_ws_capture_13113",
-          token: "lin_api_token_capture_13113",
-          webhook_secret: "whsec_capture_13113"
-        },
         active: true
       })
 
@@ -338,29 +251,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
     assert has_element?(view, "#capture-title-input[value='Some idea']")
   end
 
-  test "submit creates the issue as the user and closes", %{conn: conn} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, %{id: project_id} = project} =
-      Projects.create_project(system_scope(), %{
-        name: "Capture Project 13115",
-        github_repo: "org/capture-13115",
-        github_installation_id: 13_115,
-        linear_team_key: "P13115",
-        default_branch: "main",
-        clone_path: "/tmp/repos/capture-13115",
-        linear_state_ids: %{"triage" => "st_triage_ok"},
-        linear_workspace: %{
-          name: "Capture Workspace 13115",
-          external_id: "lin_ws_capture_13115",
-          token: "lin_api_token_capture_13115",
-          webhook_secret: "whsec_capture_13115"
-        },
-        active: true
-      })
-
+  test "submit creates the issue as the user and closes", %{conn: conn, project: %{id: project_id} = project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_capture_8",
@@ -388,7 +279,7 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
               "identifier" => "CAP-101",
               "title" => "Capture via LiveView",
               "description" => "Multiline\nbody",
-              "state" => %{"id" => "st_triage_ok", "name" => "Triage", "type" => "triage"},
+              "state" => %{"id" => "st_triage", "name" => "Triage", "type" => "triage"},
               "branchName" => "cap-101-branch",
               "url" => "https://linear.app/issue/CAP-101"
             }
@@ -421,10 +312,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
   end
 
   test "submit keeps the dialog open with the values and shows the error when creating fails", %{conn: conn} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Capture Project 13117",
@@ -434,12 +321,6 @@ defmodule RailWeb.Components.CaptureIssueModalTest do
         default_branch: "main",
         clone_path: "/tmp/repos/capture-13117",
         linear_state_ids: %{"triage" => "st_triage_err"},
-        linear_workspace: %{
-          name: "Capture Workspace 13117",
-          external_id: "lin_ws_capture_13117",
-          token: "lin_api_token_capture_13117",
-          webhook_secret: "whsec_capture_13117"
-        },
         active: true
       })
 

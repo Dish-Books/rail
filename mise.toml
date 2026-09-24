@@ -1,6 +1,7 @@
 [env]
-# Load the gitignored, per-worktree .env into the environment so config/*.exs
-# pick up the isolated ports. Missing file is tolerated — the primary checkout runs on defaults.
+# Load the gitignored, per-worktree .env (written by scripts/setup-worktree.sh)
+# into the environment so config/*.exs pick up the isolated ports. Missing file is
+# tolerated — the primary checkout runs on defaults.
 _.file = ".env"
 
 [tools]
@@ -10,6 +11,10 @@ node = "24.15.0"
 pnpm = "10.15.1"
 prek = "0.4.14"
 
+[hooks]
+# Installs .git/hooks/pre-push, shared by every worktree. docs/local-ci.md.
+postinstall = "prek install -t pre-push --allow-missing-config || echo 'prek: pre-push shim not installed — run: prek install -t pre-push'"
+
 [tasks.ci]
-description = "Run every CI gate locally"
+description = "Run every CI gate locally, then push a signed receipt so GitHub can verify instead of repeat"
 run = "scripts/ci.sh"

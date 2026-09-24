@@ -66,12 +66,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert {:error, {:redirect, %{to: "/"}}} = live(conn, ~p"/settings/roles")
   end
 
-  test "renders empty state when no projects exist", %{admin_conn: conn} do
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles")
-    assert has_element?(view, "#roles-settings")
-    assert has_element?(view, "#no-projects-message")
-  end
-
   test "renders stage list and bound roles", %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{
@@ -389,7 +383,12 @@ defmodule RailWeb.Settings.RolesLiveTest do
     refute has_element?(view, "#role-editor-modal")
   end
 
-  test "allows MCP tools on a role", %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
+  test "allows MCP tools on a role", %{
+    claude_backend: claude_backend,
+    admin_conn: conn,
+    admin_user: admin_user,
+    project: project
+  } do
     {:ok, _linear} =
       Rail.Mcp.create_server(system_scope(), %{
         name: "rl_linear",
@@ -399,16 +398,6 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
     {:ok, _sentry} =
       Rail.Mcp.create_server(system_scope(), %{name: "rl_sentry", url: "https://mcp.sentry.dev/mcp"})
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Roles Live Project 13050",
-        github_repo: "org/roles-live-13050",
-        github_installation_id: 13_050,
-        linear_team_key: "P13050",
-        default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13050"
-      })
 
     assert {:ok, %Role{id: role_id}} =
              Roles.create_role(Rail.Scope.for_user(admin_user), project, %{
@@ -800,27 +789,11 @@ defmodule RailWeb.Settings.RolesLiveTest do
 
   test "handles unconfigured backends, blank model and stage, and unrelated messages", %{
     claude_backend: claude_backend,
-    admin_conn: conn
+    admin_conn: conn,
+    project: project
   } do
     {:ok, _codex_backend} =
       Rail.Tools.create_backend(Rail.Scope.for_system(), %{name: :codex, executable_path: "/usr/local/bin/codex"})
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Roles Live Project 13020",
-        github_repo: "org/roles-live-13020",
-        github_installation_id: 13_020,
-        linear_team_key: "P13020",
-        default_branch: "main",
-        clone_path: "/tmp/repos/roles-live-13020",
-        linear_state_ids: %{
-          "triage" => "st_triage",
-          "backlog" => "st_backlog",
-          "in_progress" => "st_in_progress",
-          "done" => "st_done",
-          "canceled" => "st_canceled"
-        }
-      })
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
 

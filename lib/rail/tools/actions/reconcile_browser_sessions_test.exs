@@ -3,34 +3,12 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
   alias Rail.Tools
   alias Rail.Tools.BrowserRegistry
   alias Rail.Tools.Schemas.BrowserSession
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Reconcile Browsers Project",
-        github_repo: "org/reconcile-browsers",
-        github_installation_id: 47_040,
-        linear_workspace: %{
-          name: "Reconcile Browsers Workspace",
-          external_id: "lin_ws_reconcile_browsers",
-          token: "lin_api_token_reconcile_browsers",
-          webhook_secret: "whsec_reconcile_browsers"
-        },
-        linear_team_key: "RCB",
-        default_branch: "main",
-        clone_path: "/tmp/repos/reconcile-browsers",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

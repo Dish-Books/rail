@@ -3,31 +3,9 @@ defmodule Rail.Pipeline.Actions.ListQaEvidenceTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Projects
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "List Evidence Project",
-        github_repo: "org/list-evidence",
-        github_installation_id: 47_052,
-        linear_workspace: %{
-          name: "List Evidence Workspace",
-          external_id: "lin_ws_list_evidence",
-          token: "lin_api_token_list_evidence",
-          webhook_secret: "whsec_list_evidence"
-        },
-        linear_team_key: "LEV",
-        default_branch: "main",
-        clone_path: "/tmp/repos/list-evidence",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

@@ -5,8 +5,8 @@ defmodule Rail.Projects.Actions.CreateProject do
   alias Rail.Repo
 
   def create_project(_scope, attrs) do
-    %Project{}
-    |> Project.changeset(attrs)
-    |> Repo.insert()
+    with {:ok, project} <- %Project{} |> Project.changeset(attrs) |> Repo.insert() do
+      {:ok, Repo.preload(project, :linear_workspace)}
+    end
   end
 end

@@ -4,31 +4,9 @@ defmodule Rail.Pipeline.Schemas.ReviewFindingTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ReviewFinding
-  alias Rail.Projects
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Review Finding Schema Project",
-        github_repo: "org/review-finding-schema",
-        github_installation_id: 47_028,
-        linear_workspace: %{
-          name: "Review Finding Workspace",
-          external_id: "lin_ws_review_finding",
-          token: "lin_api_token_review_finding",
-          webhook_secret: "whsec_review_finding"
-        },
-        linear_team_key: "RVF",
-        default_branch: "main",
-        clone_path: "/tmp/repos/review-finding-schema",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

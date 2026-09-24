@@ -5,36 +5,14 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Run
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Start Qa Project",
-        github_repo: "org/start-qa",
-        github_installation_id: 47_036,
-        linear_workspace: %{
-          name: "Start Qa Workspace",
-          external_id: "lin_ws_start_qa",
-          token: "lin_api_token_start_qa",
-          webhook_secret: "whsec_start_qa"
-        },
-        linear_team_key: "SQA",
-        default_branch: "main",
-        clone_path: "/tmp/repos/start-qa",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, _created} =
       Roles.create_role(scope, project, %{

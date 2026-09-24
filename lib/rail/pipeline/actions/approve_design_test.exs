@@ -6,36 +6,14 @@ defmodule Rail.Pipeline.Actions.ApproveDesignTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Approve Design Project",
-        github_repo: "org/approve-design",
-        github_installation_id: 47_004,
-        linear_workspace: %{
-          name: "Approve Design Workspace",
-          external_id: "lin_ws_approve_design",
-          token: "lin_api_token_approve_design",
-          webhook_secret: "whsec_approve_design"
-        },
-        linear_team_key: "APD",
-        default_branch: "main",
-        clone_path: "/tmp/repos/approve-design",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     roles =
       Map.new([:design, :architect], fn stage ->

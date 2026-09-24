@@ -1,7 +1,6 @@
 defmodule Rail.Projects.Schemas.ProjectTest do
   use Rail.DataCase, async: true
 
-  alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
 
@@ -70,41 +69,13 @@ defmodule Rail.Projects.Schemas.ProjectTest do
     assert %{github_repo: ["has already been taken"]} = errors_on(changeset)
   end
 
-  test "has one linear_workspace created through the project changeset" do
-    ext_id = "lin_ext_#{System.unique_integer([:positive])}"
-    repo = "example/repo-ws-#{System.unique_integer([:positive])}"
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    assert {:ok, %Project{id: project_id, linear_workspace: %LinearWorkspace{id: workspace_id}}} =
-             %Project{}
-             |> Project.changeset(%{
-               name: "Project with WS",
-               github_repo: repo,
-               github_installation_id: 99_003,
-               linear_workspace: %{
-                 name: "Workspace For Project",
-                 external_id: ext_id,
-                 token: "tok_proj",
-                 webhook_secret: "wh_proj"
-               },
-               default_branch: "main",
-               linear_team_key: "PWS",
-               clone_path: "/tmp/pws"
-             })
-             |> Repo.insert()
-
-    assert %LinearWorkspace{id: ^workspace_id, project_id: ^project_id} =
-             Repo.get_by(LinearWorkspace, project_id: project_id)
-  end
-
-  test "looks the Linear team and its states up from the key, through the workspace, as the row is written" do
+  test "looks the Linear team and its states up from the key, through the workspace, as the row is written", %{
+    project: %{linear_workspace_id: workspace_id}
+  } do
     Req.Test.expect(Rail.Linear, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
 
-      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_team_lookup"]
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer lin_api_test_seed"]
       assert %{"teamKey" => "DIS"} = Jason.decode!(body)["variables"]
 
       Req.Test.json(conn, %{
@@ -140,12 +111,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
         default_branch: "main",
         linear_team_key: "DIS",
         clone_path: "/tmp/team-lookup",
-        linear_workspace: %{
-          name: "Team Lookup Workspace",
-          external_id: "lin_org_team_lookup",
-          token: "lin_api_team_lookup",
-          webhook_secret: "whsec_team_lookup"
-        }
+        linear_workspace_id: workspace_id
       })
 
     # Building the changeset asks Linear nothing; only writing it does.
@@ -168,7 +134,9 @@ defmodule Rail.Projects.Schemas.ProjectTest do
              project |> Project.changeset(%{name: "Renamed"}) |> Repo.update()
   end
 
-  test "a key Linear has no team for is an error on the key and nothing is written" do
+  test "a key Linear has no team for is an error on the key and nothing is written", %{
+    project: %{linear_workspace_id: workspace_id}
+  } do
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => []}}})
     end)
@@ -182,12 +150,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
                default_branch: "main",
                linear_team_key: "NOPE",
                clone_path: "/tmp/unknown-team",
-               linear_workspace: %{
-                 name: "Unknown Team Workspace",
-                 external_id: "lin_org_unknown_team",
-                 token: "lin_api_unknown_team",
-                 webhook_secret: "whsec_unknown_team"
-               }
+               linear_workspace_id: workspace_id
              })
              |> Repo.insert()
 
@@ -195,7 +158,9 @@ defmodule Rail.Projects.Schemas.ProjectTest do
     refute Repo.get_by(Project, github_repo: "example/unknown-team")
   end
 
-  test "a key Linear could not be asked about is an error on the key and nothing is written" do
+  test "a key Linear could not be asked about is an error on the key and nothing is written", %{
+    project: %{linear_workspace_id: workspace_id}
+  } do
     Req.Test.expect(Rail.Linear, fn conn ->
       conn |> Plug.Conn.put_status(400) |> Req.Test.json(%{"error" => "bad request"})
     end)
@@ -209,12 +174,7 @@ defmodule Rail.Projects.Schemas.ProjectTest do
                default_branch: "main",
                linear_team_key: "ERR",
                clone_path: "/tmp/unchecked-team",
-               linear_workspace: %{
-                 name: "Unchecked Team Workspace",
-                 external_id: "lin_org_unchecked_team",
-                 token: "lin_api_unchecked_team",
-                 webhook_secret: "whsec_unchecked_team"
-               }
+               linear_workspace_id: workspace_id
              })
              |> Repo.insert()
 

@@ -1,0 +1,47 @@
+# Hooks run by prek (the Rust pre-commit). mise pins the binary and installs the
+# pre-push shim from its postinstall hook. See docs/local-ci.md.
+#
+# One hook per lane so the terminal names what is in flight. Hooks sharing a
+# priority run concurrently; a lower priority runs first.
+repos:
+  - repo: local
+    hooks:
+      - id: prelude
+        name: "prelude: receipt check, postgres, deps"
+        entry: scripts/ci-lanes.sh prelude
+        language: system
+        stages: [pre-push]
+        priority: 0
+        pass_filenames: false
+
+      - id: lane-dev
+        name: "dev: compile, format, credo, deps.audit, sobelow"
+        entry: scripts/ci-lanes.sh lane dev
+        language: system
+        stages: [pre-push]
+        priority: 1
+        pass_filenames: false
+
+      - id: lane-tests
+        name: "tests with coverage"
+        entry: scripts/ci-lanes.sh lane tests
+        language: system
+        stages: [pre-push]
+        priority: 1
+        pass_filenames: false
+
+      - id: lane-credo
+        name: "credo/ subproject"
+        entry: scripts/ci-lanes.sh lane credo
+        language: system
+        stages: [pre-push]
+        priority: 1
+        pass_filenames: false
+
+      - id: receipt
+        name: "sign and push the receipt"
+        entry: scripts/ci-lanes.sh receipt
+        language: system
+        stages: [pre-push]
+        priority: 2
+        pass_filenames: false

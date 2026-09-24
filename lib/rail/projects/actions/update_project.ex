@@ -5,8 +5,8 @@ defmodule Rail.Projects.Actions.UpdateProject do
   alias Rail.Repo
 
   def update_project(_scope, %Project{} = project, attrs) do
-    project
-    |> Project.changeset(attrs)
-    |> Repo.update()
+    with {:ok, project} <- project |> Project.changeset(attrs) |> Repo.update() do
+      {:ok, Repo.preload(project, :linear_workspace, force: true)}
+    end
   end
 end

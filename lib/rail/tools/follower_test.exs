@@ -25,29 +25,9 @@ defmodule Rail.Tools.FollowerTest do
   # The Follower watches a real OS process.
   @moduletag :real_spawn
 
-  setup do
+  setup %{project: project} do
     {:ok, backend} =
       Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Follower Project",
-        github_repo: "org/follower",
-        github_installation_id: System.unique_integer([:positive]),
-        linear_workspace: %{
-          name: "Follower Workspace",
-          external_id: "lin_ws_follower",
-          token: "lin_api_token_follower",
-          webhook_secret: "whsec_follower"
-        },
-        linear_team_key: "FOL",
-        default_branch: "main",
-        clone_path: Path.join(System.tmp_dir!(), "follower_clone")
-      })
 
     # The Follower reads the stream in its backend's format, and the backend comes
     # off the run's role.
@@ -696,20 +676,16 @@ defmodule Rail.Tools.FollowerTest do
 
   test "detects question in stream and registers it to block task", %{
     backend: backend,
-    tmp_dir: tmp_dir
+    tmp_dir: tmp_dir,
+    project: %{linear_workspace_id: workspace_id}
   } do
+    # Its own project, since setup already gave the shared one an engineer role.
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
     end)
 
     {:ok, project} =
       Projects.create_project(system_scope(), %{
-        linear_workspace: %{
-          name: "Follower Workspace",
-          external_id: "lin_ws_follower_2",
-          token: "lin_api_token_follower",
-          webhook_secret: "whsec_follower"
-        },
         name: "Follower Project 12502",
         github_repo: "org/follower-12502",
         github_installation_id: 12_502,
@@ -722,7 +698,8 @@ defmodule Rail.Tools.FollowerTest do
           "in_progress" => "st_in_progress",
           "done" => "st_done",
           "canceled" => "st_canceled"
-        }
+        },
+        linear_workspace_id: workspace_id
       })
 
     {:ok, role} =

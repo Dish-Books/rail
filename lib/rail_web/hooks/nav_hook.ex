@@ -13,12 +13,7 @@ defmodule RailWeb.Hooks.NavHook do
     scope = socket.assigns.current_scope
     projects = Projects.list_projects()
 
-    attention_count =
-      if projects == [] do
-        0
-      else
-        count_attention(projects)
-      end
+    attention_count = count_attention(projects)
 
     url_project =
       case Map.get(params, "project") do

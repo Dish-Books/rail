@@ -5,30 +5,8 @@ defmodule Rail.Issues.Actions.UpdateIssueTest do
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.SyncIssue
-  alias Rail.Projects
 
-  setup do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(system_scope(), %{
-        name: "Update Issue Project",
-        github_repo: "org/update-issue",
-        github_installation_id: 5901,
-        linear_workspace: %{
-          name: "Update Issue Workspace",
-          external_id: "lin_ws_update_issue",
-          token: "lin_api_token_update_issue",
-          webhook_secret: "whsec_update_issue"
-        },
-        linear_team_key: "U01",
-        default_branch: "main",
-        clone_path: "/tmp/repos/update-issue",
-        linear_state_ids: %{"triage" => "st_triage", "in_progress" => "st_prog_1"}
-      })
-
+  setup %{project: project} do
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
         "data" => %{

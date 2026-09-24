@@ -4,31 +4,9 @@ defmodule Rail.Pipeline.Actions.ReadQaChecklistTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.QaChecklist
-  alias Rail.Projects
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Read Checklist Project",
-        github_repo: "org/read-checklist",
-        github_installation_id: 47_045,
-        linear_workspace: %{
-          name: "Read Checklist Workspace",
-          external_id: "lin_ws_read_checklist",
-          token: "lin_api_token_read_checklist",
-          webhook_secret: "whsec_read_checklist"
-        },
-        linear_team_key: "RCL",
-        default_branch: "main",
-        clone_path: "/tmp/repos/read-checklist",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{

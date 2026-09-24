@@ -4,36 +4,14 @@ defmodule Rail.Pipeline.Actions.SendMessageTest do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Send Message Project",
-        github_repo: "org/send-message",
-        github_installation_id: 41_001,
-        linear_workspace: %{
-          name: "Send Message Workspace",
-          external_id: "lin_ws_send_message",
-          token: "lin_api_token_send_message",
-          webhook_secret: "whsec_send_message"
-        },
-        linear_team_key: "SND",
-        default_branch: "main",
-        clone_path: "/tmp/repos/send-message",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{

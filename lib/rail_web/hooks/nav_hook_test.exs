@@ -7,10 +7,6 @@ defmodule RailWeb.Hooks.NavHookTest do
   alias Rail.Users
 
   test "handles switcher, theme, and rail toggle events", %{conn: conn} do
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Nav Hook Project 13119",
@@ -25,12 +21,6 @@ defmodule RailWeb.Hooks.NavHookTest do
           "in_progress" => "st_in_progress",
           "done" => "st_done",
           "canceled" => "st_canceled"
-        },
-        linear_workspace: %{
-          name: "Nav Hook Workspace 13118",
-          external_id: "lin_ws_nav_hook_13118",
-          token: "lin_api_token_nav_hook_13118",
-          webhook_secret: "whsec_nav_hook_13118"
         },
         active: true
       })

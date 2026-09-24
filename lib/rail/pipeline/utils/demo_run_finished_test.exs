@@ -8,35 +8,13 @@ defmodule Rail.Pipeline.Utils.DemoRunFinishedTest do
   alias Rail.Pipeline.Schemas.DemoBeat
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
 
-  setup do
+  setup %{project: project} do
     scope = system_scope()
 
     {:ok, backend} = Tools.create_backend(scope, %{name: :claude, executable_path: "/usr/bin/true"})
-
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
-    end)
-
-    {:ok, project} =
-      Projects.create_project(scope, %{
-        name: "Demo Finished Project",
-        github_repo: "org/demo-finished",
-        github_installation_id: 47_053,
-        linear_workspace: %{
-          name: "Demo Finished Workspace",
-          external_id: "lin_ws_demo_finished",
-          token: "lin_api_token_demo_finished",
-          webhook_secret: "whsec_demo_finished"
-        },
-        linear_team_key: "DFN",
-        default_branch: "main",
-        clone_path: "/tmp/repos/demo-finished",
-        linear_state_ids: %{"triage" => "st_triage"}
-      })
 
     {:ok, role} =
       Roles.create_role(scope, project, %{
