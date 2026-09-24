@@ -145,10 +145,74 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-owner", "Unassigned")
     refute has_element?(view, "#issue-task-link")
 
-    view |> element("#issue-start-product-run") |> render_click()
+    view |> element("#issue-start-product") |> render_click()
 
-    refute has_element?(view, "#issue-start-product-run")
-    assert has_element?(view, "#issue-task-link", "Product running")
+    assert %Task{id: task_id, stage: :product} = Repo.get_by(Task, issue_id: issue.id)
+    assert_redirect(view, ~p"/tasks/#{task_id}")
+  end
+
+  test "an issue whose ticket is written can start at design, skipping product", %{conn: conn, project: project} do
+    issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_17",
+        identifier: "IPG-17",
+        title: "Already written",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    {:ok, backend} =
+      Tools.create_backend(system_scope(), %{name: :claude, executable_path: "/usr/bin/true"})
+
+    {:ok, _role} =
+      Roles.create_role(system_scope(), project, %{
+        backend_id: backend.id,
+        stage: :design,
+        name: "design role",
+        model: "claude-3-7-sonnet",
+        system_prompt: "You are the designer."
+      })
+
+    expect(Git, :get_or_create_worktree, fn _project, task -> {:ok, task.worktree_path} end)
+
+    expect(Tools, :start_os_process, fn %Run{} = run, _argv ->
+      {:ok, %OsProcess{task_id: run.task_id, run: run}}
+    end)
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+    allow(Git, self(), view.pid)
+    allow(Tools, self(), view.pid)
+
+    view |> element("#issue-start-design") |> render_click()
+
+    assert %Task{id: task_id, stage: :design} = Repo.get_by(Task, issue_id: issue.id)
+    assert_redirect(view, ~p"/tasks/#{task_id}")
+  end
+
+  test "starting at a stage the project has no role for names that stage and keeps no task", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_18",
+        identifier: "IPG-18",
+        title: "No architect role",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    view |> element("#issue-start-architect") |> render_click()
+
+    assert has_element?(view, "#flash-error", "This project has no architect role.")
+    assert has_element?(view, "#issue-start-architect")
+    refute Repo.get_by(Task, issue_id: issue.id)
   end
 
   test "an issue that cannot be started says why and keeps no task", %{conn: conn, project: project} do
@@ -165,10 +229,10 @@ defmodule RailWeb.IssueLiveTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
 
-    view |> element("#issue-start-product-run") |> render_click()
+    view |> element("#issue-start-product") |> render_click()
 
     assert has_element?(view, "#flash-error", "This project has no product role.")
-    assert has_element?(view, "#issue-start-product-run")
+    assert has_element?(view, "#issue-start-product")
     refute has_element?(view, "#issue-task-link")
     refute Repo.get_by(Task, issue_id: issue.id)
   end
@@ -326,24 +390,24 @@ defmodule RailWeb.IssueLiveTest do
     allow(Git, self(), view.pid)
     allow(Tools, self(), view.pid)
 
-    view |> element("#issue-start-product-run") |> render_click()
+    view |> element("#issue-start-product") |> render_click()
     assert has_element?(view, "#flash-error", "Could not create the worktree: no checkout")
 
-    view |> element("#issue-start-product-run") |> render_click()
+    view |> element("#issue-start-product") |> render_click()
     assert has_element?(view, "#flash-error", "Could not start the agent: :enoent")
 
     assert {:ok, dispatch_view, _html} = live(conn, ~p"/issues/#{dispatch_issue.identifier}")
     allow(Git, self(), dispatch_view.pid)
     allow(Tools, self(), dispatch_view.pid)
 
-    dispatch_view |> element("#issue-start-product-run") |> render_click()
+    dispatch_view |> element("#issue-start-product") |> render_click()
     assert has_element?(dispatch_view, "#flash-error", "Dispatch is switched off, so no agent was started.")
 
     assert {:ok, other_view, _html} = live(conn, ~p"/issues/#{other_issue.identifier}")
     allow(Git, self(), other_view.pid)
     allow(Tools, self(), other_view.pid)
 
-    other_view |> element("#issue-start-product-run") |> render_click()
+    other_view |> element("#issue-start-product") |> render_click()
     assert has_element?(other_view, "#flash-error", "Could not start: :unavailable")
   end
 
@@ -410,6 +474,7 @@ defmodule RailWeb.IssueLiveTest do
 
     send(view.pid, {:issues_synced, "prj_other"})
     send(view.pid, {:issue_comments_changed, "iss_other"})
+    send(view.pid, {:issue_created, "iss_other"})
     assert has_element?(view, "#issue-title", "Before sync")
 
     send(view.pid, {:issues_synced, project.id})

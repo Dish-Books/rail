@@ -6,12 +6,13 @@ defmodule RailWeb.Components.IssueView do
   The issue page and the task page's first tab are the same view of the same
   thing, so both render this; the task page hides the section pointing at the
   task the reader is already on. The events it raises - `assign`,
-  `filter_assignees`, `comment`, `draft_comment`, `start_product_run` - belong
+  `filter_assignees`, `comment`, `draft_comment`, `start_task` - belong
   to whichever LiveView renders it.
   """
   use RailWeb, :html
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.Schemas.Task
 
   attr :issue, :any, required: true
   attr :assignees, :list, required: true
@@ -111,17 +112,27 @@ defmodule RailWeb.Components.IssueView do
               <span>{stage_label(@issue.task, stage_run(@issue.task))}</span>
             </.link>
 
-            <button
+            <div
               :if={@issue.task == nil and not Issue.finished_state?(@issue.state)}
-              type="button"
-              id="issue-start-product-run"
-              data-qa="issue-start-product-run"
-              phx-click="start_product_run"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer"
+              id="issue-start"
+              class="space-y-2"
             >
-              <.icon name="pi-play" class="h-3.5 w-3.5" />
-              <span>Start</span>
-            </button>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Start at</p>
+              <div class="flex gap-1.5">
+                <button
+                  :for={stage <- [:product, :design, :architect]}
+                  type="button"
+                  id={"issue-start-#{stage}"}
+                  data-qa={"issue-start-#{stage}"}
+                  phx-click="start_task"
+                  phx-value-stage={stage}
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-blue-500 text-white text-xs font-semibold hover:opacity-90 cursor-pointer"
+                >
+                  <.icon name="pi-play" class="h-3.5 w-3.5" />
+                  <span>{Task.stage_label(stage)}</span>
+                </button>
+              </div>
+            </div>
 
             <p
               :if={@issue.task == nil and Issue.finished_state?(@issue.state)}

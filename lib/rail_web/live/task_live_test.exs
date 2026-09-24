@@ -7,6 +7,7 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Run
@@ -91,6 +92,46 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "[data-qa='task_status_chip']", "Review the ticket")
   end
 
+  test "an unassigned issue is claimed from the task page", %{conn: conn, task: task, scope: scope} do
+    scope.user |> Ecto.Changeset.change(linear_user_id: "lin_usr_task_live") |> Repo.update!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    view |> element("#claim-task") |> render_click()
+
+    refute has_element?(view, "#claim-task")
+    assert Repo.get!(Issue, task.issue_id).owner_user_id == scope.user.id
+  end
+
+  test "claiming an issue somebody claimed since the page loaded says so", %{
+    conn: conn,
+    task: task,
+    scope: scope,
+    issue: issue
+  } do
+    scope.user |> Ecto.Changeset.change(linear_user_id: "lin_usr_task_live") |> Repo.update!()
+
+    {:ok, rival} =
+      Users.register_oauth_user(%{github_id: "gh_task_rival", login: "task_rival", email: "task_rival@example.com"})
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    {:ok, _claimed} = Issues.update_issue(issue, %{owner_user_id: rival.id})
+
+    view |> element("#claim-task") |> render_click()
+
+    assert has_element?(view, "#flash-error", "Somebody else claimed this issue first")
+    refute has_element?(view, "#claim-task")
+  end
+
+  test "claiming without a linked Linear account says what to do", %{conn: conn, task: task} do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    view |> element("#claim-task") |> render_click()
+
+    assert has_element?(view, "#flash-error", "Link your Linear account in Settings before claiming an issue")
+    assert has_element?(view, "#claim-task")
+  end
+
   test "a run that recorded an error shows it", %{conn: conn, task: task, run: run} do
     {:ok, _failed} = Pipeline.update_run(run, %{error: "The agent gave up."})
 
@@ -140,11 +181,21 @@ defmodule RailWeb.TaskLiveTest do
     refute has_element?(view, "#approve-product-plan")
   end
 
-  test "approving while the run is still working says so", %{conn: conn, task: task, run: run} do
+  test "a running stage offers no approval", %{conn: conn, task: task, run: run} do
     {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
     File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "# A ticket\n\nBody.")
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    refute has_element?(view, "#approve-product-plan")
+    refute has_element?(view, "#approve-product-plan-skip-design")
+  end
+
+  test "approving a run that started working since the page loaded says so", %{conn: conn, task: task, run: run} do
+    File.write!(Path.join([task.scratch_path, "tickets", "TLV-1.md"]), "# A ticket\n\nBody.")
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    {:ok, _working} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
 
     view |> element("#approve-product-plan") |> render_click()
 
@@ -620,8 +671,8 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "[data-qa='design_tab']")
 
       # Once there is a pick, acting on it sits in the header with every other
-      # action on the task, the way approving a ticket does.
-      assert has_element?(view, "#task-header #approve-design")
+      # action on the task; approving waits for the designer's turn to finish.
+      refute has_element?(view, "#task-header #approve-design")
       assert has_element?(view, "#task-header #open-design-table[href='/tasks/#{task.id}/design/table']")
       refute has_element?(view, "[data-qa='pick_design']")
     end

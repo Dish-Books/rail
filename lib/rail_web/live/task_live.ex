@@ -112,6 +112,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.claim_button task={@task} />
             <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
@@ -138,6 +139,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.claim_button task={@task} />
             <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
@@ -164,6 +166,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.claim_button task={@task} />
             <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
@@ -192,6 +195,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.claim_button task={@task} />
             <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
@@ -220,6 +224,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.claim_button task={@task} />
             <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
@@ -247,6 +252,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.claim_button task={@task} />
             <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
@@ -274,6 +280,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.claim_button task={@task} />
             <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
@@ -299,6 +306,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.claim_button task={@task} />
             <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
@@ -319,6 +327,7 @@ defmodule RailWeb.TaskLive do
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
+            <.claim_button task={@task} />
             <.rebase_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
@@ -403,6 +412,16 @@ defmodule RailWeb.TaskLive do
       |> start_async(:cleanup, fn -> Pipeline.cleanup_task(task) end)
 
     {:noreply, socket}
+  end
+
+  def handle_event("claim", _params, socket) do
+    socket =
+      case Issues.claim_issue(socket.assigns.current_scope, socket.assigns.task.issue) do
+        {:ok, _issue} -> socket
+        {:error, reason} -> put_flash(socket, :error, claim_error(reason))
+      end
+
+    {:noreply, refresh_task(socket)}
   end
 
   def handle_event("rebase", _params, socket) do
@@ -526,6 +545,24 @@ defmodule RailWeb.TaskLive do
       class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
     >
       {if @task.is_rebasing and Task.running?(@task), do: "Rebasing…", else: "Rebase"}
+    </button>
+    """
+  end
+
+  attr :task, :any, required: true
+
+  # Nobody owns an issue until somebody claims it.
+  defp claim_button(assigns) do
+    ~H"""
+    <button
+      :if={@task.cleaned_up_at == nil and @task.issue.owner_user_id == nil}
+      type="button"
+      id="claim-task"
+      data-qa="claim_task"
+      phx-click="claim"
+      class="px-4 py-2 rounded-lg bg-blue-600 dark:bg-blue-500 text-sm font-semibold text-white hover:opacity-90 cursor-pointer"
+    >
+      Claim
     </button>
     """
   end
@@ -672,7 +709,11 @@ defmodule RailWeb.TaskLive do
     |> assign(:selected_run, selected_run)
     |> assign(:conversation_run, selected_run)
     |> assign(:pane, pane(role))
-    |> assign(:approvable, role != nil and role.stage == task.stage and selected_run != nil)
+    # Nothing is approved while its run is still working on it.
+    |> assign(
+      :approvable,
+      role != nil and role.stage == task.stage and selected_run != nil and not Run.running?(selected_run)
+    )
     |> assign(:tabs, build_tabs(task, started, role, questions))
     |> assign(:engineer_tab, engineer_tab(started))
     |> assign(:blocked?, match?(%Run{status: :blocked_on_input}, selected_run))
@@ -852,6 +893,9 @@ defmodule RailWeb.TaskLive do
     |> assign(:selected_question_id, nil)
     |> refresh_task()
   end
+
+  defp claim_error(:already_assigned), do: "Somebody else claimed this issue first"
+  defp claim_error(:linear_not_linked), do: "Link your Linear account in Settings before claiming an issue"
 
   defp rebase_error(:task_busy), do: "Stop the task's run before rebasing it"
   defp rebase_error(:uncommitted_changes), do: "Commit the engineer's work before rebasing it"

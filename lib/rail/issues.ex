@@ -13,6 +13,7 @@ defmodule Rail.Issues do
   defdelegate get_issue(id, opts \\ []), to: Actions.GetIssue
   defdelegate create_issue(scope, project, attrs), to: Actions.CreateIssue
   defdelegate update_issue(issue, attrs), to: Actions.UpdateIssue
+  defdelegate claim_issue(scope, issue), to: Actions.ClaimIssue
 
   defdelegate sync_issues(project), to: Actions.SyncIssues
   defdelegate handle_linear_webhook(workspace, payload), to: Actions.HandleLinearWebhook

@@ -9,6 +9,7 @@ defmodule RailWeb.IssueLive do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Users
 
   def mount(_params, _session, socket) do
@@ -45,14 +46,17 @@ defmodule RailWeb.IssueLive do
     """
   end
 
-  def handle_event("start_product_run", _params, socket) do
-    socket =
-      case Pipeline.start_product_run(socket.assigns.issue) do
-        {:ok, _os_process} -> socket
-        {:error, reason} -> put_flash(socket, :error, start_error(reason))
-      end
+  def handle_event("start_task", %{"stage" => stage}, socket) do
+    {:ok, stage} = Task.cast_stage(stage)
 
-    {:noreply, load_issue(socket, socket.assigns.issue.id)}
+    case Pipeline.start_task(socket.assigns.issue, stage) do
+      {:ok, task} ->
+        {:noreply, push_navigate(socket, to: ~p"/tasks/#{task.id}")}
+
+      {:error, reason} ->
+        socket = socket |> put_flash(:error, start_error(reason, stage)) |> load_issue(socket.assigns.issue.id)
+        {:noreply, socket}
+    end
   end
 
   def handle_event("filter_assignees", %{"q" => query}, socket) do
@@ -129,9 +133,9 @@ defmodule RailWeb.IssueLive do
     end
   end
 
-  defp start_error(:role_not_found), do: "This project has no product role."
-  defp start_error({:worktree_failed, reason}), do: "Could not create the worktree: #{reason}"
-  defp start_error({:spawn_failed, reason, _run}), do: "Could not start the agent: #{inspect(reason)}"
-  defp start_error(:dispatch_disabled), do: "Dispatch is switched off, so no agent was started."
-  defp start_error(reason), do: "Could not start: #{inspect(reason)}"
+  defp start_error(:role_not_found, stage), do: "This project has no #{String.downcase(Task.stage_label(stage))} role."
+  defp start_error({:worktree_failed, reason}, _stage), do: "Could not create the worktree: #{reason}"
+  defp start_error({:spawn_failed, reason, _run}, _stage), do: "Could not start the agent: #{inspect(reason)}"
+  defp start_error(:dispatch_disabled, _stage), do: "Dispatch is switched off, so no agent was started."
+  defp start_error(reason, _stage), do: "Could not start: #{inspect(reason)}"
 end

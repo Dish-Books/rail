@@ -78,6 +78,7 @@ defmodule Rail.Pipeline do
   defdelegate read_demo(task), to: Actions.ReadDemo
   defdelegate list_demo_beats(task), to: Actions.ListDemoBeats
 
+  defdelegate start_task(issue, stage), to: Actions.StartTask
   defdelegate create_task(issue, stage), to: Actions.CreateTask
   defdelegate list_tasks(opts \\ []), to: Actions.ListTasks
   defdelegate update_task(task, attrs), to: Actions.UpdateTask
