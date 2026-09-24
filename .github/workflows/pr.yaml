@@ -1,0 +1,41 @@
+name: PR
+
+# PRs verify that `mise run ci` already ran every gate on the proposed tree; the
+# real suite runs on merge to main. docs/local-ci.md.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify Local CI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The default pull_request checkout is the merge commit, whose tree is not
+          # the tree the developer tested.
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify receipt
+        env:
+          CI_RECEIPT_KEY: ${{ secrets.CI_RECEIPT_KEY }}
+        run: |
+          set -uo pipefail
+          if [ -z "${CI_RECEIPT_KEY:-}" ]; then
+            echo "::error::No CI_RECEIPT_KEY available. A fork PR cannot carry a receipt — run the suite on a branch in this repo."
+            exit 1
+          fi
+          if ! ./scripts/ci-verify-receipt.sh "$(git rev-parse HEAD^{tree})"; then
+            echo "::error::No valid local CI receipt for this tree. Run 'mise run ci' and push."
+            exit 1
+          fi
+          echo "Local CI receipt verified — the full suite runs on merge to main." >> "$GITHUB_STEP_SUMMARY"

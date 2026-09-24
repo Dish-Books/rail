@@ -6,6 +6,8 @@ This file contains the standards for how we write code for Rail. All standards a
 
 We use Mise to manage our development environment and ensure all developers are running on the same version of all tools.
 
+`mise run ci` runs every CI gate locally and signs a receipt the PR check verifies; `scripts/setup-worktree.sh` isolates a worktree's ports and databases. See [local-ci.md](local-ci.md).
+
 ## System dependencies
 
 Two things Rail shells out to are not Mise's to manage, because they are browsers and codecs rather than language runtimes:

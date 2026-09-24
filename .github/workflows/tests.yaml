@@ -1,0 +1,68 @@
+name: Tests
+
+# The real suite, through the same scripts/ci.sh `mise run ci` runs. PRs are
+# covered by pr.yaml, which verifies that it already ran locally. docs/local-ci.md.
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# Never cancel a main run — it is the only place the suite executes on GitHub, so
+# every commit on main needs its own verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Mise
+        uses: jdx/mise-action@v2
+
+      - name: Cache Deps
+        uses: actions/cache@v5
+        with:
+          path: |
+            deps
+            _build
+            credo/deps
+            credo/_build
+          key: ${{ runner.os }}-mix-${{ hashFiles('mise.toml', 'mix.lock', 'credo/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      # --fast: a fresh checkout has nothing stale to clean, and main needs no receipt.
+      - run: scripts/ci.sh --fast
+
+  notify:
+    name: Notify Slack
+    needs:
+      - ci
+    if: failure()
+    uses: ./.github/workflows/notify-ci-failure.yaml
+    secrets: inherit
+    with:
+      workflow: Tests
+      results: ${{ toJSON(needs) }}
