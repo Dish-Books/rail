@@ -56,7 +56,9 @@ defmodule Rail.Tools.LoginSession do
         env: port_env(backend)
       ])
 
-    {:os_pid, os_pid} = Port.info(port, :os_pid)
+    # A CLI that exits at once has closed its port before this asks. Its exit status
+    # is already on its way, and there is nothing left to kill.
+    os_pid = with {:os_pid, os_pid} <- Port.info(port, :os_pid), do: os_pid
 
     {:ok,
      %{

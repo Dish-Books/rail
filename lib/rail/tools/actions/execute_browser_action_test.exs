@@ -18,7 +18,11 @@ defmodule Rail.Tools.Actions.ExecuteBrowserActionTest do
         "data" => %{
           "issueCreate" => %{
             "success" => true,
-            "issue" => %{"id" => "lin_exa_1", "identifier" => "EXA-1", "title" => "Execute Action"}
+            "issue" => %{
+              "id" => "lin_exa_#{System.unique_integer([:positive])}",
+              "identifier" => "EXA-1",
+              "title" => "Execute Action"
+            }
           }
         }
       })
