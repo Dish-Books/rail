@@ -1,58 +1,66 @@
 defmodule Rail.Tools.Actions.DriveBrowserTest do
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
-  alias Rail.Issues
-  alias Rail.Pipeline
   alias Rail.Tools
-  alias Rail.Tools.BrowserSession
 
-  # Serial, because each test drives a real Chrome and a machine running thirty at
-  # once measures contention rather than the browser.
-  @moduletag :browser
+  # The page is a form the stubs read and change, so these are about the loop;
+  # what Chrome does with an action is `ExecuteBrowserActionTest`'s.
+  setup do
+    {:ok, session} =
+      Agent.start_link(fn ->
+        %{title: "New bill", labels: [{"amount", "Amount"}], values: %{"amount" => ""}, location: nil}
+      end)
 
-  setup %{project: project} do
-    scope = system_scope()
+    # Shaped like `priv/browser/snapshot.js`: a field once to type into and once to
+    # click, a dropdown once per option it is not already set to.
+    stub(Tools, :observe_browser, fn session ->
+      form = Agent.get(session, & &1)
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{
-          "issueCreate" => %{
-            "success" => true,
-            "issue" => %{"id" => "lin_drb_1", "identifier" => "DRB-1", "title" => "Drive Browser"}
+      fields =
+        Enum.flat_map(form.labels, fn {node, label} ->
+          field = %{"node" => node, "role" => "textbox", "label" => label, "value" => form.values[node]}
+
+          [Map.put(field, "kind", "fill"), Map.merge(field, %{"kind" => "click", "label" => "Open #{label}"})]
+        end)
+
+      location =
+        for {value, label} <- [{"memorial", "Bori Memorial"}, {"montrose", "Bori Montrose"}],
+            is_binary(form.location) and label != form.location do
+          %{
+            "node" => "location",
+            "role" => "combobox",
+            "label" => "Location → #{label}",
+            "kind" => "select",
+            "value" => value,
+            "current_value" => form.location
           }
-        }
-      })
+        end
+
+      save = %{"node" => "save", "role" => "button", "label" => "Save", "kind" => "click", "value" => ""}
+      wait = %{"id" => "wait", "kind" => "wait", "label" => "Wait for the page to update"}
+
+      {:ok,
+       %{
+         "url" => "file:///bill.html",
+         "title" => form.title,
+         "text" => form.title,
+         "actions" => fields ++ [save | location] ++ [wait],
+         "marker" => :erlang.phash2(form)
+       }}
     end)
 
-    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Drive Browser"})
-    {:ok, task} = Pipeline.create_task(issue, :qa)
-    File.mkdir_p!(task.scratch_path)
+    # Typing sets the field, Save puts the amount in the title, a dropdown takes the option chosen.
+    stub(Tools, :execute_browser_action, fn session, action, text ->
+      Agent.update(session, fn form ->
+        case action do
+          %{"kind" => "fill", "node" => node} -> put_in(form, [:values, node], text)
+          %{"node" => "save"} -> %{form | title: "Saved #{form.values["amount"]}"}
+          %{"kind" => "select", "label" => "Location → " <> label} -> %{form | location: label}
+          _other -> form
+        end
+      end)
 
-    page = Path.join(task.scratch_path, "bill.html")
-
-    File.write!(page, """
-    <!doctype html><title>New bill</title>
-    <label for="amount">Amount</label><input id="amount" type="text">
-    <button type="button" id="save" onclick="document.title = 'Saved ' + amount.value">Save</button>
-    """)
-
-    {:ok, session} = Tools.start_browser_session(task)
-    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: "file://#{page}"})
-
-    # `Page.navigate` answers before the document exists, and a slow machine is still loading when the test starts.
-    eventually(fn -> assert {:ok, %{"title" => "New bill"}} = Tools.observe_browser(session) end, 5_000)
-
-    # Killing the process rather than going through `stop_browser_session/1`: an
-    # `on_exit` runs in a process of its own with no sandbox connection, and the
-    # row it would settle is rolled back with the test anyway. What must not
-    # survive is the Chrome.
-    on_exit(fn ->
-      case Tools.get_browser_session(task) do
-        pid when is_pid(pid) -> GenServer.stop(pid, :normal, 10_000)
-        nil -> :ok
-      end
-
-      File.rm_rf(task.scratch_path)
+      {:ok, action["label"]}
     end)
 
     # The choice is checked against what was actually offered, so a test builds
@@ -75,7 +83,7 @@ defmodule Rail.Tools.Actions.DriveBrowserTest do
       end)
     end
 
-    %{task: task, session: session, answering: answering, choosing: choosing}
+    %{session: session, answering: answering, choosing: choosing}
   end
 
   test "carries out an instruction and says what it did", %{session: session, answering: answering, choosing: choosing} do
@@ -106,11 +114,7 @@ defmodule Rail.Tools.Actions.DriveBrowserTest do
 
     assert {:ok, _receipt} = Tools.drive_browser(session, "fill in the amount", text: "1234.50")
 
-    assert {:ok, %{"result" => %{"value" => "1234.50"}}} =
-             BrowserSession.call(session, "Runtime.evaluate", %{
-               expression: "document.getElementById('amount').value",
-               returnByValue: true
-             })
+    assert Agent.get(session, & &1.values["amount"]) == "1234.50"
   end
 
   # The one thing a decision cannot supply. Rather than inventing a value, the
@@ -351,19 +355,7 @@ defmodule Rail.Tools.Actions.DriveBrowserTest do
     answering: answering,
     choosing: choosing
   } do
-    {:ok, _added} =
-      BrowserSession.call(session, "Runtime.evaluate", %{
-        expression: """
-        document.body.insertAdjacentHTML('beforeend', `
-          <label for="location">Location</label>
-          <select id="location">
-            <option value="">Select a location</option>
-            <option value="memorial">Bori Memorial</option>
-            <option value="montrose">Bori Montrose</option>
-          </select>`);
-        """,
-        returnByValue: true
-      })
+    Agent.update(session, &%{&1 | location: ""})
 
     answering.(fn questions, _state ->
       offered = questions["select_target"]["criteria"] |> Map.keys() |> Enum.sort() |> hd()
@@ -390,13 +382,7 @@ defmodule Rail.Tools.Actions.DriveBrowserTest do
     answering: answering,
     choosing: choosing
   } do
-    {:ok, _added} =
-      BrowserSession.call(session, "Runtime.evaluate", %{
-        expression: """
-        document.body.insertAdjacentHTML('beforeend', '<label for="notes">Notes</label><input id="notes" type="text">');
-        """,
-        returnByValue: true
-      })
+    Agent.update(session, &%{&1 | labels: [{"notes", "Notes"} | &1.labels], values: Map.put(&1.values, "notes", "")})
 
     answering.(fn questions, state ->
       wanted = if state["already_done"] == [], do: "Amount", else: "Notes"
@@ -412,11 +398,7 @@ defmodule Rail.Tools.Actions.DriveBrowserTest do
     assert {:ok, %{outcome: {:needs_text, "Notes"}, executed: [%{action: "Amount", text: "2724.04"}]}} =
              Tools.drive_browser(session, "the unit price is 2724.04", text: "2724.04")
 
-    assert {:ok, %{"result" => %{"value" => ""}}} =
-             BrowserSession.call(session, "Runtime.evaluate", %{
-               expression: "document.getElementById('notes').value",
-               returnByValue: true
-             })
+    assert Agent.get(session, & &1.values["notes"]) == ""
   end
 
   # Chosen again for the field it already went into, the typing is done rather
@@ -443,13 +425,7 @@ defmodule Rail.Tools.Actions.DriveBrowserTest do
   # A caller that named every field is filling a form, and each field is looked
   # up however many have been typed before it.
   test "values fill one field after another", %{session: session, answering: answering, choosing: choosing} do
-    {:ok, _added} =
-      BrowserSession.call(session, "Runtime.evaluate", %{
-        expression: """
-        document.body.insertAdjacentHTML('beforeend', '<label for="notes">Notes</label><input id="notes" type="text">');
-        """,
-        returnByValue: true
-      })
+    Agent.update(session, &%{&1 | labels: [{"notes", "Notes"} | &1.labels], values: Map.put(&1.values, "notes", "")})
 
     answering.(fn questions, state ->
       {operation, wanted} =

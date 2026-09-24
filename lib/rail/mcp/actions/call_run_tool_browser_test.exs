@@ -7,12 +7,12 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   alias Rail.Pipeline
   alias Rail.Roles
   alias Rail.Tools
+  alias Rail.Tools.BrowserSession
   alias Rail.Tools.Schemas.OsProcess
 
-  # The half of `call_run_tool/3` that Rail answers itself, which is a file of its
-  # own because it drives a real Chrome: serial, and only when asked for. The
-  # proxied half is in `call_run_tool_test.exs` and runs with everything else.
-  @moduletag :browser
+  # The half of `call_run_tool/3` that Rail answers itself; the proxied half is in
+  # `call_run_tool_test.exs`. The browser is stubbed at the session: Chrome itself
+  # is `BrowserSessionTest`'s and `ExecuteBrowserActionTest`'s.
 
   setup %{project: project} do
     scope = system_scope()
@@ -48,15 +48,33 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     {:ok, task} = Pipeline.create_task(issue, :qa)
     File.mkdir_p!(task.scratch_path)
 
-    page = Path.join(task.scratch_path, "bill.html")
+    stub(Tools, :start_browser_session, fn _task, _opts -> {:ok, self()} end)
+    # Shaped like `priv/browser/snapshot.js`: the field once to type into and once to click.
+    stub(Tools, :observe_browser, fn _session ->
+      amount = %{"node" => "amount", "role" => "textbox", "label" => "Amount", "value" => "1234.50"}
 
-    File.write!(page, """
-    <!doctype html><title>New bill</title>
-    <h1>New bill</h1>
-    <label for="amount">Amount</label><input id="amount" type="text" value="1234.50">
-    <img src="nowhere-at-all.png" alt="">
-    <button type="button" id="save" onclick="console.error('total is unrounded')">Save</button>
-    """)
+      {:ok,
+       %{
+         "url" => "file:///bill.html",
+         "title" => "New bill",
+         "text" => "New bill",
+         "marker" => "bill",
+         "actions" => [
+           Map.put(amount, "kind", "fill"),
+           Map.merge(amount, %{"kind" => "click", "label" => "Open Amount"}),
+           %{"node" => "save", "role" => "button", "label" => "Save", "kind" => "click", "value" => ""},
+           %{"id" => "wait", "kind" => "wait", "label" => "Wait for the page to update"}
+         ]
+       }}
+    end)
+
+    stub(Tools, :execute_browser_action, fn _session, action, _text -> {:ok, action["label"]} end)
+    stub(BrowserSession, :drain_problems, fn _session -> [] end)
+
+    stub(BrowserSession, :call, fn
+      _session, "Page.navigate", _params -> {:ok, %{"frameId" => "main"}}
+      _session, "Page.captureScreenshot", _params -> {:ok, %{"data" => Base.encode64("jpeg bytes")}}
+    end)
 
     {:ok, run} =
       Pipeline.create_run(%{
@@ -114,22 +132,12 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
       Req.Test.json(conn, %{"answers" => answers})
     end)
 
-    # Killing the process rather than going through `stop_browser_session/1`: an
-    # `on_exit` runs in a process of its own with no sandbox connection, and the
-    # row it would settle is rolled back with the test anyway. What must not
-    # survive is the Chrome.
     on_exit(fn ->
       Tools.stop_browser_recording(task)
-
-      case Tools.get_browser_session(task) do
-        pid when is_pid(pid) -> GenServer.stop(pid, :normal, 10_000)
-        nil -> :ok
-      end
-
       File.rm_rf(task.scratch_path)
     end)
 
-    %{task: task, run: run, context: context, roles: roles, page: "file://#{page}"}
+    %{task: task, run: run, context: context, roles: roles, page: "file:///bill.html"}
   end
 
   # Knowing the name is not the same as being allowed to call it.
@@ -206,6 +214,8 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   # The checklist is written before anything is opened, so neither of these costs
   # a browser.
   test "planning and marking off happen without a browser", %{context: context, task: task, run: run} do
+    reject(Tools, :start_browser_session, 2)
+
     assert {:ok, %{"content" => [%{"text" => planned}]}} =
              Mcp.call_run_tool(context, "qa_plan", %{
                "checks" => [
@@ -215,7 +225,6 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
              })
 
     assert planned =~ "2 checks"
-    assert Tools.get_browser_session(task) == nil
 
     # An outcome smuggled into the plan is not a check anybody ran.
     assert {:ok, %{checks: [%{outcome: :pending}, %{outcome: :pending}]}} = Pipeline.read_qa_checklist(task)
@@ -265,10 +274,14 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   end
 
   test "opening a page starts the browser without being asked", %{context: context, task: task, page: page} do
+    expect(Tools, :start_browser_session, fn started, _opts ->
+      assert started.id == task.id
+      {:ok, self()}
+    end)
+
     assert {:ok, %{"content" => [%{"text" => text}]}} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 
     assert text =~ "New bill"
-    assert Tools.start_browser_session(task) == {:ok, Tools.get_browser_session(task)}
   end
 
   test "reading the page names what can be acted on", %{context: context, page: page} do
@@ -298,13 +311,10 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   test "the browser's own complaints are drained, not accumulated", %{context: context, page: page} do
     {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 
-    {:ok, _clicked} =
-      Mcp.call_run_tool(context, "browser_do", %{"intent" => "click Save"})
+    expect(BrowserSession, :drain_problems, fn _session -> [%{kind: :console, detail: "total is unrounded"}] end)
 
-    eventually(fn ->
-      assert {:ok, %{"content" => [%{"text" => text}]}} = Mcp.call_run_tool(context, "browser_problems", %{})
-      assert text =~ "total is unrounded"
-    end)
+    assert {:ok, %{"content" => [%{"text" => "[console] total is unrounded"}]}} =
+             Mcp.call_run_tool(context, "browser_problems", %{})
 
     assert {:ok, %{"content" => [%{"text" => "Nothing since the last check."}]}} =
              Mcp.call_run_tool(context, "browser_problems", %{})
@@ -418,10 +428,12 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   test "a problem that happened somewhere says where", %{context: context, page: page} do
     {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 
-    eventually(fn ->
-      assert {:ok, %{"content" => [%{"text" => text}]}} = Mcp.call_run_tool(context, "browser_problems", %{})
-      assert text =~ "nowhere-at-all.png" or text =~ "(Image)"
+    expect(BrowserSession, :drain_problems, fn _session ->
+      [%{kind: :response, detail: "404 Not Found", url: "file:///nowhere-at-all.png"}]
     end)
+
+    assert {:ok, %{"content" => [%{"text" => "[response] 404 Not Found (file:///nowhere-at-all.png)"}]}} =
+             Mcp.call_run_tool(context, "browser_problems", %{})
   end
 
   # Called outside a pass - which is every call made while testing this - there
@@ -463,12 +475,13 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     assert {:error, :no_text_to_type} = Mcp.call_run_tool(context, "browser_do", %{"intent" => "click Save"})
   end
 
-  test "stopping closes the browser", %{context: context, task: task, page: page} do
-    {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
+  test "stopping closes the browser", %{context: context, task: task} do
+    expect(Tools, :stop_browser_session, fn stopped ->
+      assert stopped.id == task.id
+      :ok
+    end)
 
     assert {:ok, %{"content" => [%{"text" => "The browser is closed."}]}} =
              Mcp.call_run_tool(context, "browser_stop", %{})
-
-    assert Tools.get_browser_session(task) == nil
   end
 end

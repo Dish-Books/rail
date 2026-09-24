@@ -311,6 +311,8 @@ defmodule Rail.Tools.BrowserSession do
         "--disable-renderer-backgrounding",
         "--disable-backgrounding-occluded-windows",
         "--disable-gpu",
+        # Rail's container has no user namespaces for Chrome's sandbox, and it only opens our own apps.
+        "--no-sandbox",
         "about:blank"
       ]
   end

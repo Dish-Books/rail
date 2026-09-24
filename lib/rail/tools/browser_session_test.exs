@@ -149,7 +149,10 @@ defmodule Rail.Tools.BrowserSessionTest do
       {"Runtime.exceptionThrown", %{"exceptionDetails" => %{"text" => "x is not a function", "url" => "/bills/new"}}},
       {"Runtime.exceptionThrown", %{"exceptionDetails" => %{}}},
       {"Runtime.consoleAPICalled",
-       %{"type" => "error", "args" => [%{"description" => "Error: nope"}, %{"type" => "object"}]}},
+       %{
+         "type" => "error",
+         "args" => [%{"value" => "total is"}, %{"description" => "Error: nope"}, %{"type" => "object"}]
+       }},
       {"Runtime.consoleAPICalled", %{"type" => "log", "args" => [%{"value" => "just chatter"}]}},
       {"Log.entryAdded", %{"entry" => %{"level" => "error", "text" => "mixed content", "url" => "/bills"}}},
       {"Log.entryAdded", %{"entry" => %{"level" => "info", "text" => "hello"}}},
@@ -169,7 +172,7 @@ defmodule Rail.Tools.BrowserSessionTest do
 
     assert %{kind: :exception, detail: "x is not a function", url: "/bills/new"} = exception
     assert %{kind: :exception, detail: "Uncaught exception"} = unnamed
-    assert %{kind: :console, detail: ~s(Error: nope "object")} = console
+    assert %{kind: :console, detail: ~s(total is Error: nope "object")} = console
     assert %{kind: :log, detail: "mixed content", url: "/bills"} = log
     assert %{kind: :response, detail: "500 Server Error", url: "/api"} = response
     assert %{kind: :response, detail: "net::ERR_FAILED", url: "Image"} = failed
