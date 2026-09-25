@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   alias Rail.GitHub.Client
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
@@ -209,6 +210,27 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :review} = Repo.reload!(task)
     assert [%{key: "unhandled-nil", decision: nil}] = Pipeline.list_review_findings(task)
+  end
+
+  test "a question another run left unanswered does not hold this run's finish", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review})
+    {engineer_run, _engineer_process} = exited.(:engineer, %{})
+
+    {:ok, _question} =
+      Pipeline.register_question(Repo.preload(engineer_run, task: :issue), %DetectedQuestion{prompt: "Rebase onto main?"})
+
+    File.mkdir_p!(Path.join(task.scratch_path, "reviews"))
+
+    File.write!(Path.join([task.scratch_path, "reviews", "RUN-1.json"]), """
+    {"findings": [
+      {"key": "unhandled-nil", "title": "Nil is not handled", "severity": "major", "recommendation": "fix"}
+    ]}
+    """)
+
+    {_run, os_process} = exited.(:review, %{})
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert [%{key: "unhandled-nil"}] = Pipeline.list_review_findings(task)
   end
 
   # The process is settled before the stage's finish runs, so a finish that raises
