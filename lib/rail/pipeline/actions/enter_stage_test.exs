@@ -58,23 +58,16 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
-  test "every stage the ticket follows queues its Linear move", %{task: %Task{issue_id: issue_id} = task} do
+  test "every stage the ticket follows queues its Linear move", %{task: task} do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
-    for stage <- [:design, :architect, :engineer, :review, :qa] do
-      assert {:ok, %Run{}} = Pipeline.enter_stage(task, stage)
+    for stage <- [:design, :architect, :engineer, :review, :qa, :demo] do
+      assert {:ok, _run_or_task} = Pipeline.enter_stage(task, stage, start: stage != :demo)
+      assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id})
+
+      # Finish it, since a queued move would absorb the next stage's.
+      Repo.update_all(Oban.Job, set: [state: "completed"])
     end
-
-    assert {:ok, %Task{stage: :demo}} = Pipeline.enter_stage(task, :demo, start: false)
-
-    assert [
-             %Oban.Job{args: %{"issue_id" => ^issue_id}},
-             %Oban.Job{args: %{"issue_id" => ^issue_id}},
-             %Oban.Job{args: %{"issue_id" => ^issue_id}},
-             %Oban.Job{args: %{"issue_id" => ^issue_id}},
-             %Oban.Job{args: %{"issue_id" => ^issue_id}},
-             %Oban.Job{args: %{"issue_id" => ^issue_id}}
-           ] = all_enqueued(worker: AdvanceLinearState)
   end
 
   test "product leaves the ticket's status alone", %{task: task} do

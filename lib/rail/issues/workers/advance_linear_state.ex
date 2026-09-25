@@ -4,8 +4,14 @@ defmodule Rail.Issues.Workers.AdvanceLinearState do
 
   Only ever forward, judged against Linear's live state: somebody may have moved
   the ticket further by hand, and a send-back to the engineer must not undo In Review.
+
+  One job per issue at a time, so two can never race their writes. A job waiting
+  or retrying covers any later stage, because it reads the stage when it runs.
   """
-  use Oban.Worker, queue: :issues, max_attempts: 5
+  use Oban.Worker,
+    queue: :issues,
+    max_attempts: 5,
+    unique: [keys: [:issue_id], states: :incomplete, period: :infinity]
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Linear.Client, as: Linear
