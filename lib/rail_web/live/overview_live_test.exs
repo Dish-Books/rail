@@ -353,7 +353,7 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#overview-view-everyone[aria-pressed='true']")
       assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "4")
       assert has_element?(view, "#stat-shipped [data-qa='stat-value']", "3")
-      # Waiting on you stays the user's own; Up next below lists the team's.
+      # Waiting on you stays the user's own; Up next below follows the view.
       assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "2")
       assert has_element?(view, "#throughput-total", "3 total")
 
@@ -402,7 +402,7 @@ defmodule RailWeb.OverviewLiveTest do
       now = DateTime.utc_now()
       theirs = task_for.("Their task", %{owner_user_id: rival.id})
 
-      {:ok, _run} =
+      {:ok, run} =
         Pipeline.create_run(%{
           task_id: theirs.id,
           role_id: roles[:product].id,
@@ -431,10 +431,11 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
       refute has_element?(view, "#stat-oldest-waiting")
       assert has_element?(view, "#up-next [href^='/tasks/#{theirs.id}']")
+      assert has_element?(view, "#activity-ended-#{run.id}")
       assert has_element?(view, "#throughput-total", "1 total")
     end
 
-    test "waiting on you counts and dates only the user's own work, even on everyone's", %{
+    test "waiting on you counts and dates only the user's own work, while up next follows the view", %{
       conn: conn,
       roles: roles,
       rival: rival,

@@ -130,7 +130,7 @@ defmodule RailWeb.OverviewLive do
       |> Enum.sort_by(&Run.waiting_since/1, DateTime)
       |> Enum.uniq_by(& &1.task_id)
 
-    # Waiting on you is the user's own in either view; Up next lists the view's.
+    # Waiting on you is the user's own in either view; Up next follows the view.
     waiting_on_user = Enum.filter(waiting, &(&1.task.issue.owner_user_id == user_id))
 
     # Shipped means Linear completed the issue. Sixty days covers this month's
