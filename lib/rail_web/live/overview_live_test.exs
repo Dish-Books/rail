@@ -667,6 +667,8 @@ defmodule RailWeb.OverviewLiveTest do
       refute has_element?(view, "[data-qa='answer-input']")
 
       assert has_element?(view, "#stat-oldest-waiting", "oldest 3h 0m")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "3")
+      assert has_element?(view, "#attention-badge", "3")
 
       assert has_element?(view, "#activity-ended-#{review_run.id}", "is ready for review")
       assert has_element?(view, "#activity-asked-#{one_question.id}", "asked a question")
@@ -940,6 +942,7 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#up-next-empty")
       refute has_element?(view, "#up-next-featured-#{failed.id}")
       assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      refute has_element?(view, "#attention-badge")
       assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "QA running")
     end
 
