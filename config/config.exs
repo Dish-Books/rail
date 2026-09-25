@@ -16,6 +16,12 @@ config :logger, :default_formatter,
 
 config :phoenix, :json_library, Jason
 
+# Off until runtime.exs supplies the key in prod.
+config :posthog,
+  enable: false,
+  in_app_otp_apps: [:rail],
+  metadata: [:request_id]
+
 config :rail, Oban,
   repo: Rail.Repo,
   queues: [issues: 5, tools: 1],

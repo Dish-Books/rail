@@ -1,0 +1,82 @@
+# Ships the stack's container logs to PostHog; docker-compose.yml runs it as otel-collector.
+# Only containers using the x-logging anchor carry the compose service label, so the rest are dropped.
+
+receivers:
+  file_log:
+    include: [/var/lib/docker/containers/*/*-json.log]
+    start_at: end
+    # resume from the last read offset after a collector restart
+    storage: file_storage
+    operators:
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.time
+          layout_type: gotime
+          layout: "2006-01-02T15:04:05.999999999Z07:00"
+      - type: move
+        from: attributes.log
+        to: body
+      - type: move
+        if: 'attributes.attrs != nil && attributes.attrs["com.docker.compose.service"] != nil'
+        from: attributes.attrs["com.docker.compose.service"]
+        to: resource["service.name"]
+      - type: remove
+        if: "attributes.attrs != nil"
+        field: attributes.attrs
+      - type: remove
+        field: attributes.time
+
+extensions:
+  file_storage:
+    directory: /var/lib/otelcol
+    create_directory: true
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 200
+  filter/stack:
+    error_mode: ignore
+    logs:
+      log_record:
+        - 'resource.attributes["service.name"] == nil'
+  resource/rail:
+    attributes:
+      - key: service.namespace
+        value: rail
+        action: upsert
+  # Rail logs LoggerJSON's Basic format; lift its fields into OTel log fields. Mirrors dishbooks' collector.
+  transform/app_json:
+    error_mode: ignore
+    log_statements:
+      - statements:
+          - 'replace_pattern(log.body, "\\n$", "")'
+          - 'merge_maps(log.cache, ParseJSON(log.body), "upsert") where IsMatch(log.body, "^\\{")'
+          - 'set(log.severity_text, log.cache["severity"]) where log.cache["severity"] != nil'
+          - 'set(log.severity_number, SEVERITY_NUMBER_DEBUG) where log.severity_text == "debug"'
+          - 'set(log.severity_number, SEVERITY_NUMBER_INFO) where log.severity_text == "info"'
+          - 'set(log.severity_number, SEVERITY_NUMBER_INFO2) where log.severity_text == "notice"'
+          - 'set(log.severity_number, SEVERITY_NUMBER_WARN) where log.severity_text == "warning"'
+          - 'set(log.severity_number, SEVERITY_NUMBER_ERROR) where log.severity_text == "error"'
+          - 'set(log.severity_number, SEVERITY_NUMBER_FATAL) where log.severity_text == "critical"'
+          - 'set(log.severity_number, SEVERITY_NUMBER_FATAL2) where log.severity_text == "alert"'
+          - 'set(log.severity_number, SEVERITY_NUMBER_FATAL3) where log.severity_text == "emergency"'
+          - 'set(log.body, log.cache["message"]) where log.cache["message"] != nil'
+          - 'merge_maps(log.attributes, log.cache["metadata"], "upsert") where log.cache["metadata"] != nil'
+          - 'set(log.attributes["request"], log.cache["request"]) where log.cache["request"] != nil'
+  batch: {}
+
+exporters:
+  otlp_http/posthog:
+    # the exporter appends /v1/logs
+    endpoint: https://us.i.posthog.com/i
+    headers:
+      Authorization: Bearer ${env:POSTHOG_API_KEY}
+
+service:
+  extensions: [file_storage]
+  pipelines:
+    logs:
+      receivers: [file_log]
+      processors: [memory_limiter, filter/stack, transform/app_json, resource/rail, batch]
+      exporters: [otlp_http/posthog]

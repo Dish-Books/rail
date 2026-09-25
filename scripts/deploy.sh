@@ -16,6 +16,8 @@ secret() { gcloud secrets versions access latest --project dishbooks-shared --se
   } > .env
 )
 
+if grep -q '^POSTHOG_API_KEY=.' .env; then export COMPOSE_PROFILES=posthog; fi
+
 echo "Restarting rail stops any agent run in flight." >&2
 docker compose up -d --build --remove-orphans
 docker image prune -f
