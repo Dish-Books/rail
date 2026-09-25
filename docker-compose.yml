@@ -11,10 +11,17 @@ x-rail-env: &rail-env
   MISE_DATA_DIR: /srv/rail/mise
   MISE_TRUSTED_CONFIG_PATHS: /srv/rail/projects
 
+# Tags each log line with its compose service, which otel-collector ships under.
+x-logging: &logging
+  driver: json-file
+  options:
+    labels: com.docker.compose.service
+
 services:
   # One Postgres for rail and every project worktree. postgres/postgres because project dev
   # configs hardcode it; it listens on localhost only. Settings match dishbooks' init.sql.
   db:
+    logging: *logging
     image: postgres:17
     restart: unless-stopped
     network_mode: host
@@ -43,6 +50,7 @@ services:
       retries: 10
 
   migrate:
+    logging: *logging
     image: rail:latest
     pull_policy: never
     network_mode: host
@@ -55,6 +63,7 @@ services:
         condition: service_healthy
 
   rail:
+    logging: *logging
     build: .
     image: rail:latest
     restart: unless-stopped
@@ -71,9 +80,26 @@ services:
         condition: service_completed_successfully
 
   cloudflared:
+    logging: *logging
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     network_mode: host
     command: ["tunnel", "--no-autoupdate", "run"]
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+
+  # Only started when .env carries POSTHOG_API_KEY; scripts/deploy.sh turns the profile on.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.161.0
+    profiles: [posthog]
+    restart: unless-stopped
+    network_mode: host
+    # Root to read the docker daemon's container logs.
+    user: "0:0"
+    command: ["--config=/etc/otelcol/config.yaml"]
+    environment:
+      POSTHOG_API_KEY: ${POSTHOG_API_KEY}
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /srv/rail/otel-collector:/var/lib/otelcol

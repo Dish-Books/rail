@@ -47,6 +47,18 @@ config :ueberauth, Ueberauth.Strategy.Github.OAuth,
   client_secret: get_env.("GITHUB_CLIENT_SECRET", "github_client_secret")
 
 if config_env() == :prod do
+  # JSON lines, so the otel-collector ships level and metadata to PostHog as fields.
+  config :logger, :default_handler, formatter: LoggerJSON.Formatters.Basic.new(metadata: :all)
+
+  # Shares dishbooks' PostHog project; `service` tells rail's errors apart there.
+  if posthog_api_key = System.get_env("POSTHOG_API_KEY") do
+    config :posthog,
+      enable: true,
+      api_key: posthog_api_key,
+      api_host: "https://us.i.posthog.com",
+      global_properties: %{service: "rail"}
+  end
+
   config :rail, Rail.Repo,
     url: System.fetch_env!("DATABASE_URL"),
     pool_size: String.to_integer(System.get_env("POOL_SIZE", "10")),
