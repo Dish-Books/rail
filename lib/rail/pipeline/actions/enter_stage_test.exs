@@ -1,8 +1,10 @@
 defmodule Rail.Pipeline.Actions.EnterStageTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.AdvanceLinearState
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -54,6 +56,46 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
 
     assert {:ok, %Run{role_id: ^review_role_id, status: :running}} = Pipeline.enter_stage(task, :review)
     assert %Task{stage: :review} = Repo.reload!(task)
+  end
+
+  test "design and architect move the ticket to ready for dev", %{task: %Task{issue_id: issue_id} = task} do
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
+    assert {:ok, %Run{}} = Pipeline.enter_stage(task, :design)
+    assert {:ok, %Run{}} = Pipeline.enter_stage(task, :architect)
+
+    assert [
+             %Oban.Job{args: %{"issue_id" => ^issue_id, "state" => "todo"}},
+             %Oban.Job{args: %{"issue_id" => ^issue_id, "state" => "todo"}}
+           ] = all_enqueued(worker: AdvanceLinearState)
+  end
+
+  test "the engineer moves the ticket to In Progress", %{task: task} do
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
+    assert {:ok, %Run{}} = Pipeline.enter_stage(task, :engineer)
+
+    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id, state: "in_progress"})
+  end
+
+  test "review, QA and demo move the ticket to In Review", %{task: %Task{issue_id: issue_id} = task} do
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
+    assert {:ok, %Run{}} = Pipeline.enter_stage(task, :review)
+    assert {:ok, %Run{}} = Pipeline.enter_stage(task, :qa)
+    assert {:ok, %Task{stage: :demo}} = Pipeline.enter_stage(task, :demo, start: false)
+
+    assert [
+             %Oban.Job{args: %{"issue_id" => ^issue_id, "state" => "in_review"}},
+             %Oban.Job{args: %{"issue_id" => ^issue_id, "state" => "in_review"}},
+             %Oban.Job{args: %{"issue_id" => ^issue_id, "state" => "in_review"}}
+           ] = all_enqueued(worker: AdvanceLinearState)
+  end
+
+  test "product leaves the ticket's status alone", %{task: task} do
+    assert {:ok, %Task{stage: :product}} = Pipeline.enter_stage(task, :product, start: false)
+
+    refute_enqueued(worker: AdvanceLinearState)
   end
 
   test "design is spawned with its own brief", %{task: task, roles: roles} do
