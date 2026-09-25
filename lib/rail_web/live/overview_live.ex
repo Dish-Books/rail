@@ -108,8 +108,8 @@ defmodule RailWeb.OverviewLive do
     {:noreply, push_patch(socket, to: overview_path(socket.assigns, everyone: view == "everyone"))}
   end
 
-  # The overview is a list of runs and the tasks they belong to. What each run is
-  # doing it says itself, so nothing here has to work out which run a task means.
+  # The overview is the tasks in flight and the runs behind them; a task stands
+  # where the latest run at its own stage left it.
   defp load_overview_state(socket, project_id, everyone) do
     now = DateTime.utc_now()
     user_id = socket.assigns.current_scope.user.id
@@ -251,8 +251,7 @@ defmodule RailWeb.OverviewLive do
     |> Enum.sort_by(fn {project, _entries} -> project.name end)
   end
 
-  # A task stands where the latest run of its own stage left it; a run from a
-  # stage it has moved on from says nothing about it now.
+  # A run from a stage the task has moved on from says nothing about it now.
   defp build_in_progress_entry(task, runs, now) do
     run =
       runs
