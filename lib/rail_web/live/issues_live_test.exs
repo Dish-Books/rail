@@ -612,7 +612,7 @@ defmodule RailWeb.IssuesLiveTest do
 
   test "sync_issues button triggers sync on current project or all projects", %{
     conn: conn,
-    project: %Project{id: project_id}
+    project: %Project{id: seeded_id}
   } do
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -623,6 +623,18 @@ defmodule RailWeb.IssuesLiveTest do
       })
 
     authed_conn = log_in_user(conn, user)
+
+    # Async tests sync the seeded project and announce it to every Issues page, so
+    # this one waits on a project nobody else syncs.
+    {:ok, %Project{id: project_id}} =
+      Projects.create_project(system_scope(), %{
+        name: "Sync Project",
+        github_repo: "example/sync",
+        github_installation_id: 555,
+        linear_team_key: "SYN",
+        default_branch: "main",
+        clone_path: "/tmp/sync"
+      })
 
     # No Linear stub is queued: the click only queues the pull.
     assert {:ok, view, _html} = live(init_test_session(authed_conn, %{selected_project_id: project_id}), ~p"/issues")
@@ -652,6 +664,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view_all, "#sync-issues-button", "Syncing...")
 
     send(view_all.pid, {:issues_synced, project_id})
+    send(view_all.pid, {:issues_synced, seeded_id})
     assert has_element?(view_all, "#sync-issues-button", "Sync Issues")
 
     # A comment changes nothing a row shows.
