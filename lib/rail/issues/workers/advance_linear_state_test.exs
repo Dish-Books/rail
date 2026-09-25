@@ -167,6 +167,48 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     assert :ok = perform_job(AdvanceLinearState, args)
   end
 
+  # The stage entered mid-run was refused a job of its own, because this one was executing.
+  test "a job whose task moves on while it writes runs again for the new stage", %{
+    issue: issue,
+    task: task,
+    nodes: nodes,
+    states: states
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :engineer})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{"issue" => %{"state" => states["st_todo"], "team" => %{"states" => %{"nodes" => nodes}}}}
+      })
+    end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, _task} = Pipeline.update_task(task, %{stage: :review})
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+    end)
+
+    assert {:snooze, 1} = perform_job(AdvanceLinearState, %{issue_id: issue.id})
+  end
+
+  test "a job that had nothing to move still runs again when its task moves on meanwhile", %{
+    issue: issue,
+    task: task,
+    nodes: nodes,
+    states: states
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :design})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+
+      Req.Test.json(conn, %{
+        "data" => %{"issue" => %{"state" => states["st_todo"], "team" => %{"states" => %{"nodes" => nodes}}}}
+      })
+    end)
+
+    assert {:snooze, 1} = perform_job(AdvanceLinearState, %{issue_id: issue.id})
+  end
+
   # A send-back from review or QA re-enters the engineer stage.
   test "the engineer leaves an In Review ticket at In Review", %{
     issue: issue,
