@@ -346,6 +346,9 @@ defmodule RailWeb.IssuesLive do
   # Newest first, so a created issue lands at the top of the first page.
   def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, reload_data(socket)}
 
+  # A change from Linear can move an issue in or out of the filters, finished ones included.
+  def handle_info({:issue_changed, _issue_id}, socket), do: {:noreply, reload_data(socket)}
+
   def handle_info({:issue_comments_changed, _issue_id}, socket), do: {:noreply, socket}
 
   # Where a task got to is what the run for the stage it sits at says, picked out

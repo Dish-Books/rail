@@ -142,6 +142,7 @@ defmodule RailWeb.IssuesLiveTest do
         description: "Demo title\nDetailed explanation of the issue.",
         priority: :urgent,
         state: :in_progress,
+        state_name: "In Progress",
         branch_name: "feat-demo-101",
         url: "https://linear.app/demo/issue/DEMO-101",
         estimate: 3,
@@ -417,18 +418,32 @@ defmodule RailWeb.IssuesLiveTest do
         state: :done
       })
 
+    duplicate_issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_issues_live_13208",
+        identifier: "FIN-3",
+        title: "Duplicate task",
+        state: :duplicate,
+        state_name: "Duplicate"
+      })
+      |> Repo.insert!()
+
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
 
     # By default, show_finished is false -> only active_issue visible
     assert has_element?(view, "#issue-card-#{active_issue.id}")
     refute has_element?(view, "#issue-card-#{done_issue.id}")
+    refute has_element?(view, "#issue-card-#{duplicate_issue.id}")
     assert has_element?(view, "#filter-priority-all", "All (1)")
 
     # Toggle show finished on
     view |> element("#issues-show-finished") |> render_click()
     assert has_element?(view, "#issue-card-#{active_issue.id}")
     assert has_element?(view, "#issue-card-#{done_issue.id}")
-    assert has_element?(view, "#filter-priority-all", "All (2)")
+    assert has_element?(view, "#issue-card-#{duplicate_issue.id}")
+    assert has_element?(view, "#filter-priority-all", "All (3)")
 
     refute has_element?(view, "#task-link-#{done_issue.id}")
 
@@ -436,6 +451,75 @@ defmodule RailWeb.IssuesLiveTest do
     view |> element("#issues-show-finished") |> render_click()
     assert has_element?(view, "#issue-card-#{active_issue.id}")
     refute has_element?(view, "#issue-card-#{done_issue.id}")
+  end
+
+  test "an open list drops an issue as soon as Linear marks it Duplicate", %{conn: conn, project: project} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_dup",
+        login: "issues_live_user_dup",
+        email: "issues_live_user_dup@example.com",
+        admin: true
+      })
+
+    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+
+    issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_issues_live_dup",
+        identifier: "FIN-4",
+        title: "About to be a duplicate",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
+    assert has_element?(view, "#issue-card-#{issue.id}")
+
+    assert {:ok, _issue} =
+             Issues.handle_linear_webhook(workspace, %{
+               "type" => "Issue",
+               "action" => "update",
+               "data" => %{
+                 "id" => "lin_issues_live_dup",
+                 "teamId" => "lin_team_id",
+                 "identifier" => "FIN-4",
+                 "title" => "About to be a duplicate",
+                 "state" => %{"id" => "st_dup", "name" => "Duplicate", "type" => "duplicate"}
+               }
+             })
+
+    refute has_element?(view, "#issue-card-#{issue.id}")
+  end
+
+  test "a row names its status the way Linear does", %{conn: conn, project: project} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_label",
+        login: "issues_live_user_label",
+        email: "issues_live_user_label@example.com",
+        admin: true
+      })
+
+    # Linear's Todo is an unstarted state, which Rail keeps as :backlog.
+    issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_issues_live_label",
+        identifier: "FIN-5",
+        title: "Planned",
+        state: :backlog,
+        state_name: "Todo"
+      })
+      |> Repo.insert!()
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
+
+    assert has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-status-badge'][title='Todo']", "Todo")
+    refute has_element?(view, "#issue-card-#{issue.id} [data-qa='issue-status-badge']", "Backlog")
   end
 
   test "an issue with a task links to it from its row", %{conn: conn, project: project} do

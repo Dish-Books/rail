@@ -99,6 +99,13 @@ defmodule RailWeb.IssueLive do
 
   def handle_info({:issue_comments_changed, _other_issue_id}, socket), do: {:noreply, socket}
 
+  # Linear may have closed the issue, which takes away the offer to start it.
+  def handle_info({:issue_changed, issue_id}, %{assigns: %{issue: %{id: issue_id}}} = socket) do
+    {:noreply, load_issue(socket, issue_id)}
+  end
+
+  def handle_info({:issue_changed, _other_issue_id}, socket), do: {:noreply, socket}
+
   def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, socket}
 
   defp assign_owner(%{assigns: %{issue: issue}} = socket, owner_user_id) do

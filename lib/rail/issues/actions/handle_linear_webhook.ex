@@ -19,8 +19,9 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
 
   @doc """
   Applies `payload` for `workspace`, its projects preloaded. Issue creates and
-  updates are upserted onto the project on the issue's team, removes delete the
-  issue, and anything else, including a team no project is on, is ignored.
+  updates are upserted onto the project on the issue's team and broadcast as
+  `{:issue_changed, issue_id}` on `"issues"`, removes delete the issue, and
+  anything else, including a team no project is on, is ignored.
   """
   def handle_linear_webhook(%LinearWorkspace{projects: projects}, %{
         "type" => "Issue",
@@ -35,9 +36,13 @@ defmodule Rail.Issues.Actions.HandleLinearWebhook do
           |> format_linear_issue()
           |> Map.merge(%{project_id: project_id, owner_user_id: owner_user_id(data["assigneeId"])})
 
-        (Repo.get_by(Issue, external_id: external_id) || %Issue{})
-        |> Issue.linear_changeset(attrs)
-        |> Repo.insert_or_update()
+        with {:ok, issue} <-
+               (Repo.get_by(Issue, external_id: external_id) || %Issue{})
+               |> Issue.linear_changeset(attrs)
+               |> Repo.insert_or_update() do
+          Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, issue.id})
+          {:ok, issue}
+        end
 
       nil ->
         :ok
