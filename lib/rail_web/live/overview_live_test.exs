@@ -245,10 +245,19 @@ defmodule RailWeb.OverviewLiveTest do
           {stage, role}
         end)
 
+      {:ok, rival} =
+        Users.register_oauth_user(%{
+          github_id: "gh_overview_rival",
+          login: "overview_rival_user",
+          email: "overview_rival_user@example.com"
+        })
+
       # Each issue created answers Linear once, under a key of its own. A
-      # `:completed_at` is Linear completing the issue.
+      # `:completed_at` is Linear completing the issue. Issues belong to the
+      # signed-in user unless `:owner_user_id` says otherwise.
       task_for = fn title, attrs ->
         {completed_at, attrs} = Map.pop(attrs, :completed_at)
+        {owner_user_id, attrs} = Map.pop(attrs, :owner_user_id, user.id)
         n = System.unique_integer([:positive])
 
         Req.Test.expect(Rail.Linear, fn conn ->
@@ -263,13 +272,314 @@ defmodule RailWeb.OverviewLiveTest do
         end)
 
         {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: title})
-        issue = issue |> Issue.linear_changeset(%{completed_at: completed_at}) |> Repo.update!()
+
+        issue =
+          issue
+          |> Issue.linear_changeset(%{completed_at: completed_at, owner_user_id: owner_user_id})
+          |> Repo.update!()
+
         {:ok, task} = Pipeline.create_task(issue, :product)
         {:ok, task} = Pipeline.update_task(task, attrs)
         Repo.preload(task, :issue)
       end
 
-      %{conn: log_in_user(conn, user), project: project, roles: roles, task_for: task_for}
+      %{conn: log_in_user(conn, user), project: project, roles: roles, rival: rival, task_for: task_for}
+    end
+
+    test "opens on the user's own work, and switches to everyone's and back", %{
+      conn: conn,
+      roles: roles,
+      rival: rival,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+
+      tasks = [
+        task_for.("My first task", %{}),
+        task_for.("My second task", %{}),
+        task_for.("Their task", %{owner_user_id: rival.id}),
+        task_for.("Unowned task", %{owner_user_id: nil})
+      ]
+
+      # Started over a day ago, so the feed holds only each run's handoff.
+      [mine_one, mine_two, theirs, unowned] =
+        for task <- tasks do
+          {:ok, run} =
+            Pipeline.create_run(%{
+              task_id: task.id,
+              role_id: roles[:product].id,
+              status: :finished,
+              stage_outcome: :done,
+              started_at: DateTime.shift(now, day: -2),
+              completed_at: DateTime.shift(now, hour: -1)
+            })
+
+          run
+        end
+
+      my_shipped = task_for.("My shipped task", %{completed_at: DateTime.shift(now, hour: -2)})
+
+      their_shipped =
+        task_for.("Their shipped task", %{owner_user_id: rival.id, completed_at: DateTime.shift(now, hour: -2)})
+
+      unowned_shipped =
+        task_for.("Unowned shipped task", %{owner_user_id: nil, completed_at: DateTime.shift(now, hour: -2)})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#overview-view-mine[aria-pressed='true']")
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "2")
+      assert has_element?(view, "#stat-shipped [data-qa='stat-value']", "1")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "2")
+      assert has_element?(view, "#throughput-total", "1 total")
+
+      for run <- [mine_one, mine_two] do
+        assert has_element?(view, "#up-next [href^='/tasks/#{run.task_id}']")
+        assert has_element?(view, "#activity-ended-#{run.id}")
+      end
+
+      for run <- [theirs, unowned] do
+        refute has_element?(view, "#up-next [href^='/tasks/#{run.task_id}']")
+        refute has_element?(view, "#activity-ended-#{run.id}")
+      end
+
+      assert has_element?(view, "#activity-shipped-#{my_shipped.issue.id}")
+      refute has_element?(view, "#activity-shipped-#{their_shipped.issue.id}")
+      refute has_element?(view, "#activity-shipped-#{unowned_shipped.issue.id}")
+
+      view |> element("#overview-view-everyone") |> render_click()
+      assert_patched(view, ~p"/?everyone=true")
+
+      assert has_element?(view, "#overview-view-everyone[aria-pressed='true']")
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "4")
+      assert has_element?(view, "#stat-shipped [data-qa='stat-value']", "3")
+      # Waiting on you stays the user's own; Up next below follows the view.
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "2")
+      assert has_element?(view, "#throughput-total", "3 total")
+
+      for run <- [mine_one, mine_two, theirs, unowned] do
+        assert has_element?(view, "#up-next [href^='/tasks/#{run.task_id}']")
+        assert has_element?(view, "#activity-ended-#{run.id}")
+      end
+
+      assert has_element?(view, "#activity-shipped-#{their_shipped.issue.id}")
+      assert has_element?(view, "#activity-shipped-#{unowned_shipped.issue.id}")
+
+      view |> element("#overview-view-mine") |> render_click()
+      assert_patched(view, ~p"/")
+
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "2")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "2")
+    end
+
+    test "with a project picked, both views keep to that project", %{
+      conn: conn,
+      project: project,
+      rival: rival,
+      task_for: task_for
+    } do
+      task_for.("My task", %{})
+      task_for.("Their task", %{owner_user_id: rival.id})
+      task_for.("Unowned task", %{owner_user_id: nil})
+
+      assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/")
+
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "1")
+
+      view |> element("#overview-view-everyone") |> render_click()
+      assert_patched(view, ~p"/?everyone=true")
+
+      assert has_element?(view, "#selected-project-name", project.name)
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "3")
+    end
+
+    test "a user who owns nothing sees nothing of the team's until they switch", %{
+      conn: conn,
+      roles: roles,
+      rival: rival,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      theirs = task_for.("Their task", %{owner_user_id: rival.id})
+
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: theirs.id,
+          role_id: roles[:product].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.shift(now, hour: -2),
+          completed_at: DateTime.shift(now, hour: -1)
+        })
+
+      task_for.("Their shipped task", %{owner_user_id: rival.id, completed_at: DateTime.shift(now, hour: -1)})
+      task_for.("Unowned task", %{owner_user_id: nil})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "0")
+      assert has_element?(view, "#stat-shipped [data-qa='stat-value']", "0")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      assert has_element?(view, "#up-next-empty")
+      assert has_element?(view, "#activity-feed-empty")
+      assert has_element?(view, "#throughput-total", "0 total")
+
+      view |> element("#overview-view-everyone") |> render_click()
+
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "2")
+      assert has_element?(view, "#stat-shipped [data-qa='stat-value']", "1")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      refute has_element?(view, "#stat-oldest-waiting")
+      assert has_element?(view, "#up-next [href^='/tasks/#{theirs.id}']")
+      assert has_element?(view, "#activity-ended-#{run.id}")
+      assert has_element?(view, "#throughput-total", "1 total")
+    end
+
+    test "waiting on you counts and dates only the user's own work, while up next follows the view", %{
+      conn: conn,
+      roles: roles,
+      rival: rival,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      mine = task_for.("My waiting task", %{})
+      theirs = task_for.("Their older waiting task", %{owner_user_id: rival.id})
+      unowned = task_for.("Unowned older waiting task", %{owner_user_id: nil})
+
+      for {task, hours} <- [{mine, 1}, {theirs, 5}, {unowned, 7}] do
+        {:ok, _run} =
+          Pipeline.create_run(%{
+            task_id: task.id,
+            role_id: roles[:product].id,
+            status: :finished,
+            stage_outcome: :done,
+            started_at: DateTime.shift(now, hour: -(hours + 1)),
+            completed_at: DateTime.shift(now, hour: -hours)
+          })
+      end
+
+      assert {:ok, view, _html} = live(conn, ~p"/?everyone=true")
+
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+      assert has_element?(view, "#stat-oldest-waiting", "oldest 1h 0m")
+
+      for task <- [mine, theirs, unowned] do
+        assert has_element?(view, "#up-next [href^='/tasks/#{task.id}']")
+      end
+    end
+
+    test "picking a project in the switcher keeps everyone's view", %{conn: conn, project: project} do
+      assert {:ok, view, _html} = live(conn, ~p"/?everyone=true")
+
+      view |> element("#project-switcher-button") |> render_click()
+      view |> element("#project-option-#{project.id}") |> render_click()
+      assert_redirect(view, ~p"/project-selection?#{[project_id: project.id, return_to: "/?everyone=true"]}")
+
+      assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/?everyone=true")
+      assert has_element?(view, "#selected-project-name", project.name)
+      assert has_element?(view, "#overview-view-everyone[aria-pressed='true']")
+
+      view |> element("#project-switcher-button") |> render_click()
+      view |> element("#project-option-all") |> render_click()
+      assert_redirect(view, ~p"/project-selection?#{[project_id: "", return_to: "/?everyone=true"]}")
+    end
+
+    test "picking a project from my own work returns to my own work", %{conn: conn, project: project} do
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      view |> element("#project-switcher-button") |> render_click()
+      view |> element("#project-option-#{project.id}") |> render_click()
+      assert_redirect(view, ~p"/project-selection?#{[project_id: project.id, return_to: "/"]}")
+    end
+
+    test "the roster says waiting on you only for the user's own work", %{
+      conn: conn,
+      roles: roles,
+      rival: rival,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      theirs = task_for.("Their handed-off task", %{owner_user_id: rival.id})
+      mine = task_for.("My handed-off design", %{stage: :design})
+
+      for {task, role} <- [{theirs, roles[:product]}, {mine, roles[:design]}] do
+        {:ok, _run} =
+          Pipeline.create_run(%{
+            task_id: task.id,
+            role_id: role.id,
+            status: :finished,
+            stage_outcome: :done,
+            started_at: DateTime.shift(now, hour: -2),
+            completed_at: DateTime.shift(now, hour: -1)
+          })
+      end
+
+      for path <- [~p"/", ~p"/?everyone=true"] do
+        assert {:ok, view, _html} = live(conn, path)
+
+        assert has_element?(
+                 view,
+                 "#role-row-#{roles[:product].id}[data-tone='waiting']",
+                 "Handed off #{theirs.issue.identifier} · waiting on review"
+               )
+
+        refute has_element?(view, "#role-row-#{roles[:product].id}", "waiting on you")
+
+        assert has_element?(
+                 view,
+                 "#role-row-#{roles[:design].id}[data-tone='waiting']",
+                 "Handed off #{mine.issue.identifier} · waiting on you"
+               )
+      end
+    end
+
+    test "the chosen view is the link, so a reload or a shared link opens on it", %{
+      conn: conn,
+      rival: rival,
+      task_for: task_for
+    } do
+      task_for.("My task", %{})
+      task_for.("Their task", %{owner_user_id: rival.id})
+
+      assert {:ok, view, _html} = live(conn, ~p"/?everyone=true")
+
+      assert has_element?(view, "#overview-view-everyone[aria-pressed='true']")
+      assert has_element?(view, "#overview-view-mine[aria-pressed='false']")
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "2")
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#overview-view-mine[aria-pressed='true']")
+      assert has_element?(view, "#overview-view-everyone[aria-pressed='false']")
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "1")
+    end
+
+    test "the roster reads every role's runs, whoever owns the work", %{
+      conn: conn,
+      roles: roles,
+      rival: rival,
+      task_for: task_for
+    } do
+      theirs = task_for.("Their running task", %{owner_user_id: rival.id, stage: :engineer})
+
+      {:ok, _run} =
+        Pipeline.create_run(%{
+          task_id: theirs.id,
+          role_id: roles[:engineer].id,
+          status: :running,
+          started_at: DateTime.shift(DateTime.utc_now(), minute: -10)
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "0")
+      assert has_element?(view, "#roster-running-count", "1 / 8 running")
+
+      assert has_element?(
+               view,
+               "#role-row-#{roles[:engineer].id}[data-tone='running']",
+               "Running · #{theirs.issue.identifier}"
+             )
     end
 
     test "with nothing going on, nothing waits and every role is idle", %{

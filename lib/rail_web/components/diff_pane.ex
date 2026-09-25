@@ -54,31 +54,17 @@ defmodule RailWeb.Components.DiffPane do
           <.icon name="pi-list" class="size-4" />
         </button>
 
-        <div
+        <.segmented_control
           id="diff-filter"
           data-qa="diff_filter"
-          class="shrink-0 inline-flex rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5"
-        >
-          <button
-            :for={{filter, label} <- [branch: "All changes", uncommitted: "Uncommitted"]}
-            type="button"
-            id={"diff-filter-#{filter}"}
-            data-qa="diff_filter_option"
-            phx-click="select_diff_filter"
-            phx-target={@target}
-            phx-value-filter={filter}
-            aria-pressed={to_string(@filter == filter)}
-            class={[
-              "px-3 py-1 rounded-md text-xs font-semibold cursor-pointer",
-              @filter == filter &&
-                "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-xs",
-              @filter != filter &&
-                "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
-            ]}
-          >
-            {label}
-          </button>
-        </div>
+          class="shrink-0"
+          options={[branch: "All changes", uncommitted: "Uncommitted"]}
+          selected={@filter}
+          event="select_diff_filter"
+          target={@target}
+          value_name="filter"
+          option_qa="diff_filter_option"
+        />
 
         <.diff_stat additions={@additions} deletions={@deletions} class="shrink-0" />
 

@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   @doc """
   Lists tasks, filtered and preloaded as `opts` asks.
 
+  `:owner_user_id` keeps the tasks whose issue that user owns, so an unowned issue's tasks drop out.
   Cleaned-up tasks are left out unless `include_cleaned_up: true`.
   """
   def list_tasks(opts \\ []) do
@@ -17,6 +18,7 @@ defmodule Rail.Pipeline.Actions.ListTasks do
     |> order_by(^Keyword.get(opts, :order_by, asc: :inserted_at))
     |> preload(^Keyword.get(opts, :preload, []))
     |> filter_project(opts[:project_id])
+    |> filter_owner(opts[:owner_user_id])
     |> filter_stage(opts[:stage])
     |> filter_cleaned_up(opts[:include_cleaned_up])
     |> Repo.all()
@@ -30,6 +32,14 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   end
 
   defp filter_project(query, _all_projects), do: query
+
+  defp filter_owner(query, user_id) when is_binary(user_id) do
+    query
+    |> join(:inner, [task: t], i in assoc(t, :issue), as: :issue)
+    |> where([issue: i], i.owner_user_id == ^user_id)
+  end
+
+  defp filter_owner(query, nil), do: query
 
   defp filter_stage(query, nil), do: query
 
