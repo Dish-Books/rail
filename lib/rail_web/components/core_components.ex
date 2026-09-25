@@ -27,6 +27,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate priority_icon(assigns), to: Components.IssueIcons
   defdelegate project_badge(assigns), to: Components.ProjectBadge
   defdelegate role_roster(assigns), to: Components.RoleRoster
+  defdelegate segmented_control(assigns), to: Components.SegmentedControl
   defdelegate settings_nav(assigns), to: Components.SettingsNav
   defdelegate status_icon(assigns), to: Components.IssueIcons
   defdelegate task_layout(assigns), to: Components.TaskLayout

@@ -27,7 +27,7 @@ defmodule RailWeb.OverviewLive do
 
     socket =
       socket
-      |> assign(:everyone, everyone)
+      |> assign(:view, if(everyone, do: :everyone, else: :mine))
       |> load_overview_state(socket.assigns.current_project_id, everyone)
 
     {:noreply, socket}
@@ -52,34 +52,16 @@ defmodule RailWeb.OverviewLive do
         class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]"
       >
         <div id="overview-main" class="min-w-0 space-y-8">
-          <div
+          <.segmented_control
             id="overview-view-filter"
             data-qa="overview-view-filter"
-            class="inline-flex rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5"
-          >
-            <button
-              :for={
-                {view, label, pressed} <- [
-                  {:mine, "My work", not @everyone},
-                  {:everyone, "Everyone", @everyone}
-                ]
-              }
-              type="button"
-              id={"overview-view-#{view}"}
-              data-qa="overview-view-option"
-              phx-click="select_view"
-              phx-value-view={view}
-              aria-pressed={to_string(pressed)}
-              class={[
-                "px-3 py-1 rounded-md text-xs font-semibold cursor-pointer",
-                pressed && "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-xs",
-                not pressed &&
-                  "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
-              ]}
-            >
-              {label}
-            </button>
-          </div>
+            option_id="overview-view"
+            options={[mine: "My work", everyone: "Everyone"]}
+            selected={@view}
+            event="select_view"
+            value_name="view"
+            option_qa="overview-view-option"
+          />
 
           <.dispatch_banner :if={@dispatch_disabled} visible={@dispatch_disabled} />
 
@@ -170,7 +152,7 @@ defmodule RailWeb.OverviewLive do
   # Defaults stay out of the URL, so the user's own work is still just /.
   defp overview_path(assigns, changes) do
     params =
-      [everyone: assigns.everyone]
+      [everyone: assigns.view == :everyone]
       |> Keyword.merge(changes)
       |> Enum.reject(fn {_key, value} -> value in [nil, "", false] end)
 
