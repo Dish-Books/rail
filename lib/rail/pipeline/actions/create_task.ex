@@ -3,8 +3,8 @@ defmodule Rail.Pipeline.Actions.CreateTask do
   Creates the pipeline task for an issue, at the stage it should start from.
 
   The task carries only its own pipeline state: the title, description and
-  owner stay on the issue it links to. The issue's own state is left alone —
-  the engineer stage is what moves it to `:in_progress`. Returns the existing
+  owner stay on the issue it links to. The issue's own state is left alone -
+  entering a stage is what moves its Linear status forward. Returns the existing
   task when the issue already has one. A cleaned-up task does not count: it is
   kept as history and the issue gets a fresh one.
   """

@@ -11,11 +11,14 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   Nothing settles its way here. A run that finishes decides what its own stage
   concluded and then calls this if that conclusion means moving; the move is
   never a side effect of a process exiting.
+
+  Entering a stage also moves the task's Linear ticket forward to match it.
   """
 
   import Rail.Pipeline.Utils.PrepareWorktree
   import Rail.Pipeline.Utils.StartWorktreeSetup
 
+  alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -24,6 +27,9 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
+
+  # The stages a Linear ticket's status follows; the rest leave it where it is.
+  @linear_stages [:design, :architect, :engineer, :review, :qa, :demo]
 
   @doc """
   Enters `stage` on `task` and spawns the role that stage belongs to.
@@ -43,10 +49,17 @@ defmodule Rail.Pipeline.Actions.EnterStage do
     end
   end
 
+  # The stage and the job that moves its Linear ticket land together or not at all.
   defp claim_stage(%Task{} = task, stage) do
-    task
-    |> Task.changeset(%{stage: stage})
-    |> Repo.update()
+    Repo.transaction(fn ->
+      task = task |> Task.changeset(%{stage: stage}) |> Repo.update!()
+
+      if stage in @linear_stages do
+        {:ok, _job} = Issues.advance_issue_state(Repo.preload(task, :issue).issue)
+      end
+
+      task
+    end)
   end
 
   # The run is started before the spawn is attempted, because starting it is what

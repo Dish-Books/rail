@@ -1,8 +1,10 @@
 defmodule Rail.Pipeline.Actions.EnterStageTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.AdvanceLinearState
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -54,6 +56,24 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
 
     assert {:ok, %Run{role_id: ^review_role_id, status: :running}} = Pipeline.enter_stage(task, :review)
     assert %Task{stage: :review} = Repo.reload!(task)
+  end
+
+  test "every stage the ticket follows queues its Linear move", %{task: task} do
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
+    for stage <- [:design, :architect, :engineer, :review, :qa, :demo] do
+      assert {:ok, _run_or_task} = Pipeline.enter_stage(task, stage, start: stage != :demo)
+      assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id})
+
+      # Finish it, since a queued move would absorb the next stage's.
+      Repo.update_all(Oban.Job, set: [state: "completed"])
+    end
+  end
+
+  test "product leaves the ticket's status alone", %{task: task} do
+    assert {:ok, %Task{stage: :product}} = Pipeline.enter_stage(task, :product, start: false)
+
+    refute_enqueued(worker: AdvanceLinearState)
   end
 
   test "design is spawned with its own brief", %{task: task, roles: roles} do

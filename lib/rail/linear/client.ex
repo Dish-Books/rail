@@ -195,6 +195,41 @@ defmodule Rail.Linear.Client do
   end
 
   @doc """
+  Fetches a ticket's current workflow state and every state on its team.
+
+  The team is the ticket's own, not the project's, so a ticket moved to another
+  team still resolves.
+  """
+  def issue_workflow(%Project{} = project, issue_id, opts \\ []) do
+    query = """
+    query IssueWorkflow($id: String!) {
+      issue(id: $id) {
+        state {
+          id
+          name
+          type
+          position
+        }
+        team {
+          states {
+            nodes {
+              id
+              name
+              type
+              position
+            }
+          }
+        }
+      }
+    }
+    """
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, %{"id" => issue_id}, opts)
+    end
+  end
+
+  @doc """
   Opens a ticket. `input` is Linear's `IssueCreateInput`, team included.
   """
   def create_issue(%Project{} = project, %{} = input, opts \\ []) do

@@ -307,6 +307,26 @@ defmodule Rail.Linear.ClientTest do
     end
   end
 
+  describe "issue_workflow/3" do
+    test "asks for the issue's state and its own team's states", %{project: project} do
+      workflow = %{
+        "issue" => %{
+          "state" => %{"id" => "st_todo", "name" => "Todo", "type" => "unstarted", "position" => 0},
+          "team" => %{"states" => %{"nodes" => [%{"id" => "st_todo"}]}}
+        }
+      }
+
+      Req.Test.expect(Linear, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        assert %{"query" => query, "variables" => %{"id" => "lin_iss_1"}} = Jason.decode!(body)
+        assert query =~ "team"
+        Req.Test.json(conn, %{"data" => workflow})
+      end)
+
+      assert {:ok, ^workflow} = Client.issue_workflow(project, "lin_iss_1")
+    end
+  end
+
   describe "create_issue/3" do
     test "sends the input", %{project: project} do
       Req.Test.expect(Linear, fn conn ->
