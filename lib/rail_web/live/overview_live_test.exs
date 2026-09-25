@@ -546,6 +546,35 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "2")
     end
 
+    test "in everyone's view, only the user's own handed-off work reads as waiting on them", %{
+      conn: conn,
+      roles: roles,
+      rival: rival,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      theirs = task_for.("Their plan", %{owner_user_id: rival.id, stage: :architect})
+      mine = task_for.("My plan", %{stage: :architect})
+
+      for task <- [theirs, mine] do
+        {:ok, _run} =
+          Pipeline.create_run(%{
+            task_id: task.id,
+            role_id: roles[:architect].id,
+            status: :finished,
+            stage_outcome: :done,
+            started_at: DateTime.shift(now, hour: -2),
+            completed_at: DateTime.shift(now, hour: -1)
+          })
+      end
+
+      assert {:ok, view, _html} = live(conn, ~p"/?everyone=true")
+
+      assert has_element?(view, "#in-progress-task-#{theirs.id}[data-state='done']", "Review the plan")
+      refute has_element?(view, "#in-progress-task-#{theirs.id}.bg-amber-50")
+      assert has_element?(view, "#in-progress-task-#{mine.id}.bg-amber-50", "Review the plan")
+    end
+
     test "with nothing going on, nothing waits and nothing is in progress", %{conn: conn, project: project} do
       assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/")
 

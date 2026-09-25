@@ -151,7 +151,7 @@ defmodule RailWeb.OverviewLive do
     |> assign(:waiting, waiting)
     |> assign(:stats, stats(in_progress, completed, waiting_on_user, now))
     |> assign(:activity, activity(runs, completed, DateTime.shift(now, day: -1)))
-    |> assign(:in_progress_groups, build_in_progress_groups(in_progress, stage_runs, now))
+    |> assign(:in_progress_groups, build_in_progress_groups(in_progress, stage_runs, user_id, now))
     |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
     |> assign(:dispatch_disabled, Application.get_env(:rail, :no_dispatch, false))
   end
@@ -252,9 +252,9 @@ defmodule RailWeb.OverviewLive do
   defp questions(%Run{questions: [_one]}), do: "a question"
   defp questions(%Run{questions: questions}), do: "#{length(questions)} questions"
 
-  defp build_in_progress_groups(in_progress, stage_runs, now) do
+  defp build_in_progress_groups(in_progress, stage_runs, user_id, now) do
     in_progress
-    |> Enum.map(&build_in_progress_entry(&1, Map.get(stage_runs, &1.id), now))
+    |> Enum.map(&build_in_progress_entry(&1, Map.get(stage_runs, &1.id), user_id, now))
     |> Enum.sort_by(& &1.changed_at, DateTime)
     |> Enum.sort_by(&Map.fetch!(@attention_rank, &1.state))
     |> Enum.group_by(& &1.task.project)
@@ -262,7 +262,7 @@ defmodule RailWeb.OverviewLive do
     |> Enum.sort_by(fn {project, _entries} -> project.name end)
   end
 
-  defp build_in_progress_entry(task, run, now) do
+  defp build_in_progress_entry(task, run, user_id, now) do
     state = Run.state(run)
 
     changed_at =
@@ -277,7 +277,8 @@ defmodule RailWeb.OverviewLive do
       state: state,
       label: stage_label(task, run),
       style: run_state_style(run),
-      is_waiting: state in [:done, :blocked],
+      # Amber means waiting on the viewer, the same work the Waiting on you stat counts.
+      is_waiting: state in [:done, :blocked] and task.issue.owner_user_id == user_id,
       changed_at: changed_at,
       age: format_age(DateTime.diff(now, changed_at))
     }
