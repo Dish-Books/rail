@@ -11,6 +11,8 @@ defmodule RailWeb.Components.TaskLayout do
 
   attr :task, :any, required: true
   attr :run, :any, default: nil
+  # The status reads the task's stage, whichever tab is open; nil when that stage has no run yet.
+  attr :stage_run, :any, required: true
   attr :title, :string, default: nil
   attr :flush, :boolean, default: false
 
@@ -46,12 +48,11 @@ defmodule RailWeb.Components.TaskLayout do
 
         <div class="flex items-center flex-wrap gap-x-4 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
           <span
-            :if={@run != nil}
             id="task-status-chip"
             data-qa="task_status_chip"
-            class={["font-semibold", run_state_style(@run).text_class]}
+            class={["font-semibold", run_state_style(@stage_run).text_class]}
           >
-            {stage_label(@task, @run)}
+            {stage_label(@task, @stage_run)}
           </span>
 
           <span data-qa="task_issue_identifier" class="font-mono">

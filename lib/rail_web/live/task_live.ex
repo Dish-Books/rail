@@ -50,6 +50,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:tab_stage, nil)
       |> assign(:selected_role, nil)
       |> assign(:selected_run, nil)
+      |> assign(:stage_run, nil)
       |> assign(:conversation_run, nil)
       |> assign(:pane, :issue)
       |> assign(:diff_refreshed_at, nil)
@@ -107,6 +108,7 @@ defmodule RailWeb.TaskLive do
           id={stage_component_id(@selected_role)}
           task={@task}
           run={@selected_run}
+          stage_run={@stage_run}
           approvable={@approvable}
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
@@ -134,6 +136,7 @@ defmodule RailWeb.TaskLive do
           id={stage_component_id(@selected_role)}
           task={@task}
           run={@selected_run}
+          stage_run={@stage_run}
           approvable={@approvable}
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
@@ -161,6 +164,7 @@ defmodule RailWeb.TaskLive do
           id={stage_component_id(@selected_role)}
           task={@task}
           run={@selected_run}
+          stage_run={@stage_run}
           approvable={@approvable}
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
@@ -188,6 +192,7 @@ defmodule RailWeb.TaskLive do
           id={stage_component_id(@selected_role)}
           task={@task}
           run={@selected_run}
+          stage_run={@stage_run}
           approvable={@approvable}
           current_scope={@current_scope}
           focus_file={@focus_file}
@@ -217,6 +222,7 @@ defmodule RailWeb.TaskLive do
           id={stage_component_id(@selected_role)}
           task={@task}
           run={@selected_run}
+          stage_run={@stage_run}
           approvable={@approvable}
           current_scope={@current_scope}
           engineer_tab={@engineer_tab}
@@ -246,6 +252,7 @@ defmodule RailWeb.TaskLive do
           id={stage_component_id(@selected_role)}
           task={@task}
           run={@selected_run}
+          stage_run={@stage_run}
           approvable={@approvable}
           current_scope={@current_scope}
         >
@@ -274,6 +281,7 @@ defmodule RailWeb.TaskLive do
           id={stage_component_id(@selected_role)}
           task={@task}
           run={@selected_run}
+          stage_run={@stage_run}
           approvable={@approvable}
           current_scope={@current_scope}
         >
@@ -301,6 +309,7 @@ defmodule RailWeb.TaskLive do
         <.task_layout
           :if={@task != nil and @pane == :issue and @issue != nil}
           task={@task}
+          stage_run={@stage_run}
           title={@task.issue.title}
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
@@ -322,6 +331,7 @@ defmodule RailWeb.TaskLive do
           :if={@task != nil and @pane == :none}
           task={@task}
           run={@selected_run}
+          stage_run={@stage_run}
           title={@task.issue.title}
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
@@ -706,13 +716,10 @@ defmodule RailWeb.TaskLive do
     |> assign(:tab_stage, task.stage)
     |> assign(:selected_role, role)
     |> assign(:selected_run, selected_run)
+    |> assign(:stage_run, stage_run(started, task))
     |> assign(:conversation_run, selected_run)
     |> assign(:pane, pane(role))
-    # Nothing is approved while its run is still working on it.
-    |> assign(
-      :approvable,
-      role != nil and role.stage == task.stage and selected_run != nil and not Run.running?(selected_run)
-    )
+    |> assign(:approvable, approvable?(role, task, selected_run))
     |> assign(:tabs, build_tabs(task, started, role, questions))
     |> assign(:engineer_tab, engineer_tab(started))
     |> assign(:answers_to_send?, answers_to_send?(asked, selected_run))
@@ -764,6 +771,16 @@ defmodule RailWeb.TaskLive do
       default != nil -> default
       true -> {nil, nil}
     end
+  end
+
+  # Nothing is approved while its run is still working on it.
+  defp approvable?(%Role{stage: stage}, %Task{stage: stage}, %Run{} = run), do: not Run.running?(run)
+  defp approvable?(_role, _task, _run), do: false
+
+  # The header says where the task is, whichever tab is open: a stage with no run
+  # yet is queued, not whatever an earlier stage's run left behind.
+  defp stage_run(started, %Task{stage: stage}) do
+    Enum.find_value(started, fn {role, run} -> role.stage == stage and run end)
   end
 
   # Once the URL names a tab it keeps naming the one that is open, so a refresh

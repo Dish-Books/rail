@@ -909,6 +909,40 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "1")
     end
 
+    test "a stage that failed and is running again waits on nobody", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      task = task_for.("Retry after failure", %{stage: :qa})
+
+      {:ok, failed} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:qa].id,
+          status: :failed,
+          error: "3 of 11 checks failed",
+          started_at: DateTime.shift(now, hour: -2),
+          completed_at: DateTime.shift(now, hour: -1)
+        })
+
+      {:ok, _retry} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:qa].id,
+          status: :running,
+          started_at: DateTime.shift(now, minute: -10)
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#up-next-empty")
+      refute has_element?(view, "#up-next-featured-#{failed.id}")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "QA running")
+    end
+
     test "the sidebar lists every task in progress and where it stands", %{
       conn: conn,
       roles: roles,

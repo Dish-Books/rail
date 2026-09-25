@@ -11,6 +11,7 @@ defmodule RailWeb.IssuesLiveTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
 
@@ -558,6 +559,55 @@ defmodule RailWeb.IssuesLiveTest do
 
     assert {:ok, view, _html} = live(authed_conn, ~p"/issues")
     assert has_element?(view, "#task-link-#{issue.id}[href='/tasks/#{task.id}']")
+  end
+
+  test "a row reads the latest run at the task's stage, not one it retried", %{conn: conn, project: project} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_retry",
+        login: "issues_live_user_retry",
+        email: "issues_live_user_retry@example.com",
+        admin: true
+      })
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_retry_1", "identifier" => "RT-1", "title" => "Retry after failure"}
+          }
+        }
+      })
+    end)
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Retry after failure"})
+    {:ok, issue} = Issues.update_issue(issue, %{state: :backlog})
+    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
+    now = DateTime.utc_now()
+
+    {:ok, _failed} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: qa.id,
+        status: :failed,
+        error: "3 of 11 checks failed",
+        started_at: DateTime.shift(now, hour: -2),
+        completed_at: DateTime.shift(now, hour: -1)
+      })
+
+    {:ok, _retry} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: qa.id,
+        status: :running,
+        started_at: DateTime.shift(now, minute: -10)
+      })
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
+
+    assert has_element?(view, "#task-link-#{issue.id}", "QA running")
   end
 
   test "sync_issues button triggers sync on current project or all projects", %{

@@ -124,13 +124,23 @@ defmodule RailWeb.OverviewLive do
     in_progress =
       Enum.filter(tasks, &(is_nil(&1.merged_at) and &1.stage != :merged and is_nil(&1.issue.completed_at)))
 
+    # An earlier run at the task's stage has been retried, and one at another stage
+    # is behind it, so neither says where the task stands.
+    stage_runs =
+      runs
+      |> Enum.filter(&(&1.role.stage == &1.task.stage))
+      |> Enum.group_by(& &1.task_id)
+      |> Map.new(fn {task_id, task_runs} ->
+        {task_id, Enum.max_by(task_runs, &(&1.started_at || &1.inserted_at), DateTime)}
+      end)
+
     # A task waits on a human once, whatever its stage: the run of the stage it is
     # in is the one thing to do about it.
     waiting =
-      runs
+      stage_runs
+      |> Map.values()
       |> Enum.filter(&Run.needs_attention?/1)
       |> Enum.sort_by(&Run.waiting_since/1, DateTime)
-      |> Enum.uniq_by(& &1.task_id)
 
     # Waiting on you is the user's own in either view; Up next follows the view.
     waiting_on_user = Enum.filter(waiting, &(&1.task.issue.owner_user_id == user_id))
@@ -149,7 +159,7 @@ defmodule RailWeb.OverviewLive do
     |> assign(:waiting, waiting)
     |> assign(:stats, stats(in_progress, completed, waiting_on_user, now))
     |> assign(:activity, activity(runs, completed, DateTime.shift(now, day: -1)))
-    |> assign(:in_progress_groups, build_in_progress_groups(in_progress, runs, now))
+    |> assign(:in_progress_groups, build_in_progress_groups(in_progress, stage_runs, now))
     |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
     |> assign(:dispatch_disabled, Application.get_env(:rail, :no_dispatch, false))
   end
@@ -239,11 +249,9 @@ defmodule RailWeb.OverviewLive do
   defp questions(%Run{questions: [_one]}), do: "a question"
   defp questions(%Run{questions: questions}), do: "#{length(questions)} questions"
 
-  defp build_in_progress_groups(in_progress, runs, now) do
-    runs_by_task = Enum.group_by(runs, & &1.task_id)
-
+  defp build_in_progress_groups(in_progress, stage_runs, now) do
     in_progress
-    |> Enum.map(&build_in_progress_entry(&1, Map.get(runs_by_task, &1.id, []), now))
+    |> Enum.map(&build_in_progress_entry(&1, Map.get(stage_runs, &1.id), now))
     |> Enum.sort_by(& &1.changed_at, DateTime)
     |> Enum.sort_by(&Map.fetch!(@attention_rank, &1.state))
     |> Enum.group_by(& &1.task.project)
@@ -251,13 +259,7 @@ defmodule RailWeb.OverviewLive do
     |> Enum.sort_by(fn {project, _entries} -> project.name end)
   end
 
-  # A run from a stage the task has moved on from says nothing about it now.
-  defp build_in_progress_entry(task, runs, now) do
-    run =
-      runs
-      |> Enum.filter(&(&1.role.stage == task.stage))
-      |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
-
+  defp build_in_progress_entry(task, run, now) do
     state = Run.state(run)
 
     changed_at =
