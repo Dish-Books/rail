@@ -148,7 +148,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   end
 
   defp concluded?(%Run{role: %Role{stage: stage}} = run) when stage in [:review, :qa, :demo] do
-    run.exit_code == 0 and pending_questions(run.task_id) == []
+    run.exit_code == 0 and not asked_anything_open?(run)
   end
 
   # The engineer says it has finished by writing its commit message, and that is
@@ -158,17 +158,23 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   # uncommitted in the worktree with nothing to move it on.
   defp concluded?(%Run{role: %Role{stage: :engineer}, task: %Task{} = task} = run) do
     run.stage_outcome == :in_progress and
-      pending_questions(run.task_id) == [] and
+      not asked_anything_open?(run) and
       (run.exit_code == 0 or said_it_was_done?(task))
   end
 
   # Every other run only concludes by saying so, having actually finished: a
-  # non-zero exit and a task still parked on a question are both runs that have
+  # non-zero exit and a run still parked on a question are both runs that have
   # not.
   defp concluded?(%Run{} = run) do
     run.stage_outcome == :in_progress and
       run.exit_code == 0 and
-      pending_questions(run.task_id) == []
+      not asked_anything_open?(run)
+  end
+
+  # Only this run's own questions hold its finish: one another stage left open is
+  # that stage's to settle.
+  defp asked_anything_open?(%Run{id: run_id, task_id: task_id}) do
+    Enum.any?(pending_questions(task_id), &(&1.run_id == run_id))
   end
 
   defp finish_action(%Run{role: %Role{stage: :product}}), do: &product_run_finished/2
