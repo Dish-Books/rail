@@ -472,7 +472,7 @@ defmodule RailWeb.OverviewLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/")
 
       assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "0")
-      assert has_element?(view, "#roster-running-count", "1 / 5 running")
+      assert has_element?(view, "#roster-running-count", "1 / 8 running")
 
       assert has_element?(
                view,
