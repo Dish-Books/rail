@@ -58,37 +58,22 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
-  test "design and architect move the ticket to ready for dev", %{task: %Task{issue_id: issue_id} = task} do
+  test "every stage the ticket follows queues its Linear move", %{task: %Task{issue_id: issue_id} = task} do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
-    assert {:ok, %Run{}} = Pipeline.enter_stage(task, :design)
-    assert {:ok, %Run{}} = Pipeline.enter_stage(task, :architect)
+    for stage <- [:design, :architect, :engineer, :review, :qa] do
+      assert {:ok, %Run{}} = Pipeline.enter_stage(task, stage)
+    end
 
-    assert [
-             %Oban.Job{args: %{"issue_id" => ^issue_id, "state" => "todo"}},
-             %Oban.Job{args: %{"issue_id" => ^issue_id, "state" => "todo"}}
-           ] = all_enqueued(worker: AdvanceLinearState)
-  end
-
-  test "the engineer moves the ticket to In Progress", %{task: task} do
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
-
-    assert {:ok, %Run{}} = Pipeline.enter_stage(task, :engineer)
-
-    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id, state: "in_progress"})
-  end
-
-  test "review, QA and demo move the ticket to In Review", %{task: %Task{issue_id: issue_id} = task} do
-    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
-
-    assert {:ok, %Run{}} = Pipeline.enter_stage(task, :review)
-    assert {:ok, %Run{}} = Pipeline.enter_stage(task, :qa)
     assert {:ok, %Task{stage: :demo}} = Pipeline.enter_stage(task, :demo, start: false)
 
     assert [
-             %Oban.Job{args: %{"issue_id" => ^issue_id, "state" => "in_review"}},
-             %Oban.Job{args: %{"issue_id" => ^issue_id, "state" => "in_review"}},
-             %Oban.Job{args: %{"issue_id" => ^issue_id, "state" => "in_review"}}
+             %Oban.Job{args: %{"issue_id" => ^issue_id}},
+             %Oban.Job{args: %{"issue_id" => ^issue_id}},
+             %Oban.Job{args: %{"issue_id" => ^issue_id}},
+             %Oban.Job{args: %{"issue_id" => ^issue_id}},
+             %Oban.Job{args: %{"issue_id" => ^issue_id}},
+             %Oban.Job{args: %{"issue_id" => ^issue_id}}
            ] = all_enqueued(worker: AdvanceLinearState)
   end
 

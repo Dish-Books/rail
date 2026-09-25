@@ -28,6 +28,9 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
 
+  # The stages a Linear ticket's status follows; the rest leave it where it is.
+  @linear_stages [:design, :architect, :engineer, :review, :qa, :demo]
+
   @doc """
   Enters `stage` on `task` and spawns the role that stage belongs to.
 
@@ -51,18 +54,13 @@ defmodule Rail.Pipeline.Actions.EnterStage do
     Repo.transaction(fn ->
       task = task |> Task.changeset(%{stage: stage}) |> Repo.update!()
 
-      if state = calculate_linear_state(stage) do
-        {:ok, _job} = Issues.advance_issue_state(Repo.preload(task, :issue).issue, state)
+      if stage in @linear_stages do
+        {:ok, _job} = Issues.advance_issue_state(Repo.preload(task, :issue).issue)
       end
 
       task
     end)
   end
-
-  defp calculate_linear_state(stage) when stage in [:design, :architect], do: :todo
-  defp calculate_linear_state(:engineer), do: :in_progress
-  defp calculate_linear_state(stage) when stage in [:review, :qa, :demo], do: :in_review
-  defp calculate_linear_state(_stage), do: nil
 
   # The run is started before the spawn is attempted, because starting it is what
   # unlatches the stage. A worktree Rail cannot make is a failure to record on the

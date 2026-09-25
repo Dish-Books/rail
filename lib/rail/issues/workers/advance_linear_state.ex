@@ -1,6 +1,6 @@
 defmodule Rail.Issues.Workers.AdvanceLinearState do
   @moduledoc """
-  Moves a ticket's Linear status forward to where its pipeline stage has reached.
+  Moves a ticket's Linear status forward to where its task's stage has reached.
 
   Only ever forward, judged against Linear's live state: somebody may have moved
   the ticket further by hand, and a send-back to the engineer must not undo In Review.
@@ -9,31 +9,35 @@ defmodule Rail.Issues.Workers.AdvanceLinearState do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Linear.Client, as: Linear
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
 
   @impl Oban.Worker
-  def perform(%Oban.Job{args: %{"issue_id" => issue_id, "state" => state}}) do
+  def perform(%Oban.Job{args: %{"issue_id" => issue_id}}) do
     case Repo.get(Issue, issue_id) do
-      %Issue{} = issue -> advance(Repo.preload(issue, :project), state)
+      %Issue{} = issue -> issue |> Repo.preload([:project, :task]) |> advance()
       nil -> :ok
     end
   end
 
-  # In Progress and In Review share Linear's "started" type, so In Review can
-  # only be told apart by its name.
-  defp advance(%Issue{project: %Project{} = project} = issue, state) do
+  # The target comes from where the task is now, not from when the job was queued,
+  # so jobs for one issue that run together all aim at the same status.
+  defp advance(%Issue{project: %Project{} = project, task: %Task{stage: stage}} = issue)
+       when stage in [:design, :architect, :engineer, :review, :qa, :demo] do
     with {:ok, %{"issue" => %{"state" => current, "team" => %{"states" => %{"nodes" => states}}}}} <-
            Linear.issue_workflow(project, issue.external_id) do
+      # In Progress and In Review share Linear's "started" type, so In Review can
+      # only be told apart by its name.
       target =
-        case state do
-          "todo" ->
+        cond do
+          stage in [:design, :architect] ->
             states |> Enum.filter(&(&1["type"] == "unstarted")) |> Enum.min_by(& &1["position"], fn -> nil end)
 
-          "in_progress" ->
+          stage == :engineer ->
             states |> Enum.filter(&(&1["type"] == "started")) |> Enum.min_by(& &1["position"], fn -> nil end)
 
-          "in_review" ->
+          stage in [:review, :qa, :demo] ->
             Enum.find(states, &(&1["type"] == "started" and String.downcase(&1["name"]) == "in review"))
         end
 
@@ -44,6 +48,8 @@ defmodule Rail.Issues.Workers.AdvanceLinearState do
       end
     end
   end
+
+  defp advance(%Issue{}), do: :ok
 
   defp update_linear(%Project{} = project, %Issue{} = issue, input) do
     case Linear.update_issue(project, issue.external_id, input) do

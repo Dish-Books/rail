@@ -23,8 +23,8 @@ defmodule Rail.Issues.Actions.AdvanceIssueStateTest do
   end
 
   test "queues the Linear move rather than making it", %{issue: issue} do
-    assert {:ok, %Oban.Job{}} = Issues.advance_issue_state(issue, :in_review)
+    assert {:ok, %Oban.Job{}} = Issues.advance_issue_state(issue)
 
-    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue.id, state: "in_review"})
+    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue.id})
   end
 end

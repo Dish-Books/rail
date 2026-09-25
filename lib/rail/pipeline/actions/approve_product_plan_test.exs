@@ -82,12 +82,12 @@ defmodule Rail.Pipeline.Actions.ApproveProductPlanTest do
     assert Repo.get_by(Run, task_id: task.id, role_id: roles[:design].id)
   end
 
-  test "moves the Linear ticket to ready for dev", %{task: task, run: run} do
+  test "queues the move of the Linear ticket to ready for dev", %{task: task, run: run} do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 
     assert {:ok, %Run{}} = Pipeline.approve_product_plan(run)
 
-    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id, state: "todo"})
+    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: task.issue_id})
   end
 
   test "skipping designs hands the ticket straight to the architect", %{task: task, run: run, roles: roles} do
