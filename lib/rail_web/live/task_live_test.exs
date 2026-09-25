@@ -107,6 +107,15 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "[data-qa='task_status_chip']", "Queued for Review")
   end
 
+  test "the header of a merged task says it merged", %{conn: conn, task: task} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "[data-qa='task_status_chip']", "Merged")
+    refute has_element?(view, "[data-qa='task_status_chip']", "Queued")
+  end
+
   test "an unassigned issue is claimed from the task page", %{conn: conn, task: task, scope: scope} do
     scope.user |> Ecto.Changeset.change(linear_user_id: "lin_usr_task_live") |> Repo.update!()
 
