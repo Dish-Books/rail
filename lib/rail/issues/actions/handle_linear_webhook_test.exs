@@ -66,6 +66,8 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
       })
       |> Repo.insert!()
 
+    Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+
     assert {:ok, %Issue{id: ^issue_id, title: "Updated Title", state: :done}} =
              Issues.handle_linear_webhook(workspace, %{
                "type" => "Issue",
@@ -79,6 +81,7 @@ defmodule Rail.Issues.Actions.HandleLinearWebhookTest do
                }
              })
 
+    assert_receive {:issue_changed, ^issue_id}
     refute_enqueued(worker: SyncIssue)
   end
 

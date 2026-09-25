@@ -11,6 +11,7 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
@@ -181,6 +182,52 @@ defmodule RailWeb.IssueLiveTest do
 
     assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
 
+    assert has_element?(view, "#issue-status", "Duplicate")
+    refute has_element?(view, "#issue-start")
+  end
+
+  test "an open page follows Linear closing its issue and stops offering to start it", %{
+    conn: conn,
+    project: project
+  } do
+    {:ok, workspace} = Projects.get_linear_workspace(id: project.linear_workspace_id)
+
+    for {external_id, identifier} <- [{"lin_page_open", "IPG-21"}, {"lin_page_other", "IPG-22"}] do
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: external_id,
+        identifier: identifier,
+        title: "Open #{identifier}",
+        state: :todo,
+        state_name: "Todo"
+      })
+      |> Repo.insert!()
+    end
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/IPG-21")
+    assert has_element?(view, "#issue-start")
+
+    duplicate = fn external_id, identifier ->
+      %{
+        "type" => "Issue",
+        "action" => "update",
+        "data" => %{
+          "id" => external_id,
+          "teamId" => "lin_team_id",
+          "identifier" => identifier,
+          "title" => "Open #{identifier}",
+          "state" => %{"id" => "st_dup", "name" => "Duplicate", "type" => "duplicate"}
+        }
+      }
+    end
+
+    # Another issue closing leaves this page as it was.
+    assert {:ok, _other} = Issues.handle_linear_webhook(workspace, duplicate.("lin_page_other", "IPG-22"))
+    assert has_element?(view, "#issue-status", "Todo")
+    assert has_element?(view, "#issue-start")
+
+    assert {:ok, _issue} = Issues.handle_linear_webhook(workspace, duplicate.("lin_page_open", "IPG-21"))
     assert has_element?(view, "#issue-status", "Duplicate")
     refute has_element?(view, "#issue-start")
   end

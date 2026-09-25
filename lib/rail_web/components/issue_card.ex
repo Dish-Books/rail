@@ -39,11 +39,11 @@ defmodule RailWeb.Components.IssueCard do
 
       <span
         data-qa="issue-status-badge"
-        title={status_label(@issue.state)}
+        title={status_label(@issue)}
         class="flex items-center justify-center w-4 shrink-0"
       >
         <.status_icon state={@issue.state} />
-        <span class="sr-only">{status_label(@issue.state)}</span>
+        <span class="sr-only">{status_label(@issue)}</span>
       </span>
 
       <span
@@ -96,5 +96,6 @@ defmodule RailWeb.Components.IssueCard do
 
   defp priority_label(priority), do: Issue.priority_label(priority) || "Medium"
 
-  defp status_label(state), do: Issue.state_label(state) || "Triage"
+  # Linear's own name first, as the issue page shows it, since several Linear states share one Rail state.
+  defp status_label(%{state_name: state_name, state: state}), do: state_name || Issue.state_label(state) || "Triage"
 end
