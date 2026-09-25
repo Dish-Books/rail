@@ -306,6 +306,22 @@ defmodule RailWeb.TaskLiveTest do
     assert [] = Pipeline.list_questions(task, status: :pending)
   end
 
+  test "a question its run moved on from is still answered here and sent", %{conn: conn, task: task, run: run} do
+    parked = Repo.preload(run, task: :issue)
+    {:ok, question} = Pipeline.register_question(parked, %DetectedQuestion{prompt: "Rebase onto main?"})
+
+    # A rebase resumes the run without anyone answering what it asked.
+    {:ok, _resumed} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished})
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    assert has_element?(view, "[data-qa='answer-field']", "Rebase onto main?")
+
+    view |> form("#answer-question-form", %{"answer" => "Yes"}) |> render_submit()
+    view |> element("#send-answers-button") |> render_click()
+
+    assert {:ok, %{status: :answered, delivered_at: %DateTime{}}} = Pipeline.get_question(question.id)
+  end
+
   test "a question can be dismissed instead of answered", %{conn: conn, task: task, run: run} do
     {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
     blocked = Repo.preload(blocked, task: :issue)

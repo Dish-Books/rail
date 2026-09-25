@@ -66,7 +66,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:pending_questions, [])
       |> assign(:selected_question_id, nil)
       |> assign(:answer_text, "")
-      |> assign(:blocked?, false)
+      |> assign(:answers_to_send?, false)
       |> assign(:cleaning_up, false)
       |> assign(:focus_file, nil)
       |> assign(:engineer_tab, nil)
@@ -119,7 +119,7 @@ defmodule RailWeb.TaskLive do
             <.conversation_sidebar
               task={@task}
               roles_map={@roles_map}
-              blocked?={@blocked?}
+              answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
               pending_questions={@pending_questions}
               answer_text={@answer_text}
@@ -146,7 +146,7 @@ defmodule RailWeb.TaskLive do
             <.conversation_sidebar
               task={@task}
               roles_map={@roles_map}
-              blocked?={@blocked?}
+              answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
               pending_questions={@pending_questions}
               answer_text={@answer_text}
@@ -173,7 +173,7 @@ defmodule RailWeb.TaskLive do
             <.conversation_sidebar
               task={@task}
               roles_map={@roles_map}
-              blocked?={@blocked?}
+              answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
               pending_questions={@pending_questions}
               answer_text={@answer_text}
@@ -202,7 +202,7 @@ defmodule RailWeb.TaskLive do
             <.conversation_sidebar
               task={@task}
               roles_map={@roles_map}
-              blocked?={@blocked?}
+              answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
               pending_questions={@pending_questions}
               answer_text={@answer_text}
@@ -231,7 +231,7 @@ defmodule RailWeb.TaskLive do
             <.conversation_sidebar
               task={@task}
               roles_map={@roles_map}
-              blocked?={@blocked?}
+              answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
               pending_questions={@pending_questions}
               answer_text={@answer_text}
@@ -259,7 +259,7 @@ defmodule RailWeb.TaskLive do
             <.conversation_sidebar
               task={@task}
               roles_map={@roles_map}
-              blocked?={@blocked?}
+              answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
               pending_questions={@pending_questions}
               answer_text={@answer_text}
@@ -287,7 +287,7 @@ defmodule RailWeb.TaskLive do
             <.conversation_sidebar
               task={@task}
               roles_map={@roles_map}
-              blocked?={@blocked?}
+              answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
               pending_questions={@pending_questions}
               answer_text={@answer_text}
@@ -341,7 +341,7 @@ defmodule RailWeb.TaskLive do
             <.conversation_sidebar
               task={@task}
               roles_map={@roles_map}
-              blocked?={@blocked?}
+              answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
               pending_questions={@pending_questions}
               answer_text={@answer_text}
@@ -589,7 +589,7 @@ defmodule RailWeb.TaskLive do
 
   attr :task, :any, required: true
   attr :roles_map, :map, required: true
-  attr :blocked?, :boolean, required: true
+  attr :answers_to_send?, :boolean, required: true
   attr :pending_question, :any, required: true
   attr :pending_questions, :list, required: true
   attr :answer_text, :string, required: true
@@ -608,7 +608,7 @@ defmodule RailWeb.TaskLive do
 
     <!-- Answering only records. The round reaches the agent when the human says it is done. -->
     <div
-      :if={@blocked? and @pending_question == nil}
+      :if={@answers_to_send? and @pending_question == nil}
       id="send-answers-panel"
       data-qa="send_answers_panel"
       class="flex items-center justify-between gap-2 p-4 border-b border-slate-200 dark:border-slate-700"
@@ -693,7 +693,8 @@ defmodule RailWeb.TaskLive do
     started = started_roles(roles, task)
     {role, selected_run} = select_tab(started, task, socket.assigns.selected_tab, socket.assigns.tab_stage)
 
-    questions = Pipeline.list_questions(task, status: :pending, order_by: [asc: :inserted_at, asc: :id])
+    asked = Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
+    questions = Enum.filter(asked, &(&1.status == :pending))
     pending_questions = questions_for(questions, selected_run)
     pending_question = select_question(pending_questions, socket.assigns.selected_question_id)
 
@@ -714,7 +715,7 @@ defmodule RailWeb.TaskLive do
     )
     |> assign(:tabs, build_tabs(task, started, role, questions))
     |> assign(:engineer_tab, engineer_tab(started))
-    |> assign(:blocked?, match?(%Run{status: :blocked_on_input}, selected_run))
+    |> assign(:answers_to_send?, answers_to_send?(asked, selected_run))
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
     |> assign(:watched_browser_task_id, watch_browser(socket, task))
     |> assign(:pending_questions, pending_questions)
@@ -825,13 +826,17 @@ defmodule RailWeb.TaskLive do
 
   defp tab_tone(run), do: Run.state(run)
 
-  # A run can ask several things at once, so a blocked run shows the whole queue
-  # as tabs, in the order they were asked.
-  defp questions_for(questions, %Run{status: :blocked_on_input, id: run_id}) do
-    Enum.filter(questions, &(&1.run_id == run_id))
+  # A run can ask several things at once, so it shows the whole queue as tabs, in
+  # the order they were asked. A run resumed without an answer still shows them.
+  defp questions_for(questions, %Run{id: run_id}), do: Enum.filter(questions, &(&1.run_id == run_id))
+  defp questions_for(_questions, nil), do: []
+
+  # A round settled here but not yet sent, whether or not the run is still parked on it.
+  defp answers_to_send?(asked, %Run{id: run_id}) do
+    Enum.any?(asked, &(&1.run_id == run_id and &1.status in [:answered, :dismissed] and &1.delivered_at == nil))
   end
 
-  defp questions_for(_questions, _not_blocked), do: []
+  defp answers_to_send?(_asked, nil), do: false
 
   # The tab the human picked stays put across refreshes; once it is answered the
   # front of the queue takes over.
