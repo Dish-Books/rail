@@ -11,7 +11,7 @@ defmodule RailWeb.ProjectSelectionControllerTest do
         github_id: "gh_project_selection",
         login: "project_selection_user",
         email: "project_selection_user@example.com",
-        admin: true
+        admin: false
       })
 
     %{conn: log_in_user(conn, user)}

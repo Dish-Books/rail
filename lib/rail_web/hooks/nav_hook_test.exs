@@ -27,7 +27,7 @@ defmodule RailWeb.Hooks.NavHookTest do
         github_id: "gh_nav_hook_selection",
         login: "nav_hook_selection_user",
         email: "nav_hook_selection_user@example.com",
-        admin: true
+        admin: false
       })
 
     issue =

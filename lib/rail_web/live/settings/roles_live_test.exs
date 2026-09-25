@@ -610,6 +610,18 @@ defmodule RailWeb.Settings.RolesLiveTest do
   test "with no project selected the page edits the first active one and the switcher stays on All projects", %{
     admin_conn: conn
   } do
+    {:ok, _inactive} =
+      Projects.create_project(system_scope(), %{
+        name: "Aaa Inactive 13021",
+        github_repo: "org/roles-live-13021",
+        github_installation_id: 13_021,
+        linear_team_key: "P13021",
+        default_branch: "main",
+        clone_path: "/tmp/repos/roles-live-13021",
+        linear_state_ids: %{"triage" => "st_triage"},
+        active: false
+      })
+
     {:ok, project} =
       Projects.create_project(system_scope(), %{
         name: "Roles Live Project 13020",

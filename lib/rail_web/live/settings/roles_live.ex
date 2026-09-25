@@ -17,14 +17,21 @@ defmodule RailWeb.Settings.RolesLive do
   def mount(_params, _session, socket) do
     projects = Projects.list_projects()
 
+    # The page always edits one project, so with none selected it takes the first.
+    roles_project =
+      Enum.find(projects, &(&1.id == socket.assigns.current_project_id)) ||
+        Enum.find(projects, & &1.active) || List.first(projects)
+
+    roles_project_id = roles_project && roles_project.id
+
     socket =
       socket
       |> assign(:page_title, "Agent Roles")
       |> assign(:current_section, :roles)
       |> assign(:projects, projects)
-      |> assign(:roles_project_id, nil)
-      |> assign(:current_project, nil)
-      |> assign(:roles, [])
+      |> assign(:roles_project_id, roles_project_id)
+      |> assign(:roles_project, roles_project)
+      |> assign(:roles, if(roles_project_id, do: Roles.list_roles(roles_project_id), else: []))
       |> assign(:backends, Tools.list_backends())
       |> assign(:mcp_servers, Mcp.list_servers())
       |> assign(:canonical_stages, Role.canonical_stages())
@@ -41,27 +48,7 @@ defmodule RailWeb.Settings.RolesLive do
     {:ok, socket}
   end
 
-  def handle_params(_params, _uri, socket) do
-    projects = socket.assigns.projects
-
-    # The page always edits one project, so with none selected it takes the first.
-    current_project =
-      Enum.find(projects, &(&1.id == socket.assigns.current_project_id)) ||
-        Enum.find(projects, & &1.active) || List.first(projects)
-
-    selected_project_id = current_project && current_project.id
-    roles = if selected_project_id, do: Roles.list_roles(selected_project_id), else: []
-
-    socket =
-      socket
-      |> assign(:page_title, "Agent Roles")
-      |> assign(:current_section, :roles)
-      |> assign(:roles_project_id, selected_project_id)
-      |> assign(:current_project, current_project)
-      |> assign(:roles, roles)
-
-    {:noreply, socket}
-  end
+  def handle_params(_params, _uri, socket), do: {:noreply, socket}
 
   def render(assigns) do
     ~H"""
@@ -973,7 +960,7 @@ defmodule RailWeb.Settings.RolesLive do
     attrs =
       build_role_attrs(role_params, existing_role, length(socket.assigns.roles), socket.assigns.backends)
 
-    case execute_role_save(scope, socket.assigns.current_project, modal, existing_role, attrs) do
+    case execute_role_save(scope, socket.assigns.roles_project, modal, existing_role, attrs) do
       {:ok, _role} ->
         refreshed = Roles.list_roles(project_id)
 

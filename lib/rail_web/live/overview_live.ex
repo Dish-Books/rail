@@ -16,13 +16,12 @@ defmodule RailWeb.OverviewLive do
       socket
       |> assign(:page_title, "Overview")
       |> assign(:current_section, :overview)
+      |> load_overview_state(socket.assigns.current_project_id)
 
     {:ok, socket}
   end
 
-  def handle_params(_params, _uri, socket) do
-    {:noreply, load_overview_state(socket, socket.assigns.current_project_id)}
-  end
+  def handle_params(_params, _uri, socket), do: {:noreply, socket}
 
   def render(assigns) do
     ~H"""

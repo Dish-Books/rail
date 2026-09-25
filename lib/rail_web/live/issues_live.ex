@@ -16,7 +16,7 @@ defmodule RailWeb.IssuesLive do
       socket
       |> assign(:page_title, "Issues")
       |> assign(:current_section, :issues)
-      |> assign(:current_project, nil)
+      |> load_project(socket.assigns.current_project_id)
       |> assign(:syncing_project_ids, MapSet.new())
       |> assign(:is_syncing, false)
 
@@ -35,7 +35,6 @@ defmodule RailWeb.IssuesLive do
       |> assign(:show_finished, params["finished"] == "true")
       |> assign(:mine, params["mine"] == "true")
       |> assign(:page, page_number(params["page"]))
-      |> load_project(socket.assigns.current_project_id)
       |> reload_data()
 
     {:noreply, socket}

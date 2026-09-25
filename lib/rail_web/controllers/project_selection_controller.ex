@@ -16,8 +16,7 @@ defmodule RailWeb.ProjectSelectionController do
     local_path? =
       is_binary(return_to) and String.starts_with?(return_to, "/") and
         not String.starts_with?(return_to, "//") and
-        not String.contains?(return_to, ["\\", "/%09", "/\t"]) and
-        match?(%URI{scheme: nil, host: nil}, URI.parse(return_to))
+        not String.contains?(return_to, ["\\", "/%09", "/\t"])
 
     redirect(conn, to: if(local_path?, do: return_to, else: ~p"/"))
   end
