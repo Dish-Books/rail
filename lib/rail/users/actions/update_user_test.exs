@@ -33,16 +33,6 @@ defmodule Rail.Users.Actions.UpdateUserTest do
   end
 
   describe "profile fields" do
-    test "sets and clears the project filter" do
-      user = Rail.Repo.insert!(%User{github_id: "pf_gh", login: "pf", email: "pf@example.com"})
-
-      assert {:ok, %User{last_project_filter: "prj_01abcdef"}} =
-               Users.update_user(Scope.for_system(), user, %{last_project_filter: "prj_01abcdef"})
-
-      assert {:ok, %User{last_project_filter: nil}} =
-               Users.update_user(Scope.for_system(), user, %{last_project_filter: nil})
-    end
-
     test "rejects a non-admin, including on their own record", %{scope: scope, user: user, admin: admin} do
       assert {:error, :not_authorized} = Users.update_user(scope, admin, %{name: "Renamed"})
       assert {:error, :not_authorized} = Users.update_user(scope, user, %{name: "Renamed"})
@@ -139,8 +129,8 @@ defmodule Rail.Users.Actions.UpdateUserTest do
                  linear_token_expires_at: DateTime.shift(DateTime.utc_now(), hour: 1)
                })
 
-      assert {:ok, %User{linear_access_token: "lin_at", last_project_filter: "prj_1"}} =
-               Users.update_user(scope, linked, %{last_project_filter: "prj_1"})
+      assert {:ok, %User{linear_access_token: "lin_at", name: "Renamed"}} =
+               Users.update_user(scope, linked, %{name: "Renamed"})
     end
   end
 end

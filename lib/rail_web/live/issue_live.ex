@@ -19,7 +19,6 @@ defmodule RailWeb.IssueLive do
       socket
       |> assign(:page_title, "Issue")
       |> assign(:current_section, :issues)
-      |> assign(:current_project_id, nil)
       |> assign(:issue, nil)
       |> assign(:assignees, Users.list_linear_users())
       |> assign(:assignee_query, "")
@@ -124,7 +123,6 @@ defmodule RailWeb.IssueLive do
         socket
         |> assign(:issue, issue)
         |> assign(:page_title, "#{issue.identifier} #{issue.title}")
-        |> assign(:current_project_id, issue.project_id)
 
       {:error, :not_found} ->
         socket

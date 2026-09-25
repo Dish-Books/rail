@@ -11,8 +11,7 @@ defmodule RailWeb.Components.NavTest do
       render_component(&Nav.nav/1,
         current_section: :overview,
         is_rail_extended: true,
-        attention_count: 0,
-        current_project_id: nil
+        attention_count: 0
       )
 
     assert html =~ "id=\"navigation-rail\""
@@ -39,15 +38,15 @@ defmodule RailWeb.Components.NavTest do
       render_component(&Nav.nav/1,
         current_section: :issues,
         is_rail_extended: false,
-        attention_count: 0,
-        current_project_id: "prj_test"
+        attention_count: 0
       )
 
     assert html =~ "id=\"navigation-rail\""
     refute html =~ "id=\"brand-name\""
     refute html =~ "id=\"nav-label-overview\""
     assert html =~ "title=\"Expand sidebar\""
-    assert html =~ "?project=prj_test"
+    assert html =~ ~s(href="/issues")
+    refute html =~ "?project="
   end
 
   test "nav_rail renders attention badge on overview when attention_count > 0" do
@@ -55,8 +54,7 @@ defmodule RailWeb.Components.NavTest do
       render_component(&Nav.nav/1,
         current_section: :overview,
         is_rail_extended: true,
-        attention_count: 4,
-        current_project_id: nil
+        attention_count: 4
       )
 
     assert html_with_badge =~ "id=\"attention-badge\""
@@ -66,8 +64,7 @@ defmodule RailWeb.Components.NavTest do
       render_component(&Nav.nav/1,
         current_section: :overview,
         is_rail_extended: true,
-        attention_count: 0,
-        current_project_id: nil
+        attention_count: 0
       )
 
     refute html_no_badge =~ "id=\"attention-badge\""
@@ -79,8 +76,7 @@ defmodule RailWeb.Components.NavTest do
         render_component(&Nav.nav/1,
           current_section: section,
           is_rail_extended: true,
-          attention_count: 0,
-          current_project_id: ""
+          attention_count: 0
         )
 
       assert html =~ "id=\"nav-#{section}\""
@@ -92,8 +88,7 @@ defmodule RailWeb.Components.NavTest do
         render_component(&Nav.nav/1,
           current_section: sub,
           is_rail_extended: true,
-          attention_count: 0,
-          current_project_id: nil
+          attention_count: 0
         )
 
       assert html =~ "id=\"nav-settings\""

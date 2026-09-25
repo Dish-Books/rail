@@ -16,30 +16,25 @@ defmodule RailWeb.IssuesLive do
       socket
       |> assign(:page_title, "Issues")
       |> assign(:current_section, :issues)
-      |> assign(:current_project_id, nil)
-      |> assign(:current_project, nil)
+      |> load_project(socket.assigns.current_project_id)
       |> assign(:syncing_project_ids, MapSet.new())
       |> assign(:is_syncing, false)
 
     {:ok, socket}
   end
 
-  # Everything the list shows is in the URL, so a search or a page can be linked
-  # to and survives a reload.
+  # The search, filters and page are in the URL, so they can be linked to and
+  # survive a reload; the project is the switcher's.
   def handle_params(params, _uri, socket) do
-    project_id = present(params["project"])
-
     socket =
       socket
       |> assign(:page_title, "Issues")
       |> assign(:current_section, :issues)
-      |> assign(:current_project_id, project_id)
       |> assign(:search, params["q"] || "")
       |> assign(:filter_priority, Enum.find(Issue.priorities(), &(to_string(&1) == params["priority"])))
       |> assign(:show_finished, params["finished"] == "true")
       |> assign(:mine, params["mine"] == "true")
       |> assign(:page, page_number(params["page"]))
-      |> load_project(project_id)
       |> reload_data()
 
     {:noreply, socket}
@@ -425,7 +420,6 @@ defmodule RailWeb.IssuesLive do
   defp issues_path(assigns, changes) do
     params =
       [
-        project: assigns.current_project_id,
         q: assigns.search,
         priority: assigns.filter_priority,
         mine: assigns.mine,
@@ -446,9 +440,6 @@ defmodule RailWeb.IssuesLive do
     |> assign(:syncing_project_ids, ids)
     |> assign(:is_syncing, MapSet.size(ids) > 0)
   end
-
-  defp present(value) when is_binary(value) and value != "", do: value
-  defp present(_blank), do: nil
 
   defp page_number(value) when is_binary(value) do
     case Integer.parse(value) do

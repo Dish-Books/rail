@@ -18,7 +18,11 @@ defmodule Rail.Tools.Actions.ObserveBrowserTest do
         "data" => %{
           "issueCreate" => %{
             "success" => true,
-            "issue" => %{"id" => "lin_obb_1", "identifier" => "OBB-1", "title" => "Observe Browser"}
+            "issue" => %{
+              "id" => "lin_obb_#{System.unique_integer([:positive])}",
+              "identifier" => "OBB-1",
+              "title" => "Observe Browser"
+            }
           }
         }
       })

@@ -5,28 +5,11 @@ defmodule RailWeb.Hooks.NavHook do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
-  alias Rail.Scope
-  alias Rail.Users
-  alias Rail.Users.Schemas.User
 
-  def on_mount(:default, params, _session, socket) do
-    scope = socket.assigns.current_scope
+  def on_mount(:default, _params, session, socket) do
     projects = Projects.list_projects()
 
     attention_count = count_attention(projects)
-
-    url_project =
-      case Map.get(params, "project") do
-        id when is_binary(id) and id != "" -> id
-        _other -> nil
-      end
-
-    saved_project =
-      if is_nil(url_project) and is_struct(scope.user, User) do
-        scope.user.last_project_filter
-      end
-
-    current_project_id = url_project || saved_project
 
     socket =
       socket
@@ -35,7 +18,7 @@ defmodule RailWeb.Hooks.NavHook do
       |> assign(:show_project_switcher, false)
       |> assign(:projects, projects)
       |> assign(:attention_count, attention_count)
-      |> assign(:current_project_id, current_project_id)
+      |> assign(:current_project_id, session["selected_project_id"])
       |> assign(:current_section, :overview)
       |> attach_hook(:nav_handle_params, :handle_params, &handle_nav_params/3)
       |> attach_hook(:nav_handle_events, :handle_event, &handle_nav_events/3)
@@ -43,29 +26,8 @@ defmodule RailWeb.Hooks.NavHook do
     {:cont, socket}
   end
 
-  defp handle_nav_params(params, uri, socket) do
-    project_id =
-      case Map.get(params, "project") do
-        id when is_binary(id) and id != "" -> id
-        _other -> nil
-      end
-
-    current_path = URI.parse(uri).path
-
-    scope = socket.assigns[:current_scope]
-
-    # Updating a user requires :users/:manage; the session's own user is already
-    # authenticated by the router, so this self-update runs as the system.
-    if scope && scope.user do
-      Users.update_user(Scope.for_system(), scope.user, %{last_project_filter: project_id})
-    end
-
-    socket =
-      socket
-      |> assign(:current_project_id, project_id)
-      |> assign(:current_path, current_path)
-
-    {:cont, socket}
+  defp handle_nav_params(_params, uri, socket) do
+    {:cont, assign(socket, :current_path, URI.parse(uri).path)}
   end
 
   defp handle_nav_events("toggle_rail", _params, socket) do
@@ -91,19 +53,8 @@ defmodule RailWeb.Hooks.NavHook do
   defp handle_nav_events("select_project", %{"project_id" => project_id}, socket) do
     path = socket.assigns[:current_path] || "/"
 
-    target =
-      if project_id in [nil, ""] do
-        path
-      else
-        "#{path}?project=#{project_id}"
-      end
-
-    socket =
-      socket
-      |> assign(:show_project_switcher, false)
-      |> push_patch(to: target)
-
-    {:halt, socket}
+    # A LiveView cannot write the session, so the pick goes through a controller that can.
+    {:halt, redirect(socket, to: ~p"/project-selection?#{[project_id: project_id, return_to: path]}")}
   end
 
   defp handle_nav_events(_event, _params, socket) do

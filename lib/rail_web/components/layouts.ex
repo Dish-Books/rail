@@ -38,7 +38,6 @@ defmodule RailWeb.Layouts do
         current_section={@current_section}
         is_rail_extended={@is_rail_extended}
         attention_count={@attention_count}
-        current_project_id={@current_project_id}
       />
 
       <div class="flex flex-col flex-1 min-w-0 h-full overflow-hidden">

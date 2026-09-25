@@ -29,7 +29,11 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
         "data" => %{
           "issueCreate" => %{
             "success" => true,
-            "issue" => %{"id" => "lin_qat_1", "identifier" => "QAT-1", "title" => "Qa Tools"}
+            "issue" => %{
+              "id" => "lin_qat_#{System.unique_integer([:positive])}",
+              "identifier" => "QAT-1",
+              "title" => "Qa Tools"
+            }
           }
         }
       })

@@ -20,7 +20,11 @@ defmodule Rail.Tools.BrowserSessionTest do
         "data" => %{
           "issueCreate" => %{
             "success" => true,
-            "issue" => %{"id" => "lin_brs_1", "identifier" => "BRS-1", "title" => "Browser Session"}
+            "issue" => %{
+              "id" => "lin_brs_#{System.unique_integer([:positive])}",
+              "identifier" => "BRS-1",
+              "title" => "Browser Session"
+            }
           }
         }
       })

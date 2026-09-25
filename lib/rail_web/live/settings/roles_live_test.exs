@@ -97,7 +97,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "You are an engineer."
              })
 
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
     # Stage list checks
     assert has_element?(view, "#pipeline-stages-list")
@@ -127,7 +127,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
       })
 
     view |> element("#project-selector-form") |> render_change(%{"project_id" => project2.id})
-    assert_patched(view, ~p"/settings/roles?project=#{project2.id}")
+    assert_redirect(view, ~p"/project-selection?#{[project_id: project2.id, return_to: "/settings/roles"]}")
   end
 
   test "creates a new role with stage binding", %{agy_backend: agy_backend, admin_conn: conn} do
@@ -148,7 +148,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         }
       })
 
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
     # Open create modal for product stage
     view |> element("#assign-stage-button-product") |> render_click()
@@ -236,7 +236,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         }
       })
 
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
     # No stage param: defaults to the first canonical stage with no role bound
     view |> element("#add-custom-role-button") |> render_click()
@@ -293,7 +293,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "You chase down defects."
              })
 
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
     view |> element("#edit-role-button-#{role_id}") |> render_click()
     assert has_element?(view, "#role-modal-title", "Bug Hunter")
@@ -413,7 +413,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "You are an engineer."
              })
 
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
     view |> element("#edit-role-button-#{role_id}") |> render_click()
     assert has_element?(view, "#role-mcp-server-rl_sentry", "No tools cached yet")
@@ -497,7 +497,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
                system_prompt: "Review PRs"
              })
 
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
     assert has_element?(view, "#delete-role-button-#{role_id}")
 
     # Open delete modal
@@ -563,7 +563,8 @@ defmodule RailWeb.Settings.RolesLiveTest do
         }
       })
 
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{target_project.id}")
+    assert {:ok, view, _html} =
+             live(init_test_session(conn, %{selected_project_id: target_project.id}), ~p"/settings/roles")
 
     view |> element("#copy-roles-button") |> render_click()
     assert has_element?(view, "#copy-roles-modal")
@@ -606,6 +607,40 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert render(view2) =~ project.name
   end
 
+  test "with no project selected the page edits the first active one and the switcher stays on All projects", %{
+    admin_conn: conn
+  } do
+    {:ok, _inactive} =
+      Projects.create_project(system_scope(), %{
+        name: "Aaa Inactive 13021",
+        github_repo: "org/roles-live-13021",
+        github_installation_id: 13_021,
+        linear_team_key: "P13021",
+        default_branch: "main",
+        clone_path: "/tmp/repos/roles-live-13021",
+        linear_state_ids: %{"triage" => "st_triage"},
+        active: false
+      })
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13020",
+        github_repo: "org/roles-live-13020",
+        github_installation_id: 13_020,
+        linear_team_key: "P13020",
+        default_branch: "main",
+        clone_path: "/tmp/repos/roles-live-13020",
+        linear_state_ids: %{"triage" => "st_triage"},
+        active: true
+      })
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/roles")
+
+    assert has_element?(view, "#project-selector option[selected]", project.name)
+    assert has_element?(view, "#selected-project-name", "All projects")
+    assert has_element?(view, "#nav-issues[href='/issues']")
+  end
+
   test "select_project event updates selected project", %{
     admin_conn: conn,
     admin_user: _admin_user
@@ -644,14 +679,14 @@ defmodule RailWeb.Settings.RolesLiveTest do
         }
       })
 
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project1.id}")
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project1.id}), ~p"/settings/roles")
     assert has_element?(view, "#project-selector option[selected]", "Project One")
 
     view
     |> form("#project-selector-form", %{"project_id" => project2.id})
     |> render_change()
 
-    assert_patched(view, ~p"/settings/roles?project=#{project2.id}")
+    assert_redirect(view, ~p"/project-selection?#{[project_id: project2.id, return_to: "/settings/roles"]}")
   end
 
   test "renders available models dropdown and validates name in create modal", %{
@@ -677,7 +712,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         }
       })
 
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
     # Open create modal from a stage row
     view |> element("#assign-stage-button-product") |> render_click()
@@ -742,7 +777,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         }
       })
 
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
     # Open with atom/string stage that exists in default role names
     render_hook(view, "open_create_modal", %{"stage" => "engineer"})
@@ -813,7 +848,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     {:ok, _codex_backend} =
       Rail.Tools.create_backend(Rail.Scope.for_system(), %{name: :codex, executable_path: "/usr/local/bin/codex"})
 
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
     send(view.pid, :unrelated_pipeline_event)
 
@@ -865,7 +900,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
         }
       })
 
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
     render_hook(view, "open_delete_modal", %{"role_id" => "non_existent"})
     refute has_element?(view, "#delete-role-modal")
@@ -912,14 +947,17 @@ defmodule RailWeb.Settings.RolesLiveTest do
         }
       })
 
-    assert {:ok, view, _html} = live(conn, ~p"/settings/roles?project=#{project.id}")
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
 
     # Select project event via form change
     view
     |> form("#project-selector-form")
     |> render_change(%{"project_id" => other_project.id})
 
-    assert_patched(view, ~p"/settings/roles?project=#{other_project.id}")
+    assert_redirect(view, ~p"/project-selection?#{[project_id: other_project.id, return_to: "/settings/roles"]}")
+
+    assert {:ok, view, _html} =
+             live(init_test_session(conn, %{selected_project_id: other_project.id}), ~p"/settings/roles")
 
     # Validate copy event
     view |> element("#copy-roles-button") |> render_click()

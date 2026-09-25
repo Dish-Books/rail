@@ -7,7 +7,6 @@ defmodule RailWeb.Components.Nav do
   attr :current_section, :atom, required: true
   attr :is_rail_extended, :boolean, default: true
   attr :attention_count, :integer, default: 0
-  attr :current_project_id, :string, default: nil
 
   def nav(assigns) do
     ~H"""
@@ -45,7 +44,7 @@ defmodule RailWeb.Components.Nav do
             label="Overview"
             icon_active="pi-squares-four-fill"
             icon_inactive="pi-squares-four"
-            href={nav_path("/", @current_project_id)}
+            href={~p"/"}
             attention_count={@attention_count}
           />
 
@@ -56,7 +55,7 @@ defmodule RailWeb.Components.Nav do
             label="Issues"
             icon_active="pi-lightbulb-fill"
             icon_inactive="pi-lightbulb"
-            href={nav_path("/issues", @current_project_id)}
+            href={~p"/issues"}
             attention_count={0}
           />
 
@@ -78,7 +77,7 @@ defmodule RailWeb.Components.Nav do
             label="Settings"
             icon_active="pi-gear-fill"
             icon_inactive="pi-gear"
-            href={nav_path("/settings/connected-accounts", @current_project_id)}
+            href={~p"/settings/connected-accounts"}
             attention_count={0}
           />
         </nav>
@@ -320,7 +319,7 @@ defmodule RailWeb.Components.Nav do
 
         <!-- User Menu Button -->
         <.link
-          navigate={nav_path("/settings/connected-accounts", @current_project_id)}
+          navigate={~p"/settings/connected-accounts"}
           id="user-menu-button"
           data-qa="user-menu"
           title="User menu"
@@ -376,8 +375,4 @@ defmodule RailWeb.Components.Nav do
 
   defp section_title(:tasks), do: "Task"
   defp section_title(_other), do: "Rail"
-
-  defp nav_path(base_path, nil), do: base_path
-  defp nav_path(base_path, ""), do: base_path
-  defp nav_path(base_path, project_id), do: "#{base_path}?project=#{project_id}"
 end
