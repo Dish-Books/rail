@@ -71,14 +71,16 @@ defmodule RailWeb.Hooks.NavHook do
   end
 
   # What needs a human is counted in tasks, the same as the overview lists them:
-  # one task waiting is one thing to do, however many runs it has behind it.
+  # a task waits only if the latest run at its stage does, not one it has retried.
   defp count_attention(projects) do
     projects
     |> Enum.flat_map(fn project ->
       Pipeline.list_runs(project_id: project.id, preload: [:role, :questions, task: :issue])
     end)
-    |> Enum.filter(&Run.needs_attention?/1)
-    |> Enum.uniq_by(& &1.task_id)
-    |> length()
+    |> Enum.filter(&(&1.role.stage == &1.task.stage))
+    |> Enum.group_by(& &1.task_id)
+    |> Enum.count(fn {_task_id, stage_runs} ->
+      stage_runs |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime) |> Run.needs_attention?()
+    end)
   end
 end

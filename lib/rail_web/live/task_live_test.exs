@@ -85,6 +85,37 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "[data-qa='task_status_chip']", "Review the ticket")
   end
 
+  test "the header reads the task's own stage, not the tab a stage with no run falls back to", %{
+    conn: conn,
+    task: task,
+    project: project
+  } do
+    {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+
+    {:ok, _engineer_run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: engineer.id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now()
+      })
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "[data-qa='task_status_chip']", "Queued for Review")
+  end
+
+  test "the header of a merged task says it merged", %{conn: conn, task: task} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :merged, merged_at: DateTime.utc_now()})
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "[data-qa='task_status_chip']", "Merged")
+    refute has_element?(view, "[data-qa='task_status_chip']", "Queued")
+  end
+
   test "an unassigned issue is claimed from the task page", %{conn: conn, task: task, scope: scope} do
     scope.user |> Ecto.Changeset.change(linear_user_id: "lin_usr_task_live") |> Repo.update!()
 

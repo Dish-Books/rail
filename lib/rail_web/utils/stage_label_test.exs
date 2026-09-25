@@ -10,6 +10,11 @@ defmodule RailWeb.Utils.StageLabelTest do
     assert stage_label(nil, nil) == "Waiting on you"
   end
 
+  test "a merged task says it merged, whatever its last run did" do
+    assert stage_label(%Task{stage: :merged}, nil) == "Merged"
+    assert stage_label(%Task{stage: :merged}, %Run{status: :finished, stage_outcome: :done}) == "Merged"
+  end
+
   test "a stage that has not started is queued for it" do
     assert stage_label(%Task{stage: :product}, nil) == "Queued for Product"
   end
@@ -40,6 +45,6 @@ defmodule RailWeb.Utils.StageLabelTest do
     assert stage_label(%Task{stage: :review}, done) == "Review the findings"
     assert stage_label(%Task{stage: :qa}, done) == "Review the QA report"
     assert stage_label(%Task{stage: :demo}, done) == "Watch the demo"
-    assert stage_label(%Task{stage: :merged}, done) == "Waiting on you"
+    assert approval_label(:merged) == "Waiting on you"
   end
 end

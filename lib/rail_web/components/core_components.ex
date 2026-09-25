@@ -18,6 +18,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate diff_stat(assigns), to: Components.DiffStat
   defdelegate dispatch_banner(assigns), to: Components.DispatchBanner
   defdelegate icon(assigns), to: Components.Icon
+  defdelegate in_progress_tasks(assigns), to: Components.InProgressTasks
   defdelegate input(assigns), to: Components.Input
   defdelegate issue_card(assigns), to: Components.IssueCard
   defdelegate issue_view(assigns), to: Components.IssueView
@@ -26,7 +27,6 @@ defmodule RailWeb.CoreComponents do
   defdelegate overview_stats(assigns), to: Components.OverviewStats
   defdelegate priority_icon(assigns), to: Components.IssueIcons
   defdelegate project_badge(assigns), to: Components.ProjectBadge
-  defdelegate role_roster(assigns), to: Components.RoleRoster
   defdelegate segmented_control(assigns), to: Components.SegmentedControl
   defdelegate settings_nav(assigns), to: Components.SettingsNav
   defdelegate status_icon(assigns), to: Components.IssueIcons

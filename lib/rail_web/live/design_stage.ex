@@ -36,7 +36,7 @@ defmodule RailWeb.Live.DesignStage do
 
     ~H"""
     <div id="design-stage" data-qa="design-stage" class="contents">
-      <.task_layout task={@task} run={@run} title={@task.issue.title}>
+      <.task_layout task={@task} run={@run} stage_run={@stage_run} title={@task.issue.title}>
         <:tabs>{render_slot(@tabs)}</:tabs>
 
         <:actions>

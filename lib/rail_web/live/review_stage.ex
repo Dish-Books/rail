@@ -39,7 +39,13 @@ defmodule RailWeb.Live.ReviewStage do
   def render(assigns) do
     ~H"""
     <div id="review-stage" data-qa="review-stage" class="contents">
-      <.task_layout task={@task} run={@run} title={@task.issue.title} flush={@findings != []}>
+      <.task_layout
+        task={@task}
+        run={@run}
+        stage_run={@stage_run}
+        title={@task.issue.title}
+        flush={@findings != []}
+      >
         <:tabs>{render_slot(@tabs)}</:tabs>
 
         <:actions>

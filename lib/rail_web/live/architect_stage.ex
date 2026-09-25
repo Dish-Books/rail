@@ -28,7 +28,7 @@ defmodule RailWeb.Live.ArchitectStage do
   def render(assigns) do
     ~H"""
     <div id="architect-stage" data-qa="architect-stage" class="contents">
-      <.task_layout task={@task} run={@run} title={@task.issue.title}>
+      <.task_layout task={@task} run={@run} stage_run={@stage_run} title={@task.issue.title}>
         <:tabs>{render_slot(@tabs)}</:tabs>
 
         <:actions>

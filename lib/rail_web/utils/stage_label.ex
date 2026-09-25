@@ -19,6 +19,9 @@ defmodule RailWeb.Utils.StageLabel do
 
   def stage_label(nil, _run), do: "Waiting on you"
 
+  # No role runs at merged, so there is no run to say anything; the task is done.
+  def stage_label(%Task{stage: :merged}, _run), do: "Merged"
+
   def stage_label(%Task{stage: stage}, run) do
     case Run.state(run) do
       :queued -> "Queued for #{Task.stage_label(stage)}"

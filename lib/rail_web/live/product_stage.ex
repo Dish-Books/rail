@@ -27,7 +27,12 @@ defmodule RailWeb.Live.ProductStage do
   def render(assigns) do
     ~H"""
     <div id="product-stage" data-qa="product-stage" class="contents">
-      <.task_layout task={@task} run={@run} title={ticket_title(@ticket, @task)}>
+      <.task_layout
+        task={@task}
+        run={@run}
+        stage_run={@stage_run}
+        title={ticket_title(@ticket, @task)}
+      >
         <:tabs>{render_slot(@tabs)}</:tabs>
 
         <:meta :if={@ticket != nil and (@ticket.priority || @ticket.estimate)}>

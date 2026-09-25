@@ -49,7 +49,7 @@ defmodule RailWeb.Live.DemoStage do
   def render(assigns) do
     ~H"""
     <div id="demo-stage" data-qa="demo-stage" class="contents">
-      <.task_layout task={@task} run={@run} title={@task.issue.title} flush>
+      <.task_layout task={@task} run={@run} stage_run={@stage_run} title={@task.issue.title} flush>
         <:tabs>{render_slot(@tabs)}</:tabs>
 
         <:actions>

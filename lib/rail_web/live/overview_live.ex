@@ -5,11 +5,11 @@ defmodule RailWeb.OverviewLive do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
-  alias Rail.Projects
-  alias Rail.Roles
 
   @throughput_days 30
   @activity_limit 8
+  # Waiting on you, then broken, then working, then not started.
+  @attention_rank %{done: 0, blocked: 0, failed: 1, stopped: 1, running: 2, queued: 3}
 
   def mount(_params, _session, socket) do
     socket =
@@ -86,11 +86,10 @@ defmodule RailWeb.OverviewLive do
           id="overview-sidebar"
           class="space-y-8 lg:border-l lg:border-slate-200 lg:dark:border-slate-700/70 lg:pl-8"
         >
-          <.role_roster
-            groups={@roster_groups}
+          <.in_progress_tasks
+            groups={@in_progress_groups}
+            count={@stats.in_progress}
             is_filtered={@current_project_id != nil}
-            running_count={@running_count}
-            role_count={@roster_groups |> Enum.map(&length(elem(&1, 1))) |> Enum.sum()}
           />
 
           <section id="throughput-section">
@@ -109,8 +108,8 @@ defmodule RailWeb.OverviewLive do
     {:noreply, push_patch(socket, to: overview_path(socket.assigns, everyone: view == "everyone"))}
   end
 
-  # The overview is a list of runs and the tasks they belong to. What each run is
-  # doing it says itself, so nothing here has to work out which run a task means.
+  # The overview is the tasks in flight and the runs behind them; a task stands
+  # where the latest run at its own stage left it.
   defp load_overview_state(socket, project_id, everyone) do
     now = DateTime.utc_now()
     user_id = socket.assigns.current_scope.user.id
@@ -119,16 +118,21 @@ defmodule RailWeb.OverviewLive do
     preload = [:role, :questions, task: [:project, :issue]]
 
     runs = Pipeline.list_runs(project_id: project_id, owner_user_id: owner_user_id, preload: preload)
-    tasks = Pipeline.list_tasks(project_id: project_id, owner_user_id: owner_user_id, preload: [:issue])
-    # The roster says what every agent is doing, whoever owns the work.
-    all_runs = if everyone, do: runs, else: Pipeline.list_runs(project_id: project_id, preload: preload)
+    tasks = Pipeline.list_tasks(project_id: project_id, owner_user_id: owner_user_id, preload: [:project, :issue])
+
+    # The stat and the list both read this one list, so they cannot disagree.
+    in_progress =
+      Enum.filter(tasks, &(is_nil(&1.merged_at) and &1.stage != :merged and is_nil(&1.issue.completed_at)))
+
+    stage_runs = latest_stage_runs(runs)
+
     # A task waits on a human once, whatever its stage: the run of the stage it is
     # in is the one thing to do about it.
     waiting =
-      runs
+      stage_runs
+      |> Map.values()
       |> Enum.filter(&Run.needs_attention?/1)
       |> Enum.sort_by(&Run.waiting_since/1, DateTime)
-      |> Enum.uniq_by(& &1.task_id)
 
     # Waiting on you is the user's own in either view; Up next follows the view.
     waiting_on_user = Enum.filter(waiting, &(&1.task.issue.owner_user_id == user_id))
@@ -145,12 +149,22 @@ defmodule RailWeb.OverviewLive do
 
     socket
     |> assign(:waiting, waiting)
-    |> assign(:stats, stats(tasks, completed, waiting_on_user, now))
+    |> assign(:stats, stats(in_progress, completed, waiting_on_user, now))
     |> assign(:activity, activity(runs, completed, DateTime.shift(now, day: -1)))
-    |> assign(:running_count, Enum.count(all_runs, &Run.running?/1))
-    |> assign(:roster_groups, build_roster_groups(project_id, all_runs, user_id, now))
+    |> assign(:in_progress_groups, build_in_progress_groups(in_progress, stage_runs, user_id, now))
     |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
     |> assign(:dispatch_disabled, Application.get_env(:rail, :no_dispatch, false))
+  end
+
+  # An earlier run at the task's stage has been retried, and one at another stage
+  # is behind it, so neither says where the task stands.
+  defp latest_stage_runs(runs) do
+    runs
+    |> Enum.filter(&(&1.role.stage == &1.task.stage))
+    |> Enum.group_by(& &1.task_id)
+    |> Map.new(fn {task_id, task_runs} ->
+      {task_id, Enum.max_by(task_runs, &(&1.started_at || &1.inserted_at), DateTime)}
+    end)
   end
 
   # Defaults stay out of the URL, so the user's own work is still just /.
@@ -166,12 +180,12 @@ defmodule RailWeb.OverviewLive do
     end
   end
 
-  defp stats(tasks, completed, waiting, now) do
+  defp stats(in_progress, completed, waiting, now) do
     shipped = shipped_between(completed, DateTime.shift(now, day: -30), now)
     prior = shipped_between(completed, DateTime.shift(now, day: -60), DateTime.shift(now, day: -30))
 
     %{
-      in_progress: Enum.count(tasks, &(is_nil(&1.merged_at) and &1.stage != :merged and is_nil(&1.issue.completed_at))),
+      in_progress: length(in_progress),
       shipped: shipped,
       shipped_delta: shipped - prior,
       waiting: length(waiting),
@@ -238,65 +252,35 @@ defmodule RailWeb.OverviewLive do
   defp questions(%Run{questions: [_one]}), do: "a question"
   defp questions(%Run{questions: questions}), do: "#{length(questions)} questions"
 
-  defp build_roster_groups(project_id, runs, user_id, now) when is_binary(project_id) do
-    case Projects.get_project(project_id) do
-      {:ok, project} -> [{project, role_entries(project, runs, user_id, now)}]
-      _no_project -> []
-    end
+  defp build_in_progress_groups(in_progress, stage_runs, user_id, now) do
+    in_progress
+    |> Enum.map(&build_in_progress_entry(&1, Map.get(stage_runs, &1.id), user_id, now))
+    |> Enum.sort_by(& &1.changed_at, DateTime)
+    |> Enum.sort_by(&Map.fetch!(@attention_rank, &1.state))
+    |> Enum.group_by(& &1.task.project)
+    |> Enum.sort_by(fn {project, _entries} -> project.inserted_at end, DateTime)
+    |> Enum.sort_by(fn {project, _entries} -> project.name end)
   end
 
-  defp build_roster_groups(nil, runs, user_id, now) do
-    Enum.map(Projects.list_projects(), fn project ->
-      project_runs = Enum.filter(runs, &(&1.task.project_id == project.id))
-      {project, role_entries(project, project_runs, user_id, now)}
-    end)
-  end
+  defp build_in_progress_entry(task, run, user_id, now) do
+    state = Run.state(run)
 
-  defp role_entries(project, runs, user_id, now) do
-    project.id
-    |> Roles.list_roles()
-    |> Enum.map(fn role -> build_role_entry(role, Enum.filter(runs, &(&1.role_id == role.id)), user_id, now) end)
-  end
-
-  # A role reads off its own runs: one waiting on a human comes first, then one
-  # working, then whichever it touched last.
-  defp build_role_entry(role, runs, user_id, now) do
-    waiting = Enum.find(runs, &Run.needs_attention?/1)
-    running = Enum.find(runs, &Run.running?/1)
-    last = Enum.max_by(runs, &Run.waiting_since/1, DateTime, fn -> nil end)
-
-    {tone, run, subtitle} =
-      cond do
-        waiting -> waiting_entry(waiting, user_id, now)
-        running -> {:running, running, "Running · #{running.task.issue.identifier}"}
-        last -> last_subtitle(last, now)
-        true -> {:idle, nil, "Idle · no work assigned"}
+    changed_at =
+      case state do
+        :running -> run.started_at || run.inserted_at
+        :queued -> task.updated_at
+        _ended -> Run.waiting_since(run)
       end
 
-    %{role: role, tone: tone, run: run, subtitle: subtitle}
-  end
-
-  # A role waiting because it broke still reads as broken: "waiting on you" is
-  # true of it but says nothing about what it wants. Only the owner is "you".
-  defp waiting_entry(run, user_id, now) do
-    key = run.task.issue.identifier
-    on = if run.task.issue.owner_user_id == user_id, do: "you", else: "review"
-
-    case Run.state(run) do
-      :done -> {:waiting, run, "Handed off #{key} · waiting on #{on}"}
-      :blocked -> {:waiting, run, "Blocked · #{key} · waiting on #{on}"}
-      :failed -> last_subtitle(run, now)
-      :stopped -> {:failed, run, "Stopped #{age(run, now)} ago · #{key}"}
-    end
-  end
-
-  defp age(run, now), do: format_age(DateTime.diff(now, Run.waiting_since(run)))
-
-  defp last_subtitle(run, now) do
-    key = run.task.issue.identifier
-
-    if Run.state(run) == :failed,
-      do: {:failed, run, "Failed #{age(run, now)} ago · #{key}"},
-      else: {:idle, run, "Last ran #{age(run, now)} ago · #{key}"}
+    %{
+      task: task,
+      state: state,
+      label: stage_label(task, run),
+      style: run_state_style(run),
+      # Amber means waiting on the viewer, the same work the Waiting on you stat counts.
+      is_waiting: state in [:done, :blocked] and task.issue.owner_user_id == user_id,
+      changed_at: changed_at,
+      age: format_age(DateTime.diff(now, changed_at))
+    }
   end
 end

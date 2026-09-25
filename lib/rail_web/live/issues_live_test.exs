@@ -11,6 +11,7 @@ defmodule RailWeb.IssuesLiveTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Scope
   alias Rail.Users
 
@@ -560,9 +561,58 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#task-link-#{issue.id}[href='/tasks/#{task.id}']")
   end
 
+  test "a row reads the latest run at the task's stage, not one it retried", %{conn: conn, project: project} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_retry",
+        login: "issues_live_user_retry",
+        email: "issues_live_user_retry@example.com",
+        admin: true
+      })
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_retry_1", "identifier" => "RT-1", "title" => "Retry after failure"}
+          }
+        }
+      })
+    end)
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Retry after failure"})
+    {:ok, issue} = Issues.update_issue(issue, %{state: :backlog})
+    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
+    now = DateTime.utc_now()
+
+    {:ok, _failed} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: qa.id,
+        status: :failed,
+        error: "3 of 11 checks failed",
+        started_at: DateTime.shift(now, hour: -2),
+        completed_at: DateTime.shift(now, hour: -1)
+      })
+
+    {:ok, _retry} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: qa.id,
+        status: :running,
+        started_at: DateTime.shift(now, minute: -10)
+      })
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
+
+    assert has_element?(view, "#task-link-#{issue.id}", "QA running")
+  end
+
   test "sync_issues button triggers sync on current project or all projects", %{
     conn: conn,
-    project: %Project{id: project_id}
+    project: %Project{id: seeded_id}
   } do
     {:ok, user} =
       Users.register_oauth_user(%{
@@ -573,6 +623,18 @@ defmodule RailWeb.IssuesLiveTest do
       })
 
     authed_conn = log_in_user(conn, user)
+
+    # Async tests sync the seeded project and announce it to every Issues page, so
+    # this one waits on a project nobody else syncs.
+    {:ok, %Project{id: project_id}} =
+      Projects.create_project(system_scope(), %{
+        name: "Sync Project",
+        github_repo: "example/sync",
+        github_installation_id: 555,
+        linear_team_key: "SYN",
+        default_branch: "main",
+        clone_path: "/tmp/sync"
+      })
 
     # No Linear stub is queued: the click only queues the pull.
     assert {:ok, view, _html} = live(init_test_session(authed_conn, %{selected_project_id: project_id}), ~p"/issues")
@@ -602,6 +664,7 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view_all, "#sync-issues-button", "Syncing...")
 
     send(view_all.pid, {:issues_synced, project_id})
+    send(view_all.pid, {:issues_synced, seeded_id})
     assert has_element?(view_all, "#sync-issues-button", "Sync Issues")
 
     # A comment changes nothing a row shows.

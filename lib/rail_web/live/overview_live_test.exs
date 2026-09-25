@@ -258,6 +258,7 @@ defmodule RailWeb.OverviewLiveTest do
       task_for = fn title, attrs ->
         {completed_at, attrs} = Map.pop(attrs, :completed_at)
         {owner_user_id, attrs} = Map.pop(attrs, :owner_user_id, user.id)
+        {task_project, attrs} = Map.pop(attrs, :project, project)
         n = System.unique_integer([:positive])
 
         Req.Test.expect(Rail.Linear, fn conn ->
@@ -271,7 +272,7 @@ defmodule RailWeb.OverviewLiveTest do
           })
         end)
 
-        {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: title})
+        {:ok, issue} = Issues.create_issue(system_scope(), task_project, %{description: title})
 
         issue =
           issue
@@ -492,47 +493,6 @@ defmodule RailWeb.OverviewLiveTest do
       assert_redirect(view, ~p"/project-selection?#{[project_id: project.id, return_to: "/"]}")
     end
 
-    test "the roster says waiting on you only for the user's own work", %{
-      conn: conn,
-      roles: roles,
-      rival: rival,
-      task_for: task_for
-    } do
-      now = DateTime.utc_now()
-      theirs = task_for.("Their handed-off task", %{owner_user_id: rival.id})
-      mine = task_for.("My handed-off design", %{stage: :design})
-
-      for {task, role} <- [{theirs, roles[:product]}, {mine, roles[:design]}] do
-        {:ok, _run} =
-          Pipeline.create_run(%{
-            task_id: task.id,
-            role_id: role.id,
-            status: :finished,
-            stage_outcome: :done,
-            started_at: DateTime.shift(now, hour: -2),
-            completed_at: DateTime.shift(now, hour: -1)
-          })
-      end
-
-      for path <- [~p"/", ~p"/?everyone=true"] do
-        assert {:ok, view, _html} = live(conn, path)
-
-        assert has_element?(
-                 view,
-                 "#role-row-#{roles[:product].id}[data-tone='waiting']",
-                 "Handed off #{theirs.issue.identifier} · waiting on review"
-               )
-
-        refute has_element?(view, "#role-row-#{roles[:product].id}", "waiting on you")
-
-        assert has_element?(
-                 view,
-                 "#role-row-#{roles[:design].id}[data-tone='waiting']",
-                 "Handed off #{mine.issue.identifier} · waiting on you"
-               )
-      end
-    end
-
     test "the chosen view is the link, so a reload or a shared link opens on it", %{
       conn: conn,
       rival: rival,
@@ -554,12 +514,13 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "1")
     end
 
-    test "the roster reads every role's runs, whoever owns the work", %{
+    test "the in-progress list follows the view, and counts what the stat counts", %{
       conn: conn,
       roles: roles,
       rival: rival,
       task_for: task_for
     } do
+      mine = task_for.("My task", %{})
       theirs = task_for.("Their running task", %{owner_user_id: rival.id, stage: :engineer})
 
       {:ok, _run} =
@@ -572,21 +533,49 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/")
 
-      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "0")
-      assert has_element?(view, "#roster-running-count", "1 / 8 running")
+      assert has_element?(view, "#in-progress-task-#{mine.id}")
+      refute has_element?(view, "#in-progress-task-#{theirs.id}")
+      assert has_element?(view, "#in-progress-count", ~r/^\s*1 task\s*$/)
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "1")
 
-      assert has_element?(
-               view,
-               "#role-row-#{roles[:engineer].id}[data-tone='running']",
-               "Running · #{theirs.issue.identifier}"
-             )
+      view |> element("#overview-view-everyone") |> render_click()
+
+      assert has_element?(view, "#in-progress-task-#{mine.id}")
+      assert has_element?(view, "#in-progress-task-#{theirs.id}", "Engineer running")
+      assert has_element?(view, "#in-progress-count", "2 tasks")
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "2")
     end
 
-    test "with nothing going on, nothing waits and every role is idle", %{
+    test "in everyone's view, only the user's own handed-off work reads as waiting on them", %{
       conn: conn,
-      project: project,
-      roles: roles
+      roles: roles,
+      rival: rival,
+      task_for: task_for
     } do
+      now = DateTime.utc_now()
+      theirs = task_for.("Their plan", %{owner_user_id: rival.id, stage: :architect})
+      mine = task_for.("My plan", %{stage: :architect})
+
+      for task <- [theirs, mine] do
+        {:ok, _run} =
+          Pipeline.create_run(%{
+            task_id: task.id,
+            role_id: roles[:architect].id,
+            status: :finished,
+            stage_outcome: :done,
+            started_at: DateTime.shift(now, hour: -2),
+            completed_at: DateTime.shift(now, hour: -1)
+          })
+      end
+
+      assert {:ok, view, _html} = live(conn, ~p"/?everyone=true")
+
+      assert has_element?(view, "#in-progress-task-#{theirs.id}[data-state='done']", "Review the plan")
+      refute has_element?(view, "#in-progress-task-#{theirs.id}.bg-amber-50")
+      assert has_element?(view, "#in-progress-task-#{mine.id}.bg-amber-50", "Review the plan")
+    end
+
+    test "with nothing going on, nothing waits and nothing is in progress", %{conn: conn, project: project} do
       assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/")
 
       assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "0")
@@ -594,10 +583,12 @@ defmodule RailWeb.OverviewLiveTest do
       refute has_element?(view, "#stat-oldest-waiting")
       assert has_element?(view, "#up-next-empty", "Nothing is waiting on you.")
       assert has_element?(view, "#activity-feed-empty")
-      assert has_element?(view, "#roster-running-count", "0 / 8 running")
-      assert has_element?(view, "#role-row-#{roles[:qa].id}[data-tone='idle']", "Idle · no work assigned")
+      assert has_element?(view, "#in-progress-empty", "Nothing is in progress.")
+      assert has_element?(view, "#in-progress-count", "0 tasks")
+      refute has_element?(view, "#role-roster")
+      refute has_element?(view, "[data-qa='role-row']")
+      refute has_element?(view, "#roster-running-count")
       assert has_element?(view, "#throughput-total", "0 total")
-      refute has_element?(view, "[data-qa='roster-project-header']")
     end
 
     test "the numbers across the top count what is in flight, what shipped and what waits", %{
@@ -633,8 +624,8 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#throughput-total", "2 total")
       assert view |> render() |> :binary.matches("data-qa=\"throughput-bar\"") |> length() == 30
 
-      # Unfiltered, the roster names the project each group of roles belongs to.
-      assert has_element?(view, "[data-qa='roster-project-header']", "Test Project")
+      # Unfiltered, the list names the project each group of tasks belongs to.
+      assert has_element?(view, "[data-qa='in-progress-project-header']", "Test Project")
     end
 
     test "up next leads with the longest-waiting run, and every entry only links to its task", %{
@@ -705,8 +696,8 @@ defmodule RailWeb.OverviewLiveTest do
       refute has_element?(view, "[data-qa='answer-input']")
 
       assert has_element?(view, "#stat-oldest-waiting", "oldest 3h 0m")
-      assert has_element?(view, "#role-row-#{roles[:product].id}[data-tone='waiting']", "Handed off")
-      assert has_element?(view, "#role-row-#{roles[:architect].id}[data-tone='waiting']", "Blocked")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "3")
+      assert has_element?(view, "#attention-badge", "3")
 
       assert has_element?(view, "#activity-ended-#{review_run.id}", "is ready for review")
       assert has_element?(view, "#activity-asked-#{one_question.id}", "asked a question")
@@ -755,8 +746,9 @@ defmodule RailWeb.OverviewLiveTest do
       refute has_element?(view, "#up-next-row-#{product_run.id}")
       assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
 
-      assert has_element?(view, "#role-row-#{roles[:design].id}[data-tone='waiting']", "Handed off")
-      refute has_element?(view, "#role-row-#{roles[:product].id}[data-tone='waiting']")
+      # The row dates from the design run, not the product run the task left behind.
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='done']", "Review the designs")
+      assert has_element?(view, "#in-progress-task-#{task.id} [data-qa='in-progress-age']", "1h 0m")
     end
 
     test "a run whose questions are all answered leads as ready to send", %{
@@ -811,7 +803,7 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#up-next-featured-#{run.id} [data-qa='up-next-summary']", "Which database?")
     end
 
-    test "since yesterday lists what runs did and what shipped, newest first, and roles read the same runs", %{
+    test "since yesterday lists what runs did and what shipped, newest first", %{
       conn: conn,
       roles: roles,
       task_for: task_for
@@ -913,15 +905,19 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert positions == Enum.sort(positions)
 
-      assert has_element?(view, "#roster-running-count", "1 / 8 running")
-      assert has_element?(view, "#role-row-#{roles[:engineer].id}[data-tone='running']", "Running")
-      assert has_element?(view, "#role-row-#{roles[:qa].id}[data-tone='failed']", "Failed 4h 0m ago")
-      assert has_element?(view, "#role-row-#{roles[:architect].id}[data-tone='failed']", "Stopped 3h 0m ago")
-      assert has_element?(view, "#role-row-#{roles[:product].id}[href='/tasks/#{moved_on.id}']", "Last ran 2h 0m ago")
+      # Only a run at the task's own stage says where it stands, not the product
+      # run it moved on from.
+      assert has_element?(view, "#in-progress-task-#{moved_on.id}[data-state='queued']", "Queued for Architect")
+
+      # Of two tasks that broke, the one broken longest comes first.
+      assert html |> :binary.match("in-progress-task-#{old_task.id}") |> elem(0) <
+               html |> :binary.match("in-progress-task-#{failed_task.id}") |> elem(0)
     end
 
-    test "a merged task waits on nobody", %{conn: conn, roles: roles, task_for: task_for} do
+    test "a merged task waits on nobody and is not in progress", %{conn: conn, roles: roles, task_for: task_for} do
       task = task_for.("Shipped work", %{stage: :merged, merged_at: DateTime.utc_now()})
+      completed = task_for.("Completed in Linear", %{completed_at: DateTime.utc_now()})
+      live_task = task_for.("Live work", %{})
 
       {:ok, _run} =
         Pipeline.create_run(%{
@@ -936,12 +932,167 @@ defmodule RailWeb.OverviewLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/")
 
       assert has_element?(view, "#up-next-empty")
+
+      refute has_element?(view, "#in-progress-task-#{task.id}")
+      refute has_element?(view, "#in-progress-task-#{completed.id}")
+      assert has_element?(view, "#in-progress-task-#{live_task.id}")
+      assert has_element?(view, "#in-progress-count", ~r/^\s*1 task\s*$/)
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "1")
     end
 
-    test "a project that no longer exists shows no roster", %{conn: conn, roles: roles} do
+    test "a stage that failed and is running again waits on nobody", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      task = task_for.("Retry after failure", %{stage: :qa})
+
+      {:ok, failed} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:qa].id,
+          status: :failed,
+          error: "3 of 11 checks failed",
+          started_at: DateTime.shift(now, hour: -2),
+          completed_at: DateTime.shift(now, hour: -1)
+        })
+
+      {:ok, _retry} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:qa].id,
+          status: :running,
+          started_at: DateTime.shift(now, minute: -10)
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#up-next-empty")
+      refute has_element?(view, "#up-next-featured-#{failed.id}")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      refute has_element?(view, "#attention-badge")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "QA running")
+    end
+
+    test "the sidebar lists every task in progress and where it stands", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      engineer = task_for.("Retry backs off", %{stage: :engineer})
+
+      {:ok, _running} =
+        Pipeline.create_run(%{
+          task_id: engineer.id,
+          role_id: roles[:engineer].id,
+          status: :running,
+          started_at: DateTime.shift(now, hour: -4)
+        })
+
+      architect = task_for.("Prorate seat changes", %{stage: :architect})
+
+      {:ok, _done} =
+        Pipeline.create_run(%{
+          task_id: architect.id,
+          role_id: roles[:architect].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.shift(now, hour: -3),
+          completed_at: DateTime.shift(now, hour: -2)
+        })
+
+      qa = task_for.("Retry a failed QA run", %{stage: :qa})
+
+      {:ok, _failed} =
+        Pipeline.create_run(%{
+          task_id: qa.id,
+          role_id: roles[:qa].id,
+          status: :failed,
+          error: "3 of 11 checks failed",
+          started_at: DateTime.shift(now, hour: -2),
+          completed_at: DateTime.shift(now, hour: -1)
+        })
+
+      assert {:ok, view, html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#in-progress-task-#{engineer.id}[data-state='running']", "Engineer running")
+      assert has_element?(view, "#in-progress-task-#{engineer.id} [data-qa='in-progress-age']", "4h 0m")
+      assert has_element?(view, "#in-progress-task-#{architect.id}[data-state='done']", "Review the plan")
+      assert has_element?(view, "#in-progress-task-#{architect.id}", "Prorate seat changes")
+      assert has_element?(view, "#in-progress-task-#{architect.id}", architect.issue.identifier)
+      assert has_element?(view, "#in-progress-task-#{qa.id}[data-state='failed']", "QA failed")
+
+      assert has_element?(view, "#in-progress-count", "3 tasks")
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "3")
+
+      # Waiting on you first, then broken, then working, however long each has been so.
+      positions =
+        Enum.map([architect, qa, engineer], fn task ->
+          html |> :binary.match("in-progress-task-#{task.id}") |> elem(0)
+        end)
+
+      assert positions == Enum.sort(positions)
+
+      refute has_element?(view, "#role-roster")
+    end
+
+    test "the list honors the project switcher", %{conn: conn, project: project, task_for: task_for} do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_other"}]}}})
+      end)
+
+      {:ok, other_project} =
+        Projects.create_project(system_scope(), %{
+          name: "Other Project",
+          github_repo: "example/other",
+          github_installation_id: 444,
+          linear_team_key: "OTH",
+          default_branch: "main",
+          clone_path: "/tmp/other",
+          linear_workspace_id: project.linear_workspace_id
+        })
+
+      mine = task_for.("Work in this project", %{})
+      theirs = task_for.("Work in the other project", %{project: other_project})
+
+      assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/")
+
+      assert has_element?(view, "#in-progress-task-#{mine.id}[data-state='queued']", "Queued for Product")
+      refute has_element?(view, "#in-progress-task-#{theirs.id}")
+      refute has_element?(view, "[data-qa='in-progress-project-header']")
+      assert has_element?(view, "#in-progress-count", ~r/^\s*1 task\s*$/)
+
+      assert {:ok, view, html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#in-progress-task-#{mine.id}")
+      assert has_element?(view, "#in-progress-task-#{theirs.id}")
+      assert has_element?(view, "[data-qa='in-progress-project-header']", "Test Project")
+      assert has_element?(view, "[data-qa='in-progress-project-header']", "Other Project")
+      assert has_element?(view, "#in-progress-count", "2 tasks")
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "2")
+
+      # Projects come in the switcher's order, by name.
+      positions =
+        Enum.map([theirs, mine], fn task -> html |> :binary.match("in-progress-task-#{task.id}") |> elem(0) end)
+
+      assert positions == Enum.sort(positions)
+    end
+
+    test "a row opens its task", %{conn: conn, task_for: task_for} do
+      task = task_for.("Open me", %{})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      view |> element("#in-progress-task-#{task.id}") |> render_click()
+      assert_redirect(view, ~p"/tasks/#{task.id}")
+    end
+
+    test "a project that no longer exists lists nothing in progress", %{conn: conn} do
       assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: "prj_missing"}), ~p"/")
 
-      refute has_element?(view, "#role-row-#{roles[:product].id}")
+      assert has_element?(view, "#in-progress-empty")
     end
   end
 end

@@ -351,10 +351,12 @@ defmodule RailWeb.IssuesLive do
 
   def handle_info({:issue_comments_changed, _issue_id}, socket), do: {:noreply, socket}
 
-  # Where a task got to is what the run for the stage it sits at says, picked out
+  # Where a task got to is what the latest run at the stage it sits at says, picked out
   # of the runs already loaded rather than queried per row.
   defp stage_run(%{runs: runs, stage: stage}) when is_list(runs) do
-    Enum.find(runs, &(&1.role != nil and &1.role.stage == stage))
+    runs
+    |> Enum.filter(&(&1.role != nil and &1.role.stage == stage))
+    |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
   end
 
   defp stage_run(nil), do: nil

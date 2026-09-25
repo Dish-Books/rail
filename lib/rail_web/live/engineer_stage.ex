@@ -41,7 +41,13 @@ defmodule RailWeb.Live.EngineerStage do
   def render(assigns) do
     ~H"""
     <div id="engineer-stage" data-qa="engineer-stage" class="contents">
-      <.task_layout task={@task} run={@run} title={@task.issue.title} flush={@work?}>
+      <.task_layout
+        task={@task}
+        run={@run}
+        stage_run={@stage_run}
+        title={@task.issue.title}
+        flush={@work?}
+      >
         <:tabs>{render_slot(@tabs)}</:tabs>
         <:actions>
           {render_slot(@actions)}

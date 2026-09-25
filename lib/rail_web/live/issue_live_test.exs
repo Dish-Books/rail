@@ -9,10 +9,12 @@ defmodule RailWeb.IssueLiveTest do
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
   alias Rail.Issues.Workers.SyncIssue
+  alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
@@ -105,6 +107,49 @@ defmodule RailWeb.IssueLiveTest do
 
     assert has_element?(view, "#issue-owner", "Unassigned")
     assert %Issue{owner_user_id: nil} = Repo.get!(Issue, issue.id)
+  end
+
+  test "the task link reads the latest run at the task's stage, not one it retried", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_retry",
+        identifier: "IPG-12",
+        title: "Retry after failure",
+        state: :todo
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+
+    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
+    now = DateTime.utc_now()
+
+    {:ok, _failed} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: qa.id,
+        status: :failed,
+        error: "3 of 11 checks failed",
+        started_at: DateTime.shift(now, hour: -2),
+        completed_at: DateTime.shift(now, hour: -1)
+      })
+
+    {:ok, _retry} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: qa.id,
+        status: :running,
+        started_at: DateTime.shift(now, minute: -10)
+      })
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    assert has_element?(view, "#issue-task-link", "QA running")
   end
 
   test "an issue with no task can be started from its page", %{conn: conn, project: project} do
