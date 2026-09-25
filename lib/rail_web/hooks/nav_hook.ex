@@ -26,8 +26,14 @@ defmodule RailWeb.Hooks.NavHook do
     {:cont, socket}
   end
 
-  defp handle_nav_params(_params, uri, socket) do
-    {:cont, assign(socket, :current_path, URI.parse(uri).path)}
+  defp handle_nav_params(params, uri, socket) do
+    socket =
+      socket
+      |> assign(:current_path, URI.parse(uri).path)
+      # The Overview's everyone's-work view survives a change of project.
+      |> assign(:kept_params, if(params["everyone"] == "true", do: [everyone: true], else: []))
+
+    {:cont, socket}
   end
 
   defp handle_nav_events("toggle_rail", _params, socket) do
@@ -53,8 +59,11 @@ defmodule RailWeb.Hooks.NavHook do
   defp handle_nav_events("select_project", %{"project_id" => project_id}, socket) do
     path = socket.assigns[:current_path] || "/"
 
+    kept_params = socket.assigns[:kept_params] || []
+    return_to = if kept_params == [], do: path, else: "#{path}?#{URI.encode_query(kept_params)}"
+
     # A LiveView cannot write the session, so the pick goes through a controller that can.
-    {:halt, redirect(socket, to: ~p"/project-selection?#{[project_id: project_id, return_to: path]}")}
+    {:halt, redirect(socket, to: ~p"/project-selection?#{[project_id: project_id, return_to: return_to]}")}
   end
 
   defp handle_nav_events(_event, _params, socket) do

@@ -113,8 +113,9 @@ defmodule RailWeb.OverviewLive do
   # doing it says itself, so nothing here has to work out which run a task means.
   defp load_overview_state(socket, project_id, everyone) do
     now = DateTime.utc_now()
+    user_id = socket.assigns.current_scope.user.id
     # A nil owner means no filter, so the own view must always name the user.
-    owner_user_id = if everyone, do: nil, else: socket.assigns.current_scope.user.id
+    owner_user_id = if everyone, do: nil, else: user_id
     preload = [:role, :questions, task: [:project, :issue]]
 
     runs = Pipeline.list_runs(project_id: project_id, owner_user_id: owner_user_id, preload: preload)
@@ -129,6 +130,9 @@ defmodule RailWeb.OverviewLive do
       |> Enum.sort_by(&Run.waiting_since/1, DateTime)
       |> Enum.uniq_by(& &1.task_id)
 
+    # Waiting on you is the user's own in either view; Up next lists the view's.
+    waiting_on_user = Enum.filter(waiting, &(&1.task.issue.owner_user_id == user_id))
+
     # Shipped means Linear completed the issue. Sixty days covers this month's
     # count and the month it is compared with.
     %{issues: completed} =
@@ -141,10 +145,10 @@ defmodule RailWeb.OverviewLive do
 
     socket
     |> assign(:waiting, waiting)
-    |> assign(:stats, stats(tasks, completed, waiting, now))
+    |> assign(:stats, stats(tasks, completed, waiting_on_user, now))
     |> assign(:activity, activity(runs, completed, DateTime.shift(now, day: -1)))
     |> assign(:running_count, Enum.count(all_runs, &Run.running?/1))
-    |> assign(:roster_groups, build_roster_groups(project_id, all_runs, now))
+    |> assign(:roster_groups, build_roster_groups(project_id, all_runs, user_id, now))
     |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
     |> assign(:dispatch_disabled, Application.get_env(:rail, :no_dispatch, false))
   end
@@ -234,36 +238,36 @@ defmodule RailWeb.OverviewLive do
   defp questions(%Run{questions: [_one]}), do: "a question"
   defp questions(%Run{questions: questions}), do: "#{length(questions)} questions"
 
-  defp build_roster_groups(project_id, runs, now) when is_binary(project_id) do
+  defp build_roster_groups(project_id, runs, user_id, now) when is_binary(project_id) do
     case Projects.get_project(project_id) do
-      {:ok, project} -> [{project, role_entries(project, runs, now)}]
+      {:ok, project} -> [{project, role_entries(project, runs, user_id, now)}]
       _no_project -> []
     end
   end
 
-  defp build_roster_groups(nil, runs, now) do
+  defp build_roster_groups(nil, runs, user_id, now) do
     Enum.map(Projects.list_projects(), fn project ->
       project_runs = Enum.filter(runs, &(&1.task.project_id == project.id))
-      {project, role_entries(project, project_runs, now)}
+      {project, role_entries(project, project_runs, user_id, now)}
     end)
   end
 
-  defp role_entries(project, runs, now) do
+  defp role_entries(project, runs, user_id, now) do
     project.id
     |> Roles.list_roles()
-    |> Enum.map(fn role -> build_role_entry(role, Enum.filter(runs, &(&1.role_id == role.id)), now) end)
+    |> Enum.map(fn role -> build_role_entry(role, Enum.filter(runs, &(&1.role_id == role.id)), user_id, now) end)
   end
 
   # A role reads off its own runs: one waiting on a human comes first, then one
   # working, then whichever it touched last.
-  defp build_role_entry(role, runs, now) do
+  defp build_role_entry(role, runs, user_id, now) do
     waiting = Enum.find(runs, &Run.needs_attention?/1)
     running = Enum.find(runs, &Run.running?/1)
     last = Enum.max_by(runs, &Run.waiting_since/1, DateTime, fn -> nil end)
 
     {tone, run, subtitle} =
       cond do
-        waiting -> waiting_entry(waiting, now)
+        waiting -> waiting_entry(waiting, user_id, now)
         running -> {:running, running, "Running · #{running.task.issue.identifier}"}
         last -> last_subtitle(last, now)
         true -> {:idle, nil, "Idle · no work assigned"}
@@ -273,13 +277,14 @@ defmodule RailWeb.OverviewLive do
   end
 
   # A role waiting because it broke still reads as broken: "waiting on you" is
-  # true of it but says nothing about what it wants.
-  defp waiting_entry(run, now) do
+  # true of it but says nothing about what it wants. Only the owner is "you".
+  defp waiting_entry(run, user_id, now) do
     key = run.task.issue.identifier
+    on = if run.task.issue.owner_user_id == user_id, do: "you", else: "review"
 
     case Run.state(run) do
-      :done -> {:waiting, run, "Handed off #{key} · waiting on you"}
-      :blocked -> {:waiting, run, "Blocked · #{key} · waiting on you"}
+      :done -> {:waiting, run, "Handed off #{key} · waiting on #{on}"}
+      :blocked -> {:waiting, run, "Blocked · #{key} · waiting on #{on}"}
       :failed -> last_subtitle(run, now)
       :stopped -> {:failed, run, "Stopped #{age(run, now)} ago · #{key}"}
     end
