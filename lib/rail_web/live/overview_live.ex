@@ -124,15 +124,7 @@ defmodule RailWeb.OverviewLive do
     in_progress =
       Enum.filter(tasks, &(is_nil(&1.merged_at) and &1.stage != :merged and is_nil(&1.issue.completed_at)))
 
-    # An earlier run at the task's stage has been retried, and one at another stage
-    # is behind it, so neither says where the task stands.
-    stage_runs =
-      runs
-      |> Enum.filter(&(&1.role.stage == &1.task.stage))
-      |> Enum.group_by(& &1.task_id)
-      |> Map.new(fn {task_id, task_runs} ->
-        {task_id, Enum.max_by(task_runs, &(&1.started_at || &1.inserted_at), DateTime)}
-      end)
+    stage_runs = latest_stage_runs(runs)
 
     # A task waits on a human once, whatever its stage: the run of the stage it is
     # in is the one thing to do about it.
@@ -162,6 +154,17 @@ defmodule RailWeb.OverviewLive do
     |> assign(:in_progress_groups, build_in_progress_groups(in_progress, stage_runs, now))
     |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
     |> assign(:dispatch_disabled, Application.get_env(:rail, :no_dispatch, false))
+  end
+
+  # An earlier run at the task's stage has been retried, and one at another stage
+  # is behind it, so neither says where the task stands.
+  defp latest_stage_runs(runs) do
+    runs
+    |> Enum.filter(&(&1.role.stage == &1.task.stage))
+    |> Enum.group_by(& &1.task_id)
+    |> Map.new(fn {task_id, task_runs} ->
+      {task_id, Enum.max_by(task_runs, &(&1.started_at || &1.inserted_at), DateTime)}
+    end)
   end
 
   # Defaults stay out of the URL, so the user's own work is still just /.
