@@ -53,6 +53,13 @@ defmodule RailWeb.Router do
     get "/callback", LinearAuthController, :callback
   end
 
+  scope "/auth/slack", RailWeb do
+    pipe_through [:browser, :require_authenticated_user]
+
+    get "/", SlackAuthController, :request
+    get "/callback", SlackAuthController, :callback
+  end
+
   scope "/auth/mcp", RailWeb do
     pipe_through [:browser, :require_authenticated_user]
 
@@ -97,6 +104,8 @@ defmodule RailWeb.Router do
       live "/", OverviewLive
       live "/issues", IssuesLive
       live "/issues/:id", IssueLive
+      live "/triage", TriageLive
+      live "/triage/:id", TriageLive
       live "/tasks/:id", TaskLive
       live "/settings/connected-accounts", Settings.ConnectedAccountsLive
     end
@@ -109,6 +118,7 @@ defmodule RailWeb.Router do
       ] do
       live "/settings/projects", Settings.ProjectsLive
       live "/settings/linear-workspaces", Settings.LinearWorkspacesLive
+      live "/settings/slack-workspaces", Settings.SlackWorkspacesLive
       live "/settings/users", Settings.UsersLive
       live "/settings/roles", Settings.RolesLive
       live "/settings/backends", Settings.BackendsLive

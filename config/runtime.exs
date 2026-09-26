@@ -38,6 +38,10 @@ config :rail, :linear_oauth,
 # environment directly.
 config :rail, :no_dispatch, get_env.("RAIL_NO_DISPATCH", nil) == "1"
 
+config :rail, :slack_oauth,
+  client_id: get_env.("SLACK_CLIENT_ID", "slack_client_id"),
+  client_secret: get_env.("SLACK_CLIENT_SECRET", "slack_client_secret")
+
 config :rail, :type_safe,
   api_key: get_env.("TYPESAFE_API_KEY", "typesafe_api_key"),
   model: get_env.("TYPESAFE_MODEL", "jev-latest")

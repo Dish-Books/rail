@@ -145,4 +145,14 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
       assert %{worktree_setup_script: ["must be a path inside the repository"]} = errors_on(changeset)
     end
   end
+
+  test "names the user whose MCP connections triage uses", %{project: project} do
+    unique = System.unique_integer([:positive])
+
+    {:ok, %{id: user_id}} =
+      Rail.Users.register_oauth_user(%{github_id: "tri_#{unique}", login: "tri_#{unique}", email: "tri_#{unique}@x.com"})
+
+    assert {:ok, %Project{triage_user_id: ^user_id}} =
+             Projects.update_project(system_scope(), project, %{"triage_user_id" => user_id})
+  end
 end

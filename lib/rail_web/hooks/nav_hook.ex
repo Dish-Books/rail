@@ -5,6 +5,7 @@ defmodule RailWeb.Hooks.NavHook do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
+  alias Rail.Triage
 
   def on_mount(:default, _params, session, socket) do
     projects = Projects.list_projects()
@@ -18,6 +19,7 @@ defmodule RailWeb.Hooks.NavHook do
       |> assign(:show_project_switcher, false)
       |> assign(:projects, projects)
       |> assign(:attention_count, attention_count)
+      |> assign(:triage_count, Triage.count_triage_threads([]).waiting)
       |> assign(:current_project_id, session["selected_project_id"])
       |> assign(:current_section, :overview)
       |> attach_hook(:nav_handle_params, :handle_params, &handle_nav_params/3)
