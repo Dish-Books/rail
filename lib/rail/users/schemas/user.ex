@@ -18,6 +18,10 @@ defmodule Rail.Users.Schemas.User do
     field :linear_access_token, EncryptedBinary, redact: true
     field :linear_refresh_token, EncryptedBinary, redact: true
     field :linear_token_expires_at, :utc_datetime_usec
+    field :slack_user_id, :string
+    field :slack_team_id, :string
+    field :slack_name, :string
+    field :slack_access_token, EncryptedBinary, redact: true
     field :signing_key, EncryptedBinary, redact: true
     field :signing_public_key, :string
     field :signing_key_github_id, :integer
@@ -40,6 +44,10 @@ defmodule Rail.Users.Schemas.User do
     :linear_access_token,
     :linear_refresh_token,
     :linear_token_expires_at,
+    :slack_user_id,
+    :slack_team_id,
+    :slack_name,
+    :slack_access_token,
     :signing_key,
     :signing_public_key,
     :signing_key_github_id

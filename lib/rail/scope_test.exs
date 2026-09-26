@@ -66,4 +66,12 @@ defmodule Rail.ScopeTest do
     refute Scope.linear_linked?(%Scope{user: nil})
     refute Scope.linear_linked?(nil)
   end
+
+  test "slack_linked? is true only when the user has a Slack token" do
+    assert Scope.slack_linked?(%Scope{user: %{slack_access_token: "xoxp-1"}})
+    refute Scope.slack_linked?(%Scope{user: %{slack_access_token: nil}})
+    refute Scope.slack_linked?(%Scope{user: %{slack_access_token: ""}})
+    refute Scope.slack_linked?(%Scope{user: %{admin: true}})
+    refute Scope.slack_linked?(nil)
+  end
 end

@@ -7,6 +7,7 @@ defmodule RailWeb.Components.Nav do
   attr :current_section, :atom, required: true
   attr :is_rail_extended, :boolean, default: true
   attr :attention_count, :integer, default: 0
+  attr :triage_count, :integer, default: 0
 
   def nav(assigns) do
     ~H"""
@@ -49,6 +50,18 @@ defmodule RailWeb.Components.Nav do
           />
 
           <.nav_item
+            section={:triage}
+            active={@current_section == :triage}
+            is_extended={@is_rail_extended}
+            label="Triage"
+            icon_active="pi-chat-circle-text-fill"
+            icon_inactive="pi-chat-circle-text"
+            href={~p"/triage"}
+            attention_count={@triage_count}
+            badge_id="triage-badge"
+          />
+
+          <.nav_item
             section={:issues}
             active={@current_section == :issues}
             is_extended={@is_rail_extended}
@@ -70,7 +83,8 @@ defmodule RailWeb.Components.Nav do
                 :users,
                 :roles,
                 :backends,
-                :mcp_servers
+                :mcp_servers,
+                :slack_workspaces
               ]
             }
             is_extended={@is_rail_extended}
@@ -110,6 +124,7 @@ defmodule RailWeb.Components.Nav do
   attr :icon_inactive, :string, required: true
   attr :href, :string, required: true
   attr :attention_count, :integer, default: 0
+  attr :badge_id, :string, default: "attention-badge"
 
   def nav_item(assigns) do
     ~H"""
@@ -134,8 +149,8 @@ defmodule RailWeb.Components.Nav do
         <.icon :if={!@active} name={@icon_inactive} class="h-5 w-5" />
         <span
           :if={@attention_count > 0}
-          id="attention-badge"
-          data-qa="attention_badge"
+          id={@badge_id}
+          data-qa={String.replace(@badge_id, "-", "_")}
           class="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-600 px-1 text-[10px] font-bold text-white ring-2 ring-slate-50 dark:ring-slate-800"
         >
           {@attention_count}
@@ -360,6 +375,7 @@ defmodule RailWeb.Components.Nav do
 
   defp section_title(:overview), do: "Overview"
   defp section_title(:issues), do: "Issues"
+  defp section_title(:triage), do: "Triage"
 
   defp section_title(section)
        when section in [
@@ -370,7 +386,8 @@ defmodule RailWeb.Components.Nav do
               :users,
               :roles,
               :backends,
-              :mcp_servers
+              :mcp_servers,
+              :slack_workspaces
             ], do: "Settings"
 
   defp section_title(:tasks), do: "Task"

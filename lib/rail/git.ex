@@ -18,6 +18,7 @@ defmodule Rail.Git do
   defdelegate git_repo?(path), to: Actions.GitRepo
   defdelegate ensure_clone(clone_url, clone_path), to: Actions.EnsureClone
   defdelegate get_or_create_worktree(project, task), to: Actions.GetOrCreateWorktree
+  defdelegate checkout_detached_worktree(project, worktree_path), to: Actions.CheckoutDetachedWorktree
   defdelegate remove_worktree(repo_path, worktree_path, opts \\ []), to: Actions.RemoveWorktree
   defdelegate delete_branch(repo_path, branch, opts \\ []), to: Actions.DeleteBranch
   defdelegate branch_fingerprint(worktree_path), to: Actions.BranchFingerprint

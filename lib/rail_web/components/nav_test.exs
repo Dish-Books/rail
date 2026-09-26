@@ -70,6 +70,21 @@ defmodule RailWeb.Components.NavTest do
     refute html_no_badge =~ "id=\"attention-badge\""
   end
 
+  test "the Triage destination sits between Overview and Issues, with its own badge" do
+    html =
+      render_component(&Nav.nav/1, current_section: :triage, is_rail_extended: true, attention_count: 3, triage_count: 2)
+
+    assert [_before, after_overview] = String.split(html, ~s(id="nav-overview"))
+    assert [between, _after] = String.split(after_overview, ~s(id="nav-issues"))
+    assert between =~ ~s(id="nav-triage")
+    assert between =~ ~s(href="/triage")
+    assert between =~ ~s(id="triage-badge")
+    assert html =~ ~s(id="attention-badge")
+
+    refute render_component(&Nav.nav/1, current_section: :triage, is_rail_extended: true, triage_count: 0) =~
+             ~s(id="triage-badge")
+  end
+
   test "nav_rail active state matches current section" do
     for section <- [:overview, :issues, :settings] do
       html =
@@ -83,7 +98,7 @@ defmodule RailWeb.Components.NavTest do
     end
 
     # Test settings sub-sections highlight Settings nav
-    for sub <- [:connected_accounts, :projects, :linear_workspaces] do
+    for sub <- [:connected_accounts, :projects, :linear_workspaces, :slack_workspaces] do
       html =
         render_component(&Nav.nav/1,
           current_section: sub,

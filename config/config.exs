@@ -18,7 +18,9 @@ config :phoenix, :json_library, Jason
 
 config :rail, Oban,
   repo: Rail.Repo,
-  queues: [issues: 5, tools: 1],
+  queues: [issues: 5, tools: 1, triage: 2],
+  # A triage pass orphaned by a restart runs again rather than holding its thread forever.
+  lifeline: [rescue_after: {1, :hour}],
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [
