@@ -4,6 +4,7 @@ defmodule Rail.Mcp.RunContext do
   request, the role that decides which tools it may use, and the issue's
   assigned user whose connections those tools go out on. `user` is nil when the
   issue is unassigned, and then the run has no tools that need an account.
+  A triage pass has no OS process and runs on its project's triage user.
   """
 
   defstruct [:os_process, :role, :user]

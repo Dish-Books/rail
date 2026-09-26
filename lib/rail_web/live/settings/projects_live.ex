@@ -4,10 +4,13 @@ defmodule RailWeb.Settings.ProjectsLive do
 
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
+  alias Rail.Slack
+  alias Rail.Users
 
   def mount(_params, _session, socket) do
     projects = Projects.list_projects()
     linear_workspaces = Projects.list_linear_workspaces()
+    {:ok, users} = Users.list_users(socket.assigns.current_scope)
 
     socket =
       socket
@@ -15,6 +18,11 @@ defmodule RailWeb.Settings.ProjectsLive do
       |> assign(:current_section, :projects)
       |> assign(:projects, projects)
       |> assign(:linear_workspaces, linear_workspaces)
+      |> assign(:users, users)
+      |> assign(:slack_channel_options, [])
+      |> assign(:channel_selection, %{})
+      |> assign(:channels_saved, false)
+      |> assign(:channels_error, nil)
       |> assign(:show_modal, nil)
       |> assign(:modal_title, nil)
       |> assign(:selected_project, nil)
@@ -36,6 +44,7 @@ defmodule RailWeb.Settings.ProjectsLive do
       current_scope={@current_scope}
       is_rail_extended={@is_rail_extended}
       attention_count={@attention_count}
+      triage_count={@triage_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
@@ -425,6 +434,32 @@ defmodule RailWeb.Settings.ProjectsLive do
                 </span>
               </div>
 
+              <div class="pt-4 border-t border-slate-200 dark:border-slate-700">
+                <label
+                  for="project-triage-user-input"
+                  class="block text-sm font-medium text-slate-900 dark:text-slate-100"
+                >
+                  Triage uses the MCP connections of
+                </label>
+                <select
+                  name="project[triage_user_id]"
+                  id="project-triage-user-input"
+                  class="mt-1 block w-full rounded-md border-slate-200 dark:border-slate-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                >
+                  <option value="">Nobody, triage reads the code alone</option>
+                  <option
+                    :for={user <- @users}
+                    value={user.id}
+                    selected={Ecto.Changeset.get_field(@changeset, :triage_user_id) == user.id}
+                  >
+                    {user.name || user.login}
+                  </option>
+                </select>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  A triage pass calls the MCP tools its role allows on this person's connections.
+                </p>
+              </div>
+
               <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <.button phx-click="close_modal" id="cancel-project-button">
                   Cancel
@@ -432,6 +467,93 @@ defmodule RailWeb.Settings.ProjectsLive do
                 <.button variant="primary" type="submit" id="save-project-button">
                   Save
                 </.button>
+              </div>
+            </.form>
+
+            <.form
+              :if={@show_modal == :edit}
+              for={%{}}
+              as={:channels}
+              id="slack-channels-form"
+              phx-change="change_channels"
+              phx-submit="save_channels"
+              class="space-y-3 pt-4 border-t border-slate-200 dark:border-slate-700"
+            >
+              <div class="flex items-center justify-between">
+                <p class="text-sm font-medium text-slate-900 dark:text-slate-100">Slack channels</p>
+                <span
+                  :if={@channels_saved}
+                  id="slack-channels-saved"
+                  class="text-xs text-emerald-600 dark:text-emerald-400"
+                >
+                  Saved
+                </span>
+              </div>
+              <p
+                :if={@slack_channel_options == []}
+                id="slack-channels-empty"
+                class="text-xs text-slate-500 dark:text-slate-400"
+              >
+                No channels to pick from. Add a Slack workspace in
+                <.link
+                  navigate={~p"/settings/slack-workspaces"}
+                  class="text-indigo-600 hover:underline"
+                >
+                  Slack settings
+                </.link>
+                and invite its app to the channels triage should read.
+              </p>
+              <ul :if={@slack_channel_options != []} class="max-h-56 overflow-y-auto space-y-1.5">
+                <li :for={channel <- @slack_channel_options} class="flex items-center gap-3 text-sm">
+                  <input type="hidden" name={"channels[#{channel.id}][included]"} value="false" />
+                  <input
+                    type="checkbox"
+                    name={"channels[#{channel.id}][included]"}
+                    id={"slack-channel-#{channel.id}"}
+                    value="true"
+                    checked={Map.has_key?(@channel_selection, channel.id)}
+                    class="h-4 w-4 rounded border-slate-200 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <label
+                    for={"slack-channel-#{channel.id}"}
+                    class="font-mono text-slate-900 dark:text-slate-100"
+                  >
+                    #{channel.name}
+                  </label>
+                  <label
+                    :if={Map.has_key?(@channel_selection, channel.id)}
+                    class="ml-auto inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer"
+                  >
+                    <input
+                      type="hidden"
+                      name={"channels[#{channel.id}][triage_bot_messages]"}
+                      value="false"
+                    />
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      name={"channels[#{channel.id}][triage_bot_messages]"}
+                      id={"slack-channel-bots-#{channel.id}"}
+                      value="true"
+                      checked={Map.get(@channel_selection, channel.id) == true}
+                      class="peer sr-only"
+                    />
+                    <span class="relative h-5 w-9 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-indigo-600 after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+                    Triage bot messages
+                  </label>
+                </li>
+              </ul>
+              <p
+                :if={map_size(@channel_selection) > 0}
+                class="text-xs text-slate-500 dark:text-slate-400"
+              >
+                For channels where tools such as PostHog report issues.
+              </p>
+              <p :if={@channels_error} id="slack-channels-error" class="text-xs text-red-600">
+                {@channels_error}
+              </p>
+              <div :if={@slack_channel_options != []} class="flex justify-end">
+                <.button type="submit" id="save-slack-channels-button">Save channels</.button>
               </div>
             </.form>
           </div>
@@ -461,6 +583,13 @@ defmodule RailWeb.Settings.ProjectsLive do
 
         socket =
           socket
+          |> assign(:slack_channel_options, slack_channel_options())
+          |> assign(
+            :channel_selection,
+            Map.new(Projects.list_slack_channels(project), &{&1.external_id, &1.triage_bot_messages})
+          )
+          |> assign(:channels_saved, false)
+          |> assign(:channels_error, nil)
           |> assign(:show_modal, :edit)
           |> assign(:modal_title, "Edit Project")
           |> assign(:selected_project, project)
@@ -470,6 +599,37 @@ defmodule RailWeb.Settings.ProjectsLive do
 
       {:error, _reason} ->
         {:noreply, socket}
+    end
+  end
+
+  def handle_event("change_channels", params, socket) do
+    socket =
+      socket
+      |> assign(:channel_selection, channel_selection(params))
+      |> assign(:channels_saved, false)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("save_channels", params, socket) do
+    selection = channel_selection(params)
+    entries = Enum.map(selection, fn {id, bots?} -> %{"external_id" => id, "triage_bot_messages" => bots?} end)
+
+    case Projects.set_slack_channels(socket.assigns.current_scope, socket.assigns.selected_project, entries) do
+      {:ok, _channels} ->
+        socket =
+          socket
+          |> assign(:channel_selection, selection)
+          |> assign(:channels_saved, true)
+          |> assign(:channels_error, nil)
+
+        {:noreply, socket}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, :channels_error, channel_error(changeset))}
+
+      {:error, :channel_not_found} ->
+        {:noreply, assign(socket, :channels_error, "A channel picked is no longer in Slack.")}
     end
   end
 
@@ -545,6 +705,29 @@ defmodule RailWeb.Settings.ProjectsLive do
       _other ->
         {:noreply, socket}
     end
+  end
+
+  # Each workspace is asked for its channels; one Slack cannot answer for adds nothing to pick.
+  defp slack_channel_options do
+    Enum.flat_map(Projects.list_slack_workspaces(), fn workspace ->
+      case Slack.list_channels(workspace) do
+        {:ok, channels} -> Enum.map(channels, &%{id: &1["id"], name: &1["name"]})
+        {:error, _unreachable} -> []
+      end
+    end)
+  end
+
+  defp channel_selection(params) do
+    for {id, %{"included" => "true"} = channel} <- Map.get(params, "channels", %{}), into: %{} do
+      {id, channel["triage_bot_messages"] == "true"}
+    end
+  end
+
+  defp channel_error(changeset) do
+    changeset.errors
+    |> Keyword.get_values(:external_id)
+    |> Enum.map_join(", ", &elem(&1, 0))
+    |> then(&"This channel #{&1}.")
   end
 
   defp update_list_item(items, %{id: id} = item) do

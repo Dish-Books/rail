@@ -137,6 +137,18 @@ default_roles = [
     system_prompt: File.read!("prompts/demo.md"),
     max_concurrent: 1,
     position: 6
+  },
+  %{
+    stage: :triage,
+    name: "Triage",
+    description: "Reads Slack threads, verifies each claim against the code, and drafts replies and issues",
+    icon_name: "pi-magnifying-glass",
+    backend_id: claude_backend.id,
+    model: "claude-opus-5-5",
+    reasoning_effort: :high,
+    system_prompt: File.read!("prompts/triage.md"),
+    max_concurrent: 1,
+    position: 7
   }
 ]
 

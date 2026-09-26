@@ -9,6 +9,7 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Triage.Schemas.Thread
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
@@ -98,5 +99,72 @@ defmodule Rail.Mcp.Actions.AuthenticateRunTokenTest do
 
     os_process |> OsProcess.changeset(%{status: :finished}) |> Repo.update!()
     assert {:error, :invalid_token} = Mcp.authenticate_run_token(token)
+  end
+
+  describe "a triage pass's token" do
+    setup do
+      %{project: project, role: %{id: triage_role_id}} = triage_project()
+      %{workspace: workspace, channel: channel} = connect_slack_channel(project)
+      {:ok, thread} = Rail.Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
+      %{id: triage_user_id} = triage_user = slack_user(workspace.external_id)
+      {:ok, _project} = Rail.Projects.update_project(system_scope(), project, %{triage_user_id: triage_user.id})
+
+      %{thread: thread, triage_role_id: triage_role_id, triage_user_id: triage_user_id}
+    end
+
+    test "resolves to the project's triage role and triage user while the pass holds the thread", %{
+      thread: thread,
+      triage_role_id: triage_role_id,
+      triage_user_id: triage_user_id
+    } do
+      expect(Rail.Tools, :run_agent, fn _backend, _argv, opts ->
+        assert {:ok,
+                %RunContext{
+                  os_process: nil,
+                  role: %Role{id: ^triage_role_id, stage: :triage},
+                  user: %User{id: ^triage_user_id}
+                }} = Mcp.authenticate_run_token(opts[:env]["RAIL_MCP_TOKEN"])
+
+        send(self(), {:token, opts[:env]["RAIL_MCP_TOKEN"]})
+
+        thread
+        |> Thread.scratch_path()
+        |> Path.join("result.json")
+        |> File.write!(Jason.encode!(%{"items" => []}))
+
+        {:ok, ""}
+      end)
+
+      assert :ok = Rail.Triage.triage_thread(thread)
+      assert_received {:token, token}
+      assert {:error, :invalid_token} = Mcp.authenticate_run_token(token)
+    end
+
+    test "is dead once the pass is stale", %{thread: thread} do
+      expect(Rail.Tools, :run_agent, fn _backend, _argv, opts ->
+        stale = DateTime.shift(DateTime.utc_now(), minute: -46)
+
+        Repo.update_all(from(t in Thread, where: t.id == ^thread.id),
+          set: [triage_started_at: stale]
+        )
+
+        assert {:error, :invalid_token} = Mcp.authenticate_run_token(opts[:env]["RAIL_MCP_TOKEN"])
+        {:ok, ""}
+      end)
+
+      assert :ok = Rail.Triage.triage_thread(thread)
+    end
+
+    test "is refused when the project has no triage role", %{thread: thread, triage_role_id: triage_role_id} do
+      {:ok, role} = Roles.get_role(id: triage_role_id)
+      {:ok, _deleted} = Roles.delete_role(system_scope(), role)
+      {token, hash} = Mcp.issue_run_token()
+
+      Repo.update_all(from(t in Thread, where: t.id == ^thread.id),
+        set: [triage_started_at: DateTime.utc_now(), mcp_token_hash: hash]
+      )
+
+      assert {:error, :invalid_token} = Mcp.authenticate_run_token(token)
+    end
   end
 end

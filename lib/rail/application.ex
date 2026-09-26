@@ -13,6 +13,7 @@ defmodule Rail.Application do
       {Phoenix.PubSub, name: Rail.PubSub},
       {Task.Supervisor, name: Rail.TaskSupervisor},
       Rail.Tools,
+      Rail.Triage,
       RailWeb.Endpoint
     ]
 

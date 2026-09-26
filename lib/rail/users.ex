@@ -36,6 +36,10 @@ defmodule Rail.Users do
   defdelegate link_linear(scope, code), to: Actions.LinkLinear
   defdelegate unlink_linear(scope), to: Actions.UnlinkLinear
 
+  defdelegate slack_token(scope), to: Actions.SlackToken
+  defdelegate link_slack(scope, code), to: Actions.LinkSlack
+  defdelegate unlink_slack(scope), to: Actions.UnlinkSlack
+
   defdelegate can?(scope, action), to: Actions.Can
   defdelegate can?(scope, resource, action), to: Actions.Can
 end

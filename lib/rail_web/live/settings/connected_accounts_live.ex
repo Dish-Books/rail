@@ -21,6 +21,8 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
       |> assign(:signing_fingerprint, user && User.signing_fingerprint(user))
       |> assign(:linear_connected, linear_connected?(user))
       |> assign(:linear_name, user && user.linear_name)
+      |> assign(:slack_connected, Scope.slack_linked?(current_scope))
+      |> assign(:slack_name, user && user.slack_name)
       |> assign(:signing_error, nil)
       |> assign(:repository_access, repository_access(Projects.list_projects()))
       |> assign(:mcp_servers, Enum.filter(Mcp.list_servers(), &(&1.enabled and &1.auth == :oauth)))
@@ -42,6 +44,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
       current_scope={@current_scope}
       is_rail_extended={@is_rail_extended}
       attention_count={@attention_count}
+      triage_count={@triage_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}
@@ -259,6 +262,56 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
             </div>
 
             <div
+              id="slack-account-section"
+              class="flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 p-4"
+            >
+              <.account_avatar label="S" src={nil} id="slack-avatar" />
+
+              <div class="min-w-0 flex-1">
+                <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Slack</h3>
+
+                <p
+                  :if={@slack_connected}
+                  id="slack-connected-details"
+                  class="mt-0.5 text-sm text-slate-500 dark:text-slate-400 truncate"
+                >
+                  <span id="slack-user-name">{@slack_name || "Slack User"}</span>
+                  · replies you accept in triage post as you
+                </p>
+
+                <p
+                  :if={!@slack_connected}
+                  id="slack-disconnected-message"
+                  class="mt-0.5 text-sm text-slate-500 dark:text-slate-400"
+                >
+                  Not connected - you cannot post from triage until you connect.
+                </p>
+              </div>
+
+              <span :if={@slack_connected} class="text-sm text-emerald-600 dark:text-emerald-400">
+                Connected
+              </span>
+
+              <.button
+                :if={@slack_connected}
+                variant="secondary"
+                phx-click="disconnect_slack"
+                id="disconnect-slack-button"
+              >
+                Disconnect
+              </.button>
+
+              <.button
+                :if={!@slack_connected}
+                variant="primary"
+                href={~p"/auth/slack"}
+                id="connect-slack-button"
+              >
+                Connect Slack
+              </.button>
+            </div>
+
+            <div
               :for={server <- @mcp_servers}
               id={"mcp-server-section-#{server.name}"}
               class="flex items-center gap-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 p-4"
@@ -347,6 +400,23 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
           |> assign(:current_user, updated_user)
           |> assign(:linear_connected, false)
           |> assign(:linear_name, nil)
+
+        {:noreply, socket}
+
+      {:error, _reason} ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("disconnect_slack", _params, socket) do
+    case Users.unlink_slack(socket.assigns.current_scope) do
+      {:ok, updated_user} ->
+        socket =
+          socket
+          |> assign(:current_scope, Scope.for_user(updated_user))
+          |> assign(:current_user, updated_user)
+          |> assign(:slack_connected, false)
+          |> assign(:slack_name, nil)
 
         {:noreply, socket}
 

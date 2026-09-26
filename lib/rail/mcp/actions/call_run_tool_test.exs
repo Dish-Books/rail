@@ -94,4 +94,21 @@ defmodule Rail.Mcp.Actions.CallRunToolTest do
     assert {:error, :unknown_tool} = Mcp.call_run_tool(context, "crt_off__anything", %{})
     assert {:error, :unknown_tool} = Mcp.call_run_tool(context, nil, %{})
   end
+
+  test "a triage pass calls only what an admin allowed its role, on the triage user's connection", %{
+    context: %{user: user},
+    project: project
+  } do
+    assert {:ok, %Role{mcp_tools: []} = triage} = Rail.Roles.get_role(project_id: project.id, stage: :triage)
+    assert {:error, :unknown_tool} = Mcp.call_run_tool(%RunContext{role: triage, user: user}, "crt_open__echo", %{})
+
+    {:ok, allowed} = Rail.Roles.update_role(system_scope(), triage, %{mcp_tools: ["crt_linear__get_issue"]})
+    context = %RunContext{os_process: nil, role: allowed, user: user}
+    expected = Jason.encode!(%{"name" => "get_issue", "arguments" => %{"id" => "RAIL-1"}})
+
+    assert {:ok, %{"content" => [%{"text" => ^expected}]}} =
+             Mcp.call_run_tool(context, "crt_linear__get_issue", %{"id" => "RAIL-1"})
+
+    assert {:error, :unknown_tool} = Mcp.call_run_tool(context, "crt_open__echo", %{})
+  end
 end

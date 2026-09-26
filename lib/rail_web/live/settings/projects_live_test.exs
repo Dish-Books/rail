@@ -447,4 +447,125 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert render(view) =~ "First Project Renamed"
     assert render(view) =~ "Second Project"
   end
+
+  describe "triage" do
+    setup %{project: project} do
+      %{workspace: workspace, channel: channel} = connect_slack_channel(project)
+      unique = System.unique_integer([:positive])
+      posthog = "C#{unique}ph"
+
+      stub_slack(
+        team_id: workspace.external_id,
+        channels: [{channel.external_id, "rail-feedback"}, {posthog, "posthog-index"}]
+      )
+
+      %{channel: channel, posthog: posthog}
+    end
+
+    test "an admin picks the project's channels, and which of them triage bot posts", %{
+      admin_conn: conn,
+      project: project,
+      channel: channel,
+      posthog: posthog
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      assert has_element?(view, "#slack-channel-#{channel.external_id}[checked]")
+      refute has_element?(view, "#slack-channel-#{posthog}[checked]")
+      refute has_element?(view, "#slack-channel-bots-#{posthog}")
+
+      params = %{
+        "channels" => %{
+          channel.external_id => %{"included" => "false"},
+          posthog => %{"included" => "true"}
+        }
+      }
+
+      view |> form("#slack-channels-form", params) |> render_change()
+      assert has_element?(view, "#slack-channel-bots-#{posthog}")
+      assert has_element?(view, "#slack-channels-form", "For channels where tools such as PostHog report issues")
+
+      params = put_in(params, ["channels", posthog, "triage_bot_messages"], "true")
+      view |> form("#slack-channels-form", params) |> render_submit()
+
+      assert has_element?(view, "#slack-channels-saved")
+
+      assert [%{external_id: ^posthog, name: "posthog-index", triage_bot_messages: true}] =
+               Projects.list_slack_channels(project)
+    end
+
+    test "a channel another project holds is refused on the form", %{
+      admin_conn: conn,
+      admin_user: admin,
+      project: project,
+      posthog: posthog
+    } do
+      {:ok, other} =
+        Projects.create_project(Scope.for_user(admin), %{
+          name: "Other",
+          github_repo: "example/other-#{System.unique_integer([:positive])}",
+          github_installation_id: 9,
+          linear_team_key: "OTH",
+          default_branch: "main",
+          clone_path: "/tmp/other"
+        })
+
+      {:ok, _held} = Projects.set_slack_channels(Scope.for_user(admin), other, [%{"external_id" => posthog}])
+
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      view
+      |> form("#slack-channels-form", %{"channels" => %{posthog => %{"included" => "true"}}})
+      |> render_submit()
+
+      assert has_element?(view, "#slack-channels-error", "is connected to another project")
+    end
+
+    test "a channel gone from Slack by the time it is saved is refused, and a Slack that cannot list offers none", %{
+      admin_conn: conn,
+      project: project,
+      posthog: posthog
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      stub_slack(channels: [])
+
+      view
+      |> form("#slack-channels-form", %{"channels" => %{posthog => %{"included" => "true"}}})
+      |> render_submit()
+
+      assert has_element?(view, "#slack-channels-error", "no longer in Slack")
+
+      Req.Test.stub(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "ratelimited"}))
+      view |> element("#close-modal-button") |> render_click()
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      assert has_element?(view, "#slack-channels-empty")
+    end
+
+    test "names whose MCP connections triage uses", %{admin_conn: conn, admin_user: %{id: admin_id}, project: project} do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      assert has_element?(view, "#project-triage-user-input option[value='#{admin_id}']")
+
+      view |> form("#project-form", %{"project" => %{"triage_user_id" => admin_id}}) |> render_submit()
+
+      assert %Project{triage_user_id: ^admin_id} = Repo.get!(Project, project.id)
+    end
+  end
+
+  test "a project with no Slack workspace to pick from says where to add one", %{admin_conn: conn, project: project} do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#edit-project-#{project.id}") |> render_click()
+
+    assert has_element?(view, "#slack-channels-empty", "Add a Slack workspace")
+  end
 end

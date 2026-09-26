@@ -44,6 +44,12 @@ defmodule Rail.Scope do
   def linear_linked?(_scope), do: false
 
   @doc """
+  Returns true if the user in scope has linked a Slack account to post from triage as.
+  """
+  def slack_linked?(%__MODULE__{user: %{slack_access_token: token}}) when is_binary(token) and token != "", do: true
+  def slack_linked?(_scope), do: false
+
+  @doc """
   Helper to build a user scope.
   Supports `:admin` (boolean), `:linear_linked` (boolean), and `:user` overrides.
   """
