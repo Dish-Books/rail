@@ -9,7 +9,12 @@ defmodule Rail.FakeSlackSocket do
   @impl true
   def init(%{test: test} = state) do
     send(test, {:fake_slack_connected, self()})
-    {:push, {:text, Jason.encode!(%{type: "hello", num_connections: 1})}, state}
+    hello = {:text, Jason.encode!(%{type: "hello", num_connections: 1})}
+
+    case state do
+      %{greet: "disconnect"} -> {:push, [hello, {:text, Jason.encode!(%{type: "disconnect"})}], state}
+      %{} -> {:push, hello, state}
+    end
   end
 
   @impl true
