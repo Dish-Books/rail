@@ -55,6 +55,13 @@ defmodule RailWeb.Settings.LinearWorkspacesLiveTest do
     view |> form("#workspace-form", %{"linear_workspace" => %{"name" => "Acme"}}) |> render_change()
     assert render(view) =~ "can&#39;t be blank"
 
+    # A typed secret survives the re-render that validating another field causes.
+    view
+    |> form("#workspace-form", %{"linear_workspace" => %{"name" => "Acme", "token" => "lin_api_acme"}})
+    |> render_change()
+
+    assert has_element?(view, "#workspace-token-input[value='lin_api_acme']")
+
     view
     |> form("#workspace-form", %{
       "linear_workspace" => %{
@@ -94,7 +101,7 @@ defmodule RailWeb.Settings.LinearWorkspacesLiveTest do
     view |> element("#edit-workspace-#{workspace.id}") |> render_click()
 
     assert has_element?(view, "#modal-title", "Edit Linear Workspace")
-    assert has_element?(view, "#workspace-token-input[value='']")
+    refute render(view) =~ "lin_api_edit"
 
     view
     |> form("#workspace-form", %{"linear_workspace" => %{"name" => "After", "token" => "", "webhook_secret" => ""}})

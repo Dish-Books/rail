@@ -166,7 +166,7 @@ defmodule RailWeb.Settings.LinearWorkspacesLive do
                 label="Linear API Token"
                 name="linear_workspace[token]"
                 id="workspace-token-input"
-                value=""
+                value={Ecto.Changeset.get_change(@changeset, :token)}
                 placeholder={
                   if @selected_workspace,
                     do: "Leave blank to keep the saved token",
@@ -180,7 +180,7 @@ defmodule RailWeb.Settings.LinearWorkspacesLive do
                 label="Webhook Signing Secret"
                 name="linear_workspace[webhook_secret]"
                 id="workspace-webhook-secret-input"
-                value=""
+                value={Ecto.Changeset.get_change(@changeset, :webhook_secret)}
                 placeholder={
                   if @selected_workspace,
                     do: "Leave blank to keep the saved secret",
