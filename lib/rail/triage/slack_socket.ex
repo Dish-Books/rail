@@ -43,8 +43,8 @@ defmodule Rail.Triage.SlackSocket do
   @impl true
   def handle_continue(:connect, %__MODULE__{} = state) do
     with {:ok, url} <- Slack.open_connection(state.workspace),
-         {:ok, conn, websocket, ref} <- connect(URI.parse(url)) do
-      {:noreply, %{state | conn: conn, websocket: websocket, ref: ref}}
+         {:ok, conn, websocket, ref, early} <- connect(URI.parse(url)) do
+      receive_responses(%{state | conn: conn, websocket: websocket, ref: ref}, early)
     else
       {:error, reason} -> retry(state, reason)
     end
@@ -56,9 +56,7 @@ defmodule Rail.Triage.SlackSocket do
   def handle_info(message, %__MODULE__{conn: conn} = state) when conn != nil do
     case Mint.WebSocket.stream(conn, message) do
       {:ok, conn, responses} ->
-        {state, chunks} = Enum.reduce(responses, {%{state | conn: conn}, []}, &decode/2)
-        frames = chunks |> Enum.reverse() |> Enum.concat()
-        Enum.reduce_while(frames, {:noreply, state}, fn frame, {:noreply, state} -> handle_frame(frame, state) end)
+        receive_responses(%{state | conn: conn}, responses)
 
       {:error, conn, reason, _responses} ->
         reopen(%{state | conn: conn}, reason)
@@ -80,8 +78,8 @@ defmodule Rail.Triage.SlackSocket do
 
     with {:ok, conn} <- Mint.HTTP.connect(http, uri.host, uri.port, protocols: [:http1]),
          {:ok, conn, ref} <- Mint.WebSocket.upgrade(ws, conn, path, []),
-         {:ok, conn, websocket} <- await_upgrade(conn, ref) do
-      {:ok, conn, websocket, ref}
+         {:ok, conn, websocket, early} <- await_upgrade(conn, ref) do
+      {:ok, conn, websocket, ref, early}
     else
       # coveralls-ignore-start (Mint reporting the failure against the connection mid-upgrade)
       {:error, _conn, reason} -> {:error, reason}
@@ -90,19 +88,27 @@ defmodule Rail.Triage.SlackSocket do
     end
   end
 
-  # Only the socket's own messages are taken out of the mailbox, as in `Rail.Tools.Browser`.
-  defp await_upgrade(conn, ref, status \\ nil, headers \\ nil)
+  # Only this connection's own messages are taken out of the mailbox: a plain `receive` would take
+  # another caller's message, or a stale one from the connection just closed. Slack may send its
+  # first frames in the same packet as the upgrade, so everything read here is handed back to decode.
+  defp await_upgrade(conn, ref, status \\ nil, headers \\ nil, early \\ [])
 
-  defp await_upgrade(conn, ref, status, headers) when is_integer(status) and is_list(headers) do
-    Mint.WebSocket.new(conn, ref, status, headers)
+  defp await_upgrade(conn, ref, status, headers, early) when is_integer(status) and is_list(headers) do
+    with {:ok, conn, websocket} <- Mint.WebSocket.new(conn, ref, status, headers) do
+      {:ok, conn, websocket, early}
+    end
   end
 
-  defp await_upgrade(conn, ref, status, headers) do
+  defp await_upgrade(conn, ref, status, headers, early) do
+    socket = Mint.HTTP.get_socket(conn)
+
     receive do
-      {transport, _socket, _data} = message when transport in [:tcp, :ssl] ->
+      {transport, ^socket, _data} = message when transport in [:tcp, :ssl] ->
         case Mint.WebSocket.stream(conn, message) do
           {:ok, conn, responses} ->
-            await_upgrade(conn, ref, status || find(responses, ref, :status), headers || find(responses, ref, :headers))
+            status = status || find(responses, ref, :status)
+            data = for {:data, ^ref, _data} = response <- responses, do: response
+            await_upgrade(conn, ref, status, headers || find(responses, ref, :headers), early ++ data)
 
           # coveralls-ignore-start (a socket that breaks during the upgrade)
           {:error, _conn, reason, _responses} ->
@@ -122,6 +128,12 @@ defmodule Rail.Triage.SlackSocket do
     end)
   end
 
+  defp receive_responses(state, responses) do
+    {state, chunks} = Enum.reduce(responses, {state, []}, &decode/2)
+    frames = chunks |> Enum.reverse() |> Enum.concat()
+    Enum.reduce_while(frames, {:noreply, state}, fn frame, {:noreply, state} -> handle_frame(frame, state) end)
+  end
+
   defp decode({:data, ref, data}, {%__MODULE__{ref: ref} = state, chunks}) do
     case Mint.WebSocket.decode(state.websocket, data) do
       {:ok, websocket, decoded} -> {%{state | websocket: websocket}, [decoded | chunks]}
@@ -130,10 +142,8 @@ defmodule Rail.Triage.SlackSocket do
     end
   end
 
-  # coveralls-ignore-start (the request finishing rather than a close frame, the other shape a closed socket takes)
-  defp decode({:done, _ref}, {state, chunks}), do: {state, [[{:close, 1000, ""}] | chunks]}
+  # coveralls-ignore-next-line (a response after the upgrade that carries no frames, which Slack does not send)
   defp decode(_response, acc), do: acc
-  # coveralls-ignore-stop
 
   defp handle_frame({:text, text}, state) do
     case Jason.decode(text) do

@@ -5,7 +5,8 @@ defmodule Rail.FakeSlack do
 
   It is a plug whose only job is to upgrade the request to
   `Rail.FakeSlackSocket`, which tells the test process about every connection
-  and every frame it receives.
+  and every frame it receives. A URL carrying `greet=disconnect` sends the
+  disconnect in the same breath as the hello, as Slack can when it cycles a socket.
   """
   @behaviour Plug
 
@@ -25,6 +26,7 @@ defmodule Rail.FakeSlack do
 
   @impl true
   def call(conn, test) do
-    WebSockAdapter.upgrade(conn, Rail.FakeSlackSocket, %{test: test}, [])
+    conn = Plug.Conn.fetch_query_params(conn)
+    WebSockAdapter.upgrade(conn, Rail.FakeSlackSocket, %{test: test, greet: conn.query_params["greet"]}, [])
   end
 end

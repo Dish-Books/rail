@@ -25,7 +25,7 @@ defmodule Rail.Triage.SlackSocketTest do
       end
     end)
 
-    %{workspace: workspace, channel: channel}
+    %{workspace: workspace, channel: channel, url: url}
   end
 
   test "connects to the URL Slack hands out, acks an event, and files its message", %{
@@ -83,6 +83,18 @@ defmodule Rail.Triage.SlackSocketTest do
     Process.exit(third, :kill)
     assert_receive {:fake_slack_connected, fourth}, @connect_timeout
     refute fourth == third
+  end
+
+  test "a disconnect that lands with the hello, before the upgrade is done, still opens a new one", %{
+    workspace: workspace,
+    url: url
+  } do
+    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "url" => url <> "&greet=disconnect"}))
+    start_supervised!({SlackSocket, workspace: workspace, backoff: 10})
+
+    assert_receive {:fake_slack_connected, first}, @connect_timeout
+    assert_receive {:fake_slack_connected, second}, @connect_timeout
+    refute second == first
   end
 
   test "keeps trying when Slack will not open a connection, or its URL does not answer", %{workspace: workspace} do
