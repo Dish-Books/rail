@@ -77,9 +77,10 @@ defmodule Rail.Tools.Actions.SpawnOsProcess do
     |> Map.put(@stdout_var, Keyword.get(opts, :stdout_path, "/dev/null"))
     |> Map.put(@stderr_var, Keyword.get(opts, :stderr_path, "/dev/null"))
     |> Map.put(@stdin_var, Keyword.get(opts, :stdin_path, "/dev/null"))
-    |> env()
-    |> Enum.map(fn {key, value} ->
-      {String.to_charlist(to_string(key)), String.to_charlist(to_string(value))}
+    |> env_list(false)
+    |> Enum.map(fn
+      {key, false} -> {String.to_charlist(key), false}
+      {key, value} -> {String.to_charlist(key), String.to_charlist(value)}
     end)
   end
 end

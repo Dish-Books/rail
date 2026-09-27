@@ -69,6 +69,22 @@ defmodule Rail.Tools.Actions.SpawnOsProcessTest do
     Tools.terminate_os_process(os_pid, grace_period: 50)
   end
 
+  test "keeps Rail's own configuration out of the child", %{tmp_dir: tmp_dir, wait_for_content: wait_for_content} do
+    out = Path.join(tmp_dir, "env.log")
+    System.put_env("RAIL_SPAWN_TEST_SECRET", "secret")
+    on_exit(fn -> System.delete_env("RAIL_SPAWN_TEST_SECRET") end)
+
+    {:ok, _port, os_pid} =
+      Tools.spawn_os_process("/bin/sh", ["-c", ~s(printf '[%s]' "${RAIL_SPAWN_TEST_SECRET-unset}"; sleep 5)],
+        stdout_path: out,
+        stderr_path: "#{out}.err"
+      )
+
+    assert wait_for_content.(out) =~ "[unset]"
+
+    Tools.terminate_os_process(os_pid, grace_period: 50)
+  end
+
   test "feeds :stdin_path to the child as its stdin", %{tmp_dir: tmp_dir, wait_for_content: wait_for_content} do
     input = Path.join(tmp_dir, "stdin.txt")
     File.write!(input, "from_stdin")
