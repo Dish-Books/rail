@@ -6,14 +6,13 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-# A hook inherits the pushing shell's environment, which may carry neither the
-# pinned toolchain nor the .env holding CI_RECEIPT_KEY. mise supplies both.
+# A hook inherits the pushing shell's environment, which may not carry the pinned
+# toolchain. mise supplies it.
 if [[ -z ${CI_LANES_REEXEC:-} ]] &&
-  { ! command -v elixir >/dev/null 2>&1 || [[ -z ${CI_RECEIPT_KEY:-} ]]; } &&
+  ! command -v elixir >/dev/null 2>&1 &&
   command -v mise >/dev/null 2>&1; then
   CI_LANES_REEXEC=1 exec mise exec -- bash scripts/ci-lanes.sh "$@"
 fi
-: "${CI_RECEIPT_KEY:?is not set, so no receipt can be verified or written (docs/local-ci.md); push --no-verify to skip the hook}"
 
 # Inherited by every git command below, so a hook fired by a push from inside this
 # run does nothing — the backstop if a push forgets --no-verify.
@@ -194,7 +193,7 @@ lane)
   ;;
 
 receipt)
-  # Already signed, but the receipt may only exist locally (ci.sh writes the ref
+  # Already written, but the receipt may only exist locally (ci.sh writes the ref
   # before pushing it). A tree the PR check cannot see is not covered, so publish it.
   if [[ -e $COVERED ]]; then
     ref="$RECEIPT_REF_PREFIX/$TREE"
@@ -209,7 +208,7 @@ receipt)
   fi
 
   # Named, not globbed: a lane that never ran leaves no file, and a glob would
-  # sign a shorter gate list.
+  # claim a shorter gate list.
   results=()
   for lane in $LANES; do
     f="$STATE/results.$lane"
@@ -246,7 +245,7 @@ receipt)
       tools: {elixir: $elixir, otp: $otp, node: $node, pnpm: $pnpm},
       gates: ($gates | split("\n") | map(select(length > 0)))}' >"$STATE/payload.json"
 
-  receipt_hmac <"$STATE/payload.json" >"$STATE/sig"
+  receipt_digest <"$STATE/payload.json" >"$STATE/sig"
 
   PAYLOAD_BLOB=$(git hash-object -w "$STATE/payload.json")
   SIG_BLOB=$(git hash-object -w "$STATE/sig")

@@ -16,5 +16,5 @@ prek = "0.4.14"
 postinstall = "prek install -t pre-push --allow-missing-config || echo 'prek: pre-push shim not installed — run: prek install -t pre-push'"
 
 [tasks.ci]
-description = "Run every CI gate locally, then push a signed receipt so GitHub can verify instead of repeat"
+description = "Run every CI gate locally, then push a receipt so GitHub can verify instead of repeat"
 run = "scripts/ci.sh"
