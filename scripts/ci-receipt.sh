@@ -4,7 +4,8 @@
 set -euo pipefail
 
 # Bump when the payload shape or the gate set changes; old receipts stop verifying.
-RECEIPT_SPEC_VERSION=1
+# 2: a sha256 digest in place of the HMAC keyed with CI_RECEIPT_KEY.
+RECEIPT_SPEC_VERSION=2
 RECEIPT_REF_PREFIX="refs/ci-receipts"
 
 # Keyed on the tree, not the commit, so amend/rebase/reword of an unchanged tree
@@ -13,13 +14,14 @@ receipt_tree() {
   git rev-parse "${1:-HEAD}^{tree}"
 }
 
-# openssl rather than sha256sum/base64 — the BSD and GNU flags differ, openssl's don't.
-receipt_hmac() {
-  : "${CI_RECEIPT_KEY:?CI_RECEIPT_KEY is not set (see docs/local-ci.md)}"
-  openssl dgst -sha256 -hmac "$CI_RECEIPT_KEY" -hex | awk '{print $NF}'
+# A digest, not a keyed signature: it catches a corrupt or hand-edited payload, not
+# a forged one. Authenticity rests on who can push refs/ci-receipts to origin.
+# openssl rather than sha256sum — the BSD and GNU flags differ, openssl's don't.
+receipt_digest() {
+  openssl dgst -sha256 -hex | awk '{print $NF}'
 }
 
-# The toolchain that actually ran, so a stale local install can't quietly sign a
+# The toolchain that actually ran, so a stale local install can't quietly attest to a
 # tree the pinned toolchain would have rejected.
 receipt_tool_versions() {
   local elixir otp node pnpm

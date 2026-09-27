@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs every gate .github/workflows/tests.yaml runs, then writes a signed receipt
+# Runs every gate .github/workflows/tests.yaml runs, then writes a receipt
 # so pr.yaml can verify instead of repeat. docs/local-ci.md.
 set -euo pipefail
 
@@ -202,7 +202,7 @@ jq -n \
     tools: {elixir: $elixir, otp: $otp, node: $node, pnpm: $pnpm},
     gates: ($gates | split("\n") | map(select(length > 0)))}' >"$LANEDIR/payload.json"
 
-receipt_hmac <"$LANEDIR/payload.json" >"$LANEDIR/sig"
+receipt_digest <"$LANEDIR/payload.json" >"$LANEDIR/sig"
 
 # A commit, not a bare blob — GitHub only reliably accepts commit objects at a ref.
 PAYLOAD_BLOB=$(git hash-object -w "$LANEDIR/payload.json")

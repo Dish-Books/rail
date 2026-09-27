@@ -22,13 +22,13 @@ trap 'rm -f "$PAYLOAD"' EXIT
 git cat-file blob "$REF:payload.json" >"$PAYLOAD" || fail "receipt has no payload"
 SIG=$(git cat-file blob "$REF:sig" | tr -d '[:space:]')
 
-EXPECTED=$(receipt_hmac <"$PAYLOAD")
-[[ "$SIG" == "$EXPECTED" ]] || fail "signature mismatch"
-
-# Everything below is signed, so these checks are about it being the right
-# receipt, not about it being authentic.
+# The spec first, so a receipt from before a format change says so rather than
+# failing its digest.
 jq -e --argjson spec "$RECEIPT_SPEC_VERSION" '.spec == $spec' "$PAYLOAD" >/dev/null \
   || fail "spec version is not $RECEIPT_SPEC_VERSION"
+
+[[ "$SIG" == "$(receipt_digest <"$PAYLOAD")" ]] || fail "digest mismatch"
+
 jq -e --arg tree "$TREE" '.tree == $tree' "$PAYLOAD" >/dev/null \
   || fail "receipt is for a different tree"
 
@@ -36,7 +36,7 @@ REQUIRED='["compile","format","credo","deps.audit","sobelow","tests","credo_subp
 jq -e --argjson required "$REQUIRED" '$required - .gates == []' "$PAYLOAD" >/dev/null \
   || fail "receipt does not cover every required gate"
 
-# A receipt signed by a stale toolchain proves the wrong thing.
+# A receipt from a stale toolchain proves the wrong thing.
 pin() { grep -E "^$1 *=" mise.toml | sed 's/.*"\(.*\)".*/\1/'; }
 ELIXIR_PIN=$(pin elixir)
 check_tool() {

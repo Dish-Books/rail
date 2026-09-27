@@ -39,7 +39,7 @@ repos:
         pass_filenames: false
 
       - id: receipt
-        name: "sign and push the receipt"
+        name: "write and push the receipt"
         entry: scripts/ci-lanes.sh receipt
         language: system
         stages: [pre-push]

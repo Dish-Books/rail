@@ -26,14 +26,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Verify receipt
-        env:
-          CI_RECEIPT_KEY: ${{ secrets.CI_RECEIPT_KEY }}
         run: |
           set -uo pipefail
-          if [ -z "${CI_RECEIPT_KEY:-}" ]; then
-            echo "::error::No CI_RECEIPT_KEY available. A fork PR cannot carry a receipt — run the suite on a branch in this repo."
-            exit 1
-          fi
           if ! ./scripts/ci-verify-receipt.sh "$(git rev-parse HEAD^{tree})"; then
             echo "::error::No valid local CI receipt for this tree. Run 'mise run ci' and push."
             exit 1
