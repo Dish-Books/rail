@@ -69,6 +69,34 @@ defmodule Rail.Tools.Actions.SpawnOsProcessTest do
     Tools.terminate_os_process(os_pid, grace_period: 50)
   end
 
+  test "feeds :stdin_path to the child as its stdin", %{tmp_dir: tmp_dir, wait_for_content: wait_for_content} do
+    input = Path.join(tmp_dir, "stdin.txt")
+    File.write!(input, "from_stdin")
+    out = Path.join(tmp_dir, "stdin.log")
+
+    {:ok, _port, os_pid} =
+      Tools.spawn_os_process("/bin/sh", ["-c", "cat; sleep 5"],
+        stdin_path: input,
+        stdout_path: out,
+        stderr_path: "#{out}.err"
+      )
+
+    assert wait_for_content.(out) == "from_stdin"
+
+    Tools.terminate_os_process(os_pid, grace_period: 50)
+  end
+
+  test "gives the child an empty stdin without :stdin_path", %{tmp_dir: tmp_dir, wait_for_content: wait_for_content} do
+    out = Path.join(tmp_dir, "no_stdin.log")
+
+    {:ok, _port, os_pid} =
+      Tools.spawn_os_process("/bin/sh", ["-c", "cat; echo eof; sleep 5"], stdout_path: out, stderr_path: "#{out}.err")
+
+    assert wait_for_content.(out) == "eof\n"
+
+    Tools.terminate_os_process(os_pid, grace_period: 50)
+  end
+
   test "runs the child in :cd when given", %{tmp_dir: tmp_dir, wait_for_content: wait_for_content} do
     out = Path.join(tmp_dir, "cwd.log")
 
