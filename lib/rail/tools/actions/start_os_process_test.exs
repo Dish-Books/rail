@@ -243,6 +243,51 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     Tools.terminate_os_process(os_process.os_pid, grace_period: 50)
   end
 
+  # Linux refuses to exec with any one argument over 128KB, so a brief that inlines
+  # an approved design's page used to die with E2BIG before the CLI ever ran.
+  test "hands Claude its prompt on stdin, whatever its size", %{backend: backend, run: run, scope: scope} do
+    {:ok, _backend} = Tools.update_backend(scope, backend, %{executable_path: "/bin/sh"})
+    prompt = String.duplicate("design ", 40_000)
+
+    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+
+    # The shell stands in for the CLI: `-p` is a flag it accepts too, and `cat`
+    # echoes whatever arrived on stdin into the stream.
+    {:ok, os_process} = Tools.start_os_process(run, ["-p", prompt, "-c", "cat"])
+
+    content =
+      Enum.reduce_while(1..200, "", fn _i, _acc ->
+        content = File.read!(os_process.stream_path)
+
+        if byte_size(content) == byte_size(prompt) do
+          {:halt, content}
+        else
+          Process.sleep(10)
+          {:cont, content}
+        end
+      end)
+
+    assert content == prompt
+    assert File.read!("#{os_process.stream_path}.prompt") == prompt
+  end
+
+  test "leaves the prompt in argv for other backends", %{backend: backend, run: run} do
+    backend |> Ecto.Changeset.change(name: :agy) |> Repo.update!()
+    test_pid = self()
+
+    expect(Tools, :spawn_os_process, fn _executable, args, opts ->
+      send(test_pid, {:spawned, args, opts})
+      {:ok, nil, 4244}
+    end)
+
+    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+
+    {:ok, _os_process} = Tools.start_os_process(run, ["-p", "the prompt", "--model", "gemini"])
+
+    assert_received {:spawned, ["-p", "the prompt", "--model", "gemini"], opts}
+    refute Keyword.has_key?(opts, :stdin_path)
+  end
+
   test "with a missing backend binary reports error and settles the run", %{
     backend: backend,
     run: run,

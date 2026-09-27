@@ -116,15 +116,17 @@ defmodule Rail.Tools.Actions.StartOsProcess do
 
   # The clone is trusted along with the worktree: Claude Code keys a worktree's
   # trust to the repository it belongs to.
-  defp launch(os_process, run, backend, args, stream_path, %Task{project: %Project{} = project} = task, token) do
+  defp launch(os_process, run, backend, argv, stream_path, %Task{project: %Project{} = project} = task, token) do
     trust_workspace(backend, [project.clone_path, task.worktree_path])
+    {args, stdin_opts} = prompt_on_stdin(backend, argv, stream_path)
 
-    spawn_opts = [
-      stdout_path: stream_path,
-      stderr_path: "#{stream_path}.err",
-      cd: task.worktree_path,
-      env: task |> worktree_env() |> Map.merge(backend_env(backend)) |> Map.put("RAIL_MCP_TOKEN", token)
-    ]
+    spawn_opts =
+      [
+        stdout_path: stream_path,
+        stderr_path: "#{stream_path}.err",
+        cd: task.worktree_path,
+        env: task |> worktree_env() |> Map.merge(backend_env(backend)) |> Map.put("RAIL_MCP_TOKEN", token)
+      ] ++ stdin_opts
 
     case Tools.spawn_os_process(backend.executable_path, args, spawn_opts) do
       {:ok, port, os_pid} ->
@@ -141,6 +143,21 @@ defmodule Rail.Tools.Actions.StartOsProcess do
         # coveralls-ignore-stop
     end
   end
+
+  # Claude's prompt goes in on stdin rather than in argv. Linux refuses to exec
+  # with any one argument over 128KB (E2BIG), and a brief carrying an approved
+  # design's whole page runs past that, so the CLI never started and the run
+  # ended "Exited with code 7" with nothing in either stream. `-p` is Claude's
+  # --print flag, and with no prompt argument it reads the prompt from stdin.
+  # The file sits beside the run's stream, so what the agent was sent can be read
+  # back later.
+  defp prompt_on_stdin(%Backend{name: :claude}, ["-p", prompt | rest], stream_path) when is_binary(prompt) do
+    prompt_path = "#{stream_path}.prompt"
+    File.write!(prompt_path, prompt)
+    {["-p" | rest], [stdin_path: prompt_path]}
+  end
+
+  defp prompt_on_stdin(_backend, argv, _stream_path), do: {argv, []}
 
   # The run is already loaded down to its backend, so handing it over on the row
   # saves the Follower the preload.
