@@ -224,6 +224,25 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     Tools.terminate_os_process(os_process.os_pid, grace_period: 50)
   end
 
+  test "trusts the project's clone and the task's worktree in the backend's config", %{
+    backend: backend,
+    project: project,
+    run: run,
+    worktree_path: worktree_path
+  } do
+    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+
+    {:ok, os_process} = Tools.start_os_process(run, ["5"])
+
+    %{"projects" => projects} =
+      backend |> Backend.config_dir() |> Path.join(".claude.json") |> File.read!() |> Jason.decode!()
+
+    assert %{"hasTrustDialogAccepted" => true} = projects[project.clone_path]
+    assert %{"hasTrustDialogAccepted" => true} = projects[worktree_path]
+
+    Tools.terminate_os_process(os_process.os_pid, grace_period: 50)
+  end
+
   test "with a missing backend binary reports error and settles the run", %{
     backend: backend,
     run: run,
