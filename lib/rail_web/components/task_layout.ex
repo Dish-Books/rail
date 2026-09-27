@@ -109,7 +109,7 @@ defmodule RailWeb.Components.TaskLayout do
         <aside
           :if={@sidebar != []}
           id="task-conversation-column"
-          class="w-full lg:w-[440px] shrink-0 flex flex-col min-h-0 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-700"
+          class="w-full lg:w-[440px] flex-1 lg:flex-none flex flex-col min-h-0 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-700"
         >
           {render_slot(@sidebar)}
         </aside>

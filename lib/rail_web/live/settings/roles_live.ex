@@ -291,7 +291,7 @@ defmodule RailWeb.Settings.RolesLive do
             phx-change="validate_role"
             phx-submit="save_role"
             id="role-form"
-            class="flex h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-900 shadow-2xl"
+            class="flex h-[90dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-900 shadow-2xl"
           >
             <div class="flex items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-700/70 px-8 py-5">
               <div class="flex min-w-0 items-center gap-3">

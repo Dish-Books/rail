@@ -1689,6 +1689,23 @@ defmodule RailWeb.TaskLiveTest do
       refute render(view) =~ "The designer's line"
     end
 
+    # Stacked under the stage, a conversation with no height limit grows to its full
+    # length and pushes the composer off the bottom of the screen.
+    test "stacked below the desktop breakpoint, the conversation takes a bounded share and scrolls itself", %{
+      conn: conn,
+      task: task
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert [class] =
+               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#task-conversation-column", "class")
+
+      classes = String.split(class)
+      assert "flex-1" in classes
+      assert "lg:flex-none" in classes
+      refute "shrink-0" in classes
+    end
+
     test "stopping with nothing queued leaves the composer as it was", %{conn: conn, task: task, run: run} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -2523,6 +2540,20 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='qa_finding_detail']", "The bill total renders as $1234.5")
     end
 
+    test "stacked below the desktop breakpoint, the checks list leaves room for the detail under it", %{
+      conn: conn,
+      task: task,
+      decide_as_advised: decide_as_advised
+    } do
+      _decided = decide_as_advised.()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert [class] = view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#qa-sidebar", "class")
+      assert "max-h-1/2" in String.split(class)
+      assert "lg:max-h-none" in String.split(class)
+    end
+
     test "the detail pane says what QA drove and what it saw", %{
       conn: conn,
       task: task,
@@ -3177,6 +3208,20 @@ defmodule RailWeb.TaskLiveTest do
       # render its cues inside the video element.
       assert has_element?(view, "#demo-video-frame[phx-hook='DemoCaptions']")
       refute has_element?(view, "#demo-video track")
+    end
+
+    test "stacked below the desktop breakpoint, the beats leave room for the player under them", %{
+      conn: conn,
+      task: task,
+      recorded: recorded
+    } do
+      recorded.()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert [class] = view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#demo-beats", "class")
+      assert "max-h-1/2" in String.split(class)
+      assert "lg:max-h-none" in String.split(class)
     end
 
     test "a demo the stage was entered without asks whether it is needed", %{

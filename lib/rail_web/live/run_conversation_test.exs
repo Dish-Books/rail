@@ -506,6 +506,28 @@ defmodule RailWeb.Live.RunConversationTest do
     refute html =~ ~s(id="queued-banner")
   end
 
+  # Stacked in a half-height column, a 400px floor would push the composer out of it.
+  test "the chat pane only holds a minimum height beside the stage, not stacked under it", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :running,
+        conversation_id: "conv_pane_height",
+        started_at: DateTime.utc_now()
+      })
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert [class] = html |> Floki.parse_fragment!() |> Floki.attribute("#chat-pane-root", "class")
+    assert "min-h-0" in String.split(class)
+    assert "lg:min-h-[400px]" in String.split(class)
+  end
+
   test "a message waiting on a working agent stacks under the thinking banner", %{
     task: task,
     roles: roles,

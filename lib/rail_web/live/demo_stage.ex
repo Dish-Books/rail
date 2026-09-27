@@ -111,7 +111,7 @@ defmodule RailWeb.Live.DemoStage do
     <div
       id="demo-beats"
       data-qa="demo_beats"
-      class="w-full lg:w-[340px] shrink-0 flex flex-col min-h-0 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-700"
+      class="w-full lg:w-[340px] max-h-1/2 lg:max-h-none shrink-0 flex flex-col min-h-0 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-700"
     >
       <p class="shrink-0 px-4 py-3 text-[10.5px] font-extrabold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
         {if @running, do: "Narrated so far", else: "Walkthrough"}

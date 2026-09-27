@@ -212,7 +212,7 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(:has_messages, assigns.turns != [])
 
     ~H"""
-    <div id="chat-pane-root" data-qa="chat-pane" class="flex flex-col flex-1 min-h-[400px]">
+    <div id="chat-pane-root" data-qa="chat-pane" class="flex flex-col flex-1 min-h-0 lg:min-h-[400px]">
       <!-- Messages List / Empty State with Autoscroll Hook -->
       <div
         id="chat-messages"

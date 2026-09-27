@@ -33,7 +33,7 @@ defmodule RailWeb.Layouts do
 
   def app(assigns) do
     ~H"""
-    <div class="flex h-screen w-screen overflow-hidden bg-white dark:bg-slate-900" id="app-scaffold">
+    <div class="flex h-dvh w-screen overflow-hidden bg-white dark:bg-slate-900" id="app-scaffold">
       <.nav
         current_section={@current_section}
         is_rail_extended={@is_rail_extended}

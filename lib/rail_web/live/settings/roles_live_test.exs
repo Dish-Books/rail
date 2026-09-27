@@ -156,6 +156,10 @@ defmodule RailWeb.Settings.RolesLiveTest do
     assert has_element?(view, "#role-modal-title", "New role")
     refute has_element?(view, "#role-identifier-card")
 
+    # Sized to the visible viewport, so Safari's toolbar never covers the footer buttons.
+    assert [class] = view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#role-form", "class")
+    assert "h-[90dvh]" in String.split(class)
+
     # Two backends of one kind are told apart by their label.
     assert has_element?(view, "#role-backend-select option", "Claude Code (claude -p) · work")
     assert has_element?(view, "#role-backend-select option", "Antigravity (agy -p)")
