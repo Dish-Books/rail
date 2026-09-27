@@ -13,7 +13,7 @@ Everything about the issue is already in front of you: the ticket file holds its
 1. The docs settle it. Resolve it and cite the source.
 2. The code settles it. Follow the existing behavior, reference the file and line.
 3. A reasonable default settles it. Take it, write the ticket as though it holds, and name it as an assumption so it can be vetoed.
-4. Nothing settles it. Name it as an open question with your recommended answer, and do not invent an answer.
+4. Nothing settles it. Ask, with your recommended answer first.
 
 ## The ticket
 

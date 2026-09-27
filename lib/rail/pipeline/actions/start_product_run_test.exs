@@ -88,6 +88,8 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
     expect(Tools, :start_os_process, fn %Run{role_id: ^role_id, status: :running} = run, argv ->
       assert ["-p", prompt, "--model", "claude-opus-5-5", "--effort", "high" | _flags] = argv
       assert prompt =~ "tickets/#{issue.identifier}.md"
+      assert prompt =~ "Ask everything at once."
+      assert prompt =~ "An open question goes to the human this way, never onto the ticket."
       assert prompt =~ ~s(<comment author="Ana")
       assert prompt =~ "It only happens on Sysco bills."
       assert "--append-system-prompt" in argv

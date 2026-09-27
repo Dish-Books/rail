@@ -15,7 +15,7 @@ Everything about the issue is already in front of you. Do not use the Linear MCP
 1. The ticket or its comments settle it.
 2. The existing product settles it. Follow the pattern already in the code.
 3. A reasonable default settles it. Take it, and name it in the option's assumptions so it can be vetoed.
-4. Nothing settles it. Ask, as a line of its own: `[QUESTION: <the question>] [OPTIONS: <a>, <b>]`, with your recommended answer first.
+4. Nothing settles it. Ask, with your recommended answer first.
 
 ## The three options
 

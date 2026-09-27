@@ -52,6 +52,7 @@ defmodule Rail.Pipeline.Actions.StartDesignRunTest do
       assert prompt =~ "cat > #{design_dir}/manifest.json <<'MANIFEST'"
       assert prompt =~ "--window-size=1920,1080 --screenshot=#{design_dir}/<key>.png file://#{design_dir}/<key>.html"
       assert prompt =~ "Rail records the pick in #{design_dir}/picked"
+      assert prompt =~ "Ask everything at once."
       assert prompt =~ ~s(<ticket title="Invoice filters">\nFilter invoices by vendor.\n</ticket>)
 
       {:ok, %OsProcess{run: spawned}}
