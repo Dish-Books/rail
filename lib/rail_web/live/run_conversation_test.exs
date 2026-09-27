@@ -506,8 +506,8 @@ defmodule RailWeb.Live.RunConversationTest do
     refute html =~ ~s(id="queued-banner")
   end
 
-  # Stacked in a half-height column, a 400px floor would push the composer out of it.
-  test "the chat pane only holds a minimum height beside the stage, not stacked under it", %{
+  # A 400px floor overruns the column on an iPad, stacked or in landscape, and pushes the composer out.
+  test "the chat pane takes whatever height its column leaves", %{
     task: task,
     roles: roles,
     roles_map: roles_map
@@ -524,8 +524,9 @@ defmodule RailWeb.Live.RunConversationTest do
     html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
 
     assert [class] = html |> Floki.parse_fragment!() |> Floki.attribute("#chat-pane-root", "class")
-    assert "min-h-0" in String.split(class)
-    assert "lg:min-h-[400px]" in String.split(class)
+    classes = String.split(class)
+    assert "min-h-0" in classes
+    refute Enum.any?(classes, &(String.starts_with?(&1, "lg:min-h-") or String.starts_with?(&1, "min-h-[")))
   end
 
   test "a message waiting on a working agent stacks under the thinking banner", %{

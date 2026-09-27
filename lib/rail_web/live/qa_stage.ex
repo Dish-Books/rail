@@ -825,7 +825,10 @@ defmodule RailWeb.Live.QaStage do
         <.close_pane target={@target} />
       </div>
 
-      <div class="flex-1 min-h-[280px] overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-900">
+      <div
+        id="qa-shot-frame"
+        class="flex-1 min-h-0 lg:min-h-[280px] overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-900"
+      >
         <img
           src={~p"/tasks/#{@task.id}/qa/evidence/#{@shot.file}"}
           alt={@shot.name}

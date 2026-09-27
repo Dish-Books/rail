@@ -1793,6 +1793,18 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='raw-log-line'].text-zinc-300", "plain words")
     end
 
+    test "the raw log takes whatever height its column leaves", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#toggle-raw-log") |> render_click()
+
+      assert [class] =
+               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#raw-log-container", "class")
+
+      assert "min-h-0" in String.split(class)
+      refute "min-h-[400px]" in String.split(class)
+    end
+
     test "shows the raw log on request, and the chat again after", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -2552,6 +2564,28 @@ defmodule RailWeb.TaskLiveTest do
       assert [class] = view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#qa-sidebar", "class")
       assert "max-h-1/2" in String.split(class)
       assert "lg:max-h-none" in String.split(class)
+    end
+
+    # Stacked, the flush stage pane clips anything taller than the room under the list.
+    test "stacked below the desktop breakpoint, a screenshot only holds a minimum height beside the list", %{
+      conn: conn,
+      task: task
+    } do
+      {:ok, _checklist} =
+        Pipeline.write_qa_checklist(task, [
+          %{"key" => "bill-saves", "title" => "A bill saves and survives a reload"}
+        ])
+
+      File.write!(Path.join([task.scratch_path, "qa", "evidence", "bill-saves~the-saved-bill.png"]), "png bytes")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#qa-check-bill-saves") |> render_click()
+      view |> element("#qa-check-shot-bill-saves-the-saved-bill") |> render_click()
+
+      assert [class] = view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#qa-shot-frame", "class")
+      assert "min-h-0" in String.split(class)
+      assert "lg:min-h-[280px]" in String.split(class)
     end
 
     test "the detail pane says what QA drove and what it saw", %{
