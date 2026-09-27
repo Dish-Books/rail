@@ -59,3 +59,7 @@ debug/
 
 # What the agents write for a task: tickets, designs, plans, reviews, QA reports.
 /output/
+
+# This machine's own compose overrides (ports, volumes, extra services). Untracked
+# files count as a dirty tree for scripts/ci.sh, which would otherwise refuse every receipt.
+/docker-compose.override.yml
