@@ -186,7 +186,10 @@ defmodule Rail.Tools.LoginSession do
   defp port_env(backend) do
     backend
     |> backend_env()
-    |> env()
-    |> Enum.map(fn {key, value} -> {String.to_charlist(key), String.to_charlist(value)} end)
+    |> env_list(false)
+    |> Enum.map(fn
+      {key, false} -> {String.to_charlist(key), false}
+      {key, value} -> {String.to_charlist(key), String.to_charlist(value)}
+    end)
   end
 end

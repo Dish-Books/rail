@@ -6,6 +6,12 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# A push from a linked worktree hands its hooks an absolute GIT_DIR, and every git
+# the tests run in a scratch repo under /tmp followed it back here: their `git init`
+# made this repository bare, and their commits landed on the branch being pushed.
+# Run from the checkout's root, git finds the repository without them.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_PREFIX
+
 # A hook inherits the pushing shell's environment, which may not carry the pinned
 # toolchain. mise supplies it.
 if [[ -z ${CI_LANES_REEXEC:-} ]] &&

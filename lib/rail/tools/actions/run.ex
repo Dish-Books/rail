@@ -50,9 +50,7 @@ defmodule Rail.Tools.Actions.Run do
   end
 
   defp cmd(executable, args, opts, cd) do
-    merged_env = env(Keyword.get(opts, :env, %{}))
-
-    base_opts = [{:env, Map.to_list(merged_env)} | Keyword.take(opts, [:into, :stderr_to_stdout])]
+    base_opts = [{:env, env_list(Keyword.get(opts, :env, %{}), nil)} | Keyword.take(opts, [:into, :stderr_to_stdout])]
 
     cmd_opts =
       if is_binary(cd) do
