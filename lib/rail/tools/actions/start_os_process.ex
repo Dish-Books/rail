@@ -3,12 +3,14 @@ defmodule Rail.Tools.Actions.StartOsProcess do
 
   import Rail.Tools.Utils.BackendEnv
   import Rail.Tools.Utils.EnsureExecutable
+  import Rail.Tools.Utils.TrustWorkspace
   import Rail.Tools.Utils.WorktreeEnv
 
   alias Rail.Mcp
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
@@ -46,7 +48,7 @@ defmodule Rail.Tools.Actions.StartOsProcess do
   defp dispatch_disabled?, do: Application.get_env(:rail, :no_dispatch, false)
 
   defp spawn_os_process(%Run{} = run, argv) do
-    run = Repo.preload(run, [:task, role: :backend])
+    run = Repo.preload(run, task: :project, role: :backend)
     %Run{task: %Task{} = task, role: %Role{backend: %Backend{} = backend}} = run
 
     executable = backend.executable_path
@@ -112,7 +114,11 @@ defmodule Rail.Tools.Actions.StartOsProcess do
     stream_path
   end
 
-  defp launch(os_process, run, backend, args, stream_path, task, token) do
+  # The clone is trusted along with the worktree: Claude Code keys a worktree's
+  # trust to the repository it belongs to.
+  defp launch(os_process, run, backend, args, stream_path, %Task{project: %Project{} = project} = task, token) do
+    trust_workspace(backend, [project.clone_path, task.worktree_path])
+
     spawn_opts = [
       stdout_path: stream_path,
       stderr_path: "#{stream_path}.err",
