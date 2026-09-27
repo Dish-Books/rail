@@ -323,7 +323,7 @@ defmodule RailWeb.Live.QaStage do
     <div
       id="qa-sidebar"
       data-qa="qa_sidebar"
-      class="w-full lg:w-[300px] shrink-0 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30"
+      class="w-full lg:w-[300px] max-h-1/2 lg:max-h-none shrink-0 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30"
     >
       <.summary_item
         :if={@report && not @running}
@@ -825,7 +825,10 @@ defmodule RailWeb.Live.QaStage do
         <.close_pane target={@target} />
       </div>
 
-      <div class="flex-1 min-h-[280px] overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-900">
+      <div
+        id="qa-shot-frame"
+        class="flex-1 min-h-0 lg:min-h-[280px] overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-900"
+      >
         <img
           src={~p"/tasks/#{@task.id}/qa/evidence/#{@shot.file}"}
           alt={@shot.name}

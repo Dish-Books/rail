@@ -5,7 +5,7 @@ defmodule RailWeb.AuthHTML do
   def denied(assigns) do
     ~H"""
     <div
-      class="min-h-screen flex items-center justify-center bg-white dark:bg-slate-900 p-6"
+      class="min-h-dvh flex items-center justify-center bg-white dark:bg-slate-900 p-6"
       id="auth-denied"
     >
       <div class="max-w-md w-full space-y-4 text-center">

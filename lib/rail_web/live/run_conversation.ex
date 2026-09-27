@@ -212,7 +212,7 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(:has_messages, assigns.turns != [])
 
     ~H"""
-    <div id="chat-pane-root" data-qa="chat-pane" class="flex flex-col flex-1 min-h-[400px]">
+    <div id="chat-pane-root" data-qa="chat-pane" class="flex flex-col flex-1 min-h-0">
       <!-- Messages List / Empty State with Autoscroll Hook -->
       <div
         id="chat-messages"
@@ -777,7 +777,7 @@ defmodule RailWeb.Live.RunConversation do
       id="raw-log-container"
       data-qa="raw_log_container"
       phx-hook="ChatAutoscroll"
-      class="w-full flex-1 min-h-[400px] p-4 bg-zinc-950 text-zinc-300 font-mono text-xs overflow-y-auto select-text"
+      class="w-full flex-1 min-h-0 p-4 bg-zinc-950 text-zinc-300 font-mono text-xs overflow-y-auto select-text"
     >
       <%= if not @has_lines do %>
         <div id="raw-log-empty-state" class="flex items-center justify-center h-48 text-zinc-500">

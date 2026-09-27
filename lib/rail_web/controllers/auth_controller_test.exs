@@ -152,6 +152,11 @@ defmodule RailWeb.AuthControllerTest do
       conn = get(conn, ~p"/auth/denied")
 
       assert html_response(conn, 200) =~ "Rail is invite only"
+
+      assert [class] =
+               conn |> html_response(200) |> Floki.parse_document!() |> Floki.attribute("#auth-denied", "class")
+
+      assert "min-h-dvh" in String.split(class)
     end
 
     test "shows the reason the sign-in was refused" do
