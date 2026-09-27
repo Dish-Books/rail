@@ -35,6 +35,14 @@ defmodule Rail.Pipeline.Actions.AppendRunEventsTest do
              Pipeline.list_run_events(run)
   end
 
+  test "a batch too big for one insert is written whole and in order", %{run: run} do
+    lines = Enum.map(1..12_000, &"line #{&1}")
+
+    Pipeline.append_run_events(run.id, nil, lines)
+
+    assert Enum.map(Pipeline.list_run_events(run), & &1.line) == lines
+  end
+
   test "a line with no process belongs to the run alone", %{run: run} do
     Pipeline.append_run_events(run.id, nil, ["[rail] between turns"])
 
