@@ -198,12 +198,14 @@ defmodule RailWeb.Live.EngineerStage do
   def handle_event("toggle_viewed", %{"path" => path, "digest" => digest}, socket) do
     read_already? = Enum.any?(socket.assigns.files, &(&1.path == path and &1.viewed?))
 
-    _marked =
+    {:ok, _marked} =
       Git.set_file_viewed(socket.assigns.current_scope, socket.assigns.task, path, digest, not read_already?)
 
+    # A click from a page drawn before the last refresh marks the version it saw,
+    # which is only this one if the digest still matches.
     files =
       Enum.map(socket.assigns.files, fn file ->
-        if file.path == path, do: %{file | viewed?: not read_already?}, else: file
+        if file.path == path, do: %{file | viewed?: not read_already? and file.digest == digest}, else: file
       end)
 
     socket =

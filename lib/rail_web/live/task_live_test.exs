@@ -1404,6 +1404,34 @@ defmodule RailWeb.TaskLiveTest do
       assert_push_event(view, "diff:scroll_to", %{path: "zeta.ex"})
     end
 
+    # The click came from a page drawn before the refresh, so it marked the old
+    # version: the one on screen now has not been read.
+    test "reviewing a version of a file the pane has moved past leaves it unread", %{
+      conn: conn,
+      task: task,
+      engineer_run: run,
+      repo: repo
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      [old_digest] =
+        view
+        |> render()
+        |> Floki.parse_fragment!()
+        |> Floki.attribute("[data-qa='diff-viewed-checkbox']", "phx-value-digest")
+
+      File.write!(Path.join(repo, "shipped.ex"), "rewritten\n")
+      send(view.pid, {:run_events, run.id, []})
+      _settled = render(view)
+
+      view
+      |> element("[data-qa='diff-viewed-checkbox']")
+      |> render_click(%{"path" => "shipped.ex", "digest" => old_digest})
+
+      assert has_element?(view, "[data-qa='diff-viewed-checkbox'][aria-pressed='false']")
+      assert has_element?(view, "[data-qa='diff_viewed_progress']", "0/1")
+    end
+
     test "a file edited after it was reviewed comes back unread with its new lines", %{
       conn: conn,
       task: task,
