@@ -82,6 +82,25 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
     assert File.dir?(Path.join([task.scratch_path, "qa", "evidence"]))
   end
 
+  test "asks for the pull request description, leaving out what Rail adds itself", %{task: task, run: run} do
+    pr_dir = Path.join(task.scratch_path, "pr")
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
+      assert ["-p", prompt | _rest] = argv
+      assert prompt =~ "cat > #{pr_dir}/SQA-1.md <<'PR'"
+      assert prompt =~ "describing the whole branch as it now stands"
+      assert prompt =~ "A section with nothing to say is left out"
+
+      assert prompt =~
+               "Leave out the ticket link, the QA verdict, any `## Demo` section, and open questions or assumptions"
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_qa_run(run)
+    assert File.dir?(pr_dir)
+  end
+
   test "says the verdict is a judgement rather than a tally", %{run: run} do
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv

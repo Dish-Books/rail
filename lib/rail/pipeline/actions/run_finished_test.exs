@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.DetectedQuestion
   alias Rail.Pipeline.Schemas.Run
@@ -430,15 +431,19 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
         {"POST", "/app/installations/" <> _id} ->
           Req.Test.json(conn, %{"token" => "ghs_token"})
 
+        # A description Rail wrote when it marked the pull request ready.
         {"GET", "/repos/example/test-seed/pulls/7"} ->
-          Req.Test.json(conn, %{"number" => 7, "body" => "Opened by Rail.\n\n## Demo\n\n[Watch the demo](old)"})
+          body =
+            "https://linear.app/x/RUN-1\n\n- Adds a filter.\n\n**QA:** Passed. It works.\n\n## Demo\n\n[Watch the demo](old)"
+
+          Req.Test.json(conn, %{"number" => 7, "body" => body})
 
         {"PATCH", "/repos/example/test-seed/pulls/7"} ->
           {:ok, body, conn} = Plug.Conn.read_body(conn)
 
           assert %{
                    "body" =>
-                     "Opened by Rail.\n\n## Demo\n\n[Watch the demo](https://uploads.linear.app/assets/RUN-1-demo.webm)"
+                     "https://linear.app/x/RUN-1\n\n- Adds a filter.\n\n**QA:** Passed. It works.\n\n## Demo\n\n[Watch the demo](https://uploads.linear.app/assets/RUN-1-demo.webm)"
                  } =
                    Jason.decode!(body)
 
@@ -450,6 +455,101 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     refute Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "Could not publish"))
+  end
+
+  test "a demo that takes a draft out of draft replaces Rail's placeholder with a description", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, _issue} =
+      Issue |> Repo.get!(task.issue_id) |> Issue.changeset(%{url: "https://linear.app/rail/issue/RUN-1"}) |> Repo.update()
+
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: true})
+    demo_dir = Path.join(task.scratch_path, "demo")
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+    File.write!(Path.join(demo_dir, "demo.webm"), "webm bytes")
+    File.mkdir_p!(Path.join(task.scratch_path, "pr"))
+    File.write!(Path.join([task.scratch_path, "pr", "RUN-1.md"]), "- Adds a vendor filter.\n")
+    File.mkdir_p!(Path.join(task.scratch_path, "qa"))
+
+    File.write!(
+      Path.join([task.scratch_path, "qa", "RUN-1.json"]),
+      ~s({"verdict": "pass", "summary": "The filter works.", "findings": []})
+    )
+
+    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
+    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "fileUpload" => %{
+            "success" => true,
+            "uploadFile" => %{
+              "uploadUrl" => "https://uploads.linear.app/put/run-1",
+              "assetUrl" => "https://uploads.linear.app/assets/RUN-1-demo.webm",
+              "headers" => []
+            }
+          }
+        }
+      })
+    end)
+
+    Req.Test.expect(Rail.Linear, &Plug.Conn.send_resp(&1, 200, ""))
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "commentCreate" => %{
+            "success" => true,
+            "comment" => %{
+              "id" => "comment_demo_3",
+              "body" => "## Demo: Filters",
+              "createdAt" => "2026-09-22T10:00:00.000Z",
+              "issue" => %{"id" => "lin_run_finished_1"},
+              "botActor" => %{"name" => "Rail"}
+            }
+          }
+        }
+      })
+    end)
+
+    # What the demo's own publish leaves behind: the placeholder with the new link under it.
+    linked =
+      "https://linear.app/rail/issue/RUN-1\n\nOpened by Rail as a draft. It is marked ready for review once the change is ready to merge.\n\n## Demo\n\n[Watch the demo](https://uploads.linear.app/assets/RUN-1-demo.webm)"
+
+    test = self()
+
+    Req.Test.expect(Client, 7, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/" <> _id} ->
+          Req.Test.json(conn, %{"token" => "ghs_token"})
+
+        {"GET", "/repos/example/test-seed/pulls/7"} ->
+          Req.Test.json(conn, %{"number" => 7, "node_id" => "PR_kw7", "body" => linked})
+
+        {"PATCH", "/repos/example/test-seed/pulls/7"} ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+          send(test, {:description, Jason.decode!(body)["body"]})
+          Req.Test.json(conn, %{"number" => 7})
+
+        {"POST", "/graphql"} ->
+          send(test, :marked_ready)
+          Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{}}})
+      end
+    end)
+
+    {_run, os_process} = exited.(:demo, %{})
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert_received {:description, ^linked}
+
+    assert_received {:description,
+                     "https://linear.app/rail/issue/RUN-1\n\n- Adds a vendor filter.\n\n**QA:** Passed. The filter works.\n\n## Demo\n\n[Watch the demo](https://uploads.linear.app/assets/RUN-1-demo.webm)"}
+
+    assert_received :marked_ready
+    assert %Task{pr_is_draft: false} = Repo.reload!(task)
   end
 
   test "a recorded demo on a task with no pull request goes on the ticket alone", %{task: task, exited: exited} do

@@ -30,6 +30,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinished do
   """
 
   import Rail.Pipeline.Utils.MarkPullRequestReady
+  import Rail.Pipeline.Utils.SplitDemoSection
 
   alias Rail.GitHub.Client, as: GitHub
   alias Rail.Issues
@@ -143,7 +144,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinished do
 
   # A re-recorded demo replaces the link rather than adding another under it.
   defp with_demo(body, asset_url) do
-    kept = (body || "") |> String.split("\n\n## Demo\n") |> List.first() |> String.trim_trailing()
+    {kept, _demo} = split_demo_section(body)
     "#{kept}\n\n## Demo\n\n[Watch the demo](#{asset_url})"
   end
 

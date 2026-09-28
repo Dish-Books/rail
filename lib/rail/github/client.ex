@@ -168,6 +168,26 @@ defmodule Rail.GitHub.Client do
     end
   end
 
+  @doc """
+  Comments on issue or pull request `number` in `repo`. A pull request's
+  conversation comments are issue comments on GitHub.
+  """
+  def create_issue_comment(token, repo, number, body, opts \\ []) do
+    opts
+    |> build_req()
+    |> Req.post(
+      url: "/repos/#{repo}/issues/#{number}/comments",
+      auth: {:bearer, token},
+      headers: headers(),
+      json: %{body: body}
+    )
+    |> case do
+      {:ok, %{status: 201, body: %{} = comment}} -> {:ok, comment}
+      {:ok, %{status: status, body: body}} -> {:error, {:github_api_error, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc "Reads one pull request in `repo` by its number."
   def get_pull_request(token, repo, number, opts \\ []) do
     opts

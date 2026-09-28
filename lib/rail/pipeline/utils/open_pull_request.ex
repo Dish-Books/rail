@@ -9,6 +9,8 @@ defmodule Rail.Pipeline.Utils.OpenPullRequest do
   said in the run's log and tried again on the next push, never a failure.
   """
 
+  import Rail.Pipeline.Utils.DraftBody
+
   alias Rail.GitHub.Client, as: GitHub
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -51,7 +53,7 @@ defmodule Rail.Pipeline.Utils.OpenPullRequest do
       title: "#{issue.identifier} #{issue.title}",
       head: task.worktree_name,
       base: project.default_branch,
-      body: body(issue),
+      body: draft_body(issue),
       draft: true
     }
 
@@ -61,10 +63,5 @@ defmodule Rail.Pipeline.Utils.OpenPullRequest do
     else
       _no_owner_or_refused -> GitHub.create_pull_request(app_token, project.github_repo, attrs)
     end
-  end
-
-  defp body(%Issue{url: url}) do
-    ready = "Opened by Rail as a draft. It is marked ready for review once the change is ready to merge."
-    if is_binary(url), do: "#{url}\n\n#{ready}", else: ready
   end
 end

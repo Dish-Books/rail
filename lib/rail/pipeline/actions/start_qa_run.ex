@@ -1,7 +1,7 @@
 defmodule Rail.Pipeline.Actions.StartQaRun do
   @moduledoc """
-  Spawns the QA stage's run: the brief naming the change to exercise and the one
-  file the findings go in, and the process that writes it.
+  Spawns the QA stage's run: the brief naming the change to exercise, the file
+  the findings go in and the pull request description, and the process that writes it.
 
   `enter_stage/3` has already claimed the stage, started the run and made the
   worktree; this is the part only QA knows about.
@@ -36,6 +36,7 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
   def start_qa_run(%Run{task: %Task{} = task, role: %Role{} = role} = run) do
     task = Repo.preload(task, [:project, issue: [comments: :replies]])
     File.mkdir_p!(Path.join([task.scratch_path, "qa", "evidence"]))
+    File.mkdir_p!(Path.join(task.scratch_path, "pr"))
 
     prompt =
       Pipeline.build_prompt(
@@ -65,6 +66,8 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
     dir = Path.join(scratch_path, "qa")
     file = Path.join(dir, "#{issue.identifier}.json")
     evidence = Path.join(dir, "evidence")
+    pr_dir = Path.join(scratch_path, "pr")
+    pr_file = Path.join(pr_dir, "#{issue.identifier}.md")
 
     String.trim("""
     QA the change described below by driving the running application. #{workspace(task)}
@@ -82,6 +85,26 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
     The checklist and the findings are one account, not two. Every finding names the row it came out of, and a row you raised a finding against did not pass: mark it `fail`. If what you found belongs to no row you planned - a defect you walked past on the way to something else - call `qa_plan` again with that row added and then mark it, rather than leaving the list saying everything was fine. The only finding that leaves a row `pass` is one that was already broken before this change (`caused_by_change: false`), and the row's note has to say so. A checklist of twenty passes over a report of six findings is a pass nobody can believe.
 
     Every picture is filed against a check: `qa_shot` takes the row's key as well as a caption, and the human reads the checklist a row at a time with the pictures taken for it. Take at least one for every check, at the moment it asserts something - a row with no picture is a row they have only your word for.
+
+    Just before the report, write the description a reviewer reads on the pull request. Write it every pass, describing the whole branch as it now stands rather than this pass alone, from the ticket, the plan, the diff and its commits:
+
+    mkdir -p #{pr_dir}
+    cat > #{pr_file} <<'PR'
+    - what changed, one short bullet each
+
+    ### Beyond the ticket
+
+    - anything done that the ticket did not ask for
+
+    ### Trade-offs
+
+    - what the change knowingly gives up
+    PR
+
+    - A heredoc into #{pr_file}, never an inline string. Write the whole file every pass.
+    - A section with nothing to say is left out, rather than filled with "None" or boilerplate.
+    - Follow any pull request conventions the project writes down, in its `CLAUDE.md` or under `docs/`.
+    - Leave out the ticket link, the QA verdict, any `## Demo` section, and open questions or assumptions. Rail adds the first three itself, and posts each open question and assumption as a comment of its own.
 
     Writing #{file} is how you report, and it is the last thing you do. Write it from your worktree with a heredoc, the body and its closing JSON line at column zero:
 
