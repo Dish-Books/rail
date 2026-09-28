@@ -111,6 +111,22 @@ defmodule RailWeb.Components.DiffPaneTest do
     assert html =~ "lib/old_name.ex → lib/new_name.ex"
   end
 
+  # A block that would not parse has no path, so two of them must still be two files.
+  test "draws every file that has no path of its own", %{diff: diff} do
+    unparsed = %{diff | path: "", display_path: "", rows: []}
+
+    html =
+      render_component(&DiffPane.diff_pane/1, files: [%{unparsed | digest: "first"}, %{unparsed | digest: "second"}])
+
+    assert [_first, _second] = html |> Floki.parse_fragment!() |> Floki.find("[data-qa='diff_file_section']")
+  end
+
+  test "the caret that folds a file says which file", %{diff: diff} do
+    html = render_component(&DiffPane.diff_pane/1, files: [diff])
+
+    assert html =~ ~s(aria-label="Fold lib/rail/invoices/filter.ex")
+  end
+
   test "a collapsed file is only its header", %{diff: diff} do
     html = render_component(&DiffPane.diff_pane/1, files: [diff], collapsed: [diff.path])
 

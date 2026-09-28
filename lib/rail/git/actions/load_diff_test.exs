@@ -129,6 +129,16 @@ defmodule Rail.Git.Actions.LoadDiffTest do
     assert %{binary?: true, rows: [%{kind: :binary}]} = Enum.find(files, &(&1.path == "logo.png"))
   end
 
+  # Bytes that are not text cannot be sent to the browser as lines, so a file
+  # with no NUL in it is still binary when it is not valid UTF-8.
+  test "an untracked file that is not text is named rather than drawn", %{scope: scope, task: task, repo: repo} do
+    File.write!(Path.join(repo, "blob.bin"), <<0x82, 0xFF, 0x41, ?\n>>)
+
+    assert {:ok, files} = Git.load_diff(scope, task, :branch)
+
+    assert %{binary?: true, status: :added, rows: [%{kind: :binary}]} = Enum.find(files, &(&1.path == "blob.bin"))
+  end
+
   test "an empty untracked file is added with no lines in it", %{scope: scope, task: task, repo: repo} do
     File.write!(Path.join(repo, "empty.ex"), "")
 

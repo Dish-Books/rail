@@ -24,6 +24,7 @@ defmodule Rail.Git do
 
   defdelegate worktree_dirty?(worktree_path), to: Actions.WorktreeDirty
   defdelegate branch_unpushed?(worktree_path), to: Actions.BranchUnpushed
+  defdelegate branch_changed?(task), to: Actions.BranchChanged
   defdelegate commit_worktree(scope, task, message), to: Actions.CommitWorktree
   defdelegate push_branch(scope, task), to: Actions.PushBranch
   defdelegate credential_env(project), to: Actions.CredentialEnv

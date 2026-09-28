@@ -17,6 +17,10 @@ defmodule RailWeb.Live.EngineerStage do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias RailWeb.Components.DiffPane
+  alias RailWeb.Live.DiffFile
+  alias RailWeb.Live.DiffFileTree
+  alias RailWeb.Live.DiffToolbar
 
   @impl true
   def update(assigns, socket) do
@@ -33,16 +37,24 @@ defmodule RailWeb.Live.EngineerStage do
       |> assign_new(:selected_file, fn -> nil end)
       |> assign_new(:expanded_gaps, fn -> %{} end)
       |> assign_new(:highlighted, fn -> %{} end)
+      |> assign_new(:drawn, fn -> nil end)
+      |> assign_new(:sent, fn -> nil end)
 
     socket = if socket.assigns.focus_file, do: assign(socket, :selected_file, socket.assigns.focus_file), else: socket
     socket = load_status(socket)
 
     # The first page is thrown away once the live view connects, so reading and
-    # highlighting the diff for it would be doing the slowest part twice.
+    # highlighting the diff for it would be doing the slowest part twice. Whether
+    # there is any work is still asked, cheaply, so the header does not jump.
     socket =
       if connected?(socket),
         do: load_diff(socket),
-        else: socket |> assign(:loading?, true) |> assign(:files, []) |> assign(:work?, false)
+        else:
+          socket
+          |> assign(:loading?, true)
+          |> assign(:files, [])
+          |> assign(:work?, Git.branch_changed?(socket.assigns.task))
+          |> sync_pane()
 
     {:ok, socket}
   end
@@ -135,19 +147,8 @@ defmodule RailWeb.Live.EngineerStage do
 
         <.work_pending :if={not @work? and not @loading?} running={Run.running?(@run)} />
 
-        <div :if={@work?} id="engineer-diff" data-qa="engineer_diff" class="h-full">
-          <.diff_pane
-            files={@files}
-            filter={@filter}
-            query={@query}
-            show_file_tree={@show_files}
-            collapsed={@collapsed}
-            expanded_gaps={@expanded_gaps}
-            selected_file={@selected_file}
-            scroll_to={@focus_file}
-            target={@myself}
-            empty_message={empty_message(@filter)}
-          />
+        <div :if={@work? and not @loading?} id="engineer-diff" data-qa="engineer_diff" class="h-full">
+          <.diff_pane {@drawn} />
         </div>
 
         <:sidebar>{render_slot(@sidebar)}</:sidebar>
@@ -170,15 +171,23 @@ defmodule RailWeb.Live.EngineerStage do
   end
 
   def handle_event("filter_diff_files", %{"query" => query}, socket) do
-    {:noreply, assign(socket, :query, query)}
+    socket = socket |> assign(:query, query) |> sync_pane()
+
+    {:noreply, socket}
   end
 
   def handle_event("toggle_file_list", _params, socket) do
-    {:noreply, assign(socket, :show_files, not socket.assigns.show_files)}
+    socket = socket |> assign(:show_files, not socket.assigns.show_files) |> sync_pane()
+
+    {:noreply, socket}
   end
 
   def handle_event("toggle_collapsed", %{"path" => path}, socket) do
-    {:noreply, assign(socket, :collapsed, toggle(socket.assigns.collapsed, path, path not in socket.assigns.collapsed))}
+    collapsed = toggle(socket.assigns.collapsed, path, path not in socket.assigns.collapsed)
+
+    socket = socket |> assign(:collapsed, collapsed) |> sync_pane()
+
+    {:noreply, socket}
   end
 
   # Picking a file is asking to read it, so it is put in front of the reader and
@@ -189,6 +198,7 @@ defmodule RailWeb.Live.EngineerStage do
       |> assign(:selected_file, path)
       |> assign(:collapsed, toggle(socket.assigns.collapsed, path, false))
       |> push_event("diff:scroll_to", %{path: path})
+      |> sync_pane()
 
     {:noreply, socket}
   end
@@ -214,7 +224,9 @@ defmodule RailWeb.Live.EngineerStage do
       |> fold_away_read_files(files)
       |> assign(:files, files)
 
-    {:noreply, if(read_already?, do: socket, else: go_to_next_unread(socket, path))}
+    socket = if read_already?, do: socket, else: go_to_next_unread(socket, path)
+
+    {:noreply, sync_pane(socket)}
   end
 
   def handle_event("expand_gap", params, socket) do
@@ -229,7 +241,9 @@ defmodule RailWeb.Live.EngineerStage do
         String.to_integer(end_line)
       )
 
-    {:noreply, assign(socket, :expanded_gaps, Map.put(socket.assigns.expanded_gaps, key, lines))}
+    socket = socket |> assign(:expanded_gaps, Map.put(socket.assigns.expanded_gaps, key, lines)) |> sync_pane()
+
+    {:noreply, socket}
   end
 
   # A push runs the repository's own pre-push hooks, which can take minutes, so it
@@ -382,6 +396,56 @@ defmodule RailWeb.Live.EngineerStage do
     |> assign(:work?, highlighted.branch != [])
     |> assign(:highlighted, highlighted)
     |> assign(:loading?, false)
+    |> sync_pane()
+  end
+
+  # The browser redraws everything under whatever a patch touches, so the pane is
+  # drawn whole only when its frame moves and any other change goes to its part.
+  defp sync_pane(%{assigns: %{work?: true, loading?: false, sent: %{} = sent}} = socket) do
+    state = pane_state(socket.assigns)
+    pane = DiffPane.calculate_pane(state)
+    socket = if pane.frame == sent.frame, do: socket, else: assign(socket, :drawn, state)
+
+    send_parts(pane, sent)
+
+    assign(socket, :sent, pane)
+  end
+
+  defp sync_pane(%{assigns: %{work?: true, loading?: false}} = socket) do
+    state = pane_state(socket.assigns)
+
+    socket |> assign(:drawn, state) |> assign(:sent, DiffPane.calculate_pane(state))
+  end
+
+  defp sync_pane(socket), do: assign(socket, :sent, nil)
+
+  defp pane_state(assigns) do
+    %{
+      files: assigns.files,
+      filter: assigns.filter,
+      query: assigns.query,
+      show_file_tree: assigns.show_files,
+      collapsed: assigns.collapsed,
+      expanded_gaps: assigns.expanded_gaps,
+      selected_file: assigns.selected_file,
+      scroll_to: assigns.focus_file,
+      target: assigns.myself,
+      empty_message: empty_message(assigns.filter)
+    }
+  end
+
+  # Only to parts already on the page: a part the frame is adding is drawn by it.
+  defp send_parts(pane, sent) do
+    if pane.toolbar != sent.toolbar, do: send_update(DiffToolbar, Map.put(pane.toolbar, :id, "diff-toolbar"))
+
+    if pane.tree && sent.tree && pane.tree != sent.tree,
+      do: send_update(DiffFileTree, Map.put(pane.tree, :id, "diff-file-tree"))
+
+    sent_sections = Map.new(sent.sections)
+
+    for {id, section} <- pane.sections, Map.has_key?(sent_sections, id), sent_sections[id] != section do
+      send_update(DiffFile, Map.put(section, :id, id))
+    end
   end
 
   defp load_status(socket) do

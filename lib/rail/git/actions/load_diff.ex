@@ -15,13 +15,13 @@ defmodule Rail.Git.Actions.LoadDiff do
   since `previous_files` keeps the rows it was highlighted into there.
   """
 
+  import Rail.Git.Utils.BranchBase
   import Rail.Git.Utils.HighlightLines
   import Rail.Git.Utils.ParseDiff
+  import Rail.Git.Utils.UntrackedPaths
 
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
-  alias Rail.Projects.Schemas.Project
-  alias Rail.Repo
   alias Rail.Scope
   alias Rail.Tools
 
@@ -92,50 +92,16 @@ defmodule Rail.Git.Actions.LoadDiff do
   defp stamp([row | rows], old, new), do: [row | stamp(rows, old, new)]
 
   defp raw_diff(%Task{worktree_path: worktree_path} = task, filter) do
-    tracked(worktree_path, filter, base_branch(task)) <> untracked(worktree_path)
+    tracked(task, filter) <> Enum.map_join(untracked_paths(worktree_path), "", &synthesize(worktree_path, &1))
   end
 
-  # Every project is required to name a default branch, so there is nothing to
-  # fall back to: a project that cannot be read is a broken invariant.
-  defp base_branch(%Task{project_id: project_id}) do
-    %Project{default_branch: default_branch} = Repo.get(Project, project_id)
-
-    default_branch
-  end
-
-  defp tracked(worktree_path, :uncommitted, _base), do: diff(worktree_path, ["diff", "HEAD"])
-
-  # Diffing from the merge base rather than from the base branch's tip keeps the
-  # base moving ahead out of the picture: what shows is what this branch did. The
-  # base is `origin/`'s, the one rebases land on; the clone's own copy never moves.
-  defp tracked(worktree_path, :branch, base) do
-    case Tools.run("git", ["merge-base", "origin/#{base}", "HEAD"], cd: worktree_path, stderr_to_stdout: true) do
-      {output, 0} -> diff(worktree_path, ["diff", String.trim(output)])
-      _no_merge_base -> diff(worktree_path, ["diff", "HEAD"])
-    end
-  end
+  defp tracked(%Task{worktree_path: worktree_path}, :uncommitted), do: diff(worktree_path, ["diff", "HEAD"])
+  defp tracked(%Task{worktree_path: worktree_path} = task, :branch), do: diff(worktree_path, ["diff", branch_base(task)])
 
   defp diff(worktree_path, args) do
     case Tools.run("git", args, cd: worktree_path, stderr_to_stdout: true) do
       {output, 0} -> output
       _unreadable -> ""
-    end
-  end
-
-  defp untracked(worktree_path) do
-    case Tools.run("git", ["ls-files", "--others", "--exclude-standard"],
-           cd: worktree_path,
-           stderr_to_stdout: true
-         ) do
-      {output, 0} ->
-        output
-        |> String.split(~r/\r?\n/)
-        |> Enum.map(&String.trim/1)
-        |> Enum.reject(&(&1 == "" or String.starts_with?(&1, ".rail/")))
-        |> Enum.map_join("", &synthesize(worktree_path, &1))
-
-      _unreadable ->
-        ""
     end
   end
 
@@ -150,8 +116,9 @@ defmodule Rail.Git.Actions.LoadDiff do
   defp patch(path, bytes) do
     header = "diff --git a/#{path} b/#{path}\nnew file (untracked)\n"
 
-    if String.contains?(bytes, <<0>>) do
-      header <> "Binary file #{path} differs\n"
+    # Bytes that are not UTF-8 are not lines the browser can be sent, NUL or not.
+    if String.contains?(bytes, <<0>>) or not String.valid?(bytes) do
+      header <> "Binary files /dev/null and b/#{path} differ\n"
     else
       lines = lines(bytes)
 
