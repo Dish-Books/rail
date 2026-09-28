@@ -28,6 +28,24 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlanTest do
            ]
   end
 
+  test "an assumption keeps the lines indented under it, as a nested list" do
+    content = """
+    ### Assumptions
+
+    - One Slack app serves Rail with Socket Mode on.
+      - Admins paste the bot and app-level tokens in Settings.
+      - Rail runs on one node,
+        so there is one socket per workspace.
+
+    - Slack user tokens are stored without rotation.
+    """
+
+    assert ImplementationPlan.assumptions(%ImplementationPlan{content: content}) == [
+             "One Slack app serves Rail with Socket Mode on.\n  - Admins paste the bot and app-level tokens in Settings.\n  - Rail runs on one node,\n    so there is one socket per workspace.",
+             "Slack user tokens are stored without rotation."
+           ]
+  end
+
   test "takes the heading at any of the levels a plan puts it" do
     content = "# Plan\n\n#### Assumptions\n\n- One.\n\n## Next\n\n- Two.\n"
 
