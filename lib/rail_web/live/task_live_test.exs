@@ -1520,6 +1520,9 @@ defmodule RailWeb.TaskLiveTest do
 
       File.write!(Path.join(repo, "wip.ex"), "second draft\n")
       send(view.pid, {:run_events, run.id, []})
+      # The page forwards to the stage, and the stage to the file it changed, each
+      # on a turn of its own, so each needs a sync before the file can be read.
+      _settled = render(view)
       _settled = render(view)
       :erlang.trace(proxy, false, [:receive])
 
@@ -1586,6 +1589,9 @@ defmodule RailWeb.TaskLiveTest do
 
       File.write!(Path.join(repo, "shipped.ex"), "rewritten\n")
       send(view.pid, {:run_events, run.id, []})
+      # The page forwards to the stage, and the stage to the file it changed, each
+      # on a turn of its own, so each needs a sync before the file can be read.
+      _settled = render(view)
       _settled = render(view)
 
       assert has_element?(view, "[data-qa='diff-viewed-checkbox'][aria-pressed='false']")
