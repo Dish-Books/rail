@@ -5,7 +5,8 @@ config :elixir, :time_zone_database, Tz.TimeZoneDatabase
 config :esbuild,
   version: "0.25.0",
   rail: [
-    args: ~w(js/app.js --bundle --target=es2020 --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
+    args:
+      ~w(js/app.js --bundle --splitting --format=esm --chunk-names=chunks/[name]-[hash] --target=es2020 --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
   ]

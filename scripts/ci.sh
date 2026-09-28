@@ -65,13 +65,19 @@ lane_dev() {
   fi
   sub_gate "compile (no warnings)" mix compile --warnings-as-errors
   if grep -q '^FAIL' "$LANEDIR/results.$LANE"; then
-    for g in format credo deps.audit sobelow; do skip_gate "$g"; done
+    for g in format credo deps.audit sobelow assets; do skip_gate "$g"; done
     return
   fi
   sub_gate "format" mix format --check-formatted
   sub_gate "credo" mix credo --strict
   sub_gate "deps.audit" mix deps.audit
   sub_gate "sobelow" mix sobelow --skip --private
+  # CI serves no page, so this is the only place a broken bundle would show.
+  sub_gate "assets" bash -c '
+    set -e
+    (cd assets && pnpm install --frozen-lockfile)
+    mix esbuild.install --if-missing
+    mix esbuild rail --minify'
 }
 
 lane_tests() {
@@ -108,6 +114,7 @@ format:format
 credo:credo
 deps.audit:deps.audit
 sobelow:sobelow
+assets:assets
 tests:tests
 credo_subproject:credo/ subproject'
 

@@ -108,13 +108,18 @@ lane_dev() {
   fi
   gate compile mix compile --warnings-as-errors
   if grep -q '^FAIL' "$STATE/results.$LANE"; then
-    for g in format credo deps.audit sobelow; do skip_gate "$g"; done
+    for g in format credo deps.audit sobelow assets; do skip_gate "$g"; done
     return
   fi
   gate format mix format --check-formatted
   gate credo mix credo --strict
   gate deps.audit mix deps.audit
   gate sobelow mix sobelow --skip --private
+  # CI serves no page, so this is the only place a broken bundle would show.
+  staged_gate assets \
+    "pnpm install" "cd assets && pnpm install --frozen-lockfile" \
+    "esbuild.install" "mix esbuild.install --if-missing" \
+    "esbuild" "mix esbuild rail --minify"
 }
 
 lane_tests() {

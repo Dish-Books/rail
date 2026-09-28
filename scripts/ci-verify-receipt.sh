@@ -32,7 +32,7 @@ jq -e --argjson spec "$RECEIPT_SPEC_VERSION" '.spec == $spec' "$PAYLOAD" >/dev/n
 jq -e --arg tree "$TREE" '.tree == $tree' "$PAYLOAD" >/dev/null \
   || fail "receipt is for a different tree"
 
-REQUIRED='["compile","format","credo","deps.audit","sobelow","tests","credo_subproject"]'
+REQUIRED='["compile","format","credo","deps.audit","sobelow","assets","tests","credo_subproject"]'
 jq -e --argjson required "$REQUIRED" '$required - .gates == []' "$PAYLOAD" >/dev/null \
   || fail "receipt does not cover every required gate"
 

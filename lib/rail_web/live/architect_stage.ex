@@ -10,15 +10,21 @@ defmodule RailWeb.Live.ArchitectStage do
   use RailWeb, :live_component
 
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
 
   @impl true
   def update(assigns, socket) do
+    {plan, approved} = plan(assigns.task)
+
     socket =
       socket
       |> assign(assigns)
-      |> assign(:plan, Pipeline.read_plan(assigns.task))
+      |> assign(:plan, plan)
+      |> assign(:approved, approved)
+      |> assign(:sheet, plan && build_plan_sheet(plan))
+      |> assign_new(:diagram_views, fn -> %{change: :diagram, call_flow: :diagram} end)
       |> assign_new(:error, fn -> nil end)
 
     {:ok, socket}
@@ -39,6 +45,15 @@ defmodule RailWeb.Live.ArchitectStage do
 
         <:actions>
           {render_slot(@actions)}
+
+          <span
+            :if={@approved}
+            id="plan-approved"
+            data-qa="plan_approved"
+            class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
+          >
+            <.icon name="pi-check-circle" class="size-4" /> Plan approved
+          </span>
 
           <button
             :if={@approvable and @plan != nil}
@@ -69,9 +84,19 @@ defmodule RailWeb.Live.ArchitectStage do
           :if={@plan != nil}
           id="architect-plan"
           data-qa="architect_plan"
-          class="max-w-3xl mx-auto select-text"
+          class={["mx-auto select-text", @sheet == nil && "max-w-3xl"]}
         >
-          <.markdown content={@plan} class="text-[15px] leading-relaxed" />
+          <.plan_sheet
+            :if={@sheet}
+            sheet={@sheet}
+            diagram_views={@diagram_views}
+            event="diagram_view"
+            target={@myself}
+          />
+          <.markdown :if={@sheet == nil} content={@plan} class="text-[15px] leading-relaxed" />
+          <p :if={@approved} class="mt-6 text-[13px] text-slate-500 dark:text-slate-400">
+            Engineer, Code Reviewer, QA and Demo Presenter work from this plan exactly as approved.
+          </p>
         </div>
 
         <:sidebar>{render_slot(@sidebar)}</:sidebar>
@@ -89,6 +114,29 @@ defmodule RailWeb.Live.ArchitectStage do
 
       {:error, reason} ->
         {:noreply, assign(socket, :error, message_for(reason))}
+    end
+  end
+
+  def handle_event("diagram_view", %{"view" => "change:diagram"}, socket),
+    do: {:noreply, update(socket, :diagram_views, &%{&1 | change: :diagram})}
+
+  def handle_event("diagram_view", %{"view" => "change:source"}, socket),
+    do: {:noreply, update(socket, :diagram_views, &%{&1 | change: :source})}
+
+  def handle_event("diagram_view", %{"view" => "call_flow:diagram"}, socket),
+    do: {:noreply, update(socket, :diagram_views, &%{&1 | call_flow: :diagram})}
+
+  def handle_event("diagram_view", %{"view" => "call_flow:source"}, socket),
+    do: {:noreply, update(socket, :diagram_views, &%{&1 | call_flow: :source})}
+
+  # Once the task has left architect, the page shows what the later stages were given,
+  # not whatever the architect has since written into scratch.
+  defp plan(%Task{stage: :architect} = task), do: {Pipeline.read_plan(task), false}
+
+  defp plan(%Task{} = task) do
+    case Pipeline.get_implementation_plan(task) do
+      {:ok, %ImplementationPlan{content: content}} -> {content, true}
+      {:error, :not_found} -> {Pipeline.read_plan(task), false}
     end
   end
 

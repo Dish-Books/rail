@@ -73,6 +73,19 @@ defmodule Rail.Pipeline.Actions.ApprovePlanTest do
     assert content =~ "Extend the existing module."
   end
 
+  test "records the plan byte for byte, diagrams and signatures included", %{task: task, run: run, plan_path: path} do
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+    File.write!(path, sheet_plan())
+
+    assert {:ok, _approved} = Pipeline.approve_plan(run)
+
+    written = File.read!(path)
+
+    assert %ImplementationPlan{content: ^written} = Repo.get_by(ImplementationPlan, task_id: task.id)
+    assert written =~ "```mermaid\nsequenceDiagram\n"
+    assert written =~ "```elixir\ndef send_back_to_architect(%Run{} = run, note)\n```"
+  end
+
   test "a second pass replaces what the first plan said rather than leaving two", %{task: task, run: run} do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 

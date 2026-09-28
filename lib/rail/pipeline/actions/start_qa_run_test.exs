@@ -220,7 +220,8 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
       %ImplementationPlan{}
       |> ImplementationPlan.changeset(%{
         task_id: task.id,
-        content: "Add a vendor filter to the invoice index.",
+        content:
+          ~s{Add a vendor filter to the invoice index.\n\n```mermaid\nflowchart LR\n  A["InvoicesLive"] --> B["Invoices"]\n```\n\n```elixir\ndef list_invoices(scope, filters)\n```},
         captured_at: DateTime.utc_now()
       })
       |> Repo.insert()
@@ -229,6 +230,8 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
       assert ["-p", prompt | _rest] = argv
       assert prompt =~ "The approved implementation plan the change was built from."
       assert prompt =~ "Add a vendor filter to the invoice index."
+      assert prompt =~ ~s(```mermaid\nflowchart LR\n  A["InvoicesLive"] --> B["Invoices"]\n```)
+      assert prompt =~ "```elixir\ndef list_invoices(scope, filters)\n```"
 
       {:ok, %OsProcess{run: spawned}}
     end)

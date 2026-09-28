@@ -46,7 +46,8 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
     %ImplementationPlan{}
     |> ImplementationPlan.changeset(%{
       task_id: task.id,
-      content: "### Approach\nExtend the invoices module.",
+      content:
+        ~s{### Approach\nExtend the invoices module.\n\n```mermaid\nflowchart LR\n  A["InvoicesLive"] --> B["Invoices"]\n```\n\n```elixir\ndef list_invoices(scope, filters)\n```},
       captured_at: DateTime.utc_now()
     })
     |> Repo.insert!()
@@ -57,6 +58,8 @@ defmodule Rail.Pipeline.Actions.StartEngineerRunTest do
       assert ["-p", prompt | _rest] = argv
       assert prompt =~ "Build the approved plan below."
       assert prompt =~ "Extend the invoices module."
+      assert prompt =~ ~s(```mermaid\nflowchart LR\n  A["InvoicesLive"] --> B["Invoices"]\n```)
+      assert prompt =~ "```elixir\ndef list_invoices(scope, filters)\n```"
       assert prompt =~ "cat > #{commits_dir}/SEN-1.md <<'MSG'"
       assert prompt =~ "Never run git."
       assert prompt =~ "Your worktree is #{task.worktree_path}"
