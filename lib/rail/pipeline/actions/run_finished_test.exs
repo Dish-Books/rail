@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.DetectedQuestion
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
@@ -549,6 +550,53 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
                      "https://linear.app/rail/issue/RUN-1\n\n- Adds a vendor filter.\n\n**QA:** Passed. The filter works.\n\n## Demo\n\n[Watch the demo](https://uploads.linear.app/assets/RUN-1-demo.webm)"}
 
     assert_received :marked_ready
+    assert %Task{pr_is_draft: false} = Repo.reload!(task)
+  end
+
+  # The demo run is settled before its recording is encoded, so a person can skip
+  # the demo in between, and only one of the two gets to post the comments.
+  test "a skip while the demo is still finishing posts the open questions once", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: true})
+    demo_dir = Path.join(task.scratch_path, "demo")
+    File.mkdir_p!(Path.join(demo_dir, "frames"))
+    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
+    {engineer_run, _engineer_process} = exited.(:engineer, %{status: :finished})
+    {_run, os_process} = exited.(:demo, %{})
+
+    %Question{}
+    |> Question.changeset(%{task_id: task.id, run_id: engineer_run.id, prompt: "Which vendor list?", status: :pending})
+    |> Repo.insert!()
+
+    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
+
+    expect(Tools, :encode_recording, fn ^demo_dir, [] ->
+      assert {:ok, %Run{stage_outcome: :done}} = Pipeline.skip_demo(system_scope(), task)
+      {:ok, Path.join(demo_dir, "demo.webm"), []}
+    end)
+
+    test = self()
+
+    Req.Test.stub(Client, fn conn ->
+      case {conn.method, conn.request_path} do
+        {"POST", "/app/installations/" <> _id} ->
+          Req.Test.json(conn, %{"token" => "ghs_token"})
+
+        {"GET", "/repos/example/test-seed/pulls/7"} ->
+          Req.Test.json(conn, %{"number" => 7, "node_id" => "PR_kw7", "body" => "Written by a person."})
+
+        {"POST", "/graphql"} ->
+          Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{}}})
+
+        {"POST", "/repos/example/test-seed/issues/7/comments"} ->
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+          send(test, {:comment, Jason.decode!(body)["body"]})
+          conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{"id" => 1})
+      end
+    end)
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert_received {:comment, "**Open question for the lead**\n\nWhich vendor list?"}
+    refute_received {:comment, _again}
     assert %Task{pr_is_draft: false} = Repo.reload!(task)
   end
 

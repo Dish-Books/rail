@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Utils.MarkPullRequestReady do
   @moduledoc false
 
+  import Ecto.Query
   import Rail.Pipeline.Utils.DraftBody
   import Rail.Pipeline.Utils.SplitDemoSection
 
@@ -32,9 +33,14 @@ defmodule Rail.Pipeline.Utils.MarkPullRequestReady do
          {:ok, %{"node_id" => node_id} = pull_request} <- GitHub.get_pull_request(token, project.github_repo, number),
          :ok <- describe(token, project, task, pull_request),
          :ok <- GitHub.mark_pull_request_ready(token, node_id) do
-      {:ok, task} = task |> Task.changeset(%{pr_is_draft: false}) |> Repo.update()
-      post_open_questions(token, project, task)
-      task
+      out_of_draft = from(t in Task, where: t.id == ^task.id and t.pr_is_draft == true)
+
+      case Repo.update_all(out_of_draft, set: [pr_is_draft: false, updated_at: DateTime.utc_now()]) do
+        {1, _rows} -> post_open_questions(token, project, task)
+        {0, _rows} -> :ok
+      end
+
+      Repo.reload!(task)
     else
       {:error, reason} ->
         Logger.warning("Could not mark #{project.github_repo}##{number} ready for review: #{inspect(reason)}")
@@ -76,14 +82,15 @@ defmodule Rail.Pipeline.Utils.MarkPullRequestReady do
 
         {:error, reason} ->
           Logger.warning("Could not describe #{project.github_repo}##{task.pr_number}: #{inspect(reason)}")
+          :ok
       end
     else
       :ok
     end
   end
 
-  # Posted only once the pull request is out of draft, so a mark-ready that failed
-  # and is tried again can never post them twice.
+  # Posted by whichever call flips the task out of draft, so neither a retry nor a
+  # skip racing the demo's own finish can post them twice.
   defp post_open_questions(token, %Project{} = project, %Task{} = task) do
     questions = Pipeline.list_questions(task, status: [:pending, :unanswered], order_by: [asc: :inserted_at])
 
