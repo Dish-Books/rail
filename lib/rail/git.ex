@@ -34,7 +34,7 @@ defmodule Rail.Git do
   defdelegate conflicted_files(worktree_path), to: Actions.ConflictedFiles
   defdelegate rebase_branch(scope, task), to: Actions.RebaseBranch
 
-  defdelegate load_diff(scope, task, filter \\ :branch), to: Actions.LoadDiff
+  defdelegate load_diff(scope, task, filter \\ :branch, previous_files \\ []), to: Actions.LoadDiff
   defdelegate load_diff_hunk(scope, task, path, line \\ nil), to: Actions.LoadDiffHunk
   defdelegate expand_diff_gap(task, path, gap_index, start_line, end_line), to: Actions.ExpandDiffGap
   defdelegate list_viewed_files(scope, task), to: Actions.ListViewedFiles

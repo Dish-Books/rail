@@ -4,7 +4,8 @@ defmodule RailWeb.Live.EngineerStage do
   human takes on it.
 
   The diff is read off the worktree every time, because it is the worktree that
-  moved and no row records that. Two views of it: everything on the branch, which
+  moved and no row records that, but a file whose digest has not moved keeps the
+  highlighting it was already given. Two views of it: everything on the branch, which
   is what review means, and only what is uncommitted, which is what "what has it
   changed since I last looked" means. Marking a file read is per person and
   pinned to the file as it was read, so a file the engineer touches again comes
@@ -31,10 +32,19 @@ defmodule RailWeb.Live.EngineerStage do
       |> assign_new(:auto_collapsed, fn -> MapSet.new() end)
       |> assign_new(:selected_file, fn -> nil end)
       |> assign_new(:expanded_gaps, fn -> %{} end)
+      |> assign_new(:highlighted, fn -> %{} end)
 
     socket = if socket.assigns.focus_file, do: assign(socket, :selected_file, socket.assigns.focus_file), else: socket
+    socket = load_status(socket)
 
-    {:ok, load(socket)}
+    # The first page is thrown away once the live view connects, so reading and
+    # highlighting the diff for it would be doing the slowest part twice.
+    socket =
+      if connected?(socket),
+        do: load_diff(socket),
+        else: socket |> assign(:loading?, true) |> assign(:files, []) |> assign(:work?, false)
+
+    {:ok, socket}
   end
 
   @impl true
@@ -46,7 +56,7 @@ defmodule RailWeb.Live.EngineerStage do
         run={@run}
         stage_run={@stage_run}
         title={@task.issue.title}
-        flush={@work?}
+        flush={@work? or @loading?}
       >
         <:tabs>{render_slot(@tabs)}</:tabs>
         <:actions>
@@ -121,7 +131,9 @@ defmodule RailWeb.Live.EngineerStage do
           </p>
         </:alerts>
 
-        <.work_pending :if={not @work?} running={Run.running?(@run)} />
+        <.diff_loading :if={@loading?} />
+
+        <.work_pending :if={not @work? and not @loading?} running={Run.running?(@run)} />
 
         <div :if={@work?} id="engineer-diff" data-qa="engineer_diff" class="h-full">
           <.diff_pane
@@ -154,7 +166,7 @@ defmodule RailWeb.Live.EngineerStage do
       |> assign(:auto_collapsed, MapSet.new())
       |> assign(:selected_file, nil)
 
-    {:noreply, load(socket)}
+    {:noreply, load_diff(socket)}
   end
 
   def handle_event("filter_diff_files", %{"query" => query}, socket) do
@@ -181,15 +193,24 @@ defmodule RailWeb.Live.EngineerStage do
     {:noreply, socket}
   end
 
-  # Reading a file is also done with it, so it folds away; the caret is there to
-  # open it again. The reader is then taken on to the next file they have not read.
+  # Reading a file is also done with it, so it folds away and the reader moves on to
+  # the next unread one. Only the mark moved, so the diff is not read again.
   def handle_event("toggle_viewed", %{"path" => path, "digest" => digest}, socket) do
     read_already? = Enum.any?(socket.assigns.files, &(&1.path == path and &1.viewed?))
 
     _marked =
       Git.set_file_viewed(socket.assigns.current_scope, socket.assigns.task, path, digest, not read_already?)
 
-    socket = socket |> assign(:collapsed, toggle(socket.assigns.collapsed, path, not read_already?)) |> load()
+    files =
+      Enum.map(socket.assigns.files, fn file ->
+        if file.path == path, do: %{file | viewed?: not read_already?}, else: file
+      end)
+
+    socket =
+      socket
+      |> assign(:collapsed, toggle(socket.assigns.collapsed, path, not read_already?))
+      |> fold_away_read_files(files)
+      |> assign(:files, files)
 
     {:noreply, if(read_already?, do: socket, else: go_to_next_unread(socket, path))}
   end
@@ -257,19 +278,19 @@ defmodule RailWeb.Live.EngineerStage do
     {:ok, _cleared} = Pipeline.update_run(socket.assigns.run, %{error: nil})
     send(self(), :task_changed)
 
-    socket = socket |> assign(:committing, false) |> assign(:error, nil) |> load()
+    socket = socket |> assign(:committing, false) |> assign(:error, nil) |> load_status() |> load_diff()
 
     {:noreply, socket}
   end
 
   def handle_async(:commit, {:ok, {:error, reason}}, socket) do
-    socket = socket |> assign(:committing, false) |> assign(:error, message_for(reason)) |> load()
+    socket = socket |> assign(:committing, false) |> assign(:error, message_for(reason)) |> load_status() |> load_diff()
 
     {:noreply, socket}
   end
 
   def handle_async(:commit, {:exit, reason}, socket) do
-    socket = socket |> assign(:committing, false) |> assign(:error, message_for(reason)) |> load()
+    socket = socket |> assign(:committing, false) |> assign(:error, message_for(reason)) |> load_status() |> load_diff()
 
     {:noreply, socket}
   end
@@ -326,12 +347,43 @@ defmodule RailWeb.Live.EngineerStage do
     """
   end
 
+  # The diff is read and highlighted once the page is live, so the first page
+  # holds its place in the same frame the diff will fill.
+  defp diff_loading(assigns) do
+    ~H"""
+    <div
+      id="engineer-diff-loading"
+      data-qa="engineer_diff_loading"
+      aria-busy="true"
+      class="h-full space-y-3 p-6"
+    >
+      <div class="h-4 w-1/3 rounded bg-slate-200 dark:bg-slate-800 motion-safe:animate-pulse" />
+      <div
+        :for={width <- ["w-full", "w-11/12", "w-4/5"]}
+        class={["h-2.5 rounded bg-slate-100 dark:bg-slate-800/60 motion-safe:animate-pulse", width]}
+      />
+    </div>
+    """
+  end
+
   # What the reader is looking at is one view of the branch; whether there is any
   # work at all is the branch's own question, so a view that happens to be empty
   # is still a view, with the toolbar that gets them back out of it.
-  defp load(socket) do
-    %{current_scope: scope, task: task, filter: filter} = socket.assigns
-    files = diff(scope, task, filter)
+  defp load_diff(socket) do
+    %{current_scope: scope, task: task, filter: filter, highlighted: highlighted} = socket.assigns
+    files = diff(scope, task, filter, Enum.concat(Map.values(highlighted)))
+    highlighted = keep(highlighted, scope, task, filter, files)
+
+    socket
+    |> fold_away_read_files(files)
+    |> assign(:files, files)
+    |> assign(:work?, highlighted.branch != [])
+    |> assign(:highlighted, highlighted)
+    |> assign(:loading?, false)
+  end
+
+  defp load_status(socket) do
+    %{task: task} = socket.assigns
     present? = Task.worktree_present?(task)
 
     dirty? = present? and Git.worktree_dirty?(task.worktree_path)
@@ -339,9 +391,6 @@ defmodule RailWeb.Live.EngineerStage do
     ci = Pipeline.get_ci_status(socket.assigns.run)
 
     socket
-    |> fold_away_read_files(files)
-    |> assign(:files, files)
-    |> assign(:work?, work?(scope, task, filter, files))
     |> assign(:dirty?, dirty?)
     |> assign(:unpushed?, unpushed?)
     |> assign(:ci, ci)
@@ -399,11 +448,18 @@ defmodule RailWeb.Live.EngineerStage do
     |> MapSet.difference(MapSet.new(unread, & &1.path))
   end
 
-  defp work?(_scope, _task, :branch, files), do: files != []
-  defp work?(scope, task, :uncommitted, _files), do: diff(scope, task, :branch) != []
+  # Both views are kept so either's next load reuses whatever has not moved, which
+  # also makes the branch read the uncommitted view needs for `work?` cheap.
+  defp keep(highlighted, _scope, _task, :branch, files), do: Map.put(highlighted, :branch, files)
 
-  defp diff(scope, task, filter) do
-    case Git.load_diff(scope, task, filter) do
+  defp keep(highlighted, scope, task, :uncommitted, files) do
+    branch = diff(scope, task, :branch, files ++ Enum.concat(Map.values(highlighted)))
+
+    Map.merge(highlighted, %{uncommitted: files, branch: branch})
+  end
+
+  defp diff(scope, task, filter, previous_files) do
+    case Git.load_diff(scope, task, filter, previous_files) do
       {:ok, files} -> files
       {:error, :no_worktree} -> []
     end

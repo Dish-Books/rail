@@ -181,6 +181,33 @@ defmodule Rail.Git.Actions.LoadDiffTest do
     assert {:error, :no_worktree} = Git.load_diff(scope, task)
   end
 
+  test "a file that has not moved keeps the rows it was drawn with", %{scope: scope, task: task} do
+    {:ok, files} = Git.load_diff(scope, task, :branch)
+    shipped = Enum.find(files, &(&1.path == "shipped.ex"))
+    {:ok, _marked} = Git.set_file_viewed(scope, task, shipped.path, shipped.digest, true)
+
+    kept =
+      Enum.map(files, fn file ->
+        %{file | viewed?: false, rows: Enum.map(file.rows, &Map.put(&1, :html, "kept"))}
+      end)
+
+    assert {:ok, files} = Git.load_diff(scope, task, :branch, kept)
+
+    assert %{viewed?: true, rows: [_header, %{html: "kept"}]} = Enum.find(files, &(&1.path == "shipped.ex"))
+  end
+
+  test "a file that moved is read and highlighted afresh", %{scope: scope, task: task, repo: repo} do
+    {:ok, files} = Git.load_diff(scope, task, :branch)
+    kept = Enum.map(files, fn file -> %{file | rows: Enum.map(file.rows, &Map.put(&1, :html, "kept"))} end)
+
+    File.write!(Path.join(repo, "wip.ex"), "rewritten\n")
+
+    assert {:ok, files} = Git.load_diff(scope, task, :branch, kept)
+
+    assert %{rows: [_header, %{text: "rewritten", html: html}]} = Enum.find(files, &(&1.path == "wip.ex"))
+    assert html =~ "rewritten"
+  end
+
   test "a file is read only while it still looks the way it did", %{scope: scope, task: task} do
     {:ok, files} = Git.load_diff(scope, task, :branch)
     shipped = Enum.find(files, &(&1.path == "shipped.ex"))

@@ -1374,6 +1374,58 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='diff_line_row']")
     end
 
+    # Reading and highlighting a large branch is the slow part, and the first page
+    # is thrown away the moment the live view connects.
+    test "the first page leaves the diff to the live view", %{conn: conn, task: task} do
+      html = conn |> get(~p"/tasks/#{task.id}") |> html_response(200)
+
+      assert html =~ "engineer_diff_loading"
+      refute html =~ "diff_file_section"
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "[data-qa='diff_file_section']", "shipped.ex")
+      refute has_element?(view, "[data-qa='engineer_diff_loading']")
+    end
+
+    test "marking a file reviewed does not read the diff again", %{conn: conn, task: task, repo: repo} do
+      File.write!(Path.join(repo, "zeta.ex"), "also committed\n")
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-m", "more work"])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      reject(&Git.load_diff/3)
+      reject(&Git.load_diff/4)
+
+      view |> element("#diff-header-shipped-ex [data-qa='diff-viewed-checkbox']") |> render_click()
+
+      assert has_element?(view, "#diff-header-shipped-ex [data-qa='diff-viewed-checkbox'][aria-pressed='true']")
+      refute has_element?(view, "#diff-file-shipped-ex [data-qa='diff_line_row']")
+      assert has_element?(view, "[data-qa='diff_viewed_progress']", "1/2")
+      assert_push_event(view, "diff:scroll_to", %{path: "zeta.ex"})
+    end
+
+    test "a file edited after it was reviewed comes back unread with its new lines", %{
+      conn: conn,
+      task: task,
+      engineer_run: run,
+      repo: repo
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("[data-qa='diff-viewed-checkbox']") |> render_click()
+      assert has_element?(view, "[data-qa='diff-viewed-checkbox'][aria-pressed='true']")
+
+      File.write!(Path.join(repo, "shipped.ex"), "rewritten\n")
+      send(view.pid, {:run_events, run.id, []})
+      _settled = render(view)
+
+      assert has_element?(view, "[data-qa='diff-viewed-checkbox'][aria-pressed='false']")
+      assert has_element?(view, "[data-qa='diff_viewed_progress']", "0/1")
+
+      view |> element("[data-qa='diff_collapse_toggle']") |> render_click()
+      assert has_element?(view, "[data-qa='diff_line_row']", "rewritten")
+      refute has_element?(view, "[data-qa='diff_line_row']", "committed")
+    end
+
     test "the toolbar puts the file list away and narrows it down", %{conn: conn, task: task, repo: repo} do
       File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
 

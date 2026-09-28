@@ -1,0 +1,74 @@
+/* One line of the diff pane. A large branch sends thousands of these, so the
+ * styling lives here once rather than as class lists repeated on every line.
+ */
+
+.diff-line {
+  @apply h-[22px] w-full flex items-stretch leading-[22px] font-mono text-xs select-text border-l-2;
+}
+
+.diff-num {
+  @apply sticky left-0 z-10 w-12 shrink-0 pr-2 text-right text-[11px] select-none tabular-nums text-slate-400 dark:text-slate-500;
+}
+
+.diff-num + .diff-num {
+  @apply left-12;
+}
+
+.diff-glyph {
+  @apply sticky left-24 z-10 w-5 shrink-0 text-center font-bold select-none;
+}
+
+.diff-code {
+  @apply flex-1 pl-1.5 pr-4 flex text-slate-800 dark:text-slate-200;
+}
+
+/* The gutter is the row's tint again, opaque: a sticky cell with a see-through
+ * background shows the code sliding beneath it.
+ */
+.diff-line[data-kind="added"] {
+  @apply bg-emerald-500/10 border-emerald-500;
+}
+
+.diff-line[data-kind="added"] :is(.diff-num, .diff-glyph) {
+  @apply bg-emerald-50 dark:bg-emerald-950;
+}
+
+.diff-line[data-kind="added"] .diff-glyph {
+  @apply text-emerald-600 dark:text-emerald-500;
+}
+
+.diff-line[data-kind="deleted"] {
+  @apply bg-rose-500/10 border-rose-500;
+}
+
+.diff-line[data-kind="deleted"] :is(.diff-num, .diff-glyph) {
+  @apply bg-rose-50 dark:bg-rose-950;
+}
+
+.diff-line[data-kind="deleted"] .diff-glyph {
+  @apply text-rose-600 dark:text-rose-500;
+}
+
+.diff-line[data-kind="context"] {
+  @apply bg-transparent border-transparent;
+}
+
+.diff-line[data-kind="context"] :is(.diff-num, .diff-glyph) {
+  @apply bg-white dark:bg-slate-900;
+}
+
+.diff-line[data-kind="context"] .diff-glyph {
+  @apply text-transparent;
+}
+
+.diff-line[data-focus] {
+  @apply ring-1 ring-inset ring-amber-500/70 bg-amber-500/10 border-amber-500;
+}
+
+.diff-line[data-focus] :is(.diff-num, .diff-glyph) {
+  @apply bg-amber-100 dark:bg-amber-950;
+}
+
+.diff-line[data-focus] .diff-num {
+  @apply font-bold text-amber-800 dark:text-amber-300;
+}

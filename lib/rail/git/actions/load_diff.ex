@@ -11,7 +11,8 @@ defmodule Rail.Git.Actions.LoadDiff do
 
   The files come back already parsed into rows, already highlighted and already
   marked with whether this reader has read them, because there is nothing a
-  caller would do with the halves separately.
+  caller would do with the halves separately. A file whose digest has not moved
+  since `previous_files` keeps the rows it was highlighted into there.
   """
 
   import Rail.Git.Utils.HighlightLines
@@ -30,19 +31,36 @@ defmodule Rail.Git.Actions.LoadDiff do
   Returns `{:ok, files}`, or `{:error, :no_worktree}` once the worktree has been
   cleaned up, since the change only ever existed on disk.
   """
-  def load_diff(%Scope{} = scope, %Task{} = task, filter \\ :branch) do
+  def load_diff(%Scope{} = scope, %Task{} = task, filter \\ :branch, previous_files \\ []) do
     if Task.worktree_present?(task) do
       viewed = Git.list_viewed_files(scope, task)
+      drawn = Map.new(previous_files, &{{&1.path, &1.digest}, &1.rows})
+      parsed = task |> raw_diff(filter) |> parse_diff()
 
-      files =
-        task
-        |> raw_diff(filter)
-        |> parse_diff()
-        |> Enum.map(&(&1 |> Map.put(:viewed?, Map.get(viewed, &1.path) == &1.digest) |> highlight()))
+      highlighted =
+        parsed
+        |> Enum.reject(&Map.has_key?(drawn, {&1.path, &1.digest}))
+        |> Elixir.Task.async_stream(&highlight/1,
+          ordered: true,
+          max_concurrency: System.schedulers_online(),
+          timeout: :infinity
+        )
+        |> Enum.map(fn {:ok, file} -> file end)
 
-      {:ok, files}
+      {files, []} = Enum.map_reduce(parsed, highlighted, &draw(&1, &2, drawn))
+
+      {:ok, Enum.map(files, &Map.put(&1, :viewed?, Map.get(viewed, &1.path) == &1.digest))}
     else
       {:error, :no_worktree}
+    end
+  end
+
+  # Kept rows are put back here rather than in the tasks, so they stay the terms
+  # the caller already holds instead of copies made on the way out and back.
+  defp draw(file, highlighted, drawn) do
+    case Map.fetch(drawn, {file.path, file.digest}) do
+      {:ok, rows} -> {%{file | rows: rows}, highlighted}
+      :error -> {hd(highlighted), tl(highlighted)}
     end
   end
 

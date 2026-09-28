@@ -129,6 +129,7 @@ defmodule RailWeb.Components.DiffPane do
 
           <button
             :for={file <- @visible}
+            :key={file.digest}
             type="button"
             phx-click="select_diff_file"
             phx-target={@target}
@@ -182,6 +183,7 @@ defmodule RailWeb.Components.DiffPane do
 
             <div
               :for={file <- @visible}
+              :key={file.digest}
               id={"diff-file-#{slug(file.path)}"}
               data-qa="diff_file_section"
               data-path={file.path}
@@ -430,57 +432,24 @@ defmodule RailWeb.Components.DiffPane do
 
   attr :line, :map, required: true
 
+  # The styling is `assets/css/diff.css`'s, keyed off these attributes, because a
+  # large branch draws thousands of lines and each would otherwise carry it all.
   defp line(assigns) do
-    assigns =
-      assigns
-      |> assign(:style, line_style(assigns.line.line_kind))
-      |> assign(:focus?, Map.get(assigns.line, :focus?, false))
-
     ~H"""
-    <!-- A row fetched because something points at it says so: a reader arriving
-    from a finding should not have to count lines to find the one it meant. -->
+    <%!-- A row fetched because something points at it says so: a reader arriving
+    from a finding should not have to count lines to find the one it meant. --%>
     <div
       data-qa="diff_line_row"
       data-kind={@line.line_kind}
-      data-focus={to_string(@focus?)}
-      class={[
-        "h-[22px] w-full flex items-stretch leading-[22px] font-mono text-xs select-text border-l-2",
-        @style.background,
-        @focus? && "ring-1 ring-inset ring-amber-500/70 bg-amber-500/10",
-        not @focus? && @style.accent,
-        @focus? && "border-amber-500"
-      ]}
+      data-focus={Map.get(@line, :focus?, false)}
+      class="diff-line"
     >
-      <div class={[
-        "sticky left-0 z-10 w-12 shrink-0 pr-2 text-right text-[11px] select-none tabular-nums",
-        @focus? && "bg-amber-100 dark:bg-amber-950 font-bold text-amber-800 dark:text-amber-300",
-        not @focus? && "text-slate-400 dark:text-slate-500",
-        not @focus? && @style.gutter
-      ]}>
-        {@line.old_line}
-      </div>
-
-      <div class={[
-        "sticky left-12 z-10 w-12 shrink-0 pr-2 text-right text-[11px] select-none tabular-nums",
-        @focus? && "bg-amber-100 dark:bg-amber-950 font-bold text-amber-800 dark:text-amber-300",
-        not @focus? && "text-slate-400 dark:text-slate-500",
-        not @focus? && @style.gutter
-      ]}>
-        {@line.new_line}
-      </div>
-
-      <div class={[
-        "sticky left-24 z-10 w-5 shrink-0 text-center font-bold select-none",
-        @focus? && "bg-amber-100 dark:bg-amber-950",
-        not @focus? && @style.gutter,
-        @style.glyph_class
-      ]}>
-        {@style.glyph}
-      </div>
-
-      <!-- A flex row drops the whitespace between its children, which a `pre` cell
-      would otherwise draw as the blank lines the markup is written across. -->
-      <div class="flex-1 pl-1.5 pr-4 flex text-slate-800 dark:text-slate-200">
+      <div class="diff-num">{@line.old_line}</div>
+      <div class="diff-num">{@line.new_line}</div>
+      <div class="diff-glyph">{glyph(@line.line_kind)}</div>
+      <%!-- A flex row drops the whitespace between its children, which a `pre` cell
+      would otherwise draw as the blank lines the markup is written across. --%>
+      <div class="diff-code">
         <.code text={@line.text} html={Map.get(@line, :html)} />
       </div>
     </div>
@@ -499,34 +468,9 @@ defmodule RailWeb.Components.DiffPane do
     """
   end
 
-  # `gutter` is the row's tint again, opaque: a sticky cell with a see-through
-  # background shows the code sliding beneath it.
-  defp line_style(:added),
-    do: %{
-      background: "bg-emerald-500/10",
-      gutter: "bg-emerald-50 dark:bg-emerald-950",
-      accent: "border-emerald-500",
-      glyph_class: "text-emerald-600 dark:text-emerald-500",
-      glyph: "+"
-    }
-
-  defp line_style(:deleted),
-    do: %{
-      background: "bg-rose-500/10",
-      gutter: "bg-rose-50 dark:bg-rose-950",
-      accent: "border-rose-500",
-      glyph_class: "text-rose-600 dark:text-rose-500",
-      glyph: "-"
-    }
-
-  defp line_style(:context),
-    do: %{
-      background: "bg-transparent",
-      gutter: "bg-white dark:bg-slate-900",
-      accent: "border-transparent",
-      glyph_class: "text-transparent",
-      glyph: " "
-    }
+  defp glyph(:added), do: "+"
+  defp glyph(:deleted), do: "-"
+  defp glyph(:context), do: " "
 
   defp read([], _viewed), do: 0
   defp read(files, viewed), do: div(viewed * 100, length(files))

@@ -43,6 +43,29 @@ defmodule RailWeb.Components.DiffPaneTest do
     assert html =~ "def filter/2"
   end
 
+  # Every line of a large branch is sent, so what each one costs beyond its code
+  # is what decides how big the page is.
+  test "a line's markup is little more than its code" do
+    [file] =
+      parse_diff(
+        "diff --git a/a.ex b/a.ex\n--- a/a.ex\n+++ b/a.ex\n@@ -1,200 +1,200 @@\n" <>
+          Enum.map_join(1..200, "", &" line #{&1}\n")
+      )
+
+    html = render_component(&DiffPane.diff_pane/1, files: [Map.put(file, :viewed?, false)])
+
+    assert div(byte_size(html), 200) < 310
+  end
+
+  test "a focused line says so", %{diff: diff} do
+    rows = Enum.map(diff.rows, &Map.put(&1, :focus?, &1[:text] == "  def filter(list), do: list"))
+
+    html = (&DiffPane.diff_hunk/1) |> render_component(rows: rows) |> Floki.parse_fragment!()
+
+    assert [focused] = Floki.find(html, "[data-focus]")
+    assert Floki.text(focused) =~ "def filter(list), do: list"
+  end
+
   test "offers to expand the unchanged lines between two hunks", %{diff: diff} do
     html = render_component(&DiffPane.diff_pane/1, files: [diff], target: "2")
 
