@@ -6,8 +6,8 @@ defmodule Rail.Triage.Actions.SyncTriage do
   it said about the same thing rather than raising it twice. A pass may rewrite
   only the items it was given, and never one a person already settled: those
   are closed, and news about them is a new item. A draft a person already
-  accepted, or edited, is never rewritten: an edited one is kept and marked when
-  the pass proposed something else.
+  accepted, or edited, is never rewritten: an edited one is kept, and when the pass
+  drafted something else that draft is held beside it for a person to take.
   """
 
   import Ecto.Query
@@ -17,6 +17,8 @@ defmodule Rail.Triage.Actions.SyncTriage do
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Thread
+
+  @issue_fields [:issue_title, :issue_description, :issue_priority]
 
   @doc """
   Records `result` against `thread`, whose preloaded messages are the ones the
@@ -103,28 +105,30 @@ defmodule Rail.Triage.Actions.SyncTriage do
 
   defp redo(%Item{}, _attrs, _now), do: %{}
 
-  # A person's edit outlives the pass; the flag says Rail would now draft it differently.
+  # A person's edit outlives the pass, and a draft Rail would now write differently waits beside it.
   defp keep_edits(attrs, %Item{} = item) do
     attrs
-    |> keep_edit(item, item.issue_edited_by_id, [:issue_title, :issue_description, :issue_priority], :issue_draft_changed)
-    |> keep_edit(item, item.reply_edited_by_id, [:reply_text], :reply_draft_changed)
+    |> keep_edit(item, item.issue_edited_by_id, @issue_fields, :issue_draft_proposal, fn proposed ->
+      %{title: proposed[:issue_title], description: proposed[:issue_description], priority: proposed[:issue_priority]}
+    end)
+    |> keep_edit(item, item.reply_edited_by_id, [:reply_text], :reply_draft_proposal, & &1[:reply_text])
   end
 
-  defp keep_edit(attrs, item, editor_id, fields, draft_changed) when is_binary(editor_id) do
+  defp keep_edit(attrs, item, editor_id, fields, proposal, to_proposal) when is_binary(editor_id) do
     proposed = Map.take(attrs, fields)
-    kept = Map.new(fields, &{&1, Map.fetch!(item, &1)})
-    changed? = Enum.any?(fields, &(to_string(proposed[&1]) != to_string(kept[&1])))
+    drafted? = Enum.any?(fields, &proposed[&1])
+    changed? = Enum.any?(fields, &(to_string(proposed[&1]) != to_string(Map.fetch!(item, &1))))
 
-    attrs |> Map.drop(fields) |> Map.put(draft_changed, changed?)
+    attrs |> Map.drop(fields) |> Map.put(proposal, if(drafted? and changed?, do: to_proposal.(proposed)))
   end
 
-  defp keep_edit(attrs, _item, _editor_id, _fields, _draft_changed), do: attrs
+  defp keep_edit(attrs, _item, _editor_id, _fields, _proposal, _to_proposal), do: attrs
 
   defp accepted(%Item{} = item) do
     issue =
-      if item.created_issue_id, do: [:issue_title, :issue_description, :issue_priority, :issue_edited_by_id], else: []
+      if item.created_issue_id, do: [:issue_edited_by_id, :issue_draft_proposal | @issue_fields], else: []
 
-    reply = if item.reply_posted_at, do: [:reply_text, :reply_edited_by_id], else: []
+    reply = if item.reply_posted_at, do: [:reply_text, :reply_edited_by_id, :reply_draft_proposal], else: []
     issue ++ reply
   end
 
@@ -140,7 +144,7 @@ defmodule Rail.Triage.Actions.SyncTriage do
     if existing_issue_id do
       Map.merge(base, %{issue_title: nil, issue_description: nil, issue_priority: nil})
     else
-      Map.merge(base, Map.take(attrs, [:issue_title, :issue_description, :issue_priority]))
+      Map.merge(base, Map.take(attrs, @issue_fields))
     end
   end
 

@@ -177,6 +177,11 @@ defmodule RailWeb.TriageLive do
     {:noreply, accept(socket, item_id, &Triage.update_triage_draft(socket.assigns.current_scope, &1, attrs))}
   end
 
+  def handle_event("use_proposal", %{"item_id" => item_id, "draft" => draft}, socket) do
+    {:noreply,
+     accept(socket, item_id, &Triage.update_triage_draft(socket.assigns.current_scope, &1, proposal(&1, draft)))}
+  end
+
   def handle_event("create_issue", %{"item_id" => item_id, "item" => attrs}, socket) do
     {:noreply, accept(socket, item_id, &Triage.create_triage_issue(socket.assigns.current_scope, &1, attrs))}
   end
@@ -243,6 +248,11 @@ defmodule RailWeb.TriageLive do
         assign(socket, :item_errors, Map.put(socket.assigns.item_errors, item_id, error_message(reason)))
     end
   end
+
+  defp proposal(%Item{issue_draft_proposal: draft}, "issue"),
+    do: %{"issue_title" => draft.title, "issue_description" => draft.description, "issue_priority" => draft.priority}
+
+  defp proposal(%Item{reply_draft_proposal: text}, "reply"), do: %{"reply_text" => text}
 
   defp load(socket) do
     scope = socket.assigns.current_scope

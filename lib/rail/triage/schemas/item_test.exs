@@ -33,13 +33,23 @@ defmodule Rail.Triage.Schemas.ItemTest do
     refute Map.has_key?(reply_changes, :issue_edited_by_id)
   end
 
-  test "a person's new edit answers Rail's changed draft, so its hint goes" do
-    item = %Item{reply_text: "Mine", reply_draft_changed: true, issue_title: "T", issue_draft_changed: true}
+  test "a person's new edit answers the draft Rail proposed, so the proposal goes" do
+    item = %Item{
+      reply_text: "Mine",
+      reply_draft_proposal: "Rail's",
+      issue_title: "T",
+      issue_draft_proposal: %Item.IssueDraft{title: "Rail's T"}
+    }
 
-    assert %{changes: %{reply_draft_changed: false} = changes} =
+    assert %{changes: %{reply_draft_proposal: nil} = changes} =
              Item.draft_changeset(item, %{"reply_text" => "Mine, again"}, "usr_1")
 
-    refute Map.has_key?(changes, :issue_draft_changed)
+    refute Map.has_key?(changes, :issue_draft_proposal)
+
+    assert %{changes: %{issue_draft_proposal: nil} = issue_changes} =
+             Item.draft_changeset(item, %{"issue_priority" => "low"}, "usr_1")
+
+    refute Map.has_key?(issue_changes, :reply_draft_proposal)
   end
 
   test "an existing issue means there is no issue draft" do

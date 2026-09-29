@@ -71,10 +71,26 @@ defmodule Rail.Triage.Actions.ListTriageThreadsTest do
     {:ok, _done} = Triage.dismiss_triage_thread(Scope.for_user(%{id: nil}), older)
 
     assert %{waiting: 1, triaging: 0, done: 1} = Triage.count_triage_threads(project_id: project.id)
-    assert %{waiting: 1, done: 1} = Triage.count_triage_threads(slack_channel_id: older.slack_channel_id)
-    assert %{waiting: 0, done: 0} = Triage.count_triage_threads(slack_channel_id: "sch_other")
+    assert %{waiting: 1, done: 1} = Triage.count_triage_threads(slack_channel_id: [older.slack_channel_id])
+    assert %{waiting: 0, done: 0} = Triage.count_triage_threads(slack_channel_id: ["sch_other"])
     assert %{waiting: waiting} = Triage.count_triage_threads([])
     assert waiting >= 1
+  end
+
+  test "counts each channel's threads in one query when asked by channel", %{channel: channel} do
+    %{project: other_project} = triage_project()
+    %{workspace: other_workspace, channel: other_channel} = connect_slack_channel(other_project)
+
+    {:ok, _thread} =
+      Triage.handle_slack_event(other_workspace, slack_message_event(other_channel, %{"ts" => "1790000900.000100"}))
+
+    counts =
+      Triage.count_triage_threads(
+        slack_channel_id: [channel.id, other_channel.id, "sch_none"],
+        group_by: :slack_channel_id
+      )
+
+    assert counts == %{channel.id => 2, other_channel.id => 1}
   end
 
   test "a thread that is not there is not found" do

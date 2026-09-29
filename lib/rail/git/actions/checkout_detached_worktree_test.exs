@@ -3,6 +3,7 @@ defmodule Rail.Git.Actions.CheckoutDetachedWorktreeTest do
 
   alias Rail.Git
   alias Rail.GitHub.Client
+  alias Rail.Pipeline.Schemas.Task, as: PipelineTask
   alias Rail.Projects.Schemas.Project
 
   setup do
@@ -54,5 +55,37 @@ defmodule Rail.Git.Actions.CheckoutDetachedWorktreeTest do
 
     assert {:error, reason} = Git.checkout_detached_worktree(project, blocker)
     assert reason =~ "Failed to create worktree at #{blocker}"
+  end
+
+  test "pipeline and triage worktrees made and removed at once on one clone all succeed", %{
+    repo: repo,
+    project: project
+  } do
+    results =
+      1..16
+      |> Task.async_stream(
+        fn i ->
+          path = Path.join(repo, ".worktrees/at-once-#{i}")
+
+          for round <- 1..4 do
+            made =
+              if rem(i, 2) == 0,
+                do: Git.checkout_detached_worktree(project, path),
+                else:
+                  Git.get_or_create_worktree(project, %PipelineTask{
+                    worktree_path: path,
+                    worktree_name: "at-once-#{i}-#{round}"
+                  })
+
+            {made, Git.remove_worktree(repo, path)}
+          end
+        end,
+        max_concurrency: 16,
+        timeout: 120_000
+      )
+      |> Enum.flat_map(fn {:ok, rounds} -> rounds end)
+
+    assert Enum.all?(results, &match?({{:ok, _path}, :ok}, &1)),
+           inspect(Enum.reject(results, &match?({{:ok, _path}, :ok}, &1)))
   end
 end

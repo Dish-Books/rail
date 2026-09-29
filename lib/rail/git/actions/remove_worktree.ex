@@ -1,6 +1,8 @@
 defmodule Rail.Git.Actions.RemoveWorktree do
   @moduledoc false
 
+  import Rail.Git.Utils.WithCloneLock
+
   alias Rail.Tools
 
   @doc """
@@ -8,7 +10,10 @@ defmodule Rail.Git.Actions.RemoveWorktree do
   """
   def remove_worktree(repo_path, worktree_path, opts \\ []) when is_binary(repo_path) and is_binary(worktree_path) do
     force? = Keyword.get(opts, :force, true)
+    with_clone_lock(repo_path, fn -> remove(repo_path, worktree_path, force?) end)
+  end
 
+  defp remove(repo_path, worktree_path, force?) do
     result =
       if File.dir?(worktree_path) do
         args =

@@ -21,7 +21,6 @@ defmodule Rail.Triage.Actions.TriageThread do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Mcp
   alias Rail.Pipeline
-  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Slack
@@ -62,10 +61,7 @@ defmodule Rail.Triage.Actions.TriageThread do
       try do
         pass(thread, token)
       after
-        _removed =
-          with_clone_lock(thread.project, fn ->
-            Git.remove_worktree(thread.project.clone_path, Thread.worktree_path(thread))
-          end)
+        _removed = Git.remove_worktree(thread.project.clone_path, Thread.worktree_path(thread))
       end
 
     finish(thread, outcome)
@@ -78,20 +74,11 @@ defmodule Rail.Triage.Actions.TriageThread do
          {:ok, keys} <- pass_scope(thread),
          {:ok, role} <- role(thread),
          :ok <- write_files(thread),
-         {:ok, worktree} <-
-           with_clone_lock(thread.project, fn ->
-             Git.checkout_detached_worktree(thread.project, Thread.worktree_path(thread))
-           end),
+         {:ok, worktree} <- Git.checkout_detached_worktree(thread.project, Thread.worktree_path(thread)),
          {:ok, _output} <- agent(thread, role, worktree, token),
          %{} = result <- Triage.read_triage(thread) || {:error, :unreadable} do
       Triage.sync_triage(thread, result, keys)
     end
-  end
-
-  # Passes on one project share its clone, and git fetching there while another pass adds or
-  # removes a worktree fails on the half-made one, so those steps take turns per clone.
-  defp with_clone_lock(%Project{clone_path: clone_path}, fun) do
-    :global.trans({{__MODULE__, clone_path}, self()}, fun, [node()], :infinity)
   end
 
   defp backfill(%Thread{slack_channel: %{slack_workspace: workspace} = channel} = thread) do

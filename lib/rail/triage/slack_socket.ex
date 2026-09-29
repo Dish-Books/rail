@@ -64,7 +64,6 @@ defmodule Rail.Triage.SlackSocket do
       {:error, conn, reason, _responses} ->
         reopen(%{state | conn: conn}, reason)
 
-      # coveralls-ignore-stop
       # coveralls-ignore-start (a message for a connection already replaced, which nothing on this side can time)
       :unknown ->
         {:noreply, state}
@@ -74,6 +73,7 @@ defmodule Rail.Triage.SlackSocket do
 
   # coveralls-ignore-start (a message arriving between connections, which nothing on this side can time)
   def handle_info(_message, state), do: {:noreply, state}
+  # coveralls-ignore-stop
 
   defp connect(%URI{scheme: scheme} = uri) do
     {http, ws} = if scheme == "wss", do: {:https, :wss}, else: {:http, :ws}

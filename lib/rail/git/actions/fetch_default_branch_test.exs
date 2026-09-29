@@ -10,7 +10,8 @@ defmodule Rail.Git.Actions.FetchDefaultBranchTest do
     repo = create_temp_git_repo()
     git!(repo, ["remote", "add", "origin", remote])
 
-    %{project: %Project{github_installation_id: 47_061, default_branch: "main"}, remote: remote, repo: repo}
+    project = %Project{github_installation_id: 47_061, default_branch: "main", clone_path: repo}
+    %{project: project, remote: remote, repo: repo}
   end
 
   test "fetches the default branch with a token minted for the project", %{

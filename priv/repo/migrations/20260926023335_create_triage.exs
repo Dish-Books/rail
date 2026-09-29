@@ -92,9 +92,9 @@ defmodule Rail.Repo.Migrations.CreateTriage do
       add :reply_text, :text
       add :issue_edited_by_id, references(:users, on_delete: :nilify_all)
       add :reply_edited_by_id, references(:users, on_delete: :nilify_all)
-      # A later pass keeps a person's edit and says here that Rail's own draft moved on.
-      add :issue_draft_changed, :boolean, default: false, null: false
-      add :reply_draft_changed, :boolean, default: false, null: false
+      # A later pass keeps a person's edit and holds its own differing draft here for them to take.
+      add :issue_draft_proposal, :map
+      add :reply_draft_proposal, :text
       add :created_issue_id, references(:issues, on_delete: :nilify_all)
       add :issue_created_by_id, references(:users, on_delete: :nilify_all)
       add :reply_posted_at, :utc_datetime_usec

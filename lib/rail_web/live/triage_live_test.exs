@@ -130,6 +130,9 @@ defmodule RailWeb.TriageLiveTest do
       "reply" => "Rail's second thought."
     }
 
+    refute has_element?(view, "#issue-draft-changed-#{bug.id}")
+    refute has_element?(view, "#reply-draft-changed-#{request.id}")
+
     bug_rewritten =
       triage_bug(%{"issue" => %{"title" => "Rail's other title", "description" => "D", "priority" => "low"}})
 
@@ -140,6 +143,16 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#issue-title-#{bug.id}[value='Approve leaves tasks stuck at Design']")
     assert has_element?(view, "#issue-draft-changed-#{bug.id}", "Rail's draft changed")
     assert has_element?(view, "#reply-draft-changed-#{request.id}", "Rail's draft changed")
+
+    view |> element("#use-issue-proposal-#{bug.id}") |> render_click()
+    assert has_element?(view, ~s(#issue-title-#{bug.id}[value="Rail's other title"]))
+    assert %Item{issue_description: "D", issue_priority: :low, issue_draft_proposal: nil} = Repo.get!(Item, bug.id)
+    refute has_element?(view, "#issue-draft-changed-#{bug.id}")
+    assert has_element?(view, "#reply-draft-changed-#{request.id}")
+
+    view |> element("#use-reply-proposal-#{request.id}") |> render_click()
+    assert has_element?(view, "#reply-text-#{request.id}", "Rail's second thought.")
+    refute has_element?(view, "#reply-draft-changed-#{request.id}")
   end
 
   test "creating the issue and posting a reply settle their items, and the posts show as yours via Rail", %{

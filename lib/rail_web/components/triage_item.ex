@@ -294,12 +294,22 @@ defmodule RailWeb.Components.TriageItem do
                 {@issue_edited}
               </span>
               <span
-                :if={@item.issue_draft_changed}
+                :if={@item.issue_draft_proposal}
                 id={"issue-draft-changed-#{@item.id}"}
                 title="A later pass drafted this issue differently. Your edit is kept."
-                class="text-[11px] text-amber-600 dark:text-amber-400 font-semibold"
+                class="inline-flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 font-semibold"
               >
                 Rail's draft changed
+                <button
+                  type="button"
+                  id={"use-issue-proposal-#{@item.id}"}
+                  phx-click="use_proposal"
+                  phx-value-item_id={@item.id}
+                  phx-value-draft="issue"
+                  class="underline hover:text-amber-700 dark:hover:text-amber-300"
+                >
+                  Use Rail's draft
+                </button>
               </span>
             </div>
             <label class="sr-only" for={"issue-title-#{@item.id}"}>Issue title</label>
@@ -374,12 +384,22 @@ defmodule RailWeb.Components.TriageItem do
                 {@reply_edited}
               </span>
               <span
-                :if={@item.reply_draft_changed}
+                :if={@item.reply_draft_proposal}
                 id={"reply-draft-changed-#{@item.id}"}
                 title="A later pass drafted this reply differently. Your edit is kept."
-                class="text-[11px] text-amber-600 dark:text-amber-400 font-semibold"
+                class="inline-flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 font-semibold"
               >
                 Rail's draft changed
+                <button
+                  type="button"
+                  id={"use-reply-proposal-#{@item.id}"}
+                  phx-click="use_proposal"
+                  phx-value-item_id={@item.id}
+                  phx-value-draft="reply"
+                  class="underline hover:text-amber-700 dark:hover:text-amber-300"
+                >
+                  Use Rail's draft
+                </button>
               </span>
             </div>
             <textarea

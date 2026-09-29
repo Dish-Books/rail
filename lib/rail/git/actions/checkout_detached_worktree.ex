@@ -1,6 +1,8 @@
 defmodule Rail.Git.Actions.CheckoutDetachedWorktree do
   @moduledoc false
 
+  import Rail.Git.Utils.WithCloneLock
+
   alias Rail.Git
   alias Rail.Projects.Schemas.Project
   alias Rail.Tools
@@ -17,7 +19,7 @@ defmodule Rail.Git.Actions.CheckoutDetachedWorktree do
       File.mkdir_p!(Path.dirname(worktree_path))
       args = ["worktree", "add", "--detach", worktree_path, "origin/#{project.default_branch}"]
 
-      case Tools.run("git", args, cd: repo_path, stderr_to_stdout: true) do
+      case with_clone_lock(repo_path, fn -> Tools.run("git", args, cd: repo_path, stderr_to_stdout: true) end) do
         {_out, 0} ->
           {:ok, worktree_path}
 

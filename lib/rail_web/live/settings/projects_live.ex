@@ -821,10 +821,10 @@ defmodule RailWeb.Settings.ProjectsLive do
     kept = MapSet.new(entries, & &1["external_id"])
     names = Map.new(assigns.slack_channel_options, &{&1.id, &1.name})
 
-    for {external_id, row_id} <- assigns.channel_ids,
-        not MapSet.member?(kept, external_id),
-        threads = [slack_channel_id: row_id] |> Triage.count_triage_threads() |> Map.values() |> Enum.sum(),
-        threads > 0 do
+    removed = Enum.reject(assigns.channel_ids, fn {external_id, _row_id} -> MapSet.member?(kept, external_id) end)
+    counts = Triage.count_triage_threads(slack_channel_id: Enum.map(removed, &elem(&1, 1)), group_by: :slack_channel_id)
+
+    for {external_id, row_id} <- removed, threads = Map.get(counts, row_id, 0), threads > 0 do
       %{name: names[external_id], threads: threads}
     end
   end
