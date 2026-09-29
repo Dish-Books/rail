@@ -97,4 +97,19 @@ defmodule Rail.Tools.Schemas.OsProcessTest do
   test "a process with no start has no duration" do
     assert OsProcess.duration_seconds(%OsProcess{}, DateTime.utc_now()) == 0
   end
+
+  # A turn waiting in line has not started, so none of its wait counts as work.
+  test "a process waiting for resources has no duration yet" do
+    started = DateTime.shift(DateTime.utc_now(), minute: -10)
+    assert OsProcess.duration_seconds(%OsProcess{status: :waiting_for_resources, started_at: started}) == 0
+  end
+
+  test "says what a sandbox lacks against what is free, and whether it holds a reservation at all" do
+    sandbox = %OsProcess{reserved_cpus: 2, reserved_memory_gb: 4}
+
+    assert %{cpus: 2, memory_gb: 0} = OsProcess.short_of(sandbox, %{cpus: 0, memory_gb: 26})
+    assert %{cpus: 0, memory_gb: 1} = OsProcess.short_of(sandbox, %{cpus: 3, memory_gb: 3})
+    assert OsProcess.sandboxed?(sandbox)
+    refute OsProcess.sandboxed?(%OsProcess{})
+  end
 end

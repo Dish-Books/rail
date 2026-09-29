@@ -12,24 +12,30 @@ defmodule Rail.Tools.Follower do
   use GenServer, restart: :transient
 
   import Ecto.Query
+  import Rail.Tools.Utils.AdmitSandboxes
   import Rail.Tools.Utils.DecodeUtf8Lenient
   import Rail.Tools.Utils.DrainErrFile
+  import Rail.Tools.Utils.EndSandbox
   import Rail.Tools.Utils.GetFollowerPid
   import Rail.Tools.Utils.NewEventState
   import Rail.Tools.Utils.ParseLine
   import Rail.Tools.Utils.PumpStream
   import Rail.Tools.Utils.ReadExitFile
+  import Rail.Tools.Utils.RemoveSandbox
+  import Rail.Tools.Utils.SandboxState
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
-  alias Rail.Tools
   alias Rail.Tools.FollowerRegistry
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
   @default_tail_interval 120
   @default_batch_interval 250
+  # How often a container is asked whether it is still running, so nine Followers
+  # are not each on Docker's socket every tail tick.
+  @docker_check_interval_ms 1_000
 
   defstruct [
     :os_process_id,
@@ -37,6 +43,11 @@ defmodule Rail.Tools.Follower do
     :stream_path,
     :err_path,
     :os_pid,
+    :runtime,
+    :container_id,
+    :reserved_memory_gb,
+    :stopped_by_id,
+    :checked_at,
     :port,
     :event_state,
     :tail_interval_ms,
@@ -49,6 +60,7 @@ defmodule Rail.Tools.Follower do
     resumed?: false,
     stopped?: false,
     timed_out?: false,
+    oom_killed?: false,
     partial_line: "",
     pending_events: []
   ]
@@ -102,6 +114,9 @@ defmodule Rail.Tools.Follower do
       stream_path: stream_path,
       err_path: "#{stream_path}.err",
       os_pid: os_process.os_pid,
+      runtime: os_process.runtime,
+      container_id: os_process.container_id,
+      reserved_memory_gb: os_process.reserved_memory_gb,
       port: Keyword.get(opts, :port),
       event_state: event_state,
       deadline_at: os_process.deadline_at,
@@ -117,11 +132,9 @@ defmodule Rail.Tools.Follower do
 
   @impl true
   def handle_call({:stop_os_process, opts}, _from, state) do
-    if is_integer(state.os_pid) and state.os_pid > 0 do
-      Tools.terminate_os_process(state.os_pid, opts)
-    end
+    state |> sandbox() |> end_sandbox(opts)
 
-    state = %{state | exit_code: -1, stopped?: true}
+    state = %{state | exit_code: -1, stopped?: true, stopped_by_id: Keyword.get(opts, :stopped_by_id)}
     {updated_os_process, final_state} = do_child_exit(state)
     {:stop, :normal, {:ok, updated_os_process}, final_state}
   end
@@ -149,16 +162,11 @@ defmodule Rail.Tools.Follower do
         pending_events: pending_events
     }
 
-    alive? =
-      if is_integer(updated_state.os_pid) and updated_state.os_pid > 0 do
-        Tools.os_process_alive?(updated_state.os_pid)
-      else
-        false
-      end
+    {alive?, updated_state} = check_alive(updated_state)
 
     cond do
       alive? and past_deadline?(updated_state) ->
-        Tools.terminate_os_process(updated_state.os_pid)
+        updated_state |> sandbox() |> end_sandbox([])
         {_run, final_state} = do_child_exit(%{updated_state | timed_out?: true})
         {:stop, :normal, final_state}
 
@@ -269,16 +277,42 @@ defmodule Rail.Tools.Follower do
   end
 
   defp fallback_stop_os_process(os_process, opts) do
-    if is_integer(os_process.os_pid) and os_process.os_pid > 0 do
-      Tools.terminate_os_process(os_process.os_pid, opts)
-    end
+    end_sandbox(os_process, opts)
 
     {:ok, updated_os_process} =
       os_process
-      |> OsProcess.changeset(%{status: :finished})
+      |> OsProcess.changeset(%{
+        status: :finished,
+        ended_reason: :stopped,
+        ended_at: DateTime.utc_now(),
+        stopped_by_id: Keyword.get(opts, :stopped_by_id)
+      })
       |> Repo.update()
 
+    _admitted = admit_sandboxes()
+    remove_sandbox(updated_os_process)
     {:ok, updated_os_process}
+  end
+
+  # A container is asked at most once a second; a process beside Rail every tick.
+  defp check_alive(%__MODULE__{runtime: :docker, checked_at: checked_at} = state) when is_integer(checked_at) do
+    if System.monotonic_time(:millisecond) - checked_at < @docker_check_interval_ms,
+      do: {true, state},
+      else: check_alive(%{state | checked_at: nil})
+  end
+
+  defp check_alive(%__MODULE__{} = state) do
+    state = %{state | checked_at: System.monotonic_time(:millisecond)}
+
+    case state |> sandbox() |> sandbox_state() do
+      :running -> {true, state}
+      {:exited, exit_code, oom_killed?} -> {false, %{state | exit_code: exit_code, oom_killed?: oom_killed?}}
+      :gone -> {false, state}
+    end
+  end
+
+  defp sandbox(%__MODULE__{} = state) do
+    %OsProcess{runtime: state.runtime, container_id: state.container_id, os_pid: state.os_pid}
   end
 
   defp do_child_exit(state) do
@@ -300,8 +334,18 @@ defmodule Rail.Tools.Follower do
 
         {:ok, updated_os_process} =
           os_process
-          |> OsProcess.changeset(%{status: :finished, exit_code: exit_code})
+          |> OsProcess.changeset(%{
+            status: :finished,
+            exit_code: exit_code,
+            ended_at: DateTime.utc_now(),
+            ended_reason: ended_reason(state, exit_code),
+            stopped_by_id: state.stopped_by_id
+          })
           |> Repo.update()
+
+        # What it held goes to the front of the line before the run settles, so a
+        # turn the settle starts queues behind whoever was already waiting.
+        _admitted = admit_sandboxes()
 
         updated_run = update_run(state.run_id, event_state)
         outcome = build_outcome(exit_code, error, event_state, updated_os_process, updated_run)
@@ -309,6 +353,8 @@ defmodule Rail.Tools.Follower do
         # Everything that happens next is derived from the row, so a process whose
         # exit this Follower missed settles identically when `Rail.Tools.Boot` finds it.
         Pipeline.run_finished(updated_os_process, outcome)
+        remove_sandbox(updated_os_process)
+        Phoenix.PubSub.broadcast(Rail.PubSub, "sandboxes", :sandboxes_changed)
 
         Phoenix.PubSub.broadcast(
           Rail.PubSub,
@@ -328,6 +374,11 @@ defmodule Rail.Tools.Follower do
     {124, "Timed out, so it was stopped."}
   end
 
+  # 137 is the SIGKILL the kernel sent when the container reached its limit.
+  defp settle_exit(%__MODULE__{oom_killed?: true, reserved_memory_gb: memory_gb}, %OsProcess{}, _event_state, _raw_stderr) do
+    {137, "Killed: it used more than the #{memory_gb} GB its role reserves."}
+  end
+
   # A command's output is its log, not an error, so all it has to say about its
   # exit is the status. A Follower resumed after a restart has no port to hear
   # that from, and reads the file the command wrote on its way out.
@@ -341,6 +392,12 @@ defmodule Rail.Tools.Follower do
     error = compute_error(event_state.result_error, raw_stderr, reported_exit_code(state))
     {compute_exit_code(state.exit_code, error, event_state.saw_result), error}
   end
+
+  defp ended_reason(%__MODULE__{stopped?: true}, _exit_code), do: :stopped
+  defp ended_reason(%__MODULE__{timed_out?: true}, _exit_code), do: :timed_out
+  defp ended_reason(%__MODULE__{oom_killed?: true}, _exit_code), do: :out_of_memory
+  defp ended_reason(%__MODULE__{}, 137), do: :killed
+  defp ended_reason(%__MODULE__{}, _exit_code), do: :finished
 
   # A stop can arrive before the first tick has resumed anything.
   defp ensure_resumed(%__MODULE__{resumed?: false} = state), do: resume(state)

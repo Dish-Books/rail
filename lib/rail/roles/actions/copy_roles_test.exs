@@ -53,7 +53,9 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
         stage: :engineer,
         name: "Source Engineer",
         model: "claude-opus-5-5",
-        system_prompt: "Source Engineer prompt"
+        system_prompt: "Source Engineer prompt",
+        reserved_cpus: 2,
+        reserved_memory_gb: 4
       })
 
     assert {:ok, [%Role{name: "Source PM"}, %Role{name: "Source Engineer"}]} =
@@ -62,7 +64,12 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
     target_roles = Roles.list_roles(target.id)
     assert length(target_roles) == 2
     assert Enum.any?(target_roles, &(&1.name == "Source PM" && &1.stage == :product))
-    assert Enum.any?(target_roles, &(&1.name == "Source Engineer" && &1.stage == :engineer))
+
+    assert Enum.any?(
+             target_roles,
+             &(&1.name == "Source Engineer" and &1.stage == :engineer and &1.reserved_cpus == 2 and
+                 &1.reserved_memory_gb == 4)
+           )
   end
 
   test "unbinds existing stage in target project when copied role shares the stage", %{

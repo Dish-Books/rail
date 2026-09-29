@@ -387,6 +387,119 @@ defmodule RailWeb.Settings.RolesLiveTest do
     refute has_element?(view, "#role-editor-modal")
   end
 
+  # The test machine has 4 CPUs and 8 GB to reserve (config/test.exs).
+  test "a role's sandbox reservation shows on its row, and the editor says how many fit and refuses what never would",
+       %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13090",
+        github_repo: "org/roles-live-13090",
+        github_installation_id: 13_090,
+        linear_team_key: "P13090",
+        default_branch: "main",
+        clone_path: "/tmp/repos/roles-live-13090"
+      })
+
+    assert {:ok, %Role{id: role_id}} =
+             Roles.create_role(Rail.Scope.for_user(admin_user), project, %{
+               name: "Bug Hunter",
+               stage: :debugger,
+               backend_id: claude_backend.id,
+               model: "claude-opus-5-5",
+               reasoning_effort: :high,
+               system_prompt: "You chase down defects."
+             })
+
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
+
+    assert has_element?(view, "#bound-role-reservation-debugger", "1 CPU · 2 GB")
+
+    view |> element("#edit-role-button-#{role_id}") |> render_click()
+    assert has_element?(view, "#role-cpus-input[value='1']")
+    assert has_element?(view, "#role-memory-input[value='2']")
+    assert has_element?(view, "#role-sandbox-fit", "4 Bug Hunter sandboxes fit on this machine at once")
+    assert has_element?(view, "#role-sandbox-fit", "1 of 4 CPUs · 2 of 8 GB each")
+    assert has_element?(view, "#role-sandbox-fit", "CPUs are what limit it here.")
+
+    view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => "1", "reserved_memory_gb" => "8"}})
+    assert has_element?(view, "#role-sandbox-fit", "1 Bug Hunter sandbox fits on this machine at once")
+    assert has_element?(view, "#role-sandbox-fit", "Memory is what limits it here.")
+
+    view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => "2", "reserved_memory_gb" => "4"}})
+    assert has_element?(view, "#role-sandbox-fit", "2 Bug Hunter sandboxes fit on this machine at once")
+    assert has_element?(view, "#role-unsaved-changes", "2 unsaved changes · CPUs, memory")
+    assert has_element?(view, "#role-tab-summary-configuration", "Identity · claude-opus-5-5 · high · 2 CPUs, 4 GB")
+
+    view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => "", "reserved_memory_gb" => "4"}})
+    refute has_element?(view, "#role-sandbox-fit")
+    refute has_element?(view, "#role-sandbox-no-fit")
+
+    view |> element("#role-form") |> render_change(%{"role" => %{"reserved_cpus" => "16", "reserved_memory_gb" => "4"}})
+    assert has_element?(view, "#role-sandbox-no-fit", "No Bug Hunter sandbox would fit on this machine")
+    assert has_element?(view, "#role-sandbox-no-fit", "16 of 4 CPUs")
+
+    view
+    |> element("#role-form")
+    |> render_submit(%{
+      "role" => %{
+        "name" => "Bug Hunter",
+        "stage" => "debugger",
+        "backend_id" => claude_backend.id,
+        "model_choice" => "claude-opus-5-5",
+        "system_prompt" => "You chase down defects.",
+        "reserved_cpus" => "16",
+        "reserved_memory_gb" => "4"
+      }
+    })
+
+    assert has_element?(
+             view,
+             "#role-cpus-input-error",
+             "This machine has 4 CPUs to reserve, so a Bug Hunter that needs 16 could never start."
+           )
+
+    assert has_element?(
+             view,
+             "#role-unsaved-changes",
+             "Not saved: the Bug Hunter reserves more CPUs than this machine has."
+           )
+
+    assert {:ok, %Role{reserved_cpus: 1}} = Roles.get_role(id: role_id)
+  end
+
+  test "a machine whose capacity cannot be read shows no preview, and the role still saves", %{
+    claude_backend: claude_backend,
+    admin_conn: conn,
+    admin_user: admin_user
+  } do
+    stub(Rail.Tools, :get_sandbox_capacity, fn -> {:error, :econnrefused} end)
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13091",
+        github_repo: "org/roles-live-13091",
+        github_installation_id: 13_091,
+        linear_team_key: "P13091",
+        default_branch: "main",
+        clone_path: "/tmp/repos/roles-live-13091"
+      })
+
+    {:ok, %Role{id: role_id}} =
+      Roles.create_role(Rail.Scope.for_user(admin_user), project, %{
+        name: "Bug Hunter",
+        stage: :debugger,
+        backend_id: claude_backend.id,
+        model: "claude-opus-5-5",
+        system_prompt: "You chase down defects."
+      })
+
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
+    view |> element("#edit-role-button-#{role_id}") |> render_click()
+
+    assert has_element?(view, "#role-sandbox-section")
+    refute has_element?(view, "#role-sandbox-fit")
+  end
+
   test "allows MCP tools on a role", %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do
     {:ok, project} =
       Projects.create_project(system_scope(), %{

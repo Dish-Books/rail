@@ -93,8 +93,8 @@ defmodule Rail.Pipeline do
   defdelegate list_questions(task, opts \\ []), to: Actions.ListQuestions
 
   defdelegate send_message(run, text), to: Actions.SendMessage
-  defdelegate stop_and_send_message(run, opts \\ []), to: Actions.StopAndSendMessage
-  defdelegate stop_run(run, opts \\ []), to: Actions.StopRun
+  defdelegate stop_and_send_message(scope, run, opts \\ []), to: Actions.StopAndSendMessage
+  defdelegate stop_run(scope, run, opts \\ []), to: Actions.StopRun
 
   defdelegate start_or_resume_run(task, role, worktree_path), to: Actions.StartOrResumeRun
   defdelegate create_run(attrs), to: Actions.CreateRun

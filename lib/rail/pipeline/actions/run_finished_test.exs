@@ -881,6 +881,67 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     refute Git.worktree_dirty?(task.worktree_path)
   end
 
+  describe "an engineer finishing into a machine with no room for its CI" do
+    # Another run's sandbox holds all 4 CPUs the test machine has (config/test.exs).
+    setup %{project: project, task: task, roles: roles} do
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+      File.mkdir_p!(Path.join(task.scratch_path, "commits"))
+      File.write!(Path.join([task.scratch_path, "commits", "RUN-1.md"]), "RUN-1: did the work\n")
+      File.write!(Path.join(task.worktree_path, "changed.ex"), "the engineer's work\n")
+      stub(Git, :credential_env, fn _project -> {:ok, %{"RAIL_GIT_TOKEN" => "ghs_token"}} end)
+
+      {:ok, other} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:review].id,
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+
+      Repo.insert!(%OsProcess{
+        run_id: other.id,
+        task_id: task.id,
+        stream_path: "/dev/null",
+        status: :running,
+        started_at: DateTime.utc_now(),
+        reserved_cpus: 4,
+        reserved_memory_gb: 2
+      })
+
+      :ok
+    end
+
+    test "stays open while its CI waits in line", %{exited: exited} do
+      {run, os_process} = exited.(:engineer, %{})
+
+      assert {:ok, %Run{status: :waiting_for_resources, stage_outcome: :in_progress}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert [%OsProcess{status: :waiting_for_resources}] = Tools.list_os_processes(run_id: run.id, kind: :ci)
+    end
+
+    test "keeps a queued message for after CI rather than starting a turn beside it", %{exited: exited} do
+      {run, %OsProcess{id: agent_id} = os_process} = exited.(:engineer, %{pending_chat: "Also tidy the tests"})
+
+      # Inline, so a message sent out would be sent before this returns.
+      assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0}, async: false)
+      assert %Run{pending_chat: "Also tidy the tests"} = Repo.reload!(run)
+      assert [%OsProcess{id: ^agent_id}] = Tools.list_os_processes(run_id: run.id, kind: :agent)
+    end
+
+    test "a rebase carried on through CI is not done while CI waits in line", %{task: task, exited: exited} do
+      {:ok, _task} = Pipeline.update_task(task, %{is_rebasing: true})
+      {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
+
+      stub(Git, :rebase_in_progress?, fn _path -> true end)
+      expect(Git, :rebase_branch, fn _scope, _task -> :ok end)
+
+      assert {:ok, %Run{status: :waiting_for_resources, stage_outcome: :in_progress}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0})
+    end
+  end
+
   test "CI that cannot get a credential to push with fails the run on why", %{
     project: project,
     task: task,

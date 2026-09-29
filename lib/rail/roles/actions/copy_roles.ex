@@ -34,7 +34,9 @@ defmodule Rail.Roles.Actions.CopyRoles do
           reasoning_effort: role.reasoning_effort,
           system_prompt: role.system_prompt,
           max_concurrent: role.max_concurrent,
-          position: role.position
+          position: role.position,
+          reserved_cpus: role.reserved_cpus,
+          reserved_memory_gb: role.reserved_memory_gb
         }
 
         changeset = Role.changeset(%Role{}, attrs)

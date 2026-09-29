@@ -30,6 +30,7 @@ defmodule RailWeb.Utils.RoleStatusLabel do
   def role_status_label(%Role{}, %Run{} = run, %Task{}), do: run |> Run.state() |> label()
 
   defp label(:running), do: "in progress"
+  defp label(:waiting), do: "waiting for resources"
   defp label(:blocked), do: "needs an answer"
   defp label(:failed), do: "failed"
   defp label(:stopped), do: "stopped"

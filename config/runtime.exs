@@ -73,4 +73,11 @@ if config_env() == :prod do
   # The release bakes scratch_root in at build time; a host that keeps state elsewhere points both here.
   if scratch_root = System.get_env("RAIL_SCRATCH_ROOT"), do: config(:rail, scratch_root: scratch_root)
   if backends_root = System.get_env("RAIL_BACKENDS_ROOT"), do: config(:rail, backends_root: backends_root)
+
+  # Compose sets `docker`, so every agent, setup and CI command gets a sandbox of its own.
+  config :rail, :sandbox,
+    runtime: if(System.get_env("RAIL_SANDBOX_RUNTIME") == "docker", do: :docker, else: :local),
+    image: System.get_env("RAIL_SANDBOX_IMAGE", "rail-sandbox:latest"),
+    headroom_cpus: String.to_integer(System.get_env("RAIL_SANDBOX_HEADROOM_CPUS", "2")),
+    headroom_memory_gb: String.to_integer(System.get_env("RAIL_SANDBOX_HEADROOM_MEMORY_GB", "8"))
 end

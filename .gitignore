@@ -49,6 +49,8 @@ debug/
 # Worktrees and QA artifacts the local tooling writes here. Untracked files count
 # as a dirty tree for scripts/ci.sh, which would otherwise refuse every receipt.
 /.claude/worktrees/
+# The environment a QA fake agent dumps into the worktree it is run in.
+/.env-dump
 
 # Per-module cover dumps the BEAM leaves in place when a coveralls run is
 # interrupted. Untracked files count as a dirty tree, which blocks the next run.

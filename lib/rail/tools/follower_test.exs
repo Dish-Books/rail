@@ -19,6 +19,7 @@ defmodule Rail.Tools.FollowerTest do
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Tools
+  alias Rail.Tools.Clients.Docker
   alias Rail.Tools.Follower
   alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.OsProcess
@@ -306,7 +307,7 @@ defmodule Rail.Tools.FollowerTest do
 
     assert Tools.os_process_alive?(pid)
 
-    {:ok, stopped_run} = Tools.stop_os_process(os_process, grace_period: 100)
+    {:ok, stopped_run} = Tools.stop_os_process(system_scope(), os_process, grace_period: 100)
     assert stopped_run.status == :finished
     refute Tools.os_process_alive?(pid)
   end
@@ -1060,7 +1061,193 @@ defmodule Rail.Tools.FollowerTest do
     Sandbox.allow(Repo, self(), follower_pid)
     Process.unlink(port)
 
-    assert_receive {:os_process_finished, %OsProcess{exit_code: 124}, %{error: "Timed out, so it was stopped."}}, 5_000
+    assert_receive {:os_process_finished, %OsProcess{exit_code: 124, ended_reason: :timed_out},
+                    %{error: "Timed out, so it was stopped."}},
+                   5_000
+
     refute Tools.os_process_alive?(pid)
+  end
+
+  describe "a sandbox ending" do
+    # Mimic in global mode, so the Follower's own process sees these too.
+    setup :set_mimic_global
+
+    # The run under test holds the test machine's 4 CPUs, and another run waits for 2.
+    setup %{run: run, os_process: os_process, tmp_dir: tmp_dir} do
+      os_process = os_process |> OsProcess.changeset(%{reserved_cpus: 4, reserved_memory_gb: 4}) |> Repo.update!()
+
+      %OsProcess{id: waiting_id} =
+        waiting =
+        Repo.insert!(%OsProcess{
+          run_id: run.id,
+          task_id: run.task_id,
+          stream_path: Path.join(tmp_dir, "next.ndjson"),
+          status: :waiting_for_resources,
+          started_at: DateTime.utc_now(),
+          queued_at: DateTime.utc_now(),
+          reserved_cpus: 2,
+          reserved_memory_gb: 2,
+          launch:
+            Jason.encode!(%{
+              "executable" => "/bin/true",
+              "args" => [],
+              "env" => %{},
+              "cwd" => tmp_dir,
+              "stdout_path" => "/dev/null",
+              "stderr_path" => "/dev/null"
+            })
+        })
+
+      stub(FollowerSupervisor, :start_follower, fn
+        %OsProcess{id: ^waiting_id}, _opts -> {:ok, self()}
+        followed, opts -> call_original(FollowerSupervisor, :start_follower, [followed, opts])
+      end)
+
+      %{os_process: os_process, waiting: waiting}
+    end
+
+    test "that finished frees what it held for the next in line, in the same exit", %{
+      run: run,
+      os_process: os_process,
+      stream_path: stream_path,
+      waiting: waiting
+    } do
+      port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["0.1"]])
+      {:os_pid, pid} = Port.info(port, :os_pid)
+      line = ~s({"type":"result","subtype":"success","session_id":"sess-freed","usage":{"input_tokens":1}})
+      File.write!(stream_path, "#{line}\n")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+      {:ok, follower_pid} =
+        FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run}, tail_interval_ms: 20)
+
+      Sandbox.allow(Repo, self(), follower_pid)
+
+      assert_receive {:os_process_finished, %OsProcess{ended_reason: :finished, ended_at: %DateTime{}}, _outcome}, 5_000
+      assert %OsProcess{status: :running} = Repo.reload!(waiting)
+      assert [^line] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+    end
+
+    test "that someone stopped records who, and frees what it held", %{
+      run: run,
+      os_process: os_process,
+      waiting: waiting
+    } do
+      id = System.unique_integer([:positive])
+
+      {:ok, %{id: user_id} = user} =
+        Rail.Users.register_oauth_user(%{
+          github_id: "follower_stop_#{id}",
+          login: "follower_stop_#{id}",
+          name: "Lucas Stellet",
+          email: "follower_stop_#{id}@example.com"
+        })
+
+      port = Port.open({:spawn_executable, "/bin/sleep"}, [:binary, args: ["30"]])
+      {:os_pid, pid} = Port.info(port, :os_pid)
+
+      {:ok, follower_pid} =
+        FollowerSupervisor.start_follower(%{os_process | os_pid: pid, run: run}, tail_interval_ms: 30)
+
+      Sandbox.allow(Repo, self(), follower_pid)
+
+      assert {:ok, %OsProcess{ended_reason: :stopped, stopped_by_id: ^user_id}} =
+               Tools.stop_os_process(Rail.Scope.for_user(user), os_process, grace_period: 100)
+
+      assert %OsProcess{status: :running} = Repo.reload!(waiting)
+    end
+  end
+
+  describe "a Docker sandbox" do
+    setup {Req.Test, :set_req_test_to_shared}
+
+    setup %{os_process: os_process} do
+      os_process =
+        os_process
+        |> OsProcess.changeset(%{runtime: :docker, container_id: "c0ffee", reserved_cpus: 2, reserved_memory_gb: 4})
+        |> Repo.update!()
+
+      %{os_process: os_process}
+    end
+
+    test "killed for using more memory than it reserved says so, and is removed once settled", %{
+      run: run,
+      os_process: os_process,
+      stream_path: stream_path
+    } do
+      line = ~s({"type":"assistant","message":{"content":[{"type":"text","text":"building"}]}})
+      File.write!(stream_path, "#{line}\n")
+      test_pid = self()
+
+      Req.Test.stub(Docker, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"GET", "/containers/c0ffee/json"} ->
+            Req.Test.json(conn, %{"State" => %{"Running" => false, "ExitCode" => 137, "OOMKilled" => true}})
+
+          {"DELETE", "/containers/c0ffee"} ->
+            send(test_pid, :removed)
+            Plug.Conn.send_resp(conn, 204, "")
+        end
+      end)
+
+      Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+      {:ok, follower_pid} = FollowerSupervisor.start_follower(%{os_process | run: run}, tail_interval_ms: 20)
+      Sandbox.allow(Repo, self(), follower_pid)
+
+      assert_receive {:os_process_finished, %OsProcess{exit_code: 137, ended_reason: :out_of_memory},
+                      %{error: "Killed: it used more than the 4 GB its role reserves."}},
+                     5_000
+
+      assert_receive :removed
+      assert [^line] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+      assert {:ok, %Run{error: "Killed: it used more than the 4 GB its role reserves."}} = Pipeline.get_run(run.id)
+    end
+
+    test "stopped by someone is given its grace in whole seconds, then settles", %{run: run, os_process: os_process} do
+      {:ok, stopped} = Agent.start_link(fn -> false end)
+
+      Req.Test.stub(Docker, fn conn ->
+        case {conn.method, conn.request_path, conn.query_string} do
+          {"POST", "/containers/c0ffee/stop", "t=1"} ->
+            Agent.update(stopped, fn _running -> true end)
+            Plug.Conn.send_resp(conn, 204, "")
+
+          {"GET", "/containers/c0ffee/json", ""} ->
+            state = if Agent.get(stopped, & &1), do: %{"Running" => false, "ExitCode" => 143}, else: %{"Running" => true}
+            Req.Test.json(conn, %{"State" => state})
+
+          {"DELETE", "/containers/c0ffee", ""} ->
+            Plug.Conn.send_resp(conn, 204, "")
+        end
+      end)
+
+      {:ok, follower_pid} = FollowerSupervisor.start_follower(%{os_process | run: run}, tail_interval_ms: 20)
+      Sandbox.allow(Repo, self(), follower_pid)
+
+      assert {:ok, %OsProcess{ended_reason: :stopped}} =
+               Tools.stop_os_process(system_scope(), os_process, grace_period: 100)
+
+      assert Agent.get(stopped, & &1)
+    end
+
+    test "killed some other way reads as killed", %{run: run, os_process: os_process} do
+      Req.Test.stub(Docker, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"GET", "/containers/c0ffee/json"} ->
+            Req.Test.json(conn, %{"State" => %{"Running" => false, "ExitCode" => 137, "OOMKilled" => false}})
+
+          {"DELETE", "/containers/c0ffee"} ->
+            Plug.Conn.send_resp(conn, 204, "")
+        end
+      end)
+
+      Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+      {:ok, follower_pid} = FollowerSupervisor.start_follower(%{os_process | run: run}, tail_interval_ms: 20)
+      Sandbox.allow(Repo, self(), follower_pid)
+
+      assert_receive {:os_process_finished, %OsProcess{exit_code: 137, ended_reason: :killed}, _outcome}, 5_000
+    end
   end
 end

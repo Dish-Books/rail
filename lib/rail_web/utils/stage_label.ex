@@ -26,6 +26,7 @@ defmodule RailWeb.Utils.StageLabel do
     case Run.state(run) do
       :queued -> "Queued for #{Task.stage_label(stage)}"
       :running -> "#{Task.stage_label(stage)} running"
+      :waiting -> "#{Task.stage_label(stage)} waiting for resources"
       :blocked -> "#{Task.stage_label(stage)} needs an answer"
       :failed -> "#{Task.stage_label(stage)} failed"
       :stopped -> "#{Task.stage_label(stage)} stopped"

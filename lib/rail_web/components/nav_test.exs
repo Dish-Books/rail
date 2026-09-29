@@ -6,7 +6,7 @@ defmodule RailWeb.Components.NavTest do
   alias Rail.Projects.Schemas.Project
   alias RailWeb.Components.Nav
 
-  test "nav_rail renders 3 destinations in exact order with extended labels" do
+  test "nav_rail renders 4 destinations in exact order with extended labels" do
     html =
       render_component(&Nav.nav/1,
         current_section: :overview,
@@ -20,13 +20,16 @@ defmodule RailWeb.Components.NavTest do
     assert html =~ "Rail"
 
     assert html =~ "id=\"nav-overview\""
-    assert html =~ "id=\"nav-issues\""
+    assert [_before, after_issues] = String.split(html, "id=\"nav-issues\"")
+    assert [_between, _after_sandboxes] = String.split(after_issues, "id=\"nav-sandboxes\"")
+    assert html =~ ~s(href="/sandboxes")
     assert html =~ "id=\"nav-settings\""
 
     # Active highlighting on overview
     assert html =~ "data-active=\"true\""
     assert html =~ "Overview"
     assert html =~ "Issues"
+    assert html =~ "Sandboxes"
     assert html =~ "Settings"
 
     # Collapse sidebar tooltip
@@ -71,7 +74,7 @@ defmodule RailWeb.Components.NavTest do
   end
 
   test "nav_rail active state matches current section" do
-    for section <- [:overview, :issues, :settings] do
+    for section <- [:overview, :issues, :sandboxes, :settings] do
       html =
         render_component(&Nav.nav/1,
           current_section: section,
@@ -79,7 +82,7 @@ defmodule RailWeb.Components.NavTest do
           attention_count: 0
         )
 
-      assert html =~ "id=\"nav-#{section}\""
+      assert html =~ ~r/id="nav-#{section}"[^>]*data-active="true"/
     end
 
     # Test settings sub-sections highlight Settings nav
@@ -179,6 +182,7 @@ defmodule RailWeb.Components.NavTest do
     titles = [
       {:overview, "Overview"},
       {:issues, "Issues"},
+      {:sandboxes, "Sandboxes"},
       {:backends, "Settings"},
       {:settings, "Settings"},
       {:connected_accounts, "Settings"},

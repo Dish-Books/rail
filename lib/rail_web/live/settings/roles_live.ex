@@ -35,6 +35,13 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:backends, Tools.list_backends())
       |> assign(:mcp_servers, Mcp.list_servers())
       |> assign(:canonical_stages, Role.canonical_stages())
+      |> assign(
+        :capacity,
+        case Tools.get_sandbox_capacity() do
+          {:ok, capacity} -> capacity
+          _unknown -> nil
+        end
+      )
       |> assign(:active_modal, nil)
       |> assign(:modal_role, nil)
       |> assign(:modal_form, nil)
@@ -214,6 +221,16 @@ defmodule RailWeb.Settings.RolesLive do
                       class="text-slate-500 dark:text-slate-400 capitalize"
                     >
                       Effort: {bound_role.reasoning_effort}
+                    </span>
+                    <span>•</span>
+                    <span
+                      id={"bound-role-reservation-#{stage}"}
+                      title="What each of its sandboxes reserves"
+                      class="inline-flex items-center gap-1 font-mono text-[11px] text-slate-700 dark:text-slate-300"
+                    >
+                      <.icon name="pi-cpu" class="size-3.5 text-slate-400" />{format_reservation(
+                        bound_role
+                      )}
                     </span>
                   </div>
 
@@ -504,6 +521,44 @@ defmodule RailWeb.Settings.RolesLive do
                       />
                     </div>
                   </section>
+
+                  <div class="border-t border-slate-200 dark:border-slate-700/70"></div>
+
+                  <section class="space-y-5" id="role-sandbox-section">
+                    <h3 class="font-mono text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                      Sandbox
+                    </h3>
+
+                    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                      <.input
+                        type="number"
+                        label="CPUs"
+                        min="1"
+                        name="role[reserved_cpus]"
+                        id="role-cpus-input"
+                        value={@modal_form["reserved_cpus"]}
+                        suffix="CPUs"
+                        errors={List.wrap(@modal_errors[:reserved_cpus])}
+                      />
+                      <.input
+                        type="number"
+                        label="Memory"
+                        min="1"
+                        name="role[reserved_memory_gb]"
+                        id="role-memory-input"
+                        value={@modal_form["reserved_memory_gb"]}
+                        suffix="GB"
+                        errors={List.wrap(@modal_errors[:reserved_memory_gb])}
+                      />
+                    </div>
+
+                    <.sandbox_fit
+                      :if={@capacity}
+                      fit={fit_preview(@modal_form, @capacity)}
+                      role_name={role_name(@modal_form)}
+                      capacity={@capacity}
+                    />
+                  </section>
                 </div>
 
                 <!-- System prompt -->
@@ -665,12 +720,21 @@ defmodule RailWeb.Settings.RolesLive do
 
             <div class="flex items-center justify-between gap-4 border-t border-slate-200 dark:border-slate-700/70 px-8 py-4">
               <% changes = unsaved_changes(@modal_original, @modal_form) %>
+              <% refused = refused_reservation(@modal_errors, @modal_form) %>
               <p
                 id="role-unsaved-changes"
-                class="flex min-w-0 items-center gap-2 truncate text-sm text-slate-500 dark:text-slate-400"
+                class={[
+                  "flex min-w-0 items-center gap-2 truncate text-sm",
+                  refused && "text-red-600 dark:text-red-400",
+                  !refused && "text-slate-500 dark:text-slate-400"
+                ]}
               >
-                <span :if={changes != []} class="h-2 w-2 shrink-0 rounded-full bg-amber-400"></span>
-                {unsaved_summary(changes)}
+                <.icon :if={refused} name="pi-warning-circle" class="h-4 w-4 shrink-0" />
+                <span
+                  :if={changes != [] and !refused}
+                  class="h-2 w-2 shrink-0 rounded-full bg-amber-400"
+                ></span>
+                {refused || unsaved_summary(changes)}
               </p>
               <div class="flex shrink-0 items-center gap-3">
                 <.button phx-click="close_modal" id="cancel-role-button">Discard</.button>
@@ -801,6 +865,8 @@ defmodule RailWeb.Settings.RolesLive do
       "reasoning_effort" => "high",
       "system_prompt" => "You are an agent persona.",
       "max_concurrent" => 1,
+      "reserved_cpus" => 1,
+      "reserved_memory_gb" => 2,
       "mcp_tools" => []
     }
 
@@ -835,6 +901,8 @@ defmodule RailWeb.Settings.RolesLive do
         "reasoning_effort" => if(role.reasoning_effort, do: to_string(role.reasoning_effort), else: "high"),
         "system_prompt" => role.system_prompt,
         "max_concurrent" => role.max_concurrent,
+        "reserved_cpus" => role.reserved_cpus,
+        "reserved_memory_gb" => role.reserved_memory_gb,
         "mcp_tools" => role.mcp_tools
       }
 
@@ -1158,6 +1226,8 @@ defmodule RailWeb.Settings.RolesLive do
       reasoning_effort: parse_effort(role_params["reasoning_effort"]),
       system_prompt: String.trim(role_params["system_prompt"] || ""),
       max_concurrent: parse_int(role_params["max_concurrent"], 1),
+      reserved_cpus: parse_int(role_params["reserved_cpus"], 1),
+      reserved_memory_gb: parse_int(role_params["reserved_memory_gb"], 2),
       mcp_tools: parse_mcp_tools(role_params["mcp_tools"]),
       position: if(existing_role, do: existing_role.position, else: roles_count)
     }
@@ -1184,6 +1254,8 @@ defmodule RailWeb.Settings.RolesLive do
     {"reasoning_effort", "reasoning effort"},
     {"system_prompt", "prompt"},
     {"max_concurrent", "max concurrent"},
+    {"reserved_cpus", "CPUs"},
+    {"reserved_memory_gb", "memory"},
     {"mcp_tools", "MCP tools"}
   ]
 
@@ -1203,7 +1275,7 @@ defmodule RailWeb.Settings.RolesLive do
   defp tab_summary(:configuration, form, models, _servers) do
     model = Enum.find_value(models, form["model"], &(&1.id == form["model"] && &1.display_name))
 
-    ["Identity", model, effort_value(form["reasoning_effort"])]
+    ["Identity", model, effort_value(form["reasoning_effort"]), reservation_summary(form)]
     |> Enum.reject(&(&1 in [nil, ""]))
     |> Enum.join(" · ")
   end
@@ -1221,6 +1293,15 @@ defmodule RailWeb.Settings.RolesLive do
       end)
 
     if enabled == [], do: "None enabled", else: Enum.join(enabled, ", ")
+  end
+
+  defp reservation_summary(form) do
+    with {cpus, ""} <- Integer.parse(to_string(form["reserved_cpus"])),
+         {memory_gb, ""} <- Integer.parse(to_string(form["reserved_memory_gb"])) do
+      "#{cpus} #{if cpus == 1, do: "CPU", else: "CPUs"}, #{memory_gb} GB"
+    else
+      _unparsed -> nil
+    end
   end
 
   # `:all` for a server whose tools are all allowed (even before any are cached),
@@ -1266,6 +1347,36 @@ defmodule RailWeb.Settings.RolesLive do
   defp unsaved_summary([change]), do: "1 unsaved change · #{change}"
   defp unsaved_summary(changes), do: "#{length(changes)} unsaved changes · #{Enum.join(changes, ", ")}"
 
+  # How many sandboxes of what is typed fit at once, or nil while it is not a
+  # reservation at all.
+  defp fit_preview(form, capacity) do
+    with {cpus, ""} when cpus > 0 <- Integer.parse(to_string(form["reserved_cpus"])),
+         {memory_gb, ""} when memory_gb > 0 <- Integer.parse(to_string(form["reserved_memory_gb"])) do
+      reservation = %{reserved_cpus: cpus, reserved_memory_gb: memory_gb}
+      Map.merge(reservation, Role.fit_count(reservation, capacity))
+    else
+      _unparsed -> nil
+    end
+  end
+
+  defp role_name(form) do
+    case String.trim(to_string(form["name"])) do
+      "" -> "role"
+      name -> name
+    end
+  end
+
+  # A save the machine refused says so in place of the unsaved changes.
+  defp refused_reservation(errors, form) do
+    over =
+      for {field, resource} <- [reserved_cpus: "CPUs", reserved_memory_gb: "memory"],
+          String.starts_with?(to_string(errors[field]), "This machine has"),
+          do: resource
+
+    if over != [],
+      do: "Not saved: the #{role_name(form)} reserves more #{Enum.join(over, " and ")} than this machine has."
+  end
+
   defp error_tab(errors) do
     if Map.keys(errors) == [:system_prompt], do: :prompt, else: :configuration
   end
@@ -1276,5 +1387,77 @@ defmodule RailWeb.Settings.RolesLive do
 
   defp execute_role_save(scope, _project, _modal, existing_role, attrs) do
     Roles.update_role(scope, existing_role, attrs)
+  end
+
+  attr :fit, :map, required: true, doc: "what fit_preview/2 says, or nil"
+  attr :role_name, :string, required: true
+  attr :capacity, :map, required: true
+
+  defp sandbox_fit(%{fit: nil} = assigns), do: ~H""
+
+  defp sandbox_fit(%{fit: %{count: 0}} = assigns) do
+    ~H"""
+    <div
+      id="role-sandbox-no-fit"
+      class="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 space-y-2"
+    >
+      <div class="flex items-baseline justify-between gap-4 text-xs">
+        <span class="flex items-center gap-1.5 font-semibold text-red-700 dark:text-red-300">
+          <.icon name="pi-x-circle" class="size-3.5" />No {@role_name} sandbox would fit on this machine
+        </span>
+        <span class="font-mono text-slate-500 dark:text-slate-400">{over_capacity(@fit, @capacity)}</span>
+      </div>
+      <div class="relative h-2 rounded-full bg-slate-200 dark:bg-slate-700/70">
+        <span class="absolute inset-y-0 left-0 right-0 rounded-full bg-red-500/70" />
+      </div>
+      <p class="text-[11px] text-slate-500 dark:text-slate-400">
+        A sandbox waits until its whole reservation is free, so this one would wait forever.
+      </p>
+    </div>
+    """
+  end
+
+  defp sandbox_fit(assigns) do
+    ~H"""
+    <div
+      id="role-sandbox-fit"
+      class="rounded-lg border border-slate-200 dark:border-slate-700/70 bg-slate-50 dark:bg-slate-800/40 px-4 py-3 space-y-2"
+    >
+      <div class="flex items-baseline justify-between gap-4 text-xs">
+        <span class="font-semibold text-slate-800 dark:text-slate-200">
+          {fits_at_once(@fit.count, @role_name)}
+        </span>
+        <span class="font-mono text-slate-500 dark:text-slate-400">
+          {@fit.reserved_cpus} of {@capacity.cpus} CPUs · {@fit.reserved_memory_gb} of {@capacity.memory_gb} GB each
+        </span>
+      </div>
+      <div class="flex h-2 gap-[2px] rounded-full overflow-hidden">
+        <span
+          :for={slot <- 1..min(@fit.count, 24)}
+          class={["h-full flex-1", slot == 1 && "bg-indigo-500", slot > 1 && "bg-indigo-500/40"]}
+        />
+      </div>
+      <p class="text-[11px] text-slate-500 dark:text-slate-400">
+        Each sandbox, and the setup and CI it runs, gets exactly this and cannot use more. {limits(
+          @fit.limited_by
+        )}
+      </p>
+    </div>
+    """
+  end
+
+  defp fits_at_once(1, role_name), do: "1 #{role_name} sandbox fits on this machine at once"
+  defp fits_at_once(count, role_name), do: "#{count} #{role_name} sandboxes fit on this machine at once"
+
+  defp limits(:cpus), do: "CPUs are what limit it here."
+  defp limits(:memory), do: "Memory is what limits it here."
+
+  defp over_capacity(fit, capacity) do
+    [
+      fit.reserved_cpus > capacity.cpus && "#{fit.reserved_cpus} of #{capacity.cpus} CPUs",
+      fit.reserved_memory_gb > capacity.memory_gb && "#{fit.reserved_memory_gb} of #{capacity.memory_gb} GB"
+    ]
+    |> Enum.filter(& &1)
+    |> Enum.join(" · ")
   end
 end

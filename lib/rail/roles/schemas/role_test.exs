@@ -182,4 +182,19 @@ defmodule Rail.Roles.Schemas.RoleTest do
     preloaded = Repo.preload(role, :project)
     assert %Project{id: ^project_id} = preloaded.project
   end
+
+  test "fit_count/2 says how many fit at once and which resource runs out first" do
+    capacity = %{cpus: 14, memory_gb: 56}
+
+    assert %{count: 7, limited_by: :cpus} = Role.fit_count(%Role{reserved_cpus: 2, reserved_memory_gb: 4}, capacity)
+    assert %{count: 3, limited_by: :memory} = Role.fit_count(%{reserved_cpus: 1, reserved_memory_gb: 16}, capacity)
+    assert %{count: 0, limited_by: :cpus} = Role.fit_count(%{reserved_cpus: 16, reserved_memory_gb: 4}, capacity)
+  end
+
+  test "a reservation of nothing is refused" do
+    changeset = Role.changeset(%Role{}, %{reserved_cpus: 0, reserved_memory_gb: 0})
+
+    assert %{reserved_cpus: ["must be greater than or equal to 1"], reserved_memory_gb: [_message]} =
+             errors_on(changeset)
+  end
 end

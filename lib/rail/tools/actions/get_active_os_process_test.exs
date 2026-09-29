@@ -60,6 +60,22 @@ defmodule Rail.Tools.Actions.GetActiveOsProcessTest do
     assert {:ok, %OsProcess{id: ^newest_id}} = Tools.get_active_os_process(run)
   end
 
+  # A run waiting in line is stopped the same way as one running.
+  test "finds the process a run is waiting in line for", %{run: run} do
+    %OsProcess{id: id} =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: "/tmp/get_active_os_process.ndjson",
+        status: :waiting_for_resources,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert!()
+
+    assert {:ok, %OsProcess{id: ^id}} = Tools.get_active_os_process(run)
+  end
+
   test "says so when nothing is live", %{run: run} do
     %OsProcess{}
     |> OsProcess.changeset(%{

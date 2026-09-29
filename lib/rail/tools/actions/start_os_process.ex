@@ -2,6 +2,7 @@ defmodule Rail.Tools.Actions.StartOsProcess do
   @moduledoc false
 
   import Rail.Tools.Utils.BackendEnv
+  import Rail.Tools.Utils.EnqueueSandbox
   import Rail.Tools.Utils.EnsureExecutable
   import Rail.Tools.Utils.TrustWorkspace
   import Rail.Tools.Utils.WorktreeEnv
@@ -13,14 +14,16 @@ defmodule Rail.Tools.Actions.StartOsProcess do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
-  alias Rail.Tools
-  alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
 
   @doc """
-  Spawns a detached CLI runner for a run, records the `runs` row, starts its
-  Follower, and settles the dispatch either way.
+  Starts a detached CLI runner for a run in a sandbox of its own, records the
+  row, starts its Follower, and settles the dispatch either way.
+
+  A sandbox holds what the run's role reserves. When the machine lacks that, the
+  row waits in line, the run reads as waiting, and it starts on its own once
+  enough is free.
 
   Everything the spawn needs is derived from the run: the executable and the
   account's config directory from its role's backend, and the working directory and
@@ -29,7 +32,8 @@ defmodule Rail.Tools.Actions.StartOsProcess do
 
   A spawn is a spawn whether it carries a stage's work or a message the human
   just typed, so nothing here asks which it was and nothing here touches the
-  task. Returns `{:ok, os_process}` with its `:run` and `:task` loaded, or
+  task. Returns `{:ok, os_process}` with its `:run` and `:task` loaded, running or
+  waiting, or
   `{:error, {:spawn_failed, reason, run}}` with the reason recorded on the run.
 
   Returns `{:error, :dispatch_disabled}` when dispatch is switched off. This is
@@ -51,20 +55,19 @@ defmodule Rail.Tools.Actions.StartOsProcess do
     run = Repo.preload(run, task: :project, role: :backend)
     %Run{task: %Task{} = task, role: %Role{backend: %Backend{} = backend}} = run
 
-    executable = backend.executable_path
     stream_path = prepare_stream_files(task, run)
     {token, token_hash} = Mcp.issue_run_token()
     os_process = insert_os_process(run, stream_path, token_hash)
 
     result =
-      case ensure_executable(executable, os_process, run) do
-        :ok -> launch(os_process, run, backend, argv, stream_path, task, token)
-        {:error, reason} -> {:error, reason}
+      with :ok <- ensure_executable(backend.executable_path, os_process, run) do
+        enqueue_sandbox(os_process, run, launch_spec(backend, argv, stream_path, task, token))
       end
 
     case result do
       {:ok, os_process} -> finalize(task, run, os_process)
-      {:error, reason} -> fail(run, reason)
+      {:waiting, os_process} -> finalize(task, %{run | status: :waiting_for_resources}, os_process)
+      {:error, reason} -> fail(run, reason, Repo.get!(OsProcess, os_process.id))
     end
   end
 
@@ -74,9 +77,18 @@ defmodule Rail.Tools.Actions.StartOsProcess do
     {:ok, %{os_process | run: run, task: task}}
   end
 
-  # A failure that already said what went wrong keeps its own words: the missing
-  # binary check settles the run before returning here.
-  defp fail(run, reason) do
+  # A turn that never started, refused by the line or failed at launch, settles its
+  # run as failed, as one admitted later from the line does: a run left running with
+  # no process behind it is one nothing recovers. The run then keeps those words, as
+  # it keeps the missing binary check's, which settled it before returning here.
+  defp fail(run, reason, %OsProcess{status: :failed, ended_reason: :failed_to_start} = os_process) do
+    error = if is_binary(reason), do: reason, else: "Could not start its sandbox: #{inspect(reason)}"
+    {:ok, _settled} = Pipeline.run_finished(os_process, %{exit_code: -1, error: error})
+    Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:run_changed, run.id})
+    fail(run, reason, nil)
+  end
+
+  defp fail(run, reason, _started_or_settled) do
     {:ok, run} = Pipeline.get_run(run.id)
 
     {:ok, run} =
@@ -116,32 +128,19 @@ defmodule Rail.Tools.Actions.StartOsProcess do
 
   # The clone is trusted along with the worktree: Claude Code keys a worktree's
   # trust to the repository it belongs to.
-  defp launch(os_process, run, backend, argv, stream_path, %Task{project: %Project{} = project} = task, token) do
+  defp launch_spec(backend, argv, stream_path, %Task{project: %Project{} = project} = task, token) do
     trust_workspace(backend, [project.clone_path, task.worktree_path])
-    {args, stdin_opts} = prompt_on_stdin(backend, argv, stream_path)
+    {args, stdin_path} = prompt_on_stdin(backend, argv, stream_path)
 
-    spawn_opts =
-      [
-        stdout_path: stream_path,
-        stderr_path: "#{stream_path}.err",
-        cd: task.worktree_path,
-        env: task |> worktree_env() |> Map.merge(backend_env(backend)) |> Map.put("RAIL_MCP_TOKEN", token)
-      ] ++ stdin_opts
-
-    case Tools.spawn_os_process(backend.executable_path, args, spawn_opts) do
-      {:ok, port, os_pid} ->
-        {:ok, os_process} =
-          os_process
-          |> OsProcess.changeset(%{status: :running, os_pid: os_pid})
-          |> Repo.update()
-
-        follow(os_process, run, port)
-
-      # coveralls-ignore-start (defensive: port died before reporting a PID)
-      {:error, reason} ->
-        {:error, reason}
-        # coveralls-ignore-stop
-    end
+    %{
+      "executable" => backend.executable_path,
+      "args" => args,
+      "env" => task |> worktree_env() |> Map.merge(backend_env(backend)) |> Map.put("RAIL_MCP_TOKEN", token),
+      "cwd" => task.worktree_path,
+      "stdout_path" => stream_path,
+      "stderr_path" => "#{stream_path}.err",
+      "stdin_path" => stdin_path
+    }
   end
 
   # Claude's prompt goes in on stdin rather than in argv. Linux refuses to exec
@@ -154,18 +153,8 @@ defmodule Rail.Tools.Actions.StartOsProcess do
   defp prompt_on_stdin(%Backend{name: :claude}, ["-p", prompt | rest], stream_path) when is_binary(prompt) do
     prompt_path = "#{stream_path}.prompt"
     File.write!(prompt_path, prompt)
-    {["-p" | rest], [stdin_path: prompt_path]}
+    {["-p" | rest], prompt_path}
   end
 
-  defp prompt_on_stdin(_backend, argv, _stream_path), do: {argv, []}
-
-  # The run is already loaded down to its backend, so handing it over on the row
-  # saves the Follower the preload.
-  defp follow(%OsProcess{} = os_process, run, port) do
-    os_process = %{os_process | run: run}
-
-    with {:ok, _follower_pid} <- FollowerSupervisor.start_follower(os_process, port: port) do
-      {:ok, os_process}
-    end
-  end
+  defp prompt_on_stdin(_backend, argv, _stream_path), do: {argv, nil}
 end

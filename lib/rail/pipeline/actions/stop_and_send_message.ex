@@ -14,12 +14,13 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessage do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
+  alias Rail.Scope
 
   @doc """
   Stops `run` and immediately sends what was queued on it.
   """
-  def stop_and_send_message(%Run{} = run, opts \\ []) do
-    {:ok, run, queued} = Pipeline.stop_run(run, opts)
+  def stop_and_send_message(%Scope{} = scope, %Run{} = run, opts \\ []) do
+    {:ok, run, queued} = Pipeline.stop_run(scope, run, opts)
 
     case queued do
       text when is_binary(text) ->

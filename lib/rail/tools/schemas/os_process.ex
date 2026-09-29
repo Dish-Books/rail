@@ -10,12 +10,26 @@ defmodule Rail.Tools.Schemas.OsProcess do
 
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Types.EncryptedBinary
+  alias Rail.Users.Schemas.User
 
-  @statuses [:starting, :running, :finished, :adopted_dead, :blocked_on_input, :unwatched, :failed]
+  @statuses [
+    :waiting_for_resources,
+    :starting,
+    :running,
+    :finished,
+    :adopted_dead,
+    :blocked_on_input,
+    :unwatched,
+    :failed
+  ]
 
   # An agent's CLI writes NDJSON for its backend to read; a setup script writes
   # plain text for a person to read, and says how it went with its exit status.
   @kinds [:agent, :setup, :ci]
+
+  @runtimes [:local, :docker]
+  @ended_reasons [:finished, :stopped, :timed_out, :out_of_memory, :killed, :failed_to_start]
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "proc"}
   schema "os_processes" do
@@ -36,6 +50,19 @@ defmodule Rail.Tools.Schemas.OsProcess do
     # The commit a CI process was run against.
     field :head_sha, :string
 
+    # Where it runs: beside Rail, or in a Docker container of its own that outlives Rail.
+    field :runtime, Ecto.Enum, values: @runtimes, default: :local
+    field :container_id, :string
+    # What it holds while it runs, fixed when it joined the line.
+    field :reserved_cpus, :integer
+    field :reserved_memory_gb, :integer
+    field :queued_at, :utc_datetime_usec
+    # How to start it, kept until it starts: it carries the turn's MCP token.
+    field :launch, EncryptedBinary, redact: true
+    field :ended_at, :utc_datetime_usec
+    field :ended_reason, Ecto.Enum, values: @ended_reasons
+    belongs_to :stopped_by, User
+
     belongs_to :task, Task
     belongs_to :run, Run
 
@@ -55,7 +82,16 @@ defmodule Rail.Tools.Schemas.OsProcess do
     :command,
     :exit_code,
     :deadline_at,
-    :head_sha
+    :head_sha,
+    :runtime,
+    :container_id,
+    :reserved_cpus,
+    :reserved_memory_gb,
+    :queued_at,
+    :launch,
+    :ended_at,
+    :ended_reason,
+    :stopped_by_id
   ]
 
   @required_fields [
@@ -85,6 +121,23 @@ defmodule Rail.Tools.Schemas.OsProcess do
   @doc "Where a command process records the status it exited with."
   def exit_path(%__MODULE__{stream_path: stream_path}), do: "#{stream_path}.exit"
 
+  @doc "How a waiting process is to be started, as it was written when it joined the line."
+  def launch_spec(%__MODULE__{launch: launch}) when is_binary(launch), do: Jason.decode!(launch)
+
+  @doc "True for a process that holds a reservation while it runs."
+  def sandboxed?(%__MODULE__{reserved_cpus: cpus}), do: is_integer(cpus)
+
+  @doc """
+  The CPUs and GB this process lacks against what is `free`, 0 for a resource
+  there is already enough of.
+  """
+  def short_of(%__MODULE__{reserved_cpus: cpus, reserved_memory_gb: memory_gb}, %{
+        cpus: free_cpus,
+        memory_gb: free_memory_gb
+      }) do
+    %{cpus: max(cpus - free_cpus, 0), memory_gb: max(memory_gb - free_memory_gb, 0)}
+  end
+
   @doc """
   How long this process has been going, in seconds.
 
@@ -95,6 +148,8 @@ defmodule Rail.Tools.Schemas.OsProcess do
   what the row already says.
   """
   def duration_seconds(os_process, now \\ DateTime.utc_now())
+
+  def duration_seconds(%__MODULE__{status: :waiting_for_resources}, _now), do: 0
 
   def duration_seconds(%__MODULE__{started_at: %DateTime{} = started, status: status}, now)
       when status in [:starting, :running] do

@@ -28,6 +28,9 @@ defmodule RailWeb.CoreComponents do
   defdelegate overview_stats(assigns), to: Components.OverviewStats
   defdelegate priority_icon(assigns), to: Components.IssueIcons
   defdelegate project_badge(assigns), to: Components.ProjectBadge
+  defdelegate sandbox_meters(assigns), to: Components.SandboxMeters
+  defdelegate sandbox_stats(assigns), to: Components.SandboxStats
+  defdelegate sandbox_usage_meter(assigns), to: Components.SandboxUsageMeter
   defdelegate segmented_control(assigns), to: Components.SegmentedControl
   defdelegate settings_nav(assigns), to: Components.SettingsNav
   defdelegate status_icon(assigns), to: Components.IssueIcons

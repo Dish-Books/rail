@@ -506,6 +506,68 @@ defmodule RailWeb.Live.RunConversationTest do
     refute html =~ ~s(id="queued-banner")
   end
 
+  describe "a turn waiting for resources" do
+    setup %{task: task, roles: roles} do
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :waiting_for_resources,
+          conversation_id: "conv_waiting",
+          started_at: ~U[2026-09-09 14:27:00.000000Z]
+        })
+
+      os_process =
+        Repo.insert!(%OsProcess{
+          run_id: run.id,
+          task_id: task.id,
+          stream_path: "/tmp/#{run.id}.ndjson",
+          status: :waiting_for_resources,
+          started_at: ~U[2026-09-09 14:27:00.000000Z],
+          queued_at: ~U[2026-09-09 14:27:00.000000Z],
+          reserved_cpus: 2,
+          reserved_memory_gb: 4
+        })
+
+      %{run: run, os_process: os_process}
+    end
+
+    test "says so in the composer, the header and the transcript, and offers to stop it", %{
+      task: task,
+      run: run,
+      os_process: os_process,
+      roles_map: roles_map
+    } do
+      Pipeline.append_run_events(run.id, os_process.id, ["[rail] Turn 1 needs 2 CPUs and 4 GB."])
+
+      html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+      assert html =~ ~s(id="waiting-banner")
+      assert html =~ "engineer role is waiting for resources · 1st in line ·"
+      assert html =~ ~s(data-started-at="2026-09-09T14:27:00.000000Z")
+      assert html =~ ~s(id="stop-run")
+      refute html =~ ~s(id="thinking-banner")
+      assert html =~ ~s(data-qa="conversation-state-dot" data-state="waiting")
+      assert html =~ "waiting for resources since"
+      assert html =~ ~s(data-at="2026-09-09T14:27:00.000000Z")
+    end
+
+    test "a command waiting for resources says so rather than that it runs", %{
+      task: task,
+      run: run,
+      os_process: os_process,
+      roles_map: roles_map
+    } do
+      os_process |> Ecto.Changeset.change(kind: :ci, command: "mix ci") |> Repo.update!()
+      Pipeline.append_run_events(run.id, os_process.id, ["[rail] CI needs 2 CPUs and 4 GB."])
+
+      html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+      assert html =~ "Waiting for resources"
+      refute html =~ ">\n            Running\n"
+    end
+  end
+
   # A 400px floor overruns the column on an iPad, stacked or in landscape, and pushes the composer out.
   test "the chat pane takes whatever height its column leaves", %{
     task: task,

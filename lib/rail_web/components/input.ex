@@ -37,6 +37,7 @@ defmodule RailWeb.Components.Input do
     values: ["email", "hidden", "number", "password", "search", "select", "text", "textarea", "url"]
 
   attr :errors, :list, default: []
+  attr :suffix, :string, default: nil, doc: "a unit shown inside the frame, after what is typed"
   attr :prompt, :string, default: nil, doc: "a disabled first option for select inputs"
   attr :options, :list, default: [], doc: "the options for select inputs"
   attr :class, :any, default: nil, doc: "classes for the control itself"
@@ -117,7 +118,7 @@ defmodule RailWeb.Components.Input do
     ~H"""
     <div class={@container_class}>
       <.label id={@id} label={@label} />
-      <div class={@frame}>
+      <div class={[@frame, @suffix && "flex items-center pr-3.5"]}>
         <input
           type={@type}
           id={@id}
@@ -128,6 +129,7 @@ defmodule RailWeb.Components.Input do
           aria-describedby={@errors != [] && "#{@id}-error"}
           {@rest}
         />
+        <span :if={@suffix} class="shrink-0 text-sm text-slate-500 dark:text-slate-400">{@suffix}</span>
       </div>
       <.errors id={@id} errors={@errors} />
     </div>

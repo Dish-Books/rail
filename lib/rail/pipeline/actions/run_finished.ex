@@ -187,9 +187,10 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp finish_action(%Run{}), do: fn run, _opts -> run end
 
   # A finish that recorded an error did not conclude anything, so it stays open
-  # for the message that fixes it. One that started CI has CI's say still to come.
+  # for the message that fixes it. One that started CI has CI's say still to come,
+  # whether CI runs now or waits in line for its sandbox.
   defp latch_done(%Run{error: error} = run) when is_binary(error), do: run
-  defp latch_done(%Run{status: :running} = run), do: run
+  defp latch_done(%Run{status: status} = run) when status in [:running, :waiting_for_resources], do: run
 
   defp latch_done(%Run{} = run) do
     {:ok, latched} = run |> Run.changeset(%{stage_outcome: :done}) |> Repo.update()
@@ -200,8 +201,9 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   # out. A run parked on a question is not idle: the answer goes first.
   defp drain_queued_message(%Run{pending_chat: nil} = run, _opts), do: run
 
-  # Finishing started another process on this run, and the message waits for it.
-  defp drain_queued_message(%Run{status: :running} = run, _opts), do: run
+  # Finishing started another process on this run, running or in line, and the
+  # message waits for it.
+  defp drain_queued_message(%Run{status: status} = run, _opts) when status in [:running, :waiting_for_resources], do: run
 
   defp drain_queued_message(%Run{} = run, opts) do
     if pending_questions(run.task_id) == [] do

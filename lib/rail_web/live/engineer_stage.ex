@@ -68,6 +68,7 @@ defmodule RailWeb.Live.EngineerStage do
         task={@task}
         run={@run}
         stage_run={@stage_run}
+        line={@line}
         title={@task.issue.title}
         flush={@work? or @loading?}
       >
