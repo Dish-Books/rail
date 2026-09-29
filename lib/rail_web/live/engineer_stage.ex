@@ -13,11 +13,12 @@ defmodule RailWeb.Live.EngineerStage do
   """
   use RailWeb, :live_component
 
+  import RailWeb.Utils.CalculateDiffPane
+
   alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
-  alias RailWeb.Components.DiffPane
   alias RailWeb.Live.DiffFile
   alias RailWeb.Live.DiffFileTree
   alias RailWeb.Live.DiffToolbar
@@ -403,7 +404,7 @@ defmodule RailWeb.Live.EngineerStage do
   # drawn whole only when its frame moves and any other change goes to its part.
   defp sync_pane(%{assigns: %{work?: true, loading?: false, sent: %{} = sent}} = socket) do
     state = pane_state(socket.assigns)
-    pane = DiffPane.calculate_pane(state)
+    pane = calculate_diff_pane(state)
     socket = if pane.frame == sent.frame, do: socket, else: assign(socket, :drawn, state)
 
     send_parts(pane, sent)
@@ -414,7 +415,7 @@ defmodule RailWeb.Live.EngineerStage do
   defp sync_pane(%{assigns: %{work?: true, loading?: false}} = socket) do
     state = pane_state(socket.assigns)
 
-    socket |> assign(:drawn, state) |> assign(:sent, DiffPane.calculate_pane(state))
+    socket |> assign(:drawn, state) |> assign(:sent, calculate_diff_pane(state))
   end
 
   defp sync_pane(socket), do: assign(socket, :sent, nil)
