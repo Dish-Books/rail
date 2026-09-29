@@ -1,6 +1,5 @@
 defmodule Rail.Tools.Utils.LaunchSandboxTest do
-  # Serial: the runtime and the environment Rail passes on are both global.
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -31,18 +30,18 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
       end
     end)
 
-    original = Application.get_env(:rail, :sandbox)
-    Application.put_env(:rail, :sandbox, Keyword.put(original, :runtime, :docker))
+    stub_sandbox_config(runtime: :docker)
 
     # Rail's own configuration, which an agent must never inherit, beside what it must.
-    inherited = %{"MIX_ENV" => "prod", "DATABASE_URL" => "ecto://rail_prod", "SECRET_KEY_BASE" => "secret"}
-    kept = System.get_env("MISE_DATA_DIR")
-    System.put_env(Map.put(inherited, "MISE_DATA_DIR", "/srv/rail/mise"))
-
-    on_exit(fn ->
-      Application.put_env(:rail, :sandbox, original)
-      Enum.each(Map.keys(inherited), &System.delete_env/1)
-      if kept, do: System.put_env("MISE_DATA_DIR", kept), else: System.delete_env("MISE_DATA_DIR")
+    stub(System, :get_env, fn ->
+      System
+      |> call_original(:get_env, [])
+      |> Map.merge(%{
+        "MIX_ENV" => "prod",
+        "DATABASE_URL" => "ecto://rail_prod",
+        "SECRET_KEY_BASE" => "secret",
+        "MISE_DATA_DIR" => "/srv/rail/mise"
+      })
     end)
 
     tmp_dir = Path.join(System.tmp_dir!(), "launch_sandbox_#{System.unique_integer([:positive])}")

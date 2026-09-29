@@ -2,6 +2,7 @@ defmodule Rail.Tools.Actions.GetSandboxCapacity do
   @moduledoc false
 
   import Ecto.Query
+  import Rail.Tools.Utils.LocalCapacity
 
   alias Rail.Repo
   alias Rail.Tools.Clients.Docker
@@ -35,15 +36,20 @@ defmodule Rail.Tools.Actions.GetSandboxCapacity do
     end
   end
 
+  # The suite runs on a fixed machine of its own, set in config/test.exs.
   defp machine(config) do
-    case Keyword.get(config, :runtime, :local) do
-      :docker ->
+    case {Keyword.get(config, :runtime, :local), Keyword.get(config, :local_cpus)} do
+      {:docker, _local} ->
         with {:ok, %{"NCPU" => cpus, "MemTotal" => memory}} <- Docker.info() do
           {:ok, cpus, div(memory, 1024 ** 3)}
         end
 
-      :local ->
-        {:ok, Keyword.fetch!(config, :local_cpus), Keyword.fetch!(config, :local_memory_gb)}
+      {:local, nil} ->
+        {cpus, memory_gb} = local_capacity()
+        {:ok, cpus, memory_gb}
+
+      {:local, cpus} ->
+        {:ok, cpus, Keyword.fetch!(config, :local_memory_gb)}
     end
   end
 end

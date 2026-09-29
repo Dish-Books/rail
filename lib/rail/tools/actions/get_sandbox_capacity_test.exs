@@ -1,6 +1,7 @@
 defmodule Rail.Tools.Actions.GetSandboxCapacityTest do
-  # Serial: the Docker cases swap the runtime in the application env.
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
+
+  import Rail.Tools.Utils.LocalCapacity
 
   alias Rail.Pipeline
   alias Rail.Tools
@@ -40,17 +41,18 @@ defmodule Rail.Tools.Actions.GetSandboxCapacityTest do
     assert {:ok, %{cpus: 4, memory_gb: 8, reserved_cpus: 3, reserved_memory_gb: 6}} = Tools.get_sandbox_capacity()
   end
 
+  test "is the machine Rail runs on, read now, where nothing fixes it" do
+    stub_sandbox_config(local_cpus: nil, local_memory_gb: nil, headroom_cpus: 1, headroom_memory_gb: 1)
+    {cpus, memory_gb} = local_capacity()
+    free_cpus = cpus - 1
+    free_memory_gb = memory_gb - 1
+
+    assert {:ok, %{cpus: ^free_cpus, memory_gb: ^free_memory_gb}} = Tools.get_sandbox_capacity()
+  end
+
   describe "in Docker" do
     setup do
-      original = Application.get_env(:rail, :sandbox)
-
-      Application.put_env(
-        :rail,
-        :sandbox,
-        Keyword.merge(original, runtime: :docker, headroom_cpus: 2, headroom_memory_gb: 8)
-      )
-
-      on_exit(fn -> Application.put_env(:rail, :sandbox, original) end)
+      stub_sandbox_config(runtime: :docker, headroom_cpus: 2, headroom_memory_gb: 8)
     end
 
     test "is what the machine has, less the headroom kept for Rail, in whole GB" do

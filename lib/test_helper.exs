@@ -11,6 +11,7 @@ File.mkdir_p!(run_tmp_dir)
 System.put_env("TMPDIR", run_tmp_dir)
 ExUnit.after_suite(fn _result -> File.rm_rf(run_tmp_dir) end)
 
+Mimic.copy(Application)
 Mimic.copy(Date)
 Mimic.copy(DateTime)
 Mimic.copy(File)
@@ -25,6 +26,7 @@ Mimic.copy(Rail.Roles)
 Mimic.copy(Rail.Tools.Browser)
 Mimic.copy(Rail.Tools.BrowserSession)
 Mimic.copy(Rail.Tools.FollowerSupervisor)
+Mimic.copy(System)
 
 # Ensure that all Req calls are mocked by default
 Req.default_options(adapter: fn req -> raise "Unmocked call to #{req.url}" end)

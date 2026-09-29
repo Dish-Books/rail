@@ -409,11 +409,9 @@ defmodule RailWeb.SandboxesLive do
       capacity &&
         %{cpus: capacity.cpus - capacity.reserved_cpus, memory_gb: capacity.memory_gb - capacity.reserved_memory_gb}
 
-    latest_restart =
-      case Tools.get_latest_restart() do
-        {:ok, restart} -> restart
-        _none -> nil
-      end
+    # Far enough back for the banner's hour and for any restart a running sandbox lived through.
+    since = Enum.min([DateTime.shift(now, hour: -1) | Enum.map(running, & &1.started_at)], DateTime)
+    latest_restart = [since: since] |> Tools.list_restarts() |> List.last()
 
     socket
     |> assign(:now, now)

@@ -1,7 +1,5 @@
 defmodule Rail.Tools.BootTest do
-  # Serial: the Docker cases swap the runtime in the application env, and a sandbox
-  # adopted live is followed by a process this test does not own.
-  use Rail.DataCase, async: false
+  use Rail.DataCase, async: true
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -12,6 +10,7 @@ defmodule Rail.Tools.BootTest do
   alias Rail.Tools
   alias Rail.Tools.Boot
   alias Rail.Tools.Clients.Docker
+  alias Rail.Tools.FollowerRegistry
   alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.OsProcess
   alias Rail.Tools.Schemas.Restart
@@ -357,8 +356,10 @@ defmodule Rail.Tools.BootTest do
   end
 
   test "start_link/1 reconciles as a task when adoption on boot is enabled" do
-    Application.put_env(:rail, :adopt_on_boot, true)
-    on_exit(fn -> Application.put_env(:rail, :adopt_on_boot, false) end)
+    stub(Application, :get_env, fn
+      :rail, :adopt_on_boot, _default -> true
+      app, key, default -> call_original(Application, :get_env, [app, key, default])
+    end)
 
     {:ok, pid} = Boot.start_link([])
     assert is_pid(pid)
@@ -570,8 +571,6 @@ defmodule Rail.Tools.BootTest do
   end
 
   describe "a Docker sandbox Rail restarted under" do
-    setup {Req.Test, :set_req_test_to_shared}
-
     # A run that settles needs a real task behind it.
     setup %{project: project, role: role, tmp_dir: tmp_dir} do
       issue =
@@ -609,7 +608,7 @@ defmodule Rail.Tools.BootTest do
       run: run,
       tmp_dir: tmp_dir
     } do
-      {:ok, _stopped} = Tools.record_rail_stop()
+      Repo.insert!(%Restart{stopped_at: DateTime.shift(DateTime.utc_now(), second: -41)})
       {:ok, state} = Agent.start_link(fn -> %{"Running" => true} end)
 
       Req.Test.stub(Docker, fn conn ->
@@ -642,6 +641,9 @@ defmodule Rail.Tools.BootTest do
       Pipeline.append_run_events(run.id, os_process.id, [before])
       Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
 
+      # Lazily, so the Follower adoption starts has it from its first tick, and again if it restarts.
+      Req.Test.allow(Docker, self(), fn -> GenServer.whereis({:via, Registry, {FollowerRegistry, os_process.id}}) end)
+
       assert [{:adopted_live, %OsProcess{}, _follower_pid}] = Boot.reconcile(boot: true)
 
       restarted =
@@ -653,7 +655,7 @@ defmodule Rail.Tools.BootTest do
       end)
 
       assert %OsProcess{restarts: 1} = Repo.reload!(os_process)
-      assert {:ok, %Restart{started_at: %DateTime{}, sandboxes_kept: 1}} = Tools.get_latest_restart()
+      assert [%Restart{stopped_at: %DateTime{}, started_at: %DateTime{}, sandboxes_kept: 1}] = Tools.list_restarts()
 
       result = ~s({"type":"result","subtype":"success","session_id":"sess-docker","usage":{"input_tokens":7}})
       File.write!(stream_path, "#{result}\n", [:append])
@@ -818,17 +820,20 @@ defmodule Rail.Tools.BootTest do
       stream_path = Path.join(tmp_dir, "silent.ndjson")
       File.write!(stream_path, "")
 
-      for container_id <- ["c-removed", "c-silent"] do
-        Repo.insert!(%OsProcess{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: stream_path,
-          status: :running,
-          runtime: :docker,
-          container_id: container_id,
-          started_at: DateTime.utc_now()
-        })
-      end
+      [_removed, silent] =
+        for container_id <- ["c-removed", "c-silent"] do
+          Repo.insert!(%OsProcess{
+            run_id: run.id,
+            task_id: run.task_id,
+            stream_path: stream_path,
+            status: :running,
+            runtime: :docker,
+            container_id: container_id,
+            started_at: DateTime.utc_now()
+          })
+        end
+
+      Req.Test.allow(Docker, self(), fn -> GenServer.whereis({:via, Registry, {FollowerRegistry, silent.id}}) end)
 
       assert [{:adopted_dead, %OsProcess{container_id: "c-removed"}}, {:adopted_live, %OsProcess{}, follower_pid}] =
                Enum.sort_by(Boot.reconcile(boot: true), &elem(&1, 0))
@@ -852,6 +857,8 @@ defmodule Rail.Tools.BootTest do
           started_at: DateTime.utc_now()
         })
 
+      Req.Test.allow(Docker, self(), fn -> GenServer.whereis({:via, Registry, {FollowerRegistry, os_process.id}}) end)
+
       assert [{:adopted_live, %OsProcess{}, follower_pid}] = Boot.reconcile()
       FollowerSupervisor.stop_follower(follower_pid)
 
@@ -862,17 +869,11 @@ defmodule Rail.Tools.BootTest do
 
   test "a boot with no stop on record was a crash, and is recorded as a restart all the same" do
     assert [] = Boot.reconcile(boot: true)
-    assert {:ok, %Restart{stopped_at: nil, started_at: %DateTime{}, sandboxes_kept: 0}} = Tools.get_latest_restart()
+    assert [%Restart{stopped_at: nil, started_at: %DateTime{}, sandboxes_kept: 0}] = Tools.list_restarts()
   end
 
   describe "in Docker" do
-    setup {Req.Test, :set_req_test_to_shared}
-
-    setup do
-      original = Application.get_env(:rail, :sandbox)
-      Application.put_env(:rail, :sandbox, Keyword.put(original, :runtime, :docker))
-      on_exit(fn -> Application.put_env(:rail, :sandbox, original) end)
-    end
+    setup do: stub_sandbox_config(runtime: :docker)
 
     test "removes the containers of sandboxes that have settled, and leaves the rest", %{role: role} do
       {:ok, run} =

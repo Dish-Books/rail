@@ -5,6 +5,7 @@ defmodule Rail.Roles.Schemas.Role do
   use Rail.Schema
 
   alias Rail.Projects.Schemas.Project
+  alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
 
   @canonical_stages [
@@ -116,11 +117,10 @@ defmodule Rail.Roles.Schemas.Role do
   @doc """
   Builds a changeset for a role.
 
-  With `capacity:` (see `Rail.Tools.get_sandbox_capacity/0`), a reservation larger
-  than the machine can ever free is refused: a sandbox waits for its whole
-  reservation, so one that never fits would wait in line forever.
+  A reservation larger than the machine can ever free is refused: a sandbox waits
+  for its whole reservation, so one that never fits would wait in line forever.
   """
-  def changeset(role, attrs, opts \\ []) do
+  def changeset(role, attrs) do
     role
     |> cast(attrs, @cast_fields)
     |> validate_required(@required_fields)
@@ -129,7 +129,7 @@ defmodule Rail.Roles.Schemas.Role do
     |> validate_number(:position, greater_than_or_equal_to: 0)
     |> validate_number(:reserved_cpus, greater_than_or_equal_to: 1)
     |> validate_number(:reserved_memory_gb, greater_than_or_equal_to: 1)
-    |> validate_capacity(Keyword.get(opts, :capacity))
+    |> validate_capacity()
     |> unique_constraint(:stage, name: :roles_project_id_stage_index)
     |> foreign_key_constraint(:project_id)
     |> foreign_key_constraint(:backend_id)
@@ -149,7 +149,20 @@ defmodule Rail.Roles.Schemas.Role do
       else: %{count: by_cpus, limited_by: :cpus}
   end
 
-  defp validate_capacity(%Ecto.Changeset{valid?: true} = changeset, %{cpus: cpus, memory_gb: memory_gb}) do
+  # The machine is only asked when the reservation changes, and one it cannot be
+  # asked about is left to the line, which refuses what never fits.
+  defp validate_capacity(%Ecto.Changeset{valid?: true} = changeset) do
+    with true <- changed?(changeset, :reserved_cpus) or changed?(changeset, :reserved_memory_gb),
+         {:ok, capacity} <- Tools.get_sandbox_capacity() do
+      refuse_over_capacity(changeset, capacity)
+    else
+      _unchanged_or_unknown -> changeset
+    end
+  end
+
+  defp validate_capacity(changeset), do: changeset
+
+  defp refuse_over_capacity(changeset, %{cpus: cpus, memory_gb: memory_gb}) do
     role = if String.match?(get_field(changeset, :name), ~r/^[aeiou]/i), do: "an", else: "a"
     role = "#{role} #{get_field(changeset, :name)}"
     needs_cpus = get_field(changeset, :reserved_cpus)
@@ -175,6 +188,4 @@ defmodule Rail.Roles.Schemas.Role do
         ),
       else: changeset
   end
-
-  defp validate_capacity(changeset, _no_capacity), do: changeset
 end

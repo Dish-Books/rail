@@ -28,7 +28,9 @@ defmodule Rail.Tools do
       {Registry, keys: :unique, name: Rail.Tools.BrowserRegistry},
       {Registry, keys: :unique, name: Rail.Tools.RecorderRegistry},
       {DynamicSupervisor, name: Rail.Tools.BrowserSupervisor, strategy: :one_for_one},
-      Rail.Tools.Boot
+      Rail.Tools.Boot,
+      # Last, so it is the first stopped: the stop is recorded before anything else goes.
+      Rail.Tools.StopRecorder
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -67,8 +69,6 @@ defmodule Rail.Tools do
   defdelegate get_sandbox_capacity(), to: Actions.GetSandboxCapacity
   defdelegate get_queue_position(run), to: Actions.GetQueuePosition
   defdelegate list_sandbox_usage(), to: Actions.ListSandboxUsage
-  defdelegate record_rail_stop(), to: Actions.RecordRailStop
-  defdelegate get_latest_restart(), to: Actions.GetLatestRestart
   defdelegate list_restarts(opts \\ []), to: Actions.ListRestarts
   defdelegate parse_stream(backend, lines, opts \\ []), to: Actions.ParseStream
   defdelegate plain_text(text), to: Actions.PlainText

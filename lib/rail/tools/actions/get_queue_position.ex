@@ -10,32 +10,30 @@ defmodule Rail.Tools.Actions.GetQueuePosition do
   @doc """
   Where `run` stands in the line for sandboxes: `{:ok, %{position: n, os_process: row}}`,
   1 being next to start, or `{:error, :not_waiting}` when it is not in line.
+
+  One query: the run's waiting row by its run index, and its place counted over the
+  `(status, queued_at)` index, which holds only the line.
   """
   def get_queue_position(%Run{id: run_id}) do
-    waiting =
-      Repo.one(
-        from p in OsProcess,
-          where: p.run_id == ^run_id and p.status == :waiting_for_resources,
-          order_by: [desc: p.inserted_at],
-          limit: 1
-      )
+    ahead =
+      from q in OsProcess,
+        where:
+          q.status == :waiting_for_resources and
+            (q.queued_at < parent_as(:line).queued_at or
+               (q.queued_at == parent_as(:line).queued_at and q.id <= parent_as(:line).id)),
+        select: count()
 
-    case waiting do
-      %OsProcess{queued_at: queued_at, id: id} = os_process ->
-        ahead =
-          Repo.aggregate(
-            from(p in OsProcess,
-              where:
-                p.status == :waiting_for_resources and
-                  (p.queued_at < ^queued_at or (p.queued_at == ^queued_at and p.id < ^id))
-            ),
-            :count
-          )
+    query =
+      from p in OsProcess,
+        as: :line,
+        where: p.run_id == ^run_id and p.status == :waiting_for_resources,
+        order_by: [desc: p.inserted_at],
+        limit: 1,
+        select: %{position: subquery(ahead), os_process: p}
 
-        {:ok, %{position: ahead + 1, os_process: os_process}}
-
-      nil ->
-        {:error, :not_waiting}
+    case Repo.one(query) do
+      %{os_process: %OsProcess{}} = line -> {:ok, line}
+      nil -> {:error, :not_waiting}
     end
   end
 end

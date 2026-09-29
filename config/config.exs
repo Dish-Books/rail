@@ -55,18 +55,15 @@ config :rail, RailWeb.Endpoint,
 
 config :rail, :fetch_parsers, true
 
-# Where agents, worktree setup and CI run, and what the machine keeps back for Rail,
-# Postgres and project services. `:local` spawns beside Rail with nothing enforced;
-# prod sets `:docker`, where each sandbox gets exactly what its role reserves.
+# Where agents, setup and CI run, and what is kept back for Rail, Postgres and project services.
+# The machine's CPUs and memory are read at runtime; only `:docker` (prod) enforces a reservation.
 config :rail, :sandbox,
   runtime: :local,
   image: "rail-sandbox:latest",
   binds: ["/srv/rail:/srv/rail"],
   headroom_cpus: 2,
   headroom_memory_gb: 8,
-  shm_size_gb: 1,
-  local_cpus: System.schedulers_online(),
-  local_memory_gb: 16
+  shm_size_gb: 1
 
 config :rail,
   config_env: config_env(),
