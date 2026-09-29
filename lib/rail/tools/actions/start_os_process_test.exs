@@ -530,5 +530,25 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
 
       Tools.terminate_os_process(os_process.os_pid, grace_period: 100)
     end
+
+    # What raising the headroom in prod does to a role saved before it.
+    test "a turn the machine can no longer ever hold fails its run, rather than leaving it running", %{
+      run: run,
+      scope: scope
+    } do
+      {:ok, role} = Roles.get_role(id: run.role_id)
+      {:ok, _role} = Roles.update_role(scope, role, %{reserved_cpus: 3})
+      stub(Rail, :local_cpus, fn -> 2 end)
+      Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+      reject(Tools, :spawn_os_process, 3)
+
+      error = "It needs 3 CPUs and 2 GB, and this machine has 2 CPUs and 8 GB to reserve, so it could never start."
+
+      assert {:error, {:spawn_failed, _reason, %Run{status: :finished, error: ^error} = failed}} =
+               Tools.start_os_process(run, ["2"])
+
+      assert Run.state(failed) == :failed
+      assert_receive {:run_changed, _run_id}
+    end
   end
 end

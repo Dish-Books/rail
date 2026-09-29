@@ -3,6 +3,7 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles
   alias Rail.Tools
@@ -134,9 +135,12 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
       end
     end)
 
-    assert {:error, {:spawn_failed, {:docker_api_error, 500, _body}, _run}} = Tools.start_os_process(run, ["-p", "x"])
+    assert {:error, {:spawn_failed, {:docker_api_error, 500, _body}, %Run{status: :finished, error: error}}} =
+             Tools.start_os_process(run, ["-p", "x"])
+
+    assert error =~ "Could not start its sandbox: {:docker_api_error, 500"
     assert_received :removed
-    assert [%OsProcess{status: :failed, ended_reason: :failed_to_start}] = Tools.list_os_processes(run_id: run.id)
+    assert [%OsProcess{status: :finished, ended_reason: :failed_to_start}] = Tools.list_os_processes(run_id: run.id)
   end
 
   test "a worktree that is not there fails before Docker is asked to make one", %{run: run, worktree_path: worktree_path} do

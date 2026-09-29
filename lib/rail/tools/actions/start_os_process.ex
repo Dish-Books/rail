@@ -67,7 +67,7 @@ defmodule Rail.Tools.Actions.StartOsProcess do
     case result do
       {:ok, os_process} -> finalize(task, run, os_process)
       {:waiting, os_process} -> finalize(task, %{run | status: :waiting_for_resources}, os_process)
-      {:error, reason} -> fail(run, reason)
+      {:error, reason} -> fail(run, reason, Repo.get!(OsProcess, os_process.id))
     end
   end
 
@@ -77,9 +77,18 @@ defmodule Rail.Tools.Actions.StartOsProcess do
     {:ok, %{os_process | run: run, task: task}}
   end
 
-  # A failure that already said what went wrong keeps its own words: the missing
-  # binary check settles the run before returning here.
-  defp fail(run, reason) do
+  # A turn that never started, refused by the line or failed at launch, settles its
+  # run as failed, as one admitted later from the line does: a run left running with
+  # no process behind it is one nothing recovers. The run then keeps those words, as
+  # it keeps the missing binary check's, which settled it before returning here.
+  defp fail(run, reason, %OsProcess{status: :failed, ended_reason: :failed_to_start} = os_process) do
+    error = if is_binary(reason), do: reason, else: "Could not start its sandbox: #{inspect(reason)}"
+    {:ok, _settled} = Pipeline.run_finished(os_process, %{exit_code: -1, error: error})
+    Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:run_changed, run.id})
+    fail(run, reason, nil)
+  end
+
+  defp fail(run, reason, _started_or_settled) do
     {:ok, run} = Pipeline.get_run(run.id)
 
     {:ok, run} =
