@@ -3,6 +3,7 @@ defmodule Rail.Triage.Actions.ListTriageThreadsTest do
 
   alias Rail.Scope
   alias Rail.Triage
+  alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Thread
 
   setup do
@@ -42,6 +43,28 @@ defmodule Rail.Triage.Actions.ListTriageThreadsTest do
     assert [] = Triage.list_triage_threads(project_id: project.id, status: :triaging)
     assert [] = Triage.list_triage_threads(project_id: "prj_other", status: :waiting)
     assert Enum.any?(Triage.list_triage_threads(status: :waiting), &(&1.id == newer_id))
+  end
+
+  test "keeps to a limit, the most recent first, and loads only the message each row shows", %{
+    project: project,
+    workspace: workspace,
+    channel: channel,
+    older: %{id: older_id} = older,
+    newer: %{id: newer_id} = newer
+  } do
+    {:ok, _reply} =
+      Triage.handle_slack_event(
+        workspace,
+        slack_message_event(channel, %{"ts" => "1790000900.000100", "thread_ts" => older.external_id, "text" => "later"})
+      )
+
+    {:ok, _done} = Triage.dismiss_triage_thread(Scope.for_user(%{id: nil}), older)
+    {:ok, _done} = Triage.dismiss_triage_thread(Scope.for_user(%{id: nil}), newer)
+
+    assert [%Thread{id: ^newer_id}] = Triage.list_triage_threads(project_id: project.id, status: :done, limit: 1)
+
+    assert [%Thread{id: ^newer_id}, %Thread{id: ^older_id, messages: [%Message{text: "older"}]}] =
+             Triage.list_triage_threads(project_id: project.id, status: :done)
   end
 
   test "counts each status in one query", %{project: project, older: older} do

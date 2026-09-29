@@ -247,7 +247,7 @@ defmodule RailWeb.TriageLive do
   defp load(socket) do
     scope = socket.assigns.current_scope
     project_id = socket.assigns.current_project_id
-    threads = Triage.list_triage_threads(project_id: project_id, status: socket.assigns.filter)
+    threads = Triage.list_triage_threads(project_id: project_id, status: socket.assigns.filter, limit: 100)
     # The open thread stays open when an accept moves it to another status.
     open_id = socket.assigns.thread && socket.assigns.thread.id
     selected_id = socket.assigns.selected_id || open_id || (List.first(threads) && List.first(threads).id)
@@ -290,7 +290,7 @@ defmodule RailWeb.TriageLive do
   defp channel_names(projects, project_id) do
     projects
     |> Enum.filter(&(is_nil(project_id) or &1.id == project_id))
-    |> Enum.flat_map(&Projects.list_slack_channels/1)
+    |> Projects.list_slack_channels()
     |> Enum.map(& &1.name)
   end
 

@@ -533,6 +533,13 @@ defmodule RailWeb.Settings.ProjectsLive do
                   >
                     #{channel.name}
                   </label>
+                  <span
+                    :if={channel.unlisted}
+                    id={"slack-channel-unlisted-#{channel.id}"}
+                    class="text-xs text-amber-600 dark:text-amber-400"
+                  >
+                    Not listed by Slack
+                  </span>
                   <label
                     :if={Map.has_key?(@channel_selection, channel.id)}
                     class="ml-auto inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer"
@@ -597,7 +604,7 @@ defmodule RailWeb.Settings.ProjectsLive do
 
         socket =
           socket
-          |> assign(:slack_channel_options, slack_channel_options())
+          |> assign(:slack_channel_options, slack_channel_options(channels))
           |> assign(:channel_selection, Map.new(channels, &{&1.external_id, &1.bot_triage_enabled}))
           |> assign(:channel_ids, Map.new(channels, &{&1.external_id, &1.id}))
           |> assign(:channels_saved, false)
@@ -731,13 +738,28 @@ defmodule RailWeb.Settings.ProjectsLive do
   end
 
   # Each workspace is asked for its channels; one Slack cannot answer for adds nothing to pick.
-  defp slack_channel_options do
-    Enum.flat_map(Projects.list_slack_workspaces(), fn workspace ->
-      case Slack.list_channels(workspace) do
-        {:ok, channels} -> Enum.map(channels, &%{id: &1["id"], name: &1["name"], workspace_id: workspace.id})
-        {:error, _unreachable} -> []
+  # A channel the project has that Slack did not list stays on the form, checked, so saving
+  # never removes it, or its threads, without an admin unchecking it.
+  defp slack_channel_options(stored) do
+    listed =
+      Enum.flat_map(Projects.list_slack_workspaces(), fn workspace ->
+        case Slack.list_channels(workspace) do
+          {:ok, channels} ->
+            Enum.map(channels, &%{id: &1["id"], name: &1["name"], workspace_id: workspace.id, unlisted: false})
+
+          {:error, _unreachable} ->
+            []
+        end
+      end)
+
+    listed_ids = MapSet.new(listed, & &1.id)
+
+    unlisted =
+      for channel <- stored, not MapSet.member?(listed_ids, channel.external_id) do
+        %{id: channel.external_id, name: channel.name, workspace_id: channel.slack_workspace_id, unlisted: true}
       end
-    end)
+
+    listed ++ unlisted
   end
 
   defp channel_selection(params) do

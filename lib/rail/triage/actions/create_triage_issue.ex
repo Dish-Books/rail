@@ -5,7 +5,10 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
   """
 
   import Ecto.Query
+  import Rail.Triage.Utils.CanPostToSlack
+  import Rail.Triage.Utils.ClaimReply
   import Rail.Triage.Utils.PostToSlack
+  import Rail.Triage.Utils.ReleaseReply
   import Rail.Triage.Utils.SettleThread
   import Rail.Triage.Utils.SlackIssueLink
 
@@ -16,7 +19,6 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
   alias Rail.Scope
   alias Rail.Triage
   alias Rail.Triage.Schemas.Item
-  alias Rail.Users
 
   @doc """
   Nothing is created unless the person can post in the thread. Once Linear has
@@ -25,7 +27,7 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
   def create_triage_issue(%Scope{user: %{id: user_id}} = scope, %Item{id: item_id}, attrs) do
     item = Item |> Repo.get!(item_id) |> Repo.preload(thread: [:project, slack_channel: :slack_workspace])
 
-    with :ok <- can_post(scope, item),
+    with :ok <- can_post_to_slack(scope, item.thread),
          :ok <- open(item),
          {:ok, drafted} <- Triage.update_triage_draft(scope, item, attrs),
          :ok <- claim(item, user_id),
@@ -36,16 +38,6 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
       {:ok, item} = item |> Ecto.Changeset.change(Map.merge(started, posted)) |> Repo.update()
       {:ok, _thread} = settle_thread(item.thread)
       {:ok, item}
-    end
-  end
-
-  defp can_post(scope, %Item{thread: thread}) do
-    case Users.slack_token(scope) do
-      {:ok, _token, team_id} ->
-        if team_id == thread.slack_channel.slack_workspace.external_id, do: :ok, else: {:error, :slack_other_workspace}
-
-      {:error, :not_linked} ->
-        {:error, :slack_not_linked}
     end
   end
 
@@ -91,7 +83,8 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
 
   defp post(scope, %Item{} = item, %Issue{} = issue) do
     link = slack_issue_link(issue)
-    reply? = Item.reply_draft?(item) and is_nil(item.reply_posted_at)
+    # Someone already posting the reply gets it posted once; the link goes out on its own.
+    reply? = Item.reply_draft?(item) and is_nil(item.reply_posted_at) and claim_reply(item, scope.user.id) == :ok
 
     text =
       cond do
@@ -101,9 +94,15 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
       end
 
     case post_to_slack(scope, item.thread, text) do
-      {:ok, _message} when reply? -> %{reply_posted_at: DateTime.utc_now(), reply_posted_by_id: scope.user.id}
-      {:ok, _message} -> %{}
-      {:error, reason} -> %{error: "Created #{issue.identifier}, but could not post in Slack. #{inspect(reason)}"}
+      {:ok, _message} when reply? ->
+        %{reply_posted_at: DateTime.utc_now(), reply_posted_by_id: scope.user.id}
+
+      {:ok, _message} ->
+        %{}
+
+      {:error, reason} ->
+        if reply?, do: :ok = release_reply(item)
+        %{error: "Created #{issue.identifier}, but could not post in Slack. #{inspect(reason)}"}
     end
   end
 end

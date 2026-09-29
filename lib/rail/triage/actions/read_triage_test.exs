@@ -63,6 +63,25 @@ defmodule Rail.Triage.Actions.ReadTriageTest do
            } = Triage.read_triage(thread)
   end
 
+  test "reads evidence lines given as text, a number or a range, and drops any other shape", %{
+    thread: thread,
+    path: path
+  } do
+    evidence = [
+      %{"file" => "a.ex", "lines" => "10-12"},
+      %{"file" => "a.ex", "lines" => 42},
+      %{"file" => "a.ex", "lines" => [42, 45]},
+      %{"file" => "a.ex", "lines" => %{"start" => 42}},
+      %{"file" => "a.ex", "lines" => [1, 2, 3]}
+    ]
+
+    item = %{"key" => "k", "kind" => "bug", "title" => "T", "verdict" => "confirmed", "evidence" => evidence}
+    File.write!(path, Jason.encode!(%{"items" => [item]}))
+
+    assert %{items: [%{evidence: [%{lines: "10-12"}, %{lines: "42"}, %{lines: "42-45"}, %{lines: nil}, %{lines: nil}]}]} =
+             Triage.read_triage(thread)
+  end
+
   test "a missing or malformed file is nothing to read", %{thread: thread, path: path} do
     assert nil == Triage.read_triage(thread)
 

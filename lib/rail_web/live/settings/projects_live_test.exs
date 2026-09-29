@@ -502,6 +502,35 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
       assert [%{id: ^posthog_row, bot_triage_enabled: false}] = Projects.list_slack_channels(project)
     end
 
+    test "a stored channel Slack no longer lists stays checked and survives a save, with its threads", %{
+      admin_conn: conn,
+      project: project,
+      channel: %{id: channel_id} = channel,
+      workspace: workspace,
+      posthog: posthog
+    } do
+      {:ok, %{id: thread_id}} = Rail.Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
+      stub_slack(team_id: workspace.external_id, channels: [{posthog, "posthog-index"}])
+
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      assert has_element?(view, "#slack-channel-#{channel.external_id}[checked]")
+      assert has_element?(view, "#slack-channel-unlisted-#{channel.external_id}", "Not listed by Slack")
+
+      view
+      |> form("#slack-channels-form", %{"channels" => %{posthog => %{"included" => "true"}}})
+      |> render_submit()
+
+      assert has_element?(view, "#slack-channels-saved")
+
+      assert [%{external_id: ^posthog}, %{id: ^channel_id, name: "rail-feedback"}] =
+               Projects.list_slack_channels(project)
+
+      assert {:ok, %{id: ^thread_id}} = Rail.Triage.get_triage_thread(system_scope(), thread_id)
+    end
+
     test "a channel another project holds is refused on the form", %{
       admin_conn: conn,
       admin_user: admin,
@@ -533,14 +562,20 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
       assert has_element?(view, "#slack-channels-error", "is connected to another project")
     end
 
-    test "a Slack that cannot list its channels offers none to pick", %{admin_conn: conn, project: project} do
+    test "a Slack that cannot list its channels offers only what the project already has", %{
+      admin_conn: conn,
+      project: project,
+      channel: channel,
+      posthog: posthog
+    } do
       Req.Test.stub(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "ratelimited"}))
 
       assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
       Req.Test.allow(Rail.Slack, self(), view.pid)
       view |> element("#edit-project-#{project.id}") |> render_click()
 
-      assert has_element?(view, "#slack-channels-empty")
+      assert has_element?(view, "#slack-channel-unlisted-#{channel.external_id}", "Not listed by Slack")
+      refute has_element?(view, "#slack-channel-#{posthog}")
     end
 
     test "names whose MCP connections triage uses", %{admin_conn: conn, admin_user: %{id: admin_id}, project: project} do

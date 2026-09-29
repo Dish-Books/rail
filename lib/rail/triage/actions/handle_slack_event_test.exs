@@ -122,7 +122,7 @@ defmodule Rail.Triage.Actions.HandleSlackEventTest do
     end
 
     test "is stored and triggers nothing in a channel without the option", %{event: event, workspace: workspace} do
-      assert {:ok, %Thread{id: thread_id}} = Triage.handle_slack_event(workspace, event)
+      assert {:ok, %Thread{id: thread_id, status: :done}} = Triage.handle_slack_event(workspace, event)
 
       assert [%Message{from_bot: true}] = Repo.all(from m in Message, where: m.thread_id == ^thread_id)
       refute_received {:triage_scheduled, ^thread_id, _delay}
@@ -137,9 +137,30 @@ defmodule Rail.Triage.Actions.HandleSlackEventTest do
         |> put_in(["event", "bot_id"], workspace.bot_id)
         |> put_in(["event", "bot_profile"], %{"name" => "Rail"})
 
-      assert {:ok, %Thread{id: thread_id}} = Triage.handle_slack_event(workspace, event)
+      assert {:ok, %Thread{id: thread_id, status: :done}} = Triage.handle_slack_event(workspace, event)
       assert [%Message{author_name: "Rail"}] = Repo.all(from m in Message, where: m.thread_id == ^thread_id)
       refute_received {:triage_scheduled, ^thread_id, _delay}
     end
+  end
+
+  test "a person's message on a dismissed thread reopens it for review", %{workspace: workspace, channel: channel} do
+    {:ok, thread} = Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
+    dismisser = Rail.Scope.for_user(slack_user(workspace.external_id))
+
+    {:ok, %Thread{status: :done, dismissed_at: %DateTime{}, dismissed_by_id: "usr_" <> _id}} =
+      Triage.dismiss_triage_thread(dismisser, thread)
+
+    reply =
+      slack_message_event(channel, %{
+        "ts" => "1790000500.000100",
+        "thread_ts" => thread.external_id,
+        "user" => "U_DAN",
+        "text" => "It happened again today."
+      })
+
+    assert {:ok, %Thread{id: thread_id, status: :triaging, dismissed_at: nil, dismissed_by_id: nil}} =
+             Triage.handle_slack_event(workspace, reply)
+
+    assert_receive {:triage_scheduled, ^thread_id, 15_000}
   end
 end

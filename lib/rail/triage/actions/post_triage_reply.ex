@@ -1,7 +1,10 @@
 defmodule Rail.Triage.Actions.PostTriageReply do
   @moduledoc false
 
+  import Rail.Triage.Utils.CanPostToSlack
+  import Rail.Triage.Utils.ClaimReply
   import Rail.Triage.Utils.PostToSlack
+  import Rail.Triage.Utils.ReleaseReply
   import Rail.Triage.Utils.SettleThread
   import Rail.Triage.Utils.SlackIssueLink
 
@@ -12,7 +15,8 @@ defmodule Rail.Triage.Actions.PostTriageReply do
 
   @doc """
   Posts an item's reply, with the person's edits, in the thread as them. A reply
-  that links its issue waits until the issue exists.
+  that links its issue waits until the issue exists, and one someone else is
+  already posting is not posted again.
   """
   def post_triage_reply(%Scope{} = scope, %Item{id: item_id}, attrs) do
     item = Repo.get!(Item, item_id)
@@ -21,7 +25,9 @@ defmodule Rail.Triage.Actions.PostTriageReply do
          {:ok, _drafted} <- Triage.update_triage_draft(scope, item, attrs),
          item = Item |> Repo.get!(item_id) |> Repo.preload([:created_issue, thread: [slack_channel: :slack_workspace]]),
          {:ok, text} <- text(item),
-         {:ok, _message} <- post_to_slack(scope, item.thread, text) do
+         :ok <- can_post_to_slack(scope, item.thread),
+         :ok <- claim_reply(item, scope.user.id),
+         {:ok, _message} <- post(scope, item, text) do
       {:ok, item} =
         item
         |> Ecto.Changeset.change(reply_posted_at: DateTime.utc_now(), reply_posted_by_id: scope.user.id)
@@ -29,6 +35,13 @@ defmodule Rail.Triage.Actions.PostTriageReply do
 
       {:ok, _thread} = settle_thread(item.thread)
       {:ok, item}
+    end
+  end
+
+  defp post(scope, item, text) do
+    with {:error, reason} <- post_to_slack(scope, item.thread, text) do
+      :ok = release_reply(item)
+      {:error, reason}
     end
   end
 

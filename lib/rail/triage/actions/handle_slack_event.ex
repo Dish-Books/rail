@@ -5,11 +5,13 @@ defmodule Rail.Triage.Actions.HandleSlackEvent do
 
   Only people's messages in a project's connected channels trigger one. A bot's
   post triggers only where the channel opted in and never when it is Rail's own,
-  and a message a teammate posted through Rail never does. Edits and deletions
-  are ignored.
+  and a message a teammate posted through Rail never does. A message that
+  triggers nothing leaves the thread where it stood, and one that triggers
+  reopens a dismissed thread. Edits and deletions are ignored.
   """
 
   import Rail.Triage.Utils.EnqueueTriage
+  import Rail.Triage.Utils.SettleThread
   import Rail.Triage.Utils.UpsertSlackMessage
 
   alias Rail.Projects
@@ -60,11 +62,18 @@ defmodule Rail.Triage.Actions.HandleSlackEvent do
     {:ok, message, _names} = upsert_slack_message(thread, workspace, event, %{})
 
     if triggers?(workspace, channel, event, message) do
-      enqueue_triage(thread, delay: @delay)
+      thread |> reopen() |> enqueue_triage(delay: @delay)
     else
-      {:ok, thread}
+      settle_thread(thread)
     end
   end
+
+  # Someone wrote again in a thread a person set aside, so it is back for review.
+  defp reopen(%Thread{dismissed_at: %DateTime{}} = thread) do
+    thread |> Ecto.Changeset.change(dismissed_at: nil, dismissed_by_id: nil) |> Repo.update!()
+  end
+
+  defp reopen(%Thread{} = thread), do: thread
 
   defp triggers?(workspace, channel, event, message) do
     cond do

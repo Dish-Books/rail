@@ -159,4 +159,24 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
 
     assert :ok = Triage.triage_thread(thread)
   end
+
+  test "a reply someone else is posting right now is not posted twice", %{
+    thread: thread,
+    scope: scope,
+    workspace: workspace
+  } do
+    %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug(%{"issue" => nil, "reply" => "On it."})]})
+    other = slack_user(workspace.external_id, "Jordan Ellis")
+    Repo.update_all(from(i in Item, where: i.id == ^item.id), set: [reply_posted_by_id: other.id])
+
+    assert {:error, :already_posted} = Triage.post_triage_reply(scope, item, %{})
+  end
+
+  test "a post Slack refuses frees the reply to try again", %{thread: thread, scope: scope} do
+    %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug(%{"issue" => nil, "reply" => "On it."})]})
+    Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "not_in_channel"}))
+
+    assert {:error, {:slack_error, "not_in_channel"}} = Triage.post_triage_reply(scope, item, %{})
+    assert %Item{reply_posted_by_id: nil, reply_posted_at: nil} = Repo.get!(Item, item.id)
+  end
 end

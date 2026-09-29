@@ -13,26 +13,18 @@ defmodule Rail.Triage.Utils.PostToSlack do
   @doc """
   Posts `text` in `thread` on the scope's user's own Slack token, never the
   bot's, and records the message as theirs so Slack's echo of it is not
-  triaged. Needs the thread's channel and workspace preloaded.
+  triaged. Callers check `can_post_to_slack/2` first, so the person is linked in
+  this workspace. Needs the thread's channel and workspace preloaded.
   """
   def post_to_slack(%Scope{} = scope, %Thread{slack_channel: %SlackChannel{} = channel} = thread, text) do
-    with {:ok, token, team_id} <- linked(scope),
-         :ok <- same_workspace(team_id, channel),
-         {:ok, %{"ts" => ts}} <- Slack.post_message(token, channel.external_id, thread.external_id, text) do
+    %SlackChannel{slack_workspace: %{external_id: team_id}} = channel
+    {:ok, token, ^team_id} = Users.slack_token(scope)
+
+    with {:ok, %{"ts" => ts}} <- Slack.post_message(token, channel.external_id, thread.external_id, text) do
       {:ok, user} = Users.get_user(id: scope.user.id)
       {:ok, record(thread, user, ts, text)}
     end
   end
-
-  defp linked(scope) do
-    case Users.slack_token(scope) do
-      {:ok, token, team_id} -> {:ok, token, team_id}
-      {:error, :not_linked} -> {:error, :slack_not_linked}
-    end
-  end
-
-  defp same_workspace(team_id, %SlackChannel{slack_workspace: %{external_id: team_id}}), do: :ok
-  defp same_workspace(_team_id, _channel), do: {:error, :slack_other_workspace}
 
   # Slack's echo can land first, so the row may exist already; it becomes theirs either way.
   defp record(thread, %User{} = user, ts, text) do

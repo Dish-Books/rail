@@ -85,11 +85,16 @@ defmodule Rail.Triage.Actions.ReadTriage do
   defp evidence(evidence) do
     %{
       file: text(evidence["file"]),
-      lines: text(to_string(evidence["lines"] || "")),
+      lines: lines(evidence["lines"]),
       excerpt: text(evidence["excerpt"]),
       holds: evidence["holds"] != false
     }
   end
+
+  defp lines(lines) when is_binary(lines), do: text(lines)
+  defp lines(line) when is_integer(line), do: Integer.to_string(line)
+  defp lines([from, to]) when is_integer(from) and is_integer(to), do: "#{from}-#{to}"
+  defp lines(_malformed), do: nil
 
   defp assumption(%{"text" => text} = assumption) when is_binary(text),
     do: [%{text: String.trim(text), corrected: assumption["corrected"] == true}]

@@ -181,6 +181,33 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
     assert {:error, :already_created} = Triage.create_triage_issue(scope, item, %{})
   end
 
+  test "posts only the link line when someone else is posting the reply", %{
+    thread: thread,
+    scope: scope,
+    workspace: workspace,
+    linear_issue: linear_issue
+  } do
+    %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
+    %{id: other_id} = slack_user(workspace.external_id, "Jordan Ellis")
+    Repo.update_all(from(i in Item, where: i.id == ^item.id), set: [reply_posted_by_id: other_id])
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{"data" => %{"issueCreate" => %{"success" => true, "issue" => linear_issue}}})
+    end)
+
+    expect(Pipeline, :start_task, fn _issue, :product -> {:ok, :started} end)
+
+    Req.Test.expect(Rail.Slack, fn conn ->
+      assert %{"text" => "Filed as <https://linear.app/acme/issue/TRI-214|TRI-214>"} =
+               conn |> Req.Test.raw_body() |> Jason.decode!()
+
+      Req.Test.json(conn, %{"ok" => true, "ts" => "1790000650.000100"})
+    end)
+
+    assert {:ok, %Item{reply_posted_at: nil, reply_posted_by_id: ^other_id}} =
+             Triage.create_triage_issue(scope, item, %{})
+  end
+
   test "a Linear failure frees the item to try again", %{thread: thread, scope: scope} do
     %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
 
