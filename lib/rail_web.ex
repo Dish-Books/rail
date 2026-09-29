@@ -13,7 +13,7 @@ defmodule RailWeb do
   on imports, uses and aliases.
   """
 
-  def static_paths, do: ["assets", "fonts", "images", "favicon.ico", "robots.txt"]
+  def static_paths, do: ["assets", "fonts", "images", "favicon.ico", "favicon.svg", "apple-touch-icon.png", "robots.txt"]
 
   def router do
     quote do
