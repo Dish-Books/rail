@@ -4,6 +4,7 @@ defmodule RailWeb.TaskLiveTest do
   import Mimic
   import Phoenix.LiveViewTest
 
+  alias Phoenix.Socket.Message
   alias Rail.Git
   alias Rail.GitHub.Client
   alias Rail.Issues
@@ -1372,6 +1373,233 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("[data-qa='diff_collapse_toggle']") |> render_click()
       assert has_element?(view, "[data-qa='diff_line_row']")
+    end
+
+    # Reading and highlighting a large branch is the slow part, and the first page
+    # is thrown away the moment the live view connects.
+    test "the first page leaves the diff to the live view", %{conn: conn, task: task} do
+      html = conn |> get(~p"/tasks/#{task.id}") |> html_response(200)
+
+      assert html =~ "engineer_diff_loading"
+      refute html =~ "diff_file_section"
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "[data-qa='diff_file_section']", "shipped.ex")
+      refute has_element?(view, "[data-qa='engineer_diff_loading']")
+    end
+
+    # The header's buttons should not jump when the diff lands.
+    test "the first page offers review before the diff arrives", %{conn: conn, task: task} do
+      html = conn |> get(~p"/tasks/#{task.id}") |> html_response(200)
+
+      assert html =~ ~s(data-qa="send_to_review")
+    end
+
+    test "the first page does not offer review for a branch that changed nothing", %{
+      conn: conn,
+      task: task,
+      repo: repo
+    } do
+      git!(repo, ["checkout", "main"])
+
+      html = conn |> get(~p"/tasks/#{task.id}") |> html_response(200)
+
+      refute html =~ ~s(data-qa="send_to_review")
+    end
+
+    test "the first page counts a file git has never seen as work", %{conn: conn, task: task, repo: repo} do
+      git!(repo, ["checkout", "main"])
+      File.write!(Path.join(repo, "brand_new.ex"), "new\n")
+
+      html = conn |> get(~p"/tasks/#{task.id}") |> html_response(200)
+
+      assert html =~ ~s(data-qa="send_to_review")
+    end
+
+    test "marking a file reviewed does not read the diff again", %{conn: conn, task: task, repo: repo} do
+      File.write!(Path.join(repo, "zeta.ex"), "also committed\n")
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-m", "more work"])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      reject(&Git.load_diff/3)
+      reject(&Git.load_diff/4)
+
+      view |> element("#diff-header-shipped-ex [data-qa='diff-viewed-checkbox']") |> render_click()
+
+      assert has_element?(view, "#diff-header-shipped-ex [data-qa='diff-viewed-checkbox'][aria-pressed='true']")
+      refute has_element?(view, "#diff-file-shipped-ex [data-qa='diff_line_row']")
+      assert has_element?(view, "[data-qa='diff_viewed_progress']", "1/2")
+      assert_push_event(view, "diff:scroll_to", %{path: "zeta.ex"})
+    end
+
+    # The browser morphs every element under a component a patch names, so a click
+    # that named the stage would redraw every line of a large branch.
+    test "marking a file reviewed patches the parts it changed, not the pane around them", %{
+      conn: conn,
+      task: task,
+      repo: repo
+    } do
+      File.write!(Path.join(repo, "zeta.ex"), "also committed\n")
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-m", "more work"])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      [stage_cid] =
+        view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#engineer-stage", "data-phx-component")
+
+      {_ref, _topic, proxy} = view.proxy
+      1 = :erlang.trace(proxy, true, [:receive])
+
+      view |> element("#diff-header-shipped-ex [data-qa='diff-viewed-checkbox']") |> render_click()
+      _settled = render(view)
+      :erlang.trace(proxy, false, [:receive])
+
+      diffs =
+        fn ->
+          receive do
+            {:trace, ^proxy, :receive, %Phoenix.Socket.Reply{payload: %{diff: diff}}} -> diff
+            {:trace, ^proxy, :receive, %Message{event: "diff", payload: diff}} -> diff
+            {:trace, ^proxy, :receive, _other} -> %{}
+          after
+            0 -> :done
+          end
+        end
+        |> Stream.repeatedly()
+        |> Enum.take_while(&(&1 != :done))
+
+      assert Enum.any?(diffs, &Map.has_key?(&1, :c))
+
+      for diff <- diffs do
+        assert Map.keys(diff) -- [:c, :e] == []
+        refute Map.has_key?(Map.get(diff, :c, %{}), String.to_integer(stage_cid))
+      end
+
+      assert has_element?(view, "#diff-header-shipped-ex [data-qa='diff-viewed-checkbox'][aria-pressed='true']")
+      assert has_element?(view, "[data-qa='diff_viewed_progress']", "1/2")
+      assert has_element?(view, "[data-qa='diff-file-row'][aria-current='true']", "zeta.ex")
+    end
+
+    # The pane is drawn whole from what it last drew whole, so being sent to a file
+    # must not bring back the marks as they were then.
+    test "a finding sending the reader to another file keeps the marks made since", %{
+      conn: conn,
+      task: task,
+      repo: repo
+    } do
+      File.write!(Path.join(repo, "zeta.ex"), "also committed\n")
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-m", "more work"])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#diff-header-shipped-ex [data-qa='diff-viewed-checkbox']") |> render_click()
+
+      render_patch(view, ~p"/tasks/#{task.id}?file=zeta.ex")
+
+      assert has_element?(view, "#diff-scroller[data-scroll-to='zeta.ex']")
+      assert has_element?(view, "#diff-header-shipped-ex [data-qa='diff-viewed-checkbox'][aria-pressed='true']")
+      assert has_element?(view, "[data-qa='diff_viewed_progress']", "1/2")
+    end
+
+    test "a refresh after one file is edited patches that file, not the pane around it", %{
+      conn: conn,
+      task: task,
+      engineer_run: run,
+      repo: repo
+    } do
+      File.write!(Path.join(repo, "wip.ex"), "first draft\n")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      [stage_cid] =
+        view |> render() |> Floki.parse_fragment!() |> Floki.attribute("#engineer-stage", "data-phx-component")
+
+      {_ref, _topic, proxy} = view.proxy
+      1 = :erlang.trace(proxy, true, [:receive])
+
+      File.write!(Path.join(repo, "wip.ex"), "second draft\n")
+      send(view.pid, {:run_events, run.id, []})
+      # The page forwards to the stage, and the stage to the file it changed, each
+      # on a turn of its own, so each needs a sync before the file can be read.
+      _settled = render(view)
+      _settled = render(view)
+      :erlang.trace(proxy, false, [:receive])
+
+      diffs =
+        fn ->
+          receive do
+            {:trace, ^proxy, :receive, %Message{event: "diff", payload: diff}} -> diff
+            {:trace, ^proxy, :receive, _other} -> %{}
+          after
+            0 -> :done
+          end
+        end
+        |> Stream.repeatedly()
+        |> Enum.take_while(&(&1 != :done))
+
+      assert Enum.any?(diffs, &Map.has_key?(&1, :c))
+
+      for diff <- diffs do
+        assert Map.keys(diff) -- [:c, :e] == []
+        refute Map.has_key?(Map.get(diff, :c, %{}), String.to_integer(stage_cid))
+      end
+
+      assert has_element?(view, "[data-qa='diff_line_row']", "second draft")
+      refute has_element?(view, "[data-qa='diff_line_row']", "first draft")
+    end
+
+    # The click came from a page drawn before the refresh, so it marked the old
+    # version: the one on screen now has not been read.
+    test "reviewing a version of a file the pane has moved past leaves it unread", %{
+      conn: conn,
+      task: task,
+      engineer_run: run,
+      repo: repo
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      [old_digest] =
+        view
+        |> render()
+        |> Floki.parse_fragment!()
+        |> Floki.attribute("[data-qa='diff-viewed-checkbox']", "phx-value-digest")
+
+      File.write!(Path.join(repo, "shipped.ex"), "rewritten\n")
+      send(view.pid, {:run_events, run.id, []})
+      _settled = render(view)
+
+      view
+      |> element("[data-qa='diff-viewed-checkbox']")
+      |> render_click(%{"path" => "shipped.ex", "digest" => old_digest})
+
+      assert has_element?(view, "[data-qa='diff-viewed-checkbox'][aria-pressed='false']")
+      assert has_element?(view, "[data-qa='diff_viewed_progress']", "0/1")
+    end
+
+    test "a file edited after it was reviewed comes back unread with its new lines", %{
+      conn: conn,
+      task: task,
+      engineer_run: run,
+      repo: repo
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("[data-qa='diff-viewed-checkbox']") |> render_click()
+      assert has_element?(view, "[data-qa='diff-viewed-checkbox'][aria-pressed='true']")
+
+      File.write!(Path.join(repo, "shipped.ex"), "rewritten\n")
+      send(view.pid, {:run_events, run.id, []})
+      # The page forwards to the stage, and the stage to the file it changed, each
+      # on a turn of its own, so each needs a sync before the file can be read.
+      _settled = render(view)
+      _settled = render(view)
+
+      assert has_element?(view, "[data-qa='diff-viewed-checkbox'][aria-pressed='false']")
+      assert has_element?(view, "[data-qa='diff_viewed_progress']", "0/1")
+
+      view |> element("[data-qa='diff_collapse_toggle']") |> render_click()
+      assert has_element?(view, "[data-qa='diff_line_row']", "rewritten")
+      refute has_element?(view, "[data-qa='diff_line_row']", "committed")
     end
 
     test "the toolbar puts the file list away and narrows it down", %{conn: conn, task: task, repo: repo} do

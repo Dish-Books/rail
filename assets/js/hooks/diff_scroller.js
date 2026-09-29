@@ -27,6 +27,13 @@ export const DiffScroller = {
       { root: this.el, threshold: [1] }
     );
 
+    // A file section is patched on its own when only it moved, and says so, so
+    // its growing or folding holds the reader's place the same way.
+    this.el.addEventListener("diff:section-before-update", () => {
+      if (!this.anchor) this.anchor = this.currentAnchor();
+    });
+    this.el.addEventListener("diff:section-updated", () => this.restoreAnchor());
+
     this.watchHeaders();
   },
 
@@ -56,6 +63,10 @@ export const DiffScroller = {
       return;
     }
 
+    this.restoreAnchor();
+  },
+
+  restoreAnchor() {
     if (!this.anchor) return;
 
     const section = this.el.querySelector(`#${CSS.escape(this.anchor.id)}`);

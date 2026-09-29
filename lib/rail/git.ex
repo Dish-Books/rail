@@ -24,6 +24,7 @@ defmodule Rail.Git do
 
   defdelegate worktree_dirty?(worktree_path), to: Actions.WorktreeDirty
   defdelegate branch_unpushed?(worktree_path), to: Actions.BranchUnpushed
+  defdelegate branch_changed?(task), to: Actions.BranchChanged
   defdelegate commit_worktree(scope, task, message), to: Actions.CommitWorktree
   defdelegate push_branch(scope, task), to: Actions.PushBranch
   defdelegate credential_env(project), to: Actions.CredentialEnv
@@ -34,7 +35,7 @@ defmodule Rail.Git do
   defdelegate conflicted_files(worktree_path), to: Actions.ConflictedFiles
   defdelegate rebase_branch(scope, task), to: Actions.RebaseBranch
 
-  defdelegate load_diff(scope, task, filter \\ :branch), to: Actions.LoadDiff
+  defdelegate load_diff(scope, task, filter \\ :branch, previous_files \\ []), to: Actions.LoadDiff
   defdelegate load_diff_hunk(scope, task, path, line \\ nil), to: Actions.LoadDiffHunk
   defdelegate expand_diff_gap(task, path, gap_index, start_line, end_line), to: Actions.ExpandDiffGap
   defdelegate list_viewed_files(scope, task), to: Actions.ListViewedFiles

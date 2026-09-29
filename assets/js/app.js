@@ -8,6 +8,7 @@ import { Elapsed } from "./hooks/elapsed";
 import { ChatAutoscroll } from "./hooks/chat_autoscroll";
 import { ChatComposer } from "./hooks/chat_composer";
 import { DiffScroller } from "./hooks/diff_scroller";
+import { DiffSection } from "./hooks/diff_section";
 import { CopyText } from "./hooks/copy_text";
 import { LocalTime } from "./hooks/local_time";
 import { LocalResetTime } from "./hooks/local_reset_time";
@@ -23,6 +24,7 @@ const Hooks = {
   ChatAutoscroll,
   ChatComposer,
   DiffScroller,
+  DiffSection,
   CopyText,
   LocalTime,
   LocalResetTime,

@@ -5,6 +5,7 @@
 @source "../../lib/rail_web";
 
 @import "./code.css" layer(components);
+@import "./diff.css" layer(components);
 
 @plugin "../vendor/phosphor-icons";
 @plugin "@tailwindcss/typography";

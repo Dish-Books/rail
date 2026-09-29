@@ -129,6 +129,29 @@ defmodule Rail.Git.Actions.LoadDiffTest do
     assert %{binary?: true, rows: [%{kind: :binary}]} = Enum.find(files, &(&1.path == "logo.png"))
   end
 
+  # Bytes that are not text cannot be sent to the browser as lines, so a file
+  # with no NUL in it is still binary when it is not valid UTF-8.
+  test "an untracked file that is not text is named rather than drawn", %{scope: scope, task: task, repo: repo} do
+    File.write!(Path.join(repo, "blob.bin"), <<0x82, 0xFF, 0x41, ?\n>>)
+
+    assert {:ok, files} = Git.load_diff(scope, task, :branch)
+
+    assert %{binary?: true, status: :added, rows: [%{kind: :binary}]} = Enum.find(files, &(&1.path == "blob.bin"))
+  end
+
+  # git prints a text file's bytes as they are, and bytes that are not UTF-8
+  # cannot be sent to the browser as lines.
+  test "a committed file that is not text is named rather than drawn", %{scope: scope, task: task, repo: repo} do
+    File.write!(Path.join(repo, "menu.csv"), <<"caf", 0xE9, "\n">>)
+    git!(repo, ["add", "menu.csv"])
+    git!(repo, ["commit", "-m", "latin-1"])
+
+    assert {:ok, files} = Git.load_diff(scope, task, :branch)
+
+    assert %{binary?: true, status: :added, additions: 0, deletions: 0, rows: [%{kind: :binary}]} =
+             Enum.find(files, &(&1.path == "menu.csv"))
+  end
+
   test "an empty untracked file is added with no lines in it", %{scope: scope, task: task, repo: repo} do
     File.write!(Path.join(repo, "empty.ex"), "")
 
@@ -179,6 +202,33 @@ defmodule Rail.Git.Actions.LoadDiffTest do
     {:ok, task} = Pipeline.update_task(task, %{worktree_path: "/tmp/gone_#{System.unique_integer([:positive])}"})
 
     assert {:error, :no_worktree} = Git.load_diff(scope, task)
+  end
+
+  test "a file that has not moved keeps the rows it was drawn with", %{scope: scope, task: task} do
+    {:ok, files} = Git.load_diff(scope, task, :branch)
+    shipped = Enum.find(files, &(&1.path == "shipped.ex"))
+    {:ok, _marked} = Git.set_file_viewed(scope, task, shipped.path, shipped.digest, true)
+
+    kept =
+      Enum.map(files, fn file ->
+        %{file | viewed?: false, rows: Enum.map(file.rows, &Map.put(&1, :html, "kept"))}
+      end)
+
+    assert {:ok, files} = Git.load_diff(scope, task, :branch, kept)
+
+    assert %{viewed?: true, rows: [_header, %{html: "kept"}]} = Enum.find(files, &(&1.path == "shipped.ex"))
+  end
+
+  test "a file that moved is read and highlighted afresh", %{scope: scope, task: task, repo: repo} do
+    {:ok, files} = Git.load_diff(scope, task, :branch)
+    kept = Enum.map(files, fn file -> %{file | rows: Enum.map(file.rows, &Map.put(&1, :html, "kept"))} end)
+
+    File.write!(Path.join(repo, "wip.ex"), "rewritten\n")
+
+    assert {:ok, files} = Git.load_diff(scope, task, :branch, kept)
+
+    assert %{rows: [_header, %{text: "rewritten", html: html}]} = Enum.find(files, &(&1.path == "wip.ex"))
+    assert html =~ "rewritten"
   end
 
   test "a file is read only while it still looks the way it did", %{scope: scope, task: task} do

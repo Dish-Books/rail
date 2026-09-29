@@ -95,7 +95,19 @@ defmodule RailWeb.TaskLive do
 
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} {assigns}>
+    <%!-- Named rather than spread: a spread redraws the whole page for any assign,
+    such as each diff refresh's timestamp. --%>
+    <Layouts.app
+      flash={@flash}
+      current_section={@current_section}
+      current_scope={@current_scope}
+      is_rail_extended={@is_rail_extended}
+      attention_count={@attention_count}
+      current_project_id={@current_project_id}
+      projects={@projects}
+      theme={@theme}
+      show_project_switcher={@show_project_switcher}
+    >
       <div id="task-page" data-qa="task-page" class="contents">
         <div
           :if={@task == nil}
