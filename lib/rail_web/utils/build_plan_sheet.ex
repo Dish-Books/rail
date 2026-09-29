@@ -136,7 +136,8 @@ defmodule RailWeb.Utils.BuildPlanSheet do
   end
 
   defp leads_with_path?(%MDEx.ListItem{nodes: [%MDEx.Paragraph{nodes: [%MDEx.Code{} | _inline]} | _blocks]}), do: true
-  defp leads_with_path?(%MDEx.ListItem{}), do: false
+  # A task-list bullet, or any shape a plan might hold, is left to the markdown fallback.
+  defp leads_with_path?(_item), do: false
 
   defp file(
          {%MDEx.ListItem{nodes: [%MDEx.Paragraph{nodes: [%MDEx.Code{literal: path} | inline]} = lead | blocks]}, number}

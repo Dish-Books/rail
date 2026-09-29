@@ -1200,6 +1200,20 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "figure pre[data-diagram-source]:not(.hidden)")
     end
 
+    test "a plan whose files are a task list still opens, as the markdown it was written as", %{
+      conn: conn,
+      task: task,
+      plan_path: path
+    } do
+      File.write!(path, String.replace(sheet_plan(), "- `lib/rail/pipeline.ex`:", "- [ ] `lib/rail/pipeline.ex`:"))
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#architect-plan", "Sending a task back is a stage move")
+      assert has_element?(view, "#architect-plan input[type='checkbox']")
+      refute has_element?(view, "#plan-sheet")
+    end
+
     # Whether a diagram draws is the browser's business; the server never judges it.
     test "a plan whose diagram does not parse still approves", %{
       conn: conn,

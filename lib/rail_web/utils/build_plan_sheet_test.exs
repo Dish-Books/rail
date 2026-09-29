@@ -178,6 +178,19 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
     assert build_plan_sheet(plan) == nil
   end
 
+  # A checkbox is state the sheet has no place for, so the plan keeps it as markdown.
+  test "File-level changes written as a task list is not a sheet" do
+    plan =
+      sheet_plan()
+      |> String.replace(
+        "- `lib/rail/pipeline/actions/send_back_to_architect.ex`:",
+        "- [ ] `lib/rail/pipeline/actions/send_back_to_architect.ex`:"
+      )
+      |> String.replace("- `lib/rail/pipeline.ex`:", "- [x] `lib/rail/pipeline.ex`:")
+
+    assert build_plan_sheet(plan) == nil
+  end
+
   test "a Program design module is named by its heading even without a code span" do
     plan = String.replace(sheet_plan(), "#### `Rail.Pipeline`\n", "#### The context module\n")
 
