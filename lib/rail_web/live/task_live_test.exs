@@ -2890,6 +2890,37 @@ defmodule RailWeb.TaskLiveTest do
       assert_push_event(view, "browser:frame", %{data: "some-base64"})
     end
 
+    # An animated page paints dozens of frames a second, more than the socket can
+    # carry, and clicks queue behind them. Only the newest of a burst follows the first.
+    test "a burst of frames reaches the client as its first and its newest", %{conn: conn, task: task, qa_run: run} do
+      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      for data <- ["first", "second", "newest"], do: send(view.pid, {:browser_frame, task.id, data})
+      _settled = render(view)
+
+      assert_push_event(view, "browser:frame", %{data: "first"})
+      assert_push_event(view, "browser:frame", %{data: "newest"}, 1_000)
+      refute_push_event(view, "browser:frame", %{data: "second"}, 0)
+    end
+
+    # A page that has stopped moving owes its viewer nothing, and the next change
+    # on it should show at once rather than wait out a window.
+    test "a frame after a quiet window goes straight to the client", %{conn: conn, task: task, qa_run: run} do
+      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      send(view.pid, {:browser_frame, task.id, "first"})
+      send(view.pid, :frame_window_closed)
+      send(view.pid, {:browser_frame, task.id, "after the lull"})
+      _settled = render(view)
+
+      assert_push_event(view, "browser:frame", %{data: "first"})
+      assert_push_event(view, "browser:frame", %{data: "after the lull"}, 0)
+    end
+
     # A frame for a task nobody is reading, or while another pane is in front, is
     # nothing to send anywhere.
     test "a frame for another task is ignored", %{conn: conn, task: task} do
