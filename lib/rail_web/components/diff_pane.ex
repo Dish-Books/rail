@@ -101,9 +101,12 @@ defmodule RailWeb.Components.DiffPane do
     %{files: files, query: query, target: target, collapsed: collapsed, expanded_gaps: expanded_gaps} = assigns
     visible = Enum.filter(files, &matches?(&1, query))
 
+    shared =
+      for {path, count} <- Enum.frequencies_by(files, & &1.path), count > 1 or path == "", into: MapSet.new(), do: path
+
     %{
       frame: %{
-        sections: Enum.map(visible, &section_id/1),
+        sections: Enum.map(visible, &section_id(&1, shared)),
         empty_message: if(files == [], do: assigns.empty_message),
         no_match: if(files != [] and visible == [], do: query),
         scroll_to: assigns.scroll_to
@@ -124,14 +127,14 @@ defmodule RailWeb.Components.DiffPane do
             target: target,
             show?: assigns.show_file_tree,
             label: files_changed(files),
-            rows: Enum.map(visible, &tree_row(&1, assigns.selected_file))
+            rows: Enum.map(visible, &tree_row(&1, shared, assigns.selected_file))
           }
         ),
       sections:
         Enum.map(visible, fn file ->
           gap_keys = for %{kind: :gap, key: key} <- file.rows, do: key
 
-          {section_id(file),
+          {section_id(file, shared),
            %{
              target: target,
              file: Map.drop(file, [:rows, :viewed?]),
@@ -284,6 +287,7 @@ defmodule RailWeb.Components.DiffPane do
     """
   end
 
+  attr :id, :string, required: true
   attr :target, :any, required: true
   attr :file, :map, required: true
   attr :rows, :list, required: true
@@ -297,14 +301,14 @@ defmodule RailWeb.Components.DiffPane do
   def diff_file(assigns) do
     ~H"""
     <div
-      id={"diff-file-#{slug(@file.path)}"}
+      id={"diff-file-#{slug(@id)}"}
       data-qa="diff_file_section"
       data-path={@file.path}
       phx-hook="DiffSection"
       class="first:mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
     >
       <div
-        id={"diff-header-#{slug(@file.path)}"}
+        id={"diff-header-#{slug(@id)}"}
         data-qa="diff_file_header"
         class={[
           "sticky -top-px z-10 h-11 px-3 flex items-center gap-2 rounded-t-xl data-stuck:rounded-t-none",
@@ -645,15 +649,16 @@ defmodule RailWeb.Components.DiffPane do
   # not been rendered yet, which is all the browser wants.
   defp intrinsic_height(rows), do: length(rows) * 22
 
-  # A path names one file, and keeps naming it while its contents change, so the
-  # file's part is patched rather than replaced. A block that would not parse has
-  # no path, so its digest stands in.
-  defp section_id(%{path: "", digest: digest}), do: digest
-  defp section_id(%{path: path}), do: path
+  # A path keeps naming a file while its contents change, so its part is patched
+  # rather than replaced. A path that is not one file's alone takes the digest:
+  # a file that changed type is two blocks, and one that would not parse has none.
+  defp section_id(%{path: path, digest: digest}, shared) do
+    if MapSet.member?(shared, path), do: digest, else: path
+  end
 
-  defp tree_row(file, selected_file) do
+  defp tree_row(file, shared, selected_file) do
     %{
-      id: section_id(file),
+      id: section_id(file, shared),
       file: Map.drop(file, [:rows, :viewed?]),
       viewed?: file.viewed?,
       selected?: file.path == selected_file

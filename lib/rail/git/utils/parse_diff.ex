@@ -73,7 +73,9 @@ defmodule Rail.Git.Utils.ParseDiff do
 
     old_path = header_info.old_path
     new_path = header_info.new_path
-    is_binary = header_info.is_binary
+    # git prints a text file's bytes as they are, and bytes that are not UTF-8 are
+    # not lines a browser can be sent, so such a file is named rather than drawn.
+    is_binary = header_info.is_binary or not String.valid?(block)
     hunk_start_index = header_info.hunk_start_index
 
     {old_path, new_path} =

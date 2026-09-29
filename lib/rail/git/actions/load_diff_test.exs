@@ -139,6 +139,19 @@ defmodule Rail.Git.Actions.LoadDiffTest do
     assert %{binary?: true, status: :added, rows: [%{kind: :binary}]} = Enum.find(files, &(&1.path == "blob.bin"))
   end
 
+  # git prints a text file's bytes as they are, and bytes that are not UTF-8
+  # cannot be sent to the browser as lines.
+  test "a committed file that is not text is named rather than drawn", %{scope: scope, task: task, repo: repo} do
+    File.write!(Path.join(repo, "menu.csv"), <<"caf", 0xE9, "\n">>)
+    git!(repo, ["add", "menu.csv"])
+    git!(repo, ["commit", "-m", "latin-1"])
+
+    assert {:ok, files} = Git.load_diff(scope, task, :branch)
+
+    assert %{binary?: true, status: :added, additions: 0, deletions: 0, rows: [%{kind: :binary}]} =
+             Enum.find(files, &(&1.path == "menu.csv"))
+  end
+
   test "an empty untracked file is added with no lines in it", %{scope: scope, task: task, repo: repo} do
     File.write!(Path.join(repo, "empty.ex"), "")
 

@@ -121,6 +121,21 @@ defmodule RailWeb.Components.DiffPaneTest do
     assert [_first, _second] = html |> Floki.parse_fragment!() |> Floki.find("[data-qa='diff_file_section']")
   end
 
+  # git writes a file that became a symlink, or stopped being one, as two blocks
+  # for the one path.
+  test "draws both halves of a file that changed type", %{diff: diff} do
+    html =
+      (&DiffPane.diff_pane/1)
+      |> render_component(
+        files: [%{diff | status: :deleted, digest: "was_a_file"}, %{diff | status: :added, digest: "is_a_link"}]
+      )
+      |> Floki.parse_fragment!()
+
+    assert [first, second] = Floki.find(html, "[data-qa='diff_file_section']")
+    assert [_first_row, _second_row] = Floki.find(html, "[data-qa='diff-file-row']")
+    refute Floki.attribute(first, "id") == Floki.attribute(second, "id")
+  end
+
   test "the caret that folds a file says which file", %{diff: diff} do
     html = render_component(&DiffPane.diff_pane/1, files: [diff])
 

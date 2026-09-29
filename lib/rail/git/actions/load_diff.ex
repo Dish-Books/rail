@@ -116,8 +116,7 @@ defmodule Rail.Git.Actions.LoadDiff do
   defp patch(path, bytes) do
     header = "diff --git a/#{path} b/#{path}\nnew file (untracked)\n"
 
-    # Bytes that are not UTF-8 are not lines the browser can be sent, NUL or not.
-    if String.contains?(bytes, <<0>>) or not String.valid?(bytes) do
+    if String.contains?(bytes, <<0>>) do
       header <> "Binary files /dev/null and b/#{path} differ\n"
     else
       lines = lines(bytes)
