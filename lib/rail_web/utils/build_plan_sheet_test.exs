@@ -168,6 +168,43 @@ defmodule RailWeb.Utils.BuildPlanSheetTest do
     assert build_plan_sheet("Just prose, no sections at all.") == nil
   end
 
+  # The old prompt's three sections carry nothing that says whether code changes, so
+  # the sheet's summary would be guessing.
+  test "a plan in the old three-section format is not a sheet" do
+    plan = """
+    ## Implementation plan
+
+    ### Approach
+
+    Extend `Rail.Invoices` with a vendor filter.
+
+    ### File-level changes
+
+    - `lib/rail/invoices/actions/list_invoices.ex`: filters by `vendor_id` when given.
+    - `lib/rail_web/live/invoices_live.ex`: adds the vendor picker.
+
+    ### Verification
+
+    - `lib/rail/invoices/actions/list_invoices_test.exs` pins the filter.
+
+    ### Assumptions
+
+    - An empty vendor means every vendor.
+    """
+
+    assert build_plan_sheet(plan) == nil
+  end
+
+  test "an empty Program design is still the new format, with no modules" do
+    plan =
+      sheet_plan()
+      |> String.replace(~r/### Change diagram.*?### File-level changes/s, "### File-level changes")
+      |> String.replace(~r/### Program design.*?### Verification/s, "### Program design\n\n### Verification")
+
+    assert %{diagrams: [], no_diagrams: nil, modules: []} = sheet = build_plan_sheet(plan)
+    refute Map.has_key?(sheet, :program_design?)
+  end
+
   test "File-level changes that are not a list of files is not a sheet" do
     plan = String.replace(sheet_plan(), "### File-level changes\n", "### File-level changes\n\nTwo files change.\n")
 

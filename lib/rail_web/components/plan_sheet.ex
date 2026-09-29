@@ -17,9 +17,15 @@ defmodule RailWeb.Components.PlanSheet do
   attr :target, :any, default: nil
 
   def plan_sheet(%{sheet: sheet} = assigns) do
+    unlisted = Enum.count(sheet.modules, &(not &1.listed?))
+
     assigns =
       assigns
-      |> assign(:unlisted, Enum.count(sheet.modules, &(not &1.listed?)))
+      |> assign(:unlisted, unlisted)
+      |> assign(
+        :unlisted_line,
+        if(unlisted == 1, do: "1 module in Program design is", else: "#{unlisted} modules in Program design are")
+      )
       |> assign(:both_diagrams?, [:call_flow, :change] -- Enum.map(sheet.diagrams, & &1.kind) == [])
       |> assign(:file_numbers, Map.new(sheet.files, &{&1.path, &1.number}))
 
@@ -57,12 +63,7 @@ defmodule RailWeb.Components.PlanSheet do
               Every module in Program design is in File-level changes
             </.summary_line>
             <.summary_line :if={@unlisted > 0} tone={:warning}>
-              {@unlisted} {if @unlisted == 1, do: "module", else: "modules"} in Program design {if @unlisted ==
-                                                                                                     1,
-                                                                                                   do:
-                                                                                                     "is",
-                                                                                                   else:
-                                                                                                     "are"} not in File-level changes
+              {@unlisted_line} not in File-level changes
             </.summary_line>
             <.summary_line :if={@sheet.modules == []} tone={:absent}>
               No program design: no application code changes

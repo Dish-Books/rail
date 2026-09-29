@@ -54,7 +54,7 @@ const LIGHT = { ...SHARED, theme: "neutral" };
 // Mermaid strips markup from a label even as SVG text, so its entity codes keep the
 // characters a quoted label holds. The Source view still shows the plan as written.
 function literalLabels(source) {
-  return source.replace(/"[^"]*"/g, (label) => label.replaceAll("<", "#lt;").replaceAll(">", "#gt;"));
+  return source.replace(/"[^"\n]*"/g, (label) => label.replaceAll("<", "#lt;").replaceAll(">", "#gt;"));
 }
 
 let mermaidLoad;

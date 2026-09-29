@@ -26,14 +26,16 @@ defmodule RailWeb.Utils.BuildPlanSheet do
     diagrams: [],
     files: nil,
     modules: [],
+    program_design?: false,
     verification: nil,
     assumptions: nil,
     rest: []
   }
 
   @doc """
-  Returns the plan's sections as a map, or `nil` when it has no `### Approach` or no
-  `### File-level changes` naming one file per bullet.
+  Returns the plan's sections as a map, or `nil` when it has no `### Approach`, no
+  `### File-level changes` naming one file per bullet, or nothing only the current
+  prompt writes: a diagram, a `No diagrams:` line or a `### Program design`.
 
   Prose comes back as markdown, so `render_markdown/2` stays the one place plan text
   becomes HTML. A diagram's `source` is the fenced block exactly as written.
@@ -76,19 +78,34 @@ defmodule RailWeb.Utils.BuildPlanSheet do
   end
 
   defp place({"File-level changes", body}, %{files: nil} = sheet), do: %{sheet | files: files(body)}
-  defp place({"Program design", body}, %{modules: []} = sheet), do: %{sheet | modules: modules(body)}
+
+  defp place({"Program design", body}, %{program_design?: false} = sheet),
+    do: %{sheet | modules: modules(body), program_design?: true}
+
   defp place({"Verification", body}, %{verification: nil} = sheet), do: %{sheet | verification: markdown(body)}
   defp place({"Assumptions", body}, %{assumptions: nil} = sheet), do: %{sheet | assumptions: markdown(body)}
   defp place({:rest, {title, body}}, sheet), do: %{sheet | rest: [%{title: title, body: markdown(body)} | sheet.rest]}
   defp place(section, sheet), do: place({:rest, section}, sheet)
 
-  defp finish(%{approach: approach, files: files, modules: modules} = sheet)
-       when is_binary(approach) and is_list(files) and is_list(modules) do
+  # A plan from the old three-section prompt has Approach and File-level changes too,
+  # but none of these, and the summary would wrongly say no application code changes.
+  defp finish(
+         %{
+           approach: approach,
+           files: files,
+           modules: modules,
+           diagrams: diagrams,
+           no_diagrams: no_diagrams,
+           program_design?: program_design?
+         } = sheet
+       )
+       when is_binary(approach) and is_list(files) and is_list(modules) and
+              (diagrams != [] or is_binary(no_diagrams) or program_design?) do
     paths = MapSet.new(files, & &1.path)
 
     %{
-      sheet
-      | diagrams: Enum.reverse(sheet.diagrams),
+      Map.delete(sheet, :program_design?)
+      | diagrams: Enum.reverse(diagrams),
         modules: Enum.map(modules, &%{&1 | listed?: MapSet.member?(paths, &1.path)}),
         rest: Enum.reverse(sheet.rest)
     }

@@ -1172,6 +1172,35 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#approve-plan")
     end
 
+    test "renders a plan in the old three-section format as the markdown it was written as", %{
+      conn: conn,
+      task: task,
+      plan_path: path
+    } do
+      File.write!(path, """
+      ## Implementation plan
+
+      ### Approach
+
+      Extend `Rail.Invoices` with a vendor filter.
+
+      ### File-level changes
+
+      - `lib/rail/invoices/actions/list_invoices.ex`: filters by `vendor_id` when given.
+
+      ### Verification
+
+      - `lib/rail/invoices/actions/list_invoices_test.exs` pins the filter.
+      """)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      refute has_element?(view, "#plan-sheet")
+      refute has_element?(view, "#architect-plan", "No program design")
+      assert has_element?(view, "#architect-plan [data-qa='markdown-body'] h3", "File-level changes")
+      assert has_element?(view, "#architect-plan [data-qa='markdown-body']", "filters by vendor_id when given.")
+    end
+
     test "a plan in the sheet's sections draws both diagrams, and Source shows each as written", %{
       conn: conn,
       task: task,
