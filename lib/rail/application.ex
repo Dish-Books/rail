@@ -20,6 +20,14 @@ defmodule Rail.Application do
     Supervisor.start_link(children, opts)
   end
 
+  # Sandboxes keep running while Rail is down; this is when their conversations
+  # will say it went.
+  @impl true
+  def prep_stop(state) do
+    if Application.get_env(:rail, :adopt_on_boot, true), do: Rail.Tools.record_rail_stop()
+    state
+  end
+
   @impl true
   def config_change(changed, _new, removed) do
     RailWeb.Endpoint.config_change(changed, removed)

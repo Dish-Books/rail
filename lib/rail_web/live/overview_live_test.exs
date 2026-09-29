@@ -13,6 +13,7 @@ defmodule RailWeb.OverviewLiveTest do
   alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Scope
+  alias Rail.Tools.Schemas.OsProcess
   alias Rail.Users
 
   test "redirects an unauthenticated user to the sign-in page", %{conn: conn} do
@@ -1036,6 +1037,74 @@ defmodule RailWeb.OverviewLiveTest do
       assert positions == Enum.sort(positions)
 
       refute has_element?(view, "#role-roster")
+    end
+
+    test "a run waiting for resources is counted, linked to the line, and is neither failed nor stopped", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      engineer = task_for.("Recipe costs update", %{stage: :engineer})
+
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: engineer.id,
+          role_id: roles[:engineer].id,
+          status: :waiting_for_resources,
+          started_at: DateTime.shift(now, minute: -5)
+        })
+
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: "/dev/null",
+        status: :waiting_for_resources,
+        started_at: now,
+        queued_at: DateTime.shift(now, minute: -4),
+        reserved_cpus: 2,
+        reserved_memory_gb: 4
+      })
+
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: "/dev/null",
+        status: :running,
+        started_at: now,
+        reserved_cpus: 3,
+        reserved_memory_gb: 2
+      })
+
+      assert {:ok, view, html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#stat-waiting-for-resources [data-qa='stat-value']", "1")
+      assert has_element?(view, "#stat-waiting-for-resources[href='/sandboxes']", "oldest 4m")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+
+      assert has_element?(
+               view,
+               "#in-progress-task-#{engineer.id}[data-state='waiting']",
+               "Engineer waiting for resources"
+             )
+
+      assert has_element?(view, "#sandbox-meters #sandbox-meters-count", "1 running · 1 waiting")
+      assert has_element?(view, "#sandbox-meter-cpus", "3 of 4")
+      assert has_element?(view, "#sandbox-meter-cpus", "1 CPU free")
+      assert has_element?(view, "#sandbox-meter-memory", "6 GB free")
+      assert has_element?(view, "#open-sandboxes[href='/sandboxes']", "1 waiting · oldest 4m")
+
+      # The machine comes before the tasks on it.
+      assert elem(:binary.match(html, "sandbox-meters"), 0) < elem(:binary.match(html, "in-progress-tasks"), 0)
+    end
+
+    test "a machine whose capacity cannot be read shows no meters, and still counts the line", %{conn: conn} do
+      stub(Rail.Tools, :get_sandbox_capacity, fn -> {:error, :econnrefused} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      refute has_element?(view, "#sandbox-meters")
+      assert has_element?(view, "#stat-waiting-for-resources [data-qa='stat-value']", "0")
     end
 
     test "the list honors the project switcher", %{conn: conn, project: project, task_for: task_for} do

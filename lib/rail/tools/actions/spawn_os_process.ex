@@ -2,20 +2,12 @@ defmodule Rail.Tools.Actions.SpawnOsProcess do
   @moduledoc false
 
   import Rail.Tools.Utils.Env
-
-  @shell "/bin/sh"
-  @stdout_var "__RAIL_TOOL_STDOUT"
-  @stderr_var "__RAIL_TOOL_STDERR"
-  @stdin_var "__RAIL_TOOL_STDIN"
-
-  # stdin is redirected last, so a stdin file that cannot be opened says so in the
-  # stderr file rather than on the BEAM's own stderr.
-  @script ~s(trap "" HUP INT; exec "$0" "$@" >>"$#{@stdout_var}" 2>>"$#{@stderr_var}" <"$#{@stdin_var}")
+  import Rail.Tools.Utils.RedirectedCommand
 
   @doc """
   Spawns a detached child process with its output appended to files.
 
-  The child runs under `#{@shell}` with HUP and INT trapped, so it survives the
+  The child runs under `/bin/sh` with HUP and INT trapped, so it survives the
   BEAM detaching from it. Options are `:env` (a map merged over the tool
   environment), `:cd`, `:stdout_path`, `:stderr_path` and `:stdin_path` (a file
   the child reads as its stdin; it gets `/dev/null` otherwise).
@@ -40,7 +32,8 @@ defmodule Rail.Tools.Actions.SpawnOsProcess do
   end
 
   defp open_port(executable, args, opts) do
-    port = Port.open({:spawn_executable, @shell}, port_opts(executable, args, opts))
+    {shell, shell_args, env} = redirected_command(executable, args, opts)
+    port = Port.open({:spawn_executable, shell}, port_opts(shell_args, env, opts))
 
     case Port.info(port, :os_pid) do
       {:os_pid, os_pid} when is_integer(os_pid) ->
@@ -53,12 +46,18 @@ defmodule Rail.Tools.Actions.SpawnOsProcess do
     end
   end
 
-  defp port_opts(executable, args, opts) do
+  defp port_opts(shell_args, env, opts) do
     base = [
       :binary,
       :exit_status,
-      args: ["-c", @script, executable | args],
-      env: env_list(opts)
+      args: shell_args,
+      env:
+        env
+        |> env_list(false)
+        |> Enum.map(fn
+          {key, false} -> {String.to_charlist(key), false}
+          {key, value} -> {String.to_charlist(key), String.to_charlist(value)}
+        end)
     ]
 
     case Keyword.get(opts, :cd) do
@@ -68,19 +67,5 @@ defmodule Rail.Tools.Actions.SpawnOsProcess do
       _other ->
         base
     end
-  end
-
-  defp env_list(opts) do
-    opts
-    |> Keyword.get(:env, %{})
-    |> Map.new()
-    |> Map.put(@stdout_var, Keyword.get(opts, :stdout_path, "/dev/null"))
-    |> Map.put(@stderr_var, Keyword.get(opts, :stderr_path, "/dev/null"))
-    |> Map.put(@stdin_var, Keyword.get(opts, :stdin_path, "/dev/null"))
-    |> env_list(false)
-    |> Enum.map(fn
-      {key, false} -> {String.to_charlist(key), false}
-      {key, value} -> {String.to_charlist(key), String.to_charlist(value)}
-    end)
   end
 end

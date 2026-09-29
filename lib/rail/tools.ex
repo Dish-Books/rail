@@ -64,6 +64,12 @@ defmodule Rail.Tools do
   defdelegate get_os_process(id), to: Actions.GetOsProcess
   defdelegate get_active_os_process(run), to: Actions.GetActiveOsProcess
   defdelegate list_os_processes(opts \\ []), to: Actions.ListOsProcesses
+  defdelegate get_sandbox_capacity(), to: Actions.GetSandboxCapacity
+  defdelegate get_queue_position(run), to: Actions.GetQueuePosition
+  defdelegate list_sandbox_usage(), to: Actions.ListSandboxUsage
+  defdelegate record_rail_stop(), to: Actions.RecordRailStop
+  defdelegate get_latest_restart(), to: Actions.GetLatestRestart
+  defdelegate list_restarts(opts \\ []), to: Actions.ListRestarts
   defdelegate parse_stream(backend, lines, opts \\ []), to: Actions.ParseStream
   defdelegate plain_text(text), to: Actions.PlainText
 

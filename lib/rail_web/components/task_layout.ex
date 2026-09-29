@@ -13,6 +13,8 @@ defmodule RailWeb.Components.TaskLayout do
   attr :run, :any, default: nil
   # The status reads the task's stage, whichever tab is open; nil when that stage has no run yet.
   attr :stage_run, :any, required: true
+  # Where that run stands in the line for a sandbox, while it waits in it.
+  attr :line, :map, default: nil
   attr :title, :string, default: nil
   attr :flush, :boolean, default: false
 
@@ -50,8 +52,12 @@ defmodule RailWeb.Components.TaskLayout do
           <span
             id="task-status-chip"
             data-qa="task_status_chip"
-            class={["font-semibold", run_state_style(@stage_run).text_class]}
+            class={[
+              "inline-flex items-center gap-1.5 font-semibold",
+              run_state_style(@stage_run).text_class
+            ]}
           >
+            <.icon :if={@line} name={run_state_style(@stage_run).icon} class="h-4 w-4" />
             {stage_label(@task, @stage_run)}
           </span>
 
@@ -70,6 +76,17 @@ defmodule RailWeb.Components.TaskLayout do
           >
             <.icon name="pi-git-pull-request" class="size-4" /> PR #{@task.pr_number}
           </a>
+
+          <.link
+            :if={@line}
+            navigate={~p"/sandboxes"}
+            id="task-line"
+            data-qa="task_line"
+            class="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            <.icon name="pi-cube" class="size-4" />
+            {format_ordinal(@line.position)} in line for {format_reservation(@line.os_process)}
+          </.link>
 
           {render_slot(@meta)}
 

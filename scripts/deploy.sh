@@ -18,6 +18,14 @@ secret() { gcloud secrets versions access latest --project dishbooks-shared --se
 
 if grep -q '^POSTHOG_API_KEY=.' .env; then export COMPOSE_PROFILES=posthog; fi
 
-echo "Restarting rail stops any agent run in flight." >&2
+# Compose adds the rail container to the docker group, so it can start sandboxes.
+DOCKER_GID="$(getent group docker | cut -d: -f3)"
+export DOCKER_GID
+
+# Sandboxes are not compose containers, so neither --remove-orphans nor the image prune
+# below touches them, and the image they run is only replaced for the ones started next.
+docker build --target sandbox -t rail-sandbox:latest .
+
+echo "Agent runs, setup and CI keep running in their sandboxes while rail restarts." >&2
 docker compose up -d --build --remove-orphans
 docker image prune -f

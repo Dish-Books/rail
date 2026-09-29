@@ -1,7 +1,8 @@
 defmodule RailWeb.Components.OverviewStats do
   @moduledoc """
-  The three numbers across the top of the overview: what is in flight, what
-  shipped this month against the month before, and what is waiting on a human.
+  The four numbers across the top of the overview: what is in flight, what
+  shipped this month against the month before, what is waiting on a human, and
+  what is waiting for the machine, which opens the Sandboxes page.
   """
   use RailWeb, :html
 
@@ -12,7 +13,7 @@ defmodule RailWeb.Components.OverviewStats do
     <div
       id="overview-stats"
       data-qa="overview-stats"
-      class="grid grid-cols-1 sm:grid-cols-3 rounded-xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-800/40 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-700/70"
+      class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 rounded-xl border border-slate-200 dark:border-slate-700/70 bg-white dark:bg-slate-800/40 divide-y xl:divide-y-0 xl:divide-x divide-slate-200 dark:divide-slate-700/70"
     >
       <div id="stat-in-progress" class="px-5 py-4">
         <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
@@ -77,6 +78,32 @@ defmodule RailWeb.Components.OverviewStats do
           </span>
         </p>
       </div>
+
+      <%!-- Violet, not amber: none of it is waiting on a person. --%>
+      <.link
+        navigate={~p"/sandboxes"}
+        id="stat-waiting-for-resources"
+        class="block px-5 py-4 rounded-r-xl hover:bg-slate-50 dark:hover:bg-slate-800/70 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+      >
+        <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+          Waiting for resources
+        </p>
+        <p class="mt-1 flex items-baseline gap-2">
+          <span
+            data-qa="stat-value"
+            class={[
+              "text-3xl font-semibold tabular-nums",
+              @stats.waiting_for_resources > 0 && "text-violet-600 dark:text-violet-400",
+              @stats.waiting_for_resources == 0 && "text-slate-900 dark:text-slate-100"
+            ]}
+          >
+            {@stats.waiting_for_resources}
+          </span>
+          <span class="text-sm text-slate-500 dark:text-slate-400">
+            <span :if={@stats.oldest_waiting_for_resources}>oldest {@stats.oldest_waiting_for_resources} · </span><span class="text-blue-600 dark:text-blue-400 underline">Sandboxes</span>
+          </span>
+        </p>
+      </.link>
     </div>
     """
   end

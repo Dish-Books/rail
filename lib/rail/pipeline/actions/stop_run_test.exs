@@ -58,6 +58,46 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
     assert ["[rail] Stopped by user."] = Enum.map(Pipeline.list_run_events(run), & &1.line)
   end
 
+  test "stopping a run waiting in line takes it out of the line and lets the next one start", %{working: working} do
+    run = working.(%{status: :waiting_for_resources})
+    launch = Jason.encode!(%{"executable" => "/bin/true", "args" => [], "env" => %{}, "cwd" => "/tmp"})
+
+    %OsProcess{id: waiting_id} =
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: "/dev/null",
+        status: :waiting_for_resources,
+        started_at: DateTime.utc_now(),
+        queued_at: DateTime.utc_now(),
+        reserved_cpus: 4,
+        reserved_memory_gb: 2,
+        launch: launch
+      })
+
+    next = working.(%{status: :waiting_for_resources})
+
+    %OsProcess{id: next_id} =
+      Repo.insert!(%OsProcess{
+        run_id: next.id,
+        task_id: next.task_id,
+        stream_path: "/dev/null",
+        status: :waiting_for_resources,
+        started_at: DateTime.utc_now(),
+        queued_at: DateTime.shift(DateTime.utc_now(), second: 1),
+        reserved_cpus: 4,
+        reserved_memory_gb: 2,
+        launch: launch
+      })
+
+    assert {:ok, %Run{status: :finished}, nil} = Pipeline.stop_run(run, stopped_by_id: nil)
+
+    assert {:ok, %OsProcess{status: :finished, ended_reason: :stopped}} = Tools.get_os_process(waiting_id)
+    assert {:ok, %OsProcess{status: :running}} = Tools.get_os_process(next_id)
+    assert {:ok, %Run{status: :running}} = Pipeline.get_run(next.id)
+    assert ["[rail] Stopped by user."] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+  end
+
   test "an undelivered message comes back rather than being discarded", %{working: working} do
     run = working.(%{pending_chat: "Please add a test"})
 

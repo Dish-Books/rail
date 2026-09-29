@@ -338,4 +338,197 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
 
     Tools.terminate_os_process(os_process.os_pid, grace_period: 100)
   end
+
+  describe "on a machine with too little free" do
+    # Another run's sandbox holds what the test machine (4 CPUs, 8 GB) can reserve.
+    setup %{run: run} do
+      {:ok, other} =
+        Pipeline.create_run(%{
+          task_id: run.task_id,
+          role_id: run.role_id,
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+
+      %{other: other}
+    end
+
+    test "waits in line, reads as waiting, and says which resource it is short of", %{run: run, other: other} do
+      Repo.insert!(%OsProcess{
+        run_id: other.id,
+        task_id: other.task_id,
+        stream_path: "/dev/null",
+        status: :running,
+        started_at: DateTime.utc_now(),
+        reserved_cpus: 4,
+        reserved_memory_gb: 2
+      })
+
+      reject(Tools, :spawn_os_process, 3)
+
+      assert {:ok, %OsProcess{status: :waiting_for_resources, reserved_cpus: 1, reserved_memory_gb: 2, os_pid: nil}} =
+               Tools.start_os_process(run, ["2"])
+
+      assert :waiting = run.id |> then(&Repo.get!(Run, &1)) |> Run.state()
+
+      assert [
+               "[rail] Turn 1 needs 1 CPU and 2 GB, and every CPU on this machine is reserved. " <>
+                 "It is 1st in line and starts on its own as soon as enough is free."
+             ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+    end
+
+    test "names memory when memory is what it lacks, and its place behind the runs ahead", %{run: run, other: other} do
+      Repo.insert!(%OsProcess{
+        run_id: other.id,
+        task_id: other.task_id,
+        stream_path: "/dev/null",
+        status: :running,
+        started_at: DateTime.utc_now(),
+        reserved_cpus: 1,
+        reserved_memory_gb: 7
+      })
+
+      Repo.insert!(%OsProcess{
+        run_id: other.id,
+        task_id: other.task_id,
+        stream_path: "/dev/null",
+        status: :waiting_for_resources,
+        started_at: DateTime.utc_now(),
+        queued_at: DateTime.shift(DateTime.utc_now(), minute: -1),
+        reserved_cpus: 1,
+        reserved_memory_gb: 4,
+        launch: "{}"
+      })
+
+      reject(Tools, :spawn_os_process, 3)
+
+      assert {:ok, %OsProcess{status: :waiting_for_resources}} = Tools.start_os_process(run, ["2"])
+
+      assert [
+               "[rail] Turn 1 needs 1 CPU and 2 GB, and only 1 GB of this machine's memory is free. " <>
+                 "It is 2nd in line and starts on its own as soon as enough is free."
+             ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+    end
+
+    # Strictly oldest first: a run that would fit still waits behind one that does not.
+    test "waits behind an older run even when it would fit", %{run: run, other: other} do
+      Repo.insert!(%OsProcess{
+        run_id: other.id,
+        task_id: other.task_id,
+        stream_path: "/dev/null",
+        status: :running,
+        started_at: DateTime.utc_now(),
+        reserved_cpus: 2,
+        reserved_memory_gb: 2
+      })
+
+      Repo.insert!(%OsProcess{
+        run_id: other.id,
+        task_id: other.task_id,
+        stream_path: "/dev/null",
+        status: :waiting_for_resources,
+        started_at: DateTime.utc_now(),
+        queued_at: DateTime.shift(DateTime.utc_now(), minute: -1),
+        reserved_cpus: 3,
+        reserved_memory_gb: 2,
+        launch: "{}"
+      })
+
+      reject(Tools, :spawn_os_process, 3)
+
+      assert {:ok, %OsProcess{status: :waiting_for_resources}} = Tools.start_os_process(run, ["2"])
+
+      assert [
+               "[rail] Turn 1 needs 1 CPU and 2 GB, and the runs ahead of it in line get what is free first. " <>
+                 "It is 2nd in line and starts on its own as soon as enough is free."
+             ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+    end
+
+    # Possible only when headroom was raised after its role was saved.
+    test "a run at the front that could never fit is failed rather than holding the line", %{run: run, other: other} do
+      Repo.insert!(%OsProcess{
+        run_id: other.id,
+        task_id: other.task_id,
+        stream_path: "/dev/null",
+        status: :waiting_for_resources,
+        started_at: DateTime.utc_now(),
+        queued_at: DateTime.shift(DateTime.utc_now(), minute: -1),
+        reserved_cpus: 16,
+        reserved_memory_gb: 2,
+        launch: "{}"
+      })
+
+      expect(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, 4245} end)
+      expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+
+      assert {:ok, %OsProcess{status: :running}} = Tools.start_os_process(run, ["2"])
+
+      assert {:ok,
+              %Run{
+                status: :finished,
+                error:
+                  "It needs 16 CPUs and 2 GB, and this machine has 4 CPUs and 8 GB to reserve, so it could never start."
+              }} = Pipeline.get_run(other.id)
+    end
+
+    test "names both resources when it is short of both", %{run: run, other: other, scope: scope} do
+      {:ok, role} = Roles.get_role(id: run.role_id)
+      {:ok, _role} = Roles.update_role(scope, role, %{reserved_cpus: 3, reserved_memory_gb: 4})
+
+      Repo.insert!(%OsProcess{
+        run_id: other.id,
+        task_id: other.task_id,
+        stream_path: "/dev/null",
+        status: :running,
+        started_at: DateTime.utc_now(),
+        reserved_cpus: 2,
+        reserved_memory_gb: 8
+      })
+
+      reject(Tools, :spawn_os_process, 3)
+
+      assert {:ok, %OsProcess{status: :waiting_for_resources}} = Tools.start_os_process(run, ["2"])
+
+      assert [
+               "[rail] Turn 1 needs 3 CPUs and 4 GB, and only 2 CPUs on this machine are free and " <>
+                 "all of this machine's memory is reserved. It is 1st in line and starts on its own as soon as enough is free."
+             ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+    end
+
+    test "a run ahead in line whose sandbox cannot start is failed with why, and the line moves on", %{
+      run: run,
+      other: other
+    } do
+      launch =
+        Jason.encode!(%{
+          "executable" => "/bin/true",
+          "args" => [],
+          "env" => %{},
+          "cwd" => "/nonexistent/worktree",
+          "stdout_path" => "/dev/null",
+          "stderr_path" => "/dev/null"
+        })
+
+      Repo.insert!(%OsProcess{
+        run_id: other.id,
+        task_id: other.task_id,
+        stream_path: "/dev/null",
+        status: :waiting_for_resources,
+        started_at: DateTime.utc_now(),
+        queued_at: DateTime.shift(DateTime.utc_now(), minute: -1),
+        reserved_cpus: 1,
+        reserved_memory_gb: 2,
+        launch: launch
+      })
+
+      expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+
+      assert {:ok, %OsProcess{status: :running} = os_process} = Tools.start_os_process(run, ["2"])
+
+      assert {:ok, %Run{status: :finished, error: ~s|Could not start its sandbox: {:bad_cwd, "/nonexistent/worktree"}|}} =
+               Pipeline.get_run(other.id)
+
+      Tools.terminate_os_process(os_process.os_pid, grace_period: 100)
+    end
+  end
 end

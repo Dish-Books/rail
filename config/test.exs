@@ -25,11 +25,15 @@ config :rail, RailWeb.Endpoint,
 
 config :rail, :adopt_on_boot, false
 config :rail, :backends_root, Path.join(System.tmp_dir!(), "rail_test_backends")
+config :rail, :docker, req_options: [plug: {Req.Test, Rail.Tools.Clients.Docker}, retry: false]
 config :rail, :fetch_parsers, false
 config :rail, :github, req_options: [plug: {Req.Test, Rail.GitHub.Client}]
 config :rail, :linear, req_options: [plug: {Req.Test, Rail.Linear}]
 config :rail, :linear_oauth, req_options: [plug: {Req.Test, Rail.Linear}]
 config :rail, :mcp, req_options: [plug: {Req.Test, Rail.Mcp}, retry: false]
+
+# A fixed machine, so what fits and what waits does not depend on where the suite runs.
+config :rail, :sandbox, runtime: :local, local_cpus: 4, local_memory_gb: 8, headroom_cpus: 0, headroom_memory_gb: 0
 config :rail, :type_safe, req_options: [plug: {Req.Test, Rail.TypeSafe}, retry: false]
 config :rail, dev_routes: true
 config :rail, scratch_root: Path.join(System.tmp_dir!(), "rail")

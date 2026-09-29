@@ -1,14 +1,20 @@
 defmodule Rail.Tools.BootTest do
-  use Rail.DataCase, async: true
+  # Serial: the Docker cases swap the runtime in the application env, and a sandbox
+  # adopted live is followed by a process this test does not own.
+  use Rail.DataCase, async: false
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.Boot
+  alias Rail.Tools.Clients.Docker
   alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Tools.Schemas.Restart
 
   # Boot adopts real OS processes, so these run real children.
   @moduletag :real_spawn
@@ -561,5 +567,353 @@ defmodule Rail.Tools.BootTest do
 
     assert [{:adopted_dead, %OsProcess{exit_code: 2}}] = Boot.reconcile()
     assert {:ok, %Run{exit_code: 2, error: "Exited with code 2"}} = Pipeline.get_run(run.id)
+  end
+
+  describe "a Docker sandbox Rail restarted under" do
+    setup {Req.Test, :set_req_test_to_shared}
+
+    # A run that settles needs a real task behind it.
+    setup %{project: project, role: role, tmp_dir: tmp_dir} do
+      issue =
+        %Issue{}
+        |> Issue.changeset(%{
+          project_id: project.id,
+          external_id: "lin_boot_#{System.unique_integer([:positive])}",
+          identifier: "BOO-#{System.unique_integer([:positive])}",
+          title: "Boot Issue",
+          state: :backlog
+        })
+        |> Repo.insert!()
+
+      task =
+        %Task{}
+        |> Task.changeset(
+          %{
+            issue_id: issue.id,
+            stage: :engineer,
+            worktree_name: "boot-#{System.unique_integer([:positive])}",
+            worktree_path: Path.join(tmp_dir, "worktree"),
+            scratch_path: Path.join(tmp_dir, "scratch")
+          },
+          project.id
+        )
+        |> Repo.insert!()
+
+      {:ok, run} =
+        Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
+
+      %{run: run}
+    end
+
+    test "is adopted, and the conversation says Rail restarted between what came before and after", %{
+      run: run,
+      tmp_dir: tmp_dir
+    } do
+      {:ok, _stopped} = Tools.record_rail_stop()
+      {:ok, state} = Agent.start_link(fn -> %{"Running" => true} end)
+
+      Req.Test.stub(Docker, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"GET", "/containers/c-live/json"} -> Req.Test.json(conn, %{"State" => Agent.get(state, & &1)})
+          {"DELETE", "/containers/c-live"} -> Plug.Conn.send_resp(conn, 204, "")
+        end
+      end)
+
+      stream_path = Path.join(tmp_dir, "live_docker.ndjson")
+      before = ~s({"type":"system","subtype":"init","session_id":"sess-docker"})
+      during = ~s({"type":"assistant","message":{"content":[{"type":"text","text":"written while Rail was away"}]}})
+      File.write!(stream_path, "#{before}\n#{during}\n")
+      File.write!("#{stream_path}.err", "")
+
+      os_process =
+        Repo.insert!(%OsProcess{
+          run_id: run.id,
+          task_id: run.task_id,
+          stream_path: stream_path,
+          status: :running,
+          runtime: :docker,
+          container_id: "c-live",
+          stream_offset: byte_size(before) + 1,
+          started_at: DateTime.utc_now(),
+          reserved_cpus: 1,
+          reserved_memory_gb: 2
+        })
+
+      Pipeline.append_run_events(run.id, os_process.id, [before])
+      Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+      assert [{:adopted_live, %OsProcess{}, _follower_pid}] = Boot.reconcile(boot: true)
+
+      restarted =
+        "[rail] Rail restarted while this turn was running. The boot role kept working in its sandbox, " <>
+          "and everything it wrote while Rail was away is below."
+
+      eventually(fn ->
+        assert [^before, ^restarted, ^during] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+      end)
+
+      assert %OsProcess{restarts: 1} = Repo.reload!(os_process)
+      assert {:ok, %Restart{started_at: %DateTime{}, sandboxes_kept: 1}} = Tools.get_latest_restart()
+
+      result = ~s({"type":"result","subtype":"success","session_id":"sess-docker","usage":{"input_tokens":7}})
+      File.write!(stream_path, "#{result}\n", [:append])
+      Agent.update(state, fn _running -> %{"Running" => false, "ExitCode" => 0, "OOMKilled" => false} end)
+
+      assert_receive {:os_process_finished, %OsProcess{exit_code: 0}, %{error: nil}}, 5_000
+      assert {:ok, %Run{status: :finished, exit_code: 0, usage: %Run.Usage{input_tokens: 7}}} = Pipeline.get_run(run.id)
+    end
+
+    test "that exited while Rail was away settles from how its container exited, and the whole stream", %{
+      run: run,
+      tmp_dir: tmp_dir
+    } do
+      Req.Test.stub(Docker, fn conn ->
+        Req.Test.json(conn, %{"State" => %{"Running" => false, "ExitCode" => 0, "OOMKilled" => false}})
+      end)
+
+      stream_path = Path.join(tmp_dir, "exited_docker.ndjson")
+      File.write!(stream_path, ~s({"type":"system","session_id":"sess-exited"}\n))
+      File.write!("#{stream_path}.err", "")
+
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: stream_path,
+        status: :running,
+        runtime: :docker,
+        container_id: "c-exited",
+        started_at: DateTime.utc_now()
+      })
+
+      Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
+
+      assert [{:adopted_dead, %OsProcess{exit_code: 0, ended_reason: :finished}}] = Boot.reconcile(boot: true)
+      assert_received {:os_process_finished, %OsProcess{}, %{exit_code: 0, error: nil}}
+
+      assert [
+               "[rail] Rail restarted while this turn was running." <> _kept_working,
+               ~s({"type":"system","session_id":"sess-exited"})
+             ] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+    end
+
+    test "that ran out of memory while Rail was away says so", %{run: run, tmp_dir: tmp_dir} do
+      Req.Test.stub(Docker, fn conn ->
+        Req.Test.json(conn, %{"State" => %{"Running" => false, "ExitCode" => 137, "OOMKilled" => true}})
+      end)
+
+      stream_path = Path.join(tmp_dir, "oom_docker.ndjson")
+      File.write!(stream_path, "")
+      File.write!("#{stream_path}.err", "")
+
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: stream_path,
+        status: :running,
+        runtime: :docker,
+        container_id: "c-oom",
+        started_at: DateTime.utc_now(),
+        reserved_cpus: 2,
+        reserved_memory_gb: 4
+      })
+
+      assert [{:adopted_dead, %OsProcess{exit_code: 137, ended_reason: :out_of_memory}}] = Boot.reconcile()
+      assert {:ok, %Run{error: "Killed: it used more than the 4 GB its role reserves."}} = Pipeline.get_run(run.id)
+    end
+
+    test "running CI keeps its own words, and its exit file is its result", %{run: run, tmp_dir: tmp_dir} do
+      Req.Test.stub(Docker, fn conn ->
+        Req.Test.json(conn, %{"State" => %{"Running" => false, "ExitCode" => 3, "OOMKilled" => false}})
+      end)
+
+      stream_path = Path.join(tmp_dir, "ci_docker.log")
+      File.write!(stream_path, "3 tests, 1 failure\n")
+      File.write!("#{stream_path}.exit", "3\n")
+
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
+        task_id: run.task_id,
+        kind: :ci,
+        stream_path: stream_path,
+        status: :running,
+        runtime: :docker,
+        container_id: "c-ci",
+        started_at: DateTime.utc_now()
+      })
+
+      assert [{:adopted_dead, %OsProcess{exit_code: 3}}] = Boot.reconcile(boot: true)
+
+      assert [
+               "[rail] Rail restarted while CI was running. It kept running in its sandbox, " <>
+                 "and everything it wrote while Rail was away is below.",
+               "3 tests, 1 failure" | _settled
+             ] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+    end
+
+    test "that exited while Rail was away says what went wrong, as its Follower would have", %{
+      role: role,
+      tmp_dir: tmp_dir
+    } do
+      Req.Test.stub(Docker, fn
+        %{method: "DELETE"} = conn ->
+          Plug.Conn.send_resp(conn, 204, "")
+
+        %{request_path: "/containers/" <> rest} = conn ->
+          code = rest |> String.split("/") |> hd() |> String.replace_prefix("c-code-", "") |> String.to_integer()
+          Req.Test.json(conn, %{"State" => %{"Running" => false, "ExitCode" => code, "OOMKilled" => false}})
+      end)
+
+      result_error = ~s({"type":"result","subtype":"error","is_error":true,"result":"It broke"})
+
+      cases = [
+        {1, result_error, "warn", "claude reported error: It broke\nwarn", :finished},
+        {2, result_error, "", "claude reported error: It broke", :finished},
+        {3, "", "only stderr", "only stderr", :finished},
+        {137, "", "", "Exited with code 137", :killed}
+      ]
+
+      for {code, line, stderr, error, ended_reason} <- cases do
+        {:ok, run} =
+          Pipeline.create_run(%{
+            task_id: UXID.generate!(prefix: "tsk"),
+            role_id: role.id,
+            status: :running,
+            started_at: DateTime.utc_now()
+          })
+
+        stream_path = Path.join(tmp_dir, "code_#{code}.ndjson")
+        File.write!(stream_path, if(line == "", do: "", else: "#{line}\n"))
+        File.write!("#{stream_path}.err", stderr)
+
+        Repo.insert!(%OsProcess{
+          run_id: run.id,
+          task_id: run.task_id,
+          stream_path: stream_path,
+          status: :running,
+          runtime: :docker,
+          container_id: "c-code-#{code}",
+          started_at: DateTime.utc_now()
+        })
+
+        assert [{:adopted_dead, %OsProcess{exit_code: ^code, ended_reason: ^ended_reason}}] = Boot.reconcile()
+        assert {:ok, %Run{error: ^error}} = Pipeline.get_run(run.id)
+      end
+    end
+
+    test "a container Docker no longer has is settled as ended, and one it cannot answer for keeps running", %{
+      run: run,
+      tmp_dir: tmp_dir
+    } do
+      Req.Test.stub(Docker, fn
+        %{request_path: "/containers/c-removed/json"} = conn ->
+          conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "No such container"})
+
+        %{request_path: "/containers/c-silent/json"} = conn ->
+          Req.Test.transport_error(conn, :timeout)
+
+        %{method: "DELETE"} = conn ->
+          Plug.Conn.send_resp(conn, 204, "")
+      end)
+
+      stream_path = Path.join(tmp_dir, "silent.ndjson")
+      File.write!(stream_path, "")
+
+      for container_id <- ["c-removed", "c-silent"] do
+        Repo.insert!(%OsProcess{
+          run_id: run.id,
+          task_id: run.task_id,
+          stream_path: stream_path,
+          status: :running,
+          runtime: :docker,
+          container_id: container_id,
+          started_at: DateTime.utc_now()
+        })
+      end
+
+      assert [{:adopted_dead, %OsProcess{container_id: "c-removed"}}, {:adopted_live, %OsProcess{}, follower_pid}] =
+               Enum.sort_by(Boot.reconcile(boot: true), &elem(&1, 0))
+
+      FollowerSupervisor.stop_follower(follower_pid)
+    end
+
+    test "is picked up on the minute pass without saying Rail restarted", %{run: run, tmp_dir: tmp_dir} do
+      Req.Test.stub(Docker, fn conn -> Req.Test.json(conn, %{"State" => %{"Running" => true}}) end)
+      stream_path = Path.join(tmp_dir, "minute_docker.ndjson")
+      File.write!(stream_path, "")
+
+      os_process =
+        Repo.insert!(%OsProcess{
+          run_id: run.id,
+          task_id: run.task_id,
+          stream_path: stream_path,
+          status: :running,
+          runtime: :docker,
+          container_id: "c-minute",
+          started_at: DateTime.utc_now()
+        })
+
+      assert [{:adopted_live, %OsProcess{}, follower_pid}] = Boot.reconcile()
+      FollowerSupervisor.stop_follower(follower_pid)
+
+      assert [] = Pipeline.list_run_events(run)
+      assert %OsProcess{restarts: 0} = Repo.reload!(os_process)
+    end
+  end
+
+  test "a boot with no stop on record was a crash, and is recorded as a restart all the same" do
+    assert [] = Boot.reconcile(boot: true)
+    assert {:ok, %Restart{stopped_at: nil, started_at: %DateTime{}, sandboxes_kept: 0}} = Tools.get_latest_restart()
+  end
+
+  describe "in Docker" do
+    setup {Req.Test, :set_req_test_to_shared}
+
+    setup do
+      original = Application.get_env(:rail, :sandbox)
+      Application.put_env(:rail, :sandbox, Keyword.put(original, :runtime, :docker))
+      on_exit(fn -> Application.put_env(:rail, :sandbox, original) end)
+    end
+
+    test "removes the containers of sandboxes that have settled, and leaves the rest", %{role: role} do
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: UXID.generate!(prefix: "tsk"),
+          role_id: role.id,
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+
+      settled =
+        Repo.insert!(%OsProcess{
+          run_id: run.id,
+          task_id: run.task_id,
+          stream_path: "/dev/null",
+          status: :finished,
+          started_at: DateTime.utc_now()
+        })
+
+      test_pid = self()
+
+      Req.Test.stub(Docker, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"GET", "/info"} ->
+            Req.Test.json(conn, %{"NCPU" => 4, "MemTotal" => 8 * 1024 ** 3})
+
+          {"GET", "/containers/json"} ->
+            Req.Test.json(conn, [
+              %{"Id" => "c-settled", "Labels" => %{"dev.railai.sandbox" => settled.id}},
+              %{"Id" => "c-unknown", "Labels" => %{"dev.railai.sandbox" => "proc_nobody"}}
+            ])
+
+          {"DELETE", "/containers/" <> id} ->
+            send(test_pid, {:removed, id})
+            Plug.Conn.send_resp(conn, 204, "")
+        end
+      end)
+
+      assert [] = Boot.reconcile()
+      assert_received {:removed, "c-settled"}
+      assert_received {:removed, "c-unknown"}
+    end
   end
 end

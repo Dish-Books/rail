@@ -5,11 +5,12 @@ defmodule RailWeb.OverviewLive do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Tools
 
   @throughput_days 30
   @activity_limit 8
-  # Waiting on you, then broken, then working, then not started.
-  @attention_rank %{done: 0, blocked: 0, failed: 1, stopped: 1, running: 2, queued: 3}
+  # Waiting on you, then broken, then working or in line to, then not started.
+  @attention_rank %{done: 0, blocked: 0, failed: 1, stopped: 1, running: 2, waiting: 2, queued: 3}
 
   def mount(_params, _session, socket) do
     socket =
@@ -86,6 +87,14 @@ defmodule RailWeb.OverviewLive do
           id="overview-sidebar"
           class="space-y-8 lg:border-l lg:border-slate-200 lg:dark:border-slate-700/70 lg:pl-8"
         >
+          <.sandbox_meters
+            :if={@sandboxes.capacity}
+            capacity={@sandboxes.capacity}
+            running={@sandboxes.running}
+            waiting={length(@sandboxes.waiting)}
+            oldest_waiting={@stats.oldest_waiting_for_resources}
+          />
+
           <.in_progress_tasks
             groups={@in_progress_groups}
             count={@stats.in_progress}
@@ -147,9 +156,12 @@ defmodule RailWeb.OverviewLive do
         completed_after: DateTime.shift(now, day: -60)
       )
 
+    sandboxes = load_sandboxes()
+
     socket
     |> assign(:waiting, waiting)
-    |> assign(:stats, stats(in_progress, completed, waiting_on_user, now))
+    |> assign(:sandboxes, sandboxes)
+    |> assign(:stats, stats(in_progress, completed, waiting_on_user, sandboxes.waiting, now))
     |> assign(:activity, activity(runs, completed, DateTime.shift(now, day: -1)))
     |> assign(:in_progress_groups, build_in_progress_groups(in_progress, stage_runs, user_id, now))
     |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
@@ -180,7 +192,20 @@ defmodule RailWeb.OverviewLive do
     end
   end
 
-  defp stats(in_progress, completed, waiting, now) do
+  # The machine is shared, so what waits for it is counted whichever project is picked.
+  defp load_sandboxes do
+    %{
+      capacity:
+        case Tools.get_sandbox_capacity() do
+          {:ok, capacity} -> capacity
+          _unknown -> nil
+        end,
+      running: Tools.list_os_processes(status: [:starting, :running], sandboxed: true),
+      waiting: Tools.list_os_processes(status: [:waiting_for_resources], order: :queue)
+    }
+  end
+
+  defp stats(in_progress, completed, waiting, waiting_for_resources, now) do
     shipped = shipped_between(completed, DateTime.shift(now, day: -30), now)
     prior = shipped_between(completed, DateTime.shift(now, day: -60), DateTime.shift(now, day: -30))
 
@@ -189,7 +214,9 @@ defmodule RailWeb.OverviewLive do
       shipped: shipped,
       shipped_delta: shipped - prior,
       waiting: length(waiting),
-      oldest_waiting: oldest_waiting(waiting, now)
+      oldest_waiting: oldest_waiting(waiting, now),
+      waiting_for_resources: length(waiting_for_resources),
+      oldest_waiting_for_resources: oldest_in_line(waiting_for_resources, now)
     }
   end
 
@@ -199,6 +226,9 @@ defmodule RailWeb.OverviewLive do
 
   defp oldest_waiting([], _now), do: nil
   defp oldest_waiting([oldest | _rest], now), do: format_age(DateTime.diff(now, Run.waiting_since(oldest)))
+
+  defp oldest_in_line([], _now), do: nil
+  defp oldest_in_line([oldest | _rest], now), do: format_age(DateTime.diff(now, oldest.queued_at))
 
   defp throughput(completed, today) do
     shipped_on = Enum.frequencies_by(completed, &DateTime.to_date(&1.completed_at))
@@ -232,6 +262,7 @@ defmodule RailWeb.OverviewLive do
     ended =
       case Run.state(run) do
         :running -> nil
+        :waiting -> nil
         :blocked -> entry.("asked", Run.waiting_since(run), "asked #{questions(run)} on #{key}")
         :done -> entry.("ended", Run.waiting_since(run), done_text(run, key))
         :failed -> entry.("ended", Run.waiting_since(run), "failed on #{key}")
@@ -268,6 +299,7 @@ defmodule RailWeb.OverviewLive do
     changed_at =
       case state do
         :running -> run.started_at || run.inserted_at
+        :waiting -> run.updated_at
         :queued -> task.updated_at
         _ended -> Run.waiting_since(run)
       end

@@ -506,6 +506,112 @@ defmodule RailWeb.Live.RunConversationTest do
     refute html =~ ~s(id="queued-banner")
   end
 
+  describe "a turn waiting for resources" do
+    setup %{task: task, roles: roles} do
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :waiting_for_resources,
+          conversation_id: "conv_waiting",
+          started_at: ~U[2026-09-09 14:27:00.000000Z]
+        })
+
+      os_process =
+        Repo.insert!(%OsProcess{
+          run_id: run.id,
+          task_id: task.id,
+          stream_path: "/tmp/#{run.id}.ndjson",
+          status: :waiting_for_resources,
+          started_at: ~U[2026-09-09 14:27:00.000000Z],
+          queued_at: ~U[2026-09-09 14:27:00.000000Z],
+          reserved_cpus: 2,
+          reserved_memory_gb: 4
+        })
+
+      %{run: run, os_process: os_process}
+    end
+
+    test "says so in the composer, the header and the transcript, and offers to stop it", %{
+      task: task,
+      run: run,
+      os_process: os_process,
+      roles_map: roles_map
+    } do
+      Pipeline.append_run_events(run.id, os_process.id, ["[rail] Turn 1 needs 2 CPUs and 4 GB."])
+
+      html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+      assert html =~ ~s(id="waiting-banner")
+      assert html =~ "engineer role is waiting for resources · 1st in line ·"
+      assert html =~ ~s(data-started-at="2026-09-09T14:27:00.000000Z")
+      assert html =~ ~s(id="stop-run")
+      refute html =~ ~s(id="thinking-banner")
+      assert html =~ ~s(data-qa="conversation-state-dot" data-state="waiting")
+      assert html =~ "waiting for resources since"
+      assert html =~ ~s(data-at="2026-09-09T14:27:00.000000Z")
+    end
+
+    test "a command waiting for resources says so rather than that it runs", %{
+      task: task,
+      run: run,
+      os_process: os_process,
+      roles_map: roles_map
+    } do
+      os_process |> Ecto.Changeset.change(kind: :ci, command: "mix ci") |> Repo.update!()
+      Pipeline.append_run_events(run.id, os_process.id, ["[rail] CI needs 2 CPUs and 4 GB."])
+
+      html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+      assert html =~ "Waiting for resources"
+      refute html =~ ">\n            Running\n"
+    end
+  end
+
+  test "Rail restarting mid-turn reads as a divider above what Rail said about it", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :running,
+        conversation_id: "conv_restarted",
+        started_at: DateTime.shift(DateTime.utc_now(), minute: -30)
+      })
+
+    os_process =
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
+        task_id: task.id,
+        stream_path: "/tmp/#{run.id}.ndjson",
+        status: :running,
+        started_at: DateTime.shift(DateTime.utc_now(), minute: -30)
+      })
+
+    restarted = "[rail] Rail restarted while this turn was running. The engineer role kept working in its sandbox."
+
+    Pipeline.append_run_events(run.id, os_process.id, [
+      ~s({"type":"assistant","message":{"content":[{"type":"text","text":"Before the deploy"}]}}),
+      restarted,
+      ~s({"type":"assistant","message":{"content":[{"type":"text","text":"While Rail was away"}]}})
+    ])
+
+    now = DateTime.utc_now()
+    Repo.insert!(%Rail.Tools.Schemas.Restart{stopped_at: DateTime.shift(now, second: -41), started_at: now})
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert [_before, divider_and_after] = String.split(html, ~s(data-qa="restart-divider"))
+    assert divider_and_after =~ "back in 41s"
+    assert divider_and_after =~ ~s(data-at="#{DateTime.to_iso8601(now)}")
+    assert [divider, below] = String.split(divider_and_after, restarted)
+    refute divider =~ "While Rail was away"
+    assert below =~ "While Rail was away"
+  end
+
   # A 400px floor overruns the column on an iPad, stacked or in landscape, and pushes the composer out.
   test "the chat pane takes whatever height its column leaves", %{
     task: task,

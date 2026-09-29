@@ -11,6 +11,8 @@ defmodule RailWeb.Helpers do
   defdelegate browser_driving(run, task), to: Utils.BrowserDriving
   defdelegate format_age(seconds), to: Utils.FormatAge
   defdelegate format_duration(seconds), to: Utils.FormatDuration
+  defdelegate format_ordinal(position), to: Utils.FormatOrdinal
+  defdelegate format_reservation(reservation), to: Utils.FormatReservation
   defdelegate format_run_status(status), to: Utils.FormatRunStatus
   defdelegate render_markdown(content, assets_base \\ nil), to: Utils.RenderMarkdown
   defdelegate role_status_label(role, run, task), to: Utils.RoleStatusLabel

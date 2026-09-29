@@ -1,13 +1,12 @@
 defmodule Rail.Tools.Actions.StartCommandProcess do
   @moduledoc false
 
+  import Rail.Tools.Utils.EnqueueSandbox
   import Rail.Tools.Utils.WorktreeEnv
 
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
-  alias Rail.Tools
-  alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.OsProcess
 
   @exit_var "__RAIL_EXIT_PATH"
@@ -15,11 +14,13 @@ defmodule Rail.Tools.Actions.StartCommandProcess do
 
   @doc """
   Runs `command` through `/bin/sh` in `run`'s worktree as an OS process of `kind`,
-  followed like an agent's and settled by `run_finished/3` when it exits.
+  in a sandbox holding what the run's role reserves, followed like an agent's and
+  settled by `run_finished/3` when it exits.
 
-  Takes `:timeout_ms`, after which it is stopped, `:env`, and `:head_sha`, the
-  commit it is being run against. Returns
-  `{:ok, os_process}` with `:run` and `:task` loaded, or `{:error, reason}`.
+  Takes `:timeout_ms`, after which it is stopped, counted from when it starts
+  rather than from when it joined the line, `:env`, and `:head_sha`, the commit it
+  is being run against. Returns `{:ok, os_process}` with `:run` and `:task`
+  loaded, running or waiting, or `{:error, reason}`.
   """
   def start_command_process(%Run{} = run, kind, command, opts \\ []) when is_binary(command) do
     %Run{task: %Task{} = task} = run = Repo.preload(run, [:task, role: :backend])
@@ -31,27 +32,20 @@ defmodule Rail.Tools.Actions.StartCommandProcess do
       |> Map.merge(Keyword.get(opts, :env, %{}))
       |> Map.put(@exit_var, OsProcess.exit_path(os_process))
 
-    spawn_opts = [
-      stdout_path: os_process.stream_path,
-      stderr_path: os_process.stream_path,
-      cd: task.worktree_path,
-      env: env
-    ]
+    spec = %{
+      "executable" => "/bin/sh",
+      "args" => ["-c", script(command)],
+      "env" => env,
+      "cwd" => task.worktree_path,
+      "stdout_path" => os_process.stream_path,
+      "stderr_path" => os_process.stream_path,
+      "timeout_ms" => Keyword.get(opts, :timeout_ms, @default_timeout_ms)
+    }
 
-    case Tools.spawn_os_process("/bin/sh", ["-c", script(command)], spawn_opts) do
-      {:ok, port, os_pid} ->
-        os_process = os_process |> OsProcess.changeset(%{status: :running, os_pid: os_pid}) |> Repo.update!()
-        follow(%{os_process | run: run, task: task}, port)
-
-      # A command quick enough to be gone before its pid could be read has already
-      # written how it exited, which is all its Follower needs to settle it.
-      {:error, :no_os_pid} ->
-        os_process = os_process |> OsProcess.changeset(%{status: :running}) |> Repo.update!()
-        follow(%{os_process | run: run, task: task}, nil)
-
-      {:error, reason} ->
-        os_process |> OsProcess.changeset(%{status: :failed}) |> Repo.update!()
-        {:error, reason}
+    case enqueue_sandbox(os_process, run, spec) do
+      {:ok, os_process} -> {:ok, %{os_process | run: run, task: task}}
+      {:waiting, os_process} -> {:ok, %{os_process | run: %{run | status: :waiting_for_resources}, task: task}}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -66,7 +60,6 @@ defmodule Rail.Tools.Actions.StartCommandProcess do
     stream_path = Path.join([run.task.scratch_path, "streams", "#{id}.log"])
     stream_path |> Path.dirname() |> File.mkdir_p!()
     File.write!(stream_path, "")
-    now = DateTime.utc_now()
 
     %OsProcess{id: id}
     |> OsProcess.changeset(%{
@@ -76,16 +69,9 @@ defmodule Rail.Tools.Actions.StartCommandProcess do
       command: command,
       stream_path: stream_path,
       status: :starting,
-      started_at: now,
-      head_sha: Keyword.get(opts, :head_sha),
-      deadline_at: DateTime.add(now, Keyword.get(opts, :timeout_ms, @default_timeout_ms), :millisecond)
+      started_at: DateTime.utc_now(),
+      head_sha: Keyword.get(opts, :head_sha)
     })
     |> Repo.insert!()
-  end
-
-  defp follow(%OsProcess{} = os_process, port) do
-    with {:ok, _follower_pid} <- FollowerSupervisor.start_follower(os_process, port: port) do
-      {:ok, os_process}
-    end
   end
 end

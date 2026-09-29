@@ -12,6 +12,7 @@ defmodule RailWeb.Utils.RunStateStyleTest do
     assert run_state_style(%Run{status: :finished, error: "boom"}).icon == "pi-warning-circle"
     assert run_state_style(%Run{status: :finished}).icon == "pi-pause-circle"
     assert run_state_style(%Run{status: :finished, stage_outcome: :done}).icon == "pi-chat-text"
+    assert run_state_style(%Run{status: :waiting_for_resources}).icon == "pi-hourglass-medium"
   end
 
   test "text and chip classes share the state's colour" do
@@ -20,6 +21,8 @@ defmodule RailWeb.Utils.RunStateStyleTest do
     assert run_state_style(%Run{status: :finished, stage_outcome: :done}).text_class =~ "text-amber"
     assert run_state_style(%Run{status: :finished, error: "boom"}).text_class =~ "text-red"
     assert run_state_style(nil).text_class =~ "text-slate"
+    assert run_state_style(%Run{status: :waiting_for_resources}).text_class =~ "text-violet"
+    assert run_state_style(%Run{status: :waiting_for_resources}).chip_class =~ "bg-violet"
 
     assert run_state_style(%Run{status: :running}).chip_class =~ "bg-blue"
     assert run_state_style(%Run{status: :blocked_on_input}).chip_class =~ "bg-amber"
@@ -34,5 +37,6 @@ defmodule RailWeb.Utils.RunStateStyleTest do
     assert run_state_style(%Run{status: :finished, stage_outcome: :done}).pill_label == "Done"
     assert run_state_style(%Run{status: :finished}).pill_label == "Stopped"
     assert run_state_style(nil).pill_label == "Queued"
+    assert run_state_style(%Run{status: :waiting_for_resources}).pill_label == "Waiting for resources"
   end
 end

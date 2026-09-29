@@ -20,6 +20,7 @@ defmodule RailWeb.TaskLive do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
+  alias Rail.Tools
   alias Rail.Users
   alias RailWeb.Live.ArchitectStage
   alias RailWeb.Live.DemoStage
@@ -51,6 +52,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:selected_role, nil)
       |> assign(:selected_run, nil)
       |> assign(:stage_run, nil)
+      |> assign(:line, nil)
       |> assign(:conversation_run, nil)
       |> assign(:pane, :issue)
       |> assign(:diff_refreshed_at, nil)
@@ -109,6 +111,7 @@ defmodule RailWeb.TaskLive do
           task={@task}
           run={@selected_run}
           stage_run={@stage_run}
+          line={@line}
           approvable={@approvable}
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
@@ -120,6 +123,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
+              current_user_id={@current_scope.user.id}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -137,6 +141,7 @@ defmodule RailWeb.TaskLive do
           task={@task}
           run={@selected_run}
           stage_run={@stage_run}
+          line={@line}
           approvable={@approvable}
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
@@ -148,6 +153,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
+              current_user_id={@current_scope.user.id}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -165,6 +171,7 @@ defmodule RailWeb.TaskLive do
           task={@task}
           run={@selected_run}
           stage_run={@stage_run}
+          line={@line}
           approvable={@approvable}
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
@@ -176,6 +183,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
+              current_user_id={@current_scope.user.id}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -193,6 +201,7 @@ defmodule RailWeb.TaskLive do
           task={@task}
           run={@selected_run}
           stage_run={@stage_run}
+          line={@line}
           approvable={@approvable}
           current_scope={@current_scope}
           focus_file={@focus_file}
@@ -206,6 +215,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
+              current_user_id={@current_scope.user.id}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -223,6 +233,7 @@ defmodule RailWeb.TaskLive do
           task={@task}
           run={@selected_run}
           stage_run={@stage_run}
+          line={@line}
           approvable={@approvable}
           current_scope={@current_scope}
           engineer_tab={@engineer_tab}
@@ -236,6 +247,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
+              current_user_id={@current_scope.user.id}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -253,6 +265,7 @@ defmodule RailWeb.TaskLive do
           task={@task}
           run={@selected_run}
           stage_run={@stage_run}
+          line={@line}
           approvable={@approvable}
           current_scope={@current_scope}
         >
@@ -265,6 +278,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
+              current_user_id={@current_scope.user.id}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -282,6 +296,7 @@ defmodule RailWeb.TaskLive do
           task={@task}
           run={@selected_run}
           stage_run={@stage_run}
+          line={@line}
           approvable={@approvable}
           current_scope={@current_scope}
         >
@@ -294,6 +309,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
+              current_user_id={@current_scope.user.id}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -310,6 +326,7 @@ defmodule RailWeb.TaskLive do
           :if={@task != nil and @pane == :issue and @issue != nil}
           task={@task}
           stage_run={@stage_run}
+          line={@line}
           title={@task.issue.title}
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
@@ -332,6 +349,7 @@ defmodule RailWeb.TaskLive do
           task={@task}
           run={@selected_run}
           stage_run={@stage_run}
+          line={@line}
           title={@task.issue.title}
         >
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
@@ -350,6 +368,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
+              current_user_id={@current_scope.user.id}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -604,6 +623,7 @@ defmodule RailWeb.TaskLive do
   attr :pending_questions, :list, required: true
   attr :answer_text, :string, required: true
   attr :conversation_run, :any, required: true
+  attr :current_user_id, :string, default: nil
 
   # Questions sit above the conversation they came out of.
   defp conversation_sidebar(assigns) do
@@ -645,6 +665,7 @@ defmodule RailWeb.TaskLive do
       runs={@task.runs || []}
       stage_run={@conversation_run}
       roles_map={@roles_map}
+      current_user_id={@current_user_id}
     />
     """
   end
@@ -717,6 +738,7 @@ defmodule RailWeb.TaskLive do
     |> assign(:selected_role, role)
     |> assign(:selected_run, selected_run)
     |> assign(:stage_run, stage_run(started, task))
+    |> assign(:line, line(stage_run(started, task)))
     |> assign(:conversation_run, selected_run)
     |> assign(:pane, pane(role))
     |> assign(:approvable, approvable?(role, task, selected_run))
@@ -782,6 +804,18 @@ defmodule RailWeb.TaskLive do
   defp stage_run(started, %Task{stage: stage}) do
     Enum.find_value(started, fn {role, run} -> role.stage == stage and run end)
   end
+
+  # Where the stage's run stands in the line for a sandbox, while it waits in it.
+  defp line(%Run{} = run) do
+    with :waiting <- Run.state(run),
+         {:ok, line} <- Tools.get_queue_position(run) do
+      line
+    else
+      _not_in_line -> nil
+    end
+  end
+
+  defp line(nil), do: nil
 
   # Once the URL names a tab it keeps naming the one that is open, so a refresh
   # comes back here even after the task has moved the page on. A URL that names

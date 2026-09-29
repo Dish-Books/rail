@@ -30,7 +30,7 @@ defmodule RailWeb.Utils.BrowserDriving do
   read as this one's first page.
   """
   def browser_driving(run, %Task{} = task) do
-    if Run.running?(run), do: driving(run, task), else: idle()
+    if Run.state(run) == :running, do: driving(run, task), else: idle()
   end
 
   defp idle, do: %{doing: nil, verb: "idle", target: @waiting, url: nil, frame: nil}

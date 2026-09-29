@@ -2,6 +2,7 @@ defmodule Rail.Roles.Actions.CopyRoles do
   @moduledoc false
 
   import Ecto.Query
+  import Rail.Roles.Utils.SandboxCapacity
 
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
@@ -10,6 +11,8 @@ defmodule Rail.Roles.Actions.CopyRoles do
       when is_binary(target_project_id) and is_binary(source_project_id) do
     source_roles = Rail.Roles.list_roles(source_project_id)
     replace_all = Keyword.get(opts, :replace_all, false)
+
+    capacity = sandbox_capacity()
 
     Repo.transaction(fn ->
       if replace_all do
@@ -34,10 +37,12 @@ defmodule Rail.Roles.Actions.CopyRoles do
           reasoning_effort: role.reasoning_effort,
           system_prompt: role.system_prompt,
           max_concurrent: role.max_concurrent,
-          position: role.position
+          position: role.position,
+          reserved_cpus: role.reserved_cpus,
+          reserved_memory_gb: role.reserved_memory_gb
         }
 
-        changeset = Role.changeset(%Role{}, attrs)
+        changeset = Role.changeset(%Role{}, attrs, capacity: capacity)
 
         case Repo.insert(changeset) do
           {:ok, copied} -> copied

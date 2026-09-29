@@ -97,6 +97,7 @@ defmodule RailWeb.Router do
       live "/", OverviewLive
       live "/issues", IssuesLive
       live "/issues/:id", IssueLive
+      live "/sandboxes", SandboxesLive
       live "/tasks/:id", TaskLive
       live "/settings/connected-accounts", Settings.ConnectedAccountsLive
     end

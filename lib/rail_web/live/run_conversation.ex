@@ -17,6 +17,9 @@ defmodule RailWeb.Live.RunConversation do
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Tools.Schemas.Restart
+
+  @restarted "[rail] Rail restarted"
 
   @doc """
   Takes the task and its runs; everything else the conversation decides itself.
@@ -54,6 +57,7 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(assigns)
       |> assign(:runs, runs)
       |> assign(:selected_run, selected_run)
+      |> assign_line_and_restarts(selected_run)
       |> assign_run_events(load_run_events(selected_run))
 
     {:ok, socket}
@@ -89,11 +93,17 @@ defmodule RailWeb.Live.RunConversation do
             class="flex items-center gap-x-3 gap-y-2 px-5 py-4 border-b border-slate-200 dark:border-slate-700"
           >
             <% role = selected_role(@selected_run, @roles_map) %>
-            <span class={[
-              "h-2 w-2 rounded-full shrink-0",
-              Run.running?(@selected_run) && "bg-green-500",
-              not Run.running?(@selected_run) && "bg-slate-400 dark:bg-slate-500"
-            ]} />
+            <% state = Run.state(@selected_run) %>
+            <span
+              data-qa="conversation-state-dot"
+              data-state={state}
+              class={[
+                "h-2 w-2 rounded-full shrink-0",
+                state == :running && "bg-green-500",
+                state == :waiting && "ring-2 ring-inset ring-violet-400",
+                state not in [:running, :waiting] && "bg-slate-400 dark:bg-slate-500"
+              ]}
+            />
             <span
               id={"conversation-role-#{role.id}"}
               data-qa="conversation-role"
@@ -186,6 +196,7 @@ defmodule RailWeb.Live.RunConversation do
             chat_input={@chat_input}
             chat_sending={@chat_sending}
             can_retry={retryable?(@selected_run, @task, @roles_map)}
+            line={@line}
             target={@myself}
           />
         </div>
@@ -268,6 +279,7 @@ defmodule RailWeb.Live.RunConversation do
       assigns
       |> assign(:author, msg.author)
       |> assign(:text, msg.content || "")
+      |> assign(:waiting?, match?(%OsProcess{status: :waiting_for_resources}, msg.process))
 
     ~H"""
     <%= case @author do %>
@@ -284,12 +296,16 @@ defmodule RailWeb.Live.RunConversation do
             <span>{@text}</span>
             <%!-- The hook owns this element's whole text, so the separator sits outside it. --%>
             <span :if={@msg.at}>·</span>
+            <span :if={@waiting?} class="text-violet-500 dark:text-violet-400">
+              waiting for resources since
+            </span>
             <span
               :if={@msg.at}
               id={"turn-time-#{@idx}"}
               phx-hook="LocalTime"
               data-at={DateTime.to_iso8601(@msg.at)}
               data-qa="turn-time"
+              class={@waiting? && "text-violet-500 dark:text-violet-400"}
             >
               {Calendar.strftime(@msg.at, "%H:%M")}
             </span>
@@ -472,6 +488,40 @@ defmodule RailWeb.Live.RunConversation do
                 class="select-text font-mono whitespace-pre-wrap wrap-break-word"
               >{String.replace_prefix(@text, "[error] ", "")}</span>
             </div>
+          <% String.starts_with?(@text, "[rail] Rail restarted") -> %>
+            <!-- What the turn wrote while Rail was away follows this, so the
+            divider says when Rail went and how long it was gone. -->
+            <div
+              id={"restart-#{@idx}"}
+              data-qa="restart-divider"
+              class="flex items-center gap-3 pt-2 text-[11px] text-slate-400 dark:text-slate-500"
+            >
+              <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+              <span class="font-mono shrink-0 flex items-center gap-1.5">
+                <.icon name="pi-arrows-clockwise" class="h-3 w-3" />
+                <span>Rail restarted</span>
+                <span :if={@msg.at}>·</span>
+                <span
+                  :if={@msg.at}
+                  id={"restart-time-#{@idx}"}
+                  phx-hook="LocalTime"
+                  data-at={DateTime.to_iso8601(@msg.at)}
+                >
+                  {Calendar.strftime(@msg.at, "%H:%M")}
+                </span>
+                <span :if={@msg.duration_seconds}>·</span>
+                <span :if={@msg.duration_seconds}>back in {format_duration(@msg.duration_seconds)}</span>
+              </span>
+              <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+            </div>
+            <div
+              id={"msg-#{@idx}"}
+              data-qa="rail-event"
+              class="flex items-start gap-2 px-2.5 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 font-mono text-[11px] mb-1"
+            >
+              <.icon name="pi-info" class="h-3.5 w-3.5 shrink-0 mt-px" />
+              <span class="select-text">{@text}</span>
+            </div>
           <% String.starts_with?(@text, "[rail]") -> %>
             <div
               id={"msg-#{@idx}"}
@@ -506,14 +556,16 @@ defmodule RailWeb.Live.RunConversation do
   def command_block(assigns) do
     %Turn{process: %OsProcess{} = process} = assigns.msg
     running? = process.status in [:starting, :running]
-    failed? = not running? and process.exit_code != 0
+    waiting? = process.status == :waiting_for_resources
+    failed? = not running? and not waiting? and process.exit_code != 0
 
     assigns =
       assigns
       |> assign(:label, command_label(process))
       |> assign(:running?, running?)
+      |> assign(:waiting?, waiting?)
       |> assign(:failed?, failed?)
-      |> assign(:open?, (running? or failed?) != MapSet.member?(assigns.expanded_activities, assigns.idx))
+      |> assign(:open?, (running? or waiting? or failed?) != MapSet.member?(assigns.expanded_activities, assigns.idx))
 
     ~H"""
     <div
@@ -551,8 +603,10 @@ defmodule RailWeb.Live.RunConversation do
           class={[
             "ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
             @running? && "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+            @waiting? && "bg-violet-500/10 text-violet-700 dark:text-violet-300",
             @failed? && "bg-red-500/10 text-red-700 dark:text-red-300",
-            (not @running? and not @failed?) && "bg-green-500/10 text-green-700 dark:text-green-300"
+            (not @running? and not @waiting? and not @failed?) &&
+              "bg-green-500/10 text-green-700 dark:text-green-300"
           ]}
         >
           {command_status(@msg.process, @running?)}
@@ -579,6 +633,7 @@ defmodule RailWeb.Live.RunConversation do
   attr :chat_input, :string, default: ""
   attr :chat_sending, :boolean, default: false
   attr :can_retry, :boolean, default: false
+  attr :line, :map, default: nil, doc: "where a waiting run stands in the line for its sandbox"
   attr :target, :any, required: true
 
   def composer(assigns) do
@@ -588,7 +643,7 @@ defmodule RailWeb.Live.RunConversation do
     role_id = if is_map(role), do: Map.get(role, :id)
     role_name = if is_map(role), do: Map.get(role, :name, "role"), else: "role"
 
-    is_thinking = Run.running?(run)
+    is_thinking = Run.state(run) == :running
     is_queued = run != nil and is_binary(run.pending_chat) and run.pending_chat != ""
     is_unavailable = run == nil or not Run.can_chat?(run)
 
@@ -628,6 +683,39 @@ defmodule RailWeb.Live.RunConversation do
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
           </svg>
           <span>{"#{@role_name} is thinking..."}</span>
+        </div>
+
+        <button
+          type="button"
+          id="stop-run"
+          data-qa="stop-run"
+          phx-click="stop_run"
+          phx-target={@target}
+          class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold text-red-600 dark:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
+        >
+          <.icon name="pi-stop-fill" class="h-3.5 w-3.5 shrink-0" />
+          <span>Stop</span>
+        </button>
+      </div>
+
+      <!-- In line for its sandbox: nothing is thinking yet, and it starts on its own. -->
+      <div
+        :if={@line}
+        id="waiting-banner"
+        data-qa="waiting-banner"
+        class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-violet-100 dark:bg-violet-950/40 border border-violet-600 dark:border-violet-500/30 mb-3"
+      >
+        <div class="flex items-center gap-2 text-xs font-bold text-violet-700 dark:text-violet-300">
+          <.icon name="pi-hourglass-medium" class="h-4 w-4 shrink-0" />
+          <span>
+            {@role_name} is waiting for resources · {format_ordinal(@line.position)} in line ·
+            <span
+              id="waiting-for"
+              phx-hook="Elapsed"
+              data-started-at={DateTime.to_iso8601(@line.os_process.queued_at)}
+              data-elapsed-seconds="0"
+            >{format_duration(DateTime.diff(DateTime.utc_now(), @line.os_process.queued_at))}</span>
+          </span>
         </div>
 
         <button
@@ -826,7 +914,7 @@ defmodule RailWeb.Live.RunConversation do
   # Stopping hands back whatever had not been delivered, and the composer is where
   # it belongs: still the human's to edit, re-send or throw away.
   def handle_event("stop_run", _params, socket) do
-    {:ok, run, queued} = Pipeline.stop_run(socket.assigns.selected_run)
+    {:ok, run, queued} = Pipeline.stop_run(socket.assigns.selected_run, stopped_by_id: socket.assigns[:current_user_id])
 
     socket =
       socket
@@ -908,6 +996,7 @@ defmodule RailWeb.Live.RunConversation do
     socket
     |> assign(:selected_run, run)
     |> assign(:runs, replace_run(socket.assigns.runs, run))
+    |> assign_line_and_restarts(run)
     |> assign_run_events(load_run_events(run))
   end
 
@@ -923,6 +1012,8 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:chat_input, fn -> "" end)
     |> assign_new(:chat_sending, fn -> false end)
     |> assign_new(:run_events, fn -> [] end)
+    |> assign_new(:line, fn -> nil end)
+    |> assign_new(:restarts, fn -> {nil, []} end)
   end
 
   # The log the component holds; the rendered lines and the turns read out of it
@@ -957,8 +1048,50 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   defp said(events, socket) do
-    events |> Enum.map(& &1.line) |> readable_lines(socket.assigns) |> Pipeline.parse_transcript()
+    {_run_id, restarts} = socket.assigns.restarts
+    restarted_at = for %{line: @restarted <> _rest} = event <- events, do: Map.get(event, :inserted_at)
+
+    events
+    |> Enum.map(& &1.line)
+    |> readable_lines(socket.assigns)
+    |> Pipeline.parse_transcript()
+    |> mark_restarts(restarted_at, restarts)
   end
+
+  # Each line saying Rail restarted is dated by the restart it follows, the one
+  # that came back nearest to when the line was written.
+  defp mark_restarts(turns, [], _restarts), do: turns
+
+  defp mark_restarts(turns, restarted_at, restarts) do
+    {turns, _unmarked} =
+      Enum.map_reduce(turns, restarted_at, fn
+        %Turn{author: :event, content: @restarted <> _rest} = turn, [at | later] ->
+          restart = Enum.min_by(restarts, &abs(DateTime.diff(&1.started_at, at || DateTime.utc_now())), fn -> nil end)
+          {%{turn | at: restart && restart.started_at, duration_seconds: restart && Restart.down_seconds(restart)}, later}
+
+        turn, unmarked ->
+          {turn, unmarked}
+      end)
+
+    turns
+  end
+
+  # Where a waiting run stands in the line, and the restarts since it began, read
+  # once for the run being read rather than for every line appended to it.
+  defp assign_line_and_restarts(socket, %Run{id: run_id} = run) do
+    line =
+      with :waiting <- Run.state(run), {:ok, line} <- Tools.get_queue_position(run), do: line, else: (_not_in_line -> nil)
+
+    restarts =
+      case socket.assigns.restarts do
+        {^run_id, _restarts} = held -> held
+        _other_run -> {run_id, Tools.list_restarts(since: run.inserted_at)}
+      end
+
+    socket |> assign(:line, line) |> assign(:restarts, restarts)
+  end
+
+  defp assign_line_and_restarts(socket, nil), do: assign(socket, :line, nil)
 
   # A command's output is read as it was written. Lines Rail wrote while it ran
   # are not its output, so they follow it as themselves.
@@ -1005,6 +1138,10 @@ defmodule RailWeb.Live.RunConversation do
   # is not always a full row, so the turn is read off the event rather than
   # assumed onto it.
   defp turn_id(event), do: Map.get(event, :os_process_id)
+
+  defp turn_start(%OsProcess{status: :waiting_for_resources} = os_process, number) do
+    %Turn{author: :turn_start, content: "Turn #{number}", at: os_process.queued_at, process: os_process}
+  end
 
   defp turn_start(%OsProcess{} = os_process, number) do
     %Turn{
@@ -1204,6 +1341,7 @@ defmodule RailWeb.Live.RunConversation do
   defp command_label(%OsProcess{kind: :setup}), do: "Worktree setup"
   defp command_label(%OsProcess{kind: :ci}), do: "CI"
 
+  defp command_status(%OsProcess{status: :waiting_for_resources}, _running), do: "Waiting for resources"
   defp command_status(%OsProcess{}, true), do: "Running"
   defp command_status(%OsProcess{exit_code: 0}, false), do: "Passed"
   defp command_status(%OsProcess{exit_code: 124}, false), do: "Timed out"

@@ -15,11 +15,14 @@ defmodule Rail.Tools.Boot do
   use Task, restart: :transient
 
   import Ecto.Query
+  import Rail.Tools.Utils.AdmitSandboxes
   import Rail.Tools.Utils.DecodeUtf8Lenient
   import Rail.Tools.Utils.DrainErrFile
   import Rail.Tools.Utils.NewEventState
   import Rail.Tools.Utils.ParseLine
   import Rail.Tools.Utils.ReadExitFile
+  import Rail.Tools.Utils.RemoveSandbox
+  import Rail.Tools.Utils.SandboxState
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Rail.Pipeline
@@ -27,11 +30,14 @@ defmodule Rail.Tools.Boot do
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
+  alias Rail.Tools.Clients.Docker
   alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
+  alias Rail.Tools.Schemas.Restart
 
   @default_starting_timeout_seconds 60
+  @label "dev.railai.sandbox"
 
   @doc """
   Starts the Boot reconciliation task in the supervision tree, unless adoption on
@@ -39,18 +45,22 @@ defmodule Rail.Tools.Boot do
   """
   def start_link(opts \\ []) do
     if Application.get_env(:rail, :adopt_on_boot, true) do
-      Task.start_link(__MODULE__, :reconcile, [opts])
+      Task.start_link(__MODULE__, :reconcile, [Keyword.put(opts, :boot, true)])
     else
       :ignore
     end
   end
 
   @doc """
-  Adopts every in-flight os process, once the runs tables exist.
+  Adopts every in-flight os process, once the runs tables exist. `boot: true` is
+  the pass Rail makes as it comes back up, which records the restart.
   """
   def reconcile(opts \\ []) do
-    adopted = adopt_live_os_processes(opts)
+    {adopted, announced} = opts |> adopt_live_os_processes() |> Enum.unzip()
+    if Keyword.get(opts, :boot, false), do: record_restart(Enum.count(announced, & &1))
     _browsers = Tools.reconcile_browser_sessions(opts)
+    _admitted = admit_sandboxes()
+    remove_settled_containers()
 
     adopted
 
@@ -84,16 +94,76 @@ defmodule Rail.Tools.Boot do
     cond do
       match?([{_pid, _value}], follower) ->
         [{pid, _value}] = follower
-        {:already_following, os_process, pid}
+        {{:already_following, os_process, pid}, false}
 
-      os_process.status == :starting and is_nil(os_process.os_pid) ->
-        handle_starting_os_process(os_process, now, timeout_seconds)
-
-      is_integer(os_process.os_pid) and os_process.os_pid > 0 and Tools.os_process_alive?(os_process.os_pid) ->
-        handle_live_os_process(os_process, opts)
+      os_process.status == :starting and is_nil(os_process.os_pid) and is_nil(os_process.container_id) ->
+        {handle_starting_os_process(os_process, now, timeout_seconds), false}
 
       true ->
-        handle_dead_os_process(os_process, now, opts)
+        adopt_sandbox(os_process, sandbox_state(os_process), now, opts)
+    end
+  end
+
+  # A sandbox Rail restarted under kept going, and what it wrote meanwhile
+  # follows the line saying so. One beside Rail that died with it has nothing to say.
+  defp adopt_sandbox(os_process, state, now, opts) do
+    announced? = Keyword.get(opts, :boot, false) and state != :gone
+    os_process = if announced?, do: announce_restart(os_process), else: os_process
+
+    result =
+      case state do
+        :running -> handle_live_os_process(os_process, opts)
+        {:exited, exit_code, oom_killed?} -> handle_dead_os_process(os_process, {exit_code, oom_killed?}, now)
+        :gone -> handle_dead_os_process(os_process, nil, now)
+      end
+
+    {result, announced?}
+  end
+
+  defp announce_restart(%OsProcess{run: %Run{} = run} = os_process) do
+    line =
+      case os_process.kind do
+        :agent ->
+          "[rail] Rail restarted while this turn was running. The #{run.role.name} kept working in its sandbox, " <>
+            "and everything it wrote while Rail was away is below."
+
+        kind ->
+          "[rail] Rail restarted while #{if kind == :ci, do: "CI", else: "worktree setup"} was running. " <>
+            "It kept running in its sandbox, and everything it wrote while Rail was away is below."
+      end
+
+    Pipeline.append_run_events(run.id, os_process.id, [line])
+    os_process |> OsProcess.changeset(%{restarts: os_process.restarts + 1}) |> Repo.update!()
+  end
+
+  # The stop was recorded as Rail went down; a crash recorded none, so it gets its own row.
+  defp record_restart(kept) do
+    restart =
+      Repo.one(from r in Restart, where: is_nil(r.started_at), order_by: [desc: r.inserted_at], limit: 1) ||
+        %Restart{}
+
+    restart
+    |> Restart.changeset(%{started_at: DateTime.utc_now(), sandboxes_kept: kept})
+    |> Repo.insert_or_update!()
+  end
+
+  # A container is removed by its Follower once its run settles; this catches any
+  # whose Follower never got to, and any whose row is gone.
+  defp remove_settled_containers do
+    with :docker <- Keyword.get(Application.get_env(:rail, :sandbox, []), :runtime),
+         {:ok, containers} <- Docker.list_containers(@label) do
+      ids = Enum.map(containers, & &1["Labels"][@label])
+
+      in_flight =
+        Repo.all(
+          from p in OsProcess,
+            where: p.id in ^ids and p.status in [:waiting_for_resources, :starting, :running],
+            select: p.id
+        )
+
+      for container <- containers, container["Labels"][@label] not in in_flight do
+        Docker.remove_container(container["Id"])
+      end
     end
   end
 
@@ -147,7 +217,7 @@ defmodule Rail.Tools.Boot do
     _error -> :ok
   end
 
-  defp handle_dead_os_process(os_process, now, _opts) do
+  defp handle_dead_os_process(os_process, exited, now) do
     # A stream is parsed by the backend that wrote it, and the row arrives
     # preloaded down to the role that produced the run.
     %Run{role: %Role{backend: %Backend{} = backend}} = run = os_process.run
@@ -168,11 +238,16 @@ defmodule Rail.Tools.Boot do
         parse_line(acc, line)
       end)
 
-    {exit_code, error} = settle_dead_exit(os_process, updated_event_state, Enum.join(err_lines, "\n"))
+    {exit_code, error} = settle_dead_exit(os_process, updated_event_state, Enum.join(err_lines, "\n"), exited)
 
     {:ok, updated_os_process} =
       os_process
-      |> OsProcess.changeset(%{status: :adopted_dead, exit_code: exit_code})
+      |> OsProcess.changeset(%{
+        status: :adopted_dead,
+        exit_code: exit_code,
+        ended_at: now,
+        ended_reason: ended_reason(exited, exit_code)
+      })
       |> Repo.update()
 
     if run do
@@ -204,20 +279,54 @@ defmodule Rail.Tools.Boot do
       Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:os_process_finished, updated_os_process, outcome})
     end
 
+    remove_sandbox(updated_os_process)
+
     {:adopted_dead, updated_os_process}
   end
 
-  # A command says how it went only with its status, which it wrote to a file on
-  # its way out. One that never wrote it was killed before it could finish.
-  defp settle_dead_exit(%OsProcess{kind: kind} = os_process, _event_state, _raw_stderr) when kind != :agent do
-    case read_exit_file(os_process) do
+  defp ended_reason({_exit_code, true}, _code), do: :out_of_memory
+  defp ended_reason(_exited, 137), do: :killed
+  defp ended_reason(_exited, _code), do: :finished
+
+  defp settle_dead_exit(%OsProcess{reserved_memory_gb: memory_gb}, _event_state, _raw_stderr, {_exit_code, true}) do
+    {137, "Killed: it used more than the #{memory_gb} GB its role reserves."}
+  end
+
+  # A command says how it went with its status, which it wrote to a file on its
+  # way out, or its container kept. One that has neither was killed before it could finish.
+  defp settle_dead_exit(%OsProcess{kind: kind} = os_process, _event_state, _raw_stderr, exited) when kind != :agent do
+    case read_exit_file(os_process) || with({exit_code, _oom} <- exited, do: exit_code) do
       0 -> {0, nil}
       code when is_integer(code) -> {code, "Exited with code #{code}"}
       nil -> {-1, "Ended while Rail was not watching it, without recording how it exited."}
     end
   end
 
-  defp settle_dead_exit(%OsProcess{} = os_process, event_state, raw_stderr) do
+  # A container says how it exited, so an agent that ended without a result is
+  # settled on that rather than on a guess.
+  defp settle_dead_exit(%OsProcess{}, event_state, raw_stderr, {exit_code, false}) do
+    error =
+      cond do
+        is_binary(event_state.result_error) and event_state.result_error != "" and raw_stderr != "" ->
+          "#{event_state.result_error}\n#{raw_stderr}"
+
+        is_binary(event_state.result_error) and event_state.result_error != "" ->
+          event_state.result_error
+
+        raw_stderr != "" ->
+          raw_stderr
+
+        exit_code != 0 ->
+          "Exited with code #{exit_code}"
+
+        true ->
+          nil
+      end
+
+    {if(is_nil(error) or exit_code != 0, do: exit_code, else: 1), error}
+  end
+
+  defp settle_dead_exit(%OsProcess{} = os_process, event_state, raw_stderr, nil) do
     error = compute_dead_error(event_state.result_error, raw_stderr, event_state.saw_result, os_process.os_pid)
     {compute_dead_exit_code(event_state.saw_result, event_state.result_error, raw_stderr), error}
   end

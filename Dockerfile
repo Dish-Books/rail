@@ -44,9 +44,12 @@ RUN mix compile
 RUN mix release rail
 
 # ------------------------------------------------------------------------------
-# Runner Stage
+# Sandbox Stage
 # ------------------------------------------------------------------------------
-FROM ${RUNNER_IMAGE} AS runner
+# What every agent, worktree setup and CI command runs in, as `rail-sandbox:latest`
+# (scripts/deploy.sh). Rail's own image is built on it, so an agent finds the same
+# tools in its sandbox as it did beside Rail, without Rail's release or environment.
+FROM ${RUNNER_IMAGE} AS sandbox
 
 # chromium for QA and demos; the build tools let mise compile a project's Erlang.
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
@@ -84,14 +87,11 @@ ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US:en
 ENV LC_ALL=en_US.UTF-8
 
-WORKDIR /app
-
 RUN groupadd -g 1000 rail && \
     useradd -u 1000 -g rail -m -s /bin/bash rail
 
-RUN chown rail:rail /app
-
 USER rail
+WORKDIR /home/rail
 
 # Agent CLIs and mise, from their official installers, into ~/.local/bin.
 RUN curl -fsSL https://mise.run | sh \
@@ -100,6 +100,16 @@ RUN curl -fsSL https://mise.run | sh \
 
 ENV PATH=/home/rail/.local/bin:$PATH
 ENV DISABLE_AUTOUPDATER=1
+
+# ------------------------------------------------------------------------------
+# Runner Stage
+# ------------------------------------------------------------------------------
+FROM sandbox AS runner
+
+USER root
+WORKDIR /app
+RUN chown rail:rail /app
+USER rail
 
 COPY --from=build --chown=rail:rail /app/_build/prod/rel/rail ./
 

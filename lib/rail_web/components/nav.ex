@@ -60,6 +60,17 @@ defmodule RailWeb.Components.Nav do
           />
 
           <.nav_item
+            section={:sandboxes}
+            active={@current_section == :sandboxes}
+            is_extended={@is_rail_extended}
+            label="Sandboxes"
+            icon_active="pi-cube-fill"
+            icon_inactive="pi-cube"
+            href={~p"/sandboxes"}
+            attention_count={0}
+          />
+
+          <.nav_item
             section={:settings}
             active={
               @current_section in [
@@ -360,6 +371,7 @@ defmodule RailWeb.Components.Nav do
 
   defp section_title(:overview), do: "Overview"
   defp section_title(:issues), do: "Issues"
+  defp section_title(:sandboxes), do: "Sandboxes"
 
   defp section_title(section)
        when section in [

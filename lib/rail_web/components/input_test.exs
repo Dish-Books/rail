@@ -47,6 +47,12 @@ defmodule RailWeb.Components.InputTest do
     refute html =~ "<label"
   end
 
+  test "names the unit of what is typed inside the field" do
+    html = render_component(&Input.input/1, id: "cpus", name: "cpus", type: "number", value: 2, suffix: "CPUs")
+
+    assert html =~ ~r/<input[^>]*id="cpus"[^>]*>\s*<span[^>]*>CPUs<\/span>/
+  end
+
   test "renders a textarea with the value as its content" do
     html = render_component(&Input.input/1, id: "d", name: "d", type: "textarea", rows: "2", value: "Owns specs")
 

@@ -31,6 +31,7 @@ defmodule RailWeb.Live.ProductStage do
         task={@task}
         run={@run}
         stage_run={@stage_run}
+        line={@line}
         title={ticket_title(@ticket, @task)}
       >
         <:tabs>{render_slot(@tabs)}</:tabs>

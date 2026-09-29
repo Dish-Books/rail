@@ -125,4 +125,36 @@ defmodule Rail.Tools.Actions.StartCommandProcessTest do
 
     assert File.read(OsProcess.exit_path(os_process)) == {:ok, "0\n"}
   end
+
+  # Setup and CI hold what their run's role reserves, and wait for it like a turn does.
+  test "waits in line for what its role reserves, and says so as CI", %{run: run} do
+    {:ok, other} =
+      Pipeline.create_run(%{task_id: run.task_id, role_id: run.role_id, status: :running, started_at: DateTime.utc_now()})
+
+    Repo.insert!(%OsProcess{
+      run_id: other.id,
+      task_id: other.task_id,
+      stream_path: "/dev/null",
+      status: :running,
+      started_at: DateTime.utc_now(),
+      reserved_cpus: 3,
+      reserved_memory_gb: 8
+    })
+
+    reject(Tools, :spawn_os_process, 3)
+
+    assert {:ok, %OsProcess{status: :waiting_for_resources, kind: :ci, deadline_at: nil}} =
+             Tools.start_command_process(run, :ci, "mix ci", timeout_ms: 90_000)
+
+    assert {:ok, %{status: :waiting_for_resources}} = Pipeline.get_run(run.id)
+
+    assert {:ok, %OsProcess{status: :waiting_for_resources}} = Tools.start_command_process(run, :setup, "./setup")
+
+    assert [
+             "[rail] CI needs 1 CPU and 2 GB, and all of this machine's memory is reserved. " <>
+               "It is 1st in line and starts on its own as soon as enough is free.",
+             "[rail] Worktree setup needs 1 CPU and 2 GB, and all of this machine's memory is reserved. " <>
+               "It is 2nd in line and starts on its own as soon as enough is free."
+           ] = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+  end
 end
