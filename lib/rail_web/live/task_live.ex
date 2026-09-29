@@ -123,7 +123,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
-              current_user_id={@current_scope.user.id}
+              current_scope={@current_scope}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -153,7 +153,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
-              current_user_id={@current_scope.user.id}
+              current_scope={@current_scope}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -183,7 +183,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
-              current_user_id={@current_scope.user.id}
+              current_scope={@current_scope}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -215,7 +215,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
-              current_user_id={@current_scope.user.id}
+              current_scope={@current_scope}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -247,7 +247,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
-              current_user_id={@current_scope.user.id}
+              current_scope={@current_scope}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -278,7 +278,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
-              current_user_id={@current_scope.user.id}
+              current_scope={@current_scope}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -309,7 +309,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
-              current_user_id={@current_scope.user.id}
+              current_scope={@current_scope}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -368,7 +368,7 @@ defmodule RailWeb.TaskLive do
           <:sidebar>
             <.conversation_sidebar
               task={@task}
-              current_user_id={@current_scope.user.id}
+              current_scope={@current_scope}
               roles_map={@roles_map}
               answers_to_send?={@answers_to_send?}
               pending_question={@pending_question}
@@ -623,7 +623,7 @@ defmodule RailWeb.TaskLive do
   attr :pending_questions, :list, required: true
   attr :answer_text, :string, required: true
   attr :conversation_run, :any, required: true
-  attr :current_user_id, :string, default: nil
+  attr :current_scope, Rail.Scope, required: true
 
   # Questions sit above the conversation they came out of.
   defp conversation_sidebar(assigns) do
@@ -665,7 +665,7 @@ defmodule RailWeb.TaskLive do
       runs={@task.runs || []}
       stage_run={@conversation_run}
       roles_map={@roles_map}
-      current_user_id={@current_user_id}
+      current_scope={@current_scope}
     />
     """
   end

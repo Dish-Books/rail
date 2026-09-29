@@ -568,50 +568,6 @@ defmodule RailWeb.Live.RunConversationTest do
     end
   end
 
-  test "Rail restarting mid-turn reads as a divider above what Rail said about it", %{
-    task: task,
-    roles: roles,
-    roles_map: roles_map
-  } do
-    {:ok, run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: roles[:engineer].id,
-        status: :running,
-        conversation_id: "conv_restarted",
-        started_at: DateTime.shift(DateTime.utc_now(), minute: -30)
-      })
-
-    os_process =
-      Repo.insert!(%OsProcess{
-        run_id: run.id,
-        task_id: task.id,
-        stream_path: "/tmp/#{run.id}.ndjson",
-        status: :running,
-        started_at: DateTime.shift(DateTime.utc_now(), minute: -30)
-      })
-
-    restarted = "[rail] Rail restarted while this turn was running. The engineer role kept working in its sandbox."
-
-    Pipeline.append_run_events(run.id, os_process.id, [
-      ~s({"type":"assistant","message":{"content":[{"type":"text","text":"Before the deploy"}]}}),
-      restarted,
-      ~s({"type":"assistant","message":{"content":[{"type":"text","text":"While Rail was away"}]}})
-    ])
-
-    now = DateTime.utc_now()
-    Repo.insert!(%Rail.Tools.Schemas.Restart{stopped_at: DateTime.shift(now, second: -41), started_at: now})
-
-    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
-
-    assert [_before, divider_and_after] = String.split(html, ~s(data-qa="restart-divider"))
-    assert divider_and_after =~ "back in 41s"
-    assert divider_and_after =~ ~s(data-at="#{DateTime.to_iso8601(now)}")
-    assert [divider, below] = String.split(divider_and_after, restarted)
-    refute divider =~ "While Rail was away"
-    assert below =~ "While Rail was away"
-  end
-
   # A 400px floor overruns the column on an iPad, stacked or in landscape, and pushes the composer out.
   test "the chat pane takes whatever height its column leaves", %{
     task: task,

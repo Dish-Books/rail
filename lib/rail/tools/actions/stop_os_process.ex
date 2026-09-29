@@ -5,6 +5,7 @@ defmodule Rail.Tools.Actions.StopOsProcess do
   import Rail.Tools.Utils.AdmitSandboxes
 
   alias Rail.Repo
+  alias Rail.Scope
   alias Rail.Tools.Follower
   alias Rail.Tools.Schemas.OsProcess
 
@@ -12,10 +13,11 @@ defmodule Rail.Tools.Actions.StopOsProcess do
   Stops an OS process, and frees what it held for the next in line.
 
   One still waiting for its sandbox has nothing to kill, so it just leaves the
-  line. `:stopped_by_id` records who asked.
+  line. The row records who asked, when a person did.
   """
-  def stop_os_process(%OsProcess{} = os_process, opts \\ []) do
+  def stop_os_process(%Scope{} = scope, %OsProcess{} = os_process, opts \\ []) do
     now = DateTime.utc_now()
+    opts = Keyword.put(opts, :stopped_by_id, scope.user && scope.user.id)
 
     # Conditional, since the row may have started between being read and this.
     {left_line, _rows} =

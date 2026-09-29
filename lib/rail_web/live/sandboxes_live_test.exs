@@ -11,7 +11,6 @@ defmodule RailWeb.SandboxesLiveTest do
   alias Rail.Tools
   alias Rail.Tools.Clients.Docker
   alias Rail.Tools.Schemas.OsProcess
-  alias Rail.Tools.Schemas.Restart
   alias Rail.Users
 
   setup %{conn: conn, project: project} do
@@ -84,8 +83,7 @@ defmodule RailWeb.SandboxesLiveTest do
         container_id: "c-busy",
         reserved_cpus: 2,
         reserved_memory_gb: 4,
-        started_at: DateTime.shift(now, minute: -31),
-        restarts: 1
+        started_at: DateTime.shift(now, minute: -31)
       })
 
     ci = sandbox.(checking, %{kind: :ci, command: "mix ci"})
@@ -116,18 +114,13 @@ defmodule RailWeb.SandboxesLiveTest do
     never_started = ended.(%{ended_reason: :failed_to_start})
     _long_ago = ended.(%{ended_reason: :finished, ended_at: DateTime.shift(now, hour: -2)})
 
-    Repo.insert!(%Restart{
-      stopped_at: DateTime.shift(now, second: -641),
-      started_at: DateTime.shift(now, minute: -10),
-      sandboxes_kept: 3
-    })
-
-    Req.Test.stub(Docker, fn %{request_path: "/containers/c-busy/stats"} = conn ->
-      Req.Test.json(conn, %{
-        "cpu_stats" => %{"cpu_usage" => %{"total_usage" => 1_900}, "system_cpu_usage" => 16_000, "online_cpus" => 16},
-        "precpu_stats" => %{"cpu_usage" => %{"total_usage" => 0}, "system_cpu_usage" => 0},
-        "memory_stats" => %{"usage" => div(29 * 1024 ** 3, 10), "stats" => %{}}
-      })
+    Req.Test.stub(Docker, fn
+      %{request_path: "/containers/c-busy/stats"} = conn ->
+        Req.Test.json(conn, %{
+          "cpu_stats" => %{"cpu_usage" => %{"total_usage" => 1_900}, "system_cpu_usage" => 16_000, "online_cpus" => 16},
+          "precpu_stats" => %{"cpu_usage" => %{"total_usage" => 0}, "system_cpu_usage" => 0},
+          "memory_stats" => %{"usage" => div(29 * 1024 ** 3, 10), "stats" => %{}}
+        })
     end)
 
     %{
@@ -196,7 +189,7 @@ defmodule RailWeb.SandboxesLiveTest do
     assert has_element?(view, "#waiting-#{behind.id} [data-qa='short-of']", "—")
   end
 
-  test "lists what runs, with what it reserves and uses, and what kept running through a restart", %{
+  test "lists what runs, with what it reserves and uses", %{
     conn: conn,
     busy: busy,
     ci: ci,
@@ -209,9 +202,9 @@ defmodule RailWeb.SandboxesLiveTest do
     assert has_element?(view, "#running-#{busy.id} [data-qa='for']", "Turn 1")
     assert has_element?(view, "#running-#{busy.id} [data-qa='reserved']", "2 CPUs · 4 GB")
     assert has_element?(view, "#running-#{busy.id} [data-qa='running-for']", "31m")
-    assert has_element?(view, "#running-#{busy.id} [data-qa='restarts'][title^='Kept running through the ']", "1")
 
     assert render_async(view) =~ "1.9"
+
     assert has_element?(view, "#running-#{busy.id} [data-qa='cpu-in-use']", "of 2 CPU · near limit")
     assert has_element?(view, "#running-#{busy.id} [data-qa='memory-in-use']", "2.9")
     assert has_element?(view, "#running-#{busy.id} [data-qa='memory-in-use']", "of 4 GB")
@@ -242,13 +235,6 @@ defmodule RailWeb.SandboxesLiveTest do
     assert view |> element("#ended-sandboxes tbody") |> render() |> String.split("<tr") |> length() == 7
   end
 
-  test "says Rail restarted within the hour, how long it was away, and that the sandboxes kept going", %{conn: conn} do
-    {:ok, view, _html} = live(conn, ~p"/sandboxes")
-
-    assert has_element?(view, "#sandbox-restart", "Rail restarted at")
-    assert has_element?(view, "#sandbox-restart", "and was back in 41s. The 3 sandboxes running then kept going.")
-  end
-
   test "stopping a run from the line takes it out, and records who stopped it", %{
     conn: conn,
     next: next,
@@ -265,7 +251,7 @@ defmodule RailWeb.SandboxesLiveTest do
   test "follows the line as it moves", %{conn: conn, behind: behind} do
     {:ok, view, _html} = live(conn, ~p"/sandboxes")
 
-    {:ok, _stopped} = Tools.stop_os_process(behind)
+    {:ok, _stopped} = Tools.stop_os_process(system_scope(), behind)
     send(view.pid, :sandboxes_changed)
 
     refute has_element?(view, "#waiting-#{behind.id}")
@@ -301,40 +287,5 @@ defmodule RailWeb.SandboxesLiveTest do
     next |> Ecto.Changeset.change(reserved_cpus: 1, reserved_memory_gb: 4) |> Repo.update!()
     send(view.pid, :sandboxes_changed)
     assert has_element?(view, "#waiting-#{next.id} [data-qa='short-of']", "2 GB")
-  end
-
-  test "says how many restarts a sandbox kept running through", %{conn: conn, busy: busy} do
-    busy |> Ecto.Changeset.change(restarts: 2) |> Repo.update!()
-
-    {:ok, view, _html} = live(conn, ~p"/sandboxes")
-
-    assert has_element?(view, "#running-#{busy.id} [data-qa='restarts'][title='Kept running through 2 restarts']")
-  end
-
-  test "a restart after a crash says only when, and one no sandbox lived through says so", %{conn: conn} do
-    Repo.delete_all(Restart)
-    restart = Repo.insert!(%Restart{started_at: DateTime.shift(DateTime.utc_now(), minute: -5), sandboxes_kept: 1})
-
-    {:ok, view, _html} = live(conn, ~p"/sandboxes")
-    assert has_element?(view, "#sandbox-restart", "The 1 sandbox running then kept going.")
-    refute has_element?(view, "#sandbox-restart", "back in")
-
-    restart |> Ecto.Changeset.change(sandboxes_kept: 0) |> Repo.update!()
-    send(view.pid, :sandboxes_changed)
-    assert has_element?(view, "#sandbox-restart", "No sandbox was running then.")
-  end
-
-  test "an hour after Rail came back, or before it ever restarted, says nothing about a restart", %{conn: conn} do
-    Repo.delete_all(Restart)
-    {:ok, view, _html} = live(conn, ~p"/sandboxes")
-    refute has_element?(view, "#sandbox-restart")
-
-    Repo.insert!(%Restart{
-      stopped_at: DateTime.shift(DateTime.utc_now(), hour: -3),
-      started_at: DateTime.shift(DateTime.utc_now(), hour: -2)
-    })
-
-    send(view.pid, :sandboxes_changed)
-    refute has_element?(view, "#sandbox-restart")
   end
 end

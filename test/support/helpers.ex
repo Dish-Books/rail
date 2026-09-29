@@ -17,22 +17,6 @@ defmodule RailTest.Helpers do
   end
 
   @doc """
-  Runs this test, and whatever it starts, on `config` in place of `:rail, :sandbox`,
-  over the suite's own: a Docker runtime, say, or a machine with more headroom.
-  Stubbed rather than put in the application env, so tests beside it still see theirs.
-  """
-  def stub_sandbox_config(config) do
-    merged = Keyword.merge(Application.get_env(:rail, :sandbox, []), config)
-
-    Mimic.stub(Application, :get_env, fn
-      :rail, :sandbox, _default -> merged
-      app, key, default -> Mimic.call_original(Application, :get_env, [app, key, default])
-    end)
-
-    :ok
-  end
-
-  @doc """
   Puts a session token for `user` on `conn` so requests are authenticated.
   """
   def log_in_user(conn, user) do

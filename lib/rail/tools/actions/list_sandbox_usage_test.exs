@@ -54,7 +54,9 @@ defmodule Rail.Tools.Actions.ListSandboxUsageTest do
         conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "No such container"})
     end)
 
-    assert %{^busy_id => %{cpus: 1.4, memory_gb: 2.9}} = usage = Tools.list_sandbox_usage()
+    assert %{^busy_id => %{cpus: 1.4, memory_gb: 2.9}} =
+             usage = Tools.list_sandbox_usage()
+
     assert map_size(usage) == 1
   end
 end

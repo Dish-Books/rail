@@ -53,7 +53,7 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
   test "stopping a working run says so in the log and leaves it stopped", %{working: working} do
     run = working.(%{})
 
-    assert {:ok, %Run{status: :finished, stage_outcome: :in_progress}, nil} = Pipeline.stop_run(run)
+    assert {:ok, %Run{status: :finished, stage_outcome: :in_progress}, nil} = Pipeline.stop_run(system_scope(), run)
 
     assert ["[rail] Stopped by user."] = Enum.map(Pipeline.list_run_events(run), & &1.line)
   end
@@ -90,7 +90,7 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
         launch: launch
       })
 
-    assert {:ok, %Run{status: :finished}, nil} = Pipeline.stop_run(run, stopped_by_id: nil)
+    assert {:ok, %Run{status: :finished}, nil} = Pipeline.stop_run(system_scope(), run)
 
     assert {:ok, %OsProcess{status: :finished, ended_reason: :stopped}} = Tools.get_os_process(waiting_id)
     assert {:ok, %OsProcess{status: :running}} = Tools.get_os_process(next_id)
@@ -101,13 +101,13 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
   test "an undelivered message comes back rather than being discarded", %{working: working} do
     run = working.(%{pending_chat: "Please add a test"})
 
-    assert {:ok, %Run{pending_chat: nil}, "Please add a test"} = Pipeline.stop_run(run)
+    assert {:ok, %Run{pending_chat: nil}, "Please add a test"} = Pipeline.stop_run(system_scope(), run)
   end
 
   test "stopping a run that was already idle says nothing in the log", %{working: working} do
     run = working.(%{status: :finished})
 
-    assert {:ok, %Run{}, nil} = Pipeline.stop_run(run)
+    assert {:ok, %Run{}, nil} = Pipeline.stop_run(system_scope(), run)
     assert Pipeline.list_run_events(run) == []
   end
 
@@ -125,12 +125,12 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
       })
       |> Repo.insert()
 
-    expect(Tools, :stop_os_process, fn %OsProcess{id: id}, _opts ->
+    expect(Tools, :stop_os_process, fn %Rail.Scope{}, %OsProcess{id: id}, _opts ->
       assert id == os_process.id
       {:ok, os_process}
     end)
 
-    assert {:ok, %Run{}, nil} = Pipeline.stop_run(run)
+    assert {:ok, %Run{}, nil} = Pipeline.stop_run(system_scope(), run)
   end
 
   # Killing the process settles the run then and there, and a settle that still
@@ -150,11 +150,11 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
       })
       |> Repo.insert()
 
-    expect(Tools, :stop_os_process, fn %OsProcess{}, _opts ->
+    expect(Tools, :stop_os_process, fn %Rail.Scope{}, %OsProcess{}, _opts ->
       assert %Run{pending_chat: nil} = Repo.get!(Run, run.id)
       {:ok, os_process}
     end)
 
-    assert {:ok, %Run{}, "Please add a test"} = Pipeline.stop_run(run)
+    assert {:ok, %Run{}, "Please add a test"} = Pipeline.stop_run(system_scope(), run)
   end
 end

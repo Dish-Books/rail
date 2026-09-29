@@ -16,9 +16,7 @@ defmodule Rail.Tools.Actions.GetSandboxCapacity do
   `{:error, reason}` when Docker cannot say what the machine has.
   """
   def get_sandbox_capacity do
-    config = Application.get_env(:rail, :sandbox, [])
-
-    with {:ok, cpus, memory_gb} <- machine(config) do
+    with {:ok, cpus, memory_gb} <- machine() do
       {reserved_cpus, reserved_memory_gb} =
         Repo.one(
           from p in OsProcess,
@@ -28,8 +26,8 @@ defmodule Rail.Tools.Actions.GetSandboxCapacity do
 
       {:ok,
        %{
-         cpus: max(cpus - Keyword.get(config, :headroom_cpus, 0), 0),
-         memory_gb: max(memory_gb - Keyword.get(config, :headroom_memory_gb, 0), 0),
+         cpus: max(cpus - Rail.sandbox_headroom_cpus(), 0),
+         memory_gb: max(memory_gb - Rail.sandbox_headroom_memory_gb(), 0),
          reserved_cpus: reserved_cpus,
          reserved_memory_gb: reserved_memory_gb
        }}
@@ -37,8 +35,8 @@ defmodule Rail.Tools.Actions.GetSandboxCapacity do
   end
 
   # The suite runs on a fixed machine of its own, set in config/test.exs.
-  defp machine(config) do
-    case {Keyword.get(config, :runtime, :local), Keyword.get(config, :local_cpus)} do
+  defp machine do
+    case {Rail.sandbox_runtime(), Rail.local_cpus()} do
       {:docker, _local} ->
         with {:ok, %{"NCPU" => cpus, "MemTotal" => memory}} <- Docker.info() do
           {:ok, cpus, div(memory, 1024 ** 3)}
@@ -49,7 +47,7 @@ defmodule Rail.Tools.Actions.GetSandboxCapacity do
         {:ok, cpus, memory_gb}
 
       {:local, cpus} ->
-        {:ok, cpus, Keyword.fetch!(config, :local_memory_gb)}
+        {:ok, cpus, Rail.local_memory_gb()}
     end
   end
 end

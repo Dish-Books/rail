@@ -42,7 +42,9 @@ defmodule Rail.Tools.Actions.GetSandboxCapacityTest do
   end
 
   test "is the machine Rail runs on, read now, where nothing fixes it" do
-    stub_sandbox_config(local_cpus: nil, local_memory_gb: nil, headroom_cpus: 1, headroom_memory_gb: 1)
+    stub(Rail, :local_cpus, fn -> nil end)
+    stub(Rail, :sandbox_headroom_cpus, fn -> 1 end)
+    stub(Rail, :sandbox_headroom_memory_gb, fn -> 1 end)
     {cpus, memory_gb} = local_capacity()
     free_cpus = cpus - 1
     free_memory_gb = memory_gb - 1
@@ -52,7 +54,10 @@ defmodule Rail.Tools.Actions.GetSandboxCapacityTest do
 
   describe "in Docker" do
     setup do
-      stub_sandbox_config(runtime: :docker, headroom_cpus: 2, headroom_memory_gb: 8)
+      stub(Rail, :sandbox_runtime, fn -> :docker end)
+      stub(Rail, :sandbox_headroom_cpus, fn -> 2 end)
+      stub(Rail, :sandbox_headroom_memory_gb, fn -> 8 end)
+      :ok
     end
 
     test "is what the machine has, less the headroom kept for Rail, in whole GB" do

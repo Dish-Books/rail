@@ -45,7 +45,7 @@ defmodule Rail.Tools.Actions.StopOsProcessTest do
     assert {:ok, %OsProcess{}} = Tools.get_active_os_process(run)
 
     assert {:ok, %OsProcess{status: :finished, ended_reason: :stopped, stopped_by_id: ^user_id, ended_at: %DateTime{}}} =
-             Tools.stop_os_process(os_process, grace_period: 50, stopped_by_id: user.id)
+             Tools.stop_os_process(Rail.Scope.for_user(user), os_process, grace_period: 50)
 
     assert {:error, :os_process_not_active} = Tools.get_active_os_process(run)
   end
@@ -83,7 +83,7 @@ defmodule Rail.Tools.Actions.StopOsProcessTest do
     } do
       expect(FollowerSupervisor, :start_follower, fn %OsProcess{id: ^waiting_id}, _opts -> {:ok, self()} end)
 
-      assert {:ok, %OsProcess{status: :finished}} = Tools.stop_os_process(os_process, grace_period: 50)
+      assert {:ok, %OsProcess{status: :finished}} = Tools.stop_os_process(system_scope(), os_process, grace_period: 50)
       assert {:ok, %OsProcess{status: :running, launch: nil}} = Tools.get_os_process(waiting_id)
     end
 
@@ -91,7 +91,7 @@ defmodule Rail.Tools.Actions.StopOsProcessTest do
       reject(Tools, :terminate_os_process, 2)
 
       assert {:ok, %OsProcess{status: :finished, ended_reason: :stopped, launch: nil}} =
-               Tools.stop_os_process(waiting)
+               Tools.stop_os_process(system_scope(), waiting)
     end
   end
 end

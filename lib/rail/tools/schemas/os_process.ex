@@ -61,9 +61,6 @@ defmodule Rail.Tools.Schemas.OsProcess do
     field :launch, EncryptedBinary, redact: true
     field :ended_at, :utc_datetime_usec
     field :ended_reason, Ecto.Enum, values: @ended_reasons
-    # How many times Rail restarted while it kept running.
-    field :restarts, :integer, default: 0
-
     belongs_to :stopped_by, User
 
     belongs_to :task, Task
@@ -94,7 +91,6 @@ defmodule Rail.Tools.Schemas.OsProcess do
     :launch,
     :ended_at,
     :ended_reason,
-    :restarts,
     :stopped_by_id
   ]
 

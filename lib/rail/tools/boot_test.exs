@@ -13,7 +13,6 @@ defmodule Rail.Tools.BootTest do
   alias Rail.Tools.FollowerRegistry
   alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.OsProcess
-  alias Rail.Tools.Schemas.Restart
 
   # Boot adopts real OS processes, so these run real children.
   @moduletag :real_spawn
@@ -356,10 +355,7 @@ defmodule Rail.Tools.BootTest do
   end
 
   test "start_link/1 reconciles as a task when adoption on boot is enabled" do
-    stub(Application, :get_env, fn
-      :rail, :adopt_on_boot, _default -> true
-      app, key, default -> call_original(Application, :get_env, [app, key, default])
-    end)
+    stub(Rail, :adopt_on_boot?, fn -> true end)
 
     {:ok, pid} = Boot.start_link([])
     assert is_pid(pid)
@@ -570,7 +566,7 @@ defmodule Rail.Tools.BootTest do
     assert {:ok, %Run{exit_code: 2, error: "Exited with code 2"}} = Pipeline.get_run(run.id)
   end
 
-  describe "a Docker sandbox Rail restarted under" do
+  describe "a Docker sandbox that outlived Rail" do
     # A run that settles needs a real task behind it.
     setup %{project: project, role: role, tmp_dir: tmp_dir} do
       issue =
@@ -604,11 +600,10 @@ defmodule Rail.Tools.BootTest do
       %{run: run}
     end
 
-    test "is adopted, and the conversation says Rail restarted between what came before and after", %{
+    test "is adopted, and what it wrote while Rail was away is logged after what came before", %{
       run: run,
       tmp_dir: tmp_dir
     } do
-      Repo.insert!(%Restart{stopped_at: DateTime.shift(DateTime.utc_now(), second: -41)})
       {:ok, state} = Agent.start_link(fn -> %{"Running" => true} end)
 
       Req.Test.stub(Docker, fn conn ->
@@ -644,18 +639,11 @@ defmodule Rail.Tools.BootTest do
       # Lazily, so the Follower adoption starts has it from its first tick, and again if it restarts.
       Req.Test.allow(Docker, self(), fn -> GenServer.whereis({:via, Registry, {FollowerRegistry, os_process.id}}) end)
 
-      assert [{:adopted_live, %OsProcess{}, _follower_pid}] = Boot.reconcile(boot: true)
-
-      restarted =
-        "[rail] Rail restarted while this turn was running. The boot role kept working in its sandbox, " <>
-          "and everything it wrote while Rail was away is below."
+      assert [{:adopted_live, %OsProcess{}, _follower_pid}] = Boot.reconcile()
 
       eventually(fn ->
-        assert [^before, ^restarted, ^during] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+        assert [^before, ^during] = Enum.map(Pipeline.list_run_events(run), & &1.line)
       end)
-
-      assert %OsProcess{restarts: 1} = Repo.reload!(os_process)
-      assert [%Restart{stopped_at: %DateTime{}, started_at: %DateTime{}, sandboxes_kept: 1}] = Tools.list_restarts()
 
       result = ~s({"type":"result","subtype":"success","session_id":"sess-docker","usage":{"input_tokens":7}})
       File.write!(stream_path, "#{result}\n", [:append])
@@ -689,13 +677,10 @@ defmodule Rail.Tools.BootTest do
 
       Phoenix.PubSub.subscribe(Rail.PubSub, "run:#{run.id}")
 
-      assert [{:adopted_dead, %OsProcess{exit_code: 0, ended_reason: :finished}}] = Boot.reconcile(boot: true)
+      assert [{:adopted_dead, %OsProcess{exit_code: 0, ended_reason: :finished}}] = Boot.reconcile()
       assert_received {:os_process_finished, %OsProcess{}, %{exit_code: 0, error: nil}}
 
-      assert [
-               "[rail] Rail restarted while this turn was running." <> _kept_working,
-               ~s({"type":"system","session_id":"sess-exited"})
-             ] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+      assert [~s({"type":"system","session_id":"sess-exited"})] = Enum.map(Pipeline.list_run_events(run), & &1.line)
     end
 
     test "that ran out of memory while Rail was away says so", %{run: run, tmp_dir: tmp_dir} do
@@ -723,7 +708,7 @@ defmodule Rail.Tools.BootTest do
       assert {:ok, %Run{error: "Killed: it used more than the 4 GB its role reserves."}} = Pipeline.get_run(run.id)
     end
 
-    test "running CI keeps its own words, and its exit file is its result", %{run: run, tmp_dir: tmp_dir} do
+    test "running CI has its exit file as its result", %{run: run, tmp_dir: tmp_dir} do
       Req.Test.stub(Docker, fn conn ->
         Req.Test.json(conn, %{"State" => %{"Running" => false, "ExitCode" => 3, "OOMKilled" => false}})
       end)
@@ -743,13 +728,9 @@ defmodule Rail.Tools.BootTest do
         started_at: DateTime.utc_now()
       })
 
-      assert [{:adopted_dead, %OsProcess{exit_code: 3}}] = Boot.reconcile(boot: true)
+      assert [{:adopted_dead, %OsProcess{exit_code: 3}}] = Boot.reconcile()
 
-      assert [
-               "[rail] Rail restarted while CI was running. It kept running in its sandbox, " <>
-                 "and everything it wrote while Rail was away is below.",
-               "3 tests, 1 failure" | _settled
-             ] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+      assert ["3 tests, 1 failure" | _settled] = Enum.map(Pipeline.list_run_events(run), & &1.line)
     end
 
     test "that exited while Rail was away says what went wrong, as its Follower would have", %{
@@ -836,44 +817,17 @@ defmodule Rail.Tools.BootTest do
       Req.Test.allow(Docker, self(), fn -> GenServer.whereis({:via, Registry, {FollowerRegistry, silent.id}}) end)
 
       assert [{:adopted_dead, %OsProcess{container_id: "c-removed"}}, {:adopted_live, %OsProcess{}, follower_pid}] =
-               Enum.sort_by(Boot.reconcile(boot: true), &elem(&1, 0))
+               Enum.sort_by(Boot.reconcile(), &elem(&1, 0))
 
       FollowerSupervisor.stop_follower(follower_pid)
     end
-
-    test "is picked up on the minute pass without saying Rail restarted", %{run: run, tmp_dir: tmp_dir} do
-      Req.Test.stub(Docker, fn conn -> Req.Test.json(conn, %{"State" => %{"Running" => true}}) end)
-      stream_path = Path.join(tmp_dir, "minute_docker.ndjson")
-      File.write!(stream_path, "")
-
-      os_process =
-        Repo.insert!(%OsProcess{
-          run_id: run.id,
-          task_id: run.task_id,
-          stream_path: stream_path,
-          status: :running,
-          runtime: :docker,
-          container_id: "c-minute",
-          started_at: DateTime.utc_now()
-        })
-
-      Req.Test.allow(Docker, self(), fn -> GenServer.whereis({:via, Registry, {FollowerRegistry, os_process.id}}) end)
-
-      assert [{:adopted_live, %OsProcess{}, follower_pid}] = Boot.reconcile()
-      FollowerSupervisor.stop_follower(follower_pid)
-
-      assert [] = Pipeline.list_run_events(run)
-      assert %OsProcess{restarts: 0} = Repo.reload!(os_process)
-    end
-  end
-
-  test "a boot with no stop on record was a crash, and is recorded as a restart all the same" do
-    assert [] = Boot.reconcile(boot: true)
-    assert [%Restart{stopped_at: nil, started_at: %DateTime{}, sandboxes_kept: 0}] = Tools.list_restarts()
   end
 
   describe "in Docker" do
-    setup do: stub_sandbox_config(runtime: :docker)
+    setup do
+      stub(Rail, :sandbox_runtime, fn -> :docker end)
+      :ok
+    end
 
     test "removes the containers of sandboxes that have settled, and leaves the rest", %{role: role} do
       {:ok, run} =

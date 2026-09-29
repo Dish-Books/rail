@@ -6,7 +6,6 @@ defmodule RailWeb.SandboxesLive do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
-  alias Rail.Tools.Schemas.Restart
 
   # Usage is read from Docker, which takes a moment per container, so it is
   # re-read on its own clock rather than with everything else.
@@ -43,27 +42,12 @@ defmodule RailWeb.SandboxesLive do
       show_project_switcher={@show_project_switcher}
     >
       <div id="sandboxes-view" data-qa="sandboxes-view" class="space-y-6">
-        <div class="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-              Sandboxes
-            </h1>
-            <p id="sandboxes-intro" class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Every agent turn, worktree setup and CI command runs in its own sandbox on this machine, holding what its role reserves.
-            </p>
-          </div>
-          <p
-            :if={@restart}
-            id="sandbox-restart"
-            class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"
-          >
-            <.icon name="pi-arrows-clockwise" class="size-3.5" />
-            <span>
-              Rail restarted at
-              <.clock id="sandbox-restart-at" at={@restart.started_at} />{back_in(@restart)}. {kept_going(
-                @restart
-              )}
-            </span>
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+            Sandboxes
+          </h1>
+          <p id="sandboxes-intro" class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Every agent turn, worktree setup and CI command runs in its own sandbox on this machine, holding what its role reserves.
           </p>
         </div>
 
@@ -175,13 +159,12 @@ defmodule RailWeb.SandboxesLive do
                   <.th>CPU in use</.th>
                   <.th>Memory in use</.th>
                   <.th>Running</.th>
-                  <.th>Restarts</.th>
                   <.th />
                 </tr>
               </thead>
               <tbody>
                 <tr :if={@running == []}>
-                  <td colspan="9" class="px-4 py-4 text-sm text-slate-500 dark:text-slate-400">
+                  <td colspan="8" class="px-4 py-4 text-sm text-slate-500 dark:text-slate-400">
                     No sandbox is running.
                   </td>
                 </tr>
@@ -229,16 +212,6 @@ defmodule RailWeb.SandboxesLive do
                     class="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-slate-500 dark:text-slate-400"
                   >
                     {format_age(DateTime.diff(@now, sandbox.started_at))}
-                  </td>
-                  <td class="whitespace-nowrap px-4 py-2.5">
-                    <span
-                      :if={sandbox.restarts > 0}
-                      data-qa="restarts"
-                      title={kept_running(sandbox, @latest_restart)}
-                      class="inline-flex items-center gap-1 text-xs text-slate-700 dark:text-slate-300"
-                    >
-                      <.icon name="pi-arrows-clockwise" class="size-3.5 text-slate-400" />{sandbox.restarts}
-                    </span>
                   </td>
                   <td class="whitespace-nowrap px-4 py-2.5 text-right">
                     <.stop_button run_id={sandbox.run_id} />
@@ -319,7 +292,7 @@ defmodule RailWeb.SandboxesLive do
 
   def handle_event("stop", %{"run_id" => run_id}, socket) do
     {:ok, run} = Pipeline.get_run(run_id)
-    {:ok, _stopped, _queued} = Pipeline.stop_run(run, stopped_by_id: socket.assigns.current_scope.user.id)
+    {:ok, _stopped, _queued} = Pipeline.stop_run(socket.assigns.current_scope, run)
     {:noreply, load_sandboxes(socket)}
   end
 
@@ -409,18 +382,12 @@ defmodule RailWeb.SandboxesLive do
       capacity &&
         %{cpus: capacity.cpus - capacity.reserved_cpus, memory_gb: capacity.memory_gb - capacity.reserved_memory_gb}
 
-    # Far enough back for the banner's hour and for any restart a running sandbox lived through.
-    since = Enum.min([DateTime.shift(now, hour: -1) | Enum.map(running, & &1.started_at)], DateTime)
-    latest_restart = [since: since] |> Tools.list_restarts() |> List.last()
-
     socket
     |> assign(:now, now)
     |> assign(:free, free)
     |> assign(:waiting, waiting)
     |> assign(:running, running)
     |> assign(:ended, ended)
-    |> assign(:latest_restart, latest_restart)
-    |> assign(:restart, recent_restart(latest_restart, now))
     |> assign(:stats, capacity && stats(capacity, free, running, waiting, now))
   end
 
@@ -448,29 +415,6 @@ defmodule RailWeb.SandboxesLive do
 
   defp oldest_waiting([], _now), do: nil
   defp oldest_waiting([oldest | _rest], now), do: format_duration(DateTime.diff(now, oldest.queued_at))
-
-  # Shown for an hour, the same window as what ended.
-  defp recent_restart(%Restart{started_at: %DateTime{} = started_at} = restart, now) do
-    if DateTime.diff(now, started_at) <= 3600, do: restart
-  end
-
-  defp recent_restart(_none, _now), do: nil
-
-  defp back_in(%Restart{} = restart) do
-    case Restart.down_seconds(restart) do
-      seconds when is_integer(seconds) -> " and was back in #{format_duration(seconds)}"
-      nil -> ""
-    end
-  end
-
-  defp kept_going(%Restart{sandboxes_kept: 1}), do: "The 1 sandbox running then kept going."
-  defp kept_going(%Restart{sandboxes_kept: kept}) when kept > 1, do: "The #{kept} sandboxes running then kept going."
-  defp kept_going(%Restart{}), do: "No sandbox was running then."
-
-  defp kept_running(%OsProcess{restarts: 1}, %Restart{started_at: %DateTime{} = at}),
-    do: "Kept running through the #{Calendar.strftime(at, "%H:%M")} restart"
-
-  defp kept_running(%OsProcess{restarts: restarts}, _restart), do: "Kept running through #{restarts} restarts"
 
   # A turn is numbered among its run's turns, as its conversation numbers it.
   defp sandbox_for(%OsProcess{kind: :setup}), do: "Setup"

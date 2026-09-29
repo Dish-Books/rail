@@ -34,7 +34,6 @@ defmodule Rail.Tools.Boot do
   alias Rail.Tools.FollowerSupervisor
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
-  alias Rail.Tools.Schemas.Restart
 
   @default_starting_timeout_seconds 60
   @label "dev.railai.sandbox"
@@ -44,20 +43,19 @@ defmodule Rail.Tools.Boot do
   boot is turned off.
   """
   def start_link(opts \\ []) do
-    if Application.get_env(:rail, :adopt_on_boot, true) do
-      Task.start_link(__MODULE__, :reconcile, [Keyword.put(opts, :boot, true)])
+    if Rail.adopt_on_boot?() do
+      Task.start_link(__MODULE__, :reconcile, [opts])
     else
       :ignore
     end
   end
 
   @doc """
-  Adopts every in-flight os process, once the runs tables exist. `boot: true` is
-  the pass Rail makes as it comes back up, which records the restart.
+  Adopts every in-flight os process, once the runs tables exist, then starts
+  whatever now fits in the line and removes containers whose rows have settled.
   """
   def reconcile(opts \\ []) do
-    {adopted, announced} = opts |> adopt_live_os_processes() |> Enum.unzip()
-    if Keyword.get(opts, :boot, false), do: record_restart(Enum.count(announced, & &1))
+    adopted = adopt_live_os_processes(opts)
     _browsers = Tools.reconcile_browser_sessions(opts)
     _admitted = admit_sandboxes()
     remove_settled_containers()
@@ -94,63 +92,29 @@ defmodule Rail.Tools.Boot do
     cond do
       match?([{_pid, _value}], follower) ->
         [{pid, _value}] = follower
-        {{:already_following, os_process, pid}, false}
+        {:already_following, os_process, pid}
 
       os_process.status == :starting and is_nil(os_process.os_pid) and is_nil(os_process.container_id) ->
-        {handle_starting_os_process(os_process, now, timeout_seconds), false}
+        handle_starting_os_process(os_process, now, timeout_seconds)
 
       true ->
         adopt_sandbox(os_process, sandbox_state(os_process), now, opts)
     end
   end
 
-  # A sandbox Rail restarted under kept going, and what it wrote meanwhile
-  # follows the line saying so. One beside Rail that died with it has nothing to say.
-  defp adopt_sandbox(os_process, state, now, opts) do
-    announced? = Keyword.get(opts, :boot, false) and state != :gone
-    os_process = if announced?, do: announce_restart(os_process), else: os_process
+  # Asked of whatever it runs in, so a container that outlived Rail is adopted like
+  # any other, and one that exited meanwhile settles on how it exited.
+  defp adopt_sandbox(os_process, :running, _now, opts), do: handle_live_os_process(os_process, opts)
 
-    result =
-      case state do
-        :running -> handle_live_os_process(os_process, opts)
-        {:exited, exit_code, oom_killed?} -> handle_dead_os_process(os_process, {exit_code, oom_killed?}, now)
-        :gone -> handle_dead_os_process(os_process, nil, now)
-      end
+  defp adopt_sandbox(os_process, {:exited, exit_code, oom_killed?}, now, _opts),
+    do: handle_dead_os_process(os_process, {exit_code, oom_killed?}, now)
 
-    {result, announced?}
-  end
-
-  defp announce_restart(%OsProcess{run: %Run{} = run} = os_process) do
-    line =
-      case os_process.kind do
-        :agent ->
-          "[rail] Rail restarted while this turn was running. The #{run.role.name} kept working in its sandbox, " <>
-            "and everything it wrote while Rail was away is below."
-
-        kind ->
-          "[rail] Rail restarted while #{if kind == :ci, do: "CI", else: "worktree setup"} was running. " <>
-            "It kept running in its sandbox, and everything it wrote while Rail was away is below."
-      end
-
-    Pipeline.append_run_events(run.id, os_process.id, [line])
-    os_process |> OsProcess.changeset(%{restarts: os_process.restarts + 1}) |> Repo.update!()
-  end
-
-  # The stop was recorded as Rail went down; a crash recorded none, so it gets its own row.
-  defp record_restart(kept) do
-    restart =
-      Repo.one(from r in Restart, where: is_nil(r.started_at), order_by: [desc: r.inserted_at], limit: 1) ||
-        %Restart{}
-
-    restart
-    |> Restart.changeset(%{started_at: DateTime.utc_now(), sandboxes_kept: kept})
-    |> Repo.insert_or_update!()
-  end
+  defp adopt_sandbox(os_process, :gone, now, _opts), do: handle_dead_os_process(os_process, nil, now)
 
   # A container is removed by its Follower once its run settles; this catches any
   # whose Follower never got to, and any whose row is gone.
   defp remove_settled_containers do
-    with :docker <- Keyword.get(Application.get_env(:rail, :sandbox, []), :runtime),
+    with :docker <- Rail.sandbox_runtime(),
          {:ok, containers} <- Docker.list_containers(@label) do
       ids = Enum.map(containers, & &1["Labels"][@label])
 

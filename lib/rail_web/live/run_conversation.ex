@@ -17,9 +17,6 @@ defmodule RailWeb.Live.RunConversation do
   alias Rail.Tools
   alias Rail.Tools.Schemas.Backend
   alias Rail.Tools.Schemas.OsProcess
-  alias Rail.Tools.Schemas.Restart
-
-  @restarted "[rail] Rail restarted"
 
   @doc """
   Takes the task and its runs; everything else the conversation decides itself.
@@ -57,7 +54,7 @@ defmodule RailWeb.Live.RunConversation do
       |> assign(assigns)
       |> assign(:runs, runs)
       |> assign(:selected_run, selected_run)
-      |> assign_line_and_restarts(selected_run)
+      |> assign_line(selected_run)
       |> assign_run_events(load_run_events(selected_run))
 
     {:ok, socket}
@@ -488,40 +485,6 @@ defmodule RailWeb.Live.RunConversation do
                 class="select-text font-mono whitespace-pre-wrap wrap-break-word"
               >{String.replace_prefix(@text, "[error] ", "")}</span>
             </div>
-          <% String.starts_with?(@text, "[rail] Rail restarted") -> %>
-            <!-- What the turn wrote while Rail was away follows this, so the
-            divider says when Rail went and how long it was gone. -->
-            <div
-              id={"restart-#{@idx}"}
-              data-qa="restart-divider"
-              class="flex items-center gap-3 pt-2 text-[11px] text-slate-400 dark:text-slate-500"
-            >
-              <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-              <span class="font-mono shrink-0 flex items-center gap-1.5">
-                <.icon name="pi-arrows-clockwise" class="h-3 w-3" />
-                <span>Rail restarted</span>
-                <span :if={@msg.at}>·</span>
-                <span
-                  :if={@msg.at}
-                  id={"restart-time-#{@idx}"}
-                  phx-hook="LocalTime"
-                  data-at={DateTime.to_iso8601(@msg.at)}
-                >
-                  {Calendar.strftime(@msg.at, "%H:%M")}
-                </span>
-                <span :if={@msg.duration_seconds}>·</span>
-                <span :if={@msg.duration_seconds}>back in {format_duration(@msg.duration_seconds)}</span>
-              </span>
-              <span class="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-            </div>
-            <div
-              id={"msg-#{@idx}"}
-              data-qa="rail-event"
-              class="flex items-start gap-2 px-2.5 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 font-mono text-[11px] mb-1"
-            >
-              <.icon name="pi-info" class="h-3.5 w-3.5 shrink-0 mt-px" />
-              <span class="select-text">{@text}</span>
-            </div>
           <% String.starts_with?(@text, "[rail]") -> %>
             <div
               id={"msg-#{@idx}"}
@@ -914,7 +877,7 @@ defmodule RailWeb.Live.RunConversation do
   # Stopping hands back whatever had not been delivered, and the composer is where
   # it belongs: still the human's to edit, re-send or throw away.
   def handle_event("stop_run", _params, socket) do
-    {:ok, run, queued} = Pipeline.stop_run(socket.assigns.selected_run, stopped_by_id: socket.assigns[:current_user_id])
+    {:ok, run, queued} = Pipeline.stop_run(socket.assigns.current_scope, socket.assigns.selected_run)
 
     socket =
       socket
@@ -939,7 +902,7 @@ defmodule RailWeb.Live.RunConversation do
 
   def handle_event("stop_and_send_message", _params, socket) do
     run = socket.assigns.selected_run
-    _sent = Pipeline.stop_and_send_message(run)
+    _sent = Pipeline.stop_and_send_message(socket.assigns.current_scope, run)
     {:noreply, select(socket, run)}
   end
 
@@ -996,7 +959,7 @@ defmodule RailWeb.Live.RunConversation do
     socket
     |> assign(:selected_run, run)
     |> assign(:runs, replace_run(socket.assigns.runs, run))
-    |> assign_line_and_restarts(run)
+    |> assign_line(run)
     |> assign_run_events(load_run_events(run))
   end
 
@@ -1013,7 +976,6 @@ defmodule RailWeb.Live.RunConversation do
     |> assign_new(:chat_sending, fn -> false end)
     |> assign_new(:run_events, fn -> [] end)
     |> assign_new(:line, fn -> nil end)
-    |> assign_new(:restarts, fn -> {nil, []} end)
   end
 
   # The log the component holds; the rendered lines and the turns read out of it
@@ -1048,50 +1010,19 @@ defmodule RailWeb.Live.RunConversation do
   end
 
   defp said(events, socket) do
-    {_run_id, restarts} = socket.assigns.restarts
-    restarted_at = for %{line: @restarted <> _rest} = event <- events, do: Map.get(event, :inserted_at)
-
-    events
-    |> Enum.map(& &1.line)
-    |> readable_lines(socket.assigns)
-    |> Pipeline.parse_transcript()
-    |> mark_restarts(restarted_at, restarts)
+    events |> Enum.map(& &1.line) |> readable_lines(socket.assigns) |> Pipeline.parse_transcript()
   end
 
-  # Each line saying Rail restarted is dated by the restart it follows, the one
-  # that came back nearest to when the line was written.
-  defp mark_restarts(turns, [], _restarts), do: turns
-
-  defp mark_restarts(turns, restarted_at, restarts) do
-    {turns, _unmarked} =
-      Enum.map_reduce(turns, restarted_at, fn
-        %Turn{author: :event, content: @restarted <> _rest} = turn, [at | later] ->
-          restart = Enum.min_by(restarts, &abs(DateTime.diff(&1.started_at, at || DateTime.utc_now())), fn -> nil end)
-          {%{turn | at: restart && restart.started_at, duration_seconds: restart && Restart.down_seconds(restart)}, later}
-
-        turn, unmarked ->
-          {turn, unmarked}
-      end)
-
-    turns
-  end
-
-  # Where a waiting run stands in the line, and the restarts since it began, read
-  # once for the run being read rather than for every line appended to it.
-  defp assign_line_and_restarts(socket, %Run{id: run_id} = run) do
+  # Where a waiting run stands in the line, read for the run being read rather
+  # than for every line appended to it.
+  defp assign_line(socket, %Run{} = run) do
     line =
       with :waiting <- Run.state(run), {:ok, line} <- Tools.get_queue_position(run), do: line, else: (_not_in_line -> nil)
 
-    restarts =
-      case socket.assigns.restarts do
-        {^run_id, _restarts} = held -> held
-        _other_run -> {run_id, Tools.list_restarts(since: run.inserted_at)}
-      end
-
-    socket |> assign(:line, line) |> assign(:restarts, restarts)
+    assign(socket, :line, line)
   end
 
-  defp assign_line_and_restarts(socket, nil), do: assign(socket, :line, nil)
+  defp assign_line(socket, nil), do: assign(socket, :line, nil)
 
   # A command's output is read as it was written. Lines Rail wrote while it ran
   # are not its output, so they follow it as themselves.

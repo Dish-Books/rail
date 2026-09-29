@@ -307,7 +307,7 @@ defmodule Rail.Tools.FollowerTest do
 
     assert Tools.os_process_alive?(pid)
 
-    {:ok, stopped_run} = Tools.stop_os_process(os_process, grace_period: 100)
+    {:ok, stopped_run} = Tools.stop_os_process(system_scope(), os_process, grace_period: 100)
     assert stopped_run.status == :finished
     refute Tools.os_process_alive?(pid)
   end
@@ -1152,7 +1152,7 @@ defmodule Rail.Tools.FollowerTest do
       Sandbox.allow(Repo, self(), follower_pid)
 
       assert {:ok, %OsProcess{ended_reason: :stopped, stopped_by_id: ^user_id}} =
-               Tools.stop_os_process(os_process, grace_period: 100, stopped_by_id: user.id)
+               Tools.stop_os_process(Rail.Scope.for_user(user), os_process, grace_period: 100)
 
       assert %OsProcess{status: :running} = Repo.reload!(waiting)
     end
@@ -1225,7 +1225,9 @@ defmodule Rail.Tools.FollowerTest do
       {:ok, follower_pid} = FollowerSupervisor.start_follower(%{os_process | run: run}, tail_interval_ms: 20)
       Sandbox.allow(Repo, self(), follower_pid)
 
-      assert {:ok, %OsProcess{ended_reason: :stopped}} = Tools.stop_os_process(os_process, grace_period: 100)
+      assert {:ok, %OsProcess{ended_reason: :stopped}} =
+               Tools.stop_os_process(system_scope(), os_process, grace_period: 100)
+
       assert Agent.get(stopped, & &1)
     end
 

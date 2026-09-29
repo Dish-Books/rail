@@ -13,7 +13,6 @@ defmodule Rail.Repo.Migrations.AddSandboxFieldsToOsProcesses do
       add :ended_at, :utc_datetime_usec
       add :ended_reason, :text
       add :stopped_by_id, references(:users, on_delete: :nilify_all)
-      add :restarts, :integer, null: false, default: 0
     end
   end
 end

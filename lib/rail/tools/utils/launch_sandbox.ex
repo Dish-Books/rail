@@ -77,8 +77,6 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
   # The sandbox sees /srv/rail at the same path Rail does, so the worktree is
   # checked here: Docker would otherwise create a missing one, owned by root.
   defp start(:docker, %OsProcess{} = os_process, spec) do
-    config = Application.get_env(:rail, :sandbox, [])
-
     {shell, args, env} =
       redirected_command(spec["executable"], spec["args"],
         env: spec["env"],
@@ -88,20 +86,20 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
       )
 
     body = %{
-      "Image" => Keyword.fetch!(config, :image),
+      "Image" => Rail.sandbox_image(),
       "Cmd" => [shell | args],
       "Env" => env |> env() |> Enum.map(fn {key, value} -> "#{key}=#{value}" end),
       "WorkingDir" => spec["cwd"],
       "User" => "1000:1000",
       "HostConfig" => %{
         "NetworkMode" => "host",
-        "Binds" => Keyword.fetch!(config, :binds),
+        "Binds" => Rail.sandbox_binds(),
         "NanoCpus" => os_process.reserved_cpus * 1_000_000_000,
         # Swap is capped at the same figure, so a sandbox cannot use more by swapping.
         "Memory" => os_process.reserved_memory_gb * @gib,
         "MemorySwap" => os_process.reserved_memory_gb * @gib,
         "Init" => true,
-        "ShmSize" => Keyword.get(config, :shm_size_gb, 1) * @gib
+        "ShmSize" => Rail.sandbox_shm_size_gb() * @gib
       }
     }
 

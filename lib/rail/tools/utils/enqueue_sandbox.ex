@@ -24,7 +24,7 @@ defmodule Rail.Tools.Utils.EnqueueSandbox do
       os_process
       |> OsProcess.changeset(%{
         status: :waiting_for_resources,
-        runtime: Keyword.get(Application.get_env(:rail, :sandbox, []), :runtime, :local),
+        runtime: Rail.sandbox_runtime(),
         reserved_cpus: role.reserved_cpus,
         reserved_memory_gb: role.reserved_memory_gb,
         queued_at: DateTime.utc_now(),

@@ -18,12 +18,13 @@ defmodule Rail.Pipeline.Actions.StopRun do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Repo
+  alias Rail.Scope
 
   @doc """
-  Stops `run` and returns `{:ok, run, queued_text}`, where `queued_text` is the
+  Stops `run` on behalf of `scope` and returns `{:ok, run, queued_text}`, where `queued_text` is the
   message that had not been delivered yet, or `nil`.
   """
-  def stop_run(%Run{} = run, opts \\ []) do
+  def stop_run(%Scope{} = scope, %Run{} = run, opts \\ []) do
     run = Run |> Repo.get!(run.id) |> Repo.preload(:task)
     queued = run.pending_chat
     was_running = Run.running?(run)
@@ -34,7 +35,7 @@ defmodule Rail.Pipeline.Actions.StopRun do
     # it next for the one copy of the text.
     {:ok, drained} = run |> Run.changeset(%{pending_chat: nil}) |> Repo.update()
 
-    stop_live_process(drained, opts)
+    stop_live_process(scope, drained, opts)
 
     {:ok, mark_stopped(%{drained | task: run.task}, was_running), queued}
   end

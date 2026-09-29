@@ -142,7 +142,7 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     {:ok, %OsProcess{} = first} = Tools.start_os_process(run, ["2"])
     assert_received {:env, %{"RAIL_MCP_TOKEN" => first_token}}
 
-    {:ok, _finished} = Tools.stop_os_process(first)
+    {:ok, _finished} = Tools.stop_os_process(system_scope(), first)
     {:ok, %OsProcess{}} = Tools.start_os_process(run, ["2"])
     assert_received {:env, %{"RAIL_MCP_TOKEN" => second_token}}
 

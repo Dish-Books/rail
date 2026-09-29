@@ -30,19 +30,7 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
       end
     end)
 
-    stub_sandbox_config(runtime: :docker)
-
-    # Rail's own configuration, which an agent must never inherit, beside what it must.
-    stub(System, :get_env, fn ->
-      System
-      |> call_original(:get_env, [])
-      |> Map.merge(%{
-        "MIX_ENV" => "prod",
-        "DATABASE_URL" => "ecto://rail_prod",
-        "SECRET_KEY_BASE" => "secret",
-        "MISE_DATA_DIR" => "/srv/rail/mise"
-      })
-    end)
+    stub(Rail, :sandbox_runtime, fn -> :docker end)
 
     tmp_dir = Path.join(System.tmp_dir!(), "launch_sandbox_#{System.unique_integer([:positive])}")
     worktree_path = Path.join(tmp_dir, "worktree")
@@ -107,13 +95,14 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
              "CLAUDE_CONFIG_DIR" => ^config_dir,
              "RAIL_PORT_BASE" => "20300",
              "RAIL_WORKTREE_SLOT" => "3",
-             "MISE_DATA_DIR" => "/srv/rail/mise",
-             "RAIL_MCP_TOKEN" => "" <> _token
+             "RAIL_MCP_TOKEN" => "" <> _token,
+             "PATH" => "" <> _path
            } = env
 
-    refute Map.has_key?(env, "MIX_ENV")
-    refute Map.has_key?(env, "DATABASE_URL")
-    refute Map.has_key?(env, "SECRET_KEY_BASE")
+    # The tool environment Rail runs agents with beside itself, which keeps mise's
+    # data and leaves Rail's own settings out (see Rail.Tools.Utils.EnvTest).
+    assert env["MISE_DATA_DIR"] == System.get_env("MISE_DATA_DIR")
+    refute Enum.any?(["MIX_ENV", "DATABASE_URL", "SECRET_KEY_BASE"], &Map.has_key?(env, &1))
   end
 
   test "gives the sandbox exactly what its role reserves, with no swap to use more", %{run: run} do

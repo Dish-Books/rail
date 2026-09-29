@@ -55,12 +55,12 @@ defmodule Rail.Pipeline.Actions.StopAndSendMessageTest do
 
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
-    assert {:ok, :sent, %Run{}} = Pipeline.stop_and_send_message(run)
+    assert {:ok, :sent, %Run{}} = Pipeline.stop_and_send_message(system_scope(), run)
   end
 
   test "there is nothing to send now when nothing was queued", %{working: working} do
     run = working.(%{})
 
-    assert {:error, :nothing_queued} = Pipeline.stop_and_send_message(run)
+    assert {:error, :nothing_queued} = Pipeline.stop_and_send_message(system_scope(), run)
   end
 end

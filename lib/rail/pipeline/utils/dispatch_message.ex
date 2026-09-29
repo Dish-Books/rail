@@ -6,7 +6,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   one thing only: a message the human has written that the agent has not seen.
   That is what lets someone type while the agent is still working — the message
   waits on the row rather than being appended to the turn already in flight — and
-  what lets `stop_run/1` hand an undelivered message back to the composer.
+  what lets `stop_run/3` hand an undelivered message back to the composer.
 
   A dispatch that never reaches a process puts the text back, so a failed send
   degrades to a message that is still queued rather than one that is lost.

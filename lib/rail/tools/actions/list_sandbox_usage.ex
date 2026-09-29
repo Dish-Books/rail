@@ -23,7 +23,8 @@ defmodule Rail.Tools.Actions.ListSandboxUsage do
       select: {p.id, p.container_id}
     )
     |> Repo.all()
-    |> Task.async_stream(fn {id, container_id} -> {id, Docker.stats(container_id)} end,
+    |> Task.async_stream(
+      fn {id, container_id} -> {id, Docker.stats(container_id)} end,
       ordered: false,
       timeout: @read_timeout_ms,
       on_timeout: :kill_task
