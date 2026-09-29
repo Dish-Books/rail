@@ -66,11 +66,12 @@ defmodule Rail.Tools.Actions.ExecuteBrowserActionTest do
     end)
 
     # A document still navigating has nothing to read, which is exactly what
-    # `observe_browser/2` says rather than raising - so wait for the page these
-    # tests act on to be there.
+    # `observe_browser/2` says rather than raising, and one still parsing has only
+    # its first controls - so wait for the last control these tests act on.
     page =
       eventually(fn ->
-        assert {:ok, %{"actions" => [_first | _rest]} = page} = Tools.observe_browser(session)
+        assert {:ok, %{"actions" => actions} = page} = Tools.observe_browser(session)
+        assert Enum.any?(actions, &(&1["label"] == "Wide button"))
 
         page
       end)

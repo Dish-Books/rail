@@ -447,4 +447,187 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
     assert render(view) =~ "First Project Renamed"
     assert render(view) =~ "Second Project"
   end
+
+  describe "triage" do
+    setup %{project: project} do
+      %{workspace: workspace, channel: channel} = connect_slack_channel(project)
+      unique = System.unique_integer([:positive])
+      posthog = "C#{unique}ph"
+
+      stub_slack(
+        team_id: workspace.external_id,
+        channels: [{channel.external_id, "rail-feedback"}, {posthog, "posthog-index"}]
+      )
+
+      %{channel: channel, posthog: posthog, workspace: workspace}
+    end
+
+    test "an admin picks the project's channels, and which of them triage bot posts", %{
+      admin_conn: conn,
+      project: project,
+      channel: channel,
+      posthog: posthog
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      assert has_element?(view, "#slack-channel-#{channel.external_id}[checked]")
+      # The modal is taller than a laptop screen with the channel list, so it has to scroll.
+      assert has_element?(view, "#project-modal-panel.overflow-y-auto")
+      refute has_element?(view, "#slack-channel-#{posthog}[checked]")
+      refute has_element?(view, "#slack-channel-bots-#{posthog}")
+
+      params = %{
+        "channels" => %{
+          channel.external_id => %{"included" => "false"},
+          posthog => %{"included" => "true"}
+        }
+      }
+
+      view |> form("#slack-channels-form", params) |> render_change()
+      assert has_element?(view, "#slack-channel-bots-#{posthog}")
+      assert has_element?(view, "#slack-channels-form", "For channels where tools such as PostHog report issues")
+
+      params = put_in(params, ["channels", posthog, "bot_triage_enabled"], "true")
+      view |> form("#slack-channels-form", params) |> render_submit()
+
+      assert has_element?(view, "#slack-channels-saved")
+
+      assert [%{id: posthog_row, external_id: ^posthog, name: "posthog-index", bot_triage_enabled: true}] =
+               Projects.list_slack_channels(project)
+
+      view
+      |> form("#slack-channels-form", put_in(params, ["channels", posthog, "bot_triage_enabled"], "false"))
+      |> render_submit()
+
+      assert [%{id: ^posthog_row, bot_triage_enabled: false}] = Projects.list_slack_channels(project)
+    end
+
+    test "a stored channel Slack no longer lists stays checked and survives a save, with its threads", %{
+      admin_conn: conn,
+      project: project,
+      channel: %{id: channel_id} = channel,
+      workspace: workspace,
+      posthog: posthog
+    } do
+      {:ok, %{id: thread_id}} = Rail.Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
+      stub_slack(team_id: workspace.external_id, channels: [{posthog, "posthog-index"}])
+
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      assert has_element?(view, "#slack-channel-#{channel.external_id}[checked]")
+      assert has_element?(view, "#slack-channel-unlisted-#{channel.external_id}", "Not listed by Slack")
+
+      view
+      |> form("#slack-channels-form", %{"channels" => %{posthog => %{"included" => "true"}}})
+      |> render_submit()
+
+      assert has_element?(view, "#slack-channels-saved")
+
+      assert [%{external_id: ^posthog}, %{id: ^channel_id, name: "rail-feedback"}] =
+               Projects.list_slack_channels(project)
+
+      assert {:ok, %{id: ^thread_id}} = Rail.Triage.get_triage_thread(system_scope(), thread_id)
+    end
+
+    test "unchecking a channel with triage history asks first, naming what goes", %{
+      admin_conn: conn,
+      project: project,
+      channel: %{id: channel_id} = channel,
+      workspace: workspace,
+      posthog: posthog
+    } do
+      {:ok, %{id: thread_id}} = Rail.Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
+
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      unchecked = %{"channels" => %{channel.external_id => %{"included" => "false"}, posthog => %{"included" => "true"}}}
+      view |> form("#slack-channels-form", unchecked) |> render_submit()
+
+      assert has_element?(view, "#slack-channels-confirm", "Removing #rail-feedback deletes 1 triage thread")
+      assert [%{id: ^channel_id}] = Projects.list_slack_channels(project)
+
+      view |> element("#cancel-remove-channels-button") |> render_click()
+      refute has_element?(view, "#slack-channels-confirm")
+      assert [%{id: ^channel_id}] = Projects.list_slack_channels(project)
+
+      view |> form("#slack-channels-form", unchecked) |> render_submit()
+      view |> element("#confirm-remove-channels-button") |> render_click()
+
+      assert has_element?(view, "#slack-channels-saved")
+      assert [%{external_id: ^posthog}] = Projects.list_slack_channels(project)
+      assert {:error, :not_found} = Rail.Triage.get_triage_thread(system_scope(), thread_id)
+    end
+
+    test "a channel another project holds is refused on the form", %{
+      admin_conn: conn,
+      admin_user: admin,
+      project: project,
+      posthog: posthog,
+      workspace: workspace
+    } do
+      {:ok, other} =
+        Projects.create_project(Scope.for_user(admin), %{
+          name: "Other",
+          github_repo: "example/other-#{System.unique_integer([:positive])}",
+          github_installation_id: 9,
+          linear_team_key: "OTH",
+          default_branch: "main",
+          clone_path: "/tmp/other"
+        })
+
+      held = %{"external_id" => posthog, "name" => "posthog-index", "slack_workspace_id" => workspace.id}
+      {:ok, _held} = Projects.update_project(Scope.for_user(admin), other, %{"slack_channels" => [held]})
+
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      view
+      |> form("#slack-channels-form", %{"channels" => %{posthog => %{"included" => "true"}}})
+      |> render_submit()
+
+      assert has_element?(view, "#slack-channels-error", "is connected to another project")
+    end
+
+    test "a Slack that cannot list its channels offers only what the project already has", %{
+      admin_conn: conn,
+      project: project,
+      channel: channel,
+      posthog: posthog
+    } do
+      Req.Test.stub(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "ratelimited"}))
+
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      assert has_element?(view, "#slack-channel-unlisted-#{channel.external_id}", "Not listed by Slack")
+      refute has_element?(view, "#slack-channel-#{posthog}")
+    end
+
+    test "names whose MCP connections triage uses", %{admin_conn: conn, admin_user: %{id: admin_id}, project: project} do
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      assert has_element?(view, "#project-triage-user-input option[value='#{admin_id}']")
+
+      view |> form("#project-form", %{"project" => %{"triage_user_id" => admin_id}}) |> render_submit()
+
+      assert %Project{triage_user_id: ^admin_id} = Repo.get!(Project, project.id)
+    end
+  end
+
+  test "a project with no Slack workspace to pick from says where to add one", %{admin_conn: conn, project: project} do
+    assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+    view |> element("#edit-project-#{project.id}") |> render_click()
+
+    assert has_element?(view, "#slack-channels-empty", "Add a Slack workspace")
+  end
 end

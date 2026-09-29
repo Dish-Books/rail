@@ -23,6 +23,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate input(assigns), to: Components.Input
   defdelegate issue_card(assigns), to: Components.IssueCard
   defdelegate issue_view(assigns), to: Components.IssueView
+  defdelegate local_time(assigns), to: Components.LocalTime
   defdelegate markdown(assigns), to: Components.Markdown
   defdelegate nav(assigns), to: Components.Nav
   defdelegate overview_stats(assigns), to: Components.OverviewStats
@@ -38,5 +39,9 @@ defmodule RailWeb.CoreComponents do
   defdelegate task_tabs(assigns), to: Components.TaskTabs
   defdelegate throughput_chart(assigns), to: Components.ThroughputChart
   defdelegate top_app_bar(assigns), to: Components.Nav
+  defdelegate triage_item(assigns), to: Components.TriageItem
+  defdelegate triage_queue(assigns), to: Components.TriageQueue
+  defdelegate triage_thread(assigns), to: Components.TriageThread
+  defdelegate triage_verdict(assigns), to: Components.TriageVerdict
   defdelegate up_next(assigns), to: Components.UpNext
 end

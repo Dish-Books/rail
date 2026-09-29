@@ -1,6 +1,8 @@
 defmodule Rail.Git.Actions.GetOrCreateWorktree do
   @moduledoc false
 
+  import Rail.Git.Utils.WithCloneLock
+
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -46,7 +48,7 @@ defmodule Rail.Git.Actions.GetOrCreateWorktree do
   defp add_worktree(repo_path, worktree_path, add_args) do
     args = ["worktree", "add" | add_args]
 
-    case Tools.run("git", args, cd: repo_path, stderr_to_stdout: true) do
+    case with_clone_lock(repo_path, fn -> Tools.run("git", args, cd: repo_path, stderr_to_stdout: true) end) do
       {_out, 0} ->
         :ok
 

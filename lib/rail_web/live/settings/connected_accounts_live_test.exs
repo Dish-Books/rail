@@ -324,4 +324,36 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
       assert %User{signing_key: nil} = Repo.reload!(user)
     end
   end
+
+  test "connects and disconnects Slack, so triage posts as you", %{authed_conn: conn, user: user} do
+    {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+
+    assert has_element?(view, "#slack-disconnected-message")
+    assert has_element?(view, ~s(#connect-slack-button[href="/auth/slack"]))
+
+    {:ok, _linked} =
+      Users.update_user(system_scope(), user, %{
+        slack_name: "Live Slack",
+        slack_access_token: "xoxp-1",
+        slack_team_id: "T1"
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+    assert has_element?(view, "#slack-connected-details", "Live Slack")
+
+    view |> element("#disconnect-slack-button") |> render_click()
+
+    assert has_element?(view, "#connect-slack-button")
+    assert %User{slack_access_token: nil} = Repo.reload!(user)
+  end
+
+  test "a Slack disconnect that fails changes nothing on the page", %{authed_conn: conn, user: user} do
+    {:ok, _linked} = Users.update_user(system_scope(), user, %{slack_access_token: "xoxp-1"})
+    expect(Users, :unlink_slack, fn _scope -> {:error, :db_error} end)
+
+    {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+    view |> element("#disconnect-slack-button") |> render_click()
+
+    assert has_element?(view, "#disconnect-slack-button")
+  end
 end

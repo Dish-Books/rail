@@ -31,6 +31,7 @@ defmodule RailWeb.Settings.LinearWorkspacesLive do
       current_scope={@current_scope}
       is_rail_extended={@is_rail_extended}
       attention_count={@attention_count}
+      triage_count={@triage_count}
       current_project_id={@current_project_id}
       projects={@projects}
       theme={@theme}

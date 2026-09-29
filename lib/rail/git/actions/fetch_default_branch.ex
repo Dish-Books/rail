@@ -1,6 +1,8 @@
 defmodule Rail.Git.Actions.FetchDefaultBranch do
   @moduledoc false
 
+  import Rail.Git.Utils.WithCloneLock
+
   alias Rail.Git
   alias Rail.Projects.Schemas.Project
   alias Rail.Tools
@@ -13,12 +15,16 @@ defmodule Rail.Git.Actions.FetchDefaultBranch do
   """
   def fetch_default_branch(%Project{} = project, worktree_path) when is_binary(worktree_path) do
     with {:ok, env} <- Git.credential_env(project) do
-      case Tools.run("git", ["fetch", "origin", project.default_branch],
-             cd: worktree_path,
-             env: env,
-             stderr_to_stdout: true,
-             timeout: @timeout_ms
-           ) do
+      fetch = fn ->
+        Tools.run("git", ["fetch", "origin", project.default_branch],
+          cd: worktree_path,
+          env: env,
+          stderr_to_stdout: true,
+          timeout: @timeout_ms
+        )
+      end
+
+      case with_clone_lock(project.clone_path, fetch) do
         {_output, 0} -> :ok
         # coveralls-ignore-next-line (a fetch that runs for five minutes)
         {:error, :timeout} -> {:error, "The fetch was still running after five minutes, so it was stopped."}
