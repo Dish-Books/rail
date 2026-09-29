@@ -17,7 +17,6 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
   alias Rail.Pipeline
   alias Rail.Repo
   alias Rail.Scope
-  alias Rail.Triage
   alias Rail.Triage.Schemas.Item
 
   @doc """
@@ -29,10 +28,12 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
 
     with :ok <- can_post_to_slack(scope, item.thread),
          :ok <- open(item),
-         {:ok, drafted} <- Triage.update_triage_draft(scope, item, attrs),
+         {:ok, drafted} <- item |> Item.draft_changeset(attrs) |> Ecto.Changeset.apply_action(:update),
          :ok <- claim(item, user_id),
-         {:ok, issue} <- create(scope, %{drafted | thread: item.thread}) do
+         {:ok, issue} <- create(scope, item, drafted) do
       item = item |> Repo.reload!() |> Repo.preload(thread: [:project, slack_channel: :slack_workspace])
+      # The reply goes out as the person left it in the form, not as the pass drafted it.
+      item = %{item | reply_text: drafted.reply_text}
       started = product(issue)
       posted = post(scope, item, issue)
       {:ok, item} = item |> Ecto.Changeset.change(Map.merge(started, posted)) |> Repo.update()
@@ -60,12 +61,21 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
     end
   end
 
-  defp create(scope, %Item{thread: thread} = item) do
-    attrs = %{title: item.issue_title, description: item.issue_description, priority: item.issue_priority}
+  # The item keeps the issue as it was created, which is what the person sent.
+  defp create(scope, %Item{thread: thread} = item, %Item{} = drafted) do
+    attrs = %{title: drafted.issue_title, description: drafted.issue_description, priority: drafted.issue_priority}
 
     case Issues.create_issue(scope, thread.project, attrs) do
       {:ok, %Issue{} = issue} ->
-        item |> Ecto.Changeset.change(created_issue_id: issue.id) |> Repo.update!()
+        item
+        |> Ecto.Changeset.change(
+          created_issue_id: issue.id,
+          issue_title: attrs.title,
+          issue_description: attrs.description,
+          issue_priority: attrs.priority
+        )
+        |> Repo.update!()
+
         {:ok, issue}
 
       {:error, reason} ->

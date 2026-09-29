@@ -14,7 +14,6 @@ defmodule RailWeb.Components.TriageItem do
   attr :item, Item, required: true
   attr :form, :any, required: true, doc: "the item's draft changeset"
   attr :slack_linked, :boolean, required: true
-  attr :current_user_id, :string, required: true
   attr :project_name, :string, required: true
   attr :corrected_by, :string, default: nil
   attr :error, :string, default: nil
@@ -48,7 +47,7 @@ defmodule RailWeb.Components.TriageItem do
     assigns =
       assigns
       |> assign(:posted_by, posted_by(item))
-      |> assign(:created_line, created_line(item, assigns.current_user_id))
+      |> assign(:created_line, created_line(item))
       |> assign(:task, item.created_issue && item.created_issue.task)
 
     ~H"""
@@ -131,8 +130,6 @@ defmodule RailWeb.Components.TriageItem do
       assigns
       |> assign(:show_issue_form, Item.issue_draft?(item) and is_nil(item.created_issue_id))
       |> assign(:show_reply_form, Item.reply_draft?(item) and is_nil(item.reply_posted_at))
-      |> assign(:issue_edited, edited(item.issue_edited_by_id, item.issue_edited_by, assigns.current_user_id))
-      |> assign(:reply_edited, edited(item.reply_edited_by_id, item.reply_edited_by, assigns.current_user_id))
       |> assign(:priorities, Enum.map(Issue.priorities(), &{Issue.priority_label(&1), &1}))
       |> assign(:error, assigns.error || item.error)
 
@@ -286,31 +283,6 @@ defmodule RailWeb.Components.TriageItem do
               <span class="px-1.5 rounded-full text-[10.5px] font-semibold border border-dashed border-slate-400 dark:border-slate-500 text-slate-500 dark:text-slate-400">
                 Draft, not created
               </span>
-              <span
-                :if={@issue_edited}
-                id={"issue-edited-#{@item.id}"}
-                class="ml-auto text-[11px] text-blue-600 dark:text-blue-400 font-semibold"
-              >
-                {@issue_edited}
-              </span>
-              <span
-                :if={@item.issue_draft_proposal}
-                id={"issue-draft-changed-#{@item.id}"}
-                title="A later pass drafted this issue differently. Your edit is kept."
-                class="inline-flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 font-semibold"
-              >
-                Rail's draft changed
-                <button
-                  type="button"
-                  id={"use-issue-proposal-#{@item.id}"}
-                  phx-click="use_proposal"
-                  phx-value-item_id={@item.id}
-                  phx-value-draft="issue"
-                  class="underline hover:text-amber-700 dark:hover:text-amber-300"
-                >
-                  Use Rail's draft
-                </button>
-              </span>
             </div>
             <label class="sr-only" for={"issue-title-#{@item.id}"}>Issue title</label>
             <input
@@ -376,31 +348,6 @@ defmodule RailWeb.Components.TriageItem do
               <span class="px-1.5 rounded-full text-[10.5px] font-semibold border border-dashed border-slate-400 dark:border-slate-500 text-slate-500 dark:text-slate-400">
                 Draft, not posted
               </span>
-              <span
-                :if={@reply_edited}
-                id={"reply-edited-#{@item.id}"}
-                class="ml-auto text-[11px] text-blue-600 dark:text-blue-400 font-semibold"
-              >
-                {@reply_edited}
-              </span>
-              <span
-                :if={@item.reply_draft_proposal}
-                id={"reply-draft-changed-#{@item.id}"}
-                title="A later pass drafted this reply differently. Your edit is kept."
-                class="inline-flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 font-semibold"
-              >
-                Rail's draft changed
-                <button
-                  type="button"
-                  id={"use-reply-proposal-#{@item.id}"}
-                  phx-click="use_proposal"
-                  phx-value-item_id={@item.id}
-                  phx-value-draft="reply"
-                  class="underline hover:text-amber-700 dark:hover:text-amber-300"
-                >
-                  Use Rail's draft
-                </button>
-              </span>
             </div>
             <textarea
               id={"reply-text-#{@item.id}"}
@@ -463,18 +410,11 @@ defmodule RailWeb.Components.TriageItem do
   defp location(%{file: file, lines: lines}) when is_binary(lines), do: "#{file}:#{lines}"
   defp location(%{file: file}), do: file
 
-  defp edited(nil, _user, _current_user_id), do: nil
-  defp edited(user_id, _user, user_id), do: "Edited by you"
-  defp edited(_user_id, user, _current_user_id), do: "Edited by #{user.name || user.login}"
-
   defp posted_by(%Item{reply_posted_at: %DateTime{}, reply_posted_by: user}) when is_map(user),
     do: user.name || user.login
 
   defp posted_by(%Item{}), do: nil
 
-  defp created_line(%Item{created_issue: %Issue{identifier: identifier}, issue_edited_by_id: user_id}, user_id)
-       when is_binary(user_id), do: "Created #{identifier} with your edits"
-
-  defp created_line(%Item{created_issue: %Issue{identifier: identifier}}, _current_user_id), do: "Created #{identifier}"
-  defp created_line(%Item{}, _current_user_id), do: nil
+  defp created_line(%Item{created_issue: %Issue{identifier: identifier}}), do: "Created #{identifier}"
+  defp created_line(%Item{}), do: nil
 end

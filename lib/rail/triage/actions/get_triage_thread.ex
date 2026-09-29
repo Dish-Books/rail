@@ -28,8 +28,6 @@ defmodule Rail.Triage.Actions.GetTriageThread do
               preload: [
                 :thread,
                 :existing_issue,
-                :issue_edited_by,
-                :reply_edited_by,
                 :issue_created_by,
                 :reply_posted_by,
                 created_issue: :task

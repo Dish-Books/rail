@@ -30,7 +30,7 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
     %{linear_issue: linear_issue}
   end
 
-  test "creates the issue with the person's edits, starts product, and posts the reply with its link as them", %{
+  test "creates the issue as the person edited it, starts product, and posts their reply with its link as them", %{
     thread: thread,
     scope: scope,
     user: %{id: user_id} = user,
@@ -59,7 +59,8 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
 
       assert %{
                "thread_ts" => "1790000000.000100",
-               "text" => "Thanks Priya, we reproduced this. Filed as <https://linear.app/acme/issue/TRI-214|TRI-214>."
+               "text" =>
+                 "Thanks Priya, we fixed the stuck tasks. Filed as <https://linear.app/acme/issue/TRI-214|TRI-214>."
              } = conn |> Req.Test.raw_body() |> Jason.decode!()
 
       Req.Test.json(conn, %{"ok" => true, "ts" => "1790000500.000100"})
@@ -70,7 +71,6 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
               created_issue_id: "iss_" <> _issue_id,
               issue_created_by_id: ^user_id,
               issue_title: "Approve leaves tasks at Design, with no Design role",
-              issue_edited_by_id: ^user_id,
               reply_posted_by_id: ^user_id,
               reply_posted_at: %DateTime{},
               error: nil
@@ -78,7 +78,8 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
              Triage.create_triage_issue(scope, item, %{
                "issue_title" => "Approve leaves tasks at Design, with no Design role",
                "issue_description" => "Edited.",
-               "issue_priority" => "urgent"
+               "issue_priority" => "urgent",
+               "reply_text" => "Thanks Priya, we fixed the stuck tasks. Filed as {issue link}."
              })
 
     assert %Thread{status: :done} = Repo.get!(Thread, thread.id)
@@ -87,7 +88,6 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
              Repo.get_by!(Message, external_id: "1790000500.000100")
 
     assert {:error, :already_created} = Triage.create_triage_issue(scope, item, %{})
-    assert {:error, :locked} = Triage.update_triage_draft(scope, item, %{"issue_title" => "Too late"})
   end
 
   test "posts only the link line when no reply was proposed", %{thread: thread, scope: scope, linear_issue: linear_issue} do
@@ -213,7 +213,9 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
 
     Req.Test.expect(Rail.Linear, &(&1 |> Plug.Conn.put_status(500) |> Req.Test.json(%{})))
 
-    assert {:error, {:linear_api_error, 500, _body}} = Triage.create_triage_issue(scope, item, %{})
-    assert %Item{created_issue_id: nil, issue_created_by_id: nil} = Repo.get!(Item, item.id)
+    assert {:error, {:linear_api_error, 500, _body}} = Triage.create_triage_issue(scope, item, %{"issue_title" => "Mine"})
+
+    assert %Item{created_issue_id: nil, issue_created_by_id: nil, issue_title: "Approve leaves tasks at Design"} =
+             Repo.get!(Item, item.id)
   end
 end

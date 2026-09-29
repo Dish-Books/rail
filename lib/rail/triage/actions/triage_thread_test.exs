@@ -513,19 +513,14 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     assert 5 = Repo.aggregate(from(m in Message, where: m.thread_id == ^thread_id), :count)
   end
 
-  test "a later pass keeps a person's edits to the drafts, and keeps its own differing draft beside them", %{
+  test "a later pass sets the drafts to what it drafted", %{
     workspace: workspace,
     channel: channel,
     thread: %{id: thread_id} = thread,
     bug: bug,
     result_path: result_path
   } do
-    %Thread{items: [item]} = triage_with(thread, %{"items" => [bug]})
-    %{id: editor_id} = editor_user = slack_user(workspace.external_id)
-    editor = Rail.Scope.for_user(editor_user)
-
-    {:ok, _edited} =
-      Triage.update_triage_draft(editor, item, %{"reply_text" => "Dana, which page? A screenshot would help."})
+    %Thread{items: [_item]} = triage_with(thread, %{"items" => [bug]})
 
     {:ok, thread} =
       Triage.handle_slack_event(
@@ -536,7 +531,6 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     expect(Tools, :run_agent, fn _backend, _argv, _opts ->
       rewritten =
         Map.merge(bug, %{
-          "summary" => "Also seen on BILL-91.",
           "reply" => "Couldn't reproduce yet.",
           "issue" => %{"title" => "Rail's new title", "description" => "New.", "priority" => "low"}
         })
@@ -549,48 +543,11 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
     assert [
              %Item{
-               summary: "Also seen on BILL-91.",
-               reply_text: "Dana, which page? A screenshot would help.",
-               reply_edited_by_id: ^editor_id,
-               reply_draft_proposal: "Couldn't reproduce yet.",
+               reply_text: "Couldn't reproduce yet.",
                issue_title: "Rail's new title",
-               issue_edited_by_id: nil,
-               issue_draft_proposal: nil
+               issue_description: "New.",
+               issue_priority: :low
              }
            ] = Repo.all(from i in Item, where: i.thread_id == ^thread_id)
-  end
-
-  test "a later pass holds no draft beside a person's edit when it drafts the same or nothing", %{
-    workspace: workspace,
-    channel: channel,
-    thread: %{id: thread_id} = thread,
-    bug: bug,
-    result_path: result_path
-  } do
-    %Thread{items: [item]} = triage_with(thread, %{"items" => [bug]})
-    editor = Rail.Scope.for_user(slack_user(workspace.external_id))
-    {:ok, _edited} = Triage.update_triage_draft(editor, item, %{"reply_text" => "Which page?", "issue_title" => "Mine"})
-
-    for {ts, rewritten} <- [
-          {"1790000100.000200",
-           Map.merge(bug, %{"reply" => "Which page?", "issue" => Map.put(bug["issue"], "title", "Mine")})},
-          {"1790000100.000300", Map.drop(bug, ["reply", "issue"])}
-        ] do
-      {:ok, thread} =
-        Triage.handle_slack_event(
-          workspace,
-          slack_message_event(channel, %{"ts" => ts, "thread_ts" => thread.external_id, "text" => "+1"})
-        )
-
-      expect(Tools, :run_agent, fn _backend, _argv, _opts ->
-        File.write!(result_path, Jason.encode!(%{"items" => [rewritten]}))
-        {:ok, ""}
-      end)
-
-      assert :ok = Triage.triage_thread(thread)
-
-      assert [%Item{reply_text: "Which page?", reply_draft_proposal: nil, issue_title: "Mine", issue_draft_proposal: nil}] =
-               Repo.all(from i in Item, where: i.thread_id == ^thread_id)
-    end
   end
 end

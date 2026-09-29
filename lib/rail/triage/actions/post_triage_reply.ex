@@ -10,7 +10,6 @@ defmodule Rail.Triage.Actions.PostTriageReply do
 
   alias Rail.Repo
   alias Rail.Scope
-  alias Rail.Triage
   alias Rail.Triage.Schemas.Item
 
   @doc """
@@ -22,12 +21,9 @@ defmodule Rail.Triage.Actions.PostTriageReply do
     item = Repo.get!(Item, item_id)
 
     with :ok <- open(item),
-         {:ok, _drafted} <- Triage.update_triage_draft(scope, item, attrs),
-         item =
-           Item
-           |> Repo.get!(item_id)
-           |> Repo.preload([:created_issue, :existing_issue, thread: [slack_channel: :slack_workspace]]),
-         {:ok, text} <- text(item),
+         item = Repo.preload(item, [:created_issue, :existing_issue, thread: [slack_channel: :slack_workspace]]),
+         {:ok, drafted} <- item |> Item.draft_changeset(attrs) |> Ecto.Changeset.apply_action(:update),
+         {:ok, text} <- text(drafted),
          :ok <- can_post_to_slack(scope, item.thread),
          :ok <- claim_reply(item, scope.user.id),
          {:ok, message} <- post(scope, item, text) do

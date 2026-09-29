@@ -5,9 +5,8 @@ defmodule Rail.Triage.Actions.SyncTriage do
   An item is matched by the key the agent gave it, so a later pass updates what
   it said about the same thing rather than raising it twice. A pass may rewrite
   only the items it was given, and never one a person already settled: those
-  are closed, and news about them is a new item. A draft a person already
-  accepted, or edited, is never rewritten: an edited one is kept, and when the pass
-  drafted something else that draft is held beside it for a person to take.
+  are closed, and news about them is a new item. Each pass sets the drafts it
+  wrote, except one a person already accepted.
   """
 
   import Ecto.Query
@@ -92,7 +91,6 @@ defmodule Rail.Triage.Actions.SyncTriage do
       attrs
       |> Map.merge(%{retriaging: false, error: nil})
       |> Map.merge(redo(item, attrs, now))
-      |> keep_edits(item)
       |> Map.drop(accepted(item))
 
     item |> Item.triage_changeset(attrs) |> Repo.update!()
@@ -105,30 +103,11 @@ defmodule Rail.Triage.Actions.SyncTriage do
 
   defp redo(%Item{}, _attrs, _now), do: %{}
 
-  # A person's edit outlives the pass, and a draft Rail would now write differently waits beside it.
-  defp keep_edits(attrs, %Item{} = item) do
-    attrs
-    |> keep_edit(item, item.issue_edited_by_id, @issue_fields, :issue_draft_proposal, fn proposed ->
-      %{title: proposed[:issue_title], description: proposed[:issue_description], priority: proposed[:issue_priority]}
-    end)
-    |> keep_edit(item, item.reply_edited_by_id, [:reply_text], :reply_draft_proposal, & &1[:reply_text])
-  end
-
-  defp keep_edit(attrs, item, editor_id, fields, proposal, to_proposal) when is_binary(editor_id) do
-    proposed = Map.take(attrs, fields)
-    drafted? = Enum.any?(fields, &proposed[&1])
-    changed? = Enum.any?(fields, &(to_string(proposed[&1]) != to_string(Map.fetch!(item, &1))))
-
-    attrs |> Map.drop(fields) |> Map.put(proposal, if(drafted? and changed?, do: to_proposal.(proposed)))
-  end
-
-  defp keep_edit(attrs, _item, _editor_id, _fields, _proposal, _to_proposal), do: attrs
-
   defp accepted(%Item{} = item) do
     issue =
-      if item.created_issue_id, do: [:issue_edited_by_id, :issue_draft_proposal | @issue_fields], else: []
+      if item.created_issue_id, do: @issue_fields, else: []
 
-    reply = if item.reply_posted_at, do: [:reply_text, :reply_edited_by_id, :reply_draft_proposal], else: []
+    reply = if item.reply_posted_at, do: [:reply_text], else: []
     issue ++ reply
   end
 

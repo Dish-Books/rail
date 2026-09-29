@@ -82,7 +82,11 @@ defmodule Rail.Triage.RunnerTest do
   end
 
   test "a pass that finds its thread locked tries again", %{thread: %{id: thread_id}, result_path: result_path} do
-    start_supervised!({Runner, enabled: true, retry_after: 20})
+    # Starting frees every lock and runs every thread still Triaging, so the lock is only
+    # taken once that is over, on a thread it did not pick up.
+    Repo.update_all(from(t in Thread, where: t.id == ^thread_id), set: [status: :waiting])
+    runner = start_supervised!({Runner, enabled: true, retry_after: 20})
+    _recovered = :sys.get_state(runner)
     Repo.update_all(from(t in Thread, where: t.id == ^thread_id), set: [triage_started_at: DateTime.utc_now()])
     test = self()
 

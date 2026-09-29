@@ -29,8 +29,6 @@ defmodule Rail.Triage.Schemas.Item do
     field :issue_priority, Ecto.Enum, values: Issue.priorities()
     field :reply_text, :string
     field :reply_posted_at, :utc_datetime_usec
-    # A later pass drafted differently from a person's edit, which it kept, so its draft waits here.
-    field :reply_draft_proposal, :string
     field :retriaging, :boolean, default: false
     field :retriaged_at, :utc_datetime_usec
     field :error, :string
@@ -48,17 +46,9 @@ defmodule Rail.Triage.Schemas.Item do
       field :corrected, :boolean, default: false
     end
 
-    embeds_one :issue_draft_proposal, IssueDraft, on_replace: :delete, primary_key: false do
-      field :title, :string
-      field :description, :string
-      field :priority, Ecto.Enum, values: Issue.priorities()
-    end
-
     belongs_to :thread, Thread
     belongs_to :existing_issue, Issue
     belongs_to :created_issue, Issue
-    belongs_to :issue_edited_by, User
-    belongs_to :reply_edited_by, User
     belongs_to :issue_created_by, User
     belongs_to :reply_posted_by, User
 
@@ -79,9 +69,6 @@ defmodule Rail.Triage.Schemas.Item do
     :issue_description,
     :issue_priority,
     :reply_text,
-    :issue_edited_by_id,
-    :reply_edited_by_id,
-    :reply_draft_proposal,
     :retriaging,
     :retriaged_at,
     :error
@@ -95,24 +82,16 @@ defmodule Rail.Triage.Schemas.Item do
     |> cast(attrs, @triaged)
     |> cast_embed(:evidence, with: &evidence_changeset/2)
     |> cast_embed(:assumptions, with: &assumption_changeset/2)
-    |> cast_embed(:issue_draft_proposal, with: &issue_draft_changeset/2)
     |> validate_required([:key, :position, :kind, :title, :verdict])
     |> validate_verdict()
     |> unique_constraint([:thread_id, :key])
   end
 
   @doc """
-  A person's edit to the drafts, marking whichever draft changed as theirs.
+  What a person typed into the drafts, before they accept them.
   """
-  def draft_changeset(item, attrs, user_id) do
-    changeset = cast(item, attrs, [:issue_title, :issue_description, :issue_priority, :reply_text])
-
-    changeset
-    |> then(&if(issue_changed?(&1), do: put_edit(&1, :issue_edited_by_id, :issue_draft_proposal, user_id), else: &1))
-    |> then(
-      &if(changed?(&1, :reply_text), do: put_edit(&1, :reply_edited_by_id, :reply_draft_proposal, user_id), else: &1)
-    )
-  end
+  def draft_changeset(item, attrs),
+    do: cast(item, attrs, [:issue_title, :issue_description, :issue_priority, :reply_text])
 
   def issue_draft?(%__MODULE__{issue_title: title, existing_issue_id: nil}), do: is_binary(title) and title != ""
   def issue_draft?(%__MODULE__{}), do: false
@@ -148,15 +127,6 @@ defmodule Rail.Triage.Schemas.Item do
   def kind_label(:bug), do: "Bug"
   def kind_label(:feature_request), do: "Feature request"
 
-  # An edit made after Rail proposed its own draft is the person answering that, so the proposal goes.
-  defp put_edit(changeset, edited_by, proposal, user_id) do
-    changeset |> put_change(edited_by, user_id) |> put_change(proposal, nil)
-  end
-
-  defp issue_changed?(changeset) do
-    changed?(changeset, :issue_title) or changed?(changeset, :issue_description) or changed?(changeset, :issue_priority)
-  end
-
   defp validate_verdict(changeset) do
     kind = get_field(changeset, :kind)
 
@@ -169,6 +139,4 @@ defmodule Rail.Triage.Schemas.Item do
 
   defp evidence_changeset(evidence, attrs), do: cast(evidence, attrs, [:file, :lines, :excerpt, :holds])
   defp assumption_changeset(assumption, attrs), do: cast(assumption, attrs, [:text, :corrected])
-
-  defp issue_draft_changeset(draft, attrs), do: cast(draft, attrs, [:title, :description, :priority])
 end

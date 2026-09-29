@@ -23,6 +23,13 @@ defmodule RailWeb.TriageLive do
     settled: "This item is settled and takes no more notes."
   }
 
+  @draft_fields %{
+    "issue_title" => :issue_title,
+    "issue_description" => :issue_description,
+    "issue_priority" => :issue_priority,
+    "reply_text" => :reply_text
+  }
+
   def mount(_params, _session, socket) do
     if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "triage")
 
@@ -47,6 +54,7 @@ defmodule RailWeb.TriageLive do
       |> assign(:selected_id, params["id"])
       |> assign(:thread, nil)
       |> assign(:item_errors, %{})
+      |> assign(:drafts, %{})
       |> assign(:note, Ecto.Changeset.change(%Note{}))
       |> load()
 
@@ -157,7 +165,6 @@ defmodule RailWeb.TriageLive do
               item={item}
               form={Map.fetch!(@item_forms, item.id)}
               slack_linked={!@show_slack_link_prompt}
-              current_user_id={@current_scope.user.id}
               project_name={@thread.project.name}
               corrected_by={Map.get(@corrected_by, item.id)}
               error={Map.get(@item_errors, item.id)}
@@ -173,20 +180,28 @@ defmodule RailWeb.TriageLive do
     {:noreply, push_patch(socket, to: ~p"/triage?#{[filter: filter]}")}
   end
 
+  # What a person types stays on this page, and is only saved by accepting it.
   def handle_event("update_draft", %{"item_id" => item_id, "item" => attrs}, socket) do
-    {:noreply, accept(socket, item_id, &Triage.update_triage_draft(socket.assigns.current_scope, &1, attrs))}
-  end
+    item = Enum.find(socket.assigns.thread.items, &(&1.id == item_id))
+    typed = Map.get(socket.assigns.drafts, item_id, %{})
 
-  def handle_event("use_proposal", %{"item_id" => item_id, "draft" => draft}, socket) do
-    {:noreply,
-     accept(socket, item_id, &Triage.update_triage_draft(socket.assigns.current_scope, &1, proposal(&1, draft)))}
+    typed =
+      for {field, key} <- @draft_fields, Map.has_key?(attrs, field), into: typed do
+        {field, {Map.fetch!(item, key), attrs[field]}}
+      end
+
+    drafts = Map.put(socket.assigns.drafts, item_id, typed)
+    socket = socket |> assign(:drafts, drafts) |> assign(:item_forms, item_forms(socket.assigns.thread, drafts))
+    {:noreply, socket}
   end
 
   def handle_event("create_issue", %{"item_id" => item_id, "item" => attrs}, socket) do
+    attrs = Map.merge(typed(socket.assigns.drafts, item_id), attrs)
     {:noreply, accept(socket, item_id, &Triage.create_triage_issue(socket.assigns.current_scope, &1, attrs))}
   end
 
   def handle_event("post_reply", %{"item_id" => item_id, "item" => attrs}, socket) do
+    attrs = Map.merge(typed(socket.assigns.drafts, item_id), attrs)
     {:noreply, accept(socket, item_id, &Triage.post_triage_reply(socket.assigns.current_scope, &1, attrs))}
   end
 
@@ -249,11 +264,6 @@ defmodule RailWeb.TriageLive do
     end
   end
 
-  defp proposal(%Item{issue_draft_proposal: draft}, "issue"),
-    do: %{"issue_title" => draft.title, "issue_description" => draft.description, "issue_priority" => draft.priority}
-
-  defp proposal(%Item{reply_draft_proposal: text}, "reply"), do: %{"reply_text" => text}
-
   defp load(socket) do
     scope = socket.assigns.current_scope
     project_id = socket.assigns.current_project_id
@@ -268,6 +278,8 @@ defmodule RailWeb.TriageLive do
         _none -> nil
       end
 
+    drafts = kept_drafts(socket.assigns.drafts, thread)
+
     socket
     |> assign(:now, DateTime.utc_now())
     |> assign(:threads, threads)
@@ -275,7 +287,8 @@ defmodule RailWeb.TriageLive do
     |> assign(:triage_count, Triage.count_triage_threads([]).waiting)
     |> assign(:channel_names, channel_names(socket.assigns.projects, project_id))
     |> assign(:thread, thread)
-    |> assign(:item_forms, item_forms(thread))
+    |> assign(:drafts, drafts)
+    |> assign(:item_forms, item_forms(thread, drafts))
     |> assign(:corrected_by, corrected_by(thread, scope.user.id))
     |> assign(:show_dismiss, thread != nil and thread.status != :done)
     |> assign(:show_triaging, thread != nil and thread.status == :triaging and thread.items == [])
@@ -285,8 +298,22 @@ defmodule RailWeb.TriageLive do
   defp show_no_response?(%Thread{items: [], error: nil, no_response_reason: reason}), do: is_binary(reason)
   defp show_no_response?(_thread), do: false
 
-  defp item_forms(nil), do: %{}
-  defp item_forms(%Thread{items: items}), do: Map.new(items, &{&1.id, Item.draft_changeset(&1, %{}, nil)})
+  defp item_forms(nil, _drafts), do: %{}
+
+  defp item_forms(%Thread{items: items}, drafts),
+    do: Map.new(items, &{&1.id, Item.draft_changeset(&1, typed(drafts, &1.id))})
+
+  # A pass that redrafts a field replaces what was typed there.
+  defp kept_drafts(_drafts, nil), do: %{}
+
+  defp kept_drafts(drafts, %Thread{items: items}) do
+    for %Item{id: id} = item <- items, Map.has_key?(drafts, id), into: %{} do
+      {id, Map.filter(drafts[id], fn {field, {pass, _typed}} -> Map.fetch!(item, @draft_fields[field]) == pass end)}
+    end
+  end
+
+  defp typed(drafts, item_id),
+    do: Map.new(Map.get(drafts, item_id, %{}), fn {field, {_pass, value}} -> {field, value} end)
 
   defp corrected_by(nil, _user_id), do: %{}
 

@@ -17,7 +17,7 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
     %{workspace: workspace, channel: channel, thread: thread, user: user, scope: Scope.for_user(user), project: project}
   end
 
-  test "posts the person's edited reply as them, and the thread records it as theirs", %{
+  test "posts the reply as the person edited it, as them, and the thread records it as theirs", %{
     thread: thread,
     scope: scope,
     user: %{id: user_id} = user
@@ -30,7 +30,7 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
       Req.Test.json(conn, %{"ok" => true, "ts" => "1790000700.000100"})
     end)
 
-    assert {:ok, %Item{reply_posted_by_id: ^user_id, reply_edited_by_id: ^user_id, reply_posted_at: %DateTime{}}} =
+    assert {:ok, %Item{reply_posted_by_id: ^user_id, reply_posted_at: %DateTime{}}} =
              Triage.post_triage_reply(scope, item, %{"reply_text" => "Fixed in TRI-9, thanks for the report."})
 
     assert %Message{sent_by_user_id: ^user_id, text: "Fixed in TRI-9, thanks for the report."} =
@@ -80,7 +80,8 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
   test "a reply waiting on its issue's link cannot go out before the issue exists", %{thread: thread, scope: scope} do
     %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
 
-    assert {:error, :needs_issue_link} = Triage.post_triage_reply(scope, item, %{})
+    assert {:error, :needs_issue_link} = Triage.post_triage_reply(scope, item, %{"reply_text" => "Mine, {issue link}"})
+    assert %Item{reply_text: "Thanks Priya, we reproduced this. Filed as {issue link}."} = Repo.get!(Item, item.id)
   end
 
   test "an item being triaged again is locked", %{thread: thread, scope: scope} do

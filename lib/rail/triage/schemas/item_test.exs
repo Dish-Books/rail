@@ -19,37 +19,13 @@ defmodule Rail.Triage.Schemas.ItemTest do
     assert %{kind: ["can't be blank"]} = errors_on(Item.triage_changeset(%Item{}, base))
   end
 
-  test "an edit marks only the draft it changed as edited" do
-    item = %Item{issue_title: "Old", reply_text: "Hi"}
+  test "a person's edit reaches the drafts and nothing else" do
+    item = %Item{issue_title: "Old", reply_text: "Hi", verdict: :confirmed}
 
-    assert %{changes: %{issue_title: "New", issue_edited_by_id: "usr_1"} = changes} =
-             Item.draft_changeset(item, %{"issue_title" => "New", "reply_text" => "Hi"}, "usr_1")
+    expected = %{issue_title: "New"}
 
-    refute Map.has_key?(changes, :reply_edited_by_id)
-
-    assert %{changes: %{reply_text: "Hello", reply_edited_by_id: "usr_2"} = reply_changes} =
-             Item.draft_changeset(item, %{"reply_text" => "Hello"}, "usr_2")
-
-    refute Map.has_key?(reply_changes, :issue_edited_by_id)
-  end
-
-  test "a person's new edit answers the draft Rail proposed, so the proposal goes" do
-    item = %Item{
-      reply_text: "Mine",
-      reply_draft_proposal: "Rail's",
-      issue_title: "T",
-      issue_draft_proposal: %Item.IssueDraft{title: "Rail's T"}
-    }
-
-    assert %{changes: %{reply_draft_proposal: nil} = changes} =
-             Item.draft_changeset(item, %{"reply_text" => "Mine, again"}, "usr_1")
-
-    refute Map.has_key?(changes, :issue_draft_proposal)
-
-    assert %{changes: %{issue_draft_proposal: nil} = issue_changes} =
-             Item.draft_changeset(item, %{"issue_priority" => "low"}, "usr_1")
-
-    refute Map.has_key?(issue_changes, :reply_draft_proposal)
+    assert %{changes: ^expected} =
+             Item.draft_changeset(item, %{"issue_title" => "New", "reply_text" => "Hi", "verdict" => "built"})
   end
 
   test "an existing issue means there is no issue draft" do
