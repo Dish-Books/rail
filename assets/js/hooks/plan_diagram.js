@@ -84,6 +84,9 @@ export const PlanDiagram = {
       this.fullscreen.addEventListener("click", this.openFullscreen);
     }
 
+    this.fitFullscreen = () => this.sizeForFullscreen();
+    document.addEventListener("fullscreenchange", this.fitFullscreen);
+
     this.themeObserver = new MutationObserver(() => this.draw());
     this.themeObserver.observe(document.documentElement, { attributeFilter: ["data-theme"] });
 
@@ -93,6 +96,7 @@ export const PlanDiagram = {
   destroyed() {
     this.themeObserver?.disconnect();
     this.fullscreen?.removeEventListener("click", this.openFullscreen);
+    document.removeEventListener("fullscreenchange", this.fitFullscreen);
   },
 
   async draw() {
@@ -110,9 +114,24 @@ export const PlanDiagram = {
       await mermaid.parse(drawable);
       const { svg } = await mermaid.render(`${this.el.id}-svg`, drawable);
       canvas.innerHTML = svg;
+      this.sizeForFullscreen();
     } catch (error) {
-      this.el.querySelector("[data-diagram-error]").textContent = String(error?.message ?? error).split("\n")[0];
+      // Mermaid's first line names only the line number; its second quotes the source there.
+      const [first, excerpt] = String(error?.message ?? error).split("\n");
+      this.el.querySelector("[data-diagram-error]").textContent = excerpt ? `${first} ${excerpt}` : first;
       this.js().setAttribute(this.el, "data-drawn", "error");
     }
+  },
+
+  // Inline, a diagram shrinks to fit its column. In full screen one wider than the screen
+  // keeps its natural width, so its labels stay readable and the card scrolls sideways.
+  sizeForFullscreen() {
+    const canvas = this.el.querySelector("[data-diagram-canvas]");
+    const svg = canvas.querySelector("svg");
+    if (!svg) return;
+
+    const natural = svg.viewBox.baseVal.width;
+    const wide = document.fullscreenElement === this.el && natural > canvas.clientWidth;
+    svg.style.width = wide ? `${natural}px` : "";
   }
 };
