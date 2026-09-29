@@ -30,8 +30,16 @@ defmodule Rail.Tools.Actions.ListSandboxUsage do
       on_timeout: :kill_task
     )
     |> Enum.reduce(%{}, fn
-      {:ok, {id, {:ok, %{} = stats}}}, usage -> Map.put(usage, id, reading(stats))
-      _unread_in_time_or_at_all, usage -> usage
+      {:ok,
+       {id, {:ok, %{"cpu_stats" => %{"system_cpu_usage" => system}, "memory_stats" => %{"usage" => memory}} = stats}}},
+      usage
+      when is_number(system) and is_number(memory) ->
+        Map.put(usage, id, reading(stats))
+
+      # A container that has just exited has nothing to sample, and one Docker did
+      # not answer for, in time or at all, has no reading.
+      _unread, usage ->
+        usage
     end)
   end
 

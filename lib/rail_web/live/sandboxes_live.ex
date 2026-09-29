@@ -304,6 +304,12 @@ defmodule RailWeb.SandboxesLive do
     {:noreply, assign(socket, :usage, usage)}
   end
 
+  # A reading that failed leaves the last one up until the next.
+  def handle_async(:usage, {:exit, _reason}, socket) do
+    Process.send_after(self(), :read_usage, @usage_interval_ms)
+    {:noreply, socket}
+  end
+
   attr :sandbox, OsProcess, required: true
 
   defp task_cell(assigns) do

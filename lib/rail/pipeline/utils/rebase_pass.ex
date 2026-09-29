@@ -52,9 +52,9 @@ defmodule Rail.Pipeline.Utils.RebasePass do
     {:ok, open} = run |> Run.changeset(%{stage_outcome: :in_progress, ci_failure_streak: 0}) |> Repo.update()
 
     with :ok <- Pipeline.commit_engineer_work(Scope.for_system(), task) do
-      # Starting CI moved the run on; with no CI, the push was the whole of it.
+      # Starting CI moved the run on, even into the line; with no CI, the push was the whole of it.
       %Run{} = sent = Repo.get!(Run, open.id)
-      attrs = if sent.status == :running, do: %{}, else: %{stage_outcome: :done}
+      attrs = if sent.status in [:running, :waiting_for_resources], do: %{}, else: %{stage_outcome: :done}
       {:ok, sent} = sent |> Run.changeset(attrs) |> Repo.update()
       {:ok, %{sent | task: task, role: run.role}}
     end

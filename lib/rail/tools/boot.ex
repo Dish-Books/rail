@@ -125,8 +125,10 @@ defmodule Rail.Tools.Boot do
             select: p.id
         )
 
+      # Forced, since a settled row's container can still be running: a stop that
+      # never reached Docker, or a launch Rail went down in the middle of.
       for container <- containers, container["Labels"][@label] not in in_flight do
-        Docker.remove_container(container["Id"])
+        Docker.remove_container(container["Id"], force: true)
       end
     end
   end

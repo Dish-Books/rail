@@ -257,6 +257,20 @@ defmodule RailWeb.SandboxesLiveTest do
     refute has_element?(view, "#waiting-#{behind.id}")
   end
 
+  test "a usage read that fails leaves the page up, with no reading, and is tried again", %{conn: conn, busy: busy} do
+    stub(Tools, :list_sandbox_usage, fn -> raise "Docker answered with something unreadable" end)
+
+    {:ok, view, _html} = live(conn, ~p"/sandboxes")
+    render_async(view)
+
+    assert has_element?(view, "#running-#{busy.id} [data-qa='cpu-in-use']", "—")
+
+    stub(Tools, :list_sandbox_usage, fn -> %{busy.id => %{cpus: 0.5, memory_gb: 1.0}} end)
+    send(view.pid, :read_usage)
+
+    assert render_async(view) =~ "0.5"
+  end
+
   test "reads usage again on its own clock", %{conn: conn, busy: busy} do
     {:ok, view, _html} = live(conn, ~p"/sandboxes")
     assert render_async(view) =~ "1.9"

@@ -42,7 +42,13 @@ defmodule Rail.Tools.Clients.Docker do
   @doc "One reading of a container's CPU and memory, rather than a stream of them."
   def stats(id), do: request(method: :get, url: "/containers/#{id}/stats", params: [stream: false])
 
-  def remove_container(id), do: request(method: :delete, url: "/containers/#{id}")
+  @doc """
+  Removes a container. `force: true` kills it first if it is still running, which
+  Docker otherwise refuses to remove.
+  """
+  def remove_container(id, opts \\ []) do
+    request(method: :delete, url: "/containers/#{id}", params: Keyword.take(opts, [:force]))
+  end
 
   @doc "Every container carrying `label`, running or exited."
   def list_containers(label) do

@@ -59,4 +59,19 @@ defmodule Rail.Tools.Actions.ListSandboxUsageTest do
 
     assert map_size(usage) == 1
   end
+
+  # Docker has nothing to sample for a container that exited and has not been removed yet.
+  test "leaves out a container that has just exited", %{insert: insert} do
+    _exited = insert.(%{runtime: :docker, container_id: "c-exited"})
+
+    Req.Test.stub(Docker, fn %{request_path: "/containers/c-exited/stats"} = conn ->
+      Req.Test.json(conn, %{
+        "cpu_stats" => %{"cpu_usage" => %{"total_usage" => 0}},
+        "precpu_stats" => %{},
+        "memory_stats" => %{}
+      })
+    end)
+
+    assert Tools.list_sandbox_usage() == %{}
+  end
 end

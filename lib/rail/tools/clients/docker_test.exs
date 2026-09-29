@@ -26,17 +26,20 @@ defmodule Rail.Tools.Clients.DockerTest do
   end
 
   test "starts, stops and removes a container" do
-    Req.Test.expect(Docker, 3, fn conn ->
+    Req.Test.expect(Docker, 4, fn conn ->
       case {conn.method, conn.request_path, conn.query_string} do
         {"POST", "/containers/c0ffee/start", ""} -> Plug.Conn.send_resp(conn, 204, "")
         {"POST", "/containers/c0ffee/stop", "t=5"} -> Plug.Conn.send_resp(conn, 204, "")
         {"DELETE", "/containers/c0ffee", ""} -> Plug.Conn.send_resp(conn, 204, "")
+        {"DELETE", "/containers/c0ffee", "force=true"} -> Plug.Conn.send_resp(conn, 204, "")
       end
     end)
 
     assert {:ok, _started} = Docker.start_container("c0ffee")
     assert {:ok, _stopped} = Docker.stop_container("c0ffee", 5)
     assert {:ok, _removed} = Docker.remove_container("c0ffee")
+    # A running container is only removed by force, which kills it first.
+    assert {:ok, _killed} = Docker.remove_container("c0ffee", force: true)
   end
 
   test "inspects a container and reads its usage once" do

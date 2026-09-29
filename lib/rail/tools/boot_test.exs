@@ -829,7 +829,9 @@ defmodule Rail.Tools.BootTest do
       :ok
     end
 
-    test "removes the containers of sandboxes that have settled, and leaves the rest", %{role: role} do
+    # A settled row's container may still be running: a stop that never reached Docker, or
+    # a launch Rail went down in the middle of. Removing it has to kill it too.
+    test "force-removes the containers of sandboxes that have settled, and leaves the rest", %{role: role} do
       {:ok, run} =
         Pipeline.create_run(%{
           task_id: UXID.generate!(prefix: "tsk"),
@@ -849,6 +851,19 @@ defmodule Rail.Tools.BootTest do
 
       test_pid = self()
 
+      live =
+        Repo.insert!(%OsProcess{
+          run_id: run.id,
+          task_id: run.task_id,
+          stream_path: "/dev/null",
+          status: :running,
+          runtime: :docker,
+          container_id: "c-live",
+          started_at: DateTime.utc_now()
+        })
+
+      Req.Test.allow(Docker, self(), fn -> GenServer.whereis({:via, Registry, {FollowerRegistry, live.id}}) end)
+
       Req.Test.stub(Docker, fn conn ->
         case {conn.method, conn.request_path} do
           {"GET", "/info"} ->
@@ -856,19 +871,26 @@ defmodule Rail.Tools.BootTest do
 
           {"GET", "/containers/json"} ->
             Req.Test.json(conn, [
-              %{"Id" => "c-settled", "Labels" => %{"dev.railai.sandbox" => settled.id}},
-              %{"Id" => "c-unknown", "Labels" => %{"dev.railai.sandbox" => "proc_nobody"}}
+              %{"Id" => "c-settled", "State" => "running", "Labels" => %{"dev.railai.sandbox" => settled.id}},
+              %{"Id" => "c-unknown", "State" => "exited", "Labels" => %{"dev.railai.sandbox" => "proc_nobody"}},
+              %{"Id" => "c-live", "State" => "running", "Labels" => %{"dev.railai.sandbox" => live.id}}
             ])
 
+          {"GET", "/containers/c-live/json"} ->
+            Req.Test.json(conn, %{"State" => %{"Running" => true}})
+
           {"DELETE", "/containers/" <> id} ->
-            send(test_pid, {:removed, id})
+            send(test_pid, {:removed, id, conn.query_string})
             Plug.Conn.send_resp(conn, 204, "")
         end
       end)
 
-      assert [] = Boot.reconcile()
-      assert_received {:removed, "c-settled"}
-      assert_received {:removed, "c-unknown"}
+      assert [{:adopted_live, %OsProcess{}, follower_pid}] = Boot.reconcile()
+      FollowerSupervisor.stop_follower(follower_pid)
+
+      assert_received {:removed, "c-settled", "force=true"}
+      assert_received {:removed, "c-unknown", "force=true"}
+      refute_received {:removed, "c-live", _query}
     end
   end
 end
