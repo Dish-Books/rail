@@ -459,7 +459,7 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
         channels: [{channel.external_id, "rail-feedback"}, {posthog, "posthog-index"}]
       )
 
-      %{channel: channel, posthog: posthog}
+      %{channel: channel, posthog: posthog, workspace: workspace}
     end
 
     test "an admin picks the project's channels, and which of them triage bot posts", %{
@@ -487,20 +487,27 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
       assert has_element?(view, "#slack-channel-bots-#{posthog}")
       assert has_element?(view, "#slack-channels-form", "For channels where tools such as PostHog report issues")
 
-      params = put_in(params, ["channels", posthog, "triage_bot_messages"], "true")
+      params = put_in(params, ["channels", posthog, "bot_triage_enabled"], "true")
       view |> form("#slack-channels-form", params) |> render_submit()
 
       assert has_element?(view, "#slack-channels-saved")
 
-      assert [%{external_id: ^posthog, name: "posthog-index", triage_bot_messages: true}] =
+      assert [%{id: posthog_row, external_id: ^posthog, name: "posthog-index", bot_triage_enabled: true}] =
                Projects.list_slack_channels(project)
+
+      view
+      |> form("#slack-channels-form", put_in(params, ["channels", posthog, "bot_triage_enabled"], "false"))
+      |> render_submit()
+
+      assert [%{id: ^posthog_row, bot_triage_enabled: false}] = Projects.list_slack_channels(project)
     end
 
     test "a channel another project holds is refused on the form", %{
       admin_conn: conn,
       admin_user: admin,
       project: project,
-      posthog: posthog
+      posthog: posthog,
+      workspace: workspace
     } do
       {:ok, other} =
         Projects.create_project(Scope.for_user(admin), %{
@@ -512,7 +519,8 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
           clone_path: "/tmp/other"
         })
 
-      {:ok, _held} = Projects.set_slack_channels(Scope.for_user(admin), other, [%{"external_id" => posthog}])
+      held = %{"external_id" => posthog, "name" => "posthog-index", "slack_workspace_id" => workspace.id}
+      {:ok, _held} = Projects.update_project(Scope.for_user(admin), other, %{"slack_channels" => [held]})
 
       assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
       Req.Test.allow(Rail.Slack, self(), view.pid)
@@ -525,25 +533,11 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
       assert has_element?(view, "#slack-channels-error", "is connected to another project")
     end
 
-    test "a channel gone from Slack by the time it is saved is refused, and a Slack that cannot list offers none", %{
-      admin_conn: conn,
-      project: project,
-      posthog: posthog
-    } do
+    test "a Slack that cannot list its channels offers none to pick", %{admin_conn: conn, project: project} do
+      Req.Test.stub(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "ratelimited"}))
+
       assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
       Req.Test.allow(Rail.Slack, self(), view.pid)
-      view |> element("#edit-project-#{project.id}") |> render_click()
-
-      stub_slack(channels: [])
-
-      view
-      |> form("#slack-channels-form", %{"channels" => %{posthog => %{"included" => "true"}}})
-      |> render_submit()
-
-      assert has_element?(view, "#slack-channels-error", "no longer in Slack")
-
-      Req.Test.stub(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "ratelimited"}))
-      view |> element("#close-modal-button") |> render_click()
       view |> element("#edit-project-#{project.id}") |> render_click()
 
       assert has_element?(view, "#slack-channels-empty")

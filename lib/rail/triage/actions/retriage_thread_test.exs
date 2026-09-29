@@ -1,13 +1,11 @@
 defmodule Rail.Triage.Actions.RetriageThreadTest do
   use Rail.DataCase, async: true
-  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Triage
   alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Thread
-  alias Rail.Triage.Workers.TriageThread
 
   setup do
     %{project: project} = triage_project()
@@ -20,7 +18,7 @@ defmodule Rail.Triage.Actions.RetriageThreadTest do
     }
 
     thread = triage_with(thread, no_response)
-    Repo.delete_all(Oban.Job)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "triage")
 
     %{thread: thread}
   end
@@ -33,7 +31,7 @@ defmodule Rail.Triage.Actions.RetriageThreadTest do
     assert [%Message{triaged_at: nil, no_response_reason: nil}] =
              Repo.all(from m in Message, where: m.thread_id == ^thread_id)
 
-    assert_enqueued(worker: TriageThread, args: %{thread_id: thread_id})
+    assert_receive {:triage_scheduled, ^thread_id, 0}
 
     expect(Tools, :run_agent, fn _backend, argv, _opts ->
       assert Enum.any?(argv, &(&1 =~ "A person asked for this thread to be triaged"))

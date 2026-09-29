@@ -4,14 +4,14 @@ defmodule Rail.Triage.Actions.GetTriageThread do
   import Ecto.Query
 
   alias Rail.Repo
-  alias Rail.Triage.Schemas.Correction
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Message
+  alias Rail.Triage.Schemas.Note
   alias Rail.Triage.Schemas.Thread
 
   @doc """
   Loads a thread with everything its page shows: the conversation oldest first,
-  its items in order with the issues they link and created, and its corrections.
+  its items in order with the issues they link and created, and the notes people left on them.
   """
   def get_triage_thread(_scope, id) when is_binary(id) do
     query =
@@ -35,7 +35,7 @@ defmodule Rail.Triage.Actions.GetTriageThread do
                 created_issue: :task
               ]
             ),
-          corrections: ^from(c in Correction, order_by: [asc: c.inserted_at], preload: [:user, :item])
+          notes: ^from(n in Note, order_by: [asc: n.inserted_at], preload: [:user, :item])
         ]
 
     case Repo.one(query) do

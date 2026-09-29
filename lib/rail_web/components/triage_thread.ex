@@ -1,8 +1,8 @@
 defmodule RailWeb.Components.TriageThread do
   @moduledoc """
   The middle pane of the triage page: the Slack thread, each passage marked by
-  the item it raised, and the corrections people have sent triage. Corrections
-  go to the next pass and never to Slack.
+  the item it raised, and the notes people have left on its items. Notes go to
+  the next pass and never to Slack; replies are what go to Slack.
   """
   use RailWeb, :html
 
@@ -14,24 +14,24 @@ defmodule RailWeb.Components.TriageThread do
 
   attr :thread, Thread, required: true
   attr :current_user_id, :string, required: true
-  attr :correction, :any, required: true, doc: "the correction changeset the form edits"
+  attr :note, :any, required: true, doc: "the note changeset the form edits"
 
   def triage_thread(assigns) do
     items = assigns.thread.items
     by_key = Map.new(items, &{&1.key, &1})
-    correctable = Enum.reject(items, &(Item.settled?(&1) or &1.retriaging))
+    notable = Enum.reject(items, &(Item.settled?(&1) or &1.retriaging))
 
     picked =
-      Enum.find(correctable, &(&1.id == Ecto.Changeset.get_field(assigns.correction, :item_id))) ||
-        List.first(correctable)
+      Enum.find(notable, &(&1.id == Ecto.Changeset.get_field(assigns.note, :item_id))) ||
+        List.first(notable)
 
     assigns =
       assigns
       |> assign(:messages, Enum.map(assigns.thread.messages, &message(&1, items, by_key)))
-      |> assign(:correctable, correctable)
+      |> assign(:notable, notable)
       |> assign(:picked, picked)
-      |> assign(:assumption, Ecto.Changeset.get_field(assigns.correction, :assumption))
-      |> assign(:corrections, Enum.map(assigns.thread.corrections, &correction(&1, assigns.current_user_id)))
+      |> assign(:assumption, Ecto.Changeset.get_field(assigns.note, :assumption))
+      |> assign(:notes, Enum.map(assigns.thread.notes, &note(&1, assigns.current_user_id)))
 
     ~H"""
     <section
@@ -131,35 +131,35 @@ defmodule RailWeb.Components.TriageThread do
         </div>
 
         <div
-          :if={@corrections != []}
-          id="triage-corrections"
+          :if={@notes != []}
+          id="triage-notes"
           class="mx-2 mt-3 pt-3 border-t border-slate-200 dark:border-slate-700"
         >
           <p class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Corrections
+            Notes
           </p>
-          <div :for={entry <- @corrections} id={"triage-correction-#{entry.correction.id}"}>
+          <div :for={entry <- @notes} id={"triage-note-#{entry.note.id}"}>
             <div class="mt-2 w-fit max-w-[92%] ml-auto px-3 py-2 rounded-xl rounded-br-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
               <p class="flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                <.icon name="pi-user" class="size-3" />{entry.who} · on item {entry.correction.item.position} · {time(
-                  entry.correction.inserted_at
+                <.icon name="pi-user" class="size-3" />{entry.who} · on item {entry.note.item.position} · {time(
+                  entry.note.inserted_at
                 )}
               </p>
               <p
-                :if={entry.correction.assumption}
+                :if={entry.note.assumption}
                 class="text-[12px] text-slate-500 dark:text-slate-400"
               >
-                Assumed: {entry.correction.assumption}
+                Assumed: {entry.note.assumption}
               </p>
               <p class="text-[13px] leading-relaxed text-slate-900 dark:text-slate-100">
-                {entry.correction.text}
+                {entry.note.text}
               </p>
             </div>
             <p
               :if={entry.redone_at}
               class="mt-1.5 text-right text-[11px] text-slate-500 dark:text-slate-400"
             >
-              Item {entry.correction.item.position} triaged again at {time(entry.redone_at)}
+              Item {entry.note.item.position} triaged again at {time(entry.redone_at)}
             </p>
           </div>
         </div>
@@ -167,21 +167,21 @@ defmodule RailWeb.Components.TriageThread do
 
       <.form
         :if={@picked}
-        for={@correction}
-        id="correction-form"
-        phx-change="change_correction"
-        phx-submit="send_correction"
+        for={@note}
+        id="note-form"
+        phx-change="change_note"
+        phx-submit="add_note"
         class="border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30 px-4 py-3 space-y-2"
       >
         <div class="flex items-center gap-1.5 text-xs">
-          <label for="correction-text" class="font-semibold text-slate-900 dark:text-slate-100 mr-1">Correct</label>
+          <label for="note-text" class="font-semibold text-slate-900 dark:text-slate-100 mr-1">Note on</label>
           <button
-            :for={item <- @correctable}
+            :for={item <- @notable}
             type="button"
-            id={"correction-pick-#{item.id}"}
+            id={"note-pick-#{item.id}"}
             phx-click={
-              JS.push("pick_correction", value: %{item_id: item.id})
-              |> JS.focus(to: "#correction-text")
+              JS.push("pick_note", value: %{item_id: item.id})
+              |> JS.focus(to: "#note-text")
             }
             aria-pressed={to_string(item.id == @picked.id)}
             class={[
@@ -197,24 +197,24 @@ defmodule RailWeb.Components.TriageThread do
             <.icon name="pi-lock-simple" class="size-3" />Never posted to Slack
           </span>
         </div>
-        <input type="hidden" name="correction[item_id]" value={@picked.id} />
-        <input type="hidden" name="correction[assumption]" value={@assumption} />
+        <input type="hidden" name="note[item_id]" value={@picked.id} />
+        <input type="hidden" name="note[assumption]" value={@assumption} />
         <div
           :if={@assumption}
-          id="correction-assumption"
+          id="note-assumption"
           class="rounded-lg border-l-2 border-slate-500 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-[12px] text-slate-500 dark:text-slate-400"
         >
           Assumed: {@assumption}
         </div>
         <div class="flex items-end gap-2">
           <textarea
-            id="correction-text"
-            name="correction[text]"
+            id="note-text"
+            name="note[text]"
             rows="2"
-            placeholder={"What did Rail get wrong about item #{@picked.position}? It triages that item again."}
+            placeholder={"A note on item #{@picked.position}, such as something Rail got wrong. It triages that item again."}
             class="flex-1 resize-none px-2.5 py-1.5 text-[12.5px] rounded-lg border border-slate-500 dark:border-slate-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400"
-          >{Ecto.Changeset.get_field(@correction, :text)}</textarea>
-          <.button type="submit" id="send-correction-button">Send correction</.button>
+          >{Ecto.Changeset.get_field(@note, :text)}</textarea>
+          <.button type="submit" id="add-note-button">Add note</.button>
         </div>
       </.form>
     </section>
@@ -236,16 +236,14 @@ defmodule RailWeb.Components.TriageThread do
     }
   end
 
-  defp correction(correction, current_user_id) do
-    who =
-      if correction.user_id == current_user_id, do: "You", else: (correction.user && correction.user.name) || "Someone"
-
-    redone_at = correction.item.retriaged_at
+  defp note(note, current_user_id) do
+    who = if note.user_id == current_user_id, do: "You", else: (note.user && note.user.name) || "Someone"
+    redone_at = note.item.retriaged_at
 
     %{
-      correction: correction,
+      note: note,
       who: who,
-      redone_at: if(redone_at && DateTime.after?(redone_at, correction.inserted_at), do: redone_at)
+      redone_at: if(redone_at && DateTime.after?(redone_at, note.inserted_at), do: redone_at)
     }
   end
 

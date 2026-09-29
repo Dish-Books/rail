@@ -94,7 +94,7 @@ defmodule Rail.Triage.Actions.SyncTriage do
     item |> Item.triage_changeset(attrs) |> Repo.update!()
   end
 
-  # A redo is a pass a correction asked for; what it overturned stays on the item.
+  # A redo is a pass a note asked for; what it overturned stays on the item.
   defp redo(%Item{retriaging: true, verdict: verdict}, %{verdict: new_verdict}, now) do
     if to_string(verdict) == new_verdict, do: %{retriaged_at: now}, else: %{retriaged_at: now, previous_verdict: verdict}
   end

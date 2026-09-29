@@ -38,7 +38,4 @@ defmodule Rail.Projects do
   defdelegate get_slack_channel(by), to: Actions.GetSlackChannel
 
   defdelegate list_slack_channels(project), to: Actions.ListSlackChannels
-
-  @decorate can?(resource: :projects, action: :update)
-  defdelegate set_slack_channels(scope, project, channels), to: Actions.SetSlackChannels
 end

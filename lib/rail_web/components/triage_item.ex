@@ -32,7 +32,7 @@ defmodule RailWeb.Components.TriageItem do
         <span class="relative size-2 rounded-full bg-blue-500"></span>
       </span>
       <span class="font-semibold text-slate-900 dark:text-slate-100">
-        {@item.position} · {Item.kind_label(@item.kind)} · Triaging again with your correction
+        {@item.position} · {Item.kind_label(@item.kind)} · Triaging again with your note
       </span>
     </article>
     """
@@ -141,7 +141,7 @@ defmodule RailWeb.Components.TriageItem do
           class="ml-auto shrink-0 inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400"
         >
           <.icon name="pi-arrow-counter-clockwise" class="size-3.5 text-blue-500" />
-          Redone after your correction. Was {Item.verdict_label(@item.previous_verdict)}.
+          Redone after your note. Was {Item.verdict_label(@item.previous_verdict)}.
         </span>
       </header>
       <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] divide-x divide-slate-200 dark:divide-slate-700">
@@ -208,10 +208,10 @@ defmodule RailWeb.Components.TriageItem do
                   type="button"
                   id={"correct-#{@item.id}-#{index}"}
                   phx-click={
-                    JS.push("pick_correction",
+                    JS.push("pick_note",
                       value: %{item_id: @item.id, assumption: assumption.text}
                     )
-                    |> JS.focus(to: "#correction-text")
+                    |> JS.focus(to: "#note-text")
                   }
                   class="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
                 >

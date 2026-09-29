@@ -5,6 +5,7 @@ defmodule Rail.Projects.Schemas.Project do
   alias Rail.Git
   alias Rail.Linear.Client, as: Linear
   alias Rail.Projects.Schemas.LinearWorkspace
+  alias Rail.Projects.Schemas.SlackChannel
   alias Rail.Users.Schemas.User
 
   @primary_key {:id, UXID, autogenerate: true, prefix: "prj"}
@@ -28,6 +29,10 @@ defmodule Rail.Projects.Schemas.Project do
     belongs_to :linear_workspace, LinearWorkspace
     # Whose MCP connections a triage pass uses; none leaves it working from code alone.
     belongs_to :triage_user, User
+
+    # Its threads hang off each one, so a channel sent back with its `id` is updated, never recreated,
+    # and only one left out is deleted. Params without `slack_channels` leave them alone.
+    has_many :slack_channels, SlackChannel, on_replace: :delete
 
     timestamps()
   end
@@ -67,6 +72,7 @@ defmodule Rail.Projects.Schemas.Project do
     |> foreign_key_constraint(:linear_workspace_id)
     |> foreign_key_constraint(:triage_user_id)
     |> unique_constraint(:github_repo)
+    |> cast_assoc(:slack_channels)
     |> put_linear_team_id()
   end
 

@@ -1,7 +1,8 @@
-defmodule Rail.Triage.Schemas.Correction do
+defmodule Rail.Triage.Schemas.Note do
   @moduledoc """
-  A person telling triage what it got wrong about one item. It goes to the next
-  pass, never to Slack.
+  A person's note on one item: context triage lacked, or a correction to
+  something it assumed. It goes to the next pass of that item, never to Slack;
+  what goes to Slack are replies.
   """
   use Rail.Schema
 
@@ -10,10 +11,10 @@ defmodule Rail.Triage.Schemas.Correction do
   alias Rail.Triage.Schemas.Thread
   alias Rail.Users.Schemas.User
 
-  @primary_key {:id, UXID, autogenerate: true, prefix: "tco"}
-  schema "triage_corrections" do
+  @primary_key {:id, UXID, autogenerate: true, prefix: "tno"}
+  schema "triage_notes" do
     field :text, :string
-    # The assumption it answers, quoted as the item stated it.
+    # The assumption it answers, quoted as the item stated it, when it corrects one.
     field :assumption, :string
 
     belongs_to :thread, Thread

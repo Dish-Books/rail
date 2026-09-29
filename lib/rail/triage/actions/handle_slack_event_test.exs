@@ -1,13 +1,12 @@
 defmodule Rail.Triage.Actions.HandleSlackEventTest do
   use Rail.DataCase, async: true
-  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Triage
   alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Thread
-  alias Rail.Triage.Workers.TriageThread
 
   setup %{project: project} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "triage")
     connect_slack_channel(project, users: %{"U_PRIYA" => "Priya Natarajan", "U_DAN" => "Dan Okafor"})
   end
 
@@ -16,8 +15,6 @@ defmodule Rail.Triage.Actions.HandleSlackEventTest do
     channel: channel,
     project: %{id: project_id}
   } do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "triage")
-
     assert {:ok, %Thread{id: thread_id, status: :triaging, project_id: ^project_id, external_id: "1790000000.000100"}} =
              Triage.handle_slack_event(
                workspace,
@@ -26,7 +23,7 @@ defmodule Rail.Triage.Actions.HandleSlackEventTest do
                })
              )
 
-    assert_enqueued(worker: TriageThread, args: %{thread_id: thread_id})
+    assert_receive {:triage_scheduled, ^thread_id, 15_000}
     assert_receive {:triage_changed, ^thread_id}
 
     assert [
@@ -77,7 +74,7 @@ defmodule Rail.Triage.Actions.HandleSlackEventTest do
     end
 
     assert :ignored = Triage.handle_slack_event(workspace, %{"type" => "app_rate_limited"})
-    assert [] = all_enqueued(worker: TriageThread)
+    assert [] = Repo.all(from t in Thread, where: t.slack_channel_id == ^channel.id)
   end
 
   test "a channel of another workspace is ignored", %{workspace: workspace, channel: channel} do
@@ -107,7 +104,7 @@ defmodule Rail.Triage.Actions.HandleSlackEventTest do
       event: event,
       project: project
     } do
-      %{workspace: workspace, channel: channel} = connect_slack_channel(project, bot_messages: true)
+      %{workspace: workspace, channel: channel} = connect_slack_channel(project, bot_triage_enabled: true)
       event = put_in(event, ["event", "channel"], channel.external_id)
 
       assert {:ok, %Thread{id: thread_id}} = Triage.handle_slack_event(workspace, event)
@@ -121,18 +118,18 @@ defmodule Rail.Triage.Actions.HandleSlackEventTest do
                }
              ] = Repo.all(from m in Message, where: m.thread_id == ^thread_id)
 
-      assert_enqueued(worker: TriageThread, args: %{thread_id: thread_id})
+      assert_receive {:triage_scheduled, ^thread_id, 15_000}
     end
 
     test "is stored and triggers nothing in a channel without the option", %{event: event, workspace: workspace} do
       assert {:ok, %Thread{id: thread_id}} = Triage.handle_slack_event(workspace, event)
 
       assert [%Message{from_bot: true}] = Repo.all(from m in Message, where: m.thread_id == ^thread_id)
-      refute_enqueued(worker: TriageThread, args: %{thread_id: thread_id})
+      refute_received {:triage_scheduled, ^thread_id, _delay}
     end
 
     test "from Rail's own bot never triggers, even where bots do", %{event: event, project: project} do
-      %{workspace: workspace, channel: channel} = connect_slack_channel(project, bot_messages: true)
+      %{workspace: workspace, channel: channel} = connect_slack_channel(project, bot_triage_enabled: true)
 
       event =
         event
@@ -142,7 +139,7 @@ defmodule Rail.Triage.Actions.HandleSlackEventTest do
 
       assert {:ok, %Thread{id: thread_id}} = Triage.handle_slack_event(workspace, event)
       assert [%Message{author_name: "Rail"}] = Repo.all(from m in Message, where: m.thread_id == ^thread_id)
-      refute_enqueued(worker: TriageThread, args: %{thread_id: thread_id})
+      refute_received {:triage_scheduled, ^thread_id, _delay}
     end
   end
 end

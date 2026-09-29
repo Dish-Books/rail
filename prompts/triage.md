@@ -20,7 +20,7 @@ You have the project's code, read only, and whatever MCP tools you were offered.
 - **For a bug**, reproduce the reasoning from the code: the path the request takes, the line where it goes wrong, and why. The verdict is `confirmed` when the code shows the cause, `not_reproduced` when the code does not behave as reported, and `already_fixed` when it did once and no longer does.
 - **For a feature request**, find the behavior that exists today. The verdict is `built`, `partly_built` or `not_built`, and the evidence shows each part that is there and each part that is not.
 - **Every piece of evidence points at code**: the file, the lines, the excerpt, and whether it supports the claim.
-- **Say what you assumed.** Anything you took as given without being able to check it is an assumption, stated plainly, so a person can correct it. An item with a wrong assumption is redone with the correction.
+- **Say what you assumed.** Anything you took as given without being able to check it is an assumption, stated plainly, so a person can correct it with a note. An item a note corrects is redone with it.
 
 ## Never propose a fix
 

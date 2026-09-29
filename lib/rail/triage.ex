@@ -12,8 +12,8 @@ defmodule Rail.Triage do
   alias Rail.Triage.Actions
 
   @doc """
-  Starts the registry and supervisor the Slack sockets run under, and the
-  manager that opens one per workspace.
+  Starts the registry and supervisor the Slack sockets run under, the manager
+  that opens one per workspace, and the runner that triages threads.
   """
   def start_link(opts \\ []) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
@@ -24,7 +24,8 @@ defmodule Rail.Triage do
     children = [
       {Registry, keys: :unique, name: Rail.Triage.SocketRegistry},
       {DynamicSupervisor, name: Rail.Triage.SocketSupervisor, strategy: :one_for_one},
-      Rail.Triage.SocketManager
+      Rail.Triage.SocketManager,
+      Rail.Triage.Runner
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -38,7 +39,7 @@ defmodule Rail.Triage do
   defdelegate update_triage_draft(scope, item, attrs), to: Actions.UpdateTriageDraft
   defdelegate create_triage_issue(scope, item, attrs), to: Actions.CreateTriageIssue
   defdelegate post_triage_reply(scope, item, attrs), to: Actions.PostTriageReply
-  defdelegate correct_triage_item(scope, item, attrs), to: Actions.CorrectTriageItem
+  defdelegate add_triage_note(scope, item, attrs), to: Actions.AddTriageNote
   defdelegate dismiss_triage_thread(scope, thread), to: Actions.DismissTriageThread
   defdelegate retriage_thread(scope, thread), to: Actions.RetriageThread
   defdelegate list_triage_threads(opts \\ []), to: Actions.ListTriageThreads

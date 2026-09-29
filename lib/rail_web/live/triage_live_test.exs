@@ -194,24 +194,24 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#connect-slack-#{bug.id}", "Connect Slack to post as yourself")
   end
 
-  test "Correct quotes the assumption, and sending the correction locks only its item", %{
+  test "Correct quotes the assumption in a note, and adding the note locks only its item", %{
     conn: conn,
     thread: %Thread{items: [bug, request]}
   } do
     {:ok, view, _html} = live(conn, ~p"/triage")
 
     view |> element("#correct-#{bug.id}-0") |> render_click()
-    view |> form("#correction-form", %{"correction" => %{"text" => "Half typed"}}) |> render_change()
-    assert has_element?(view, "#correction-text", "Half typed")
-    assert has_element?(view, "#correction-assumption", "Assumed: Billing is the BILL project.")
-    assert has_element?(view, "#correction-pick-#{bug.id}[aria-pressed='true']")
+    view |> form("#note-form", %{"note" => %{"text" => "Half typed"}}) |> render_change()
+    assert has_element?(view, "#note-text", "Half typed")
+    assert has_element?(view, "#note-assumption", "Assumed: Billing is the BILL project.")
+    assert has_element?(view, "#note-pick-#{bug.id}[aria-pressed='true']")
 
-    view |> form("#correction-form", %{"correction" => %{"text" => "Billing has no Design role."}}) |> render_submit()
+    view |> form("#note-form", %{"note" => %{"text" => "Billing has no Design role."}}) |> render_submit()
 
-    assert has_element?(view, "#triage-item-#{bug.id}[data-state='retriaging']", "Triaging again with your correction")
+    assert has_element?(view, "#triage-item-#{bug.id}[data-state='retriaging']", "Triaging again with your note")
     assert has_element?(view, "#triage-item-#{request.id}[data-state='open']")
-    assert has_element?(view, "#triage-corrections", "You · on item 1")
-    assert has_element?(view, "#triage-corrections", "Billing has no Design role.")
+    assert has_element?(view, "#triage-notes", "You · on item 1")
+    assert has_element?(view, "#triage-notes", "Billing has no Design role.")
 
     bug_redone =
       triage_bug(%{
@@ -224,11 +224,19 @@ defmodule RailWeb.TriageLiveTest do
 
     assert has_element?(view, "#triage-redo-#{bug.id}", "Was Confirmed.")
     assert has_element?(view, "#triage-item-#{bug.id}", "Corrected by you.")
-    assert has_element?(view, "#triage-corrections", "Item 1 triaged again at")
+    assert has_element?(view, "#triage-notes", "Item 1 triaged again at")
 
-    view |> element("#correction-pick-#{request.id}") |> render_click()
-    view |> form("#correction-form", %{"correction" => %{"text" => " "}}) |> render_submit()
+    view |> element("#note-pick-#{request.id}") |> render_click()
+    view |> form("#note-form", %{"note" => %{"text" => " "}}) |> render_submit()
     assert %Item{retriaging: false} = Repo.get!(Item, request.id)
+
+    assert has_element?(view, "#note-form", "Never posted to Slack")
+    assert has_element?(view, "#add-note-button", "Add note")
+    refute has_element?(view, "#note-assumption")
+
+    view |> form("#note-form", %{"note" => %{"text" => "Customers asked for this twice this week."}}) |> render_submit()
+    assert %Item{retriaging: true} = Repo.get!(Item, request.id)
+    assert has_element?(view, "#triage-notes", "Customers asked for this twice this week.")
   end
 
   test "dismissing a thread finishes it", %{conn: conn, thread: %Thread{id: thread_id, items: [bug, _request]}} do
@@ -242,8 +250,8 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#triage-queue-empty", "#rail-feedback is connected.")
     assert has_element?(view, "#triage-item-#{bug.id}[data-state='settled']", "Done")
 
-    render_hook(view, "send_correction", %{"correction" => %{"item_id" => bug.id, "text" => "Too late"}})
-    assert has_element?(view, "#triage-item-error-#{bug.id}", "settled and closed to corrections")
+    render_hook(view, "add_note", %{"note" => %{"item_id" => bug.id, "text" => "Too late"}})
+    assert has_element?(view, "#triage-item-error-#{bug.id}", "settled and takes no more notes")
 
     view |> element("#triage-filter-done") |> render_click()
     assert_patch(view, ~p"/triage?filter=done")
@@ -290,7 +298,7 @@ defmodule RailWeb.TriageLiveTest do
   end
 
   test "a bot's post shows its name and APP", %{conn: conn, project: project} do
-    %{workspace: workspace, channel: channel} = connect_slack_channel(project, bot_messages: true)
+    %{workspace: workspace, channel: channel} = connect_slack_channel(project, bot_triage_enabled: true)
 
     {:ok, thread} =
       Triage.handle_slack_event(

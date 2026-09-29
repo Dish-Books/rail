@@ -21,7 +21,7 @@ defmodule Rail.Repo.Migrations.CreateTriage do
       add :slack_workspace_id, references(:slack_workspaces, on_delete: :delete_all), null: false
       add :external_id, :text, null: false
       add :name, :text, null: false
-      add :triage_bot_messages, :boolean, default: false, null: false
+      add :bot_triage_enabled, :boolean, default: false, null: false
 
       timestamps()
     end
@@ -105,7 +105,7 @@ defmodule Rail.Repo.Migrations.CreateTriage do
 
     create unique_index(:triage_items, [:thread_id, :key])
 
-    create table(:triage_corrections) do
+    create table(:triage_notes) do
       add :thread_id, references(:triage_threads, on_delete: :delete_all), null: false
       add :item_id, references(:triage_items, on_delete: :delete_all)
       add :user_id, references(:users, on_delete: :nilify_all)
@@ -115,7 +115,7 @@ defmodule Rail.Repo.Migrations.CreateTriage do
       timestamps()
     end
 
-    create index(:triage_corrections, [:thread_id])
+    create index(:triage_notes, [:thread_id])
 
     alter table(:users) do
       add :slack_user_id, :text

@@ -1,14 +1,12 @@
-defmodule Rail.Triage.Actions.CorrectTriageItemTest do
+defmodule Rail.Triage.Actions.AddTriageNoteTest do
   use Rail.DataCase, async: true
-  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Triage
-  alias Rail.Triage.Schemas.Correction
   alias Rail.Triage.Schemas.Item
+  alias Rail.Triage.Schemas.Note
   alias Rail.Triage.Schemas.Thread
-  alias Rail.Triage.Workers.TriageThread
 
   setup do
     %{project: project} = triage_project()
@@ -25,19 +23,19 @@ defmodule Rail.Triage.Actions.CorrectTriageItemTest do
 
     bug = triage_bug(%{"verdict" => "not_reproduced", "assumptions" => [%{"text" => "Billing has a Design role."}]})
     thread = triage_with(thread, %{"items" => [bug, request]})
-    Repo.delete_all(Oban.Job)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "triage")
 
     %{thread: thread, bug: bug, request: request, scope: Scope.for_user(%{id: nil})}
   end
 
-  test "a correction triages only its item again, with the correction in the brief, and records what it overturned", %{
+  test "a note triages only its item again, with the note in the brief, and records what it overturned", %{
     thread: %Thread{id: thread_id, items: [bug_item, request_item]} = thread,
     bug: bug,
     request: request,
     scope: scope
   } do
-    assert {:ok, %Correction{text: "Billing has its Design role turned off.", assumption: "Billing has a Design role."}} =
-             Triage.correct_triage_item(scope, bug_item, %{
+    assert {:ok, %Note{text: "Billing has its Design role turned off.", assumption: "Billing has a Design role."}} =
+             Triage.add_triage_note(scope, bug_item, %{
                "text" => "  Billing has its Design role turned off.  ",
                "assumption" => "Billing has a Design role."
              })
@@ -45,11 +43,11 @@ defmodule Rail.Triage.Actions.CorrectTriageItemTest do
     assert %Item{retriaging: true} = Repo.get!(Item, bug_item.id)
     assert %Item{retriaging: false} = Repo.get!(Item, request_item.id)
     assert %Thread{status: :triaging} = Repo.get!(Thread, thread_id)
-    assert_enqueued(worker: TriageThread, args: %{thread_id: thread_id})
+    assert_receive {:triage_scheduled, ^thread_id, 0}
 
     expect(Tools, :run_agent, fn _backend, argv, _opts ->
-      brief = Enum.find(argv, &(&1 =~ "A person corrected these items"))
-      assert brief =~ ~s(On `stuck-at-design`, a person wrote: "Billing has its Design role turned off.")
+      brief = Enum.find(argv, &(&1 =~ "People left notes on these items"))
+      assert brief =~ ~s(On `stuck-at-design`, a person noted: "Billing has its Design role turned off.")
       assert brief =~ ~s(It answers your assumption: "Billing has a Design role.")
       refute brief =~ "On `wait-times`"
 
@@ -83,15 +81,15 @@ defmodule Rail.Triage.Actions.CorrectTriageItemTest do
     assert %Thread{status: :waiting} = Repo.get!(Thread, thread_id)
   end
 
-  test "a correction needs words", %{thread: %Thread{items: [bug_item, _request]}, scope: scope} do
-    assert {:error, changeset} = Triage.correct_triage_item(scope, bug_item, %{"text" => "  "})
+  test "a note needs words", %{thread: %Thread{items: [bug_item, _request]}, scope: scope} do
+    assert {:error, changeset} = Triage.add_triage_note(scope, bug_item, %{"text" => "  "})
     assert %{text: ["can't be blank"]} = errors_on(changeset)
     assert %Item{retriaging: false} = Repo.get!(Item, bug_item.id)
   end
 
-  test "a settled item is closed to corrections", %{thread: %Thread{items: [bug_item, _request]} = thread, scope: scope} do
+  test "a settled item takes no more notes", %{thread: %Thread{items: [bug_item, _request]} = thread, scope: scope} do
     {:ok, _dismissed} = Triage.dismiss_triage_thread(scope, thread)
 
-    assert {:error, :settled} = Triage.correct_triage_item(scope, bug_item, %{"text" => "Too late."})
+    assert {:error, :settled} = Triage.add_triage_note(scope, bug_item, %{"text" => "Too late."})
   end
 end

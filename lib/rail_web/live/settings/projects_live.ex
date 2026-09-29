@@ -21,6 +21,7 @@ defmodule RailWeb.Settings.ProjectsLive do
       |> assign(:users, users)
       |> assign(:slack_channel_options, [])
       |> assign(:channel_selection, %{})
+      |> assign(:channel_ids, %{})
       |> assign(:channels_saved, false)
       |> assign(:channels_error, nil)
       |> assign(:show_modal, nil)
@@ -506,6 +507,18 @@ defmodule RailWeb.Settings.ProjectsLive do
               <ul :if={@slack_channel_options != []} class="max-h-56 overflow-y-auto space-y-1.5">
                 <li :for={channel <- @slack_channel_options} class="flex items-center gap-3 text-sm">
                   <input type="hidden" name={"channels[#{channel.id}][included]"} value="false" />
+                  <input type="hidden" name={"channels[#{channel.id}][name]"} value={channel.name} />
+                  <input
+                    :if={@channel_ids[channel.id]}
+                    type="hidden"
+                    name={"channels[#{channel.id}][id]"}
+                    value={@channel_ids[channel.id]}
+                  />
+                  <input
+                    type="hidden"
+                    name={"channels[#{channel.id}][slack_workspace_id]"}
+                    value={channel.workspace_id}
+                  />
                   <input
                     type="checkbox"
                     name={"channels[#{channel.id}][included]"}
@@ -526,13 +539,13 @@ defmodule RailWeb.Settings.ProjectsLive do
                   >
                     <input
                       type="hidden"
-                      name={"channels[#{channel.id}][triage_bot_messages]"}
+                      name={"channels[#{channel.id}][bot_triage_enabled]"}
                       value="false"
                     />
                     <input
                       type="checkbox"
                       role="switch"
-                      name={"channels[#{channel.id}][triage_bot_messages]"}
+                      name={"channels[#{channel.id}][bot_triage_enabled]"}
                       id={"slack-channel-bots-#{channel.id}"}
                       value="true"
                       checked={Map.get(@channel_selection, channel.id) == true}
@@ -580,14 +593,13 @@ defmodule RailWeb.Settings.ProjectsLive do
     case Projects.get_project(project_id) do
       {:ok, project} ->
         changeset = Project.changeset(project, %{})
+        channels = Projects.list_slack_channels(project)
 
         socket =
           socket
           |> assign(:slack_channel_options, slack_channel_options())
-          |> assign(
-            :channel_selection,
-            Map.new(Projects.list_slack_channels(project), &{&1.external_id, &1.triage_bot_messages})
-          )
+          |> assign(:channel_selection, Map.new(channels, &{&1.external_id, &1.bot_triage_enabled}))
+          |> assign(:channel_ids, Map.new(channels, &{&1.external_id, &1.id}))
           |> assign(:channels_saved, false)
           |> assign(:channels_error, nil)
           |> assign(:show_modal, :edit)
@@ -613,12 +625,26 @@ defmodule RailWeb.Settings.ProjectsLive do
 
   def handle_event("save_channels", params, socket) do
     selection = channel_selection(params)
-    entries = Enum.map(selection, fn {id, bots?} -> %{"external_id" => id, "triage_bot_messages" => bots?} end)
 
-    case Projects.set_slack_channels(socket.assigns.current_scope, socket.assigns.selected_project, entries) do
-      {:ok, _channels} ->
+    entries =
+      for {id, %{"included" => "true"} = channel} <- Map.get(params, "channels", %{}) do
+        %{
+          "id" => channel["id"],
+          "external_id" => id,
+          "name" => channel["name"],
+          "slack_workspace_id" => channel["slack_workspace_id"],
+          "bot_triage_enabled" => channel["bot_triage_enabled"] == "true"
+        }
+      end
+
+    scope = socket.assigns.current_scope
+
+    case Projects.update_project(scope, socket.assigns.selected_project, %{"slack_channels" => entries}) do
+      {:ok, project} ->
         socket =
           socket
+          |> assign(:selected_project, project)
+          |> assign(:channel_ids, Map.new(project.slack_channels, &{&1.external_id, &1.id}))
           |> assign(:channel_selection, selection)
           |> assign(:channels_saved, true)
           |> assign(:channels_error, nil)
@@ -627,9 +653,6 @@ defmodule RailWeb.Settings.ProjectsLive do
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, :channels_error, channel_error(changeset))}
-
-      {:error, :channel_not_found} ->
-        {:noreply, assign(socket, :channels_error, "A channel picked is no longer in Slack.")}
     end
   end
 
@@ -711,7 +734,7 @@ defmodule RailWeb.Settings.ProjectsLive do
   defp slack_channel_options do
     Enum.flat_map(Projects.list_slack_workspaces(), fn workspace ->
       case Slack.list_channels(workspace) do
-        {:ok, channels} -> Enum.map(channels, &%{id: &1["id"], name: &1["name"]})
+        {:ok, channels} -> Enum.map(channels, &%{id: &1["id"], name: &1["name"], workspace_id: workspace.id})
         {:error, _unreachable} -> []
       end
     end)
@@ -719,15 +742,17 @@ defmodule RailWeb.Settings.ProjectsLive do
 
   defp channel_selection(params) do
     for {id, %{"included" => "true"} = channel} <- Map.get(params, "channels", %{}), into: %{} do
-      {id, channel["triage_bot_messages"] == "true"}
+      {id, channel["bot_triage_enabled"] == "true"}
     end
   end
 
   defp channel_error(changeset) do
-    changeset.errors
-    |> Keyword.get_values(:external_id)
-    |> Enum.map_join(", ", &elem(&1, 0))
-    |> then(&"This channel #{&1}.")
+    changeset
+    |> Ecto.Changeset.traverse_errors(fn {message, _opts} -> message end)
+    |> Map.get(:slack_channels, [])
+    |> Enum.flat_map(&Map.get(&1, :external_id, []))
+    |> Enum.uniq()
+    |> Enum.map_join(" ", &"A channel #{&1}.")
   end
 
   defp update_list_item(items, %{id: id} = item) do

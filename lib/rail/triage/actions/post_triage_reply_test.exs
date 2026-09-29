@@ -1,6 +1,5 @@
 defmodule Rail.Triage.Actions.PostTriageReplyTest do
   use Rail.DataCase, async: true
-  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Scope
   alias Rail.Tools
@@ -8,7 +7,6 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Thread
-  alias Rail.Triage.Workers.TriageThread
 
   setup do
     %{project: project} = triage_project()
@@ -52,7 +50,7 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
     %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug(%{"issue" => nil, "reply" => "On it."})]})
     Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "ts" => "1790000800.000100"}))
     {:ok, _item} = Triage.post_triage_reply(scope, item, %{})
-    Repo.delete_all(Oban.Job)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "triage")
 
     echo =
       slack_message_event(channel, %{
@@ -62,8 +60,8 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
         "text" => "On it."
       })
 
-    assert {:ok, %Thread{}} = Triage.handle_slack_event(workspace, echo)
-    assert [] = all_enqueued(worker: TriageThread)
+    assert {:ok, %Thread{id: thread_id}} = Triage.handle_slack_event(workspace, echo)
+    refute_received {:triage_scheduled, ^thread_id, _delay}
     assert %Message{sent_by_user_id: ^user_id} = Repo.get_by!(Message, external_id: "1790000800.000100")
 
     reject(&Tools.run_agent/3)
@@ -87,7 +85,7 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
 
   test "an item being triaged again is locked", %{thread: thread, scope: scope} do
     %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug(%{"issue" => nil})]})
-    {:ok, _correction} = Triage.correct_triage_item(scope, item, %{"text" => "Wrong project."})
+    {:ok, _note} = Triage.add_triage_note(scope, item, %{"text" => "Wrong project."})
 
     assert {:error, :locked} = Triage.post_triage_reply(scope, item, %{})
   end

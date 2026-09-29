@@ -1,6 +1,5 @@
 defmodule Rail.Triage.Actions.TriageThreadTest do
   use Rail.DataCase, async: true
-  use Oban.Testing, repo: Rail.Repo
 
   alias Rail.Issues
   alias Rail.Roles
@@ -9,7 +8,6 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Thread
-  alias Rail.Triage.Workers.TriageThread
 
   setup do
     %{project: project, role: role, remote: remote} = triage_project()
@@ -296,7 +294,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     project: project,
     bug: bug
   } do
-    %{workspace: workspace, channel: channel} = connect_slack_channel(project, bot_messages: true)
+    %{workspace: workspace, channel: channel} = connect_slack_channel(project, bot_triage_enabled: true)
 
     {:ok, %{id: thread_id} = thread} =
       Triage.handle_slack_event(
@@ -378,21 +376,21 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     thread: %{id: thread_id} = thread,
     result_path: result_path
   } do
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
-      Repo.delete_all(Oban.Job)
+    Phoenix.PubSub.subscribe(Rail.PubSub, "triage")
 
+    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
       Triage.handle_slack_event(
         workspace,
         slack_message_event(channel, %{"ts" => "1790000300.000100", "thread_ts" => thread.external_id})
       )
 
-      Repo.delete_all(Oban.Job)
       File.write!(result_path, Jason.encode!(%{"items" => []}))
       {:ok, ""}
     end)
 
     assert :ok = Triage.triage_thread(thread)
-    assert_enqueued(worker: TriageThread, args: %{thread_id: thread_id})
+    assert_received {:triage_scheduled, ^thread_id, 15_000}
+    assert_received {:triage_scheduled, ^thread_id, 0}
     assert %Thread{status: :triaging} = Repo.get!(Thread, thread_id)
   end
 

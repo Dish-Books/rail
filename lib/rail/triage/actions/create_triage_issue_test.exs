@@ -169,7 +169,7 @@ defmodule Rail.Triage.Actions.CreateTriageIssueTest do
 
   test "an item being triaged again is locked", %{thread: thread, scope: scope} do
     %Thread{items: [item]} = triage_with(thread, %{"items" => [triage_bug()]})
-    {:ok, _correction} = Triage.correct_triage_item(scope, item, %{"text" => "Billing has no Design role."})
+    {:ok, _note} = Triage.add_triage_note(scope, item, %{"text" => "Billing has no Design role."})
 
     assert {:error, :locked} = Triage.create_triage_issue(scope, item, %{})
   end

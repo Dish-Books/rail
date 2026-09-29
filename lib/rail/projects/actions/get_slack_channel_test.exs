@@ -11,8 +11,8 @@ defmodule Rail.Projects.Actions.GetSlackChannelTest do
     unique = System.unique_integer([:positive])
     Req.Test.expect(Slack, &Req.Test.json(&1, %{"ok" => true, "team_id" => "T#{unique}"}))
     {:ok, workspace} = Projects.create_slack_workspace(system_scope(), %{"name" => "Acme", "token" => "xoxb-1"})
-    Req.Test.expect(Slack, &Req.Test.json(&1, %{"ok" => true, "channels" => [%{"id" => "C#{unique}", "name" => "fb"}]}))
-    {:ok, _channels} = Projects.set_slack_channels(system_scope(), project, [%{"external_id" => "C#{unique}"}])
+    channel = %{"external_id" => "C#{unique}", "name" => "fb", "slack_workspace_id" => workspace.id}
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{"slack_channels" => [channel]})
     %{channel_id: "C#{unique}", workspace: workspace}
   end
 

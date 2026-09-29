@@ -5,8 +5,8 @@ defmodule RailWeb.TriageLive do
   alias Rail.Projects
   alias Rail.Scope
   alias Rail.Triage
-  alias Rail.Triage.Schemas.Correction
   alias Rail.Triage.Schemas.Item
+  alias Rail.Triage.Schemas.Note
   alias Rail.Triage.Schemas.Thread
 
   @filters ["waiting", "triaging", "done"]
@@ -20,7 +20,7 @@ defmodule RailWeb.TriageLive do
     locked: "This item is being triaged again, so it cannot change yet.",
     needs_issue_link: "This reply links the issue, so create the issue first.",
     no_reply: "There is no reply to post.",
-    settled: "This item is settled and closed to corrections."
+    settled: "This item is settled and takes no more notes."
   }
 
   def mount(_params, _session, socket) do
@@ -32,7 +32,7 @@ defmodule RailWeb.TriageLive do
       |> assign(:current_section, :triage)
       |> assign(:show_slack_link_prompt, not Scope.slack_linked?(socket.assigns.current_scope))
       |> assign(:item_errors, %{})
-      |> assign(:correction, Ecto.Changeset.change(%Correction{}))
+      |> assign(:note, Ecto.Changeset.change(%Note{}))
 
     {:ok, socket}
   end
@@ -47,7 +47,7 @@ defmodule RailWeb.TriageLive do
       |> assign(:selected_id, params["id"])
       |> assign(:thread, nil)
       |> assign(:item_errors, %{})
-      |> assign(:correction, Ecto.Changeset.change(%Correction{}))
+      |> assign(:note, Ecto.Changeset.change(%Note{}))
       |> load()
 
     {:noreply, socket}
@@ -81,7 +81,7 @@ defmodule RailWeb.TriageLive do
           :if={@thread}
           thread={@thread}
           current_user_id={@current_scope.user.id}
-          correction={@correction}
+          note={@note}
         />
 
         <section :if={@thread} id="triage-items" class="flex-1 min-w-0 flex flex-col min-h-0">
@@ -185,32 +185,32 @@ defmodule RailWeb.TriageLive do
     {:noreply, accept(socket, item_id, &Triage.post_triage_reply(socket.assigns.current_scope, &1, attrs))}
   end
 
-  def handle_event("pick_correction", %{"item_id" => item_id} = params, socket) do
-    correction = Ecto.Changeset.change(%Correction{}, item_id: item_id, assumption: params["assumption"])
-    {:noreply, assign(socket, :correction, correction)}
+  def handle_event("pick_note", %{"item_id" => item_id} = params, socket) do
+    note = Ecto.Changeset.change(%Note{}, item_id: item_id, assumption: params["assumption"])
+    {:noreply, assign(socket, :note, note)}
   end
 
-  def handle_event("change_correction", %{"correction" => attrs}, socket) do
-    correction =
-      Ecto.Changeset.change(%Correction{},
+  def handle_event("change_note", %{"note" => attrs}, socket) do
+    note =
+      Ecto.Changeset.change(%Note{},
         item_id: attrs["item_id"],
         assumption: attrs["assumption"],
         text: attrs["text"]
       )
 
-    {:noreply, assign(socket, :correction, correction)}
+    {:noreply, assign(socket, :note, note)}
   end
 
-  def handle_event("send_correction", %{"correction" => %{"item_id" => item_id} = attrs}, socket) do
+  def handle_event("add_note", %{"note" => %{"item_id" => item_id} = attrs}, socket) do
     item = Enum.find(socket.assigns.thread.items, &(&1.id == item_id))
 
-    case Triage.correct_triage_item(socket.assigns.current_scope, item, attrs) do
-      {:ok, _correction} ->
-        socket = socket |> assign(:correction, Ecto.Changeset.change(%Correction{})) |> load()
+    case Triage.add_triage_note(socket.assigns.current_scope, item, attrs) do
+      {:ok, _note} ->
+        socket = socket |> assign(:note, Ecto.Changeset.change(%Note{})) |> load()
         {:noreply, socket}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, :correction, changeset)}
+        {:noreply, assign(socket, :note, changeset)}
 
       {:error, reason} ->
         {:noreply, assign(socket, :item_errors, %{item_id => error_message(reason)})}
@@ -280,10 +280,11 @@ defmodule RailWeb.TriageLive do
 
   defp corrected_by(nil, _user_id), do: %{}
 
-  defp corrected_by(%Thread{corrections: corrections}, user_id) do
-    Map.new(corrections, fn correction ->
-      {correction.item_id, if(correction.user_id == user_id, do: "you", else: correction.user && correction.user.name)}
-    end)
+  # Who wrote the note that corrected an item's assumption, for the assumption it answers.
+  defp corrected_by(%Thread{notes: notes}, user_id) do
+    for %{assumption: assumption} = note <- notes, is_binary(assumption), into: %{} do
+      {note.item_id, if(note.user_id == user_id, do: "you", else: note.user && note.user.name)}
+    end
   end
 
   defp channel_names(projects, project_id) do

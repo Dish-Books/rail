@@ -8,9 +8,9 @@ defmodule Rail.Triage.Schemas.Thread do
 
   alias Rail.Projects.Schemas.Project
   alias Rail.Projects.Schemas.SlackChannel
-  alias Rail.Triage.Schemas.Correction
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Message
+  alias Rail.Triage.Schemas.Note
   alias Rail.Users.Schemas.User
 
   @statuses [:triaging, :waiting, :done]
@@ -37,7 +37,7 @@ defmodule Rail.Triage.Schemas.Thread do
 
     has_many :messages, Message
     has_many :items, Item
-    has_many :corrections, Correction
+    has_many :notes, Note
 
     timestamps()
   end
@@ -70,7 +70,7 @@ defmodule Rail.Triage.Schemas.Thread do
   workspace preloaded.
   """
   def triggering?(%__MODULE__{} = thread, %Message{} = message) do
-    %SlackChannel{triage_bot_messages: bots?, slack_workspace: workspace} = thread.slack_channel
+    %SlackChannel{bot_triage_enabled: bots?, slack_workspace: workspace} = thread.slack_channel
 
     cond do
       Message.via_rail?(message) -> false

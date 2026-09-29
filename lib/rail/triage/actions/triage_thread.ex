@@ -26,9 +26,9 @@ defmodule Rail.Triage.Actions.TriageThread do
   alias Rail.Slack
   alias Rail.Tools
   alias Rail.Triage
-  alias Rail.Triage.Schemas.Correction
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Message
+  alias Rail.Triage.Schemas.Note
   alias Rail.Triage.Schemas.Thread
 
   @stale_after_minutes 45
@@ -112,12 +112,12 @@ defmodule Rail.Triage.Actions.TriageThread do
       slack_channel: :slack_workspace,
       messages: from(m in Message, order_by: [asc: m.posted_at]),
       items: from(i in Item, order_by: [asc: i.position]),
-      corrections: from(c in Correction, order_by: [asc: c.inserted_at], preload: :item)
+      notes: from(n in Note, order_by: [asc: n.inserted_at], preload: :item)
     ])
   end
 
-  # New messages put every open item in play and allow new ones; a correction
-  # with nothing new puts only the corrected items back.
+  # New messages put every open item in play and allow new ones; a note with
+  # nothing new puts only the items it was left on back.
   defp pass_scope(%Thread{} = thread) do
     cond do
       Enum.any?(thread.messages, &(is_nil(&1.triaged_at) and Thread.triggering?(thread, &1))) ->
@@ -238,7 +238,7 @@ defmodule Rail.Triage.Actions.TriageThread do
     #{Path.join(dir, "issues.md")} lists every issue in this project with its state. Read it before you draft any issue.
     #{forced(thread)}
     #{items(thread)}
-    #{corrections(thread)}
+    #{notes(thread)}
     Writing #{file} is how you report, and it is the last thing you do. Write it with a heredoc, the body and its closing JSON line at column zero:
 
     cat > #{file} <<'JSON'
@@ -310,25 +310,23 @@ defmodule Rail.Triage.Actions.TriageThread do
     """
   end
 
-  defp corrections(%Thread{corrections: corrections, items: items}) do
+  defp notes(%Thread{notes: notes, items: items}) do
     open = for item <- items, item.retriaging, do: item.id
 
-    case Enum.filter(corrections, &(&1.item_id in open)) do
+    case Enum.filter(notes, &(&1.item_id in open)) do
       [] ->
         ""
 
       pending ->
         lines =
-          Enum.map(pending, fn %Correction{} = correction ->
-            answering =
-              if correction.assumption, do: " It answers your assumption: \"#{correction.assumption}\".", else: ""
-
-            "- On `#{correction.item.key}`, a person wrote: \"#{correction.text}\".#{answering}"
+          Enum.map(pending, fn %Note{} = note ->
+            answering = if note.assumption, do: " It answers your assumption: \"#{note.assumption}\".", else: ""
+            "- On `#{note.item.key}`, a person noted: \"#{note.text}\".#{answering}"
           end)
 
         """
 
-        A person corrected these items. Triage each of them again with the correction taken as true, restate it under the same key, and mark the assumption it answers `"corrected": true`.
+        People left notes on these items. A note is their word on the item, and it may correct something you assumed. Triage each of them again with its notes taken as true, restate it under the same key, and mark any assumption a note answers `"corrected": true`.
 
         #{Enum.join(lines, "\n")}
         """

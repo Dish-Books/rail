@@ -20,7 +20,7 @@ defmodule Rail.Triage.Actions.HandleSlackEvent do
   alias Rail.Triage.Schemas.Thread
 
   @subtypes [nil, "thread_broadcast", "file_share", "bot_message"]
-  @delay_seconds 15
+  @delay to_timeout(second: 15)
 
   @doc """
   Returns `{:ok, thread}` for a message it filed, or `:ignored`.
@@ -60,7 +60,7 @@ defmodule Rail.Triage.Actions.HandleSlackEvent do
     {:ok, message, _names} = upsert_slack_message(thread, workspace, event, %{})
 
     if triggers?(workspace, channel, event, message) do
-      enqueue_triage(thread, schedule_in: @delay_seconds)
+      enqueue_triage(thread, delay: @delay)
     else
       {:ok, thread}
     end
@@ -69,7 +69,7 @@ defmodule Rail.Triage.Actions.HandleSlackEvent do
   defp triggers?(workspace, channel, event, message) do
     cond do
       Message.via_rail?(message) -> false
-      is_binary(event["bot_id"]) -> channel.triage_bot_messages and event["bot_id"] != workspace.bot_id
+      is_binary(event["bot_id"]) -> channel.bot_triage_enabled and event["bot_id"] != workspace.bot_id
       true -> true
     end
   end

@@ -1,7 +1,7 @@
 defmodule Rail.Projects.Schemas.SlackChannel do
   @moduledoc """
   A Slack channel a project triages. Bot posts only trigger triage where
-  `triage_bot_messages` is on, such as a channel an error tracker reports in.
+  `bot_triage_enabled` is on, such as a channel an error tracker reports in.
   """
   use Rail.Schema
 
@@ -12,7 +12,7 @@ defmodule Rail.Projects.Schemas.SlackChannel do
   schema "slack_channels" do
     field :external_id, :string
     field :name, :string
-    field :triage_bot_messages, :boolean, default: false
+    field :bot_triage_enabled, :boolean, default: false
 
     belongs_to :project, Project
     belongs_to :slack_workspace, SlackWorkspace
@@ -20,10 +20,15 @@ defmodule Rail.Projects.Schemas.SlackChannel do
     timestamps()
   end
 
-  def changeset(%Project{id: project_id}, %SlackWorkspace{id: workspace_id}, attrs) do
-    %__MODULE__{project_id: project_id, slack_workspace_id: workspace_id}
-    |> cast(attrs, [:external_id, :name, :triage_bot_messages])
-    |> validate_required([:external_id, :name])
+  @doc """
+  A channel as a project's channels form sets it, through `Project.slack_channels_changeset/2`.
+  The form offers only what it just listed from Slack, so the id, name and workspace come from there.
+  """
+  def changeset(%__MODULE__{} = channel, attrs) do
+    channel
+    |> cast(attrs, [:external_id, :name, :slack_workspace_id, :bot_triage_enabled])
+    |> validate_required([:external_id, :name, :slack_workspace_id])
+    |> foreign_key_constraint(:slack_workspace_id)
     |> unique_constraint(:external_id, message: "is connected to another project")
   end
 end

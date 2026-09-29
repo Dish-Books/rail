@@ -4,6 +4,7 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
   alias Rail.Projects
   alias Rail.Projects.Schemas.LinearWorkspace
   alias Rail.Projects.Schemas.Project
+  alias Rail.Projects.Schemas.SlackChannel
   alias Rail.Scope
 
   test "admin updates project successfully" do
@@ -154,5 +155,99 @@ defmodule Rail.Projects.Actions.UpdateProjectTest do
 
     assert {:ok, %Project{triage_user_id: ^user_id}} =
              Projects.update_project(system_scope(), project, %{"triage_user_id" => user_id})
+  end
+
+  describe "slack channels" do
+    setup do
+      unique = System.unique_integer([:positive])
+      Req.Test.expect(Rail.Slack, &Req.Test.json(&1, %{"ok" => true, "team_id" => "T#{unique}"}))
+      {:ok, workspace} = Projects.create_slack_workspace(system_scope(), %{"name" => "Acme", "token" => "xoxb-1"})
+
+      %{
+        workspace: workspace,
+        feedback: %{"external_id" => "C#{unique}a", "name" => "rail-feedback", "slack_workspace_id" => workspace.id},
+        posthog: %{"external_id" => "C#{unique}b", "name" => "posthog-index", "slack_workspace_id" => workspace.id}
+      }
+    end
+
+    test "sets each channel as Slack listed it, with its bot switch, and replaces the previous set", %{
+      project: project,
+      workspace: %{id: workspace_id},
+      feedback: %{"external_id" => feedback_id} = feedback,
+      posthog: %{"external_id" => posthog_id} = posthog
+    } do
+      assert {:ok,
+              %Project{
+                slack_channels: [
+                  %SlackChannel{external_id: ^feedback_id, name: "rail-feedback", slack_workspace_id: ^workspace_id}
+                ]
+              }} = Projects.update_project(system_scope(), project, %{"slack_channels" => [feedback]})
+
+      assert {:ok, %Project{slack_channels: [%SlackChannel{external_id: ^posthog_id, bot_triage_enabled: true}]}} =
+               Projects.update_project(system_scope(), project, %{
+                 "slack_channels" => [Map.put(posthog, "bot_triage_enabled", "true")]
+               })
+
+      assert [%SlackChannel{external_id: ^posthog_id}] = Projects.list_slack_channels(project)
+    end
+
+    test "updates a channel it already has in place, so its threads stay, and leaves channels alone when not sent", %{
+      project: project,
+      workspace: workspace,
+      feedback: feedback,
+      posthog: %{"external_id" => posthog_id} = posthog
+    } do
+      {:ok, %Project{slack_channels: [%SlackChannel{id: channel_id} = channel]} = project} =
+        Projects.update_project(system_scope(), project, %{"slack_channels" => [feedback]})
+
+      {:ok, %{id: thread_id}} =
+        Rail.Triage.handle_slack_event(
+          workspace,
+          slack_message_event(channel, %{"bot_id" => "B_PH", "username" => "PostHog", "text" => "TypeError"})
+        )
+
+      kept = Map.merge(feedback, %{"id" => channel_id, "name" => "renamed", "bot_triage_enabled" => "true"})
+
+      assert {:ok,
+              %Project{
+                slack_channels: [
+                  %SlackChannel{id: ^channel_id, name: "renamed", bot_triage_enabled: true},
+                  %SlackChannel{external_id: ^posthog_id}
+                ]
+              } = project} = Projects.update_project(system_scope(), project, %{"slack_channels" => [kept, posthog]})
+
+      assert {:ok, %{id: ^thread_id}} = Rail.Triage.get_triage_thread(system_scope(), thread_id)
+
+      assert {:ok, %Project{name: "Renamed project"}} =
+               Projects.update_project(system_scope(), project, %{"name" => "Renamed project"})
+
+      assert [%SlackChannel{external_id: ^posthog_id}, %SlackChannel{id: ^channel_id}] =
+               Projects.list_slack_channels(project)
+    end
+
+    test "refuses a channel another project holds, or a workspace Rail does not have", %{
+      project: project,
+      feedback: feedback
+    } do
+      {:ok, other} =
+        Projects.create_project(system_scope(), %{
+          name: "Other",
+          github_repo: "example/other-#{System.unique_integer([:positive])}",
+          github_installation_id: 2,
+          linear_team_key: "OTH",
+          default_branch: "main",
+          clone_path: "/tmp/other"
+        })
+
+      assert {:ok, _held} = Projects.update_project(system_scope(), other, %{"slack_channels" => [feedback]})
+
+      assert {:error, changeset} = Projects.update_project(system_scope(), project, %{"slack_channels" => [feedback]})
+      assert %{slack_channels: [%{external_id: ["is connected to another project"]}]} = errors_on(changeset)
+      assert [] = Projects.list_slack_channels(project)
+
+      elsewhere = %{"external_id" => "C_ELSEWHERE", "name" => "x", "slack_workspace_id" => "sw_missing"}
+      assert {:error, changeset} = Projects.update_project(system_scope(), project, %{"slack_channels" => [elsewhere]})
+      assert %{slack_channels: [%{slack_workspace_id: ["does not exist"]}]} = errors_on(changeset)
+    end
   end
 end
