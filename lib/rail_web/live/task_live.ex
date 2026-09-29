@@ -36,6 +36,10 @@ defmodule RailWeb.TaskLive do
   # this; the turn finishing re-reads regardless of when the last one was.
   @diff_refresh_ms 5_000
 
+  # A full-size frame is a few hundred KB, so four a second is still a live
+  # picture but a load any viewer's connection can keep up with.
+  @frame_interval_ms 250
+
   @issue_tab "issue"
 
   def mount(_params, _session, socket) do
@@ -62,6 +66,8 @@ defmodule RailWeb.TaskLive do
       |> assign(:comment_nonce, 0)
       |> assign(:subscribed_run_ids, MapSet.new())
       |> assign(:watched_browser_task_id, nil)
+      |> assign(:frame_window_open?, false)
+      |> assign(:held_frame, nil)
       |> assign(:roles_map, %{})
       |> assign(:pending_question, nil)
       |> assign(:pending_questions, [])
@@ -458,11 +464,29 @@ defmodule RailWeb.TaskLive do
   # arriving several times a second and nothing on the page depends on it, so
   # re-rendering the panel around it would be paying for a diff of everything
   # else to move one image.
+  #
+  # Chrome paints as often as the page moves, which on an animated page is dozens
+  # of full-size frames a second - more than the socket to a viewer can carry, and
+  # every click waits behind the pictures queued ahead of it. So a viewer gets at
+  # most one per window: the newest frame that arrives during a window goes out when
+  # it closes, and the rest are dropped, since each one only replaces the last.
   def handle_info({:browser_frame, task_id, data}, socket) do
-    if socket.assigns.task_id == task_id and socket.assigns.pane in [:qa, :demo] do
-      {:noreply, push_event(socket, "browser:frame", %{data: data})}
-    else
-      {:noreply, socket}
+    cond do
+      socket.assigns.task_id != task_id or socket.assigns.pane not in [:qa, :demo] ->
+        {:noreply, socket}
+
+      socket.assigns.frame_window_open? ->
+        {:noreply, assign(socket, :held_frame, data)}
+
+      true ->
+        {:noreply, push_frame(socket, data)}
+    end
+  end
+
+  def handle_info(:frame_window_closed, socket) do
+    case socket.assigns.held_frame do
+      data when is_binary(data) -> {:noreply, push_frame(assign(socket, :held_frame, nil), data)}
+      nil -> {:noreply, assign(socket, :frame_window_open?, false)}
     end
   end
 
@@ -889,6 +913,14 @@ defmodule RailWeb.TaskLive do
     end
 
     if connected?(socket), do: task_id, else: watched
+  end
+
+  defp push_frame(socket, data) do
+    Process.send_after(self(), :frame_window_closed, @frame_interval_ms)
+
+    socket
+    |> assign(:frame_window_open?, true)
+    |> push_event("browser:frame", %{data: data})
   end
 
   defp question_id(socket, params) do
