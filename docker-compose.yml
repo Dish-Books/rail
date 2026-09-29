@@ -10,9 +10,6 @@ x-rail-env: &rail-env
   RAIL_BACKENDS_ROOT: /srv/rail/backends
   MISE_DATA_DIR: /srv/rail/mise
   MISE_TRUSTED_CONFIG_PATHS: /srv/rail/projects
-  # The image's PATH plus mise's shims, so a bare `prek` (a git hook's fallback) or any
-  # other tool a project's mise.toml pins resolves in its worktree.
-  PATH: /home/rail/.local/bin:/srv/rail/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Tags each log line with its compose service, which otel-collector ships under.
 x-logging: &logging
