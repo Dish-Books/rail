@@ -473,6 +473,8 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
       view |> element("#edit-project-#{project.id}") |> render_click()
 
       assert has_element?(view, "#slack-channel-#{channel.external_id}[checked]")
+      # The modal is taller than a laptop screen with the channel list, so it has to scroll.
+      assert has_element?(view, "#project-modal-panel.overflow-y-auto")
       refute has_element?(view, "#slack-channel-#{posthog}[checked]")
       refute has_element?(view, "#slack-channel-bots-#{posthog}")
 
@@ -529,6 +531,37 @@ defmodule RailWeb.Settings.ProjectsLiveTest do
                Projects.list_slack_channels(project)
 
       assert {:ok, %{id: ^thread_id}} = Rail.Triage.get_triage_thread(system_scope(), thread_id)
+    end
+
+    test "unchecking a channel with triage history asks first, naming what goes", %{
+      admin_conn: conn,
+      project: project,
+      channel: %{id: channel_id} = channel,
+      workspace: workspace,
+      posthog: posthog
+    } do
+      {:ok, %{id: thread_id}} = Rail.Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
+
+      assert {:ok, view, _html} = live(conn, ~p"/settings/projects")
+      Req.Test.allow(Rail.Slack, self(), view.pid)
+      view |> element("#edit-project-#{project.id}") |> render_click()
+
+      unchecked = %{"channels" => %{channel.external_id => %{"included" => "false"}, posthog => %{"included" => "true"}}}
+      view |> form("#slack-channels-form", unchecked) |> render_submit()
+
+      assert has_element?(view, "#slack-channels-confirm", "Removing #rail-feedback deletes 1 triage thread")
+      assert [%{id: ^channel_id}] = Projects.list_slack_channels(project)
+
+      view |> element("#cancel-remove-channels-button") |> render_click()
+      refute has_element?(view, "#slack-channels-confirm")
+      assert [%{id: ^channel_id}] = Projects.list_slack_channels(project)
+
+      view |> form("#slack-channels-form", unchecked) |> render_submit()
+      view |> element("#confirm-remove-channels-button") |> render_click()
+
+      assert has_element?(view, "#slack-channels-saved")
+      assert [%{external_id: ^posthog}] = Projects.list_slack_channels(project)
+      assert {:error, :not_found} = Rail.Triage.get_triage_thread(system_scope(), thread_id)
     end
 
     test "a channel another project holds is refused on the form", %{

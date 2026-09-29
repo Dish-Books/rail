@@ -23,6 +23,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate input(assigns), to: Components.Input
   defdelegate issue_card(assigns), to: Components.IssueCard
   defdelegate issue_view(assigns), to: Components.IssueView
+  defdelegate local_time(assigns), to: Components.LocalTime
   defdelegate markdown(assigns), to: Components.Markdown
   defdelegate nav(assigns), to: Components.Nav
   defdelegate overview_stats(assigns), to: Components.OverviewStats

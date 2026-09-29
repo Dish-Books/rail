@@ -94,8 +94,8 @@ defmodule Rail.Triage.Actions.CreateTriageIssue do
       end
 
     case post_to_slack(scope, item.thread, text) do
-      {:ok, _message} when reply? ->
-        %{reply_posted_at: DateTime.utc_now(), reply_posted_by_id: scope.user.id}
+      {:ok, message} when reply? ->
+        %{reply_posted_at: DateTime.utc_now(), reply_posted_by_id: scope.user.id, reply_text: message.text}
 
       {:ok, _message} ->
         %{}

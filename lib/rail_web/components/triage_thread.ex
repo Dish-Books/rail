@@ -100,7 +100,11 @@ defmodule RailWeb.Components.TriageThread do
               >
                 via Rail
               </span>
-              <span class="text-xs text-slate-500 dark:text-slate-400">{time(entry.message.posted_at)}</span>
+              <.local_time
+                id={"message-time-#{entry.message.id}"}
+                at={entry.message.posted_at}
+                class="text-xs text-slate-500 dark:text-slate-400"
+              />
             </p>
             <p class="text-[13px] leading-relaxed text-slate-800 dark:text-slate-200 whitespace-pre-line break-words">
               <span :for={{text, mark} <- entry.segments}><mark
@@ -141,9 +145,8 @@ defmodule RailWeb.Components.TriageThread do
           <div :for={entry <- @notes} id={"triage-note-#{entry.note.id}"}>
             <div class="mt-2 w-fit max-w-[92%] ml-auto px-3 py-2 rounded-xl rounded-br-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
               <p class="flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                <.icon name="pi-user" class="size-3" />{entry.who} · on item {entry.note.item.position} · {time(
-                  entry.note.inserted_at
-                )}
+                <.icon name="pi-user" class="size-3" />{entry.who} · on item {entry.note.item.position} ·
+                <.local_time id={"note-time-#{entry.note.id}"} at={entry.note.inserted_at} />
               </p>
               <p
                 :if={entry.note.assumption}
@@ -159,7 +162,8 @@ defmodule RailWeb.Components.TriageThread do
               :if={entry.redone_at}
               class="mt-1.5 text-right text-[11px] text-slate-500 dark:text-slate-400"
             >
-              Item {entry.note.item.position} triaged again at {time(entry.redone_at)}
+              Item {entry.note.item.position} triaged again at
+              <.local_time id={"note-redone-#{entry.note.id}"} at={entry.redone_at} />
             </p>
           </div>
         </div>
@@ -264,6 +268,4 @@ defmodule RailWeb.Components.TriageThread do
   defp initials(name) when is_binary(name) do
     name |> String.split(~r/\s+/, trim: true) |> Enum.take(2) |> Enum.map_join(&String.first/1) |> String.upcase()
   end
-
-  defp time(%DateTime{} = at), do: Calendar.strftime(at, "%-I:%M %p")
 end

@@ -14,7 +14,7 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
     {:ok, thread} = Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
     user = slack_user(workspace.external_id)
 
-    %{workspace: workspace, channel: channel, thread: thread, user: user, scope: Scope.for_user(user)}
+    %{workspace: workspace, channel: channel, thread: thread, user: user, scope: Scope.for_user(user), project: project}
   end
 
   test "posts the person's edited reply as them, and the thread records it as theirs", %{
@@ -178,5 +178,42 @@ defmodule Rail.Triage.Actions.PostTriageReplyTest do
 
     assert {:error, {:slack_error, "not_in_channel"}} = Triage.post_triage_reply(scope, item, %{})
     assert %Item{reply_posted_by_id: nil, reply_posted_at: nil} = Repo.get!(Item, item.id)
+  end
+
+  test "a reply on an item an existing issue covers links that issue", %{
+    project: project,
+    thread: thread,
+    scope: scope
+  } do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{
+              "id" => "lin_11",
+              "identifier" => "TRI-11",
+              "title" => "Sidebar",
+              "url" => "https://linear.app/acme/issue/TRI-11",
+              "state" => %{"type" => "started"}
+            }
+          }
+        }
+      })
+    end)
+
+    {:ok, _issue} = Rail.Issues.create_issue(system_scope(), project, %{title: "Sidebar"})
+
+    tracked = triage_bug(%{"existing_issue" => "TRI-11", "reply" => "Already tracked in {issue link}."})
+    %Thread{items: [item]} = triage_with(thread, %{"items" => [tracked]})
+
+    Req.Test.expect(Rail.Slack, fn conn ->
+      assert %{"text" => "Already tracked in <https://linear.app/acme/issue/TRI-11|TRI-11>."} =
+               conn |> Req.Test.raw_body() |> Jason.decode!()
+
+      Req.Test.json(conn, %{"ok" => true, "ts" => "1790002000.000100"})
+    end)
+
+    assert {:ok, %Item{reply_posted_at: %DateTime{}}} = Triage.post_triage_reply(scope, item, %{})
   end
 end

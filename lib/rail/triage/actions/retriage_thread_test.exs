@@ -48,9 +48,20 @@ defmodule Rail.Triage.Actions.RetriageThreadTest do
     assert %Thread{status: :waiting, forced: false} = Repo.get!(Thread, thread_id)
   end
 
-  test "Triage again after a failure clears the error and runs a pass", %{thread: %{id: thread_id} = thread} do
-    Repo.update_all(from(t in Thread, where: t.id == ^thread_id), set: [error: "Triage exited with code 1."])
+  test "Triage again after a failure clears the error and runs a plain pass", %{thread: %{id: thread_id} = thread} do
+    Repo.update_all(from(t in Thread, where: t.id == ^thread_id),
+      set: [error: "Triage exited with code 1.", no_response_reason: nil]
+    )
 
-    assert {:ok, %Thread{status: :triaging, error: nil}} = Triage.retriage_thread(Scope.for_user(%{id: nil}), thread)
+    assert {:ok, %Thread{status: :triaging, error: nil, forced: false}} =
+             Triage.retriage_thread(Scope.for_user(%{id: nil}), thread)
+
+    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+      refute Enum.any?(argv, &(&1 =~ "needing no response"))
+      thread |> Thread.scratch_path() |> Path.join("result.json") |> File.write!(Jason.encode!(%{"items" => []}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Triage.triage_thread(thread)
   end
 end

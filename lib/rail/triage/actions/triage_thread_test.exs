@@ -156,6 +156,7 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
               "id" => "lin_tri_23",
               "identifier" => "TRI-23",
               "title" => "Wait times",
+              "url" => "https://linear.app/acme/issue/TRI-23",
               "state" => %{"id" => "st_todo", "name" => "Todo", "type" => "unstarted"}
             }
           }
@@ -166,6 +167,8 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     {:ok, %{id: issue_id}} = Issues.create_issue(system_scope(), project, %{title: "Wait times"})
 
     expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+      issues = thread |> Thread.scratch_path() |> Path.join("issues.md") |> File.read!()
+      assert issues =~ "## TRI-23 · Triage · Wait times\n\nLink: https://linear.app/acme/issue/TRI-23"
       File.write!(result_path, Jason.encode!(%{"items" => [Map.put(request, "existing_issue", "TRI-23")]}))
       {:ok, ""}
     end)
@@ -508,5 +511,84 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     assert_received {:looked_up, "U_DAN"}
     refute_received {:looked_up, "U_DAN"}
     assert 5 = Repo.aggregate(from(m in Message, where: m.thread_id == ^thread_id), :count)
+  end
+
+  test "a later pass keeps a person's edits to the drafts, and says Rail's draft changed", %{
+    workspace: workspace,
+    channel: channel,
+    thread: %{id: thread_id} = thread,
+    bug: bug,
+    result_path: result_path
+  } do
+    %Thread{items: [item]} = triage_with(thread, %{"items" => [bug]})
+    %{id: editor_id} = editor_user = slack_user(workspace.external_id)
+    editor = Rail.Scope.for_user(editor_user)
+
+    {:ok, _edited} =
+      Triage.update_triage_draft(editor, item, %{"reply_text" => "Dana, which page? A screenshot would help."})
+
+    {:ok, thread} =
+      Triage.handle_slack_event(
+        workspace,
+        slack_message_event(channel, %{"ts" => "1790000100.000200", "thread_ts" => thread.external_id, "text" => "+1"})
+      )
+
+    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+      rewritten =
+        Map.merge(bug, %{
+          "summary" => "Also seen on BILL-91.",
+          "reply" => "Couldn't reproduce yet.",
+          "issue" => %{"title" => "Rail's new title", "description" => "New.", "priority" => "low"}
+        })
+
+      File.write!(result_path, Jason.encode!(%{"items" => [rewritten]}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Triage.triage_thread(thread)
+
+    assert [
+             %Item{
+               summary: "Also seen on BILL-91.",
+               reply_text: "Dana, which page? A screenshot would help.",
+               reply_edited_by_id: ^editor_id,
+               reply_draft_changed: true,
+               issue_title: "Rail's new title",
+               issue_edited_by_id: nil,
+               issue_draft_changed: false
+             }
+           ] = Repo.all(from i in Item, where: i.thread_id == ^thread_id)
+  end
+
+  test "passes on threads of one project running at once all check the code out", %{
+    workspace: workspace,
+    channel: channel
+  } do
+    threads =
+      for i <- 1..12 do
+        {:ok, thread} =
+          Triage.handle_slack_event(workspace, slack_message_event(channel, %{"ts" => "17900100#{i}.000100"}))
+
+        thread
+      end
+
+    stub(Tools, :run_agent, fn _backend, _argv, opts ->
+      [_worktrees, "triage-" <> thread_id] = opts[:cd] |> Path.split() |> Enum.take(-2)
+
+      %Thread{id: thread_id}
+      |> Map.put(:project_id, Repo.get!(Thread, thread_id).project_id)
+      |> Thread.scratch_path()
+      |> Path.join("result.json")
+      |> File.write!(Jason.encode!(%{"items" => []}))
+
+      {:ok, ""}
+    end)
+
+    threads
+    |> Task.async_stream(&Triage.triage_thread/1, max_concurrency: 12, timeout: 60_000)
+    |> Enum.each(fn result -> assert {:ok, :ok} = result end)
+
+    ids = Enum.map(threads, & &1.id)
+    assert [] = Repo.all(from t in Thread, where: t.id in ^ids and not is_nil(t.error), select: t.error)
   end
 end

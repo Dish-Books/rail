@@ -14,6 +14,7 @@ defmodule Rail.Triage.SlackSocket do
   alias Rail.Projects.Schemas.SlackWorkspace
   alias Rail.Slack
   alias Rail.Triage
+  alias Rail.Triage.SocketRegistry
 
   require Logger
 
@@ -27,7 +28,8 @@ defmodule Rail.Triage.SlackSocket do
   """
   def start_link(opts) do
     %SlackWorkspace{id: id} = Keyword.fetch!(opts, :workspace)
-    GenServer.start_link(__MODULE__, opts, name: {:via, Registry, {Rail.Triage.SocketRegistry, id}})
+    # The registry value is the connection's state, which the Slack settings page shows.
+    GenServer.start_link(__MODULE__, opts, name: {:via, Registry, {SocketRegistry, id, :connecting}})
   end
 
   def child_spec(opts) do
@@ -44,6 +46,7 @@ defmodule Rail.Triage.SlackSocket do
   def handle_continue(:connect, %__MODULE__{} = state) do
     with {:ok, url} <- Slack.open_connection(state.workspace),
          {:ok, conn, websocket, ref, early} <- connect(URI.parse(url)) do
+      status(state, :connected)
       receive_responses(%{state | conn: conn, websocket: websocket, ref: ref}, early)
     else
       {:error, reason} -> retry(state, reason)
@@ -61,6 +64,7 @@ defmodule Rail.Triage.SlackSocket do
       {:error, conn, reason, _responses} ->
         reopen(%{state | conn: conn}, reason)
 
+      # coveralls-ignore-stop
       # coveralls-ignore-start (a message for a connection already replaced, which nothing on this side can time)
       :unknown ->
         {:noreply, state}
@@ -70,7 +74,6 @@ defmodule Rail.Triage.SlackSocket do
 
   # coveralls-ignore-start (a message arriving between connections, which nothing on this side can time)
   def handle_info(_message, state), do: {:noreply, state}
-  # coveralls-ignore-stop
 
   defp connect(%URI{scheme: scheme} = uri) do
     {http, ws} = if scheme == "wss", do: {:https, :wss}, else: {:http, :ws}
@@ -184,14 +187,21 @@ defmodule Rail.Triage.SlackSocket do
   end
 
   defp reopen(%__MODULE__{conn: conn} = state, reason) do
+    status(state, :connecting)
     Logger.info("[slack] reconnecting #{state.workspace.name}: #{inspect(reason)}")
     Mint.HTTP.close(conn)
     {:noreply, %{state | conn: nil, websocket: nil, ref: nil}, {:continue, :connect}}
   end
 
   defp retry(%__MODULE__{backoff: backoff} = state, reason) do
+    status(state, {:error, reason})
     Logger.warning("[slack] could not connect #{state.workspace.name}: #{inspect(reason)}")
     Process.send_after(self(), :reconnect, backoff)
     {:noreply, %{state | backoff: min(backoff * 2, @max_backoff)}}
+  end
+
+  defp status(%__MODULE__{workspace: workspace}, status) do
+    {_new, _old} = Registry.update_value(SocketRegistry, workspace.id, fn _previous -> status end)
+    :ok
   end
 end

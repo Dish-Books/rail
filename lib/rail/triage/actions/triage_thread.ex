@@ -21,6 +21,7 @@ defmodule Rail.Triage.Actions.TriageThread do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Mcp
   alias Rail.Pipeline
+  alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Slack
@@ -61,7 +62,10 @@ defmodule Rail.Triage.Actions.TriageThread do
       try do
         pass(thread, token)
       after
-        _removed = Git.remove_worktree(thread.project.clone_path, Thread.worktree_path(thread))
+        _removed =
+          with_clone_lock(thread.project, fn ->
+            Git.remove_worktree(thread.project.clone_path, Thread.worktree_path(thread))
+          end)
       end
 
     finish(thread, outcome)
@@ -74,11 +78,20 @@ defmodule Rail.Triage.Actions.TriageThread do
          {:ok, keys} <- pass_scope(thread),
          {:ok, role} <- role(thread),
          :ok <- write_files(thread),
-         {:ok, worktree} <- Git.checkout_detached_worktree(thread.project, Thread.worktree_path(thread)),
+         {:ok, worktree} <-
+           with_clone_lock(thread.project, fn ->
+             Git.checkout_detached_worktree(thread.project, Thread.worktree_path(thread))
+           end),
          {:ok, _output} <- agent(thread, role, worktree, token),
          %{} = result <- Triage.read_triage(thread) || {:error, :unreadable} do
       Triage.sync_triage(thread, result, keys)
     end
+  end
+
+  # Passes on one project share its clone, and git fetching there while another pass adds or
+  # removes a worktree fails on the half-made one, so those steps take turns per clone.
+  defp with_clone_lock(%Project{clone_path: clone_path}, fun) do
+    :global.trans({{__MODULE__, clone_path}, self()}, fun, [node()], :infinity)
   end
 
   defp backfill(%Thread{slack_channel: %{slack_workspace: workspace} = channel} = thread) do
@@ -220,7 +233,8 @@ defmodule Rail.Triage.Actions.TriageThread do
 
     entries =
       Enum.map(issues, fn %Issue{} = issue ->
-        "## #{issue.identifier} · #{Issue.state_label(issue.state)} · #{issue.title}\n\n#{issue.description}\n"
+        url = if issue.url, do: "Link: #{issue.url}\n\n", else: ""
+        "## #{issue.identifier} · #{Issue.state_label(issue.state)} · #{issue.title}\n\n#{url}#{issue.description}\n"
       end)
 
     "# Every issue in this project\n\n" <> Enum.join(entries, "\n")
@@ -282,11 +296,11 @@ defmodule Rail.Triage.Actions.TriageThread do
     - Never propose a fix, a design or a plan, anywhere. There is no field for one.
     - `existing_issue` is the identifier of the issue in issues.md that already covers the item, or null. When one does, leave `issue` null, and the reply says the item is already tracked in that issue, giving its identifier and its state from issues.md.
     - `priority` is `urgent`, `high`, `medium` or `low`.
-    - A reply is posted by the teammate who accepts it, under their name. Write it in their voice. Where the issue you draft should be linked, write `{issue link}` and Rail fills it in once the issue exists. Leave `reply` null where only a bot would read it.
+    - A reply is posted by the teammate who accepts it, under their name. Write it in their voice. Where the issue should be linked, write `{issue link}`: Rail fills in the existing issue that tracks the item, or the one you draft once it exists. Leave `reply` null where only a bot would read it.
     """)
   end
 
-  defp forced(%Thread{forced: true}),
+  defp forced(%Thread{forced: true, no_response_reason: reason}) when is_binary(reason),
     do:
       "\nA person asked for this thread to be triaged, having seen it marked as needing no response. Read it again closely.\n"
 

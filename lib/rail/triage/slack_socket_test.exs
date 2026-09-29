@@ -37,6 +37,7 @@ defmodule Rail.Triage.SlackSocketTest do
     Req.Test.allow(Rail.Slack, self(), pid)
 
     assert_receive {:fake_slack_connected, fake}, @connect_timeout
+    eventually(fn -> assert :connected = Rail.Triage.get_slack_socket_status(workspace) end)
 
     envelope = %{
       "envelope_id" => "env-1",
@@ -104,5 +105,18 @@ defmodule Rail.Triage.SlackSocketTest do
     start_supervised!({SlackSocket, workspace: workspace, backoff: 10})
 
     assert_receive {:fake_slack_connected, _socket}, @connect_timeout
+  end
+
+  test "says why while Slack will not open a connection, and that it is off when no socket runs", %{
+    workspace: workspace
+  } do
+    assert :off = Rail.Triage.get_slack_socket_status(workspace)
+
+    Req.Test.stub(Rail.Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "not_allowed_token_type"}))
+    start_supervised!({SlackSocket, workspace: workspace, backoff: 10})
+
+    eventually(fn ->
+      assert {:error, {:slack_error, "not_allowed_token_type"}} = Rail.Triage.get_slack_socket_status(workspace)
+    end)
   end
 end

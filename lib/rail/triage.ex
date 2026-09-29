@@ -32,6 +32,7 @@ defmodule Rail.Triage do
   end
 
   defdelegate handle_slack_event(workspace, payload), to: Actions.HandleSlackEvent
+  defdelegate get_slack_socket_status(workspace), to: Actions.GetSlackSocketStatus
   defdelegate triage_thread(thread), to: Actions.TriageThread
   defdelegate read_triage(thread), to: Actions.ReadTriage
   defdelegate sync_triage(thread, result, item_keys_in_scope), to: Actions.SyncTriage

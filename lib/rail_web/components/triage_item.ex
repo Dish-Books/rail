@@ -47,7 +47,7 @@ defmodule RailWeb.Components.TriageItem do
 
     assigns =
       assigns
-      |> assign(:posted_line, posted_line(item))
+      |> assign(:posted_by, posted_by(item))
       |> assign(:created_line, created_line(item, assigns.current_user_id))
       |> assign(:task, item.created_issue && item.created_issue.task)
 
@@ -67,12 +67,22 @@ defmodule RailWeb.Components.TriageItem do
           :if={@item.existing_issue}
           class="whitespace-nowrap text-slate-500 dark:text-slate-400"
         >
-          in <span class="font-mono text-blue-600 dark:text-blue-400">{@item.existing_issue.identifier}</span>, {Issue.state_label(
+          in <.link
+            navigate={~p"/issues/#{@item.existing_issue.id}"}
+            class="font-mono text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            {@item.existing_issue.identifier}
+          </.link>, {Issue.state_label(
             @item.existing_issue.state
           )}
         </span>
         <span class="ml-auto whitespace-nowrap inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-          <.icon name="pi-check-circle-fill" class="size-3.5" />{@posted_line}
+          <.icon name="pi-check-circle-fill" class="size-3.5" />
+          <span :if={@posted_by}>
+            Reply posted by {@posted_by} at
+            <.local_time id={"reply-posted-time-#{@item.id}"} at={@item.reply_posted_at} />
+          </span>
+          <span :if={!@posted_by}>Done</span>
         </span>
       </summary>
       <div class="px-4 pb-4 space-y-3">
@@ -93,9 +103,14 @@ defmodule RailWeb.Components.TriageItem do
         </p>
         <div
           :if={@item.reply_posted_at}
-          class="rounded-lg px-2.5 py-2 border-l-[3px] border-red-500 bg-slate-100 dark:bg-slate-800/40 text-[12.5px] leading-relaxed text-slate-800 dark:text-slate-200 whitespace-pre-line"
+          id={"triage-item-posted-#{@item.id}"}
+          class={[
+            "rounded-lg px-2.5 py-2 border-l-[3px] bg-slate-100 dark:bg-slate-800/40 text-[12.5px] leading-relaxed text-slate-800 dark:text-slate-200",
+            @item.kind == :bug && "border-red-500",
+            @item.kind == :feature_request && "border-violet-500"
+          ]}
         >
-          {@item.reply_text}
+          <span class="whitespace-pre-line">{@item.reply_text}</span>
         </div>
         <p
           :if={@error || @item.error}
@@ -148,7 +163,7 @@ defmodule RailWeb.Components.TriageItem do
         <div class="p-4 space-y-3 min-w-0">
           <p
             :if={@item.summary}
-            class="text-[13px] leading-relaxed text-slate-700 dark:text-slate-300"
+            class="text-[13px] leading-relaxed break-words text-slate-700 dark:text-slate-300"
           >
             {@item.summary}
           </p>
@@ -158,10 +173,10 @@ defmodule RailWeb.Components.TriageItem do
           >
             <div
               :for={evidence <- @item.evidence}
-              class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-2.5 py-1.5"
+              class="min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-2.5 py-1.5"
             >
-              <p class="text-blue-600 dark:text-blue-400">{location(evidence)}</p>
-              <p :if={evidence.excerpt} class="truncate text-slate-600 dark:text-slate-300">
+              <p class="break-all text-blue-600 dark:text-blue-400">{location(evidence)}</p>
+              <p :if={evidence.excerpt} class="break-all text-slate-600 dark:text-slate-300">
                 {evidence.excerpt}
               </p>
             </div>
@@ -170,12 +185,15 @@ defmodule RailWeb.Components.TriageItem do
             :if={@item.kind == :feature_request and @item.evidence != []}
             class="space-y-1.5 text-[12.5px]"
           >
-            <p :for={evidence <- @item.evidence} class="flex gap-2 text-slate-800 dark:text-slate-200">
+            <p
+              :for={evidence <- @item.evidence}
+              class="flex gap-2 min-w-0 text-slate-800 dark:text-slate-200"
+            >
               <.icon :if={evidence.holds} name="pi-check" class="size-3.5 mt-0.5 text-emerald-500" />
               <.icon :if={!evidence.holds} name="pi-x" class="size-3.5 mt-0.5 text-slate-400" />
-              <span>
+              <span class="min-w-0 break-words">
                 {evidence.excerpt}
-                <span class="font-mono text-[11px] text-blue-600 dark:text-blue-400">{location(
+                <span class="break-all font-mono text-[11px] text-blue-600 dark:text-blue-400">{location(
                   evidence
                 )}</span>
               </span>
@@ -233,7 +251,13 @@ defmodule RailWeb.Components.TriageItem do
           >
             <.icon name="pi-link" class="size-3.5 text-slate-400" />
             <span class="font-semibold">Already tracked, no new issue:</span>
-            <span class="font-mono text-blue-600 dark:text-blue-400">{@item.existing_issue.identifier}</span>
+            <.link
+              navigate={~p"/issues/#{@item.existing_issue.id}"}
+              id={"triage-tracked-link-#{@item.id}"}
+              class="font-mono text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              {@item.existing_issue.identifier}
+            </.link>
             <span class="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400">
               <.icon name="pi-circle" class="size-3" />{Issue.state_label(@item.existing_issue.state)}
             </span>
@@ -268,6 +292,14 @@ defmodule RailWeb.Components.TriageItem do
                 class="ml-auto text-[11px] text-blue-600 dark:text-blue-400 font-semibold"
               >
                 {@issue_edited}
+              </span>
+              <span
+                :if={@item.issue_draft_changed}
+                id={"issue-draft-changed-#{@item.id}"}
+                title="A later pass drafted this issue differently. Your edit is kept."
+                class="text-[11px] text-amber-600 dark:text-amber-400 font-semibold"
+              >
+                Rail's draft changed
               </span>
             </div>
             <label class="sr-only" for={"issue-title-#{@item.id}"}>Issue title</label>
@@ -341,6 +373,14 @@ defmodule RailWeb.Components.TriageItem do
               >
                 {@reply_edited}
               </span>
+              <span
+                :if={@item.reply_draft_changed}
+                id={"reply-draft-changed-#{@item.id}"}
+                title="A later pass drafted this reply differently. Your edit is kept."
+                class="text-[11px] text-amber-600 dark:text-amber-400 font-semibold"
+              >
+                Rail's draft changed
+              </span>
             </div>
             <textarea
               id={"reply-text-#{@item.id}"}
@@ -407,10 +447,10 @@ defmodule RailWeb.Components.TriageItem do
   defp edited(user_id, _user, user_id), do: "Edited by you"
   defp edited(_user_id, user, _current_user_id), do: "Edited by #{user.name || user.login}"
 
-  defp posted_line(%Item{reply_posted_at: %DateTime{} = at, reply_posted_by: user}) when is_map(user),
-    do: "Reply posted by #{user.name || user.login} at #{Calendar.strftime(at, "%-I:%M %p")}"
+  defp posted_by(%Item{reply_posted_at: %DateTime{}, reply_posted_by: user}) when is_map(user),
+    do: user.name || user.login
 
-  defp posted_line(%Item{}), do: "Done"
+  defp posted_by(%Item{}), do: nil
 
   defp created_line(%Item{created_issue: %Issue{identifier: identifier}, issue_edited_by_id: user_id}, user_id)
        when is_binary(user_id), do: "Created #{identifier} with your edits"

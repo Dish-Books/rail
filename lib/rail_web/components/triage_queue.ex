@@ -99,10 +99,10 @@ defmodule RailWeb.Components.TriageQueue do
           ]}>
             {Thread.title_or_preview(row.thread)}
           </span>
-          <span class="mt-1.5 flex items-center gap-1.5 text-[11px]">
+          <span class="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 min-w-0 text-[11px]">
             <span
               :if={row.no_response}
-              class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300"
+              class="whitespace-nowrap shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300"
             >
               <.icon name="pi-minus-circle" class="size-3" />Needed no response
             </span>
@@ -116,7 +116,10 @@ defmodule RailWeb.Components.TriageQueue do
               <.icon name={TriageVerdict.kind_style(kind).icon} class="size-3" />{label}
             </span>
             <span :if={row.verdict} class="whitespace-nowrap text-slate-500 dark:text-slate-400">{row.verdict}</span>
-            <span :if={row.created} class="font-mono text-blue-600 dark:text-blue-400">{row.created}</span>
+            <span
+              :if={row.created}
+              class="whitespace-nowrap font-mono text-blue-600 dark:text-blue-400"
+            >{row.created}</span>
             <span :if={row.error} class="whitespace-nowrap text-red-600 dark:text-red-400">Triage failed</span>
             <span
               :if={row.to_accept > 0 and @filter != :done}
@@ -126,7 +129,8 @@ defmodule RailWeb.Components.TriageQueue do
             </span>
             <span
               :if={@filter == :done}
-              class="ml-auto whitespace-nowrap text-slate-500 dark:text-slate-400"
+              title={row.outcome}
+              class="ml-auto min-w-0 max-w-full truncate text-slate-500 dark:text-slate-400"
             >
               {row.outcome}
             </span>

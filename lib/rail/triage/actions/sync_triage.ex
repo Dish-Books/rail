@@ -6,7 +6,8 @@ defmodule Rail.Triage.Actions.SyncTriage do
   it said about the same thing rather than raising it twice. A pass may rewrite
   only the items it was given, and never one a person already settled: those
   are closed, and news about them is a new item. A draft a person already
-  accepted is never rewritten.
+  accepted, or edited, is never rewritten: an edited one is kept and marked when
+  the pass proposed something else.
   """
 
   import Ecto.Query
@@ -87,8 +88,9 @@ defmodule Rail.Triage.Actions.SyncTriage do
 
     attrs =
       attrs
-      |> Map.merge(%{retriaging: false, error: nil, issue_edited_by_id: nil, reply_edited_by_id: nil})
+      |> Map.merge(%{retriaging: false, error: nil})
       |> Map.merge(redo(item, attrs, now))
+      |> keep_edits(item)
       |> Map.drop(accepted(item))
 
     item |> Item.triage_changeset(attrs) |> Repo.update!()
@@ -100,6 +102,23 @@ defmodule Rail.Triage.Actions.SyncTriage do
   end
 
   defp redo(%Item{}, _attrs, _now), do: %{}
+
+  # A person's edit outlives the pass; the flag says Rail would now draft it differently.
+  defp keep_edits(attrs, %Item{} = item) do
+    attrs
+    |> keep_edit(item, item.issue_edited_by_id, [:issue_title, :issue_description, :issue_priority], :issue_draft_changed)
+    |> keep_edit(item, item.reply_edited_by_id, [:reply_text], :reply_draft_changed)
+  end
+
+  defp keep_edit(attrs, item, editor_id, fields, draft_changed) when is_binary(editor_id) do
+    proposed = Map.take(attrs, fields)
+    kept = Map.new(fields, &{&1, Map.fetch!(item, &1)})
+    changed? = Enum.any?(fields, &(to_string(proposed[&1]) != to_string(kept[&1])))
+
+    attrs |> Map.drop(fields) |> Map.put(draft_changed, changed?)
+  end
+
+  defp keep_edit(attrs, _item, _editor_id, _fields, _draft_changed), do: attrs
 
   defp accepted(%Item{} = item) do
     issue =

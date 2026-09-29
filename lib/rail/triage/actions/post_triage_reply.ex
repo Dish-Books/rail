@@ -23,14 +23,22 @@ defmodule Rail.Triage.Actions.PostTriageReply do
 
     with :ok <- open(item),
          {:ok, _drafted} <- Triage.update_triage_draft(scope, item, attrs),
-         item = Item |> Repo.get!(item_id) |> Repo.preload([:created_issue, thread: [slack_channel: :slack_workspace]]),
+         item =
+           Item
+           |> Repo.get!(item_id)
+           |> Repo.preload([:created_issue, :existing_issue, thread: [slack_channel: :slack_workspace]]),
          {:ok, text} <- text(item),
          :ok <- can_post_to_slack(scope, item.thread),
          :ok <- claim_reply(item, scope.user.id),
-         {:ok, _message} <- post(scope, item, text) do
+         {:ok, message} <- post(scope, item, text) do
+      # From here the reply is what went to Slack, placeholder filled, not the draft.
       {:ok, item} =
         item
-        |> Ecto.Changeset.change(reply_posted_at: DateTime.utc_now(), reply_posted_by_id: scope.user.id)
+        |> Ecto.Changeset.change(
+          reply_posted_at: DateTime.utc_now(),
+          reply_posted_by_id: scope.user.id,
+          reply_text: message.text
+        )
         |> Repo.update()
 
       {:ok, _thread} = settle_thread(item.thread)
@@ -49,7 +57,10 @@ defmodule Rail.Triage.Actions.PostTriageReply do
   defp open(%Item{reply_posted_at: %DateTime{}}), do: {:error, :already_posted}
   defp open(%Item{}), do: :ok
 
-  defp text(%Item{reply_text: text, created_issue: issue}) when is_binary(text) do
+  # The link is to the issue this item created, or to the one that already tracks it.
+  defp text(%Item{reply_text: text} = item) when is_binary(text) do
+    issue = item.created_issue || item.existing_issue
+
     cond do
       not String.contains?(text, "{issue link}") -> {:ok, text}
       is_nil(issue) -> {:error, :needs_issue_link}

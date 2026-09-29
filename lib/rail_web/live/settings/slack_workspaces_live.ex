@@ -4,6 +4,7 @@ defmodule RailWeb.Settings.SlackWorkspacesLive do
 
   alias Rail.Projects
   alias Rail.Projects.Schemas.SlackWorkspace
+  alias Rail.Triage
 
   def mount(_params, _session, socket) do
     socket =
@@ -90,8 +91,8 @@ defmodule RailWeb.Settings.SlackWorkspacesLive do
                     <span class="font-mono text-slate-900 dark:text-slate-100">{workspace.external_id}</span>
                   </span>
                   <span>•</span>
-                  <span>
-                    Socket Mode: {if workspace.app_token, do: "on", else: "no app-level token"}
+                  <span id={"slack-socket-status-#{workspace.id}"}>
+                    Socket Mode: {socket_status(workspace)}
                   </span>
                 </div>
               </div>
@@ -236,6 +237,19 @@ defmodule RailWeb.Settings.SlackWorkspacesLive do
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, :changeset, Map.put(changeset, :action, :validate))}
+    end
+  end
+
+  # What the settings page can see of the connection events arrive on.
+  defp socket_status(%SlackWorkspace{app_token: nil}), do: "no app-level token"
+
+  defp socket_status(%SlackWorkspace{} = workspace) do
+    case Triage.get_slack_socket_status(workspace) do
+      :connected -> "connected"
+      :off -> "not running"
+      {:error, {:slack_error, reason}} -> "failing (#{reason})"
+      {:error, reason} -> "failing (#{inspect(reason)})"
+      :connecting -> "connecting"
     end
   end
 

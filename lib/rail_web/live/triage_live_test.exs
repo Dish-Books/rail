@@ -79,6 +79,7 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#triage-thread mark", "Approved BILL-88 and it sits at Design.")
     assert has_element?(view, "#triage-thread mark", "Could Up next show wait times?")
     assert has_element?(view, "#triage-thread", "Priya Natarajan")
+    assert has_element?(view, "#triage-thread time[phx-hook='LocalTime'][data-format='date-time']")
 
     assert has_element?(view, "#triage-verdict-#{bug.id}", "Confirmed")
     assert has_element?(view, "#triage-verdict-#{request.id}", "Partly built")
@@ -89,11 +90,12 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#triage-item-#{request.id}", "lib/overview.ex")
   end
 
-  test "an edit to a draft is saved as yours, and someone else's under their name", %{
+  test "an edit to a draft is saved as yours, someone else's under their name, and outlives a later pass", %{
     conn: conn,
     user: %{id: user_id},
     workspace: workspace,
-    thread: %Thread{items: [bug, request]}
+    channel: channel,
+    thread: %Thread{items: [bug, request]} = thread
   } do
     {:ok, view, _html} = live(conn, ~p"/triage")
 
@@ -113,6 +115,31 @@ defmodule RailWeb.TriageLiveTest do
     {:ok, _edited} = Triage.update_triage_draft(Rail.Scope.for_user(jordan), request, %{"reply_text" => "Nice idea."})
     send(view.pid, {:triage_changed, request.thread_id})
     assert has_element?(view, "#reply-edited-#{request.id}", "Edited by Jordan Ellis")
+
+    {:ok, _reply} =
+      Triage.handle_slack_event(
+        workspace,
+        slack_message_event(channel, %{"ts" => "1790000700.000100", "thread_ts" => thread.external_id, "text" => "+1"})
+      )
+
+    rewritten = %{
+      "key" => "wait-times",
+      "kind" => "feature_request",
+      "title" => "Wait time on every Up next row",
+      "verdict" => "partly_built",
+      "reply" => "Rail's second thought."
+    }
+
+    bug_rewritten =
+      triage_bug(%{"issue" => %{"title" => "Rail's other title", "description" => "D", "priority" => "low"}})
+
+    triage_with(Repo.get!(Thread, thread.id), %{"items" => [bug_rewritten, rewritten]})
+    send(view.pid, {:triage_changed, thread.id})
+
+    assert has_element?(view, "#reply-text-#{request.id}", "Nice idea.")
+    assert has_element?(view, "#issue-title-#{bug.id}[value='Approve leaves tasks stuck at Design']")
+    assert has_element?(view, "#issue-draft-changed-#{bug.id}", "Rail's draft changed")
+    assert has_element?(view, "#reply-draft-changed-#{request.id}", "Rail's draft changed")
   end
 
   test "creating the issue and posting a reply settle their items, and the posts show as yours via Rail", %{
@@ -160,10 +187,13 @@ defmodule RailWeb.TriageLiveTest do
     |> render_submit()
 
     assert has_element?(view, "#triage-item-#{bug.id}[data-state='settled']", "Created TRI-214 with your edits")
+    assert has_element?(view, "#triage-item-posted-#{bug.id}", "Filed as TRI-214.")
+    refute has_element?(view, "#triage-item-#{bug.id}", "{issue link}")
     assert has_element?(view, "#triage-item-task-#{bug.id}", "Product")
 
     view |> form("#reply-form-#{request.id}") |> render_submit()
     assert has_element?(view, "#triage-item-#{request.id}[data-state='settled']", "Reply posted by Michael")
+    assert has_element?(view, "#reply-posted-time-#{request.id}[phx-hook='LocalTime']")
 
     assert has_element?(view, "#triage-thread [data-qa='triage-message']", user.slack_name)
     assert has_element?(view, "#triage-thread [data-qa='via-rail']", "via Rail")
@@ -225,6 +255,7 @@ defmodule RailWeb.TriageLiveTest do
     assert has_element?(view, "#triage-redo-#{bug.id}", "Was Confirmed.")
     assert has_element?(view, "#triage-item-#{bug.id}", "Corrected by you.")
     assert has_element?(view, "#triage-notes", "Item 1 triaged again at")
+    assert has_element?(view, "#triage-notes time[phx-hook='LocalTime']")
 
     view |> element("#note-pick-#{request.id}") |> render_click()
     view |> form("#note-form", %{"note" => %{"text" => " "}}) |> render_submit()
@@ -355,7 +386,7 @@ defmodule RailWeb.TriageLiveTest do
       })
     end)
 
-    {:ok, _issue} = Rail.Issues.create_issue(system_scope(), project, %{title: "Wait times"})
+    {:ok, %{id: tracked_issue_id}} = Rail.Issues.create_issue(system_scope(), project, %{title: "Wait times"})
 
     {:ok, thread} =
       Triage.handle_slack_event(
@@ -377,6 +408,7 @@ defmodule RailWeb.TriageLiveTest do
     {:ok, view, _html} = live(conn, ~p"/triage/#{thread.id}")
     assert has_element?(view, "#triage-tracked-#{item.id}", "Already tracked, no new issue:")
     assert has_element?(view, "#triage-tracked-#{item.id}", "TRI-23")
+    assert has_element?(view, "#triage-tracked-link-#{item.id}[href='/issues/#{tracked_issue_id}']")
     refute has_element?(view, "#issue-form-#{item.id}")
 
     Req.Test.allow(Rail.Slack, self(), view.pid)

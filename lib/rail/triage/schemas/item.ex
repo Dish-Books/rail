@@ -29,6 +29,9 @@ defmodule Rail.Triage.Schemas.Item do
     field :issue_priority, Ecto.Enum, values: Issue.priorities()
     field :reply_text, :string
     field :reply_posted_at, :utc_datetime_usec
+    # A person edited the draft and a later pass proposed a different one, which their edit kept out.
+    field :issue_draft_changed, :boolean, default: false
+    field :reply_draft_changed, :boolean, default: false
     field :retriaging, :boolean, default: false
     field :retriaged_at, :utc_datetime_usec
     field :error, :string
@@ -73,6 +76,8 @@ defmodule Rail.Triage.Schemas.Item do
     :reply_text,
     :issue_edited_by_id,
     :reply_edited_by_id,
+    :issue_draft_changed,
+    :reply_draft_changed,
     :retriaging,
     :retriaged_at,
     :error
@@ -98,8 +103,10 @@ defmodule Rail.Triage.Schemas.Item do
     changeset = cast(item, attrs, [:issue_title, :issue_description, :issue_priority, :reply_text])
 
     changeset
-    |> then(&if(issue_changed?(&1), do: put_change(&1, :issue_edited_by_id, user_id), else: &1))
-    |> then(&if(changed?(&1, :reply_text), do: put_change(&1, :reply_edited_by_id, user_id), else: &1))
+    |> then(&if(issue_changed?(&1), do: put_edit(&1, :issue_edited_by_id, :issue_draft_changed, user_id), else: &1))
+    |> then(
+      &if(changed?(&1, :reply_text), do: put_edit(&1, :reply_edited_by_id, :reply_draft_changed, user_id), else: &1)
+    )
   end
 
   def issue_draft?(%__MODULE__{issue_title: title, existing_issue_id: nil}), do: is_binary(title) and title != ""
@@ -135,6 +142,11 @@ defmodule Rail.Triage.Schemas.Item do
 
   def kind_label(:bug), do: "Bug"
   def kind_label(:feature_request), do: "Feature request"
+
+  # An edit made after Rail's draft moved on is the person answering that, so the hint goes.
+  defp put_edit(changeset, edited_by, draft_changed, user_id) do
+    changeset |> put_change(edited_by, user_id) |> put_change(draft_changed, false)
+  end
 
   defp issue_changed?(changeset) do
     changed?(changeset, :issue_title) or changed?(changeset, :issue_description) or changed?(changeset, :issue_priority)

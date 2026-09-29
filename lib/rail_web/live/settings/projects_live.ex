@@ -5,6 +5,7 @@ defmodule RailWeb.Settings.ProjectsLive do
   alias Rail.Projects
   alias Rail.Projects.Schemas.Project
   alias Rail.Slack
+  alias Rail.Triage
   alias Rail.Users
 
   def mount(_params, _session, socket) do
@@ -22,6 +23,7 @@ defmodule RailWeb.Settings.ProjectsLive do
       |> assign(:slack_channel_options, [])
       |> assign(:channel_selection, %{})
       |> assign(:channel_ids, %{})
+      |> assign(:channels_confirm, nil)
       |> assign(:channels_saved, false)
       |> assign(:channels_error, nil)
       |> assign(:show_modal, nil)
@@ -167,7 +169,10 @@ defmodule RailWeb.Settings.ProjectsLive do
           class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4"
           id="project-modal"
         >
-          <div class="w-full max-w-xl rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-6">
+          <div
+            id="project-modal-panel"
+            class="w-full max-w-xl max-h-[calc(100vh-2rem)] overflow-y-auto rounded-lg bg-slate-50 dark:bg-slate-800 p-6 shadow-xl space-y-6"
+          >
             <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-4">
               <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100" id="modal-title">
                 {@modal_title}
@@ -569,6 +574,37 @@ defmodule RailWeb.Settings.ProjectsLive do
               >
                 For channels where tools such as PostHog report issues.
               </p>
+              <div
+                :if={@channels_confirm}
+                id="slack-channels-confirm"
+                class="rounded-lg border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3 space-y-2"
+              >
+                <p
+                  :for={removal <- @channels_confirm.removals}
+                  class="text-xs text-red-800 dark:text-red-200"
+                >
+                  Removing #{removal.name} deletes {removal.threads} triage {if removal.threads == 1,
+                    do: "thread",
+                    else: "threads"}, along with their items, notes and the record of what was posted.
+                </p>
+                <div class="flex justify-end gap-2">
+                  <.button
+                    size="sm"
+                    phx-click="cancel_remove_channels"
+                    id="cancel-remove-channels-button"
+                  >
+                    Keep them
+                  </.button>
+                  <.button
+                    size="sm"
+                    variant="danger"
+                    phx-click="confirm_remove_channels"
+                    id="confirm-remove-channels-button"
+                  >
+                    Remove and save
+                  </.button>
+                </div>
+              </div>
               <p :if={@channels_error} id="slack-channels-error" class="text-xs text-red-600">
                 {@channels_error}
               </p>
@@ -607,6 +643,7 @@ defmodule RailWeb.Settings.ProjectsLive do
           |> assign(:slack_channel_options, slack_channel_options(channels))
           |> assign(:channel_selection, Map.new(channels, &{&1.external_id, &1.bot_triage_enabled}))
           |> assign(:channel_ids, Map.new(channels, &{&1.external_id, &1.id}))
+          |> assign(:channels_confirm, nil)
           |> assign(:channels_saved, false)
           |> assign(:channels_error, nil)
           |> assign(:show_modal, :edit)
@@ -644,23 +681,23 @@ defmodule RailWeb.Settings.ProjectsLive do
         }
       end
 
-    scope = socket.assigns.current_scope
+    # Unchecking a channel deletes its triage threads with it, so that waits for a yes.
+    case channel_removals(socket.assigns, entries) do
+      [] ->
+        {:noreply, save_channels(socket, entries, selection)}
 
-    case Projects.update_project(scope, socket.assigns.selected_project, %{"slack_channels" => entries}) do
-      {:ok, project} ->
-        socket =
-          socket
-          |> assign(:selected_project, project)
-          |> assign(:channel_ids, Map.new(project.slack_channels, &{&1.external_id, &1.id}))
-          |> assign(:channel_selection, selection)
-          |> assign(:channels_saved, true)
-          |> assign(:channels_error, nil)
-
-        {:noreply, socket}
-
-      {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, :channels_error, channel_error(changeset))}
+      removals ->
+        {:noreply, assign(socket, :channels_confirm, %{entries: entries, selection: selection, removals: removals})}
     end
+  end
+
+  def handle_event("confirm_remove_channels", _params, %{assigns: %{channels_confirm: pending}} = socket) do
+    socket = socket |> assign(:channels_confirm, nil) |> save_channels(pending.entries, pending.selection)
+    {:noreply, socket}
+  end
+
+  def handle_event("cancel_remove_channels", _params, socket) do
+    {:noreply, assign(socket, :channels_confirm, nil)}
   end
 
   def handle_event("close_modal", _params, socket) do
@@ -760,6 +797,36 @@ defmodule RailWeb.Settings.ProjectsLive do
       end
 
     listed ++ unlisted
+  end
+
+  defp save_channels(socket, entries, selection) do
+    case Projects.update_project(socket.assigns.current_scope, socket.assigns.selected_project, %{
+           "slack_channels" => entries
+         }) do
+      {:ok, project} ->
+        socket
+        |> assign(:selected_project, project)
+        |> assign(:channel_ids, Map.new(project.slack_channels, &{&1.external_id, &1.id}))
+        |> assign(:channel_selection, selection)
+        |> assign(:channels_saved, true)
+        |> assign(:channels_error, nil)
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        assign(socket, :channels_error, channel_error(changeset))
+    end
+  end
+
+  # Each channel the project has that the save leaves out, with how many triage threads go with it.
+  defp channel_removals(assigns, entries) do
+    kept = MapSet.new(entries, & &1["external_id"])
+    names = Map.new(assigns.slack_channel_options, &{&1.id, &1.name})
+
+    for {external_id, row_id} <- assigns.channel_ids,
+        not MapSet.member?(kept, external_id),
+        threads = [slack_channel_id: row_id] |> Triage.count_triage_threads() |> Map.values() |> Enum.sum(),
+        threads > 0 do
+      %{name: names[external_id], threads: threads}
+    end
   end
 
   defp channel_selection(params) do
