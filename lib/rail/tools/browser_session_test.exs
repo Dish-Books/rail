@@ -172,6 +172,41 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert fresh != target
   end
 
+  # A row left `starting` never got as far as a tab, so there is nothing to
+  # attach to - and it is still the one live row the task is allowed.
+  test "a row that never got a tab is settled and a tab opened", %{task: task} do
+    {:ok, %Session{id: stuck}} =
+      %Session{}
+      |> Session.changeset(%{task_id: task.id, status: :starting, started_at: DateTime.utc_now()})
+      |> Repo.insert()
+
+    assert {:ok, _session} = Tools.start_browser_session(task)
+
+    assert %Session{status: :finished} = Repo.get!(Session, stuck)
+
+    assert %Session{target_id: target} =
+             Repo.one!(from s in Session, where: s.task_id == ^task.id and s.status == :running)
+
+    assert byte_size(target) > 0
+  end
+
+  # A Chrome that cannot be started is no answer about whether the tab is still
+  # there, so the row pointing at it is left for when it can be.
+  test "a tab that cannot be reached for want of a browser keeps its row", %{task: task} do
+    {:ok, %Session{id: id}} =
+      %Session{}
+      |> Session.changeset(%{task_id: task.id, status: :running, browser_context_id: "CTX", target_id: "TGT"})
+      |> Repo.insert()
+
+    set_mimic_global()
+    root = Path.join(System.tmp_dir!(), "rail-no-browser-#{System.unique_integer([:positive])}")
+    stub(Rail, :browser_root, fn -> root end)
+    stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:error, :enoent} end)
+
+    assert {:error, {:browser_unavailable, :enoent}} = Tools.start_browser_session(task)
+    assert %Session{status: :running} = Repo.get!(Session, id)
+  end
+
   # An agent that never reaches its last instruction still cannot leave a tab
   # open, because stopping is not the agent's to remember.
   test "stopping closes the tab and its context", %{task: task} do

@@ -245,10 +245,12 @@ defmodule Rail.Tools.BrowserSession do
        when is_binary(context) and is_binary(target) do
     state = %{state | browser_context_id: context, target_id: target}
 
-    case Browser.call(state.browser, "Target.attachToTarget", %{targetId: target, flatten: true}) do
-      {:ok, %{"sessionId" => cdp}} ->
-        {:ok, %{state | cdp_session_id: cdp, url: current_url(state)}}
-
+    with {:ok, %{"sessionId" => cdp}} <-
+           Browser.call(state.browser, "Target.attachToTarget", %{targetId: target, flatten: true}),
+         {:ok, %{"targetInfo" => %{"url" => url}}} <-
+           Browser.call(state.browser, "Target.getTargetInfo", %{targetId: target}) do
+      {:ok, %{state | cdp_session_id: cdp, url: url}}
+    else
       {:error, _gone} ->
         dispose(state)
         {:error, :tab_gone}
@@ -262,13 +264,6 @@ defmodule Rail.Tools.BrowserSession do
          {:ok, %{"sessionId" => cdp}} <-
            Browser.call(state.browser, "Target.attachToTarget", %{targetId: target, flatten: true}) do
       {:ok, %{state | browser_context_id: context, target_id: target, cdp_session_id: cdp}}
-    end
-  end
-
-  defp current_url(%__MODULE__{} = state) do
-    case Browser.call(state.browser, "Target.getTargetInfo", %{targetId: state.target_id}) do
-      {:ok, %{"targetInfo" => %{"url" => url}}} -> url
-      _unknown -> nil
     end
   end
 
