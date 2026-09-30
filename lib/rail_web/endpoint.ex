@@ -19,7 +19,8 @@ defmodule RailWeb.Endpoint do
     at: "/",
     from: :rail,
     gzip: not code_reloading?,
-    only: RailWeb.static_paths()
+    # Prefixes, not names: phx.digest renames favicon.svg to favicon-<hash>.svg.
+    only_matching: Enum.map(RailWeb.static_paths(), &Path.rootname/1)
 
   if code_reloading? do
     socket "/phoenix/live_reload/socket", Phoenix.LiveReloader.Socket
