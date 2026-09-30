@@ -3,6 +3,8 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
 
   import RailWeb.Utils.CalculateDiffPane
 
+  alias Rail.Pipeline.Schemas.DiffComment
+
   setup do
     diff = %{
       path: "lib/filter.ex",
@@ -27,7 +29,10 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
         filter: :branch,
         selected_file: nil,
         empty_message: "Nothing yet.",
-        scroll_to: nil
+        scroll_to: nil,
+        comments: [],
+        draft: nil,
+        engineer_running?: false
       }
     }
   end
@@ -77,5 +82,133 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
 
   test "marks the file the reader selected in the list", %{assigns: assigns, diff: diff} do
     assert %{tree: %{rows: [%{selected?: true}]}} = calculate_diff_pane(%{assigns | selected_file: diff.path})
+  end
+
+  describe "comments" do
+    setup %{diff: diff} do
+      header = %{kind: :hunk_header, text: "@@ -1,3 +1,3 @@"}
+      opening = %{kind: :line, line_kind: :context, old_line: 1, new_line: 1, text: "defmodule Filter do"}
+      removed = %{kind: :line, line_kind: :deleted, old_line: 2, new_line: nil, text: "  def filter(list), do: list"}
+      added = %{kind: :line, line_kind: :added, old_line: nil, new_line: 2, text: "  def filter(list, v), do: list"}
+      closing = %{kind: :line, line_kind: :context, old_line: 3, new_line: 3, text: "end"}
+
+      comment = fn attrs ->
+        struct!(%{DiffComment.factory() | id: UXID.generate!(prefix: "dcm"), path: diff.path}, attrs)
+      end
+
+      %{
+        diff: %{diff | rows: [header, opening, removed, added, closing]},
+        rows: %{header: header, opening: opening, removed: removed, added: added, closing: closing},
+        comment: comment
+      }
+    end
+
+    test "a comment sits under the line it was written on, whatever kind of line", %{
+      assigns: assigns,
+      diff: diff,
+      rows: rows,
+      comment: comment
+    } do
+      on_removed = comment.(line_kind: :deleted, line: 2, line_text: rows.removed.text)
+      on_added = comment.(line_kind: :added, line: 2, line_text: rows.added.text)
+      on_closing = comment.(line_kind: :context, line: 3, line_text: "end")
+
+      segments = [
+        %{rows: [rows.header, rows.opening, rows.removed], comments: [on_removed], draft: nil},
+        %{rows: [rows.added], comments: [on_added], draft: nil},
+        %{rows: [rows.closing], comments: [on_closing], draft: nil}
+      ]
+
+      assert %{sections: [{_id, %{segments: ^segments, lifted: [], changed_count: 0, unsent: 3}}]} =
+               calculate_diff_pane(%{assigns | files: [diff], comments: [on_removed, on_added, on_closing]})
+    end
+
+    # An added line the engineer has since committed reads as unchanged in the
+    # uncommitted view, and it is still the same line.
+    test "a comment on an added line stays with it once it reads as unchanged", %{
+      assigns: assigns,
+      diff: diff,
+      rows: %{closing: closing},
+      comment: comment
+    } do
+      on_closing = comment.(line_kind: :added, line: 3, line_text: "end")
+
+      assert %{
+               sections: [
+                 {_id, %{segments: [%{rows: [_header, _opening, _removed, _added, ^closing], comments: [^on_closing]}]}}
+               ]
+             } =
+               calculate_diff_pane(%{assigns | files: [diff], comments: [on_closing]})
+    end
+
+    test "a comment whose line reads differently now is lifted and says so", %{
+      assigns: assigns,
+      diff: diff,
+      comment: comment
+    } do
+      rewritten = comment.(line_kind: :added, line: 2, line_text: "  def filter(list), do: :before")
+      out_of_view = comment.(line_kind: :added, line: 40, line_text: "  # far below")
+
+      assert %{sections: [{_id, section}]} =
+               calculate_diff_pane(%{assigns | files: [diff], comments: [rewritten, out_of_view]})
+
+      assert %{lifted: [{^rewritten, true}, {^out_of_view, false}], changed_count: 1, unsent: 2} = section
+      assert [%{comments: [], draft: nil}] = section.segments
+    end
+
+    # Old-side numbers are counted from a different base in each view.
+    test "a comment on a removed line stays in the view it was written in", %{
+      assigns: assigns,
+      diff: diff,
+      rows: rows,
+      comment: comment
+    } do
+      elsewhere = comment.(line_kind: :deleted, line: 2, line_text: rows.removed.text, filter: :uncommitted)
+
+      assert %{sections: [{_id, %{lifted: [{^elsewhere, false}], changed_count: 0}}]} =
+               calculate_diff_pane(%{assigns | files: [diff], comments: [elsewhere]})
+    end
+
+    test "a comment on a file out of the view is kept after the last file, one the query hides is not", %{
+      assigns: assigns,
+      diff: diff,
+      comment: comment
+    } do
+      hidden = %{diff | path: "mix.exs", display_path: "mix.exs", digest: "mix_digest"}
+      on_gone = comment.(path: "lib/gone.ex")
+      on_hidden = comment.(path: "mix.exs")
+
+      assert %{frame: %{stray: [{"lib/gone.ex", [^on_gone]}], sections: ["lib/filter.ex"]}} =
+               calculate_diff_pane(%{assigns | files: [diff, hidden], query: "filter", comments: [on_gone, on_hidden]})
+    end
+
+    test "counts every unsent comment, and each file its own", %{assigns: assigns, diff: diff, comment: comment} do
+      other = %{diff | path: "mix.exs", display_path: "mix.exs", digest: "mix_digest"}
+      comments = [comment.(path: "lib/gone.ex"), comment.([]), comment.(path: "mix.exs"), comment.(path: "mix.exs")]
+
+      assert %{
+               toolbar: %{unsent: 4, engineer_running?: true},
+               tree: %{rows: [%{unsent: 1}, %{unsent: 2}]},
+               sections: [{_filter, %{unsent: 1}}, {_mix, %{unsent: 2}}]
+             } = calculate_diff_pane(%{assigns | files: [diff, other], comments: comments, engineer_running?: true})
+    end
+
+    test "the comment being written sits under its line", %{assigns: assigns, diff: diff, rows: %{added: added}} do
+      draft = %{path: diff.path, line_kind: :added, line: 2, line_text: added.text, filter: :branch}
+
+      assert %{
+               sections: [
+                 {_id, %{segments: [%{rows: [_header, _opening, _removed, ^added], draft: ^draft}, %{draft: nil}]}}
+               ]
+             } =
+               calculate_diff_pane(%{assigns | files: [diff], draft: draft})
+    end
+
+    test "the comment being written goes when its line does", %{assigns: assigns, diff: diff} do
+      draft = %{path: diff.path, line_kind: :added, line: 2, line_text: "  gone since", filter: :branch}
+
+      assert %{sections: [{_id, %{segments: [%{draft: nil}]}}]} =
+               calculate_diff_pane(%{assigns | files: [diff], draft: draft})
+    end
   end
 end

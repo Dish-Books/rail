@@ -18,4 +18,11 @@ defmodule RailWeb.Components.DiffHunkTest do
     assert [focused] = Floki.find(html, "[data-focus]")
     assert Floki.text(focused) =~ "def filter(list), do: list"
   end
+
+  # A finding's excerpt is not the diff, so it takes no comments of its own.
+  test "offers no comment on a line" do
+    rows = [%{kind: :line, line_kind: :added, old_line: nil, new_line: 1, text: "defmodule Filter do"}]
+
+    refute render_component(&DiffHunk.diff_hunk/1, rows: rows) =~ "diff_comment_add"
+  end
 end

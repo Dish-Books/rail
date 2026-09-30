@@ -14,7 +14,15 @@ defmodule RailWeb.Live.DiffFileTreeTest do
         target: nil,
         show?: true,
         label: "1 file changed",
-        rows: [%{id: file.path, file: Map.merge(file, %{additions: 2, deletions: 1}), viewed?: false, selected?: false}]
+        rows: [
+          %{
+            id: file.path,
+            file: Map.merge(file, %{additions: 2, deletions: 1}),
+            viewed?: false,
+            selected?: false,
+            unsent: 0
+          }
+        ]
       }
     }
   end
@@ -53,5 +61,19 @@ defmodule RailWeb.Live.DiffFileTreeTest do
 
   test "hides the list when the reader has put it away", %{tree: tree} do
     refute render_component(DiffFileTree, %{tree | show?: false}) =~ "diff_file_tree"
+  end
+
+  test "counts a file's unsent comments beside its name", %{tree: tree} do
+    [row] = tree.rows
+
+    refute render_component(DiffFileTree, tree) =~ "diff_file_unsent"
+
+    html = render_component(DiffFileTree, %{tree | rows: [%{row | unsent: 2}]})
+
+    assert [{_tag, _attrs, _children} = count] =
+             html |> Floki.parse_fragment!() |> Floki.find("[data-qa='diff_file_unsent']")
+
+    assert Floki.text(count) =~ "2"
+    assert Floki.attribute(count, "title") == ["2 unsent comments"]
   end
 end

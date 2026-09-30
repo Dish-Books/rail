@@ -17,6 +17,7 @@ defmodule RailWeb.Components.DiffPane do
   use RailWeb, :html
 
   import RailWeb.Utils.CalculateDiffPane
+  import RailWeb.Utils.DiffFileName
 
   alias RailWeb.Live.DiffFile
   alias RailWeb.Live.DiffFileTree
@@ -32,6 +33,9 @@ defmodule RailWeb.Components.DiffPane do
   attr :empty_message, :string, default: "Nothing has been changed on this branch yet."
   attr :scroll_to, :string, default: nil
   attr :target, :any, default: nil
+  attr :comments, :list, default: [], doc: "the reader's unsent comments on this task"
+  attr :draft, :map, default: nil, doc: "the line a comment is being written on"
+  attr :engineer_running?, :boolean, default: false
 
   def diff_pane(assigns) do
     assigns = assign(assigns, :pane, calculate_diff_pane(assigns))
@@ -50,6 +54,15 @@ defmodule RailWeb.Components.DiffPane do
         <p class="text-sm font-medium text-slate-900 dark:text-slate-100">
           {@pane.frame.empty_message}
         </p>
+
+        <div :if={@pane.frame.stray != []} class="mt-6 w-full max-w-4xl space-y-3 text-left">
+          <.stray_comments
+            :for={{path, comments} <- @pane.frame.stray}
+            name={diff_file_name(%{display_path: path})}
+            comments={comments}
+            target={@target}
+          />
+        </div>
       </div>
 
       <div :if={@pane.tree} class="flex-1 min-h-0 flex">
@@ -83,8 +96,44 @@ defmodule RailWeb.Components.DiffPane do
               id={id}
               {section}
             />
+
+            <.stray_comments
+              :for={{path, comments} <- @pane.frame.stray}
+              name={diff_file_name(%{display_path: path})}
+              comments={comments}
+              target={@target}
+            />
           </div>
         </div>
+      </div>
+    </div>
+    """
+  end
+
+  attr :name, :map, required: true
+  attr :comments, :list, required: true
+  attr :target, :any, required: true
+
+  # A file this view does not draw, such as a committed one under Uncommitted,
+  # still has its comments counted and sent, so they are shown after the rest.
+  defp stray_comments(assigns) do
+    ~H"""
+    <div
+      data-qa="diff_comment_stray_section"
+      class="first:mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden"
+    >
+      <div class="h-11 px-3 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+        <span class="min-w-0 flex font-mono text-xs">
+          <span class="truncate text-slate-500 dark:text-slate-400">{@name.dir}</span>
+          <span class="shrink-0 font-bold text-slate-900 dark:text-slate-100">{@name.name}</span>
+        </span>
+        <span class="ml-auto shrink-0 inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+          <.icon name="pi-chat-text-fill" class="size-3" />{length(@comments)} unsent
+        </span>
+      </div>
+
+      <div class="px-4 py-2.5 space-y-2 bg-slate-50 dark:bg-slate-800/40">
+        <.diff_comment :for={comment <- @comments} comment={comment} target={@target} lifted?={true} />
       </div>
     </div>
     """

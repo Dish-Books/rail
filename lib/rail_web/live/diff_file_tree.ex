@@ -44,8 +44,18 @@ defmodule RailWeb.Live.DiffFileTree do
           <.file_mark viewed?={row.viewed?} status={row.file.status} />
 
           <span class="min-w-0 flex-1">
-            <span class="block truncate font-mono text-xs font-semibold text-slate-900 dark:text-slate-100">
-              {diff_file_name(row.file).name}
+            <span class="flex items-center gap-1.5">
+              <span class="truncate font-mono text-xs font-semibold text-slate-900 dark:text-slate-100">
+                {diff_file_name(row.file).name}
+              </span>
+              <span
+                :if={row.unsent > 0}
+                data-qa="diff_file_unsent"
+                title={unsent_title(row.unsent)}
+                class="inline-flex items-center gap-0.5 shrink-0 font-mono text-[10px] font-bold text-amber-700 dark:text-amber-300"
+              >
+                <.icon name="pi-chat-text-fill" class="size-3" />{row.unsent}
+              </span>
             </span>
             <span class="block truncate font-mono text-[10px] text-slate-500 dark:text-slate-400">
               {short_dir(diff_file_name(row.file).dir)}
@@ -116,6 +126,9 @@ defmodule RailWeb.Live.DiffFileTree do
 
   defp portion(0, _total), do: 0
   defp portion(count, total), do: count |> Kernel.*(5) |> div(total) |> max(1) |> min(5)
+
+  defp unsent_title(1), do: "1 unsent comment"
+  defp unsent_title(unsent), do: "#{unsent} unsent comments"
 
   defp short_dir(nil), do: nil
 

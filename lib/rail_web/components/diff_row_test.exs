@@ -61,4 +61,24 @@ defmodule RailWeb.Components.DiffRowTest do
     assert render_component(&DiffRow.diff_row/1, row: %{kind: :hunk_header, text: "@@ -1,3 +1,4 @@ def filter/2"}) =~
              "def filter/2"
   end
+
+  test "offers a comment on a line of the diff only when asked to" do
+    row = %{kind: :line, line_kind: :added, old_line: nil, new_line: 4, text: "x = 1"}
+
+    assert render_component(&DiffRow.diff_row/1, row: row, commentable: true) =~ ~s(data-qa="diff_comment_add")
+    refute render_component(&DiffRow.diff_row/1, row: row) =~ "diff_comment_add"
+  end
+
+  # An opened gap is fetched on demand and gone after a reload, so a comment on
+  # it would never find its line again.
+  test "offers no comment on a line of an opened gap" do
+    gap = %{kind: :gap, path: "lib/filter.ex", gap_index: 0, start_line: 4, end_line: 4, old_start_line: 3, count: 1}
+
+    refute render_component(&DiffRow.diff_row/1,
+             row: gap,
+             expanded: [%{text: "  # in between", html: nil}],
+             commentable: true
+           ) =~
+             "diff_comment_add"
+  end
 end
