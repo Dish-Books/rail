@@ -17,14 +17,17 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
   a Follower. `os_process` must carry its run, preloaded down to `role: :backend`.
 
   `:local` spawns beside Rail. `:docker` runs it in a container of its own, which
-  outlives Rail and cannot use more than the row reserves. Its clock starts now,
-  so time spent in line never counts against a command's timeout. Returns
-  `{:ok, os_process}`, or `{:error, reason}` with the row failed when nothing started.
+  outlives Rail and holds the memory the row reserves. Its CPUs are the row's
+  share rather than a cap: `capacity` is what `Rail.Tools.get_sandbox_capacity/0`
+  said the machine has, and a sandbox may use all of it while it is idle. Its
+  clock starts now, so time spent in line never counts against a command's
+  timeout. Returns `{:ok, os_process}`, or `{:error, reason}` with the row failed
+  when nothing started.
   """
-  def launch_sandbox(%OsProcess{runtime: runtime} = os_process) do
+  def launch_sandbox(%OsProcess{runtime: runtime} = os_process, %{cpus: _cpus} = capacity) do
     spec = OsProcess.launch_spec(os_process)
 
-    case start(runtime, os_process, spec) do
+    case start(runtime, os_process, spec, capacity) do
       {:ok, attrs, port} ->
         now = DateTime.utc_now()
         deadline_at = if is_integer(spec["timeout_ms"]), do: DateTime.add(now, spec["timeout_ms"], :millisecond)
@@ -51,7 +54,7 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
     end
   end
 
-  defp start(:local, %OsProcess{} = os_process, spec) do
+  defp start(:local, %OsProcess{} = os_process, spec, _capacity) do
     opts =
       [
         cd: spec["cwd"],
@@ -76,7 +79,13 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
 
   # The sandbox sees /srv/rail at the same path Rail does, so the worktree is
   # checked here: Docker would otherwise create a missing one, owned by root.
-  defp start(:docker, %OsProcess{} = os_process, spec) do
+  #
+  # CPU time is weighed rather than capped: a sandbox takes whatever the others
+  # leave idle, and when they all want more, each gets its reservation's share.
+  # The ceiling is the machine less its headroom, so Rail, Postgres and project
+  # services keep theirs. Memory stays a hard limit: with no swap, a sandbox
+  # that took more than it reserved could push the host into killing Postgres.
+  defp start(:docker, %OsProcess{} = os_process, spec, capacity) do
     {shell, args, env} =
       redirected_command(spec["executable"], spec["args"],
         env: spec["env"],
@@ -88,13 +97,14 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
     body = %{
       "Image" => Rail.sandbox_image(),
       "Cmd" => [shell | args],
-      "Env" => env |> env() |> Enum.map(fn {key, value} -> "#{key}=#{value}" end),
+      "Env" => env |> env() |> schedulers(os_process) |> Enum.map(fn {key, value} -> "#{key}=#{value}" end),
       "WorkingDir" => spec["cwd"],
       "User" => "1000:1000",
       "HostConfig" => %{
         "NetworkMode" => "host",
         "Binds" => Rail.sandbox_binds(),
-        "NanoCpus" => os_process.reserved_cpus * 1_000_000_000,
+        "CpuShares" => os_process.reserved_cpus * 1024,
+        "NanoCpus" => capacity.cpus * 1_000_000_000,
         # Swap is capped at the same figure, so a sandbox cannot use more by swapping.
         "Memory" => os_process.reserved_memory_gb * @gib,
         "MemorySwap" => os_process.reserved_memory_gb * @gib,
@@ -109,6 +119,17 @@ defmodule Rail.Tools.Utils.LaunchSandbox do
       {:ok, %{container_id: id}, nil}
     end
   end
+
+  # The BEAM sizes itself to the ceiling, and ExUnit runs twice as many cases as
+  # it has schedulers, so a CI suite on a busy machine would pile far more work on
+  # its share than its reservation. Pinning CI's schedulers to the reservation
+  # keeps its tests in proportion; a flag the project set itself comes after, and
+  # wins. An agent's turn keeps the whole ceiling for its compiles.
+  defp schedulers(env, %OsProcess{kind: :ci, reserved_cpus: cpus}) do
+    Map.put(env, "ERL_FLAGS", String.trim("+S #{cpus}:#{cpus} #{env["ERL_FLAGS"]}"))
+  end
+
+  defp schedulers(env, %OsProcess{}), do: env
 
   defp start_container(id) do
     with {:error, reason} <- Docker.start_container(id) do

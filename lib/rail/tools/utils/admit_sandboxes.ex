@@ -64,7 +64,7 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
         {:cont, {free, Map.put(results, os_process.id, refuse(os_process, capacity, own))}}
 
       OsProcess.short_of(os_process, free) == %{cpus: 0, memory_gb: 0} ->
-        result = launch(os_process, own)
+        result = launch(os_process, capacity, own)
         {:cont, {taken(free, os_process, result), Map.put(results, os_process.id, result)}}
 
       true ->
@@ -79,8 +79,8 @@ defmodule Rail.Tools.Utils.AdmitSandboxes do
 
   defp mark_waiting(_started_or_none, _results), do: :ok
 
-  defp launch(%OsProcess{} = os_process, own) do
-    case launch_sandbox(os_process) do
+  defp launch(%OsProcess{} = os_process, capacity, own) do
+    case launch_sandbox(os_process, capacity) do
       {:ok, %OsProcess{run: %Run{status: :waiting_for_resources} = run}} = launched ->
         {:ok, _running} = Pipeline.update_run(run, %{status: :running})
         Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:run_changed, run.id})

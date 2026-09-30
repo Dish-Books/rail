@@ -104,15 +104,36 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     # data and leaves Rail's own settings out (see Rail.Tools.Utils.EnvTest).
     assert env["MISE_DATA_DIR"] == System.get_env("MISE_DATA_DIR")
     refute Enum.any?(["MIX_ENV", "DATABASE_URL", "SECRET_KEY_BASE"], &Map.has_key?(env, &1))
+
+    # A turn's compiles may use every CPU the machine leaves idle.
+    refute Map.has_key?(env, "ERL_FLAGS")
   end
 
-  test "gives the sandbox exactly what its role reserves, with no swap to use more", %{run: run} do
+  # ExUnit runs twice as many cases as the BEAM has schedulers, so CI's are held
+  # to its reservation; a flag the project passes comes after, where it wins.
+  test "a CI sandbox's BEAM runs as many schedulers as its role reserves", %{run: run} do
+    assert {:ok, %OsProcess{kind: :ci}} =
+             Tools.start_command_process(run, :ci, "mix test", env: %{"ERL_FLAGS" => "+sbwt none"})
+
+    assert_received {:created, %{"Env" => env}}
+    assert "ERL_FLAGS=+S 2:2 +sbwt none" in env
+  end
+
+  # The machine has 16 CPUs and keeps 3 back, so the other 13 are the sandbox's
+  # to use while idle; its reservation is its weight when others want them too.
+  test "weighs the sandbox's CPUs by its reservation up to what the machine can spare, and caps memory with no swap", %{
+    run: run
+  } do
+    stub(Rail, :sandbox_headroom_cpus, fn -> 3 end)
+
     assert {:ok, %OsProcess{reserved_cpus: 2, reserved_memory_gb: 4}} = Tools.start_os_process(run, ["-p", "Build it."])
 
     four_gb = 4 * @gib
 
-    assert_received {:created,
-                     %{"HostConfig" => %{"NanoCpus" => 2_000_000_000, "Memory" => ^four_gb, "MemorySwap" => ^four_gb}}}
+    assert_received {:created, %{"HostConfig" => host_config}}
+
+    assert %{"CpuShares" => 2048, "NanoCpus" => 13_000_000_000, "Memory" => ^four_gb, "MemorySwap" => ^four_gb} =
+             host_config
   end
 
   test "a sandbox Docker will not start fails the run with why, and leaves nothing behind", %{run: run} do
