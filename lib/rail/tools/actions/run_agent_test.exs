@@ -33,7 +33,9 @@ defmodule Rail.Tools.Actions.RunAgentTest do
     config_dir = Backend.config_dir(backend)
 
     assert {:ok, output} = Tools.run_agent(backend, [], env: %{"RAIL_MCP_TOKEN" => "tok"}, cd: dir, timeout: 5_000)
-    assert String.trim(output) == "#{config_dir}|tok|#{dir}"
+    # `pwd` prints the physical path, which on macOS puts /private ahead of $TMPDIR.
+    {physical_dir, 0} = System.cmd("pwd", ["-P"], cd: dir, env: %{})
+    assert String.trim(output) == "#{config_dir}|tok|#{String.trim(physical_dir)}"
 
     assert {:ok, overridden} =
              Tools.run_agent(backend, [], env: %{"CLAUDE_CONFIG_DIR" => "mine"}, cd: dir, timeout: 5_000)
