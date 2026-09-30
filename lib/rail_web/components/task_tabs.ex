@@ -29,8 +29,7 @@ defmodule RailWeb.Components.TaskTabs do
       id={"task-tab-#{@tab.id}"}
       data-qa="task-tab"
       aria-selected={to_string(@tab.selected?)}
-      phx-click="select_tab"
-      phx-value-tab={@tab.id}
+      phx-click={JS.push("select_tab", value: %{tab: @tab.id}, page_loading: true)}
       class={[
         "flex items-start gap-2 shrink-0 max-w-[15rem] px-4 pt-2.5 pb-3 rounded-t-xl border text-left cursor-pointer transition-colors",
         @tab.selected? &&
