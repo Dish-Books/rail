@@ -1906,7 +1906,7 @@ defmodule RailWeb.TaskLiveTest do
         "new_line" => "1"
       })
 
-      view |> form("#diff-comment-form", %{"body" => "Say what was committed."}) |> render_submit()
+      view |> form("[data-qa='diff_comment_form']", %{"body" => "Say what was committed."}) |> render_submit()
 
       render_click(stage, "open_diff_comment", %{
         "path" => "tracked.txt",
@@ -1915,12 +1915,12 @@ defmodule RailWeb.TaskLiveTest do
         "new_line" => ""
       })
 
-      view |> form("#diff-comment-form", %{"body" => "Keep the first line."}) |> render_submit()
+      view |> form("[data-qa='diff_comment_form']", %{"body" => "Keep the first line."}) |> render_submit()
 
       assert has_element?(view, "#diff-file-shipped-ex [data-qa='diff_comment']", "Say what was committed.")
       assert has_element?(view, "#diff-file-tracked-txt [data-qa='diff_comment']", "Keep the first line.")
       assert has_element?(view, "#diff-file-tracked-txt [data-qa='diff_comment']", "Not sent")
-      refute has_element?(view, "#diff-comment-form")
+      refute has_element?(view, "[data-qa='diff_comment_form']")
 
       view |> element("#diff-filter-uncommitted") |> render_click()
 
@@ -1931,7 +1931,7 @@ defmodule RailWeb.TaskLiveTest do
         "new_line" => "1"
       })
 
-      view |> form("#diff-comment-form", %{"body" => "Why keep this one?"}) |> render_submit()
+      view |> form("[data-qa='diff_comment_form']", %{"body" => "Why keep this one?"}) |> render_submit()
 
       section = view |> element("#diff-file-tracked-txt") |> render() |> Floki.parse_fragment!() |> Floki.text()
       assert section =~ ~r/two.*Why keep this one\?.*three/s
@@ -1952,7 +1952,7 @@ defmodule RailWeb.TaskLiveTest do
         "new_line" => "1"
       })
 
-      view |> form("#diff-comment-form", %{"body" => "Say what was committed."}) |> render_submit()
+      view |> form("[data-qa='diff_comment_form']", %{"body" => "Say what was committed."}) |> render_submit()
 
       assert {:ok, again, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(again, "#diff-file-shipped-ex [data-qa='diff_comment']", "Say what was committed.")
@@ -2142,20 +2142,20 @@ defmodule RailWeb.TaskLiveTest do
       open = %{"path" => "shipped.ex", "kind" => "added", "old_line" => "", "new_line" => "1"}
 
       render_click(stage, "open_diff_comment", open)
-      view |> form("#diff-comment-form", %{"body" => "Half a thought"}) |> render_change()
-      assert has_element?(view, "#diff-comment-body", "Half a thought")
+      view |> form("[data-qa='diff_comment_form']", %{"body" => "Half a thought"}) |> render_change()
+      assert has_element?(view, "[data-qa='diff_comment_body']", "Half a thought")
 
-      view |> form("#diff-comment-form", %{"body" => "   "}) |> render_submit()
-      assert has_element?(view, "#diff-comment-form")
+      view |> form("[data-qa='diff_comment_form']", %{"body" => "   "}) |> render_submit()
+      assert has_element?(view, "[data-qa='diff_comment_form']")
       refute has_element?(view, "[data-qa='diff_comment']")
 
       view |> element("[data-qa='diff_comment_cancel']") |> render_click()
-      refute has_element?(view, "#diff-comment-form")
+      refute has_element?(view, "[data-qa='diff_comment_form']")
 
       # A line that is not drawn, or a number that is not one, opens nothing.
       render_click(stage, "open_diff_comment", %{open | "new_line" => "40"})
       render_click(stage, "open_diff_comment", %{open | "new_line" => ""})
-      refute has_element?(view, "#diff-comment-form")
+      refute has_element?(view, "[data-qa='diff_comment_form']")
 
       # A save from a page drawn before the composer closed has nothing to save.
       render_change(stage, "change_diff_comment", %{"body" => "Too late."})
@@ -2165,7 +2165,49 @@ defmodule RailWeb.TaskLiveTest do
       render_click(stage, "open_diff_comment", open)
       view |> element("#diff-filter-uncommitted") |> render_click()
       view |> element("#diff-filter-branch") |> render_click()
-      refute has_element?(view, "#diff-comment-form")
+      refute has_element?(view, "[data-qa='diff_comment_form']")
+    end
+
+    # A box patched in place from one line to the next keeps the focus on the "+"
+    # that moved it, and two files briefly holding one id is a clash in the page.
+    test "the comment box opened on another line is a new one, named for its file and line", %{
+      conn: conn,
+      task: task,
+      repo: repo
+    } do
+      File.write!(Path.join(repo, "tracked.txt"), "two\nthree\n")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      stage = with_target(view, "#engineer-stage")
+
+      render_click(stage, "open_diff_comment", %{
+        "path" => "tracked.txt",
+        "kind" => "added",
+        "old_line" => "",
+        "new_line" => "1"
+      })
+
+      assert has_element?(view, "#diff-comment-form-tracked-txt-added-1 #diff-comment-body-tracked-txt-added-1")
+
+      render_click(stage, "open_diff_comment", %{
+        "path" => "tracked.txt",
+        "kind" => "added",
+        "old_line" => "",
+        "new_line" => "2"
+      })
+
+      assert has_element?(view, "#diff-comment-form-tracked-txt-added-2 #diff-comment-body-tracked-txt-added-2")
+      refute has_element?(view, "#diff-comment-form-tracked-txt-added-1")
+
+      render_click(stage, "open_diff_comment", %{
+        "path" => "shipped.ex",
+        "kind" => "added",
+        "old_line" => "",
+        "new_line" => "1"
+      })
+
+      assert has_element?(view, "#diff-comment-form-shipped-ex-added-1")
+      assert [_one] = view |> render() |> Floki.parse_fragment!() |> Floki.find("[data-qa='diff_comment_form']")
     end
 
     test "Escape puts the comment being written away", %{conn: conn, task: task} do
@@ -2180,9 +2222,9 @@ defmodule RailWeb.TaskLiveTest do
         "new_line" => "1"
       })
 
-      view |> element("#diff-comment-body") |> render_keydown(%{"key" => "Escape"})
+      view |> element("[data-qa='diff_comment_body']") |> render_keydown(%{"key" => "Escape"})
 
-      refute has_element?(view, "#diff-comment-form")
+      refute has_element?(view, "[data-qa='diff_comment_form']")
     end
 
     # Send sends what is in the database, so every tab the person has open has to
@@ -2198,7 +2240,7 @@ defmodule RailWeb.TaskLiveTest do
 
       for body <- ["Written in the other tab.", "Thought better of it."] do
         there |> with_target("#engineer-stage") |> render_click("open_diff_comment", open)
-        there |> form("#diff-comment-form", %{"body" => body}) |> render_submit()
+        there |> form("[data-qa='diff_comment_form']", %{"body" => body}) |> render_submit()
       end
 
       # The page hears of it and forwards to the stage, each on a turn of its own.

@@ -141,11 +141,15 @@ defmodule RailWeb.Live.DiffFile do
   attr :target, :any, required: true
 
   # Indented under the code column, so it reads as belonging to the line above.
-  defp comment_composer(assigns) do
+  # Named for its line, so moving it mounts a new box that takes the focus, and two
+  # files patched one after the other never both hold it.
+  defp comment_composer(%{draft: draft} = assigns) do
+    assigns = assign(assigns, :key, slug("#{draft.path}-#{draft.line_kind}-#{draft.line}"))
+
     ~H"""
     <div class="diff-comment-row">
       <form
-        id="diff-comment-form"
+        id={"diff-comment-form-#{@key}"}
         data-qa="diff_comment_form"
         phx-submit="save_diff_comment"
         phx-change="change_diff_comment"
@@ -153,7 +157,7 @@ defmodule RailWeb.Live.DiffFile do
         class="max-w-[760px] rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-2 shadow-xs"
       >
         <textarea
-          id="diff-comment-body"
+          id={"diff-comment-body-#{@key}"}
           name="body"
           data-qa="diff_comment_body"
           aria-label={"Comment on line #{@draft.line}"}

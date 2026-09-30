@@ -159,7 +159,7 @@ defmodule RailWeb.Live.DiffFileTest do
 
       html = render_component(DiffFile, %{section | segments: segments})
 
-      assert html =~ ~r/def filter\(list, vendor\).*id="diff-comment-form"/s
+      assert html =~ ~r/def filter\(list, vendor\).*id="diff-comment-form-lib-rail-invoices-filter-ex-added-2"/s
       assert html =~ ~s(phx-submit="save_diff_comment")
       assert html =~ ~s(name="body")
       assert html =~ "Only you see this until you send it."
