@@ -1,0 +1,66 @@
+defmodule Rail.Pipeline.Actions.ReadQaEvidenceTest do
+  use Rail.DataCase, async: true
+
+  alias Rail.Issues
+  alias Rail.Pipeline
+
+  setup %{project: project} do
+    scope = system_scope()
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_rqe_1", "identifier" => "RQE-1", "title" => "Read Evidence"}
+          }
+        }
+      })
+    end)
+
+    {:ok, issue} = Issues.create_issue(scope, project, %{description: "Read Evidence"})
+    {:ok, task} = Pipeline.create_task(issue, :qa)
+    directory = Path.join([task.scratch_path, "qa", "evidence"])
+    File.mkdir_p!(directory)
+    on_exit(fn -> File.rm_rf(task.scratch_path) end)
+
+    %{task: task, directory: directory}
+  end
+
+  test "reads a filed text file for the panel", %{task: task, directory: directory} do
+    File.write!(Path.join(directory, "script-runs~the-log.log"), "wrote 3 rows\n")
+
+    assert [%{kind: :text} = listed] = Pipeline.list_qa_evidence(task)
+    assert {:ok, %{text: "wrote 3 rows\n", truncated: false}} = Pipeline.read_qa_evidence(task, listed)
+  end
+
+  # A log can run to megabytes, and the panel is a preview with the whole file
+  # one click away.
+  test "stops at 64 KB and says so", %{task: task, directory: directory} do
+    File.write!(Path.join(directory, "script-runs~the-log.log"), String.duplicate("a", 70_000))
+
+    shown = String.duplicate("a", 65_536)
+
+    assert [listed] = Pipeline.list_qa_evidence(task)
+    assert {:ok, %{text: ^shown, truncated: true}} = Pipeline.read_qa_evidence(task, listed)
+  end
+
+  # The limit is in bytes, so it can land inside a character, and half of one is
+  # not text.
+  test "drops a character the limit cut in half", %{task: task, directory: directory} do
+    File.write!(Path.join(directory, "script-runs~the-log.log"), String.duplicate("a", 65_535) <> "é and more")
+
+    shown = String.duplicate("a", 65_535)
+
+    assert [listed] = Pipeline.list_qa_evidence(task)
+    assert {:ok, %{text: ^shown, truncated: true}} = Pipeline.read_qa_evidence(task, listed)
+  end
+
+  test "a file gone since it was listed is not found", %{task: task, directory: directory} do
+    File.write!(Path.join(directory, "script-runs~the-log.log"), "wrote 3 rows")
+    assert [listed] = Pipeline.list_qa_evidence(task)
+    File.rm!(Path.join(directory, "script-runs~the-log.log"))
+
+    assert {:error, :not_found} = Pipeline.read_qa_evidence(task, listed)
+  end
+end

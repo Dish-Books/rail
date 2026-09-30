@@ -303,6 +303,28 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     assert File.exists?(Path.join([task.scratch_path, "qa", "evidence", "the-bill-total-as-rendered.jpg"]))
   end
 
+  # A change with nothing on screen is proved by what it writes, so filing that
+  # costs no browser, and the line lands once there is a file for the panel to read.
+  test "a file is filed against its check without a browser", %{context: context, task: task, run: run} do
+    reject(Tools, :start_browser_session, 2)
+    File.mkdir_p!(Path.join([task.scratch_path, "qa", "evidence"]))
+    File.write!(Path.join([task.scratch_path, "qa", "evidence", "run.log"]), "wrote 3 rows")
+
+    assert {:ok, %{"content" => [%{"text" => text}]}} =
+             Mcp.call_run_tool(context, "qa_file", %{
+               "check" => "script-runs",
+               "name" => "The script's log",
+               "path" => "evidence/run.log"
+             })
+
+    assert text =~ "evidence/script-runs~the-script-s-log.log"
+    assert File.exists?(Path.join([task.scratch_path, "qa", "evidence", "script-runs~the-script-s-log.log"]))
+
+    log = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
+
+    assert log =~ ~s([qa] file "The script's log")
+  end
+
   test "the browser's own complaints are drained, not accumulated", %{context: context, page: page} do
     {:ok, _opened} = Mcp.call_run_tool(context, "browser_goto", %{"url" => page})
 

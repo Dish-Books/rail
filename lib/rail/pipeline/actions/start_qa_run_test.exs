@@ -65,13 +65,33 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
       assert prompt =~ "call `qa_plan` with every check this pass will run"
       assert prompt =~ "Call `qa_check` on each one the moment you have run it"
       assert prompt =~ "each under a `group` that says what kind of check it is"
-      assert prompt =~ "`qa_shot` takes the row's key as well as a caption"
       assert prompt =~ "`summary` is one or two sentences"
 
       {:ok, %OsProcess{run: spawned}}
     end)
 
     assert {:ok, %OsProcess{run: %Run{}}} = Pipeline.start_qa_run(run)
+  end
+
+  # A check proved by a log or a PDF is evidenced by that file, so the brief asks
+  # for evidence on every row rather than a picture on every row.
+  test "asks for evidence on every check, a picture where it is on screen", %{task: task, run: run} do
+    qa_dir = Path.join(task.scratch_path, "qa")
+
+    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
+      assert ["-p", prompt | _rest] = argv
+      assert prompt =~ "Every check gets evidence filed against it"
+      assert prompt =~ "A check that asserts something on screen gets a `qa_shot` at that moment"
+      assert prompt =~ "then call `qa_file` with the row's key, a caption and the path relative to #{qa_dir}"
+      assert prompt =~ "A check can carry both."
+      assert prompt =~ "a change with nothing on screen is proved by what it writes, not by opening the browser"
+      assert prompt =~ "Files filed with `qa_file` sit next to the finding through its `check`, as pictures do"
+      refute prompt =~ "Take at least one for every check"
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_qa_run(run)
   end
 
   # The agent writes its screenshots here, so it exists before the agent does.

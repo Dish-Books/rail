@@ -33,6 +33,10 @@ defmodule RailWeb.QaControllerTest do
     File.write!(Path.join(evidence_dir, "total.png"), "png bytes")
     File.write!(Path.join(evidence_dir, "server.log"), "** (RuntimeError) boom")
     File.write!(Path.join(evidence_dir, "unnamed.png"), "nobody points at this")
+    File.write!(Path.join(evidence_dir, "script-runs~the-log.log"), "wrote 3 rows")
+    File.write!(Path.join(evidence_dir, "invoice~the-invoice.pdf"), "%PDF-1.7")
+    File.write!(Path.join(evidence_dir, "export~the-export.bin"), <<0, 159, 146, 150>>)
+    File.write!(Path.join(evidence_dir, "page~the-page.html"), "<script>alert(1)</script>")
 
     {:ok, _raised} =
       Pipeline.sync_qa_findings(task, [
@@ -82,6 +86,42 @@ defmodule RailWeb.QaControllerTest do
     assert conn |> get(~p"/tasks/#{task.id}/qa/evidence/invented.png") |> response(404)
     assert conn |> get(~p"/tasks/#{task.id}/qa/evidence/server.log") |> response(404)
     assert conn |> get(~p"/tasks/tsk_missing/qa/evidence/unnamed.png") |> response(404)
+    assert conn |> get("/tasks/#{task.id}/qa/evidence/..%2F..%2Fsecret.log") |> response(404)
+  end
+
+  # A log filed against a check is read in the browser, and as text whatever the
+  # browser would have guessed it was.
+  test "serves a filed log as text", %{conn: conn, task: task} do
+    conn = get(conn, ~p"/tasks/#{task.id}/qa/evidence/script-runs~the-log.log")
+
+    assert response(conn, 200) == "wrote 3 rows"
+    assert ["text/plain; charset=utf-8"] = get_resp_header(conn, "content-type")
+    assert ["nosniff"] = get_resp_header(conn, "x-content-type-options")
+  end
+
+  test "serves a filed PDF for the browser to open", %{conn: conn, task: task} do
+    conn = get(conn, ~p"/tasks/#{task.id}/qa/evidence/invoice~the-invoice.pdf")
+
+    assert response(conn, 200) == "%PDF-1.7"
+    assert ["application/pdf" <> _charset] = get_resp_header(conn, "content-type")
+    assert [] = get_resp_header(conn, "content-disposition")
+  end
+
+  test "serves a filed binary as a download", %{conn: conn, task: task} do
+    conn = get(conn, ~p"/tasks/#{task.id}/qa/evidence/export~the-export.bin")
+
+    assert response(conn, 200) == <<0, 159, 146, 150>>
+    assert ["application/octet-stream" <> _charset] = get_resp_header(conn, "content-type")
+    assert ["attachment" <> _filename] = get_resp_header(conn, "content-disposition")
+    assert ["nosniff"] = get_resp_header(conn, "x-content-type-options")
+  end
+
+  # The agent wrote it, so it never runs as a page on Rail's own origin.
+  test "serves a filed page as text rather than as a page", %{conn: conn, task: task} do
+    conn = get(conn, ~p"/tasks/#{task.id}/qa/evidence/page~the-page.html")
+
+    assert response(conn, 200) == "<script>alert(1)</script>"
+    assert ["text/plain; charset=utf-8"] = get_resp_header(conn, "content-type")
   end
 
   # The path is looked up, never taken from the URL: the worst a caller can do

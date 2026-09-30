@@ -43,12 +43,17 @@ defmodule Rail.Pipeline.Schemas.QaEvidence do
 
   def kinds, do: @kinds
 
-  # A path is confined to `<scratch>/qa` or it is not served. The format above
-  # already refuses a leading slash and anything exotic; this is the segment
-  # that looks ordinary and is not.
+  @doc """
+  True when `path` is relative to the task's `<scratch>/qa` and never climbs out
+  of it, which is the one test for a path a finding cites or `qa_file` files.
+  """
+  def confined?(path) when is_binary(path), do: path =~ @path and ".." not in Path.split(path)
+
+  # The format above already refuses a leading slash and anything exotic; `..`
+  # is the segment that looks ordinary and is not.
   defp validate_confined(changeset) do
     validate_change(changeset, :path, fn :path, path ->
-      if ".." in Path.split(path), do: [path: "cannot climb out of the QA directory"], else: []
+      if confined?(path), do: [], else: [path: "cannot climb out of the QA directory"]
     end)
   end
 

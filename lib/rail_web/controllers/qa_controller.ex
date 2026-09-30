@@ -1,6 +1,6 @@
 defmodule RailWeb.QaController do
   @moduledoc """
-  Serves the pictures a QA pass took, out of its task's scratch.
+  Serves the evidence a QA pass filed, out of its task's scratch.
 
   Two ways in, and neither lets a path come from the URL. `evidence/2` names a
   finding and a position in that finding's own evidence list, and the filename is
@@ -12,6 +12,9 @@ defmodule RailWeb.QaController do
   There are two because a finding's evidence only exists once the pass has
   written its report, and the point of watching a pass is seeing what it saw
   while it is still going.
+
+  An agent wrote every one of these, so none is served as what its name claims:
+  the listed kind picks the type, and nothing is ever rendered as a page.
   """
   use RailWeb, :controller
 
@@ -23,7 +26,7 @@ defmodule RailWeb.QaController do
     with {:ok, %Task{} = task} <- Pipeline.get_task(task_id),
          %QaEvidence{path: path} when is_binary(path) <- evidence(task, key, index) do
       file = Path.join([task.scratch_path, "qa", path])
-      send_shot(conn, file)
+      send_shot(conn, file, :named)
     else
       _missing -> send_resp(conn, 404, "Not found")
     end
@@ -31,22 +34,38 @@ defmodule RailWeb.QaController do
 
   def shot(conn, %{"task_id" => task_id, "file" => file}) do
     with {:ok, %Task{} = task} <- Pipeline.get_task(task_id),
-         %{file: listed} <- Enum.find(Pipeline.list_qa_evidence(task), &(&1.file == file)) do
-      send_shot(conn, Path.join([task.scratch_path, "qa", "evidence", listed]))
+         %{file: listed, kind: kind} <- Enum.find(Pipeline.list_qa_evidence(task), &(&1.file == file)) do
+      send_shot(conn, Path.join([task.scratch_path, "qa", "evidence", listed]), kind)
     else
       _missing -> send_resp(conn, 404, "Not found")
     end
   end
 
-  defp send_shot(conn, file) do
+  defp send_shot(conn, file, kind) do
     if File.regular?(file) do
       conn
-      |> put_resp_content_type(MIME.from_path(file))
+      |> served_as(kind, file)
+      |> put_resp_header("x-content-type-options", "nosniff")
       |> put_resp_header("cache-control", "private, max-age=31536000")
       |> send_file(200, file)
     else
       send_resp(conn, 404, "Not found")
     end
+  end
+
+  # A finding's own evidence keeps the type its name gives it; that is not this
+  # listing's to change.
+  defp served_as(conn, kind, file) when kind in [:named, :screenshot] do
+    put_resp_content_type(conn, MIME.from_path(file))
+  end
+
+  defp served_as(conn, :pdf, _file), do: put_resp_content_type(conn, "application/pdf", nil)
+  defp served_as(conn, :text, _file), do: put_resp_content_type(conn, "text/plain")
+
+  defp served_as(conn, :file, _file) do
+    conn
+    |> put_resp_content_type("application/octet-stream", nil)
+    |> put_resp_header("content-disposition", "attachment")
   end
 
   defp evidence(%Task{} = task, key, index) do
