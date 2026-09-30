@@ -74,7 +74,7 @@ defmodule Rail.Tools.Actions.SubmitBackendLoginCodeTest do
 
     File.write!(
       impatient,
-      "#!/bin/sh\necho 'visit: https://claude.com/cai/oauth/authorize?x=1'\necho 'gave up'\nexit 3\n"
+      "#!/bin/sh\necho 'visit: https://claude.com/cai/oauth/authorize?x=1'\necho 'gave up'\nsleep 0.2\nexit 3\n"
     )
 
     File.chmod!(impatient, 0o755)

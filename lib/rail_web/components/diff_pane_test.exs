@@ -4,6 +4,7 @@ defmodule RailWeb.Components.DiffPaneTest do
   import Phoenix.LiveViewTest
   import Rail.Git.Utils.ParseDiff
 
+  alias Rail.Pipeline.Schemas.DiffComment
   alias RailWeb.Components.DiffPane
 
   setup do
@@ -44,7 +45,7 @@ defmodule RailWeb.Components.DiffPaneTest do
   end
 
   # Every line of a large branch is sent, so what each one costs beyond its code
-  # is what decides how big the page is.
+  # is what decides how big the page is. The button that comments on it is most of that.
   test "a line's markup is little more than its code" do
     [file] =
       parse_diff(
@@ -54,7 +55,7 @@ defmodule RailWeb.Components.DiffPaneTest do
 
     html = render_component(&DiffPane.diff_pane/1, files: [Map.put(file, :viewed?, false)])
 
-    assert div(byte_size(html), 200) < 310
+    assert div(byte_size(html), 200) < 390
   end
 
   # A block that would not parse has no path, so two of them must still be two files.
@@ -107,5 +108,69 @@ defmodule RailWeb.Components.DiffPaneTest do
 
     assert html =~ "No file here matches nothing-like-this."
     refute html =~ "diff_file_section"
+  end
+
+  # A comment is never dropped: its file may only be out of this view.
+  test "keeps comments on a file out of the view after the last file", %{diff: diff} do
+    gone = %{
+      %DiffComment{
+        path: "lib/rail/feature.ex",
+        line_kind: :added,
+        line: 1,
+        line_text: "def feature, do: :ok",
+        filter: :branch,
+        body: "Name this for what it does."
+      }
+      | id: "dcm_gone",
+        path: "lib/gone.ex",
+        body: "Still wanted."
+    }
+
+    html = render_component(&DiffPane.diff_pane/1, files: [diff], comments: [gone])
+
+    assert [stray] = html |> Floki.parse_fragment!() |> Floki.find("[data-qa='diff_comment_stray_section']")
+    assert Floki.text(stray) =~ "lib/gone.ex"
+    assert Floki.text(stray) =~ "1 unsent"
+    assert Floki.text(stray) =~ "Line 1 when you commented"
+    assert Floki.text(stray) =~ "Still wanted."
+    refute Floki.text(stray) =~ "Line changed"
+    assert html =~ ~r/filter\.ex.*diff_comment_stray_section/s
+  end
+
+  test "has no such section while every comment's file is in view", %{diff: diff} do
+    here = %{
+      %DiffComment{
+        path: "lib/rail/feature.ex",
+        line_kind: :added,
+        line: 1,
+        line_text: "def feature, do: :ok",
+        filter: :branch,
+        body: "Name this for what it does."
+      }
+      | id: "dcm_here",
+        path: diff.path
+    }
+
+    refute render_component(&DiffPane.diff_pane/1, files: [diff], comments: [here]) =~ "diff_comment_stray_section"
+  end
+
+  test "keeps them when the view has no files at all" do
+    gone = %{
+      %DiffComment{
+        path: "lib/rail/feature.ex",
+        line_kind: :added,
+        line: 1,
+        line_text: "def feature, do: :ok",
+        filter: :branch,
+        body: "Name this for what it does."
+      }
+      | id: "dcm_gone",
+        path: "lib/gone.ex"
+    }
+
+    html = render_component(&DiffPane.diff_pane/1, files: [], comments: [gone], empty_message: "All committed.")
+
+    assert html =~ "All committed."
+    assert html =~ "diff_comment_stray_section"
   end
 end

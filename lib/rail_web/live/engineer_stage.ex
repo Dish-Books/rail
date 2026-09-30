@@ -9,7 +9,8 @@ defmodule RailWeb.Live.EngineerStage do
   is what review means, and only what is uncommitted, which is what "what has it
   changed since I last looked" means. Marking a file read is per person and
   pinned to the file as it was read, so a file the engineer touches again comes
-  back unread.
+  back unread. Comments on lines are the reader's own until they send them all to
+  the engineer as one message.
   """
   use RailWeb, :live_component
 
@@ -23,7 +24,16 @@ defmodule RailWeb.Live.EngineerStage do
   alias RailWeb.Live.DiffFileTree
   alias RailWeb.Live.DiffToolbar
 
+  # Another of the reader's tabs saved, removed or sent comments. Only they moved,
+  # so the diff is not read again.
   @impl true
+  def update(%{reload_comments: true}, socket) do
+    %{current_scope: scope, task: task} = socket.assigns
+    socket = socket |> assign(:comments, Pipeline.list_diff_comments(scope, task)) |> sync_pane()
+
+    {:ok, socket}
+  end
+
   def update(assigns, socket) do
     socket =
       socket
@@ -40,6 +50,8 @@ defmodule RailWeb.Live.EngineerStage do
       |> assign_new(:highlighted, fn -> %{} end)
       |> assign_new(:drawn, fn -> nil end)
       |> assign_new(:sent, fn -> nil end)
+      |> assign_new(:comments, fn -> [] end)
+      |> assign_new(:draft, fn -> nil end)
 
     socket = if socket.assigns.focus_file, do: assign(socket, :selected_file, socket.assigns.focus_file), else: socket
     socket = load_status(socket)
@@ -168,6 +180,7 @@ defmodule RailWeb.Live.EngineerStage do
       |> assign(:collapsed, [])
       |> assign(:auto_collapsed, MapSet.new())
       |> assign(:selected_file, nil)
+      |> assign(:draft, nil)
 
     {:noreply, load_diff(socket)}
   end
@@ -246,6 +259,102 @@ defmodule RailWeb.Live.EngineerStage do
     socket = socket |> assign(:expanded_gaps, Map.put(socket.assigns.expanded_gaps, key, lines)) |> sync_pane()
 
     {:noreply, socket}
+  end
+
+  # The line is read off the diff this pane drew, so the comment quotes what the
+  # reader saw. The numbers come from the page, which may be stale or not numbers.
+  def handle_event("open_diff_comment", %{"path" => path, "kind" => kind} = params, socket) do
+    number = if kind == "deleted", do: params["old_line"], else: params["new_line"]
+
+    row =
+      with {line, ""} <- Integer.parse(number || "") do
+        socket.assigns.files
+        |> Enum.filter(&(&1.path == path))
+        |> Enum.flat_map(& &1.rows)
+        |> Enum.find(&(&1.kind == :line and to_string(&1.line_kind) == kind and line_number(&1) == line))
+      end
+
+    socket =
+      case row do
+        %{line_kind: line_kind, text: text} ->
+          draft = %{
+            path: path,
+            line_kind: line_kind,
+            line: line_number(row),
+            line_text: text,
+            filter: socket.assigns.filter
+          }
+
+          socket |> assign(:draft, draft) |> sync_pane()
+
+        _no_such_line ->
+          socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("cancel_diff_comment", _params, socket) do
+    socket = socket |> assign(:draft, nil) |> sync_pane()
+
+    {:noreply, socket}
+  end
+
+  def handle_event("change_diff_comment", _params, %{assigns: %{draft: nil}} = socket), do: {:noreply, socket}
+
+  # What is typed is kept, so the file being drawn again does not lose it.
+  def handle_event("change_diff_comment", %{"body" => body}, socket) do
+    socket = socket |> assign(:draft, Map.put(socket.assigns.draft, :body, body)) |> sync_pane()
+
+    {:noreply, socket}
+  end
+
+  def handle_event("save_diff_comment", _params, %{assigns: %{draft: nil}} = socket), do: {:noreply, socket}
+
+  # A blank comment is refused and the composer stays open on what was typed.
+  # The list is read back so it is in the order a reload would show it.
+  def handle_event("save_diff_comment", %{"body" => body}, socket) do
+    %{current_scope: scope, task: task, draft: draft} = socket.assigns
+
+    case Pipeline.create_diff_comment(scope, task, Map.put(draft, :body, body)) do
+      {:ok, _comment} ->
+        socket =
+          socket
+          |> assign(:comments, Pipeline.list_diff_comments(scope, task))
+          |> assign(:draft, nil)
+          |> sync_pane()
+
+        {:noreply, socket}
+
+      {:error, _changeset} ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("remove_diff_comment", %{"id" => id}, socket) do
+    case Enum.find(socket.assigns.comments, &(&1.id == id)) do
+      %{} = comment ->
+        {:ok, _removed} = Pipeline.delete_diff_comment(socket.assigns.current_scope, comment)
+        socket = socket |> assign(:comments, List.delete(socket.assigns.comments, comment)) |> sync_pane()
+
+        {:noreply, socket}
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("send_diff_comments", _params, socket) do
+    case Pipeline.send_diff_comments(socket.assigns.current_scope, socket.assigns.run) do
+      {:ok, _delivery, _run} ->
+        send(self(), :task_changed)
+        socket = socket |> assign(:comments, []) |> assign(:error, nil) |> sync_pane()
+
+        {:noreply, socket}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, :error, message_for(reason))}
+    end
   end
 
   # A push runs the repository's own pre-push hooks, which can take minutes, so it
@@ -395,6 +504,7 @@ defmodule RailWeb.Live.EngineerStage do
     socket
     |> fold_away_read_files(files)
     |> assign(:files, files)
+    |> assign(:comments, Pipeline.list_diff_comments(scope, task))
     |> assign(:work?, highlighted.branch != [])
     |> assign(:highlighted, highlighted)
     |> assign(:loading?, false)
@@ -432,7 +542,10 @@ defmodule RailWeb.Live.EngineerStage do
       selected_file: assigns.selected_file,
       scroll_to: assigns.focus_file,
       target: assigns.myself,
-      empty_message: empty_message(assigns.filter)
+      empty_message: empty_message(assigns.filter),
+      comments: assigns.comments,
+      draft: assigns.draft,
+      engineer_running?: Run.running?(assigns.run)
     }
   end
 
@@ -555,6 +668,10 @@ defmodule RailWeb.Live.EngineerStage do
     end
   end
 
+  # A removed line has only its old number; every other line is known by its new one.
+  defp line_number(%{line_kind: :deleted, old_line: line}), do: line
+  defp line_number(%{new_line: line}), do: line
+
   defp toggle(paths, path, true), do: Enum.uniq([path | paths])
   defp toggle(paths, path, false), do: List.delete(paths, path)
 
@@ -567,6 +684,8 @@ defmodule RailWeb.Live.EngineerStage do
   defp message_for(:nothing_to_commit), do: "There is nothing left to commit."
   defp message_for(:ci_not_passed), do: "CI has to pass on the latest commit before this goes to review."
   defp message_for(:nothing_new_to_review), do: "Review has already seen this commit."
+  defp message_for(:chat_unavailable), do: "The engineer has no conversation to send these to yet."
+  defp message_for(:nothing_to_send), do: "There are no comments to send."
   defp message_for(reason) when is_binary(reason), do: reason
   defp message_for(reason), do: "Could not finish that: #{inspect(reason)}"
 end

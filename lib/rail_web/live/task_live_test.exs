@@ -1879,6 +1879,392 @@ defmodule RailWeb.TaskLiveTest do
       _settled = render(view)
       assert has_element?(view, "[data-qa='diff-file-row']", "later.ex")
     end
+
+    test "offers a comment on each line of the diff", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#diff-file-shipped-ex[data-comment-target] [data-qa='diff_comment_add']")
+    end
+
+    test "a comment saved on a line sits under it unsent, in either view, and tells the engineer nothing", %{
+      conn: conn,
+      task: task,
+      engineer_run: run,
+      repo: repo
+    } do
+      File.write!(Path.join(repo, "tracked.txt"), "one\ntwo\n")
+      git!(repo, ["commit", "-am", "a second line"])
+      File.write!(Path.join(repo, "tracked.txt"), "two\nthree\n")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      stage = with_target(view, "#engineer-stage")
+
+      render_click(stage, "open_diff_comment", %{
+        "path" => "shipped.ex",
+        "kind" => "added",
+        "old_line" => "",
+        "new_line" => "1"
+      })
+
+      view |> form("[data-qa='diff_comment_form']", %{"body" => "Say what was committed."}) |> render_submit()
+
+      render_click(stage, "open_diff_comment", %{
+        "path" => "tracked.txt",
+        "kind" => "deleted",
+        "old_line" => "1",
+        "new_line" => ""
+      })
+
+      view |> form("[data-qa='diff_comment_form']", %{"body" => "Keep the first line."}) |> render_submit()
+
+      assert has_element?(view, "#diff-file-shipped-ex [data-qa='diff_comment']", "Say what was committed.")
+      assert has_element?(view, "#diff-file-tracked-txt [data-qa='diff_comment']", "Keep the first line.")
+      assert has_element?(view, "#diff-file-tracked-txt [data-qa='diff_comment']", "Not sent")
+      refute has_element?(view, "[data-qa='diff_comment_form']")
+
+      view |> element("#diff-filter-uncommitted") |> render_click()
+
+      render_click(stage, "open_diff_comment", %{
+        "path" => "tracked.txt",
+        "kind" => "context",
+        "old_line" => "2",
+        "new_line" => "1"
+      })
+
+      view |> form("[data-qa='diff_comment_form']", %{"body" => "Why keep this one?"}) |> render_submit()
+
+      section = view |> element("#diff-file-tracked-txt") |> render() |> Floki.parse_fragment!() |> Floki.text()
+      assert section =~ ~r/two.*Why keep this one\?.*three/s
+      assert has_element?(view, "#send-diff-comments", "Send 3 comments")
+      assert has_element?(view, "[data-qa='diff_comments_hint']", "Engineer is idle and starts on these at once.")
+      assert Pipeline.list_run_events(run) == []
+    end
+
+    test "unsent comments are still there after a reload, and nobody else sees them", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view
+      |> with_target("#engineer-stage")
+      |> render_click("open_diff_comment", %{
+        "path" => "shipped.ex",
+        "kind" => "added",
+        "old_line" => "",
+        "new_line" => "1"
+      })
+
+      view |> form("[data-qa='diff_comment_form']", %{"body" => "Say what was committed."}) |> render_submit()
+
+      assert {:ok, again, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(again, "#diff-file-shipped-ex [data-qa='diff_comment']", "Say what was committed.")
+      assert has_element?(again, "[data-qa='diff-file-row'] [data-qa='diff_file_unsent']", "1")
+
+      {:ok, someone} =
+        Users.register_oauth_user(%{github_id: "gh_task_live_other", login: "someone", email: "someone@example.com"})
+
+      assert {:ok, theirs, _html} = live(log_in_user(build_conn(), someone), ~p"/tasks/#{task.id}")
+      refute has_element?(theirs, "[data-qa='diff_comment']")
+      refute has_element?(theirs, "#send-diff-comments")
+    end
+
+    test "sending to an idle engineer starts a turn on one message holding every comment", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      repo: repo
+    } do
+      File.write!(Path.join(repo, "tracked.txt"), "two\nthree\n")
+      comment = %{filter: :branch, body: "Why?"}
+
+      for attrs <- [
+            %{path: "shipped.ex", line_kind: :added, line: 1, line_text: "committed", body: "Say what was committed."},
+            %{path: "tracked.txt", line_kind: :deleted, line: 1, line_text: "one", body: "Keep the first line."},
+            %{path: "tracked.txt", line_kind: :added, line: 2, line_text: "three"}
+          ] do
+        {:ok, _saved} = Pipeline.create_diff_comment(scope, task, Map.merge(comment, attrs))
+      end
+
+      test_pid = self()
+
+      expect(Tools, :start_os_process, fn spawned, argv ->
+        send(test_pid, {:turn, argv})
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#send-diff-comments", "Send 3 comments") |> render_click()
+
+      assert_receive {:turn, argv}, 5_000
+      assert Enum.join(argv, " ") =~ "3 comments on the diff"
+
+      _settled = render(view)
+      assert [bubble] = view |> render() |> Floki.parse_fragment!() |> Floki.find("[data-qa='human-bubble']")
+
+      assert Floki.text(bubble) =~
+               ~r/3 comments on the diff.*shipped\.ex, line 1.*\+ committed.*Say what was committed\./s
+
+      assert Floki.text(bubble) =~ ~r/tracked\.txt, removed line 1.*- one.*Keep the first line\./s
+      assert Floki.text(bubble) =~ ~r/tracked\.txt, line 2.*\+ three.*Why\?/s
+      refute has_element?(view, "[data-qa='diff_comment']")
+      refute has_element?(view, "#send-diff-comments")
+    end
+
+    test "sending while the engineer works queues the message for when its turn ends", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      engineer_run: run
+    } do
+      {:ok, _working} = Pipeline.update_run(run, %{status: :running})
+      reject(&Tools.start_os_process/2)
+
+      {:ok, _saved} =
+        Pipeline.create_diff_comment(scope, task, %{
+          path: "shipped.ex",
+          line_kind: :added,
+          line: 1,
+          line_text: "committed",
+          filter: :branch,
+          body: "Say what was committed."
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "[data-qa='diff_comments_hint']", "Engineer is working. These wait until its turn ends.")
+
+      view |> element("#send-diff-comments", "Send 1 comment") |> render_click()
+
+      assert has_element?(view, "#queued-banner", "1 comment on the diff")
+      refute has_element?(view, "[data-qa='diff_comment']")
+    end
+
+    test "a comment whose line the engineer rewrote is lifted, and still sent quoting the line as it was", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      engineer_run: run,
+      repo: repo
+    } do
+      {:ok, _saved} =
+        Pipeline.create_diff_comment(scope, task, %{
+          path: "shipped.ex",
+          line_kind: :added,
+          line: 1,
+          line_text: "committed",
+          filter: :branch,
+          body: "Say what was committed."
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      File.write!(Path.join(repo, "shipped.ex"), "rewritten\n")
+      send(view.pid, {:run_events, run.id, []})
+      _settled = render(view)
+      _settled = render(view)
+
+      assert has_element?(
+               view,
+               "#diff-file-shipped-ex [data-qa='diff_comments_lifted']",
+               "1 comment is on a line that has changed."
+             )
+
+      assert has_element?(view, "#diff-file-shipped-ex [data-qa='diff_comment_changed']", "Line changed")
+      assert has_element?(view, "#diff-file-shipped-ex [data-qa='diff_comment_quote']", "committed")
+      assert has_element?(view, "#send-diff-comments", "Send 1 comment")
+
+      test_pid = self()
+
+      expect(Tools, :start_os_process, fn spawned, argv ->
+        send(test_pid, {:turn, argv})
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      view |> element("#send-diff-comments") |> render_click()
+
+      assert_receive {:turn, argv}, 5_000
+      assert Enum.join(argv, " ") =~ "shipped.ex, line 1\n+ committed\nSay what was committed."
+    end
+
+    test "a removed comment is not sent, and with none left there is nothing to send", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      engineer_run: run
+    } do
+      comment = %{path: "shipped.ex", line_kind: :added, line: 1, line_text: "committed", filter: :branch}
+      {:ok, kept} = Pipeline.create_diff_comment(scope, task, Map.put(comment, :body, "Keep this one."))
+      {:ok, dropped} = Pipeline.create_diff_comment(scope, task, Map.put(comment, :body, "Drop this one."))
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("[data-qa='diff_comment_remove'][phx-value-id='#{dropped.id}']") |> render_click()
+      refute has_element?(view, "[data-qa='diff_comment']", "Drop this one.")
+      assert has_element?(view, "#send-diff-comments", "Send 1 comment")
+
+      # A click from a page drawn before the removal names a comment that is gone.
+      view |> with_target("#engineer-stage") |> render_click("remove_diff_comment", %{"id" => dropped.id})
+
+      view |> element("[data-qa='diff_comment_remove'][phx-value-id='#{kept.id}']") |> render_click()
+      refute has_element?(view, "[data-qa='diff_comment']")
+      refute has_element?(view, "#send-diff-comments")
+
+      view |> with_target("#engineer-stage") |> render_click("send_diff_comments", %{})
+      assert has_element?(view, "#engineer-error", "There are no comments to send.")
+      assert Pipeline.list_run_events(run) == []
+    end
+
+    test "comments an engineer with no conversation cannot take are kept, and the pane says why", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      engineer_run: run
+    } do
+      {:ok, _forgotten} = Pipeline.update_run(run, %{conversation_id: nil})
+
+      {:ok, _saved} =
+        Pipeline.create_diff_comment(scope, task, %{
+          path: "shipped.ex",
+          line_kind: :added,
+          line: 1,
+          line_text: "committed",
+          filter: :branch,
+          body: "Say what was committed."
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#send-diff-comments") |> render_click()
+
+      assert has_element?(view, "#engineer-error", "The engineer has no conversation to send these to yet.")
+      assert has_element?(view, "[data-qa='diff_comment']", "Say what was committed.")
+    end
+
+    test "the comment being written can be put away, and is not saved blank", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      stage = with_target(view, "#engineer-stage")
+      open = %{"path" => "shipped.ex", "kind" => "added", "old_line" => "", "new_line" => "1"}
+
+      render_click(stage, "open_diff_comment", open)
+      view |> form("[data-qa='diff_comment_form']", %{"body" => "Half a thought"}) |> render_change()
+      assert has_element?(view, "[data-qa='diff_comment_body']", "Half a thought")
+
+      view |> form("[data-qa='diff_comment_form']", %{"body" => "   "}) |> render_submit()
+      assert has_element?(view, "[data-qa='diff_comment_form']")
+      refute has_element?(view, "[data-qa='diff_comment']")
+
+      view |> element("[data-qa='diff_comment_cancel']") |> render_click()
+      refute has_element?(view, "[data-qa='diff_comment_form']")
+
+      # A line that is not drawn, or a number that is not one, opens nothing.
+      render_click(stage, "open_diff_comment", %{open | "new_line" => "40"})
+      render_click(stage, "open_diff_comment", %{open | "new_line" => ""})
+      refute has_element?(view, "[data-qa='diff_comment_form']")
+
+      # A save from a page drawn before the composer closed has nothing to save.
+      render_change(stage, "change_diff_comment", %{"body" => "Too late."})
+      render_submit(stage, "save_diff_comment", %{"body" => "Too late."})
+      refute has_element?(view, "[data-qa='diff_comment']")
+
+      render_click(stage, "open_diff_comment", open)
+      view |> element("#diff-filter-uncommitted") |> render_click()
+      view |> element("#diff-filter-branch") |> render_click()
+      refute has_element?(view, "[data-qa='diff_comment_form']")
+    end
+
+    # A box patched in place from one line to the next keeps the focus on the "+"
+    # that moved it, and two files briefly holding one id is a clash in the page.
+    test "the comment box opened on another line is a new one, named for its file and line", %{
+      conn: conn,
+      task: task,
+      repo: repo
+    } do
+      File.write!(Path.join(repo, "tracked.txt"), "two\nthree\n")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      stage = with_target(view, "#engineer-stage")
+
+      render_click(stage, "open_diff_comment", %{
+        "path" => "tracked.txt",
+        "kind" => "added",
+        "old_line" => "",
+        "new_line" => "1"
+      })
+
+      assert has_element?(view, "#diff-comment-form-tracked-txt-added-1 #diff-comment-body-tracked-txt-added-1")
+
+      render_click(stage, "open_diff_comment", %{
+        "path" => "tracked.txt",
+        "kind" => "added",
+        "old_line" => "",
+        "new_line" => "2"
+      })
+
+      assert has_element?(view, "#diff-comment-form-tracked-txt-added-2 #diff-comment-body-tracked-txt-added-2")
+      refute has_element?(view, "#diff-comment-form-tracked-txt-added-1")
+
+      render_click(stage, "open_diff_comment", %{
+        "path" => "shipped.ex",
+        "kind" => "added",
+        "old_line" => "",
+        "new_line" => "1"
+      })
+
+      assert has_element?(view, "#diff-comment-form-shipped-ex-added-1")
+      assert [_one] = view |> render() |> Floki.parse_fragment!() |> Floki.find("[data-qa='diff_comment_form']")
+    end
+
+    test "Escape puts the comment being written away", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view
+      |> with_target("#engineer-stage")
+      |> render_click("open_diff_comment", %{
+        "path" => "shipped.ex",
+        "kind" => "added",
+        "old_line" => "",
+        "new_line" => "1"
+      })
+
+      view |> element("[data-qa='diff_comment_body']") |> render_keydown(%{"key" => "Escape"})
+
+      refute has_element?(view, "[data-qa='diff_comment_form']")
+    end
+
+    # Send sends what is in the database, so every tab the person has open has to
+    # show and count exactly that.
+    test "a comment saved, removed or sent in another tab shows here as it is", %{
+      conn: conn,
+      task: task,
+      scope: scope
+    } do
+      assert {:ok, here, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, there, _html} = live(conn, ~p"/tasks/#{task.id}")
+      open = %{"path" => "shipped.ex", "kind" => "added", "old_line" => "", "new_line" => "1"}
+
+      for body <- ["Written in the other tab.", "Thought better of it."] do
+        there |> with_target("#engineer-stage") |> render_click("open_diff_comment", open)
+        there |> form("[data-qa='diff_comment_form']", %{"body" => body}) |> render_submit()
+      end
+
+      # The page hears of it and forwards to the stage, each on a turn of its own.
+      _settled = render(here)
+      _settled = render(here)
+      assert has_element?(here, "[data-qa='diff_comment']", "Written in the other tab.")
+      assert has_element?(here, "#send-diff-comments", "Send 2 comments")
+
+      [_kept, dropped] = Pipeline.list_diff_comments(scope, task)
+      there |> element("[data-qa='diff_comment_remove'][phx-value-id='#{dropped.id}']") |> render_click()
+
+      _settled = render(here)
+      _settled = render(here)
+      refute has_element?(here, "[data-qa='diff_comment']", "Thought better of it.")
+      assert has_element?(here, "#send-diff-comments", "Send 1 comment")
+
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      there |> element("#send-diff-comments") |> render_click()
+
+      _settled = render(here)
+      _settled = render(here)
+      refute has_element?(here, "[data-qa='diff_comment']")
+      refute has_element?(here, "#send-diff-comments")
+    end
   end
 
   describe "the conversation, which the page hosts and feeds" do

@@ -11,6 +11,7 @@ defmodule RailWeb.Components.DiffRow do
   attr :row, :map, required: true
   attr :expanded, :any, default: nil, doc: "the lines of a gap the reader opened"
   attr :target, :any, default: nil
+  attr :commentable, :boolean, default: false, doc: "offers the reader a comment on a line"
 
   def diff_row(%{row: %{kind: :binary}} = assigns) do
     ~H"""
@@ -81,11 +82,12 @@ defmodule RailWeb.Components.DiffRow do
 
   def diff_row(%{row: %{kind: :line}} = assigns) do
     ~H"""
-    <.line line={@row} />
+    <.line line={@row} commentable={@commentable} />
     """
   end
 
   attr :line, :map, required: true
+  attr :commentable, :boolean, default: false
 
   # The styling is `assets/css/diff.css`'s, keyed off these attributes, because a
   # large branch draws thousands of lines and each would otherwise carry it all.
@@ -101,7 +103,13 @@ defmodule RailWeb.Components.DiffRow do
     >
       <div class="diff-num">{@line.old_line}</div>
       <div class="diff-num">{@line.new_line}</div>
-      <div class="diff-glyph">{glyph(@line.line_kind)}</div>
+      <div class="diff-glyph">
+        {glyph(@line.line_kind)}<button
+          :if={@commentable}
+          data-qa="diff_comment_add"
+          class="diff-comment-add"
+        >+</button>
+      </div>
       <%!-- A flex row drops the whitespace between its children, which a `pre` cell
       would otherwise draw as the blank lines the markup is written across. --%>
       <div class="diff-code">

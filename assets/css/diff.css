@@ -72,3 +72,28 @@
 .diff-line[data-focus] .diff-num {
   @apply font-bold text-amber-800 dark:text-amber-300;
 }
+
+/* The "+" that opens a comment sits over the glyph and shows only on the line
+ * the reader is pointing at or has tabbed to. The sticky glyph cell anchors it.
+ */
+.diff-comment-add {
+  @apply absolute left-0 top-px z-20 size-5 grid opacity-0 place-items-center rounded-md bg-blue-600 text-xs font-bold text-white shadow-sm ring-2 ring-white dark:ring-slate-900 cursor-pointer;
+}
+
+.diff-line:hover .diff-comment-add,
+.diff-comment-add:focus-visible {
+  @apply opacity-100;
+}
+
+/* A comment, or the one being written, sits under its line indented to the code.
+ * It is exactly as wide as the file's visible column and stays in it however far
+ * the code is scrolled, so no card can make a file with short code scroll sideways.
+ */
+.diff-comment-row {
+  @apply sticky left-0 w-[100cqw] py-1.5 pr-4 pl-[124px] whitespace-normal bg-slate-50 dark:bg-slate-800/40 border-y border-slate-200 dark:border-slate-700;
+}
+
+.diff-line:has(+ .diff-comment-row) .diff-num + .diff-num,
+.diff-line[data-kind="deleted"]:has(+ .diff-comment-row) .diff-num:first-child {
+  @apply font-bold text-amber-700 dark:text-amber-300;
+}

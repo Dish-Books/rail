@@ -68,6 +68,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:comment_nonce, 0)
       |> assign(:subscribed_run_ids, MapSet.new())
       |> assign(:watched_browser_task_id, nil)
+      |> assign(:watched_comments_task_id, nil)
       |> assign(:frame_window_open?, false)
       |> assign(:held_frame, nil)
       |> assign(:roles_map, %{})
@@ -522,6 +523,16 @@ defmodule RailWeb.TaskLive do
     end
   end
 
+  # The reader's comments moved in another of their tabs, or in this one. Only the
+  # comments are read again: the diff under them has not moved.
+  def handle_info({:diff_comments_changed, task_id}, socket) do
+    with %{pane: :engineer, task_id: ^task_id, selected_role: %Role{} = role} <- socket.assigns do
+      send_update(EngineerStage, id: stage_component_id(role), reload_comments: true)
+    end
+
+    {:noreply, socket}
+  end
+
   # A queued message went out, or came back, on its own time.
   def handle_info({:run_changed, _run_id}, socket) do
     {:noreply, refresh_task(socket)}
@@ -751,7 +762,7 @@ defmodule RailWeb.TaskLive do
 
   defp refresh_task(socket) do
     case Pipeline.get_task(socket.assigns.task_id) do
-      {:ok, task} -> socket |> apply_task(task) |> sync_tab_url()
+      {:ok, task} -> socket |> apply_task(task) |> watch_diff_comments(task) |> sync_tab_url()
       {:error, _reason} -> assign(socket, :task, nil)
     end
   end
@@ -960,6 +971,20 @@ defmodule RailWeb.TaskLive do
     end
 
     if connected?(socket), do: task_id, else: watched
+  end
+
+  # One topic per task and reader: unsent comments are theirs alone, and every tab
+  # they have open has to show and count what Send would send.
+  defp watch_diff_comments(socket, %Task{id: task_id}) do
+    watched = socket.assigns.watched_comments_task_id
+    user_id = socket.assigns.current_scope.user.id
+
+    if connected?(socket) and watched != task_id do
+      if watched, do: Phoenix.PubSub.unsubscribe(Rail.PubSub, "diff_comments:#{watched}:#{user_id}")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}:#{user_id}")
+    end
+
+    assign(socket, :watched_comments_task_id, if(connected?(socket), do: task_id, else: watched))
   end
 
   defp push_frame(socket, data) do

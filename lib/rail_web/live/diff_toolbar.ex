@@ -73,10 +73,42 @@ defmodule RailWeb.Live.DiffToolbar do
           class="w-full bg-transparent border-0 p-0 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-0"
         />
       </form>
+
+      <span
+        :if={@unsent > 0}
+        data-qa="diff_comments_hint"
+        class="inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap"
+      >
+        <span class={[
+          "size-1.5 rounded-full",
+          @engineer_running? && "bg-green-500",
+          not @engineer_running? && "bg-slate-400"
+        ]} />
+        {hint(@engineer_running?)}
+      </span>
+
+      <button
+        :if={@unsent > 0}
+        type="button"
+        id="send-diff-comments"
+        data-qa="send_diff_comments"
+        phx-click="send_diff_comments"
+        phx-disable-with="Sending…"
+        phx-target={@target}
+        class="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 shadow-xs cursor-pointer"
+      >
+        <.icon name="pi-paper-plane-tilt" class="size-4" />{send_label(@unsent)}
+      </button>
     </div>
     """
   end
 
   defp read(0, _viewed), do: 0
   defp read(total, viewed), do: div(viewed * 100, total)
+
+  defp hint(true), do: "Engineer is working. These wait until its turn ends."
+  defp hint(false), do: "Engineer is idle and starts on these at once."
+
+  defp send_label(1), do: "Send 1 comment"
+  defp send_label(unsent), do: "Send #{unsent} comments"
 end
