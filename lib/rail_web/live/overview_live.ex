@@ -119,7 +119,7 @@ defmodule RailWeb.OverviewLive do
   end
 
   # The overview is the tasks in flight and the runs behind them; a task stands
-  # where the latest run at its own stage left it.
+  # where its stage's run left it, unless another role is working on it.
   defp load_overview_state(socket, project_id, everyone) do
     now = DateTime.utc_now()
     user_id = socket.assigns.current_scope.user.id
@@ -134,12 +134,18 @@ defmodule RailWeb.OverviewLive do
     in_progress =
       Enum.filter(tasks, &(is_nil(&1.merged_at) and &1.stage != :merged and is_nil(&1.issue.completed_at)))
 
-    stage_runs = latest_stage_runs(runs)
+    # A task with no run standing for it is left out, which reads as queued.
+    standing_runs =
+      runs
+      |> Enum.group_by(& &1.task_id)
+      |> Enum.map(fn {task_id, task_runs} -> {task_id, Run.standing_run(hd(task_runs).task, task_runs)} end)
+      |> Enum.reject(fn {_task_id, run} -> is_nil(run) end)
+      |> Map.new()
 
     # A task waits on a human once, whatever its stage: the run of the stage it is
     # in is the one thing to do about it.
     waiting =
-      stage_runs
+      standing_runs
       |> Map.values()
       |> Enum.filter(&Run.needs_attention?/1)
       |> Enum.sort_by(&Run.waiting_since/1, DateTime)
@@ -164,20 +170,9 @@ defmodule RailWeb.OverviewLive do
     |> assign(:sandboxes, sandboxes)
     |> assign(:stats, stats(in_progress, completed, waiting_on_user, sandboxes.waiting, now))
     |> assign(:activity, activity(runs, completed, DateTime.shift(now, day: -1)))
-    |> assign(:in_progress_groups, build_in_progress_groups(in_progress, stage_runs, user_id, now))
+    |> assign(:in_progress_groups, build_in_progress_groups(in_progress, standing_runs, user_id, now))
     |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
     |> assign(:dispatch_disabled, Application.get_env(:rail, :no_dispatch, false))
-  end
-
-  # An earlier run at the task's stage has been retried, and one at another stage
-  # is behind it, so neither says where the task stands.
-  defp latest_stage_runs(runs) do
-    runs
-    |> Enum.filter(&(&1.role.stage == &1.task.stage))
-    |> Enum.group_by(& &1.task_id)
-    |> Map.new(fn {task_id, task_runs} ->
-      {task_id, Enum.max_by(task_runs, &(&1.started_at || &1.inserted_at), DateTime)}
-    end)
   end
 
   # Defaults stay out of the URL, so the user's own work is still just /.
@@ -284,9 +279,9 @@ defmodule RailWeb.OverviewLive do
   defp questions(%Run{questions: [_one]}), do: "a question"
   defp questions(%Run{questions: questions}), do: "#{length(questions)} questions"
 
-  defp build_in_progress_groups(in_progress, stage_runs, user_id, now) do
+  defp build_in_progress_groups(in_progress, standing_runs, user_id, now) do
     in_progress
-    |> Enum.map(&build_in_progress_entry(&1, Map.get(stage_runs, &1.id), user_id, now))
+    |> Enum.map(&build_in_progress_entry(&1, Map.get(standing_runs, &1.id), user_id, now))
     |> Enum.sort_by(& &1.changed_at, DateTime)
     |> Enum.sort_by(&Map.fetch!(@attention_rank, &1.state))
     |> Enum.group_by(& &1.task.project)

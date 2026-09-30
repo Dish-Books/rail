@@ -347,4 +347,75 @@ defmodule Rail.Pipeline.Schemas.RunTest do
 
     refute Run.needs_attention?(merged_at)
   end
+
+  # A human who messages the engineer from a task at QA has put the engineer to work,
+  # so while it works the task is not the finished QA report.
+  test "a task stands where another role is working while its own stage is done" do
+    qa_done = %Run{
+      status: :finished,
+      stage_outcome: :done,
+      started_at: ~U[2026-01-01 10:00:00Z],
+      role: %Role{stage: :qa}
+    }
+
+    engineer_running = %Run{status: :running, started_at: ~U[2026-01-01 09:00:00Z], role: %Role{stage: :engineer}}
+    engineer_waiting = %{engineer_running | status: :waiting_for_resources}
+
+    assert Run.standing_run(%Task{stage: :qa}, [qa_done, engineer_running]) == engineer_running
+    assert Run.standing_run(%Task{stage: :qa}, [qa_done, engineer_waiting]) == engineer_waiting
+  end
+
+  test "a task whose own stage is working stands there, whatever else is working" do
+    qa_running = %Run{status: :running, started_at: ~U[2026-01-01 09:00:00Z], role: %Role{stage: :qa}}
+    engineer_running = %Run{status: :running, started_at: ~U[2026-01-01 10:00:00Z], role: %Role{stage: :engineer}}
+
+    assert Run.standing_run(%Task{stage: :qa}, [engineer_running, qa_running]) == qa_running
+  end
+
+  test "with nothing working, a task stands where the latest run at its stage left it" do
+    qa_retried = %Run{status: :finished, error: "boom", started_at: ~U[2026-01-01 09:00:00Z], role: %Role{stage: :qa}}
+
+    qa_done = %Run{
+      status: :finished,
+      stage_outcome: :done,
+      started_at: ~U[2026-01-01 10:00:00Z],
+      role: %Role{stage: :qa}
+    }
+
+    engineer_done = %Run{
+      status: :finished,
+      stage_outcome: :done,
+      started_at: ~U[2026-01-01 11:00:00Z],
+      role: %Role{stage: :engineer}
+    }
+
+    assert Run.standing_run(%Task{stage: :qa}, [qa_retried, engineer_done, qa_done]) == qa_done
+  end
+
+  test "a task with no run at its stage and nothing working stands nowhere yet" do
+    engineer_done = %Run{
+      status: :finished,
+      stage_outcome: :done,
+      started_at: ~U[2026-01-01 11:00:00Z],
+      role: %Role{stage: :engineer}
+    }
+
+    assert is_nil(Run.standing_run(%Task{stage: :qa}, [engineer_done]))
+    assert is_nil(Run.standing_run(%Task{stage: :qa}, []))
+  end
+
+  # Such a run has no stage to name, so the task would read as " running".
+  test "a working run with no role, or a role with no stage, does not say where a task stands" do
+    qa_done = %Run{
+      status: :finished,
+      stage_outcome: :done,
+      started_at: ~U[2026-01-01 09:00:00Z],
+      role: %Role{stage: :qa}
+    }
+
+    role_deleted = %Run{status: :running, started_at: ~U[2026-01-01 10:00:00Z], role: nil}
+    stageless = %Run{status: :running, started_at: ~U[2026-01-01 11:00:00Z], role: %Role{stage: nil}}
+
+    assert Run.standing_run(%Task{stage: :qa}, [qa_done, role_deleted, stageless]) == qa_done
+  end
 end

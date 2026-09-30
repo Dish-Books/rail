@@ -760,6 +760,7 @@ defmodule RailWeb.TaskLive do
     roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []
     started = started_roles(roles, task)
     {role, selected_run} = select_tab(started, task, socket.assigns.selected_tab, socket.assigns.tab_stage)
+    standing_run = Run.standing_run(task, task.runs)
 
     asked = Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
     questions = Enum.filter(asked, &(&1.status == :pending))
@@ -774,8 +775,8 @@ defmodule RailWeb.TaskLive do
     |> assign(:tab_stage, task.stage)
     |> assign(:selected_role, role)
     |> assign(:selected_run, selected_run)
-    |> assign(:stage_run, stage_run(started, task))
-    |> assign(:line, line(stage_run(started, task)))
+    |> assign(:stage_run, standing_run)
+    |> assign(:line, line(standing_run))
     |> assign(:conversation_run, selected_run)
     |> assign(:pane, pane(role))
     |> assign(:approvable, approvable?(role, task, selected_run))
@@ -836,13 +837,7 @@ defmodule RailWeb.TaskLive do
   defp approvable?(%Role{stage: stage}, %Task{stage: stage}, %Run{} = run), do: not Run.running?(run)
   defp approvable?(_role, _task, _run), do: false
 
-  # The header says where the task is, whichever tab is open: a stage with no run
-  # yet is queued, not whatever an earlier stage's run left behind.
-  defp stage_run(started, %Task{stage: stage}) do
-    Enum.find_value(started, fn {role, run} -> role.stage == stage and run end)
-  end
-
-  # Where the stage's run stands in the line for a sandbox, while it waits in it.
+  # Where the header's run stands in the line for a sandbox, while it waits in it.
   defp line(%Run{} = run) do
     with :waiting <- Run.state(run),
          {:ok, line} <- Tools.get_queue_position(run) do

@@ -108,6 +108,39 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "[data-qa='task_status_chip']", "Queued for Review")
   end
 
+  test "the header of a task at QA says the engineer is working while a message has it working", %{
+    conn: conn,
+    task: task,
+    project: project
+  } do
+    {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
+    {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa, worktree_path: create_temp_git_repo()})
+    now = DateTime.utc_now()
+
+    {:ok, _qa_run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: qa.id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.shift(now, hour: -1)
+      })
+
+    {:ok, engineer_run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: engineer.id, status: :running, started_at: now})
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "[data-qa='task_status_chip']", "Engineer running")
+
+    {:ok, _finished} = Pipeline.update_run(engineer_run, %{status: :finished, completed_at: now})
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "[data-qa='task_status_chip']", "Review the QA report")
+  end
+
   test "a stage waiting for resources says so, and where it stands in line", %{
     conn: conn,
     task: task,

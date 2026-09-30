@@ -2,13 +2,14 @@ defmodule RailWeb.Utils.StageLabel do
   @moduledoc """
   The one line that says where a task is and what its run is doing.
 
-  Two things make the sentence: the stage the task sits at, and what the run for
-  it says about itself. Neither is enough alone — "Product" does not say whether
-  anyone is waiting, and `:done` does not say done with what.
+  Two things make the sentence: the stage of the run that says where the task
+  stands, and what that run says about itself. Neither is enough alone - "Product"
+  does not say whether anyone is waiting, and `:done` does not say done with what.
   """
 
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Roles.Schemas.Role
 
   @doc """
   Labels `task` with what `run` is doing.
@@ -25,8 +26,8 @@ defmodule RailWeb.Utils.StageLabel do
   def stage_label(%Task{stage: stage}, run) do
     case Run.state(run) do
       :queued -> "Queued for #{Task.stage_label(stage)}"
-      :running -> "#{Task.stage_label(stage)} running"
-      :waiting -> "#{Task.stage_label(stage)} waiting for resources"
+      :running -> "#{Task.stage_label(working_stage(run, stage))} running"
+      :waiting -> "#{Task.stage_label(working_stage(run, stage))} waiting for resources"
       :blocked -> "#{Task.stage_label(stage)} needs an answer"
       :failed -> "#{Task.stage_label(stage)} failed"
       :stopped -> "#{Task.stage_label(stage)} stopped"
@@ -50,4 +51,10 @@ defmodule RailWeb.Utils.StageLabel do
   def approval_label(:qa), do: "Review the QA report"
   def approval_label(:demo), do: "Watch the demo"
   def approval_label(_other), do: "Waiting on you"
+
+  # Only a working run can belong to another stage (see `Run.standing_run/2`), so it
+  # names its own role's stage; anything else reads from the task's.
+  defp working_stage(%Run{role: %Role{stage: nil}}, stage), do: stage
+  defp working_stage(%Run{role: %Role{stage: role_stage}}, _stage), do: role_stage
+  defp working_stage(_run, stage), do: stage
 end

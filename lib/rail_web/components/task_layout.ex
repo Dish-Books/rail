@@ -11,7 +11,7 @@ defmodule RailWeb.Components.TaskLayout do
 
   attr :task, :any, required: true
   attr :run, :any, default: nil
-  # The status reads the task's stage, whichever tab is open; nil when that stage has no run yet.
+  # The run that says where the task stands, whichever tab is open: its stage's run, or whatever is working on it.
   attr :stage_run, :any, required: true
   # Where that run stands in the line for a sandbox, while it waits in it.
   attr :line, :map, default: nil

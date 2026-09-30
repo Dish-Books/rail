@@ -145,6 +145,28 @@ defmodule Rail.Pipeline.Schemas.Run do
   def running?(_other), do: false
 
   @doc """
+  The run that says where `task` stands: its stage's latest run while that works, else
+  the latest working run of any staged role, else its stage's latest run or nil.
+
+  A human can put a role outside the task's stage to work, and while it works the task
+  is not waiting on anyone. Requires `role` preloaded on `runs`.
+  """
+  def standing_run(%Task{stage: stage}, runs) do
+    stage_run = runs |> Enum.filter(&match?(%Role{stage: ^stage}, &1.role)) |> latest_run()
+
+    working_run =
+      runs
+      |> Enum.filter(&(running?(&1) and match?(%Role{stage: role_stage} when role_stage != nil, &1.role)))
+      |> latest_run()
+
+    cond do
+      running?(stage_run) -> stage_run
+      is_struct(working_run, __MODULE__) -> working_run
+      true -> stage_run
+    end
+  end
+
+  @doc """
   What this run has spent, as a compact token count, or nil if it has spent
   nothing yet.
 
@@ -245,6 +267,8 @@ defmodule Rail.Pipeline.Schemas.Run do
   end
 
   def can_chat?(_other), do: false
+
+  defp latest_run(runs), do: Enum.max_by(runs, &(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
 
   defp waiting_state?(:blocked, _stage), do: true
   defp waiting_state?(:failed, _stage), do: true

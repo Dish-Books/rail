@@ -12,6 +12,7 @@ defmodule RailWeb.Components.IssueView do
   use RailWeb, :html
 
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
 
   attr :issue, :any, required: true
@@ -372,10 +373,6 @@ defmodule RailWeb.Components.IssueView do
     end
   end
 
-  # Where the task got to is what the latest run at the stage it sits at says.
-  defp stage_run(%{runs: runs, stage: stage}) do
-    runs
-    |> Enum.filter(&(&1.role != nil and &1.role.stage == stage))
-    |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime, fn -> nil end)
-  end
+  # Where the task got to is what its standing run says: its stage's run, or whatever is working on it.
+  defp stage_run(%{runs: runs} = task), do: Run.standing_run(task, runs)
 end

@@ -976,6 +976,82 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "QA running")
     end
 
+    test "a task whose engineer is messaged from QA is working, not waiting on you", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      task = task_for.("Fix what QA found", %{stage: :qa})
+
+      {:ok, qa_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:qa].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.shift(now, hour: -2),
+          completed_at: DateTime.shift(now, hour: -1)
+        })
+
+      {:ok, engineer_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :running,
+          started_at: DateTime.shift(now, hour: -3)
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#up-next-empty")
+      refute has_element?(view, "#up-next-featured-#{qa_run.id}")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      refute has_element?(view, "#attention-badge")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "Engineer running")
+
+      {:ok, _finished} = Pipeline.update_run(engineer_run, %{status: :finished, completed_at: now})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#up-next-featured-#{qa_run.id}", "Review the QA report")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+      assert has_element?(view, "#attention-badge", "1")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='done']", "Review the QA report")
+    end
+
+    test "a task whose engineer waits for a sandbox from QA is not waiting on you", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      task = task_for.("Queue behind QA", %{stage: :qa})
+
+      {:ok, _qa_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:qa].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.shift(now, hour: -2),
+          completed_at: DateTime.shift(now, hour: -1)
+        })
+
+      {:ok, _engineer_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :waiting_for_resources,
+          started_at: DateTime.shift(now, minute: -5)
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      assert has_element?(view, "#in-progress-task-#{task.id}", "Engineer waiting for resources")
+    end
+
     test "the sidebar lists every task in progress and where it stands", %{
       conn: conn,
       roles: roles,

@@ -5,6 +5,7 @@ defmodule RailWeb.Utils.StageLabelTest do
 
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Roles.Schemas.Role
 
   test "no task at all is something waiting on you" do
     assert stage_label(nil, nil) == "Waiting on you"
@@ -47,5 +48,24 @@ defmodule RailWeb.Utils.StageLabelTest do
     assert stage_label(%Task{stage: :qa}, done) == "Review the QA report"
     assert stage_label(%Task{stage: :demo}, done) == "Watch the demo"
     assert approval_label(:merged) == "Waiting on you"
+  end
+
+  test "a task whose engineer is working from QA says the engineer is working" do
+    engineer = %Role{stage: :engineer}
+
+    assert stage_label(%Task{stage: :qa}, %Run{status: :running, role: engineer}) == "Engineer running"
+
+    assert stage_label(%Task{stage: :qa}, %Run{status: :waiting_for_resources, role: engineer}) ==
+             "Engineer waiting for resources"
+  end
+
+  test "a concluded run with its role loaded still reads from the task's stage" do
+    done = %Run{status: :finished, stage_outcome: :done, role: %Role{stage: :qa}}
+
+    assert stage_label(%Task{stage: :qa}, done) == "Review the QA report"
+  end
+
+  test "a working run whose role has no stage reads from the task's stage" do
+    assert stage_label(%Task{stage: :qa}, %Run{status: :running, role: %Role{stage: nil}}) == "QA running"
   end
 end

@@ -610,6 +610,56 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#task-link-#{issue.id}", "QA running")
   end
 
+  test "a row reads the engineer working when a message from QA has it working", %{conn: conn, project: project} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_messaged",
+        login: "issues_live_user_messaged",
+        email: "issues_live_user_messaged@example.com",
+        admin: true
+      })
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_messaged_1", "identifier" => "MSG-1", "title" => "Fix what QA found"}
+          }
+        }
+      })
+    end)
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{title: "Fix what QA found"})
+    {:ok, issue} = Issues.update_issue(issue, %{state: :backlog})
+    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
+    {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
+    now = DateTime.utc_now()
+
+    {:ok, _qa_done} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: qa.id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.shift(now, hour: -2),
+        completed_at: DateTime.shift(now, hour: -1)
+      })
+
+    {:ok, _engineer_running} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: engineer.id,
+        status: :running,
+        started_at: DateTime.shift(now, minute: -10)
+      })
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
+
+    assert has_element?(view, "#task-link-#{issue.id}", "Engineer running")
+  end
+
   test "sync_issues button triggers sync on current project or all projects", %{
     conn: conn,
     project: %Project{id: seeded_id}

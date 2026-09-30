@@ -152,6 +152,50 @@ defmodule RailWeb.IssueLiveTest do
     assert has_element?(view, "#issue-task-link", "QA running")
   end
 
+  test "the task link reads the engineer working when a message from QA has it working", %{
+    conn: conn,
+    project: project
+  } do
+    issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_page_messaged",
+        identifier: "IPG-13",
+        title: "Fix what QA found",
+        state: :todo
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+
+    {:ok, task} = Pipeline.create_task(issue, :qa)
+    {:ok, qa} = Roles.get_role(project_id: project.id, stage: :qa)
+    {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
+    now = DateTime.utc_now()
+
+    {:ok, _qa_done} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: qa.id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.shift(now, hour: -2),
+        completed_at: DateTime.shift(now, hour: -1)
+      })
+
+    {:ok, _engineer_running} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: engineer.id,
+        status: :running,
+        started_at: DateTime.shift(now, minute: -10)
+      })
+
+    assert {:ok, view, _html} = live(conn, ~p"/issues/#{issue.identifier}")
+
+    assert has_element?(view, "#issue-task-link", "Engineer running")
+  end
+
   test "an issue with no task can be started from its page", %{conn: conn, project: project} do
     issue =
       %Issue{}
