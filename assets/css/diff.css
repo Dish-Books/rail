@@ -85,9 +85,12 @@
   @apply opacity-100;
 }
 
-/* A comment, or the one being written, sits under its line indented to the code. */
+/* A comment, or the one being written, sits under its line indented to the code.
+ * It is exactly as wide as the file's visible column and stays in it however far
+ * the code is scrolled, so no card can make a file with short code scroll sideways.
+ */
 .diff-comment-row {
-  @apply py-1.5 pr-4 pl-[124px] whitespace-normal bg-slate-50 dark:bg-slate-800/40 border-y border-slate-200 dark:border-slate-700;
+  @apply sticky left-0 w-[100cqw] py-1.5 pr-4 pl-[124px] whitespace-normal bg-slate-50 dark:bg-slate-800/40 border-y border-slate-200 dark:border-slate-700;
 }
 
 .diff-line:has(+ .diff-comment-row) .diff-num + .diff-num,

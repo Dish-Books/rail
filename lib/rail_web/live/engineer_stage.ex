@@ -24,7 +24,16 @@ defmodule RailWeb.Live.EngineerStage do
   alias RailWeb.Live.DiffFileTree
   alias RailWeb.Live.DiffToolbar
 
+  # Another of the reader's tabs saved, removed or sent comments. Only they moved,
+  # so the diff is not read again.
   @impl true
+  def update(%{reload_comments: true}, socket) do
+    %{current_scope: scope, task: task} = socket.assigns
+    socket = socket |> assign(:comments, Pipeline.list_diff_comments(scope, task)) |> sync_pane()
+
+    {:ok, socket}
+  end
+
   def update(assigns, socket) do
     socket =
       socket

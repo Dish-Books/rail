@@ -7,6 +7,7 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.BroadcastDiffComments
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
@@ -29,6 +30,7 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
       # from another process, which would not see an uncommitted message.
       ids = Enum.map(comments, & &1.id)
       Repo.delete_all(from comment in mine, where: comment.id in ^ids)
+      broadcast_diff_comments(task_id, user_id)
       sent
     else
       [] -> {:error, :nothing_to_send}

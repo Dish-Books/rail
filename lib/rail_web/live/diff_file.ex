@@ -115,7 +115,7 @@ defmodule RailWeb.Live.DiffFile do
       <div
         :if={not @collapsed?}
         style={"content-visibility: auto; contain-intrinsic-size: auto #{intrinsic_height(@segments)}px;"}
-        class="overflow-x-auto rounded-b-xl"
+        class="@container overflow-x-auto rounded-b-xl"
       >
         <div class="min-w-max">
           <div :for={segment <- @segments} class="contents">
@@ -158,6 +158,9 @@ defmodule RailWeb.Live.DiffFile do
           data-qa="diff_comment_body"
           aria-label={"Comment on line #{@draft.line}"}
           phx-mounted={JS.focus()}
+          phx-keydown="cancel_diff_comment"
+          phx-key="Escape"
+          phx-target={@target}
           phx-debounce="300"
           phx-no-format
           class="block w-full min-h-[52px] resize-y px-3 py-2 text-sm leading-[18px] rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-600 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-500"

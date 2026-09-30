@@ -169,4 +169,31 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
     refute lines =~ "Grace's"
     assert [^graces] = Pipeline.list_diff_comments(grace, task)
   end
+
+  test "tells the author's pages on the task once the comments are sent, not before", %{
+    task: %{id: task_id} = task,
+    run: run,
+    ada: ada
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}:#{ada.user.id}")
+
+    assert {:error, :nothing_to_send} = Pipeline.send_diff_comments(ada, run)
+    refute_receive {:diff_comments_changed, ^task_id}
+
+    {:ok, _saved} =
+      Pipeline.create_diff_comment(ada, task, %{
+        path: "lib/a.ex",
+        line_kind: :added,
+        line: 1,
+        line_text: "def feature, do: :ok",
+        filter: :branch,
+        body: "Name it."
+      })
+
+    assert_receive {:diff_comments_changed, ^task_id}
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, :sent, %Run{}} = Pipeline.send_diff_comments(ada, run)
+    assert_receive {:diff_comments_changed, ^task_id}
+  end
 end

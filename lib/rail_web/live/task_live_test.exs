@@ -2167,6 +2167,62 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#diff-filter-branch") |> render_click()
       refute has_element?(view, "#diff-comment-form")
     end
+
+    test "Escape puts the comment being written away", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view
+      |> with_target("#engineer-stage")
+      |> render_click("open_diff_comment", %{
+        "path" => "shipped.ex",
+        "kind" => "added",
+        "old_line" => "",
+        "new_line" => "1"
+      })
+
+      view |> element("#diff-comment-body") |> render_keydown(%{"key" => "Escape"})
+
+      refute has_element?(view, "#diff-comment-form")
+    end
+
+    # Send sends what is in the database, so every tab the person has open has to
+    # show and count exactly that.
+    test "a comment saved, removed or sent in another tab shows here as it is", %{
+      conn: conn,
+      task: task,
+      scope: scope
+    } do
+      assert {:ok, here, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, there, _html} = live(conn, ~p"/tasks/#{task.id}")
+      open = %{"path" => "shipped.ex", "kind" => "added", "old_line" => "", "new_line" => "1"}
+
+      for body <- ["Written in the other tab.", "Thought better of it."] do
+        there |> with_target("#engineer-stage") |> render_click("open_diff_comment", open)
+        there |> form("#diff-comment-form", %{"body" => body}) |> render_submit()
+      end
+
+      # The page hears of it and forwards to the stage, each on a turn of its own.
+      _settled = render(here)
+      _settled = render(here)
+      assert has_element?(here, "[data-qa='diff_comment']", "Written in the other tab.")
+      assert has_element?(here, "#send-diff-comments", "Send 2 comments")
+
+      [_kept, dropped] = Pipeline.list_diff_comments(scope, task)
+      there |> element("[data-qa='diff_comment_remove'][phx-value-id='#{dropped.id}']") |> render_click()
+
+      _settled = render(here)
+      _settled = render(here)
+      refute has_element?(here, "[data-qa='diff_comment']", "Thought better of it.")
+      assert has_element?(here, "#send-diff-comments", "Send 1 comment")
+
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      there |> element("#send-diff-comments") |> render_click()
+
+      _settled = render(here)
+      _settled = render(here)
+      refute has_element?(here, "[data-qa='diff_comment']")
+      refute has_element?(here, "#send-diff-comments")
+    end
   end
 
   describe "the conversation, which the page hosts and feeds" do

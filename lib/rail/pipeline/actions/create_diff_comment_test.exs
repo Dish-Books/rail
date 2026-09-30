@@ -94,4 +94,23 @@ defmodule Rail.Pipeline.Actions.CreateDiffCommentTest do
 
     assert {:ok, %DiffComment{task_id: ^task_id, user_id: ^user_id}} = Pipeline.create_diff_comment(ada, task, attrs)
   end
+
+  # Every page the author has open on the task shows what Send would send.
+  test "tells the author's pages on the task, and nobody else's", %{
+    task: task,
+    task_id: task_id,
+    user_id: user_id,
+    ada: ada
+  } do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}:#{user_id}")
+    Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}:usr_someone_else")
+    attrs = %{path: "lib/a.ex", line_kind: :added, line: 3, line_text: "x", filter: :branch, body: "Why?"}
+
+    {:ok, _saved} = Pipeline.create_diff_comment(ada, task, attrs)
+    assert_receive {:diff_comments_changed, ^task_id}
+    refute_receive {:diff_comments_changed, ^task_id}
+
+    {:error, _blank} = Pipeline.create_diff_comment(ada, task, %{attrs | body: " "})
+    refute_receive {:diff_comments_changed, ^task_id}
+  end
 end

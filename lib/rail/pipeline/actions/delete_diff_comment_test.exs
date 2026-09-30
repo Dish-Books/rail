@@ -56,4 +56,12 @@ defmodule Rail.Pipeline.Actions.DeleteDiffCommentTest do
     assert_raise FunctionClauseError, fn -> Pipeline.delete_diff_comment(grace, comment) end
     assert [%DiffComment{}] = Pipeline.list_diff_comments(ada, task)
   end
+
+  test "tells the author's pages on the task", %{task: %{id: task_id}, ada: ada, comment: comment} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}:#{ada.user.id}")
+
+    {:ok, _removed} = Pipeline.delete_diff_comment(ada, comment)
+
+    assert_receive {:diff_comments_changed, ^task_id}
+  end
 end
