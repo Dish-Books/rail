@@ -120,12 +120,14 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     assert "ERL_FLAGS=+S 2:2 +sbwt none" in env
   end
 
-  # The machine has 16 CPUs and keeps 3 back, so the other 13 are the sandbox's
-  # to use while idle; its reservation is its weight when others want them too.
+  # The machine has 16 CPUs, keeps 3 back and gives the shared browser 2, so the
+  # other 11 are the sandbox's to use while idle; its reservation is its weight
+  # when others want them too.
   test "weighs the sandbox's CPUs by its reservation up to what the machine can spare, and caps memory with no swap", %{
     run: run
   } do
     stub(Rail, :sandbox_headroom_cpus, fn -> 3 end)
+    stub(Rail, :browser_cpus, fn -> 2 end)
 
     assert {:ok, %OsProcess{reserved_cpus: 2, reserved_memory_gb: 4}} = Tools.start_os_process(run, ["-p", "Build it."])
 
@@ -133,7 +135,7 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
 
     assert_received {:created, %{"HostConfig" => host_config}}
 
-    assert %{"CpuShares" => 2048, "NanoCpus" => 13_000_000_000, "Memory" => ^four_gb, "MemorySwap" => ^four_gb} =
+    assert %{"CpuShares" => 2048, "NanoCpus" => 11_000_000_000, "Memory" => ^four_gb, "MemorySwap" => ^four_gb} =
              host_config
   end
 
