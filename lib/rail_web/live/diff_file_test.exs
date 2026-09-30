@@ -78,7 +78,22 @@ defmodule RailWeb.Live.DiffFileTest do
 
   describe "comments" do
     setup do
-      %{comment: %{DiffComment.factory() | id: "dcm_on_removed", line_kind: :deleted, line: 2, body: "Keep this one."}}
+      %{
+        comment: %{
+          %DiffComment{
+            path: "lib/rail/feature.ex",
+            line_kind: :added,
+            line: 1,
+            line_text: "def feature, do: :ok",
+            filter: :branch,
+            body: "Name this for what it does."
+          }
+          | id: "dcm_on_removed",
+            line_kind: :deleted,
+            line: 2,
+            body: "Keep this one."
+        }
+      }
     end
 
     test "counts its unsent comments in the header, folded or not", %{section: section} do

@@ -3,7 +3,6 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Roles
   alias Rail.Tools
@@ -141,17 +140,25 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
     {:ok, fresh} =
       Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})
 
-    {:ok, comment} = Pipeline.create_diff_comment(ada, task, Map.from_struct(DiffComment.factory()))
+    {:ok, comment} =
+      Pipeline.create_diff_comment(ada, task, %{
+        path: "lib/a.ex",
+        line_kind: :added,
+        line: 1,
+        line_text: "def feature, do: :ok",
+        filter: :branch,
+        body: "Name it."
+      })
 
     assert {:error, :chat_unavailable} = Pipeline.send_diff_comments(ada, fresh)
     assert [^comment] = Pipeline.list_diff_comments(ada, task)
   end
 
   test "another person's comments are neither sent nor removed", %{task: task, run: run, ada: ada, grace: grace} do
-    {:ok, _adas} = Pipeline.create_diff_comment(ada, task, %{Map.from_struct(DiffComment.factory()) | body: "Ada's"})
+    comment = %{path: "lib/a.ex", line_kind: :added, line: 1, line_text: "def feature, do: :ok", filter: :branch}
 
-    {:ok, graces} =
-      Pipeline.create_diff_comment(grace, task, %{Map.from_struct(DiffComment.factory()) | body: "Grace's"})
+    {:ok, _adas} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Ada's"))
+    {:ok, graces} = Pipeline.create_diff_comment(grace, task, Map.put(comment, :body, "Grace's"))
 
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 

@@ -93,7 +93,21 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
       closing = %{kind: :line, line_kind: :context, old_line: 3, new_line: 3, text: "end"}
 
       comment = fn attrs ->
-        struct!(%{DiffComment.factory() | id: UXID.generate!(prefix: "dcm"), path: diff.path}, attrs)
+        struct!(
+          %{
+            %DiffComment{
+              path: "lib/rail/feature.ex",
+              line_kind: :added,
+              line: 1,
+              line_text: "def feature, do: :ok",
+              filter: :branch,
+              body: "Name this for what it does."
+            }
+            | id: UXID.generate!(prefix: "dcm"),
+              path: diff.path
+          },
+          attrs
+        )
       end
 
       %{

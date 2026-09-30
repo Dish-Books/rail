@@ -25,7 +25,16 @@ defmodule Rail.Pipeline.Actions.DeleteDiffCommentTest do
     {:ok, ada} = Users.register_oauth_user(%{github_id: "gh_dcd_ada", login: "ada", email: "ada@example.com"})
     {:ok, grace} = Users.register_oauth_user(%{github_id: "gh_dcd_grace", login: "grace", email: "grace@example.com"})
     ada = user_scope(user: ada)
-    {:ok, comment} = Pipeline.create_diff_comment(ada, task, Map.from_struct(DiffComment.factory()))
+
+    {:ok, comment} =
+      Pipeline.create_diff_comment(ada, task, %{
+        path: "lib/a.ex",
+        line_kind: :added,
+        line: 1,
+        line_text: "def feature, do: :ok",
+        filter: :branch,
+        body: "Name it."
+      })
 
     %{task: task, ada: ada, grace: user_scope(user: grace), comment: comment}
   end

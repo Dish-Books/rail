@@ -112,7 +112,19 @@ defmodule RailWeb.Components.DiffPaneTest do
 
   # A comment is never dropped: its file may only be out of this view.
   test "keeps comments on a file out of the view after the last file", %{diff: diff} do
-    gone = %{DiffComment.factory() | id: "dcm_gone", path: "lib/gone.ex", body: "Still wanted."}
+    gone = %{
+      %DiffComment{
+        path: "lib/rail/feature.ex",
+        line_kind: :added,
+        line: 1,
+        line_text: "def feature, do: :ok",
+        filter: :branch,
+        body: "Name this for what it does."
+      }
+      | id: "dcm_gone",
+        path: "lib/gone.ex",
+        body: "Still wanted."
+    }
 
     html = render_component(&DiffPane.diff_pane/1, files: [diff], comments: [gone])
 
@@ -126,13 +138,35 @@ defmodule RailWeb.Components.DiffPaneTest do
   end
 
   test "has no such section while every comment's file is in view", %{diff: diff} do
-    here = %{DiffComment.factory() | id: "dcm_here", path: diff.path}
+    here = %{
+      %DiffComment{
+        path: "lib/rail/feature.ex",
+        line_kind: :added,
+        line: 1,
+        line_text: "def feature, do: :ok",
+        filter: :branch,
+        body: "Name this for what it does."
+      }
+      | id: "dcm_here",
+        path: diff.path
+    }
 
     refute render_component(&DiffPane.diff_pane/1, files: [diff], comments: [here]) =~ "diff_comment_stray_section"
   end
 
   test "keeps them when the view has no files at all" do
-    gone = %{DiffComment.factory() | id: "dcm_gone", path: "lib/gone.ex"}
+    gone = %{
+      %DiffComment{
+        path: "lib/rail/feature.ex",
+        line_kind: :added,
+        line: 1,
+        line_text: "def feature, do: :ok",
+        filter: :branch,
+        body: "Name this for what it does."
+      }
+      | id: "dcm_gone",
+        path: "lib/gone.ex"
+    }
 
     html = render_component(&DiffPane.diff_pane/1, files: [], comments: [gone], empty_message: "All committed.")
 

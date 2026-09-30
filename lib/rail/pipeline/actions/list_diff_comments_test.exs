@@ -3,7 +3,6 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Users
 
   setup %{project: project} do
@@ -38,7 +37,7 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
     ada: ada,
     grace: grace
   } do
-    attrs = Map.take(DiffComment.factory(), [:line_kind, :line, :line_text, :filter])
+    attrs = %{line_kind: :added, line: 1, line_text: "def feature, do: :ok", filter: :branch}
 
     {:ok, second_file} = Pipeline.create_diff_comment(ada, task, Map.merge(attrs, %{path: "lib/b.ex", body: "b"}))
     {:ok, first} = Pipeline.create_diff_comment(ada, task, Map.merge(attrs, %{path: "lib/a.ex", body: "a1"}))
@@ -50,7 +49,15 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
   end
 
   test "a different person sees none of them", %{task: task, ada: ada, grace: grace} do
-    {:ok, _adas} = Pipeline.create_diff_comment(ada, task, Map.from_struct(DiffComment.factory()))
+    {:ok, _adas} =
+      Pipeline.create_diff_comment(ada, task, %{
+        path: "lib/a.ex",
+        line_kind: :added,
+        line: 1,
+        line_text: "def feature, do: :ok",
+        filter: :branch,
+        body: "Name it."
+      })
 
     assert Pipeline.list_diff_comments(grace, task) == []
   end

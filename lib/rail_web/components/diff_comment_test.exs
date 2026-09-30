@@ -7,7 +7,18 @@ defmodule RailWeb.Components.DiffCommentTest do
   alias RailWeb.Components.DiffComment, as: Card
 
   test "under its line it is the comment alone, not yet sent" do
-    comment = %{DiffComment.factory() | id: "dcm_placed", body: "Name this for what it does."}
+    comment = %{
+      %DiffComment{
+        path: "lib/rail/feature.ex",
+        line_kind: :added,
+        line: 1,
+        line_text: "def feature, do: :ok",
+        filter: :branch,
+        body: "Name this for what it does."
+      }
+      | id: "dcm_placed",
+        body: "Name this for what it does."
+    }
 
     html = render_component(&Card.diff_comment/1, comment: comment)
 
@@ -17,7 +28,20 @@ defmodule RailWeb.Components.DiffCommentTest do
   end
 
   test "lifted off an unchanged line, it quotes the line as it read" do
-    comment = %{DiffComment.factory() | id: "dcm_lifted", line_kind: :context, line: 39, line_text: "  filters = parse()"}
+    comment = %{
+      %DiffComment{
+        path: "lib/rail/feature.ex",
+        line_kind: :added,
+        line: 1,
+        line_text: "def feature, do: :ok",
+        filter: :branch,
+        body: "Name this for what it does."
+      }
+      | id: "dcm_lifted",
+        line_kind: :context,
+        line: 39,
+        line_text: "  filters = parse()"
+    }
 
     html = render_component(&Card.diff_comment/1, comment: comment, lifted?: true)
 

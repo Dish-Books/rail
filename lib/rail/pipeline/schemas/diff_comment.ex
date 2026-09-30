@@ -43,15 +43,4 @@ defmodule Rail.Pipeline.Schemas.DiffComment do
     |> foreign_key_constraint(:task_id)
     |> foreign_key_constraint(:user_id)
   end
-
-  def factory do
-    %__MODULE__{
-      path: "lib/rail/feature.ex",
-      line_kind: :added,
-      line: 1,
-      line_text: "def feature, do: :ok",
-      filter: :branch,
-      body: "Name this for what it does."
-    }
-  end
 end
