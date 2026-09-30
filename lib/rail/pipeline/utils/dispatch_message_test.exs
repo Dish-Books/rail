@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
 
   import Rail.Pipeline.Utils.DispatchMessage
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -46,7 +47,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
         started_at: DateTime.utc_now()
       })
 
-    %{project: project, run: run, run_id: run_id}
+    %{project: project, task: task, run: run, run_id: run_id}
   end
 
   test "sends the queued message and takes it off the run", %{run: run, run_id: run_id} do
@@ -82,6 +83,63 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert %Run{error: nil, exit_code: nil} = Repo.reload!(failed)
   end
 
+  # The turn's end compares against this to tell whether the engineer changed code.
+  test "a message to the engineer on a task past engineer stamps how the tree stood", %{
+    project: project,
+    task: task
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
+    File.write!(Path.join(task.worktree_path, "qa_leftover.log"), "from QA\n")
+    %{head_sha: head_sha, dirty_digest: dirty_digest} = Git.branch_fingerprint(task.worktree_path)
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :finished,
+        stage_outcome: :done,
+        conversation_id: "sess_dispatch_engineer",
+        pending_chat: "Rename the button",
+        started_at: DateTime.utc_now()
+      })
+
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+
+    assert %Run{stage_fingerprint_head_sha: ^head_sha, stage_fingerprint_dirty_digest: ^dirty_digest} =
+             Repo.reload!(run)
+  end
+
+  test "a message to another stage's run leaves the stamp its stage started with", %{
+    project: project,
+    task: task
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :qa)
+
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: role.id,
+        status: :finished,
+        stage_outcome: :done,
+        conversation_id: "sess_dispatch_qa",
+        pending_chat: "Check the empty state too",
+        stage_fingerprint_head_sha: "qa_started_here",
+        stage_fingerprint_dirty_digest: "qa_started_digest",
+        started_at: DateTime.utc_now()
+      })
+
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+
+    assert %Run{stage_fingerprint_head_sha: "qa_started_here", stage_fingerprint_dirty_digest: "qa_started_digest"} =
+             Repo.reload!(run)
+  end
+
   test "a message that fails to spawn goes back on the run", %{run: run, run_id: run_id} do
     expect(Tools, :start_os_process, fn spawned, _argv -> {:error, {:spawn_failed, :enoent, spawned}} end)
 
@@ -103,7 +161,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
   # A worktree that cannot be made is the message never leaving, and the run has
   # to say so rather than look like it was delivered.
   test "a message with nowhere to run fails the run", %{run: run} do
-    expect(Rail.Git, :get_or_create_worktree, fn _project, _task -> {:error, :no_such_branch} end)
+    expect(Git, :get_or_create_worktree, fn _project, _task -> {:error, :no_such_branch} end)
 
     assert {:error, {:worktree_failed, :no_such_branch}} = dispatch_message(run, async: false)
     assert %Run{pending_chat: "Please also add a test"} = Repo.reload!(run)

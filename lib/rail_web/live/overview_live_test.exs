@@ -3,6 +3,7 @@ defmodule RailWeb.OverviewLiveTest do
 
   import Phoenix.LiveViewTest
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -974,6 +975,54 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
       refute has_element?(view, "#attention-badge")
       assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']", "QA running")
+    end
+
+    test "a task at demo whose code changed waits at engineer for review, not to be merged", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+
+      task =
+        task_for.("Change after the demo", %{
+          stage: :demo,
+          worktree_path: create_temp_git_repo(),
+          pr_number: 4,
+          pr_url: "https://github.com/example/test-seed/pull/4"
+        })
+
+      {:ok, engineer_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.shift(now, hour: -3),
+          completed_at: DateTime.shift(now, hour: -2)
+        })
+
+      {:ok, demo_run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:demo].id,
+          status: :finished,
+          stage_outcome: :done,
+          started_at: DateTime.shift(now, hour: -2),
+          completed_at: DateTime.shift(now, hour: -1)
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      assert has_element?(view, "#up-next-featured-#{demo_run.id} [data-qa='up-next-chip']", "Ready to merge")
+
+      stub(Git, :push_branch, fn _scope, _task -> :ok end)
+      File.write!(Path.join(task.worktree_path, "after_demo.ex"), "changed\n")
+      assert :ok = Pipeline.commit_engineer_work(system_scope(), task)
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+      assert has_element?(view, "#up-next-featured-#{engineer_run.id} [data-qa='up-next-chip']", "Ready for review")
+      refute has_element?(view, "[data-qa='up-next-chip']", "Ready to merge")
+      assert has_element?(view, "#in-progress-task-#{task.id}", "Review the diff")
     end
 
     test "the sidebar lists every task in progress and where it stands", %{

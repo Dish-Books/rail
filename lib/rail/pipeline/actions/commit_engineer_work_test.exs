@@ -164,6 +164,22 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWorkTest do
     assert :ok = Pipeline.commit_engineer_work(scope, task)
   end
 
+  test "a commit on a task past engineer sends it back to engineer", %{scope: scope, task: task, repo: repo} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+
+    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert %Task{stage: :engineer} = Repo.reload!(task)
+  end
+
+  # A retry with only the push outstanding changes no code, so nothing new needs review.
+  test "a push with nothing to commit leaves a task past engineer where it is", %{scope: scope, task: task} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
+
+    assert :ok = Pipeline.commit_engineer_work(scope, task)
+    assert %Task{stage: :qa} = Repo.reload!(task)
+  end
+
   test "a project with CI runs it on the commit instead of pushing it", %{
     scope: scope,
     project: project,

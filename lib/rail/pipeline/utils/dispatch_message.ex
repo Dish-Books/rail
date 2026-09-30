@@ -16,6 +16,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   import Rail.Pipeline.Utils.StartWorktreeSetup
 
   alias Ecto.Adapters.SQL.Sandbox
+  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -91,20 +92,31 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   defp send_message(%Task{} = task, %Role{} = role, %Run{} = run, worktree_path, _opts) do
     message = run.pending_chat
 
+    # The turn's end compares against this to tell whether the engineer changed code.
+    stamp =
+      if role.stage == :engineer and task.stage in [:review, :qa, :demo] do
+        fingerprint = Git.branch_fingerprint(worktree_path)
+        %{stage_fingerprint_head_sha: fingerprint[:head_sha], stage_fingerprint_dirty_digest: fingerprint[:dirty_digest]}
+      else
+        %{}
+      end
+
     # The turn before this one is history the moment another starts. Its error
     # and exit code go with it: left on the row they read as this turn's, and a
     # run still wearing an error is one that can never be latched done.
     {:ok, run} =
       run
-      |> Run.changeset(%{
-        pending_chat: nil,
-        # A person stepping in is what lets CI send its failures back again.
-        ci_failure_streak: 0,
-        status: :running,
-        error: nil,
-        exit_code: nil,
-        started_at: run.started_at || DateTime.utc_now()
-      })
+      |> Run.changeset(
+        Map.merge(stamp, %{
+          pending_chat: nil,
+          # A person stepping in is what lets CI send its failures back again.
+          ci_failure_streak: 0,
+          status: :running,
+          error: nil,
+          exit_code: nil,
+          started_at: run.started_at || DateTime.utc_now()
+        })
+      )
       |> Repo.update()
 
     broadcast_changed(run)

@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Actions.SendToReviewTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Git
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -209,6 +210,56 @@ defmodule Rail.Pipeline.Actions.SendToReviewTest do
 
     assert {:ok, %Run{}} = Pipeline.send_to_review(run)
     assert %Task{stage: :review} = Repo.reload!(task)
+  end
+
+  test "code changed at QA goes round review and QA again, with neither earlier pass carrying it", %{
+    project: project,
+    task: task,
+    run: run,
+    worktree_path: worktree_path
+  } do
+    {:ok, review_role} = Roles.get_role(project_id: project.id, stage: :review)
+    {:ok, qa_role} = Roles.get_role(project_id: project.id, stage: :qa)
+
+    {:ok, task} =
+      Pipeline.update_task(task, %{stage: :qa, pr_number: 3, pr_url: "https://github.com/example/test-seed/pull/3"})
+
+    {:ok, review_run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: review_role.id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, qa_run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: qa_role.id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, _latched} = Pipeline.update_run(run, %{stage_outcome: :done})
+
+    stub(Git, :push_branch, fn _scope, _task ->
+      git!(worktree_path, ["push", "origin", "main"])
+      :ok
+    end)
+
+    File.write!(Path.join(worktree_path, "asked_for_at_qa.ex"), "the change\n")
+    assert :ok = Pipeline.commit_engineer_work(system_scope(), task)
+
+    assert {:error, {:invalid_stage, :engineer}} = Pipeline.send_to_demo(qa_run)
+    assert {:error, {:invalid_stage, :engineer}} = Pipeline.send_to_qa(review_run)
+
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    assert {:ok, %Run{}} = Pipeline.send_to_review(run)
+    assert %Task{stage: :review} = Repo.reload!(task)
+    assert %Run{stage_outcome: :in_progress} = Repo.reload!(review_run)
   end
 
   test "a task never reviewed has changed since review", %{task: task} do

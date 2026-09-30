@@ -1205,6 +1205,33 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#rebase-task[disabled]", "Rebasing…")
     end
 
+    test "a clean rebase of a task at QA brings it back to engineer, ready to send to review", %{
+      conn: conn,
+      task: task,
+      repo: repo
+    } do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
+      expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
+
+      expect(Git, :rebase_branch, fn _scope, _task ->
+        git!(repo, ["commit", "--allow-empty", "-m", "replayed onto main"])
+        :ok
+      end)
+
+      expect(Git, :push_branch, fn _scope, _task ->
+        git!(repo, ["push", "origin", "feature"])
+        :ok
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Queued for QA")
+
+      view |> element("#rebase-task") |> render_click()
+
+      assert has_element?(view, "[data-qa='task_status_chip']", "Review the diff")
+      assert has_element?(view, "[data-qa='send_to_review']:not([disabled])")
+    end
+
     test "rebase says why for each way it can be refused", %{conn: conn, task: task, engineer_run: run, repo: repo} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 

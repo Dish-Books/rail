@@ -5,6 +5,7 @@ defmodule Rail.Pipeline.Actions.RebaseTask do
   Rail fetches and rebases itself, and a rebase that goes through cleanly needs
   nobody: it is sent on as any finished round is. Only one that stops on a
   conflict goes to the engineer, because a conflict is a question about the code.
+  Either way, a rebase that rewrites the branch sends the task back to Engineer.
   """
 
   import Rail.Pipeline.Utils.RebasePass

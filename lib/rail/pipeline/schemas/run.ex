@@ -43,6 +43,7 @@ defmodule Rail.Pipeline.Schemas.Run do
     field :error, :string
     field :pending_answer, :string
     field :pending_chat, :string
+    # The tree when the stage last started, or, for an engineer messaged after its stage, when that turn started.
     field :stage_fingerprint_head_sha, :string
     field :stage_fingerprint_dirty_digest, :string
     # CI failures in a row that went back to the engineer on their own.
