@@ -105,8 +105,9 @@ defmodule Rail.Tools.Utils.LaunchSandboxTest do
     assert env["MISE_DATA_DIR"] == System.get_env("MISE_DATA_DIR")
     refute Enum.any?(["MIX_ENV", "DATABASE_URL", "SECRET_KEY_BASE"], &Map.has_key?(env, &1))
 
-    # A turn's compiles may use every CPU the machine leaves idle.
-    refute Map.has_key?(env, "ERL_FLAGS")
+    # A turn's compiles may use every CPU the machine leaves idle, so Rail pins no
+    # schedulers; only what its own environment carries, as under CI, passes through.
+    assert env["ERL_FLAGS"] == System.get_env("ERL_FLAGS")
   end
 
   # ExUnit runs twice as many cases as the BEAM has schedulers, so CI's are held
