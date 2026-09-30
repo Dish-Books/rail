@@ -15,8 +15,8 @@ defmodule RailWeb.LayoutsTest do
     assert ["image/svg+xml"] = get_resp_header(conn, "content-type")
 
     assert [light, dark] = conn |> response(200) |> String.split("prefers-color-scheme: dark")
-    assert light =~ "#dbeafe" and light =~ "#1e40af"
-    assert dark =~ "#1e3a8a" and dark =~ "#bfdbfe"
+    assert light =~ "#dbeafe" and light =~ "#193cb8"
+    assert dark =~ "#1c398e" and dark =~ "#bedbff"
   end
 
   # Chrome takes sizes="any" as the best match, and the ICO has no dark tile.
