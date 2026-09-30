@@ -72,9 +72,11 @@ defmodule Rail.Tools.Actions.SubmitBackendLoginCodeTest do
   test "reports a CLI that exited before the code arrived", %{backend: backend, dir: dir, scope: scope} do
     impatient = Path.join(dir, "impatient")
 
+    # The pause lets the URL reach the caller first; exiting at once can end the
+    # session before it is asked for the URL at all, which is a different case.
     File.write!(
       impatient,
-      "#!/bin/sh\necho 'visit: https://claude.com/cai/oauth/authorize?x=1'\necho 'gave up'\nexit 3\n"
+      "#!/bin/sh\necho 'visit: https://claude.com/cai/oauth/authorize?x=1'\necho 'gave up'\nsleep 0.2\nexit 3\n"
     )
 
     File.chmod!(impatient, 0o755)
