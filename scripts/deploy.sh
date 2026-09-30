@@ -26,6 +26,6 @@ export DOCKER_GID
 # below touches them, and the image they run is only replaced for the ones started next.
 docker build --target sandbox -t rail-sandbox:latest .
 
-echo "Agent runs, setup and CI keep running in their sandboxes while rail restarts." >&2
+echo "Agent runs, setup, CI and the browser keep running in their sandboxes while rail restarts." >&2
 docker compose up -d --build --remove-orphans
 docker image prune -f

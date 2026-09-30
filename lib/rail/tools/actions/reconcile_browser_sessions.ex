@@ -1,55 +1,66 @@
 defmodule Rail.Tools.Actions.ReconcileBrowserSessions do
   @moduledoc """
-  Settles the browser sessions that nothing is driving any more.
+  Closes the tabs nothing needs any more, and reconnects to the ones a running
+  pass is still using.
 
-  A session cleans up after itself when it stops, and that covers almost
-  everything. What it cannot cover is not stopping: the application going down, the
-  process being killed outright, a crash between launching Chrome and recording
-  it. Those leave a row that still says `running` and, often, a Chrome holding a
-  core for as long as the machine is up.
+  The shared Chrome outlives Rail, so a tab outlives whatever opened it. That is
+  the point - a deploy in the middle of a pass leaves the pass's page where it
+  was - and it is also the leak: a task that moved on from QA or demo leaves a
+  tab signed into its app, open until the machine restarts, unless something
+  closes it. This is what closes it: a task out of both stages has its context
+  closed and its row settled, whatever holds it.
 
-  Left alone that is two problems rather than one. The browser is the visible one.
-  The row is worse: only one live session is allowed per task, so a task whose
-  last browser died badly can never be given another, and QA on it stops working
-  with no sign of why.
+  A task still in QA or demo keeps its tab. One with a run executing right now is
+  reconnected to it, so the panel is watching again and the tab's problems are
+  collected again without waiting for the agent's next call to Rail; one waiting
+  on a human is left for its next pass to attach to.
 
-  A session with a live process is left to it, alive or dead - it owns its own
-  browser and will settle its own row. Only what nothing is holding is reaped
-  here, which is what makes this safe to run every minute.
+  Safe to run every minute: a tab that is already held by a session is left to
+  it.
   """
 
   import Ecto.Query
 
+  alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Tools
   alias Rail.Tools.BrowserRegistry
   alias Rail.Tools.Schemas.BrowserSession
 
+  @driven_stages [:qa, :demo]
+
   @doc """
-  Reaps every browser session whose process is gone, and returns them.
+  Closes every live session whose task has left QA and demo, reconnects every
+  one a running pass is using, and returns the sessions it closed.
   """
   def reconcile_browser_sessions(_opts \\ []) do
     BrowserSession
     |> where([s], s.status in [:starting, :running])
     |> order_by([s], asc: s.started_at)
+    |> preload(:task)
     |> Repo.all()
-    |> Enum.reject(&driven?/1)
-    |> Enum.map(&reap/1)
+    |> Enum.flat_map(&reconcile/1)
   end
 
-  defp driven?(%BrowserSession{task_id: task_id}) do
-    Registry.lookup(BrowserRegistry, task_id) != []
+  defp reconcile(%BrowserSession{task: %Task{} = task} = session) do
+    cond do
+      task.stage not in @driven_stages ->
+        :ok = Tools.stop_browser_session(task)
+        [Repo.get!(BrowserSession, session.id)]
+
+      driven?(task) or not running?(task) ->
+        []
+
+      true ->
+        _reconnected = Tools.start_browser_session(task, [])
+        []
+    end
   end
 
-  defp reap(%BrowserSession{} = session) do
-    if session.os_pid, do: Tools.terminate_os_process(session.os_pid, [])
-    if session.profile_path, do: File.rm_rf(session.profile_path)
+  defp driven?(%Task{id: task_id}), do: Registry.lookup(BrowserRegistry, task_id) != []
 
-    {:ok, reaped} =
-      session
-      |> BrowserSession.changeset(%{status: :finished, finished_at: DateTime.utc_now()})
-      |> Repo.update()
-
-    reaped
+  defp running?(%Task{id: task_id}) do
+    Repo.exists?(from r in Run, where: r.task_id == ^task_id and r.status in [:starting, :running])
   end
 end

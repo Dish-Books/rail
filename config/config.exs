@@ -55,6 +55,10 @@ config :rail, RailWeb.Endpoint,
   pubsub_server: Rail.PubSub,
   live_view: [signing_salt: "rail_lv_salt_1234"]
 
+# The one headless Chrome every QA and demo pass drives, a tab per task. It runs where sandboxes
+# do and outlives Rail; what it reserves is kept back from the sandbox line. `root` is where its
+# profile lives, and nil means the system temp directory.
+config :rail, :browser, root: nil, cpus: 2, memory_gb: 4, shm_size_gb: 2
 config :rail, :fetch_parsers, true
 
 # Where agents, setup and CI run, and what is kept back for Rail, Postgres and project services.

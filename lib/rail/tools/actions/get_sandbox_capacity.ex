@@ -12,11 +12,14 @@ defmodule Rail.Tools.Actions.GetSandboxCapacity do
   What this machine can reserve for sandboxes, and how much of it is reserved now.
 
   Returns `{:ok, %{cpus, memory_gb, reserved_cpus, reserved_memory_gb}}`. The totals
-  are the machine's less the headroom kept for Rail, Postgres and project services;
-  `{:error, reason}` when Docker cannot say what the machine has.
+  are the machine's less the headroom kept for Rail, Postgres and project services
+  and, under Docker, what the shared browser's container is given; `{:error,
+  reason}` when Docker cannot say what the machine has.
   """
   def get_sandbox_capacity do
     with {:ok, cpus, memory_gb} <- machine() do
+      {browser_cpus, browser_memory_gb} = browser()
+
       {reserved_cpus, reserved_memory_gb} =
         Repo.one(
           from p in OsProcess,
@@ -26,11 +29,19 @@ defmodule Rail.Tools.Actions.GetSandboxCapacity do
 
       {:ok,
        %{
-         cpus: max(cpus - Rail.sandbox_headroom_cpus(), 0),
-         memory_gb: max(memory_gb - Rail.sandbox_headroom_memory_gb(), 0),
+         cpus: max(cpus - Rail.sandbox_headroom_cpus() - browser_cpus, 0),
+         memory_gb: max(memory_gb - Rail.sandbox_headroom_memory_gb() - browser_memory_gb, 0),
          reserved_cpus: reserved_cpus,
          reserved_memory_gb: reserved_memory_gb
        }}
+    end
+  end
+
+  # Only a container holds Chrome to what it was given; beside Rail it takes what it uses.
+  defp browser do
+    case Rail.sandbox_runtime() do
+      :docker -> {Rail.browser_cpus(), Rail.browser_memory_gb()}
+      :local -> {0, 0}
     end
   end
 

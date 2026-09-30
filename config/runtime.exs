@@ -42,10 +42,6 @@ config :rail, :slack_oauth,
   client_id: get_env.("SLACK_CLIENT_ID", "slack_client_id"),
   client_secret: get_env.("SLACK_CLIENT_SECRET", "slack_client_secret")
 
-config :rail, :type_safe,
-  api_key: get_env.("TYPESAFE_API_KEY", "typesafe_api_key"),
-  model: get_env.("TYPESAFE_MODEL", "jev-latest")
-
 config :ueberauth, Ueberauth.Strategy.Github.OAuth,
   client_id: get_env.("GITHUB_CLIENT_ID", "github_client_id"),
   client_secret: get_env.("GITHUB_CLIENT_SECRET", "github_client_secret")
@@ -84,4 +80,7 @@ if config_env() == :prod do
     image: System.get_env("RAIL_SANDBOX_IMAGE", "rail-sandbox:latest"),
     headroom_cpus: String.to_integer(System.get_env("RAIL_SANDBOX_HEADROOM_CPUS", "2")),
     headroom_memory_gb: String.to_integer(System.get_env("RAIL_SANDBOX_HEADROOM_MEMORY_GB", "8"))
+
+  # Under /srv/rail, so the profile and the address Chrome writes into it outlive Rail's container.
+  if browser_root = System.get_env("RAIL_BROWSER_ROOT"), do: config(:rail, :browser, root: browser_root)
 end

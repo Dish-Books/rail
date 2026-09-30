@@ -47,10 +47,6 @@ defmodule Rail.Tools do
   defdelegate get_browser_url(task), to: Actions.GetBrowserUrl
   defdelegate stop_browser_session(task), to: Actions.StopBrowserSession
   defdelegate reconcile_browser_sessions(opts \\ []), to: Actions.ReconcileBrowserSessions
-  defdelegate observe_browser(session, opts \\ []), to: Actions.ObserveBrowser
-  defdelegate decide_browser_action(page, intent, history \\ [], opts \\ []), to: Actions.DecideBrowserAction
-  defdelegate execute_browser_action(session, action, text \\ nil), to: Actions.ExecuteBrowserAction
-  defdelegate drive_browser(session, intent, opts \\ []), to: Actions.DriveBrowser
   defdelegate capture_browser_evidence(session, task, name, key \\ nil), to: Actions.CaptureBrowserEvidence
   defdelegate file_qa_evidence(task, path, name, key), to: Actions.FileQaEvidence
 

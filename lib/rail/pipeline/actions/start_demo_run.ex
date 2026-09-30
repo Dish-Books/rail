@@ -77,7 +77,9 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
 
     Nothing under #{scratch_path} is part of the change. It is your workspace, and Rail keeps it out of the commit. It survives between turns, so keep the scripts that seed your starting state there and make them re-runnable: a retake is then one command. `/tmp`, and anything you started, do not survive.
 
-    The browser is Rail's rather than yours. `browser_goto`, `browser_do`, `browser_look` and `browser_problems` drive one headless Chrome that stays where you left it between calls; it opens on the first call and Rail closes it when the task moves on.
+    The browser is Rail's: one headless Chrome shared by every task, with a tab of your own that stays where you left it between scripts, between turns and across a Rail restart. Call `browser_connect` for its address and for `driver.mjs`, then drive it with your own Node scripts (`.mjs`, run with `node`). Rail films that same tab, so what your scripts do is what the video shows. The driver's clicks and keystrokes are trusted input events and typing goes a character at a time, so the recording shows the application responding the way it does for a person. Never click or type through `evaluate`: it races LiveView's re-render and does nothing on camera.
+
+    You name every element yourself, with a JavaScript expression that returns it: `document.querySelector('#bill-form button[type=submit]')`, or a find over text when nothing stable identifies it. The templates in your worktree are where ids and `data-qa` attributes come from. Work every target out while rehearsing and write the take as scripts you already ran - a target that finds nothing on camera is a retake. Pace the take for a viewer: `wait` a beat after each `demo_say` and after anything that changes the screen.
 
     Rehearse, then record. Nothing is recorded until you call `demo_start`, and everything after it is, so the working out is free and the take is not:
 

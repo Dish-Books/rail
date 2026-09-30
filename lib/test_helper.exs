@@ -9,7 +9,12 @@ run_tmp_dir = Path.join(System.tmp_dir!(), "rt#{System.pid()}")
 File.rm_rf!(run_tmp_dir)
 File.mkdir_p!(run_tmp_dir)
 System.put_env("TMPDIR", run_tmp_dir)
-ExUnit.after_suite(fn _result -> File.rm_rf(run_tmp_dir) end)
+# The shared Chrome is detached, like it is beside Rail in dev, and its profile is under this run's
+# directory - which is how the one this run started is told apart from anybody else's.
+ExUnit.after_suite(fn _result ->
+  System.cmd("pkill", ["-f", "--", "--user-data-dir=#{run_tmp_dir}"], stderr_to_stdout: true, env: [])
+  File.rm_rf(run_tmp_dir)
+end)
 
 Mimic.copy(Date)
 Mimic.copy(DateTime)

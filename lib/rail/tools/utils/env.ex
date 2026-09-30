@@ -23,9 +23,7 @@ defmodule Rail.Tools.Utils.Env do
     "POOL_SIZE",
     "PORT",
     "POSTHOG_API_KEY",
-    "SECRET_KEY_BASE",
-    "TYPESAFE_API_KEY",
-    "TYPESAFE_MODEL"
+    "SECRET_KEY_BASE"
   ]
   @app_prefixes ["RAIL_", "RELEASE_"]
 

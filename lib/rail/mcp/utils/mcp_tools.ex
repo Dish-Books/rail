@@ -11,16 +11,23 @@ defmodule Rail.Mcp.Utils.McpTools do
   Three registers, because two stages drive the same browser for different
   reasons. `@browser_tools` is the browser itself and belongs to neither: QA
   drives it to find out whether the change works, demo drives it to show that it
-  does, and the page does not care which. Rail holds it, so it can hand back a
-  receipt instead of a page, keep the session alive between calls, and take the
-  whole thing down when the task ends. Every other stage reads code, and a
-  browser would be a thing to get lost in.
+  does, and the page does not care which. Rail holds it, so it can keep the
+  session alive between calls, film and stream it, and take the whole thing down
+  when the task ends. Every other stage reads code, and a browser would be a
+  thing to get lost in.
 
-  The agent never starts the browser and never names a file Rail serves. Any tool
-  opens the session if it is not open, a screenshot is described rather than
+  Rail does not drive it. `browser_connect` hands the agent its tab's DevTools
+  address and a driver, and the agent writes and runs its own scripts against
+  it - as many steps to a script as it likes, with anything CDP can do. What
+  Rail keeps is what only Rail can do: open the tab, watch it, and say what the
+  browser complained about.
+
+  The agent never starts the browser and never names a file Rail serves. Any
+  tool opens the tab if it is not open, a screenshot is described rather than
   located, and a file the agent wrote is copied in under a name Rail chooses - so
   nothing arriving from a model becomes a served path, and there is no way to
-  leave a Chrome behind by forgetting the last instruction.
+  leave a tab behind by forgetting the last instruction: reconcile closes it when
+  the task moves on.
 
   `@qa_tools` are about a pass rather than a page. `qa_plan` writes the checklist
   before anything is opened, `qa_check` marks a row off as it is reached, and
@@ -41,54 +48,16 @@ defmodule Rail.Mcp.Utils.McpTools do
 
   @browser_tools [
     %{
-      "name" => "browser_goto",
+      "name" => "browser_connect",
       "description" =>
-        "Open a URL in the browser. Starts the browser if it is not already open. " <>
-          "Returns where it ended up, which is not always where it was sent.",
-      "inputSchema" => %{
-        "type" => "object",
-        "properties" => %{"url" => %{"type" => "string", "description" => "The URL to open."}},
-        "required" => ["url"]
-      }
-    },
-    %{
-      "name" => "browser_do",
-      "description" =>
-        "Say what you want to be true of the current page and Rail drives until it is: \"a bill " <>
-          "for Sysco dated 12 Aug 2026 for $2,500 is entered and saved\". It reads the page, acts, " <>
-          "reads again, and stops when the outcome is reached or nothing offered can reach it. " <>
-          "Give it the whole outcome rather than one keystroke - a step at a time is slower and " <>
-          "reads worse, because each call starts again knowing nothing of the last. Nothing is " <>
-          "ever invented: supply every value it will need in `values`, keyed by the field as the " <>
-          "page labels it, and a field with no value stops the call and asks. A date or time field " <>
-          "takes the value HTML gives it whatever the page displays: `2026-09-19`, " <>
-          "`2026-09-19T14:30`, `14:30`, `2026-09`. Returns what was executed, not the page - read " <>
-          "it with browser_look before you conclude anything, because reaching the end is not the " <>
-          "same as the application having done the right thing.",
-      "inputSchema" => %{
-        "type" => "object",
-        "properties" => %{
-          "intent" => %{"type" => "string", "description" => "The outcome you want on this page."},
-          "values" => %{
-            "type" => "object",
-            "description" =>
-              ~s(What to type, keyed by the field's label on the page - {"Number": "QA-1", ) <>
-                ~s("Date": "2026-08-12"}. Every field the outcome needs.),
-            "additionalProperties" => %{"type" => "string"}
-          },
-          "text" => %{
-            "type" => "string",
-            "description" => "A single value, for an outcome that types into one field and no more."
-          }
-        },
-        "required" => ["intent"]
-      }
-    },
-    %{
-      "name" => "browser_look",
-      "description" =>
-        "Read the current page as text: where it is, its title, what is visible, and what can be " <>
-          "acted on. Cheaper and more exact than a screenshot - use this to check a value.",
+        "Get your tab in Rail's headless Chrome and the driver to drive it with. Returns the tab's " <>
+          "DevTools websocket and the path of `driver.mjs`, a zero-dependency Node module: " <>
+          "`openBrowser(url)` gives you click, hover, type, press, select, typeDate, upload, goto, " <>
+          "evaluate, expect, until, text, shot, resize and drainProblems, all as trusted input " <>
+          "events so LiveView sees what a person's would produce. Write a script per check and run " <>
+          "it with `node`; the tab stays where each script leaves it, signed in. Rail watches the " <>
+          "same tab, so the panel and a demo recording show what you do. Call it again if the " <>
+          "address stops answering.",
       "inputSchema" => %{"type" => "object", "properties" => %{}}
     },
     %{
@@ -97,13 +66,6 @@ defmodule Rail.Mcp.Utils.McpTools do
         "Everything the browser complained about since this was last asked: uncaught exceptions, " <>
           "console errors, failed requests, a crashed page. Draining, so what comes back belongs " <>
           "to whatever just ran. Ask often.",
-      "inputSchema" => %{"type" => "object", "properties" => %{}}
-    },
-    %{
-      "name" => "browser_stop",
-      "description" =>
-        "Close the browser. Not required - Rail closes it when the task moves on - but it frees " <>
-          "the machine sooner when the driving is finished.",
       "inputSchema" => %{"type" => "object", "properties" => %{}}
     }
   ]

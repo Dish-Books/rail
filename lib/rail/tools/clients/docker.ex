@@ -30,6 +30,15 @@ defmodule Rail.Tools.Clients.Docker do
     )
   end
 
+  @doc """
+  Creates the one container the shared browser runs in, under the fixed name
+  `rail-browser`. It carries no sandbox label, so nothing that sweeps settled
+  sandboxes ever mistakes it for one.
+  """
+  def create_browser_container(body) when is_map(body) do
+    request(method: :post, url: "/containers/create", params: [name: "rail-browser"], json: body)
+  end
+
   def start_container(id), do: request(method: :post, url: "/containers/#{id}/start")
 
   @doc "Stops a container, giving it `timeout_seconds` after SIGTERM before SIGKILL."

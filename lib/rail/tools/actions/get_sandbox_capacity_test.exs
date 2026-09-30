@@ -60,10 +60,14 @@ defmodule Rail.Tools.Actions.GetSandboxCapacityTest do
       :ok
     end
 
-    test "is what the machine has, less the headroom kept for Rail, in whole GB" do
+    # The shared browser's container is held to what it is given, so that is
+    # never the line's to hand out either.
+    test "is what the machine has, less the headroom kept for Rail and the browser, in whole GB" do
+      stub(Rail, :browser_cpus, fn -> 2 end)
+      stub(Rail, :browser_memory_gb, fn -> 4 end)
       Req.Test.expect(Docker, &Req.Test.json(&1, %{"NCPU" => 16, "MemTotal" => 64 * 1024 ** 3 + 12_345}))
 
-      assert {:ok, %{cpus: 14, memory_gb: 56, reserved_cpus: 3, reserved_memory_gb: 6}} = Tools.get_sandbox_capacity()
+      assert {:ok, %{cpus: 12, memory_gb: 52, reserved_cpus: 3, reserved_memory_gb: 6}} = Tools.get_sandbox_capacity()
     end
 
     test "is not known when Docker cannot be asked" do

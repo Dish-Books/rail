@@ -8,9 +8,9 @@ defmodule Rail.Tools.Boot do
   its unlogged lines written to the run's log first. A process that has a
   Follower is left to it, alive or not: the Follower sees its own exit.
 
-  Browser sessions are reaped on the same pass, and for the same reason: a Chrome
-  whose session process is gone is a core held until the machine restarts, and its
-  row is what stops its task ever getting another browser.
+  Browser sessions are reconciled on the same pass: the shared Chrome outlives
+  Rail, so a tab whose task has moved on is closed here, and one a running pass
+  is still using is reconnected to.
   """
   use Task, restart: :transient
 
