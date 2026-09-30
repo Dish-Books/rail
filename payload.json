@@ -1,0 +1,22 @@
+{
+  "spec": 2,
+  "tree": "e84488543dc61e2c3f2dc2f03b90fc0c6b189bb3",
+  "commit": "89acdc463bd009e5bd86aad6f5126f31c4cba517",
+  "ran_at": "2026-09-30T19:36:00Z",
+  "ran_by": "michaelst57@gmail.com",
+  "tools": {
+    "elixir": "1.19.5",
+    "otp": "28",
+    "node": "24.15.0",
+    "pnpm": "10.15.1"
+  },
+  "gates": [
+    "compile",
+    "credo",
+    "credo_subproject",
+    "deps.audit",
+    "format",
+    "sobelow",
+    "tests"
+  ]
+}
