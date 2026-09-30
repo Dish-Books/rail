@@ -591,6 +591,55 @@ defmodule RailWeb.Live.RunConversationTest do
     refute Enum.any?(classes, &(String.starts_with?(&1, "lg:min-h-") or String.starts_with?(&1, "min-h-[")))
   end
 
+  test "a wide agent reply wraps inside the sidebar and keeps its code and tables in their own box", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :finished,
+        conversation_id: "conv_wide",
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+
+    long = String.duplicate("a", 200)
+    columns = Enum.map_join(1..12, " | ", &"column_#{&1}")
+
+    reply =
+      Enum.join(
+        [
+          "See https://example.com/#{long}",
+          "Edit `lib/rail_web/live/#{long}.ex`",
+          "```\n#{long}\n```",
+          "| #{columns} |\n|#{String.duplicate(" --- |", 12)}\n| #{columns} |"
+        ],
+        "\n\n"
+      )
+
+    Pipeline.append_run_events(run.id, nil, [
+      ~s({"type":"assistant","message":{"content":[{"type":"text","text":#{Jason.encode!(reply)}}]}}),
+      "[tool read_file] lib/rail.ex"
+    ])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+    doc = Floki.parse_fragment!(html)
+
+    assert [pane] = Floki.attribute(doc, "#chat-messages", "class")
+    assert ["overflow-y-auto", "overflow-x-hidden"] -- String.split(pane) == []
+
+    assert [body] = Floki.attribute(doc, "[data-qa='role-bubble'] [data-qa='markdown-body']", "class")
+    assert ["wrap-break-word", "prose-table:block", "prose-table:overflow-x-auto"] -- String.split(body) == []
+
+    assert Floki.find(doc, "[data-qa='role-bubble'] pre") != []
+    assert Floki.find(doc, "[data-qa='role-bubble'] table") != []
+
+    assert [summary] = Floki.attribute(doc, "[data-qa='activity-tile'] button span.truncate", "class")
+    refute "wrap-break-word" in String.split(summary)
+  end
+
   test "a message waiting on a working agent stacks under the thinking banner", %{
     task: task,
     roles: roles,

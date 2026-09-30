@@ -2065,6 +2065,23 @@ defmodule RailWeb.TaskLiveTest do
       refute "min-h-[400px]" in String.split(class)
     end
 
+    test "the raw log wraps long lines and never scrolls sideways", %{conn: conn, task: task, run: run} do
+      Pipeline.append_run_events(run.id, nil, [
+        ~s({"type":"assistant","message":{"content":[{"type":"text","text":"#{String.duplicate("x", 400)}"}]}})
+      ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#toggle-raw-log") |> render_click()
+
+      doc = view |> render() |> Floki.parse_fragment!()
+      assert [class] = Floki.attribute(doc, "#raw-log-container", "class")
+      assert ["overflow-y-auto", "overflow-x-hidden"] -- String.split(class) == []
+
+      assert [_first | _rest] = line_classes = Floki.attribute(doc, "[data-qa='raw-log-line']", "class")
+      assert Enum.all?(line_classes, &("wrap-break-word" in String.split(&1)))
+    end
+
     test "shows the raw log on request, and the chat again after", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 

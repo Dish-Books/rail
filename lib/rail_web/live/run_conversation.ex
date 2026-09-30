@@ -226,7 +226,7 @@ defmodule RailWeb.Live.RunConversation do
         id="chat-messages"
         data-qa="chat-messages"
         phx-hook="ChatAutoscroll"
-        class="flex-1 overflow-y-auto px-5 py-5 space-y-4"
+        class="flex-1 overflow-y-auto overflow-x-hidden px-5 py-5 space-y-4"
       >
         <%= if not @has_messages do %>
           <!-- Empty State -->
@@ -338,7 +338,10 @@ defmodule RailWeb.Live.RunConversation do
           class="text-slate-900 dark:text-slate-100"
         >
           <div class="select-text prose dark:prose-invert max-w-none text-[13px] leading-relaxed">
-            <.markdown content={@text} />
+            <.markdown
+              content={@text}
+              class="wrap-break-word prose-table:block prose-table:overflow-x-auto"
+            />
           </div>
         </div>
       <% :activity -> %>
@@ -828,7 +831,7 @@ defmodule RailWeb.Live.RunConversation do
       id="raw-log-container"
       data-qa="raw_log_container"
       phx-hook="ChatAutoscroll"
-      class="w-full flex-1 min-h-0 p-4 bg-zinc-950 text-zinc-300 font-mono text-xs overflow-y-auto select-text"
+      class="w-full flex-1 min-h-0 p-4 bg-zinc-950 text-zinc-300 font-mono text-xs overflow-y-auto overflow-x-hidden select-text"
     >
       <%= if not @has_lines do %>
         <div id="raw-log-empty-state" class="flex items-center justify-center h-48 text-zinc-500">
@@ -839,7 +842,7 @@ defmodule RailWeb.Live.RunConversation do
           <div
             id={"raw-log-line-#{idx}"}
             data-qa="raw-log-line"
-            class={["leading-relaxed whitespace-pre-wrap", raw_log_color_class(line)]}
+            class={["leading-relaxed whitespace-pre-wrap wrap-break-word", raw_log_color_class(line)]}
           >
             {line}
           </div>
