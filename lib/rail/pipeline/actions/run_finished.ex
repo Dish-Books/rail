@@ -22,6 +22,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   """
 
   import Rail.Pipeline.Utils.ArchitectRunFinished
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.CiRunFinished
   import Rail.Pipeline.Utils.DemoRunFinished
   import Rail.Pipeline.Utils.DesignRunFinished
@@ -53,6 +54,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
           |> settle_run(outcome)
           |> finish(os_process, opts)
           |> drain_queued_message(opts)
+          |> broadcast_pipeline_changed()
 
         {:ok, run}
 

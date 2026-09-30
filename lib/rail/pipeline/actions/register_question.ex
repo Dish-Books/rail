@@ -6,8 +6,8 @@ defmodule Rail.Pipeline.Actions.RegisterQuestion do
   run asking the same thing files its own, since the answer goes back to whoever
   asked. The run parks (`status: :blocked_on_input`) and the questions queue in the
   order they were asked, so the human answers them one at a time without the stage
-  resuming in between. The run goes to `:blocked_on_input` and `pipeline_changed` is
-  broadcast either way.
+  resuming in between. The run goes to `:blocked_on_input` either way, and
+  `run_finished/3`, which files the questions, broadcasts `pipeline_changed`.
 
   Nothing suppresses a question. A reply already queued on the run goes out alongside
   the answer when it resumes, so a question asked in that window is still filed rather

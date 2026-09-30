@@ -58,6 +58,17 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert %Task{stage: :review} = Repo.reload!(task)
   end
 
+  test "entering a stage, started or not, tells whoever is watching the pipeline", %{task: %Task{id: task_id} = task} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
+    assert {:ok, %Task{}} = Pipeline.enter_stage(task, :product, start: false)
+    assert_received {:pipeline_changed, ^task_id}
+
+    assert {:ok, %Run{}} = Pipeline.enter_stage(task, :review)
+    assert_received {:pipeline_changed, ^task_id}
+  end
+
   test "every stage the ticket follows queues its Linear move", %{task: task} do
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
 

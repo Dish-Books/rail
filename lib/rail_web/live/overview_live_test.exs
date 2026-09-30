@@ -1163,6 +1163,264 @@ defmodule RailWeb.OverviewLiveTest do
 
       assert has_element?(view, "#in-progress-empty")
     end
+
+    test "a run that hands its work over is waiting on the user, without a reload", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      task = task_for.("Handed over", %{stage: :engineer})
+
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :running,
+          started_at: DateTime.shift(now, minute: -30)
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      refute has_element?(view, "[id^='up-next-featured-']")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']")
+
+      {:ok, _finished} = Pipeline.update_run(run, %{status: :finished, stage_outcome: :done, completed_at: now})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task.id})
+
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+      assert has_element?(view, "#up-next-featured-#{run.id}[href='/tasks/#{task.id}']")
+      assert has_element?(view, "#activity-ended-#{run.id}", "says #{task.issue.identifier} is ready for review")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='done']")
+    end
+
+    test "a run that asks a question is waiting on the user, without a reload", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      task = task_for.("Asks something", %{stage: :engineer})
+
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :running,
+          conversation_id: "sess_asks_live",
+          started_at: DateTime.utc_now()
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']")
+
+      {:ok, _question} =
+        Pipeline.register_question(Repo.preload(run, task: :issue), %DetectedQuestion{prompt: "Which database?"})
+
+      Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task.id})
+
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='blocked']")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+    end
+
+    test "a run that starts, then joins the sandbox line, shows as it goes, without a reload", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      now = DateTime.utc_now()
+      task = task_for.("Starts and queues", %{stage: :engineer})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='queued']")
+
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :running,
+          started_at: now
+        })
+
+      Phoenix.PubSub.broadcast(Rail.PubSub, "sandboxes", :sandboxes_changed)
+
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='running']")
+      assert has_element?(view, "#stat-waiting-for-resources [data-qa='stat-value']", "0")
+
+      {:ok, _waiting} = Pipeline.update_run(run, %{status: :waiting_for_resources})
+
+      Repo.insert!(%OsProcess{
+        run_id: run.id,
+        task_id: run.task_id,
+        stream_path: "/dev/null",
+        status: :waiting_for_resources,
+        started_at: now,
+        queued_at: now,
+        reserved_cpus: 2,
+        reserved_memory_gb: 4
+      })
+
+      Phoenix.PubSub.broadcast(Rail.PubSub, "sandboxes", :sandboxes_changed)
+
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='waiting']")
+      assert has_element?(view, "#stat-waiting-for-resources [data-qa='stat-value']", "1")
+    end
+
+    test "a task whose issue Linear completes has shipped, without a reload", %{conn: conn, task_for: task_for} do
+      task = task_for.("Ships in Linear", %{stage: :engineer})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#in-progress-task-#{task.id}")
+      assert has_element?(view, "#stat-shipped [data-qa='stat-value']", "0")
+      assert has_element?(view, "#throughput-total", "0 total")
+
+      task.issue |> Issue.linear_changeset(%{completed_at: DateTime.utc_now()}) |> Repo.update!()
+      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, task.issue.id})
+
+      refute has_element?(view, "#in-progress-task-#{task.id}")
+      assert has_element?(view, "#stat-shipped [data-qa='stat-value']", "1")
+      assert has_element?(view, "#throughput-total", "1 total")
+      assert has_element?(view, "#activity-shipped-#{task.issue.id}", "#{task.issue.identifier} shipped")
+    end
+
+    test "a task whose issue completes in a sync from Linear has shipped, without a reload", %{
+      conn: conn,
+      project: project,
+      task_for: task_for
+    } do
+      task = task_for.("Ships in a sync", %{stage: :engineer})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#in-progress-task-#{task.id}")
+
+      task.issue |> Issue.linear_changeset(%{completed_at: DateTime.utc_now()}) |> Repo.update!()
+      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issues_synced, project.id})
+
+      refute has_element?(view, "#in-progress-task-#{task.id}")
+      assert has_element?(view, "#stat-shipped [data-qa='stat-value']", "1")
+    end
+
+    test "on my work in one project, a change to someone else's task or another project's changes nothing", %{
+      conn: conn,
+      project: project,
+      roles: roles,
+      rival: rival,
+      task_for: task_for
+    } do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_other"}]}}})
+      end)
+
+      {:ok, other_project} =
+        Projects.create_project(system_scope(), %{
+          name: "Other Project",
+          github_repo: "example/other",
+          github_installation_id: 444,
+          linear_team_key: "OTH",
+          default_branch: "main",
+          clone_path: "/tmp/other",
+          linear_workspace_id: project.linear_workspace_id
+        })
+
+      mine = task_for.("My work here", %{})
+      theirs = task_for.("Their work here", %{owner_user_id: rival.id, stage: :engineer})
+      elsewhere = task_for.("My work elsewhere", %{project: other_project, stage: :engineer})
+
+      runs =
+        for task <- [theirs, elsewhere] do
+          {:ok, run} =
+            Pipeline.create_run(%{
+              task_id: task.id,
+              role_id: roles[:engineer].id,
+              status: :running,
+              started_at: DateTime.utc_now()
+            })
+
+          run
+        end
+
+      assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/")
+
+      assert has_element?(view, "#in-progress-task-#{mine.id}")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "1")
+
+      for run <- runs do
+        {:ok, _finished} =
+          Pipeline.update_run(run, %{status: :finished, stage_outcome: :done, completed_at: DateTime.utc_now()})
+
+        Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, run.task_id})
+      end
+
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      assert has_element?(view, "#stat-in-progress [data-qa='stat-value']", "1")
+      assert has_element?(view, "#in-progress-count", ~r/^\s*1 task\s*$/)
+
+      for task <- [theirs, elsewhere] do
+        refute has_element?(view, "#in-progress-task-#{task.id}")
+        refute has_element?(view, "[id^='up-next-'][href^='/tasks/#{task.id}']")
+      end
+
+      assert has_element?(view, "#overview-view-mine[aria-pressed='true']")
+      assert has_element?(view, "#selected-project-name", project.name)
+    end
+
+    test "a refresh keeps the project switcher open and the view the user picked", %{
+      conn: conn,
+      task_for: task_for
+    } do
+      task = task_for.("Changes underneath", %{})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      view |> element("#project-switcher-button") |> render_click()
+      assert has_element?(view, "#project-switcher-dialog")
+
+      Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task.id})
+
+      assert has_element?(view, "#project-switcher-dialog")
+      refute_redirected(view)
+      refute_patched(view)
+
+      view |> element("#overview-view-everyone") |> render_click()
+      assert_patched(view, ~p"/?everyone=true")
+
+      Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task.id})
+
+      assert has_element?(view, "#overview-view-everyone[aria-pressed='true']")
+      refute_redirected(view)
+      refute_patched(view)
+    end
+
+    test "a new issue or a comment on one moves no task, so the page is left as it was", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      task = task_for.("Queued work", %{stage: :engineer})
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='queued']")
+
+      {:ok, _run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+
+      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_created, task.issue.id})
+      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_comments_changed, task.issue.id})
+
+      assert has_element?(view, "#in-progress-task-#{task.id}[data-state='queued']")
+    end
   end
 end
 

@@ -127,11 +127,21 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{stage: :product} = Repo.reload!(task)
   end
 
-  test "a process whose run is gone has nothing to settle", %{exited: exited} do
+  test "a settled run tells whoever is watching the pipeline", %{task: %Task{id: task_id}, exited: exited} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    {_run, os_process} = exited.(:product, %{})
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert_received {:pipeline_changed, ^task_id}
+  end
+
+  test "a process whose run is gone has nothing to settle", %{task: %Task{id: task_id}, exited: exited} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     {run, os_process} = exited.(:product, %{})
     Repo.delete!(run)
 
     assert {:error, :invalid_state} = Pipeline.run_finished(os_process)
+    refute_received {:pipeline_changed, ^task_id}
   end
 
   test "a message queued while the run worked goes out once it is idle", %{task: task, exited: exited} do
