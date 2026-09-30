@@ -1125,7 +1125,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   test "CI that passed on a branch that will not push says so and is not done", %{task: task, exited: exited} do
     {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
-    {_run, os_process} = exited.(:engineer, %{})
+    {_run, os_process} = exited.(:engineer, %{review_on_ci_pass: true})
     os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
 
     expect(Git, :push_branch, fn _scope, _task -> {:error, "no CI receipt for this tree"} end)
@@ -1133,6 +1133,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert {:ok,
             %Run{
               stage_outcome: :in_progress,
+              review_on_ci_pass: false,
               error: "CI passed, but the branch could not be pushed: no CI receipt for this tree"
             }} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
@@ -1140,7 +1141,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   test "CI that failed goes back to the engineer with the end of its output", %{task: task, exited: exited} do
     {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
-    {run, os_process} = exited.(:engineer, %{})
+    {run, os_process} = exited.(:engineer, %{review_on_ci_pass: true})
     stream_path = Path.join(task.scratch_path, "ci.log")
     File.mkdir_p!(task.scratch_path)
     File.write!(stream_path, Enum.map_join(1..200, "\n", &"line #{&1}") <> "\n\e[31m1 test, 1 failure\e[0m\n")
@@ -1155,7 +1156,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert {:ok, %Run{status: :running, ci_failure_streak: 1}} =
+    assert {:ok, %Run{status: :running, ci_failure_streak: 1, review_on_ci_pass: false}} =
              Pipeline.run_finished(os_process, %{exit_code: 1, error: "Exited with code 1"})
 
     assert_received {:resumed, prompt}
@@ -1217,23 +1218,30 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
   test "CI that failed a third time in a row waits for a person", %{task: task, exited: exited} do
     {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
-    {_run, os_process} = exited.(:engineer, %{ci_failure_streak: 2})
+    {_run, os_process} = exited.(:engineer, %{ci_failure_streak: 2, review_on_ci_pass: true})
     os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
 
     reject(Tools, :start_os_process, 2)
 
-    assert {:ok, %Run{status: :finished, ci_failure_streak: 3, error: "CI failed 3 times in a row" <> _rest}} =
+    assert {:ok,
+            %Run{
+              status: :finished,
+              ci_failure_streak: 3,
+              review_on_ci_pass: false,
+              error: "CI failed 3 times in a row" <> _rest
+            }} =
              Pipeline.run_finished(os_process, %{exit_code: 1})
   end
 
   test "CI that was stopped before it finished sends nothing back", %{task: task, exited: exited} do
     {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
-    {_run, os_process} = exited.(:engineer, %{ci_failure_streak: 1})
+    {_run, os_process} = exited.(:engineer, %{ci_failure_streak: 1, review_on_ci_pass: true})
     os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
 
     reject(Tools, :start_os_process, 2)
 
-    assert {:ok, %Run{ci_failure_streak: 1, error: "CI was stopped before it finished." <> _rest}} =
+    assert {:ok,
+            %Run{ci_failure_streak: 1, review_on_ci_pass: false, error: "CI was stopped before it finished." <> _rest}} =
              Pipeline.run_finished(os_process, %{exit_code: -1})
   end
 
@@ -1271,6 +1279,99 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{error: "CI passed, but the branch could not be pushed: {:github_api_error, 401, %{}}"}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  describe "CI that passed on a commit" do
+    # Review only takes a branch the remote has, on a commit CI passed, so the
+    # worktree is one CI's pass can really push.
+    setup %{project: project, task: task} do
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+
+      remote = create_temp_git_repo(prefix: "rail_git_remote", initial_commit: false)
+      git!(remote, ["config", "receive.denyCurrentBranch", "ignore"])
+      repo = create_temp_git_repo()
+      git!(repo, ["remote", "add", "origin", remote])
+      git!(repo, ["push", "--set-upstream", "origin", "main"])
+      File.write!(Path.join(repo, "feature.ex"), "the engineer's work\n")
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-m", "the engineer's work"])
+
+      {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: repo})
+
+      stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
+        git!(path, ["push", "origin", "HEAD"])
+        :ok
+      end)
+
+      %{task: task, repo: repo, ci: %{kind: :ci, exit_code: 0, head_sha: String.trim(git!(repo, ["rev-parse", "HEAD"]))}}
+    end
+
+    test "a human asked for goes on to review with nobody clicking", %{task: task, exited: exited, ci: ci} do
+      {_run, os_process} = exited.(:engineer, %{review_on_ci_pass: true})
+      os_process = os_process |> OsProcess.changeset(ci) |> Repo.update!()
+
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, %Run{stage_outcome: :done, review_on_ci_pass: false}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert %Task{stage: :review} = Repo.reload!(task)
+    end
+
+    # Rail's own commit at the end of a round waits for a human to read the diff.
+    test "Rail made on its own stays in engineer", %{task: task, exited: exited, ci: ci} do
+      {_run, os_process} = exited.(:engineer, %{})
+      os_process = os_process |> OsProcess.changeset(ci) |> Repo.update!()
+
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+    end
+
+    test "a human asked for, with work left uncommitted since, stays in engineer and says why", %{
+      task: task,
+      repo: repo,
+      exited: exited,
+      ci: ci
+    } do
+      {run, os_process} = exited.(:engineer, %{review_on_ci_pass: true})
+      os_process = os_process |> OsProcess.changeset(ci) |> Repo.update!()
+      File.write!(Path.join(repo, "later.ex"), "written since\n")
+
+      reject(Tools, :start_os_process, 2)
+
+      assert {:ok, %Run{stage_outcome: :done, review_on_ci_pass: false}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0})
+
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+
+      assert [%{line: "[rail] CI passed, but the work was not sent to review: " <> _reason}] =
+               Pipeline.list_run_events(run)
+    end
+
+    # A message queued while CI ran is the engineer about to work again.
+    test "a human asked for, with a message queued meanwhile, sends the engineer that instead", %{
+      task: task,
+      exited: exited,
+      ci: ci
+    } do
+      {_run, os_process} = exited.(:engineer, %{review_on_ci_pass: true, pending_chat: "Rename the filter too"})
+      os_process = os_process |> OsProcess.changeset(ci) |> Repo.update!()
+      test_pid = self()
+
+      expect(Tools, :start_os_process, fn spawned, argv ->
+        send(test_pid, {:dispatched, Enum.join(argv, " ")})
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %Run{review_on_ci_pass: false}} =
+               Pipeline.run_finished(os_process, %{exit_code: 0}, async: false)
+
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+      assert_received {:dispatched, prompt}
+      assert prompt =~ "Rename the filter too"
+    end
   end
 
   # The conflicts already sent the task back to engineer, and finishing the rebase

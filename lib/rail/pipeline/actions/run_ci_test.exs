@@ -79,13 +79,18 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
     %{project: project, run: run, worktree_path: worktree_path}
   end
 
-  test "runs CI again with the count of failures started over", %{run: run} do
+  # Running CI on its own is no commit from a human, so a go-ahead left over from
+  # one does not carry into it.
+  test "runs CI again with the count of failures started over, and no go-ahead to review", %{run: run} do
+    {:ok, run} = Pipeline.update_run(run, %{review_on_ci_pass: true})
+
     expect(Tools, :start_command_process, fn spawned, :ci, "mise run ci", opts ->
       assert opts[:timeout_ms] == to_timeout(minute: 45)
       {:ok, %OsProcess{kind: :ci, run: spawned}}
     end)
 
-    assert {:ok, %Run{status: :running, ci_failure_streak: 0, error: nil}} = Pipeline.run_ci(system_scope(), run)
+    assert {:ok, %Run{status: :running, ci_failure_streak: 0, review_on_ci_pass: false, error: nil}} =
+             Pipeline.run_ci(system_scope(), run)
   end
 
   test "a project without CI has none to run", %{project: project, run: run} do

@@ -363,13 +363,13 @@ defmodule RailWeb.Live.EngineerStage do
   def handle_event("commit", _params, %{assigns: %{committing: true}} = socket), do: {:noreply, socket}
 
   def handle_event("commit", _params, socket) do
-    %{current_scope: scope, task: task} = socket.assigns
+    %{current_scope: scope, run: run} = socket.assigns
 
     socket =
       socket
       |> assign(:committing, true)
       |> assign(:error, nil)
-      |> start_async(:commit, fn -> Pipeline.commit_engineer_work(scope, task) end)
+      |> start_async(:commit, fn -> Pipeline.commit_and_send_to_review(scope, run) end)
 
     {:noreply, socket}
   end
@@ -401,7 +401,7 @@ defmodule RailWeb.Live.EngineerStage do
   # still moved the worktree, so either way the pane re-reads it: what is left
   # outstanding is what the button offers next.
   @impl true
-  def handle_async(:commit, {:ok, :ok}, socket) do
+  def handle_async(:commit, {:ok, {:ok, _run}}, socket) do
     {:ok, _cleared} = Pipeline.update_run(socket.assigns.run, %{error: nil})
     send(self(), :task_changed)
 

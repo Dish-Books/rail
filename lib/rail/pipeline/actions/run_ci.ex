@@ -22,7 +22,7 @@ defmodule Rail.Pipeline.Actions.RunCi do
     run = Repo.preload(run, [task: :project, role: :backend], force: true)
 
     with :ok <- runnable(run) do
-      {:ok, reset} = run |> Run.changeset(%{ci_failure_streak: 0}) |> Repo.update()
+      {:ok, reset} = run |> Run.changeset(%{ci_failure_streak: 0, review_on_ci_pass: false}) |> Repo.update()
 
       case start_ci(reset) do
         {:ok, os_process} -> {:ok, os_process.run}

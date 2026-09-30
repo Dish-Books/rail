@@ -1409,11 +1409,14 @@ defmodule RailWeb.TaskLiveTest do
         :ok
       end)
 
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
       view |> element("#commit-work") |> render_click()
       render_async(view, 5_000)
 
       refute has_element?(view, "#commit-work")
       assert %Run{error: nil} = Repo.reload!(run)
+      assert %Task{stage: :review} = Repo.reload!(task)
     end
 
     # The push runs the repository's pre-push hooks, which can take minutes, so the
@@ -1790,6 +1793,26 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#send-to-review") |> render_click()
 
       assert %Task{stage: :review} = Repo.reload!(task)
+    end
+
+    # A human's commit already says the work is ready, so nobody has to click on.
+    test "committing the diff moves the task to review once it is pushed", %{conn: conn, task: task, repo: repo} do
+      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+
+      stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
+        git!(path, ["push", "origin", "HEAD"])
+        :ok
+      end)
+
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#commit-work") |> render_click()
+      render_async(view, 5_000)
+
+      assert %Task{stage: :review} = Repo.reload!(task)
+      refute has_element?(view, "#engineer-error")
     end
 
     test "selecting a file in the tree marks it and goes there", %{conn: conn, task: task} do

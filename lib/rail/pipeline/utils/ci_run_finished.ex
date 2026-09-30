@@ -2,9 +2,10 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   @moduledoc """
   Where a finished CI run leaves the engineer's run.
 
-  A pass is what lets the branch be pushed, and the stage be done. A failure goes
-  back to the engineer with the output that says why, until it has failed three
-  times in a row with nobody stepping in; then it waits for a person.
+  A pass is what lets the branch be pushed, and the stage be done, and sends the
+  work to review when a human's commit asked for that. A failure goes back to the
+  engineer with the output that says why, until it has failed three times in a
+  row with nobody stepping in; then it waits for a person.
   """
 
   import Rail.Pipeline.Utils.OpenPullRequest
@@ -26,22 +27,34 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   def ci_run_finished(%Run{exit_code: 0, task: %Task{} = task} = run, %OsProcess{}) do
     case Git.push_branch(Scope.for_system(), task) do
       :ok ->
-        %{update(run, %{ci_failure_streak: 0, error: nil, stage_outcome: :done}) | task: open_pull_request(task, run)}
+        attrs = %{ci_failure_streak: 0, error: nil, stage_outcome: :done, review_on_ci_pass: false}
+        pushed = %{update(run, attrs) | task: open_pull_request(task, run)}
+
+        # A message queued while CI ran is the engineer about to work again, which
+        # review cannot see once the run has settled.
+        if run.review_on_ci_pass and is_nil(run.pending_chat), do: send_on_to_review(pushed), else: pushed
 
       {:error, reason} ->
-        update(run, %{error: "CI passed, but the branch could not be pushed: #{describe(reason)}"})
+        update(run, %{
+          review_on_ci_pass: false,
+          error: "CI passed, but the branch could not be pushed: #{describe(reason)}"
+        })
     end
   end
 
   # Nothing the engineer wrote stopped it: a person did, or Rail restarted
   # without seeing it finish.
   def ci_run_finished(%Run{exit_code: -1} = run, %OsProcess{}) do
-    update(run, %{error: "CI was stopped before it finished. Run it again from the diff when ready."})
+    update(run, %{
+      review_on_ci_pass: false,
+      error: "CI was stopped before it finished. Run it again from the diff when ready."
+    })
   end
 
   def ci_run_finished(%Run{ci_failure_streak: streak} = run, %OsProcess{}) when streak + 1 >= @failure_limit do
     update(run, %{
       ci_failure_streak: streak + 1,
+      review_on_ci_pass: false,
       error:
         "CI failed #{streak + 1} times in a row, so it was not sent back again. " <>
           "Read its output, then message the engineer or run CI again."
@@ -59,6 +72,7 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
         run,
         Map.merge(turn_stamp(run.task), %{
           ci_failure_streak: streak + 1,
+          review_on_ci_pass: false,
           pending_answer: note(run, os_process),
           status: :running,
           error: nil
@@ -74,6 +88,20 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
 
       {:error, :dispatch_disabled} ->
         update(briefed, %{status: :finished, error: "Dispatch is off, so the engineer was not resumed."})
+    end
+  end
+
+  defp send_on_to_review(%Run{} = pushed) do
+    case Pipeline.send_to_review(pushed) do
+      {:ok, %Run{} = sent} ->
+        %{sent | task: pushed.task, role: pushed.role}
+
+      {:error, reason} ->
+        Pipeline.append_run_events(pushed.id, nil, [
+          "[rail] CI passed, but the work was not sent to review: #{describe(reason)}"
+        ])
+
+        pushed
     end
   end
 
