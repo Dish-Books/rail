@@ -149,7 +149,7 @@ defmodule RailWeb.Settings.SlackWorkspacesLive do
                 label="Bot Token"
                 name="slack_workspace[token]"
                 id="slack-workspace-token-input"
-                value=""
+                value={Ecto.Changeset.get_change(@changeset, :token)}
                 placeholder={
                   if @selected_workspace, do: "Leave blank to keep the saved token", else: "xoxb-..."
                 }
@@ -161,7 +161,7 @@ defmodule RailWeb.Settings.SlackWorkspacesLive do
                 label="App-Level Token"
                 name="slack_workspace[app_token]"
                 id="slack-workspace-app-token-input"
-                value=""
+                value={Ecto.Changeset.get_change(@changeset, :app_token)}
                 placeholder={
                   if @selected_workspace, do: "Leave blank to keep the saved token", else: "xapp-..."
                 }

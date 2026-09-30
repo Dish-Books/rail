@@ -35,6 +35,20 @@ defmodule RailWeb.Settings.SlackWorkspacesLiveTest do
     view |> form("#slack-workspace-form", %{"slack_workspace" => %{"name" => "Acme"}}) |> render_change()
     assert render(view) =~ "can&#39;t be blank"
 
+    # Typed tokens survive the re-render that typing in the other field causes.
+    view
+    |> form("#slack-workspace-form", %{"slack_workspace" => %{"name" => "Acme", "token" => "xoxb-acme"}})
+    |> render_change()
+
+    view
+    |> form("#slack-workspace-form", %{
+      "slack_workspace" => %{"name" => "Acme", "token" => "xoxb-acme", "app_token" => "xapp-acme"}
+    })
+    |> render_change()
+
+    assert has_element?(view, "#slack-workspace-token-input[value='xoxb-acme']")
+    assert has_element?(view, "#slack-workspace-app-token-input[value='xapp-acme']")
+
     Req.Test.expect(Rail.Slack, fn conn ->
       assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer xoxb-acme"]
       Req.Test.json(conn, %{"ok" => true, "team_id" => team_id, "bot_id" => "B1"})
@@ -73,6 +87,11 @@ defmodule RailWeb.Settings.SlackWorkspacesLiveTest do
     assert {:ok, view, _html} = live(conn, ~p"/settings/slack-workspaces")
     view |> element("#edit-slack-workspace-#{workspace.id}") |> render_click()
     assert has_element?(view, "#modal-title", "Edit Slack Workspace")
+
+    # Only what was typed here is echoed back; the saved tokens never reach the page.
+    view |> form("#slack-workspace-form", %{"slack_workspace" => %{"name" => "After"}}) |> render_change()
+    refute render(view) =~ "xoxb-1"
+    refute render(view) =~ "xapp-1"
 
     view
     |> form("#slack-workspace-form", %{"slack_workspace" => %{"name" => "After", "token" => "", "app_token" => ""}})
