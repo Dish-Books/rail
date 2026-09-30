@@ -30,8 +30,8 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Advance Issue"})
     {:ok, task} = Pipeline.create_task(issue, :product)
 
-    # Ready for Dev comes before Todo and In Review before In Progress, so both the
-    # unstarted and the started pick have to go by position, not by the order sent.
+    # In Review comes before In Progress, so the started pick has to go by position,
+    # not by the order sent.
     nodes = [
       %{"id" => "st_triage", "name" => "Triage", "type" => "triage", "position" => 0.0},
       %{"id" => "st_backlog", "name" => "Backlog", "type" => "backlog", "position" => 0.0},
@@ -46,7 +46,43 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     %{project: project, issue: issue, task: task, nodes: nodes, states: Map.new(nodes, &{&1["id"], &1})}
   end
 
-  test "design moves a ticket still in Triage, where Rail opens them, to Todo", %{
+  test "product moves a ticket still in Triage, where Rail opens them, to In Progress", %{
+    issue: issue,
+    nodes: nodes,
+    states: states
+  } do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{"issue" => %{"state" => states["st_triage"], "team" => %{"states" => %{"nodes" => nodes}}}}
+      })
+    end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"input" => %{"stateId" => "st_in_progress"}} = Jason.decode!(body)["variables"]
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+    end)
+
+    assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
+  end
+
+  test "product moves a Backlog ticket to In Progress", %{issue: issue, nodes: nodes, states: states} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{"issue" => %{"state" => states["st_backlog"], "team" => %{"states" => %{"nodes" => nodes}}}}
+      })
+    end)
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"input" => %{"stateId" => "st_in_progress"}} = Jason.decode!(body)["variables"]
+      Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+    end)
+
+    assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
+  end
+
+  test "design moves a Triage ticket to In Progress", %{
     issue: issue,
     task: task,
     nodes: nodes,
@@ -62,14 +98,14 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
 
     Req.Test.expect(Rail.Linear, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
-      assert %{"input" => %{"stateId" => "st_todo"}} = Jason.decode!(body)["variables"]
+      assert %{"input" => %{"stateId" => "st_in_progress"}} = Jason.decode!(body)["variables"]
       Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
     end)
 
     assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
   end
 
-  test "architect moves a backlog ticket to the team's first unstarted state", %{
+  test "architect moves a Backlog ticket to the team's first started state", %{
     issue: issue,
     task: task,
     nodes: nodes,
@@ -85,24 +121,39 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
 
     Req.Test.expect(Rail.Linear, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
-      assert %{"id" => "lin_advance_1", "input" => %{"stateId" => "st_todo"}} = Jason.decode!(body)["variables"]
+
+      assert %{"id" => "lin_advance_1", "input" => %{"stateId" => "st_in_progress"}} =
+               Jason.decode!(body)["variables"]
+
       Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
     end)
 
     assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
   end
 
-  # Design and architect enter after product approval has already moved it there.
-  test "design leaves a ticket already at Todo alone", %{issue: issue, task: task, nodes: nodes, states: states} do
-    {:ok, _task} = Pipeline.update_task(task, %{stage: :design})
+  test "design and architect move a Todo ticket to In Progress", %{
+    issue: issue,
+    task: task,
+    nodes: nodes,
+    states: states
+  } do
+    for stage <- [:design, :architect] do
+      {:ok, _task} = Pipeline.update_task(task, %{stage: stage})
 
-    Req.Test.expect(Rail.Linear, fn conn ->
-      Req.Test.json(conn, %{
-        "data" => %{"issue" => %{"state" => states["st_todo"], "team" => %{"states" => %{"nodes" => nodes}}}}
-      })
-    end)
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{"issue" => %{"state" => states["st_todo"], "team" => %{"states" => %{"nodes" => nodes}}}}
+        })
+      end)
 
-    assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
+      Req.Test.expect(Rail.Linear, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        assert %{"input" => %{"stateId" => "st_in_progress"}} = Jason.decode!(body)["variables"]
+        Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
+      end)
+
+      assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
+    end
   end
 
   test "the engineer moves a Todo ticket to In Progress", %{issue: issue, task: task, nodes: nodes, states: states} do
@@ -202,7 +253,7 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
       {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
 
       Req.Test.json(conn, %{
-        "data" => %{"issue" => %{"state" => states["st_todo"], "team" => %{"states" => %{"nodes" => nodes}}}}
+        "data" => %{"issue" => %{"state" => states["st_in_progress"], "team" => %{"states" => %{"nodes" => nodes}}}}
       })
     end)
 
@@ -227,7 +278,8 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
   end
 
-  test "design leaves a ticket someone already moved to In Progress alone", %{
+  # Product approval hands on a ticket that starting the task already moved to In Progress.
+  test "design leaves an In Progress ticket there rather than moving it back to Todo", %{
     issue: issue,
     task: task,
     nodes: nodes,
@@ -244,8 +296,28 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
     assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
   end
 
+  test "starting at product, design or architect leaves an In Review ticket alone", %{
+    issue: issue,
+    task: task,
+    nodes: nodes,
+    states: states
+  } do
+    for stage <- [:product, :design, :architect] do
+      {:ok, _task} = Pipeline.update_task(task, %{stage: stage})
+
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{
+          "data" => %{"issue" => %{"state" => states["st_in_review"], "team" => %{"states" => %{"nodes" => nodes}}}}
+        })
+      end)
+
+      assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
+    end
+  end
+
   test "never reopens a ticket that is Done or Canceled", %{issue: issue, task: task, nodes: nodes, states: states} do
-    for finished <- ["st_done", "st_canceled"], stage <- [:design, :architect, :engineer, :review, :qa, :demo] do
+    for finished <- ["st_done", "st_canceled"],
+        stage <- [:product, :design, :architect, :engineer, :review, :qa, :demo] do
       {:ok, _task} = Pipeline.update_task(task, %{stage: stage})
 
       Req.Test.expect(Rail.Linear, fn conn ->
@@ -298,15 +370,17 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
 
     Req.Test.expect(Rail.Linear, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
-      assert %{"input" => %{"stateId" => "st_todo"}} = Jason.decode!(body)["variables"]
+      assert %{"input" => %{"stateId" => "st_in_progress"}} = Jason.decode!(body)["variables"]
       Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
     end)
 
     assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
   end
 
-  test "a task at a stage the ticket does not follow leaves Linear untouched", %{issue: issue} do
-    # The task is still at product, and no Linear mock is queued, so a request would raise.
+  test "a task at a stage the ticket does not follow leaves Linear untouched", %{issue: issue, task: task} do
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :merged})
+
+    # No Linear mock is queued, so a request would raise.
     assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
   end
 
