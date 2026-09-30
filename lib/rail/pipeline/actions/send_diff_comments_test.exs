@@ -89,15 +89,15 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
                  3 comments on the diff
 
                  lib/ledger/billing/invoice_query.ex, line 38
-                 + where(query, [i], i.status != :paid)
+                 +     where(query, [i], i.status != :paid)
                  Void invoices are not overdue.
 
                  lib/ledger/billing/invoice_query.ex, removed line 28
-                 - defp newest_first(query)
+                 -   defp newest_first(query)
                  Keep this ordering.
 
                  lib/ledger_web/live/invoice_live/index.ex, line 39
-                   filters = Filters.parse(params)
+                       filters = Filters.parse(params)
                  An unknown status should fall back to All.\
                  """,
                  "\n"
@@ -116,7 +116,7 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
         path: "lib/a.ex",
         line_kind: :added,
         line: 3,
-        line_text: "x = 1",
+        line_text: "x = 1   ",
         filter: :branch,
         body: "Name it."
       })

@@ -44,6 +44,14 @@ defmodule Rail.Pipeline.Actions.DeleteDiffCommentTest do
     assert Pipeline.list_diff_comments(ada, task) == []
   end
 
+  # The same person, in another tab drawn before the first removed it.
+  test "removing a comment already gone is still done", %{task: task, ada: ada, comment: comment} do
+    {:ok, _removed} = Pipeline.delete_diff_comment(ada, comment)
+
+    assert {:ok, %DiffComment{}} = Pipeline.delete_diff_comment(ada, comment)
+    assert Pipeline.list_diff_comments(ada, task) == []
+  end
+
   test "nobody else can remove it", %{task: task, ada: ada, grace: grace, comment: comment} do
     assert_raise FunctionClauseError, fn -> Pipeline.delete_diff_comment(grace, comment) end
     assert [%DiffComment{}] = Pipeline.list_diff_comments(ada, task)

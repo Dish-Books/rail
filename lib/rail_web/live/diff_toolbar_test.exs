@@ -48,6 +48,10 @@ defmodule RailWeb.Live.DiffToolbarTest do
 
     assert html |> Floki.parse_fragment!() |> Floki.find("#send-diff-comments") |> Floki.text() =~ "Send 3 comments"
     assert html =~ "Engineer is idle and starts on these at once."
+
+    # A second click before the first is answered would find nothing left to send.
+    assert [_disabled_while_sending] =
+             html |> Floki.parse_fragment!() |> Floki.find("#send-diff-comments[phx-disable-with]")
   end
 
   test "says comments sent to a working engineer wait for its turn to end", %{toolbar: toolbar} do

@@ -39,15 +39,15 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
   defp format(comments) do
     heading = if length(comments) == 1, do: "1 comment on the diff", else: "#{length(comments)} comments on the diff"
 
-    Enum.map_join([heading | Enum.map(comments, &block/1)], "\n\n", & &1)
+    Enum.join([heading | Enum.map(comments, &block/1)], "\n\n")
   end
 
   defp block(%DiffComment{} = comment) do
-    "#{comment.path}, #{where(comment)}\n#{glyph(comment.line_kind)} #{String.trim(comment.line_text)}\n#{comment.body}"
+    "#{comment.path}, #{line_label(comment)}\n#{glyph(comment.line_kind)} #{String.trim_trailing(comment.line_text)}\n#{comment.body}"
   end
 
-  defp where(%DiffComment{line_kind: :deleted, line: line}), do: "removed line #{line}"
-  defp where(%DiffComment{line: line}), do: "line #{line}"
+  defp line_label(%DiffComment{line_kind: :deleted, line: line}), do: "removed line #{line}"
+  defp line_label(%DiffComment{line: line}), do: "line #{line}"
 
   defp glyph(:added), do: "+"
   defp glyph(:deleted), do: "-"

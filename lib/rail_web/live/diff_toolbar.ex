@@ -93,6 +93,7 @@ defmodule RailWeb.Live.DiffToolbar do
         id="send-diff-comments"
         data-qa="send_diff_comments"
         phx-click="send_diff_comments"
+        phx-disable-with="Sending…"
         phx-target={@target}
         class="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 shadow-xs cursor-pointer"
       >

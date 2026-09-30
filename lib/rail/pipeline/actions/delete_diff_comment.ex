@@ -11,6 +11,6 @@ defmodule Rail.Pipeline.Actions.DeleteDiffComment do
   Deletes `comment`, which must be the scope user's own.
   """
   def delete_diff_comment(%Scope{user: %{id: user_id}}, %DiffComment{user_id: user_id} = comment) do
-    Repo.delete(comment)
+    Repo.delete(comment, allow_stale: true)
   end
 end
