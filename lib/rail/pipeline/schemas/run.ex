@@ -50,7 +50,7 @@ defmodule Rail.Pipeline.Schemas.Run do
     field :stage_fingerprint_dirty_digest, :string
     # CI failures in a row that went back to the engineer on their own.
     field :ci_failure_streak, :integer, default: 0
-    # A human's commit asked for review once CI passes.
+    # A human's commit or CI run asked for review once CI passes.
     field :review_on_ci_pass, :boolean, default: false
 
     # What the agent has spent getting this far, by kind of token. What that

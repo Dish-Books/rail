@@ -3,9 +3,9 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   Where a finished CI run leaves the engineer's run.
 
   A pass is what lets the branch be pushed, and the stage be done, and sends the
-  work to review when a human's commit asked for that. A failure goes back to the
-  engineer with the output that says why, until it has failed three times in a
-  row with nobody stepping in; then it waits for a person.
+  work to review when a human's commit or CI run asked for that. A failure goes
+  back to the engineer with the output that says why, until it has failed three
+  times in a row with nobody stepping in; then it waits for a person.
   """
 
   import Rail.Pipeline.Utils.OpenPullRequest

@@ -3,7 +3,7 @@ defmodule Rail.Pipeline.Actions.RunCi do
   Runs CI on the engineer's latest commit because a person asked to.
 
   Asking is stepping in, so the count of failures sent back on their own starts
-  over.
+  over, and it says the work is ready: a pass sends it to review.
   """
 
   import Rail.Pipeline.Utils.StartCi
@@ -22,11 +22,15 @@ defmodule Rail.Pipeline.Actions.RunCi do
     run = Repo.preload(run, [task: :project, role: :backend], force: true)
 
     with :ok <- runnable(run) do
-      {:ok, reset} = run |> Run.changeset(%{ci_failure_streak: 0, review_on_ci_pass: false}) |> Repo.update()
+      {:ok, reset} = run |> Run.changeset(%{ci_failure_streak: 0, review_on_ci_pass: true}) |> Repo.update()
 
       case start_ci(reset) do
-        {:ok, os_process} -> {:ok, os_process.run}
-        {:error, %Run{error: error}} -> {:error, error}
+        {:ok, os_process} ->
+          {:ok, os_process.run}
+
+        {:error, %Run{error: error} = failed} ->
+          {:ok, _cleared} = failed |> Run.changeset(%{review_on_ci_pass: false}) |> Repo.update()
+          {:error, error}
       end
     end
   end

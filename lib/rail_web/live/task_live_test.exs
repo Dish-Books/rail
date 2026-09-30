@@ -1110,7 +1110,7 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("#run-ci", "Run CI") |> render_click()
 
-      assert %Run{status: :running, ci_failure_streak: 0} = Repo.reload!(run)
+      assert %Run{status: :running, ci_failure_streak: 0, review_on_ci_pass: true} = Repo.reload!(run)
     end
 
     test "with CI, a pass on the latest commit lets the change go to review", %{
