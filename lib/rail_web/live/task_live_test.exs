@@ -3513,6 +3513,87 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#demo-beat-5200", "0:05")
     end
 
+    # A player LiveView patches in is loaded again by its hook, so every way to the
+    # tab without a reload must bring the same hooked, sourced video a reload does.
+    test "a recorded demo reached from another tab renders its player", %{
+      conn: conn,
+      task: task,
+      role: role,
+      recorded: recorded
+    } do
+      recorded.()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=issue")
+      view |> element("#task-tab-#{role.id}") |> render_click()
+
+      assert has_element?(
+               view,
+               "#demo-video-frame[phx-hook='DemoCaptions'][phx-update='ignore'] #demo-video[src='/tasks/#{task.id}/demo/video']"
+             )
+    end
+
+    test "a recorded demo reached by a link elsewhere in Rail renders its player", %{
+      conn: conn,
+      task: task,
+      recorded: recorded
+    } do
+      recorded.()
+
+      assert {:ok, overview, _html} = live(conn, ~p"/")
+      assert {:ok, view, _html} = live_redirect(overview, to: ~p"/tasks/#{task.id}")
+
+      assert has_element?(
+               view,
+               "#demo-video-frame[phx-hook='DemoCaptions'][phx-update='ignore'] #demo-video[src='/tasks/#{task.id}/demo/video']"
+             )
+    end
+
+    test "leaving the demo tab and coming back renders the player again", %{
+      conn: conn,
+      task: task,
+      role: role,
+      recorded: recorded
+    } do
+      recorded.()
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#task-tab-issue") |> render_click()
+      refute has_element?(view, "#demo-video")
+      view |> element("#task-tab-#{role.id}") |> render_click()
+
+      assert has_element?(
+               view,
+               "#demo-video-frame[phx-hook='DemoCaptions'][phx-update='ignore'] #demo-video[src='/tasks/#{task.id}/demo/video']"
+             )
+    end
+
+    test "a demo with nothing recorded reached from another tab shows no player", %{
+      conn: conn,
+      task: task,
+      role: role
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=issue")
+      view |> element("#task-tab-#{role.id}") |> render_click()
+
+      assert has_element?(view, "#demo-pending", "Nothing recorded yet.")
+      refute has_element?(view, "#demo-video")
+    end
+
+    test "a skipped demo reached from another tab shows no player", %{
+      conn: conn,
+      scope: scope,
+      task: task,
+      role: role
+    } do
+      {:ok, _run} = Pipeline.skip_demo(scope, task)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=issue")
+      view |> element("#task-tab-#{role.id}") |> render_click()
+
+      assert has_element?(view, "#demo-pending", "No demo is needed for this change.")
+      refute has_element?(view, "#demo-video")
+    end
+
     # The whole point of recording the application is seeing the application, so
     # the caption has a bar of its own under the video rather than a box over it.
     test "the caption sits under the video, never over it", %{conn: conn, task: task, recorded: recorded} do
