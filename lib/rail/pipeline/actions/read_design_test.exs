@@ -80,6 +80,23 @@ defmodule Rail.Pipeline.Actions.ReadDesignTest do
            } = Pipeline.read_design(task)
   end
 
+  test "an option's page version follows its content", %{task: task, design_dir: dir} do
+    File.write!(Path.join(dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
+    assert %{options: [%{html_version: nil}]} = Pipeline.read_design(task)
+
+    File.write!(Path.join(dir, "cards.html"), "<h1>Cards</h1>")
+    assert %{options: [%{html_version: written}]} = Pipeline.read_design(task)
+    assert written =~ ~r/\A[\w-]{16}\z/
+
+    File.write!(Path.join(dir, "cards.html"), "<h1>Cards</h1>")
+    assert %{options: [%{html_version: ^written}]} = Pipeline.read_design(task)
+
+    File.write!(Path.join(dir, "cards.html"), "<h1>Cards, without the links</h1>")
+    assert %{options: [%{html_version: revised}]} = Pipeline.read_design(task)
+    assert revised =~ ~r/\A[\w-]{16}\z/
+    assert revised != written
+  end
+
   test "a pick counts only when it names an option", %{task: task, design_dir: dir} do
     File.write!(Path.join(dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
 

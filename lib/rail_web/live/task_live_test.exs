@@ -671,6 +671,7 @@ defmodule RailWeb.TaskLiveTest do
     } do
       File.write!(Path.join(dir, "cards.png"), "png")
       stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+      %{options: [%{html_version: cards}, %{html_version: table}, _timeline]} = Pipeline.read_design(task)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -684,12 +685,18 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#design-good-at", "Easy to scan")
       assert has_element?(view, "#design-costs", "Few per screen")
       assert has_element?(view, "#design-assumptions", "Twelve per page.")
-      assert has_element?(view, "#open-design-cards[href='/tasks/#{task.id}/design/cards']")
+      assert has_element?(view, "#open-design-cards[href='/tasks/#{task.id}/design/cards?v=#{cards}']")
       refute has_element?(view, "#approve-design")
 
       view |> element("#design-tab-table") |> render_click()
 
-      assert has_element?(view, "#design-option-table iframe[srcdoc='<h1>table</h1>']")
+      assert has_element?(
+               view,
+               "#design-option-table iframe[src='/tasks/#{task.id}/design/table?v=#{table}'][sandbox='allow-scripts']"
+             )
+
+      refute has_element?(view, "iframe[srcdoc]")
+      assert has_element?(view, "#open-design-table[href='/tasks/#{task.id}/design/table?v=#{table}']")
       refute has_element?(view, "#design-option-cards")
       refute has_element?(view, "#design-good-at")
 
@@ -702,7 +709,8 @@ defmodule RailWeb.TaskLiveTest do
       # Once there is a pick, acting on it sits in the header with every other
       # action on the task; approving waits for the designer's turn to finish.
       refute has_element?(view, "#task-header #approve-design")
-      assert has_element?(view, "#task-header #open-design-table[href='/tasks/#{task.id}/design/table']")
+      assert has_element?(view, "#task-header #open-design-table[href='/tasks/#{task.id}/design/table?v=#{table}']")
+      assert has_element?(view, "#design-option-table iframe[src='/tasks/#{task.id}/design/table?v=#{table}']")
       refute has_element?(view, "[data-qa='pick_design']")
     end
 
@@ -712,19 +720,53 @@ defmodule RailWeb.TaskLiveTest do
       design_run: design_run,
       design_dir: dir
     } do
+      File.write!(Path.join(dir, "picked"), "cards")
+      %{options: [%{html_version: before} | _others]} = Pipeline.read_design(task)
+
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "#design-option-cards", "Big tiles.")
+      assert has_element?(view, "iframe[id='design-page-cards-#{before}']")
 
       File.write!(
         Path.join(dir, "manifest.json"),
         ~s({"options": [{"key": "cards", "title": "Cards", "summary": "Bigger tiles."}]})
       )
 
+      File.write!(Path.join(dir, "cards.html"), "<h1>cards, without the links</h1>")
+      %{options: [%{html_version: revised}]} = Pipeline.read_design(task)
+
       send(view.pid, {:os_process_finished, design_run, %{}})
 
       # The page forwards to the component, which renders on its own turn.
       _settled = render(view)
       assert has_element?(view, "#design-option-cards", "Bigger tiles.")
+      refute has_element?(view, "iframe[id='design-page-cards-#{before}']")
+
+      assert has_element?(
+               view,
+               "iframe[id='design-page-cards-#{revised}'][src='/tasks/#{task.id}/design/cards?v=#{revised}']"
+             )
+
+      assert has_element?(view, "#task-header #open-design-cards[href='/tasks/#{task.id}/design/cards?v=#{revised}']")
+    end
+
+    test "a turn finishing shows the screenshot it retook", %{
+      conn: conn,
+      task: task,
+      design_run: design_run,
+      design_dir: dir
+    } do
+      File.write!(Path.join(dir, "cards.png"), "png")
+      File.touch!(Path.join(dir, "cards.png"), 1_900_000_000)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#design-tab-cards img[src$='?v=1900000000']")
+
+      File.touch!(Path.join(dir, "cards.png"), 1_900_000_060)
+      send(view.pid, {:os_process_finished, design_run, %{}})
+
+      _settled = render(view)
+      assert has_element?(view, "#design-tab-cards img[src$='?v=1900000060']")
     end
 
     test "approving the picked design hands the task to the architect", %{conn: conn, task: task, design_dir: dir} do

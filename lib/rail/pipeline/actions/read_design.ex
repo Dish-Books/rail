@@ -18,7 +18,8 @@ defmodule Rail.Pipeline.Actions.ReadDesign do
   The design is `%{options: options, picked: key | nil}`. Each option is a map of
   its `:key`, `:title`, `:summary`, `:good_at` and `:costs` (lists of short
   phrases), `:assumptions`, `:html` (the page, or `nil` when it is not written
-  yet), `:html_path`, `:screenshot_path` and `:screenshot_version` (when the
+  yet), `:html_version` (a URL-safe digest of the page, or `nil` with it),
+  `:html_path`, `:screenshot_path` and `:screenshot_version` (when the
   screenshot was last written, or `nil` when there is none). An option without a
   usable key or title is no option, and a pick naming no option is no pick.
 
@@ -46,6 +47,7 @@ defmodule Rail.Pipeline.Actions.ReadDesign do
   defp option(%{"key" => key, "title" => title} = option, dir) do
     html_path = Path.join(dir, "#{key}.html")
     screenshot_path = Path.join(dir, "#{key}.png")
+    html = html(html_path)
 
     %{
       key: key,
@@ -54,7 +56,8 @@ defmodule Rail.Pipeline.Actions.ReadDesign do
       good_at: phrases(option["good_at"]),
       costs: phrases(option["costs"]),
       assumptions: text(option["assumptions"]) || "",
-      html: html(html_path),
+      html: html,
+      html_version: html_version(html),
       html_path: html_path,
       screenshot_path: screenshot_path,
       screenshot_version: version(screenshot_path)
@@ -79,6 +82,14 @@ defmodule Rail.Pipeline.Actions.ReadDesign do
       {:error, _unwritten} -> nil
     end
   end
+
+  # Keyed on content, not mtime, so a same-second rewrite still reads as new and
+  # an unchanged one does not reload the frame.
+  defp html_version(html) when is_binary(html) do
+    :sha256 |> :crypto.hash(html) |> binary_part(0, 12) |> Base.url_encode64(padding: false)
+  end
+
+  defp html_version(nil), do: nil
 
   defp version(path) do
     case File.stat(path, time: :posix) do
