@@ -1,11 +1,13 @@
 defmodule Rail.Pipeline.Actions.StartProductRunTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   import Ecto.Query
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Comment
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.AdvanceLinearState
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -113,6 +115,9 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
 
     assert content =~ "title: Attachments follow their source document"
     assert content =~ "priority: medium"
+
+    # Queued, not called: no Linear mock is left, so a call made now would raise.
+    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue_id})
   end
 
   test "leaves the owner on the issue the task links to", %{issue: issue} do
@@ -145,5 +150,6 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
 
     refute Repo.exists?(from t in Task, where: t.issue_id == ^issue.id)
     refute Repo.exists?(Run)
+    refute_enqueued(worker: AdvanceLinearState)
   end
 end

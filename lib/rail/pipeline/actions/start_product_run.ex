@@ -4,13 +4,14 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
 
   Everything the product stage needs lives here: the task, the worktree, the
   scratch ticket file the agent reads and writes, the brief describing that file,
-  and the spawned run.
+  and the spawned run. Starting it also queues the ticket's move to In Progress.
   """
 
   import Rail.Pipeline.Utils.FormatComments
   import Rail.Pipeline.Utils.FormatTicket
 
   alias Rail.Git
+  alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
@@ -45,6 +46,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
   defp record_run(%Issue{} = issue, %Project{} = project, %Role{} = role) do
     Repo.transaction(fn ->
       with {:ok, task} <- Pipeline.create_task(issue, :product),
+           {:ok, _job} <- Issues.advance_issue_state(issue),
            task = Repo.preload(task, [:project, :issue]),
            {:ok, worktree_path} <- ensure_worktree(project, task),
            {:ok, run} <- Pipeline.start_or_resume_run(task, role, worktree_path) do
