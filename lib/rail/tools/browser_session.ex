@@ -35,6 +35,12 @@ defmodule Rail.Tools.BrowserSession do
 
   @screencast %{format: "jpeg", quality: 80, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1}
 
+  # Encoding frames is most of what Chrome spends on a busy tab, and the panel
+  # shows four a second. Chrome keeps two frames in flight, so holding each ack
+  # this long keeps a busy tab to about eighteen a second and half the CPU.
+  @ack_after_ms 133
+  @settled_after_ms 250
+
   defstruct [
     :session_id,
     :task_id,
@@ -45,6 +51,8 @@ defmodule Rail.Tools.BrowserSession do
     :debug_port,
     :frame,
     :url,
+    frame_seq: 0,
+    screenshot_echo?: false,
     problems: []
   ]
 
@@ -153,20 +161,47 @@ defmodule Rail.Tools.BrowserSession do
     {:stop, {:browser_gone, reason}, state}
   end
 
-  # Chrome stops sending frames until the last one is acknowledged, so the ack
-  # goes out before anything else happens with it. The frame is broadcast whether
-  # or not anybody is listening, which on a local PubSub with no subscribers is a
-  # lookup and nothing else.
-  def handle_info({:cdp_event, "Page.screencastFrame", %{"data" => data} = params}, %__MODULE__{} = state) do
-    Browser.cast(state.browser, "Page.screencastFrameAck", %{
-      session: state.cdp_session_id,
-      sessionId: params["sessionId"]
-    })
+  # Chrome sends no frame until the last one is acknowledged, so holding the ack
+  # is what sets the frame rate. The frame is broadcast whether or not anybody is
+  # listening, which on a local PubSub with no subscribers is a lookup and
+  # nothing else.
+  #
+  # The frame a screenshot of our own paints is let straight through, or every
+  # screenshot would be followed by another.
+  def handle_info(
+        {:cdp_event, "Page.screencastFrame", %{"data" => data, "sessionId" => ack}},
+        %__MODULE__{screenshot_echo?: true} = state
+      ) do
+    ack(state, ack)
 
-    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{state.task_id}", {:browser_frame, state.task_id, data})
-
-    {:noreply, %{state | frame: data}}
+    {:noreply, %{show(state, data) | screenshot_echo?: false}}
   end
+
+  def handle_info({:cdp_event, "Page.screencastFrame", %{"data" => data, "sessionId" => ack}}, %__MODULE__{} = state) do
+    seq = state.frame_seq + 1
+    Process.send_after(self(), {:ack_frame, ack, seq}, @ack_after_ms)
+
+    {:noreply, %{show(state, data) | frame_seq: seq}}
+  end
+
+  def handle_info({:ack_frame, ack, seq}, %__MODULE__{} = state) do
+    ack(state, ack)
+    Process.send_after(self(), {:settled, seq}, @settled_after_ms)
+
+    {:noreply, state}
+  end
+
+  # Whatever the page painted while an ack was held was never sent, and a page
+  # that has since gone still will not paint again. So once the frames stop, the
+  # page is photographed as it is, and that is the frame everyone ends on.
+  def handle_info({:settled, seq}, %__MODULE__{frame_seq: seq} = state) do
+    case command(state, "Page.captureScreenshot", %{format: "jpeg", quality: @screencast.quality}) do
+      {:ok, %{"data" => data}} -> {:noreply, %{show(state, data) | screenshot_echo?: true}}
+      {:error, _gone} -> {:noreply, state}
+    end
+  end
+
+  def handle_info({:settled, _since_moved}, %__MODULE__{} = state), do: {:noreply, state}
 
   # The tab said it navigated. Only the main frame counts: an iframe going
   # somewhere is not the page going somewhere.
@@ -196,6 +231,16 @@ defmodule Rail.Tools.BrowserSession do
     if state.browser && Process.alive?(state.browser), do: GenServer.stop(state.browser, :normal, 1_000)
 
     :ok
+  end
+
+  defp show(%__MODULE__{} = state, data) do
+    Phoenix.PubSub.broadcast(Rail.PubSub, "browser:#{state.task_id}", {:browser_frame, state.task_id, data})
+
+    %{state | frame: data}
+  end
+
+  defp ack(%__MODULE__{} = state, ack) do
+    Browser.cast(state.browser, "Page.screencastFrameAck", %{session: state.cdp_session_id, sessionId: ack})
   end
 
   defp problem("Runtime.exceptionThrown", %{"exceptionDetails" => details}) do
@@ -278,10 +323,18 @@ defmodule Rail.Tools.BrowserSession do
   # A tab Rail drives is a fixed size so a narrow-viewport check means something,
   # and renders while it is in the background so animations and menus behave the
   # way they would in front of somebody.
+  #
+  # The size is the window's own, not only an override: Chrome drops every
+  # override when a connection that set one goes, and the agent's driver resizes
+  # over a connection of its own. A headless window is 756x469 inside, so without
+  # this the page stays laid out at 1920 while the screencast shows its corner.
   defp prepare(%__MODULE__{} = state) do
     metrics = Map.merge(@viewport, %{deviceScaleFactor: 1, mobile: false})
 
-    with {:ok, _set} <- command(state, "Emulation.setDeviceMetricsOverride", metrics),
+    with {:ok, %{"windowId" => window}} <-
+           Browser.call(state.browser, "Browser.getWindowForTarget", %{targetId: state.target_id}),
+         {:ok, _sized} <- Browser.call(state.browser, "Browser.setContentsSize", Map.put(@viewport, :windowId, window)),
+         {:ok, _set} <- command(state, "Emulation.setDeviceMetricsOverride", metrics),
          {:ok, _focus} <- command(state, "Emulation.setFocusEmulationEnabled", %{enabled: true}),
          :ok <- listen(state),
          {:ok, _casting} <- command(state, "Page.startScreencast", @screencast) do

@@ -156,6 +156,8 @@ defmodule Rail.Tools.Utils.EnsureBrowserHostTest do
       assert_received {:created, "name=rail-browser", body}
       assert %{"NetworkMode" => "host", "RestartPolicy" => %{"Name" => "unless-stopped"}} = body["HostConfig"]
       assert body["HostConfig"]["Memory"] == Rail.browser_memory_gb() * 1024 ** 3
+      assert body["HostConfig"]["CpuShares"] == Rail.browser_cpus() * 1024
+      refute Map.has_key?(body["HostConfig"], "NanoCpus")
       assert body["Image"] == Rail.sandbox_image()
       assert ["/bin/sh", "-c", _script, _profile, "--headless=new" | _flags] = body["Cmd"]
       # Not a sandbox, so the sweep of settled sandboxes never removes it.

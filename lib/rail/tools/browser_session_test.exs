@@ -95,6 +95,30 @@ defmodule Rail.Tools.BrowserSessionTest do
              })
   end
 
+  # The agent drives the tab over a connection of its own, and Chrome forgets the
+  # viewport a connection set when that connection goes. What is left has to be
+  # the tab's own size, or the panel shows the corner of a page laid out wider.
+  test "the tab stays the size Rail asked for after the agent's connection resizes it and goes", %{
+    task: task,
+    page: page
+  } do
+    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
+    %{page_url: page_url} = BrowserSession.details(session)
+
+    {:ok, agent} = Browser.start_link(url: page_url)
+    narrow = %{width: 390, height: 844, deviceScaleFactor: 1, mobile: true}
+    {:ok, _narrow} = Browser.call(agent, "Emulation.setDeviceMetricsOverride", narrow)
+    wide = %{width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false}
+    {:ok, _wide} = Browser.call(agent, "Emulation.setDeviceMetricsOverride", wide)
+    :ok = GenServer.stop(agent, :normal)
+
+    eventually(fn ->
+      assert {:ok, %{"cssVisualViewport" => %{"clientWidth" => 1920, "clientHeight" => 1080}}} =
+               BrowserSession.call(session, "Page.getLayoutMetrics")
+    end)
+  end
+
   test "asking twice gets the tab that is already open", %{task: task} do
     assert {:ok, session} = Tools.start_browser_session(task)
     assert {:ok, ^session} = Tools.start_browser_session(task)
@@ -272,6 +296,87 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert task_id == task.id
     assert {:ok, <<0xFF, 0xD8, _rest::binary>>} = Base.decode64(data)
 
+    assert Tools.get_browser_frame(task)
+  end
+
+  # Frames are taken at most about fifteen a second, so a paint that lands while
+  # one is still being held back is never sent. A page that then holds still is
+  # still the page the panel and the demo end on. Read back in the tab itself,
+  # because Chrome is what can decode a JPEG.
+  test "the last frame is the page as it settled, however quickly it got there", %{task: task} do
+    page = Path.join(task.scratch_path, "settles.html")
+
+    File.write!(page, """
+    <!doctype html><body style="margin:0;background:rgb(255,0,0)"><script>
+      setTimeout(() => {
+        let shade = 0
+        const flicker = setInterval(() => { document.body.style.background = `rgb(0,0,${++shade * 40})` }, 10)
+        setTimeout(() => {
+          clearInterval(flicker)
+          document.body.style.background = 'rgb(0,160,0)'
+          document.title = 'settled'
+        }, 55)
+      }, 1000)
+    </script>
+    """)
+
+    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: "file://#{page}"})
+
+    eventually(
+      fn ->
+        assert {:ok, %{"result" => %{"value" => "settled"}}} =
+                 BrowserSession.call(session, "Runtime.evaluate", %{expression: "document.title", returnByValue: true})
+      end,
+      5_000
+    )
+
+    eventually(
+      fn ->
+        decode = """
+        new Promise(resolve => {
+          const image = new Image()
+          image.onload = () => {
+            const canvas = document.createElement('canvas')
+            canvas.width = image.width
+            canvas.height = image.height
+            const context = canvas.getContext('2d')
+            context.drawImage(image, 0, 0)
+            resolve(Array.from(context.getImageData(image.width / 2, image.height / 2, 1, 1).data.slice(0, 3)))
+          }
+          image.src = 'data:image/jpeg;base64,#{Tools.get_browser_frame(task)}'
+        })
+        """
+
+        assert {:ok, %{"result" => %{"value" => [red, green, blue]}}} =
+                 BrowserSession.call(session, "Runtime.evaluate", %{
+                   expression: decode,
+                   awaitPromise: true,
+                   returnByValue: true
+                 })
+
+        assert red < 40 and green > 120 and blue < 40
+      end,
+      3_000
+    )
+  end
+
+  # The tab closed from under the session between its last frame and the
+  # photograph of how it settled. The frame it had is the frame it keeps.
+  test "a tab that goes before it can be photographed keeps its last frame", %{task: task, page: page} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}")
+    {:ok, session} = Tools.start_browser_session(task)
+    %Session{browser_context_id: context} = Repo.get_by!(Session, task_id: task.id)
+    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
+    assert_receive {:browser_frame, _task_id, _data}, 10_000
+
+    {:ok, %{url: url}} = ensure_browser_host(start: false)
+    {:ok, connection} = Browser.start_link(url: url)
+    {:ok, _closed} = Browser.call(connection, "Target.disposeBrowserContext", %{browserContextId: context})
+    GenServer.stop(connection)
+
+    Process.sleep(500)
+    assert Process.alive?(session)
     assert Tools.get_browser_frame(task)
   end
 
