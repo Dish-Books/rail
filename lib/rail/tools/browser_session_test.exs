@@ -95,6 +95,30 @@ defmodule Rail.Tools.BrowserSessionTest do
              })
   end
 
+  # The agent drives the tab over a connection of its own, and Chrome forgets the
+  # viewport a connection set when that connection goes. What is left has to be
+  # the tab's own size, or the panel shows the corner of a page laid out wider.
+  test "the tab stays the size Rail asked for after the agent's connection resizes it and goes", %{
+    task: task,
+    page: page
+  } do
+    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
+    %{page_url: page_url} = BrowserSession.details(session)
+
+    {:ok, agent} = Browser.start_link(url: page_url)
+    narrow = %{width: 390, height: 844, deviceScaleFactor: 1, mobile: true}
+    {:ok, _narrow} = Browser.call(agent, "Emulation.setDeviceMetricsOverride", narrow)
+    wide = %{width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false}
+    {:ok, _wide} = Browser.call(agent, "Emulation.setDeviceMetricsOverride", wide)
+    :ok = GenServer.stop(agent, :normal)
+
+    eventually(fn ->
+      assert {:ok, %{"cssVisualViewport" => %{"clientWidth" => 1920, "clientHeight" => 1080}}} =
+               BrowserSession.call(session, "Page.getLayoutMetrics")
+    end)
+  end
+
   test "asking twice gets the tab that is already open", %{task: task} do
     assert {:ok, session} = Tools.start_browser_session(task)
     assert {:ok, ^session} = Tools.start_browser_session(task)

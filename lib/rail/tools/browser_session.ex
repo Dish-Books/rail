@@ -278,10 +278,18 @@ defmodule Rail.Tools.BrowserSession do
   # A tab Rail drives is a fixed size so a narrow-viewport check means something,
   # and renders while it is in the background so animations and menus behave the
   # way they would in front of somebody.
+  #
+  # The size is the window's own, not only an override: Chrome drops every
+  # override when a connection that set one goes, and the agent's driver resizes
+  # over a connection of its own. A headless window is 756x469 inside, so without
+  # this the page stays laid out at 1920 while the screencast shows its corner.
   defp prepare(%__MODULE__{} = state) do
     metrics = Map.merge(@viewport, %{deviceScaleFactor: 1, mobile: false})
 
-    with {:ok, _set} <- command(state, "Emulation.setDeviceMetricsOverride", metrics),
+    with {:ok, %{"windowId" => window}} <-
+           Browser.call(state.browser, "Browser.getWindowForTarget", %{targetId: state.target_id}),
+         {:ok, _sized} <- Browser.call(state.browser, "Browser.setContentsSize", Map.put(@viewport, :windowId, window)),
+         {:ok, _set} <- command(state, "Emulation.setDeviceMetricsOverride", metrics),
          {:ok, _focus} <- command(state, "Emulation.setFocusEmulationEnabled", %{enabled: true}),
          :ok <- listen(state),
          {:ok, _casting} <- command(state, "Page.startScreencast", @screencast) do
