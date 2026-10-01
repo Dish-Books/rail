@@ -47,6 +47,7 @@ defmodule Rail.Pipeline do
   defdelegate start_engineer_run(run), to: Actions.StartEngineerRun
   defdelegate read_commit_message(task), to: Actions.ReadCommitMessage
   defdelegate commit_engineer_work(scope, task), to: Actions.CommitEngineerWork
+  defdelegate commit_and_send_to_review(scope, run), to: Actions.CommitAndSendToReview
   defdelegate send_to_review(run), to: Actions.SendToReview
   defdelegate changed_since_review?(task), to: Actions.ChangedSinceReview
   defdelegate run_ci(scope, run), to: Actions.RunCi

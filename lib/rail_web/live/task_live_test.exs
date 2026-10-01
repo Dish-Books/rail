@@ -1110,7 +1110,7 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("#run-ci", "Run CI") |> render_click()
 
-      assert %Run{status: :running, ci_failure_streak: 0} = Repo.reload!(run)
+      assert %Run{status: :running, ci_failure_streak: 0, review_on_ci_pass: true} = Repo.reload!(run)
     end
 
     test "with CI, a pass on the latest commit lets the change go to review", %{
@@ -1409,11 +1409,14 @@ defmodule RailWeb.TaskLiveTest do
         :ok
       end)
 
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
       view |> element("#commit-work") |> render_click()
       render_async(view, 5_000)
 
       refute has_element?(view, "#commit-work")
       assert %Run{error: nil} = Repo.reload!(run)
+      assert %Task{stage: :review} = Repo.reload!(task)
     end
 
     # The push runs the repository's pre-push hooks, which can take minutes, so the
@@ -1451,6 +1454,44 @@ defmodule RailWeb.TaskLiveTest do
 
       refute has_element?(view, "#commit-work")
       refute has_element?(view, "#send-to-review[disabled]")
+    end
+
+    # A push lasts as long as the repository's hooks do, and leaving the page
+    # meanwhile takes back neither the commit nor the go-ahead that came with it.
+    test "a commit carries on to review after the page is left", %{
+      conn: conn,
+      task: task,
+      engineer_run: run,
+      repo: repo
+    } do
+      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+      {:ok, run} = Pipeline.update_run(run, %{error: "CI passed, but the branch could not be pushed: rejected"})
+      test_pid = self()
+
+      stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
+        send(test_pid, {:pushing, self()})
+
+        receive do
+          :release ->
+            git!(path, ["push", "origin", "HEAD"])
+            :ok
+        end
+      end)
+
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#commit-work") |> render_click()
+      assert_receive {:pushing, pusher}
+
+      Process.flag(:trap_exit, true)
+      Process.exit(view.pid, :kill)
+      pushing = Process.monitor(pusher)
+      send(pusher, :release)
+      assert_receive {:DOWN, ^pushing, :process, ^pusher, :normal}, 5_000
+
+      assert %Task{stage: :review} = Repo.reload!(task)
+      assert %Run{review_on_ci_pass: false, error: nil} = Repo.reload!(run)
     end
 
     # A push that takes the whole process down with it still has to leave the
@@ -1790,6 +1831,26 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#send-to-review") |> render_click()
 
       assert %Task{stage: :review} = Repo.reload!(task)
+    end
+
+    # A human's commit already says the work is ready, so nobody has to click on.
+    test "committing the diff moves the task to review once it is pushed", %{conn: conn, task: task, repo: repo} do
+      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+
+      stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
+        git!(path, ["push", "origin", "HEAD"])
+        :ok
+      end)
+
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#commit-work") |> render_click()
+      render_async(view, 5_000)
+
+      assert %Task{stage: :review} = Repo.reload!(task)
+      refute has_element?(view, "#engineer-error")
     end
 
     test "selecting a file in the tree marks it and goes there", %{conn: conn, task: task} do

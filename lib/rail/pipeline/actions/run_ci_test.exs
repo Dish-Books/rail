@@ -79,13 +79,15 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
     %{project: project, run: run, worktree_path: worktree_path}
   end
 
-  test "runs CI again with the count of failures started over", %{run: run} do
+  # A person asking for CI is saying the work is ready, as a commit from them does.
+  test "runs CI again with the count of failures started over, and review to follow a pass", %{run: run} do
     expect(Tools, :start_command_process, fn spawned, :ci, "mise run ci", opts ->
       assert opts[:timeout_ms] == to_timeout(minute: 45)
       {:ok, %OsProcess{kind: :ci, run: spawned}}
     end)
 
-    assert {:ok, %Run{status: :running, ci_failure_streak: 0, error: nil}} = Pipeline.run_ci(system_scope(), run)
+    assert {:ok, %Run{status: :running, ci_failure_streak: 0, review_on_ci_pass: true, error: nil}} =
+             Pipeline.run_ci(system_scope(), run)
   end
 
   test "a project without CI has none to run", %{project: project, run: run} do
@@ -110,5 +112,6 @@ defmodule Rail.Pipeline.Actions.RunCiTest do
     expect(Tools, :start_command_process, fn _run, :ci, _command, _opts -> {:error, {:bad_cwd, "/gone"}} end)
 
     assert {:error, "Could not start CI: {:bad_cwd, \"/gone\"}"} = Pipeline.run_ci(system_scope(), run)
+    assert %Run{review_on_ci_pass: false} = Repo.reload!(run)
   end
 end

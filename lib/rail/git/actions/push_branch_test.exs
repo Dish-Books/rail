@@ -101,4 +101,58 @@ defmodule Rail.Git.Actions.PushBranchTest do
     assert :ok = Git.push_branch(scope, task)
     assert git!(repo, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
   end
+
+  # A push cut off after the remote took it, but before git wrote down that it
+  # had, leaves a lease that can never match again.
+  test "pushes again over a push of its own that git never recorded", %{
+    scope: scope,
+    task: task,
+    repo: repo,
+    remote: remote
+  } do
+    Req.Test.expect(Client, 2, &Req.Test.json(&1, %{"token" => "ghs_installation_token"}))
+
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "feature"])
+    git!(repo, ["push", "origin", "main"])
+    git!(repo, ["update-ref", "-d", "refs/remotes/origin/main"])
+
+    File.write!(Path.join(repo, "feature.ex"), "two\n")
+    git!(repo, ["commit", "-am", "more"])
+
+    assert :ok = Git.push_branch(scope, task)
+    assert git!(repo, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
+  end
+
+  # The lease is what stops Rail overwriting work it never saw, so a remote that
+  # moved on outside Rail is still refused after the fetch.
+  test "still refuses a remote that holds someone else's push", %{
+    scope: scope,
+    task: task,
+    repo: repo,
+    remote: remote
+  } do
+    Req.Test.expect(Client, 2, &Req.Test.json(&1, %{"token" => "ghs_installation_token"}))
+
+    elsewhere = Path.join(System.tmp_dir!(), "rail_git_elsewhere_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf(elsewhere) end)
+    git!(repo, ["push", "origin", "main"])
+    git!(System.tmp_dir!(), ["clone", remote, elsewhere])
+    git!(elsewhere, ["config", "user.email", "else@rail.local"])
+    git!(elsewhere, ["config", "user.name", "Someone Else"])
+    File.write!(Path.join(elsewhere, "theirs.ex"), "theirs\n")
+    git!(elsewhere, ["add", "."])
+    git!(elsewhere, ["commit", "-m", "theirs"])
+    git!(elsewhere, ["push", "origin", "main"])
+    git!(repo, ["update-ref", "-d", "refs/remotes/origin/main"])
+
+    File.write!(Path.join(repo, "feature.ex"), "one\n")
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "feature"])
+
+    assert {:error, output} = Git.push_branch(scope, task)
+    assert output =~ "stale info"
+    assert git!(elsewhere, ["rev-parse", "HEAD"]) == git!(remote, ["rev-parse", "main"])
+  end
 end
