@@ -72,7 +72,7 @@ defmodule Rail.Pipeline.Actions.StartArchitectRun do
 
     - A heredoc into #{file}, never an inline string.
     - Keep the `## Implementation plan` heading on the first line.
-    - Review comments come back as further turns of this same conversation. When that happens, write the file again.
+    - Review comments come back as further turns of this same conversation. When that happens, write the file again with the correction carried everywhere it reaches: "do not store it" removes the column, the migration, the schema field and their tests, not only the sentence.
     - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each `[QUESTION: ...]` on a line of its own. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or a named assumption is not a question.
 
     The approved ticket:
@@ -96,7 +96,7 @@ defmodule Rail.Pipeline.Actions.StartArchitectRun do
            Enum.find(options, &(&1.key == key)) do
       """
 
-      The human approved the design "#{title}". The page is #{html_path} and its screenshot is #{screenshot_path}. Read the page: the plan builds that screen, and its markup carries the layout, states and copy the ticket only describes. Where the code cannot reasonably produce what the page shows, say so in the plan rather than quietly building something else.
+      The human approved the design "#{title}". The page is #{html_path} and its screenshot is #{screenshot_path}. Read the page: the plan builds that screen, and its markup carries the layout, states and copy the ticket only describes. Plan every state it shows, even where the ticket says less, and never recommend dropping one. Where the code cannot reasonably produce what the page shows, ask rather than quietly building something else. The page can carry large inline images, so strip `data:` URIs with `sed` before reading it whole.
       """
     else
       _no_approved_design -> ""
