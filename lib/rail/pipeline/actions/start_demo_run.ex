@@ -91,7 +91,7 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
 
     `demo_say` is the narration, and Rail stamps each caption against the recording's own clock: say what is about to happen and then do it, or the caption lands over whatever came next. Rail renders captions in a bar under the video and never on it, so nothing you say covers the application - and nothing you say can point at it either. Name the acceptance criterion in `criterion` on the beat that proves one; that is how Rail reads back what the walkthrough covered.
 
-    Captions need time to be read: two `demo_say` calls in the same second leave the first one unseen, so let about five seconds pass after each. Look at the page before you narrate that something worked: reaching the end of an instruction is not the application having done the right thing. Never wait for something to age out or time out on camera; set the state up before `demo_start`.
+    Captions need time to be read: two `demo_say` calls in the same second leave the first one unseen, so let about five seconds pass after each. Look at the page before you narrate that something worked: a script finishing is not the application having done the right thing. Never wait for something to age out or time out on camera; set the state up before `demo_start`.
 
     #{avoid(task)}
     Writing #{file} is how you hand the recording over, and it is the last thing you do. Write it from your worktree with a heredoc, the body and its closing JSON line at column zero:
