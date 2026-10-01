@@ -226,7 +226,7 @@ defmodule RailWeb.Live.RunConversation do
         id="chat-messages"
         data-qa="chat-messages"
         phx-hook="ChatAutoscroll"
-        class="flex-1 overflow-y-auto px-5 py-5 space-y-4"
+        class="flex-1 overflow-y-auto overflow-x-hidden px-5 py-5 space-y-4"
       >
         <%= if not @has_messages do %>
           <!-- Empty State -->
@@ -338,7 +338,10 @@ defmodule RailWeb.Live.RunConversation do
           class="text-slate-900 dark:text-slate-100"
         >
           <div class="select-text prose dark:prose-invert max-w-none text-[13px] leading-relaxed">
-            <.markdown content={@text} />
+            <.markdown
+              content={@text}
+              class="wrap-break-word prose-table:block prose-table:overflow-x-auto"
+            />
           </div>
         </div>
       <% :activity -> %>
@@ -482,7 +485,7 @@ defmodule RailWeb.Live.RunConversation do
               <%!-- Kept on one line: pre-wrap would render the template's own indentation. --%>
               <span
                 phx-no-format
-                class="select-text font-mono whitespace-pre-wrap wrap-break-word"
+                class="min-w-0 select-text font-mono whitespace-pre-wrap wrap-break-word"
               >{String.replace_prefix(@text, "[error] ", "")}</span>
             </div>
           <% String.starts_with?(@text, "[rail]") -> %>
@@ -492,13 +495,13 @@ defmodule RailWeb.Live.RunConversation do
               class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 font-mono text-[11px] mt-4 mb-1"
             >
               <.icon name="pi-info" class="h-3.5 w-3.5 shrink-0" />
-              <span class="select-text">{@text}</span>
+              <span class="min-w-0 select-text wrap-break-word">{@text}</span>
             </div>
           <% true -> %>
             <div
               id={"msg-#{@idx}"}
               data-qa="system-event"
-              class="text-center font-mono text-[11px] text-slate-500 dark:text-slate-400 select-text my-0.5"
+              class="text-center font-mono text-[11px] text-slate-500 dark:text-slate-400 select-text wrap-break-word my-0.5"
             >
               {@text}
             </div>
@@ -828,7 +831,7 @@ defmodule RailWeb.Live.RunConversation do
       id="raw-log-container"
       data-qa="raw_log_container"
       phx-hook="ChatAutoscroll"
-      class="w-full flex-1 min-h-0 p-4 bg-zinc-950 text-zinc-300 font-mono text-xs overflow-y-auto select-text"
+      class="w-full flex-1 min-h-0 p-4 bg-zinc-950 text-zinc-300 font-mono text-xs overflow-y-auto overflow-x-hidden select-text"
     >
       <%= if not @has_lines do %>
         <div id="raw-log-empty-state" class="flex items-center justify-center h-48 text-zinc-500">
@@ -836,13 +839,13 @@ defmodule RailWeb.Live.RunConversation do
         </div>
       <% else %>
         <%= for {line, idx} <- Enum.with_index(@lines) do %>
+          <%!-- Kept on one line: pre-wrap would render the template's own indentation. --%>
           <div
+            phx-no-format
             id={"raw-log-line-#{idx}"}
             data-qa="raw-log-line"
-            class={["leading-relaxed whitespace-pre-wrap", raw_log_color_class(line)]}
-          >
-            {line}
-          </div>
+            class={["leading-relaxed whitespace-pre-wrap wrap-break-word", raw_log_color_class(line)]}
+          >{line}</div>
         <% end %>
       <% end %>
     </div>
