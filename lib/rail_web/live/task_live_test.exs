@@ -4152,7 +4152,7 @@ defmodule RailWeb.TaskLiveTest do
       # everything under it is proof of that defect.
       view |> element("#qa-check-finding-off-by-a-cent") |> render_click()
       refute has_element?(view, "[data-qa='qa_finding_check_shots']")
-      assert has_element?(view, "#qa-evidence-tab-0[aria-selected='true']", "totals~the-entry-a-cent-short.png")
+      assert has_element?(view, "#qa-evidence-tab-0[aria-selected='true']", "The entry a cent short")
 
       assert [_its_own] =
                view |> render() |> Floki.parse_fragment!() |> Floki.find("#qa-finding-detail img")
@@ -4294,6 +4294,41 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("#qa-evidence-tab-5[data-kind='note']") |> render_click()
       assert has_element?(view, "[data-qa='qa_evidence_line']", "POST /exports twice")
+    end
+
+    # Every picture qa_shot files for one check starts with that check's key, so
+    # a tab says what QA called the picture, and a strip too narrow for every tab
+    # scrolls rather than squeezing their names away.
+    test "each evidence tab keeps a name a reader can tell apart", %{conn: conn, task: task} do
+      {:ok, _synced} =
+        Pipeline.sync_qa_findings(task, [
+          %{
+            key: "total-unrounded",
+            title: "The total is wrong",
+            check: "totals",
+            severity: :major,
+            recommendation: :fix,
+            evidence: [
+              %{name: "The total before saving", kind: :screenshot, path: "evidence/totals~the-total-before-saving.jpg"},
+              %{name: "The total after saving", kind: :screenshot, path: "evidence/totals~the-total-after-saving.jpg"},
+              %{name: "What the database holds", kind: :query, text: "amount_cents: 123450"}
+            ]
+          }
+        ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#qa-evidence-tab-0", "The total before saving")
+      assert has_element?(view, "#qa-evidence-tab-1", "The total after saving")
+      refute has_element?(view, "#qa-evidence-tab-0", "totals~")
+
+      document = view |> render() |> Floki.parse_fragment!()
+      assert [strip] = Floki.attribute(document, "#qa-evidence-viewer [role='tablist']", "class")
+      assert "overflow-x-auto" in String.split(strip)
+
+      for tab <- Floki.attribute(document, "[data-qa='qa_evidence_tab']", "class") do
+        assert "shrink-0" in String.split(tab)
+      end
     end
 
     # A finding raised before every finding had to carry evidence still opens.

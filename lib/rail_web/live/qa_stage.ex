@@ -785,7 +785,7 @@ defmodule RailWeb.Live.QaStage do
       <div
         :if={@shown}
         role="tablist"
-        class="shrink-0 flex items-end gap-1 px-4 pt-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40"
+        class="shrink-0 flex items-end gap-1 overflow-x-auto px-4 pt-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40"
       >
         <button
           :for={{evidence, index} <- Enum.with_index(@finding.evidence)}
@@ -799,7 +799,7 @@ defmodule RailWeb.Live.QaStage do
           phx-target={@target}
           phx-value-index={index}
           class={[
-            "-mb-px min-w-0 flex items-center gap-2 px-3.5 py-2 rounded-t-lg border text-[12.5px] cursor-pointer",
+            "shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-t-lg border text-[12.5px] cursor-pointer",
             index == @index &&
               "border-slate-200 dark:border-slate-700 border-b-white dark:border-b-slate-900 bg-white dark:bg-slate-900 font-semibold text-slate-900 dark:text-slate-100",
             index != @index &&
@@ -1829,7 +1829,9 @@ defmodule RailWeb.Live.QaStage do
   defp evidence_icon(:query), do: "pi-database"
   defp evidence_icon(:note), do: "pi-note"
 
-  # A file is named by its file, and something written inline by what QA called it.
+  # A picture goes by what QA called it, since every qa_shot file from one check
+  # starts the same. Any other file goes by its file, and inline text by its name.
+  defp tab_name(%QaEvidence{kind: :screenshot, name: name}), do: name
   defp tab_name(%QaEvidence{path: path}) when is_binary(path), do: Path.basename(path)
   defp tab_name(%QaEvidence{name: name}), do: name
 
