@@ -96,19 +96,12 @@ defmodule Rail.Pipeline.Actions.RecordDemoTest do
     assert %Task{demo_skipped_at: nil} = Repo.reload!(task)
   end
 
-  test "settles a demo as not needed, which is the demo done", %{task: task} do
+  test "settles a demo as not needed, which is the demo done, and leaves the pull request in draft", %{task: task} do
     {:ok, task} = Pipeline.update_task(task, %{pr_number: 7, pr_is_draft: true})
-
-    Req.Test.expect(Client, 3, fn conn ->
-      case {conn.method, conn.request_path} do
-        {"POST", "/app/installations/" <> _id} -> Req.Test.json(conn, %{"token" => "ghs_token"})
-        {"GET", "/repos/org/demo/pulls/7"} -> Req.Test.json(conn, %{"number" => 7, "node_id" => "PR_kw7"})
-        {"POST", "/graphql"} -> Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{}}})
-      end
-    end)
+    Req.Test.stub(Client, fn _conn -> flunk("a skipped demo marked the pull request ready") end)
 
     assert {:ok, %Run{id: run_id, status: :finished, stage_outcome: :done}} = Pipeline.skip_demo(system_scope(), task)
-    assert %Task{demo_skipped_at: %DateTime{}, pr_is_draft: false} = Repo.reload!(task)
+    assert %Task{demo_skipped_at: %DateTime{}, pr_is_draft: true} = Repo.reload!(task)
     assert [%RunEvent{run_id: ^run_id, line: "[human] No demo is needed for this change."}] = Repo.all(RunEvent)
   end
 

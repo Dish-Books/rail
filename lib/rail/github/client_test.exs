@@ -231,4 +231,22 @@ defmodule Rail.GitHub.ClientTest do
     Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
     assert {:error, %Req.TransportError{}} = Client.update_pull_request("ghs_token", "acme/app", 43, %{})
   end
+
+  test "comments on a pull request's conversation" do
+    Req.Test.expect(Client, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/repos/acme/app/issues/43/comments"
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"body" => "Which vendor list?"} = Jason.decode!(body)
+      conn |> Plug.Conn.put_status(201) |> Req.Test.json(%{"id" => 9001, "body" => "Which vendor list?"})
+    end)
+
+    assert {:ok, %{"id" => 9001}} = Client.create_issue_comment("ghs_token", "acme/app", 43, "Which vendor list?")
+
+    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(403) |> Req.Test.json(%{"message" => "Forbidden"})))
+    assert {:error, {:github_api_error, 403, _body}} = Client.create_issue_comment("ghs_token", "acme/app", 43, "b")
+
+    Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
+    assert {:error, %Req.TransportError{}} = Client.create_issue_comment("ghs_token", "acme/app", 43, "b")
+  end
 end

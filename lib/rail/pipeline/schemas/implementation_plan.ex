@@ -42,4 +42,35 @@ defmodule Rail.Pipeline.Schemas.ImplementationPlan do
     |> foreign_key_constraint(:task_id)
     |> unique_constraint(:task_id)
   end
+
+  @doc """
+  The defaults the plan took for a human to veto: the bullets under its
+  `Assumptions` heading, each with whatever is indented under it.
+  """
+  def assumptions(%__MODULE__{content: content}) do
+    content
+    |> String.split(~r/\R/)
+    |> Enum.drop_while(&(not Regex.match?(~r/\A\#{2,4} Assumptions\s*\z/, &1)))
+    |> Enum.drop(1)
+    |> Enum.take_while(&(not String.starts_with?(&1, "#")))
+    |> Enum.reduce([], &gather_assumption/2)
+    |> Enum.reverse()
+  end
+
+  # The architect is asked for flat bullets but nests them anyway, and a nested or
+  # wrapped line is part of what the lead is asked to confirm.
+  defp gather_assumption(line, gathered) do
+    line = String.trim_trailing(line)
+
+    case {Regex.run(~r/\A[-*] (.+)\z/, line), gathered} do
+      {[_line, assumption], gathered} ->
+        [String.trim(assumption) | gathered]
+
+      {nil, [assumption | rest]} ->
+        if Regex.match?(~r/\A\s+\S/, line), do: [assumption <> "\n" <> line | rest], else: gathered
+
+      {nil, []} ->
+        []
+    end
+  end
 end

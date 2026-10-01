@@ -12,7 +12,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWork do
 
   import Rail.Pipeline.Utils.CiPassed
   import Rail.Pipeline.Utils.CommitMessage
-  import Rail.Pipeline.Utils.OpenPullRequest
+  import Rail.Pipeline.Utils.EnqueuePullRequest
   import Rail.Pipeline.Utils.ReturnToEngineer
   import Rail.Pipeline.Utils.StartCi
 
@@ -53,7 +53,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWork do
 
   defp push(%Scope{} = scope, %Task{} = task) do
     with :ok <- Git.push_branch(scope, task) do
-      _task = open_pull_request(task, engineer_run(task))
+      _job = enqueue_pull_request(task)
       :ok
     end
   end

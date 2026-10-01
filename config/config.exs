@@ -25,7 +25,7 @@ config :posthog,
 
 config :rail, Oban,
   repo: Rail.Repo,
-  queues: [issues: 5, tools: 1, git: 1],
+  queues: [issues: 5, tools: 1, git: 1, pull_requests: 2],
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [

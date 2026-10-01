@@ -9,6 +9,8 @@ defmodule RailWeb.Components.TaskLayout do
   """
   use RailWeb, :html
 
+  alias Rail.Pipeline.Schemas.Task
+
   attr :task, :any, required: true
   attr :run, :any, default: nil
   # The status reads the task's stage, whichever tab is open; nil when that stage has no run yet.
@@ -26,6 +28,8 @@ defmodule RailWeb.Components.TaskLayout do
   slot :sidebar
 
   def task_layout(assigns) do
+    assigns = assign(assigns, :show_mark_ready?, Task.ready_to_mark?(assigns.task))
+
     ~H"""
     <div class="-m-6 h-[calc(100%+3rem)] flex flex-col min-h-0">
       <div
@@ -76,6 +80,17 @@ defmodule RailWeb.Components.TaskLayout do
           >
             <.icon name="pi-git-pull-request" class="size-4" /> PR #{@task.pr_number}
           </a>
+          <button
+            :if={@show_mark_ready?}
+            type="button"
+            id="mark-ready"
+            data-qa="mark_ready"
+            phx-click="mark_ready"
+            phx-disable-with="Marking ready…"
+            class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Mark ready
+          </button>
 
           <.link
             :if={@line}

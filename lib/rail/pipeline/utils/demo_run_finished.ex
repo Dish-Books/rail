@@ -2,13 +2,11 @@ defmodule Rail.Pipeline.Utils.DemoRunFinished do
   @moduledoc """
   Where a finished demo run leaves its task.
 
-  At demo, with the video on the ticket and the pull request, and the pull
-  request out of draft: the video is the last thing Rail makes, so it is done
-  keeping people off it. A video that could not be published is said in the
-  run's log rather than failing a demo that was recorded. The task stays because what
-  happens next is the human's to say. They watch it and decide whether it shows
-  what they asked for, and a walkthrough of the wrong thing is a message back
-  rather than a state machine's problem.
+  At demo, with the video on the ticket and the pull request. A video that could
+  not be published is said in the run's log rather than failing a demo that was
+  recorded. The task stays because what happens next is the human's to say. They
+  watch it and decide whether it shows what they asked for, and a walkthrough of
+  the wrong thing is a message back rather than a state machine's problem.
 
   The encode squeezes out the time nothing happened, but never the time a caption
   needs to be read, so the captions go in as the stretches that must play at real
@@ -29,7 +27,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinished do
   there.
   """
 
-  import Rail.Pipeline.Utils.MarkPullRequestReady
+  import Rail.Pipeline.Utils.SplitDemoSection
 
   alias Rail.GitHub.Client, as: GitHub
   alias Rail.Issues
@@ -103,7 +101,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinished do
     case Pipeline.read_demo(task) do
       %Demo{} = demo ->
         publish(run, task, demo)
-        %{run | task: mark_pull_request_ready(task)}
+        run
 
       nil ->
         fail(run, "The demo agent did not write #{write_up(task)}.")
@@ -143,7 +141,7 @@ defmodule Rail.Pipeline.Utils.DemoRunFinished do
 
   # A re-recorded demo replaces the link rather than adding another under it.
   defp with_demo(body, asset_url) do
-    kept = (body || "") |> String.split("\n\n## Demo\n") |> List.first() |> String.trim_trailing()
+    {kept, _demo} = split_demo_section(body)
     "#{kept}\n\n## Demo\n\n[Watch the demo](#{asset_url})"
   end
 

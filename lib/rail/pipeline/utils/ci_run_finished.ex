@@ -8,7 +8,7 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   times in a row with nobody stepping in; then it waits for a person.
   """
 
-  import Rail.Pipeline.Utils.OpenPullRequest
+  import Rail.Pipeline.Utils.EnqueuePullRequest
   import Rail.Pipeline.Utils.TurnStamp
 
   alias Rail.Git
@@ -29,7 +29,8 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
     case Git.push_branch(Scope.for_system(), task) do
       :ok ->
         attrs = %{ci_failure_streak: 0, error: nil, stage_outcome: :done, review_on_ci_pass: false}
-        pushed = %{update(run, attrs) | task: open_pull_request(task, run)}
+        _job = enqueue_pull_request(task)
+        pushed = update(run, attrs)
 
         # A message queued while CI ran is the engineer about to work again, which
         # review cannot see once the run has settled.

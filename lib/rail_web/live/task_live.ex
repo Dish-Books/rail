@@ -509,6 +509,16 @@ defmodule RailWeb.TaskLive do
     {:noreply, push_patch(socket, to: ~p"/tasks/#{socket.assigns.task_id}?tab=#{socket.assigns.engineer_tab}")}
   end
 
+  def handle_event("mark_ready", _params, socket) do
+    socket =
+      case Pipeline.mark_pull_request_ready(socket.assigns.current_scope, socket.assigns.task) do
+        {:ok, _task} -> socket
+        {:error, reason} -> put_flash(socket, :error, mark_ready_error(reason))
+      end
+
+    {:noreply, refresh_task(socket)}
+  end
+
   def handle_info({:run_events, run_id, events}, socket) do
     if MapSet.member?(socket.assigns.subscribed_run_ids, run_id) do
       send_update(RunConversation, id: "run-conversation", run_id: run_id, appended_events: events)
@@ -1061,4 +1071,7 @@ defmodule RailWeb.TaskLive do
   defp rebase_error(:no_worktree), do: "The task's worktree is gone, so there is nothing to rebase"
   defp rebase_error(reason) when is_binary(reason), do: "Could not rebase: #{reason}"
   defp rebase_error(reason), do: "Could not rebase: #{inspect(reason)}"
+
+  defp mark_ready_error(:not_markable), do: "Only a draft pull request whose engineer is done can be marked ready"
+  defp mark_ready_error(reason), do: "Could not mark the pull request ready: #{inspect(reason)}"
 end

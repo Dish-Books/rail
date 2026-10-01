@@ -1414,22 +1414,6 @@ defmodule RailWeb.TaskLiveTest do
 
       {:ok, task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: repo})
 
-      # Every push opens the task's pull request if it has none.
-      Req.Test.stub(Client, fn conn ->
-        case {conn.method, conn.request_path} do
-          {"POST", "/app/installations/" <> _id} ->
-            Req.Test.json(conn, %{"token" => "ghs_token"})
-
-          {"GET", _pulls} ->
-            Req.Test.json(conn, [])
-
-          {"POST", _pulls} ->
-            conn
-            |> Plug.Conn.put_status(201)
-            |> Req.Test.json(%{"number" => 7, "html_url" => "https://github.com/org/repo/pull/7", "draft" => true})
-        end
-      end)
-
       {:ok, engineer_run} =
         Pipeline.create_run(%{
           task_id: task.id,
@@ -1593,6 +1577,88 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "#task-pull-request[href='https://github.com/org/app/pull/12']", "PR #12")
       refute has_element?(view, "#task-pull-request", "Draft")
+    end
+
+    test "Mark ready shows next to the pull request once the engineer is done, and goes once pressed", %{
+      conn: conn,
+      task: task
+    } do
+      {:ok, task} =
+        Pipeline.update_task(task, %{pr_number: 12, pr_url: "https://github.com/org/app/pull/12", pr_is_draft: true})
+
+      Req.Test.stub(Client, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/" <> _id} ->
+            Req.Test.json(conn, %{"token" => "ghs_token"})
+
+          {"GET", "/repos/example/test-seed/pulls/12"} ->
+            Req.Test.json(conn, %{"number" => 12, "node_id" => "PR_kw12", "draft" => true})
+
+          {"POST", "/graphql"} ->
+            Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{}}})
+        end
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#task-pull-request + #mark-ready[phx-disable-with='Marking ready…']", "Mark ready")
+
+      view |> element("#mark-ready") |> render_click()
+
+      refute has_element?(view, "#mark-ready")
+      assert %Task{pr_is_draft: false} = Repo.reload!(task)
+    end
+
+    test "Mark ready is not offered while the engineer runs, before a pull request, or once it is ready", %{
+      conn: conn,
+      task: task,
+      engineer_run: run
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#mark-ready")
+
+      {:ok, task} =
+        Pipeline.update_task(task, %{pr_number: 12, pr_url: "https://github.com/org/app/pull/12", pr_is_draft: false})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      refute has_element?(view, "#mark-ready")
+
+      {:ok, _task} = Pipeline.update_task(task, %{pr_is_draft: true})
+      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#task-pull-request")
+      refute has_element?(view, "#mark-ready")
+    end
+
+    test "a press from a page that missed the pull request leaving draft says so", %{conn: conn, task: task} do
+      {:ok, task} =
+        Pipeline.update_task(task, %{pr_number: 12, pr_url: "https://github.com/org/app/pull/12", pr_is_draft: true})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      {:ok, _ready} = Pipeline.update_task(task, %{pr_is_draft: false})
+
+      assert view |> element("#mark-ready") |> render_click() =~
+               "Only a draft pull request whose engineer is done can be marked ready"
+
+      refute has_element?(view, "#mark-ready")
+    end
+
+    test "a press GitHub refuses says why and keeps the button", %{conn: conn, task: task} do
+      {:ok, task} =
+        Pipeline.update_task(task, %{pr_number: 12, pr_url: "https://github.com/org/app/pull/12", pr_is_draft: true})
+
+      Req.Test.stub(Client, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/app/installations/" <> _id} -> Req.Test.json(conn, %{"token" => "ghs_token"})
+          {"GET", "/repos/example/test-seed/pulls/12"} -> conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{})
+        end
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      html = view |> element("#mark-ready") |> render_click()
+
+      assert html =~ "Could not mark the pull request ready"
+      assert has_element?(view, "#mark-ready")
     end
 
     test "rebase hands conflicts to the engineer and says it is rebasing", %{
@@ -3869,6 +3935,14 @@ defmodule RailWeb.TaskLiveTest do
       end
 
       %{task: task, role: role, qa_run: qa_run, raised: raised, decide_as_advised: decide_as_advised}
+    end
+
+    test "Mark ready stays next to the pull request at QA, the engineer being done", %{conn: conn, task: task} do
+      {:ok, task} =
+        Pipeline.update_task(task, %{pr_number: 12, pr_url: "https://github.com/org/app/pull/12", pr_is_draft: true})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#task-pull-request + #mark-ready", "Mark ready")
     end
 
     test "lists every finding with QA's verdict over the top", %{

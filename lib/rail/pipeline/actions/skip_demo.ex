@@ -3,11 +3,9 @@ defmodule Rail.Pipeline.Actions.SkipDemo do
   Settles the demo stage without a recording, for a change that needs none.
 
   It is the demo done, as far as anything after it is concerned: the stage's run
-  is latched done, so the change waits on its merge, and its pull request comes
-  out of draft.
+  is latched done, so the change waits on its merge. Its pull request stays in
+  draft until a person marks it ready.
   """
-
-  import Rail.Pipeline.Utils.MarkPullRequestReady
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -34,8 +32,7 @@ defmodule Rail.Pipeline.Actions.SkipDemo do
         end
 
       Pipeline.append_run_events(run.id, nil, ["[human] No demo is needed for this change."])
-      {:ok, task} = task |> Task.changeset(%{demo_skipped_at: now}) |> Repo.update()
-      _task = mark_pull_request_ready(task)
+      {:ok, _task} = task |> Task.changeset(%{demo_skipped_at: now}) |> Repo.update()
       {:ok, run}
     end
   end

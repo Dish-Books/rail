@@ -53,6 +53,7 @@ defmodule Rail.Pipeline do
   defdelegate run_ci(scope, run), to: Actions.RunCi
   defdelegate rebase_task(scope, task), to: Actions.RebaseTask
   defdelegate get_ci_status(run), to: Actions.GetCiStatus
+  defdelegate describe_pull_request(task), to: Actions.DescribePullRequest
 
   defdelegate start_review_run(run), to: Actions.StartReviewRun
   defdelegate read_review(task), to: Actions.ReadReview
@@ -77,6 +78,7 @@ defmodule Rail.Pipeline do
   defdelegate send_to_demo(run), to: Actions.SendToDemo
   defdelegate record_demo(scope, task), to: Actions.RecordDemo
   defdelegate skip_demo(scope, task), to: Actions.SkipDemo
+  defdelegate mark_pull_request_ready(scope, task), to: Actions.MarkPullRequestReady
 
   defdelegate start_demo_run(run), to: Actions.StartDemoRun
   defdelegate read_demo(task), to: Actions.ReadDemo

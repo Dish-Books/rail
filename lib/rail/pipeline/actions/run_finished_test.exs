@@ -1,5 +1,6 @@
 defmodule Rail.Pipeline.Actions.RunFinishedTest do
   use Rail.DataCase, async: true
+  use Oban.Testing, repo: Rail.Repo
 
   import Rail.Pipeline.Utils.QuestionQueue
 
@@ -11,6 +12,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Pipeline.Workers.OpenPullRequest
   alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
@@ -76,22 +78,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
       {run, os_process}
     end
-
-    # Every push opens the task's pull request if it has none.
-    Req.Test.stub(Client, fn conn ->
-      case {conn.method, conn.request_path} do
-        {"POST", "/app/installations/" <> _id} ->
-          Req.Test.json(conn, %{"token" => "ghs_token"})
-
-        {"GET", _pulls} ->
-          Req.Test.json(conn, [])
-
-        {"POST", _pulls} ->
-          conn
-          |> Plug.Conn.put_status(201)
-          |> Req.Test.json(%{"number" => 7, "html_url" => "https://github.com/org/repo/pull/7", "draft" => true})
-      end
-    end)
 
     %{project: project, task: task, roles: roles, exited: exited}
   end
@@ -357,7 +343,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{stage: :demo} = Repo.reload!(task)
   end
 
-  test "a demo that is done takes the task's pull request out of draft", %{task: task, exited: exited} do
+  test "a demo that is done leaves the task's pull request in draft", %{task: task, exited: exited} do
     {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: true})
     demo_dir = Path.join(task.scratch_path, "demo")
     File.mkdir_p!(Path.join(demo_dir, "frames"))
@@ -365,28 +351,16 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
     expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
-
-    Req.Test.expect(Client, 3, fn conn ->
-      case {conn.method, conn.request_path} do
-        {"POST", "/app/installations/1/access_tokens"} ->
-          Req.Test.json(conn, %{"token" => "ghs_token"})
-
-        {"GET", "/repos/example/test-seed/pulls/7"} ->
-          Req.Test.json(conn, %{"number" => 7, "node_id" => "PR_kw7"})
-
-        {"POST", "/graphql"} ->
-          Req.Test.json(conn, %{"data" => %{"markPullRequestReadyForReview" => %{"pullRequest" => %{"isDraft" => false}}}})
-      end
-    end)
+    Req.Test.stub(Client, fn _conn -> flunk("a demo marked the pull request ready") end)
 
     {_run, os_process} = exited.(:demo, %{})
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert %Task{stage: :demo, pr_is_draft: false} = Repo.reload!(task)
+    assert %Task{stage: :demo, pr_is_draft: true} = Repo.reload!(task)
   end
 
-  test "a recorded demo is posted on the ticket and linked from the pull request", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: false})
+  test "a re-recorded demo swaps only the link under a description a person wrote", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: true})
     demo_dir = Path.join(task.scratch_path, "demo")
     File.mkdir_p!(Path.join(demo_dir, "frames"))
     File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
@@ -442,14 +416,17 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
           Req.Test.json(conn, %{"token" => "ghs_token"})
 
         {"GET", "/repos/example/test-seed/pulls/7"} ->
-          Req.Test.json(conn, %{"number" => 7, "body" => "Opened by Rail.\n\n## Demo\n\n[Watch the demo](old)"})
+          Req.Test.json(conn, %{
+            "number" => 7,
+            "body" => "Ada rewrote this.\n\n## Summary\n\nA call tree.\n\n## Demo\n\n[Watch the demo](old)"
+          })
 
         {"PATCH", "/repos/example/test-seed/pulls/7"} ->
           {:ok, body, conn} = Plug.Conn.read_body(conn)
 
           assert %{
                    "body" =>
-                     "Opened by Rail.\n\n## Demo\n\n[Watch the demo](https://uploads.linear.app/assets/RUN-1-demo.webm)"
+                     "Ada rewrote this.\n\n## Summary\n\nA call tree.\n\n## Demo\n\n[Watch the demo](https://uploads.linear.app/assets/RUN-1-demo.webm)"
                  } =
                    Jason.decode!(body)
 
@@ -530,25 +507,6 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert Enum.any?(Pipeline.list_run_events(run), &(&1.line =~ "[rail] Could not publish the demo:"))
-  end
-
-  test "a draft GitHub will not mark ready does not hold the demo back", %{task: task, exited: exited} do
-    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, pr_number: 7, pr_is_draft: true})
-    demo_dir = Path.join(task.scratch_path, "demo")
-    File.mkdir_p!(Path.join(demo_dir, "frames"))
-    File.write!(Path.join(demo_dir, "RUN-1.json"), ~s({"title": "Filters", "summary": "It filters."}))
-
-    expect(Tools, :stop_browser_recording, fn %Task{} -> demo_dir end)
-    expect(Tools, :encode_recording, fn ^demo_dir, [] -> {:ok, Path.join(demo_dir, "demo.webm"), []} end)
-    Req.Test.expect(Client, &(&1 |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})))
-
-    {_run, os_process} = exited.(:demo, %{})
-
-    assert ExUnit.CaptureLog.capture_log(fn ->
-             assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-           end) =~ "Could not mark example/test-seed#7 ready for review"
-
-    assert %Task{pr_is_draft: true} = Repo.reload!(task)
   end
 
   test "a QA run that wrote no report says so and stays open", %{task: task, exited: exited} do
@@ -1114,7 +1072,10 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
              Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
-  test "CI that passed pushes the branch and has the engineer's run done", %{task: task, exited: exited} do
+  test "CI that passed pushes the branch, has the engineer's run done and queues the pull request", %{
+    task: task,
+    exited: exited
+  } do
     {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
     {_run, os_process} = exited.(:engineer, %{ci_failure_streak: 2})
     os_process = os_process |> OsProcess.changeset(%{kind: :ci}) |> Repo.update!()
@@ -1123,6 +1084,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
 
     assert {:ok, %Run{stage_outcome: :done, ci_failure_streak: 0, error: nil}} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
+
+    assert_enqueued(worker: OpenPullRequest, args: %{task_id: task.id})
   end
 
   test "CI that passed on a branch that will not push says so and is not done", %{task: task, exited: exited} do
@@ -1139,6 +1102,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
               error: "CI passed, but the branch could not be pushed: no CI receipt for this tree"
             }} =
              Pipeline.run_finished(os_process, %{exit_code: 0})
+
+    refute_enqueued(worker: OpenPullRequest)
   end
 
   test "CI that failed goes back to the engineer with the end of its output", %{task: task, exited: exited} do

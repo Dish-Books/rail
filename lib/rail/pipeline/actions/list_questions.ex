@@ -10,7 +10,8 @@ defmodule Rail.Pipeline.Actions.ListQuestions do
   @doc """
   Lists the questions every run of `task` asked.
 
-  Filters by `:status` and orders by `:order_by` (newest first by default).
+  Filters by `:status`, one or a list of them, and orders by `:order_by` (newest
+  first by default).
   """
   def list_questions(%Task{id: task_id}, opts \\ []) do
     order = Keyword.get(opts, :order_by, desc: :inserted_at)
@@ -19,6 +20,7 @@ defmodule Rail.Pipeline.Actions.ListQuestions do
 
     query =
       case Keyword.fetch(opts, :status) do
+        {:ok, statuses} when is_list(statuses) -> from(q in query, where: q.status in ^statuses)
         {:ok, status} -> from(q in query, where: q.status == ^status)
         :error -> query
       end
