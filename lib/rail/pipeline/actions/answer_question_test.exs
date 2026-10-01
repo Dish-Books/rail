@@ -60,11 +60,57 @@ defmodule Rail.Pipeline.Actions.AnswerQuestionTest do
     assert {:error, :empty_answer} = Pipeline.answer_question(question, "   ")
   end
 
-  test "a question already settled is not answered again", %{run: run} do
+  test "an answered question takes a replacement until it is sent", %{run: run} do
     {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
     {:ok, answered} = Pipeline.answer_question(question, "Postgres")
 
-    assert {:error, :already_resolved} = Pipeline.answer_question(answered, "Sqlite")
+    assert {:ok, %Question{status: :answered, answer: "Sqlite"}} = Pipeline.answer_question(answered, "Sqlite")
+  end
+
+  test "a dismissed question can be answered instead", %{run: run} do
+    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    {:ok, dismissed} = Pipeline.dismiss_question(question)
+
+    assert {:ok, %Question{status: :answered, answer: "Postgres"}} = Pipeline.answer_question(dismissed, "Postgres")
+  end
+
+  test "a sent round cannot be changed", %{run: run} do
+    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    {:ok, _answered} = Pipeline.answer_question(question, "Postgres")
+
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    {:ok, :sent, %Run{}} = Pipeline.send_answers(Repo.reload!(run))
+
+    assert {:error, :already_sent} = Pipeline.answer_question(Repo.reload!(question), "Sqlite")
+    assert %Question{answer: "Postgres"} = Repo.reload!(question)
+  end
+
+  test "the replacement is what goes back", %{run: run} do
+    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    {:ok, answered} = Pipeline.answer_question(question, "Postgres")
+    {:ok, _replaced} = Pipeline.answer_question(answered, "Sqlite")
+
+    stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+    {:ok, :sent, %Run{}} = Pipeline.send_answers(Repo.reload!(run))
+
+    lines = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
+    assert lines =~ "The answer is: Sqlite"
+    refute lines =~ "Postgres"
+  end
+
+  test "a round with nothing answered is not sent", %{run: run} do
+    {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    {:ok, second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Behind a flag?"})
+    {:ok, _dismissed} = Pipeline.dismiss_question(first)
+    {:ok, _dismissed} = Pipeline.dismiss_question(second)
+
+    assert {:error, :nothing_answered} = Pipeline.send_answers(Repo.reload!(run))
+
+    refute Repo.reload!(first).delivered_at
+    refute Repo.reload!(second).delivered_at
+    assert Pipeline.list_run_events(run) == []
   end
 
   test "the round goes back as one message once nothing is pending", %{run: run} do

@@ -1,11 +1,8 @@
 defmodule Rail.Pipeline.Actions.AnswerQuestion do
   @moduledoc """
-  Records the human's answer to one question the agent asked.
+  Records the human's answer to one question the agent asked, replacing any earlier one.
 
-  Recording is all it does. The agent hears nothing until the human says so with
-  `send_answers/1`, which is what lets somebody work through a batch — answering
-  one, changing their mind about another, waving off a third — without the agent
-  being resumed halfway through the thought.
+  An answer can be changed, or given to a dismissed question, until `send_answers/1` sends the round.
   """
 
   alias Rail.Pipeline.Schemas.Question
@@ -14,14 +11,15 @@ defmodule Rail.Pipeline.Actions.AnswerQuestion do
   @doc """
   Records `answer` against `question`.
   """
-  def answer_question(%Question{status: :pending} = question, answer) when is_binary(answer) do
+  def answer_question(%Question{delivered_at: nil, status: status} = question, answer)
+      when status in [:pending, :answered, :dismissed] and is_binary(answer) do
     case String.trim(answer) do
       "" -> {:error, :empty_answer}
       trimmed -> record(question, trimmed)
     end
   end
 
-  def answer_question(%Question{}, _answer), do: {:error, :already_resolved}
+  def answer_question(%Question{}, _answer), do: {:error, :already_sent}
 
   defp record(%Question{} = question, answer) do
     question

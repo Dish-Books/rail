@@ -1,17 +1,12 @@
 defmodule Rail.Pipeline.Actions.SendAnswers do
   @moduledoc """
-  Hands a run the answers to everything it asked.
+  Hands a run the answers to everything it asked, as one message once nothing is open.
 
-  A run ends by asking its whole batch, so the human works through the batch and
-  the whole round goes back as one message — never once per answer. A question the
-  human waved off travels with the answers, said plainly, so the agent knows it
-  was seen and left alone rather than still waiting.
-
-  Nothing goes anywhere while something is still pending: this is the button the
-  human presses when they are done, and being done is the precondition.
+  A dismissed question travels with the answers, said plainly; a round with no answer at all is `dismiss_round/1`'s.
   """
 
   import Ecto.Query
+  import Rail.Pipeline.Utils.UnsentRound
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
@@ -21,35 +16,28 @@ defmodule Rail.Pipeline.Actions.SendAnswers do
   @doc """
   Sends `run` the round it is parked on.
 
-  Returns `{:error, :questions_pending}` while anything it asked is unanswered,
-  and `{:error, :nothing_to_send}` when there is no round to hand back.
+  Returns `{:error, :questions_pending}` while anything it asked is open, `{:error, :nothing_to_send}`
+  when there is no round, and `{:error, :nothing_answered}` when every question was dismissed.
   """
   def send_answers(%Run{} = run) do
-    with :ok <- nothing_pending(run),
-         [_first | _rest] = round <- resolved_round(run) do
-      mark_delivered(round)
-      Pipeline.send_message(run, format(round))
-    else
-      {:error, reason} -> {:error, reason}
-      [] -> {:error, :nothing_to_send}
-    end
-  end
+    round = unsent_round(run)
 
-  defp nothing_pending(%Run{id: run_id}) do
-    if Repo.exists?(from q in Question, where: q.run_id == ^run_id and q.status == :pending) do
-      {:error, :questions_pending}
-    else
-      :ok
-    end
-  end
+    cond do
+      Enum.any?(round, &(&1.status == :pending)) ->
+        {:error, :questions_pending}
 
-  # Everything settled during this parked round, in the order it was asked.
-  defp resolved_round(%Run{id: run_id}) do
-    Repo.all(
-      from q in Question,
-        where: q.run_id == ^run_id and q.status in [:answered, :dismissed] and is_nil(q.delivered_at),
-        order_by: [asc: q.inserted_at, asc: q.id]
-    )
+      round == [] ->
+        {:error, :nothing_to_send}
+
+      Enum.all?(round, &(&1.status == :dismissed)) ->
+        {:error, :nothing_answered}
+
+      true ->
+        mark_delivered(round)
+        # A page open elsewhere hears nothing else when the message cannot go out.
+        Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:run_changed, run.id})
+        Pipeline.send_message(run, format(round))
+    end
   end
 
   defp mark_delivered(round) do

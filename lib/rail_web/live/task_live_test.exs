@@ -11,6 +11,7 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.DetectedQuestion
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects
@@ -412,6 +413,223 @@ defmodule RailWeb.TaskLiveTest do
     assert {:ok, %{status: :pending}} = Pipeline.get_question(question.id)
   end
 
+  test "a round sent from another tab leaves this one", %{conn: conn, task: task, run: run} do
+    {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+
+    {:ok, question} =
+      blocked |> Repo.preload(task: :issue) |> Pipeline.register_question(%DetectedQuestion{prompt: "Which database?"})
+
+    {:ok, _answered} = Pipeline.answer_question(question, "Postgres")
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    view |> element("#change-answer-button") |> render_click()
+
+    # A run with no conversation to resume takes the round without a word on its topic.
+    _sent = Pipeline.send_answers(Repo.reload!(run))
+
+    refute has_element?(view, "#answer-field-card")
+  end
+
+  describe "a round of three questions" do
+    setup %{run: run} do
+      {:ok, blocked} =
+        Pipeline.update_run(run, %{
+          status: :blocked_on_input,
+          stage_outcome: :in_progress,
+          conversation_id: "sess_round"
+        })
+
+      blocked = Repo.preload(blocked, task: :issue)
+
+      {:ok, first} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
+      {:ok, second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which region?"})
+      {:ok, third} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Who reviews it?"})
+
+      %{questions: [first, second, third]}
+    end
+
+    test "a saved answer keeps its tab, marked answered, and the card moves on", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
+
+      assert has_element?(view, "#question-tabs #question-tab-2[role='tab']")
+      refute has_element?(view, "#question-tabs #question-tab-3")
+      assert has_element?(view, "#question-tab-0[aria-label='Question 1, answered']")
+      assert has_element?(view, "#question-tab-1[aria-selected='true']")
+      assert has_element?(view, "[data-qa='questions-pending-note']", "2 still to answer")
+
+      view |> element("#question-tab-0") |> render_click()
+
+      assert has_element?(view, "[data-qa='saved-answer']", "Postgres")
+    end
+
+    test "a replaced answer is the one that goes back", %{conn: conn, task: task, run: run} do
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
+      view |> form("#answer-question-form", %{"answer" => "eu-west-1"}) |> render_submit()
+      view |> form("#answer-question-form", %{"answer" => "Sam"}) |> render_submit()
+
+      view |> element("#question-tab-0") |> render_click()
+      view |> element("#change-answer-button") |> render_click()
+      assert has_element?(view, "#answer-textarea", "Postgres")
+
+      view |> form("#answer-question-form", %{"answer" => "Sqlite"}) |> render_submit()
+      assert has_element?(view, "[data-qa='saved-answer']", "Sqlite")
+
+      view |> element("#send-answers-button") |> render_click()
+
+      lines = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
+      assert lines =~ "The answer is: Sqlite"
+      refute lines =~ "Postgres"
+    end
+
+    test "answering every question keeps the card up and sends nothing until asked", %{
+      conn: conn,
+      task: task,
+      run: run
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
+      view |> form("#answer-question-form", %{"answer" => "eu-west-1"}) |> render_submit()
+      view |> form("#answer-question-form", %{"answer" => "Sam"}) |> render_submit()
+
+      assert has_element?(view, "#question-tab-0[aria-label='Question 1, answered']")
+      assert has_element?(view, "#question-tab-1[aria-label='Question 2, answered']")
+      assert has_element?(view, "#question-tab-2[aria-label='Question 3, answered']")
+      assert has_element?(view, "#question-tab-2[aria-selected='true']")
+      assert has_element?(view, "[data-qa='saved-answer']", "Sam")
+      assert has_element?(view, "#send-answers-button")
+      refute has_element?(view, "#send-answers-button[disabled]")
+      refute has_element?(view, "[data-qa='questions-pending-note']")
+
+      assert %Run{pending_chat: nil} = Repo.reload!(run)
+      assert Pipeline.list_run_events(run) == []
+    end
+
+    test "a dismissed question stays on the card and can be answered instead", %{
+      conn: conn,
+      task: task,
+      questions: [first | _rest]
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#dismiss-question-button") |> render_click()
+
+      assert has_element?(view, "#question-tab-0[aria-label='Question 1, dismissed']")
+
+      view |> element("#question-tab-0") |> render_click()
+      assert has_element?(view, "[data-qa='dismissed-note']", "will carry on without an answer to this.")
+
+      view |> element("#answer-instead-button") |> render_click()
+      view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
+
+      assert {:ok, %{status: :answered, answer: "Postgres"}} = Pipeline.get_question(first.id)
+      assert has_element?(view, "#question-tab-0[aria-label='Question 1, answered']")
+    end
+
+    test "a sent round leaves the card", %{conn: conn, task: task, questions: questions} do
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
+      view |> form("#answer-question-form", %{"answer" => "eu-west-1"}) |> render_submit()
+      view |> form("#answer-question-form", %{"answer" => "Sam"}) |> render_submit()
+      view |> element("#send-answers-button") |> render_click()
+
+      refute has_element?(view, "#answer-field-card")
+
+      for question <- questions do
+        assert {:ok, %{status: :answered, delivered_at: %DateTime{}}} = Pipeline.get_question(question.id)
+      end
+    end
+
+    test "dismissing every question closes the round without a message", %{conn: conn, task: task, run: run} do
+      reject(&Tools.start_os_process/2)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#dismiss-question-button") |> render_click()
+      view |> element("#dismiss-question-button") |> render_click()
+      view |> element("#dismiss-question-button") |> render_click()
+
+      assert has_element?(view, "[data-qa='dismissed-note']", "won't get a message about it.")
+      refute has_element?(view, "#send-answers-button")
+
+      view |> element("#dismiss-questions-button") |> render_click()
+
+      refute has_element?(view, "#answer-field-card")
+      assert has_element?(view, "[data-qa='rail-event']", "Questions dismissed. Nothing was sent to")
+      assert %Run{status: :finished, pending_chat: nil} = Repo.reload!(run)
+    end
+
+    test "cancelling a change keeps the saved answer", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
+      view |> element("#question-tab-0") |> render_click()
+      view |> element("#change-answer-button") |> render_click()
+      view |> form("#answer-question-form", %{"answer" => "Half typed"}) |> render_change()
+      view |> element("#cancel-answer-button") |> render_click()
+
+      assert has_element?(view, "[data-qa='saved-answer']", "Postgres")
+      refute has_element?(view, "#answer-textarea")
+    end
+
+    test "a change left unsaved holds the round back until it is saved or cancelled", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
+      view |> form("#answer-question-form", %{"answer" => "eu-west-1"}) |> render_submit()
+      view |> form("#answer-question-form", %{"answer" => "Sam"}) |> render_submit()
+
+      view |> element("#question-tab-0") |> render_click()
+      view |> element("#change-answer-button") |> render_click()
+      view |> form("#answer-question-form", %{"answer" => "Sqlite"}) |> render_change()
+
+      assert has_element?(view, "#send-answers-button[disabled]")
+      assert has_element?(view, "[data-qa='questions-pending-note']", "Save or cancel your change first")
+
+      view |> element("#cancel-answer-button") |> render_click()
+
+      refute has_element?(view, "#send-answers-button[disabled]")
+    end
+
+    test "a round dismissed from another tab leaves this one", %{conn: conn, task: task, run: run} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#dismiss-question-button") |> render_click()
+      view |> element("#dismiss-question-button") |> render_click()
+      view |> element("#dismiss-question-button") |> render_click()
+      assert has_element?(view, "#answer-field-card")
+
+      {:ok, _closed} = run |> Repo.reload!() |> Repo.preload(:role) |> Pipeline.dismiss_round()
+
+      refute has_element?(view, "#answer-field-card")
+    end
+
+    test "saving an answer the round already sent says so", %{conn: conn, task: task, questions: [first | _rest]} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
+      view |> element("#question-tab-0") |> render_click()
+      view |> element("#change-answer-button") |> render_click()
+
+      # Sent somewhere this page never heard about.
+      {:ok, _sent} = first |> Repo.reload!() |> Question.changeset(%{delivered_at: DateTime.utc_now()}) |> Repo.update()
+
+      view |> form("#answer-question-form", %{"answer" => "Sqlite"}) |> render_submit()
+
+      assert has_element?(view, "#flash-error", "This round was already sent, so its answers can no longer be changed.")
+      assert {:ok, %{answer: "Postgres"}} = Pipeline.get_question(first.id)
+    end
+  end
+
   test "cleaning up releases the disk the task was holding", %{conn: conn, task: task} do
     assert File.dir?(task.scratch_path)
 
@@ -565,6 +783,14 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-badge']", "2")
+      assert has_element?(view, "#task-tab-#{role.id}", "needs an answer")
+
+      # An answer saved but not yet sent is not something the role is still waiting on.
+      view |> form("#answer-question-form", %{"answer" => "Checkout"}) |> render_submit()
+      assert has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-badge']", "1")
+
+      view |> form("#answer-question-form", %{"answer" => "Three"}) |> render_submit()
+      refute has_element?(view, "#task-tab-#{role.id} [data-qa='task-tab-badge']")
       assert has_element?(view, "#task-tab-#{role.id}", "needs an answer")
     end
 

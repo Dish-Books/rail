@@ -166,10 +166,18 @@ defmodule RailWeb.Components.UpNext do
     end
   end
 
+  # A round with nothing answered has nothing to send; the task page closes it instead.
   defp asked(run) do
+    unsent = Enum.filter(run.questions, &(&1.delivered_at == nil))
+
     case Enum.find(run.questions, &(&1.status == :pending)) do
-      %Question{prompt: prompt} -> prompt
-      nil -> "Every question is answered and ready to send."
+      %Question{prompt: prompt} ->
+        prompt
+
+      nil ->
+        if unsent != [] and Enum.all?(unsent, &(&1.status == :dismissed)),
+          do: "Every question is dismissed. Close the round from the task.",
+          else: "Every question is answered and ready to send."
     end
   end
 

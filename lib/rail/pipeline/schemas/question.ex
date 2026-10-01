@@ -51,6 +51,7 @@ defmodule Rail.Pipeline.Schemas.Question do
     question
     |> cast(attrs, @cast_fields)
     |> maybe_put_task_id(task_id)
+    |> clear_answer_on_dismiss()
     |> validate_required(@required_fields)
     |> foreign_key_constraint(:task_id)
     |> foreign_key_constraint(:run_id)
@@ -63,6 +64,14 @@ defmodule Rail.Pipeline.Schemas.Question do
 
   def resolved?(status) when is_atom(status), do: status in [:answered, :dismissed]
   def resolved?(_other), do: false
+
+  # A dismissed question never carries a stale answer back to the agent or into Answer instead.
+  defp clear_answer_on_dismiss(changeset) do
+    case get_change(changeset, :status) do
+      :dismissed -> change(changeset, answer: nil, answered_at: nil)
+      _other -> changeset
+    end
+  end
 
   defp maybe_put_task_id(changeset, nil), do: changeset
   defp maybe_put_task_id(changeset, task_id), do: put_change(changeset, :task_id, task_id)

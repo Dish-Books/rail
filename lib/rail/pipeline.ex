@@ -92,6 +92,7 @@ defmodule Rail.Pipeline do
   defdelegate register_question(run, question), to: Actions.RegisterQuestion
   defdelegate answer_question(question, answer), to: Actions.AnswerQuestion
   defdelegate send_answers(run), to: Actions.SendAnswers
+  defdelegate dismiss_round(run), to: Actions.DismissRound
   defdelegate dismiss_question(question), to: Actions.DismissQuestion
   defdelegate get_question(id), to: Actions.GetQuestion
   defdelegate list_questions(task, opts \\ []), to: Actions.ListQuestions
