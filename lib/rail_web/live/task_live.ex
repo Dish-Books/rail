@@ -72,11 +72,12 @@ defmodule RailWeb.TaskLive do
       |> assign(:frame_window_open?, false)
       |> assign(:held_frame, nil)
       |> assign(:roles_map, %{})
-      |> assign(:pending_question, nil)
-      |> assign(:pending_questions, [])
+      |> assign(:selected_question, nil)
+      |> assign(:round_questions, [])
       |> assign(:selected_question_id, nil)
+      |> assign(:advance_question?, false)
       |> assign(:answer_text, "")
-      |> assign(:answers_to_send?, false)
+      |> assign(:changing_answer?, false)
       |> assign(:cleaning_up, false)
       |> assign(:focus_file, nil)
       |> assign(:engineer_tab, nil)
@@ -145,10 +146,10 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              answers_to_send?={@answers_to_send?}
-              pending_question={@pending_question}
-              pending_questions={@pending_questions}
+              selected_question={@selected_question}
+              round_questions={@round_questions}
               answer_text={@answer_text}
+              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -175,10 +176,10 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              answers_to_send?={@answers_to_send?}
-              pending_question={@pending_question}
-              pending_questions={@pending_questions}
+              selected_question={@selected_question}
+              round_questions={@round_questions}
               answer_text={@answer_text}
+              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -205,10 +206,10 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              answers_to_send?={@answers_to_send?}
-              pending_question={@pending_question}
-              pending_questions={@pending_questions}
+              selected_question={@selected_question}
+              round_questions={@round_questions}
               answer_text={@answer_text}
+              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -237,10 +238,10 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              answers_to_send?={@answers_to_send?}
-              pending_question={@pending_question}
-              pending_questions={@pending_questions}
+              selected_question={@selected_question}
+              round_questions={@round_questions}
               answer_text={@answer_text}
+              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -269,10 +270,10 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              answers_to_send?={@answers_to_send?}
-              pending_question={@pending_question}
-              pending_questions={@pending_questions}
+              selected_question={@selected_question}
+              round_questions={@round_questions}
               answer_text={@answer_text}
+              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -300,10 +301,10 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              answers_to_send?={@answers_to_send?}
-              pending_question={@pending_question}
-              pending_questions={@pending_questions}
+              selected_question={@selected_question}
+              round_questions={@round_questions}
               answer_text={@answer_text}
+              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -331,10 +332,10 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              answers_to_send?={@answers_to_send?}
-              pending_question={@pending_question}
-              pending_questions={@pending_questions}
+              selected_question={@selected_question}
+              round_questions={@round_questions}
               answer_text={@answer_text}
+              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -390,10 +391,10 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              answers_to_send?={@answers_to_send?}
-              pending_question={@pending_question}
-              pending_questions={@pending_questions}
+              selected_question={@selected_question}
+              round_questions={@round_questions}
               answer_text={@answer_text}
+              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -407,6 +408,7 @@ defmodule RailWeb.TaskLive do
     socket =
       socket
       |> assign(:selected_question_id, nil)
+      |> assign(:changing_answer?, false)
       |> push_patch(to: ~p"/tasks/#{socket.assigns.task_id}?tab=#{tab}")
 
     {:noreply, socket}
@@ -421,6 +423,7 @@ defmodule RailWeb.TaskLive do
       socket
       |> assign(:selected_question_id, question_id)
       |> assign(:answer_text, "")
+      |> assign(:changing_answer?, false)
       |> refresh_task()
 
     {:noreply, socket}
@@ -436,18 +439,41 @@ defmodule RailWeb.TaskLive do
     if answer == "" do
       {:noreply, socket}
     else
-      _answered = socket |> question_id(params) |> answer_one(answer)
-      {:noreply, reset_answer(socket)}
+      question_id = question_id(socket, params)
+      _answered = answer_one(question_id, answer)
+      socket = socket |> assign(:selected_question_id, question_id) |> reset_answer()
+      {:noreply, socket}
     end
   end
 
   def handle_event("dismiss_question", params, socket) do
-    _dismissed = socket |> question_id(params) |> dismiss_one()
-    {:noreply, reset_answer(socket)}
+    question_id = question_id(socket, params)
+    _dismissed = dismiss_one(question_id)
+    socket = socket |> assign(:selected_question_id, question_id) |> reset_answer()
+    {:noreply, socket}
+  end
+
+  def handle_event("change_answer", _params, socket) do
+    socket =
+      socket
+      |> assign(:changing_answer?, true)
+      |> assign(:answer_text, socket.assigns.selected_question.answer || "")
+
+    {:noreply, socket}
+  end
+
+  def handle_event("cancel_answer", _params, socket) do
+    socket = socket |> assign(:changing_answer?, false) |> assign(:answer_text, "")
+    {:noreply, socket}
   end
 
   def handle_event("send_answers", _params, socket) do
     _sent = Pipeline.send_answers(socket.assigns.conversation_run)
+    {:noreply, refresh_task(socket)}
+  end
+
+  def handle_event("dismiss_round", _params, socket) do
+    _dismissed = Pipeline.dismiss_round(socket.assigns.conversation_run)
     {:noreply, refresh_task(socket)}
   end
 
@@ -667,44 +693,28 @@ defmodule RailWeb.TaskLive do
 
   attr :task, :any, required: true
   attr :roles_map, :map, required: true
-  attr :answers_to_send?, :boolean, required: true
-  attr :pending_question, :any, required: true
-  attr :pending_questions, :list, required: true
+  attr :selected_question, :any, required: true
+  attr :round_questions, :list, required: true
   attr :answer_text, :string, required: true
+  attr :changing_answer?, :boolean, required: true
   attr :conversation_run, :any, required: true
   attr :current_scope, Rail.Scope, required: true
 
-  # Questions sit above the conversation they came out of.
+  # Questions sit above the conversation they came out of. Answering only records:
+  # the round reaches the agent when the human says it is done.
   defp conversation_sidebar(assigns) do
+    assigns =
+      assign(assigns, :role_name, assigns.selected_question && assigns.roles_map[assigns.conversation_run.role_id].name)
+
     ~H"""
-    <div :if={@pending_question != nil} class="p-4 border-b border-slate-200 dark:border-slate-700">
+    <div :if={@selected_question != nil} class="p-4 border-b border-slate-200 dark:border-slate-700">
       <.answer_field
-        question={@pending_question}
-        questions={@pending_questions}
+        question={@selected_question}
+        questions={@round_questions}
         answer_text={@answer_text}
+        changing_answer={@changing_answer?}
+        role_name={@role_name}
       />
-    </div>
-
-    <!-- Answering only records. The round reaches the agent when the human says it is done. -->
-    <div
-      :if={@answers_to_send? and @pending_question == nil}
-      id="send-answers-panel"
-      data-qa="send_answers_panel"
-      class="flex items-center justify-between gap-2 p-4 border-b border-slate-200 dark:border-slate-700"
-    >
-      <span class="text-xs text-slate-500 dark:text-slate-400">
-        Every question is answered.
-      </span>
-
-      <button
-        type="button"
-        id="send-answers-button"
-        data-qa="send-answers-button"
-        phx-click="send_answers"
-        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 cursor-pointer shadow-xs"
-      >
-        Send answers
-      </button>
     </div>
 
     <.live_component
@@ -775,8 +785,10 @@ defmodule RailWeb.TaskLive do
 
     asked = Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
     questions = Enum.filter(asked, &(&1.status == :pending))
-    pending_questions = questions_for(questions, selected_run)
-    pending_question = select_question(pending_questions, socket.assigns.selected_question_id)
+    round_questions = round_questions(asked, selected_run)
+
+    selected_question =
+      select_question(round_questions, socket.assigns.selected_question_id, socket.assigns.advance_question?)
 
     socket
     |> assign(:task, task)
@@ -793,12 +805,12 @@ defmodule RailWeb.TaskLive do
     |> assign(:approvable, approvable?(role, task, selected_run))
     |> assign(:tabs, build_tabs(task, started, role, questions))
     |> assign(:engineer_tab, engineer_tab(started))
-    |> assign(:answers_to_send?, answers_to_send?(asked, selected_run))
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
     |> assign(:watched_browser_task_id, watch_browser(socket, task))
-    |> assign(:pending_questions, pending_questions)
-    |> assign(:pending_question, pending_question)
-    |> assign(:selected_question_id, pending_question && pending_question.id)
+    |> assign(:round_questions, round_questions)
+    |> assign(:selected_question, selected_question)
+    |> assign(:selected_question_id, selected_question && selected_question.id)
+    |> assign(:advance_question?, false)
     |> load_issue(task)
   end
 
@@ -926,22 +938,28 @@ defmodule RailWeb.TaskLive do
 
   defp tab_tone(run), do: Run.state(run)
 
-  # A run can ask several things at once, so it shows the whole queue as tabs, in
+  # A run can ask several things at once, so its whole unsent round shows as tabs, in
   # the order they were asked. A run resumed without an answer still shows them.
-  defp questions_for(questions, %Run{id: run_id}), do: Enum.filter(questions, &(&1.run_id == run_id))
-  defp questions_for(_questions, nil), do: []
-
-  # A round settled here but not yet sent, whether or not the run is still parked on it.
-  defp answers_to_send?(asked, %Run{id: run_id}) do
-    Enum.any?(asked, &(&1.run_id == run_id and &1.status in [:answered, :dismissed] and &1.delivered_at == nil))
+  defp round_questions(asked, %Run{id: run_id}) do
+    Enum.filter(
+      asked,
+      &(&1.run_id == run_id and &1.delivered_at == nil and &1.status in [:pending, :answered, :dismissed])
+    )
   end
 
-  defp answers_to_send?(_asked, nil), do: false
+  defp round_questions(_asked, nil), do: []
 
-  # The tab the human picked stays put across refreshes; once it is answered the
-  # front of the queue takes over.
-  defp select_question(questions, selected_id) do
-    Enum.find(questions, &(&1.id == selected_id)) || List.first(questions)
+  # The tab the human picked stays put across refreshes; saving one moves on to the
+  # next open question, or stays put once none is left.
+  defp select_question(questions, selected_id, advance?) do
+    open = Enum.find(questions, &(&1.status == :pending))
+    selected = Enum.find(questions, &(&1.id == selected_id))
+
+    cond do
+      advance? and open != nil -> open
+      selected != nil -> selected
+      true -> List.first(questions)
+    end
   end
 
   # `run:<id>` carries the run's log lines and the finish of its OS process. A
@@ -997,7 +1015,7 @@ defmodule RailWeb.TaskLive do
   end
 
   defp question_id(socket, params) do
-    Map.get(params, "question_id") || (socket.assigns.pending_question && socket.assigns.pending_question.id)
+    Map.get(params, "question_id") || (socket.assigns.selected_question && socket.assigns.selected_question.id)
   end
 
   defp answer_one(question_id, answer) do
@@ -1015,7 +1033,8 @@ defmodule RailWeb.TaskLive do
   defp reset_answer(socket) do
     socket
     |> assign(:answer_text, "")
-    |> assign(:selected_question_id, nil)
+    |> assign(:changing_answer?, false)
+    |> assign(:advance_question?, true)
     |> refresh_task()
   end
 

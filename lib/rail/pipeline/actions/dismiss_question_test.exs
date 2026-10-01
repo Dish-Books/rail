@@ -64,6 +64,8 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     run: %Run{id: run_id} = run
   } do
     {:ok, q} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Should we proceed?"})
+    {:ok, answered} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
+    {:ok, _answered} = Pipeline.answer_question(answered, "Postgres")
 
     assert Repo.reload!(run).status == :blocked_on_input
 
@@ -111,30 +113,18 @@ defmodule Rail.Pipeline.Actions.DismissQuestionTest do
     assert [%Question{prompt: "And the migration?"}] = pending_questions(task.id)
   end
 
-  test "returns error when dismissing an answered question", %{task: task, run: run, roles: roles} do
-    {:ok, _product_run} =
-      Pipeline.create_run(%{
-        task_id: task.id,
-        role_id: roles[:product].id,
-        conversation_id: "sess_product",
-        status: :running,
-        started_at: DateTime.utc_now()
-      })
+  test "an answered question can be dismissed until it is sent", %{run: run} do
+    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Answered question?"})
+    {:ok, answered} = Pipeline.answer_question(question, "Yes")
 
-    {:ok, q_answered} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Answered question?"})
-
-    {:ok, q_answered} =
-      q_answered
-      |> Question.changeset(%{answer: "Yes", status: :answered, answered_at: DateTime.utc_now()})
-      |> Repo.update()
-
-    assert {:error, :already_resolved} = Pipeline.dismiss_question(q_answered)
+    assert {:ok, %Question{status: :dismissed, answer: nil, answered_at: nil}} = Pipeline.dismiss_question(answered)
   end
 
-  test "returns error when dismissing an already dismissed question", %{run: run} do
-    {:ok, q_dismissed} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Dismissed question?"})
-    {:ok, q_dismissed} = Pipeline.dismiss_question(q_dismissed)
+  test "a sent question cannot be dismissed", %{run: run} do
+    {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Sent question?"})
+    {:ok, sent} = question |> Question.changeset(%{delivered_at: DateTime.utc_now()}) |> Repo.update()
 
-    assert {:error, :already_resolved} = Pipeline.dismiss_question(q_dismissed)
+    assert {:error, :already_sent} = Pipeline.dismiss_question(sent)
+    assert %Question{status: :pending} = Repo.reload!(question)
   end
 end
