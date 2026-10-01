@@ -485,7 +485,7 @@ defmodule RailWeb.Live.RunConversation do
               <%!-- Kept on one line: pre-wrap would render the template's own indentation. --%>
               <span
                 phx-no-format
-                class="select-text font-mono whitespace-pre-wrap wrap-break-word"
+                class="min-w-0 select-text font-mono whitespace-pre-wrap wrap-break-word"
               >{String.replace_prefix(@text, "[error] ", "")}</span>
             </div>
           <% String.starts_with?(@text, "[rail]") -> %>
@@ -495,13 +495,13 @@ defmodule RailWeb.Live.RunConversation do
               class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 font-mono text-[11px] mt-4 mb-1"
             >
               <.icon name="pi-info" class="h-3.5 w-3.5 shrink-0" />
-              <span class="select-text">{@text}</span>
+              <span class="min-w-0 select-text wrap-break-word">{@text}</span>
             </div>
           <% true -> %>
             <div
               id={"msg-#{@idx}"}
               data-qa="system-event"
-              class="text-center font-mono text-[11px] text-slate-500 dark:text-slate-400 select-text my-0.5"
+              class="text-center font-mono text-[11px] text-slate-500 dark:text-slate-400 select-text wrap-break-word my-0.5"
             >
               {@text}
             </div>
@@ -839,13 +839,13 @@ defmodule RailWeb.Live.RunConversation do
         </div>
       <% else %>
         <%= for {line, idx} <- Enum.with_index(@lines) do %>
+          <%!-- Kept on one line: pre-wrap would render the template's own indentation. --%>
           <div
+            phx-no-format
             id={"raw-log-line-#{idx}"}
             data-qa="raw-log-line"
             class={["leading-relaxed whitespace-pre-wrap wrap-break-word", raw_log_color_class(line)]}
-          >
-            {line}
-          </div>
+          >{line}</div>
         <% end %>
       <% end %>
     </div>

@@ -591,7 +591,7 @@ defmodule RailWeb.Live.RunConversationTest do
     refute Enum.any?(classes, &(String.starts_with?(&1, "lg:min-h-") or String.starts_with?(&1, "min-h-[")))
   end
 
-  test "a wide agent reply wraps inside the sidebar and keeps its code and tables in their own box", %{
+  test "wide agent replies and events wrap inside the sidebar, and code and tables keep their own box", %{
     task: task,
     roles: roles,
     roles_map: roles_map
@@ -621,7 +621,10 @@ defmodule RailWeb.Live.RunConversationTest do
 
     Pipeline.append_run_events(run.id, nil, [
       ~s({"type":"assistant","message":{"content":[{"type":"text","text":#{Jason.encode!(reply)}}]}}),
-      "[tool read_file] lib/rail.ex"
+      "[tool read_file] lib/rail.ex",
+      "[error] could not open /srv/#{long}/file.ex",
+      "[rail] That message was not delivered: #{long}",
+      "[stderr] warning: could not read /srv/#{long}.beam"
     ])
 
     html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
@@ -638,6 +641,14 @@ defmodule RailWeb.Live.RunConversationTest do
 
     assert [summary] = Floki.attribute(doc, "[data-qa='activity-tile'] button span.truncate", "class")
     refute "wrap-break-word" in String.split(summary)
+
+    for selector <- ["[data-qa='error-event'] span.select-text", "[data-qa='rail-event'] span.select-text"] do
+      assert [class] = Floki.attribute(doc, selector, "class")
+      assert ["min-w-0", "wrap-break-word"] -- String.split(class) == []
+    end
+
+    assert [system] = Floki.attribute(doc, "[data-qa='system-event']", "class")
+    assert "wrap-break-word" in String.split(system)
   end
 
   test "a message waiting on a working agent stacks under the thinking banner", %{

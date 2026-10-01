@@ -2080,6 +2080,8 @@ defmodule RailWeb.TaskLiveTest do
 
       assert [_first | _rest] = line_classes = Floki.attribute(doc, "[data-qa='raw-log-line']", "class")
       assert Enum.all?(line_classes, &("wrap-break-word" in String.split(&1)))
+
+      assert "[tool read_file] lib/rail.ex" in (doc |> Floki.find("[data-qa='raw-log-line']") |> Enum.map(&Floki.text/1))
     end
 
     test "shows the raw log on request, and the chat again after", %{conn: conn, task: task} do
