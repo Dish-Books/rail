@@ -18,6 +18,7 @@ defmodule Rail.Pipeline.Utils.RebasePass do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Scope
 
   @doc """
@@ -76,8 +77,10 @@ defmodule Rail.Pipeline.Utils.RebasePass do
     {:ok, task} = task |> Task.changeset(%{is_rebasing: true}) |> Repo.update()
     attrs = %{pending_answer: brief(base, files), status: :running, error: nil, exit_code: nil}
     {:ok, briefed} = run |> Run.changeset(attrs) |> Repo.update()
+    # Each turn's system prompt is the one it is spawned with, so it is read as the repo has it now.
+    {:ok, role} = Roles.get_role(id: run.role_id)
 
-    case Pipeline.start_engineer_run(%{briefed | task: task}) do
+    case Pipeline.start_engineer_run(%{briefed | task: task, role: role}) do
       {:ok, os_process} -> {:ok, os_process.run}
       {:error, {:spawn_failed, _reason, %Run{} = failed}} -> {:error, failed.error}
       {:error, :dispatch_disabled} -> {:error, :dispatch_disabled}

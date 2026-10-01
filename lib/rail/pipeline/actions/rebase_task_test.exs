@@ -74,7 +74,7 @@ defmodule Rail.Pipeline.Actions.RebaseTaskTest do
         started_at: DateTime.utc_now()
       })
 
-    %{task: task, run: run, worktree_path: worktree_path}
+    %{project: project, task: task, run: run, worktree_path: worktree_path}
   end
 
   test "a rebase that goes cleanly is pushed without the engineer", %{task: task, run: run} do
@@ -145,6 +145,31 @@ defmodule Rail.Pipeline.Actions.RebaseTaskTest do
     assert [
              "[rail] Rebase onto origin/main stopped on conflicts in lib/app.ex, mix.lock. Asked the engineer to resolve them."
            ] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+  end
+
+  test "the engineer resolving conflicts runs on the prompt merged to the project's .rail/prompts", %{
+    project: project,
+    task: task
+  } do
+    remote = create_temp_git_repo(prefix: "rail_rebase_prompt_remote")
+    File.mkdir_p!(Path.join(remote, ".rail/prompts"))
+    File.write!(Path.join(remote, ".rail/prompts/engineer.md"), "From the repo.\n")
+    git!(remote, ["add", "."])
+    git!(remote, ["commit", "-m", "add prompt"])
+    clone = create_temp_git_repo(prefix: "rail_rebase_prompt_clone")
+    git!(clone, ["remote", "add", "origin", remote])
+    git!(clone, ["fetch", "origin", "main"])
+    project |> Project.changeset(%{clone_path: clone}) |> Repo.update!()
+
+    stub(Git, :fetch_default_branch, fn _project, _path -> :ok end)
+    expect(Git, :rebase_branch, fn _scope, _task -> {:conflicts, ["lib/app.ex"]} end)
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      assert ["--append-system-prompt", "From the repo."] in Enum.chunk_every(argv, 2, 1)
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Task{is_rebasing: true}} = Pipeline.rebase_task(system_scope(), task)
   end
 
   test "a rebase git refuses says why", %{task: task, run: run} do

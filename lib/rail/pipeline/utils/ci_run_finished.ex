@@ -15,6 +15,7 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Scope
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
@@ -65,7 +66,10 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
         })
       )
 
-    case Pipeline.start_engineer_run(briefed) do
+    # Each turn's system prompt is the one it is spawned with, so it is read as the repo has it now.
+    {:ok, role} = Roles.get_role(id: run.role_id)
+
+    case Pipeline.start_engineer_run(%{briefed | role: role}) do
       {:ok, %OsProcess{run: %Run{} = resumed}} ->
         resumed
 

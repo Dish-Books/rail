@@ -1198,6 +1198,33 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
              Repo.reload!(run)
   end
 
+  test "CI that failed resumes the engineer on the prompt merged to the project's .rail/prompts", %{
+    project: project,
+    task: task,
+    exited: exited
+  } do
+    remote = create_temp_git_repo(prefix: "rail_ci_prompt_remote")
+    File.mkdir_p!(Path.join(remote, ".rail/prompts"))
+    File.write!(Path.join(remote, ".rail/prompts/engineer.md"), "From the repo.\n")
+    git!(remote, ["add", "."])
+    git!(remote, ["commit", "-m", "add prompt"])
+    clone = create_temp_git_repo(prefix: "rail_ci_prompt_clone")
+    git!(clone, ["remote", "add", "origin", remote])
+    git!(clone, ["fetch", "origin", "main"])
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{clone_path: clone})
+
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:engineer, %{})
+    os_process = os_process |> OsProcess.changeset(%{kind: :ci, command: "mise run ci"}) |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      assert ["--append-system-prompt", "From the repo."] in Enum.chunk_every(argv, 2, 1)
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %Run{status: :running}} = Pipeline.run_finished(os_process, %{exit_code: 1})
+  end
+
   test "CI that timed out goes back to the engineer saying so", %{task: task, exited: exited} do
     {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
     {_run, os_process} = exited.(:engineer, %{})
