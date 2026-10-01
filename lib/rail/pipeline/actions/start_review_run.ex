@@ -68,7 +68,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     String.trim("""
     Review the change described below. #{workspace(task)}
 
-    You are reading it, not changing it: write no application code and no tests, and never run a git command that writes - no commit, no push, no branch, no checkout, no stash. Reading the tree with git is exactly what you are here for.
+    You are reading it, not changing it: write no application code and no tests, and never run a git command that writes - no commit, no push, no fetch, no branch, no checkout, no stash. Reading the tree with git is exactly what you are here for.
 
     Do not run the project's test suite, its coverage run or its linters. Those are the engineer's to have passed before the change reached you, they take minutes you would spend not reading, and a number out of one of them is not a finding. Run a single targeted check only where it settles a question you cannot answer by reading, and say in the finding what you ran.
 
@@ -160,7 +160,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
   defp plan(%Task{} = task) do
     case Pipeline.get_implementation_plan(task) do
       {:ok, %ImplementationPlan{content: content}} ->
-        "The approved implementation plan the change was built from. It is the specification: where it named a file and what changed in it, that is what should have changed, and a change that did something else, or stopped short of what it called for, is a finding however good the code is.\n\n#{String.trim(content)}\n"
+        "The approved implementation plan the change was built from. It is the specification: where it named a file and what changed in it, that is what should have changed, and a change that did something else instead, or stopped short of what it called for, is a finding however good the code is. Work beyond the plan is not a finding for being beyond it: a human usually asked for it in the engineer's chat, or QA sent it back. Judge it on whether it is right.\n\n#{String.trim(content)}\n"
 
       {:error, :not_found} ->
         "There is no implementation plan for this ticket, so the ticket below is the whole specification.\n"

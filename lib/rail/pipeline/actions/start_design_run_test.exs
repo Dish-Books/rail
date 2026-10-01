@@ -50,7 +50,7 @@ defmodule Rail.Pipeline.Actions.StartDesignRunTest do
       assert ["-p", prompt | _rest] = argv
       assert prompt =~ "exactly three distinct design options"
       assert prompt =~ "cat > #{design_dir}/manifest.json <<'MANIFEST'"
-      assert prompt =~ "--window-size=1920,1080 --screenshot=#{design_dir}/<key>.png file://#{design_dir}/<key>.html"
+      assert prompt =~ "--window-size=1920,1170 --screenshot=#{design_dir}/<key>.png file://#{design_dir}/<key>.html"
       assert prompt =~ "Rail records the pick in #{design_dir}/picked and deletes the options not picked"
       assert prompt =~ ~s(<ticket title="Invoice filters">\nFilter invoices by vendor.\n</ticket>)
 
