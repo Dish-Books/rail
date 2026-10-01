@@ -1465,6 +1465,7 @@ defmodule RailWeb.TaskLiveTest do
       repo: repo
     } do
       File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+      {:ok, run} = Pipeline.update_run(run, %{error: "CI passed, but the branch could not be pushed: rejected"})
       test_pid = self()
 
       stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
@@ -1490,7 +1491,7 @@ defmodule RailWeb.TaskLiveTest do
       assert_receive {:DOWN, ^pushing, :process, ^pusher, :normal}, 5_000
 
       assert %Task{stage: :review} = Repo.reload!(task)
-      assert %Run{review_on_ci_pass: false} = Repo.reload!(run)
+      assert %Run{review_on_ci_pass: false, error: nil} = Repo.reload!(run)
     end
 
     # A push that takes the whole process down with it still has to leave the

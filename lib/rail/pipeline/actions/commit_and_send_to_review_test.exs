@@ -82,12 +82,13 @@ defmodule Rail.Pipeline.Actions.CommitAndSendToReviewTest do
 
   test "with no CI, the pushed commit goes on to review", %{scope: scope, run: run, task: task, repo: repo} do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
+    {:ok, run} = Pipeline.update_run(run, %{error: "CI passed, but the branch could not be pushed: rejected"})
 
     expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.commit_and_send_to_review(scope, run)
     assert %Task{stage: :review} = Repo.reload!(task)
-    assert %Run{stage_outcome: :done, review_on_ci_pass: false} = Repo.reload!(run)
+    assert %Run{stage_outcome: :done, review_on_ci_pass: false, error: nil} = Repo.reload!(run)
   end
 
   test "with CI, the commit waits on CI, holding the go-ahead for when it passes", %{
@@ -170,10 +171,12 @@ defmodule Rail.Pipeline.Actions.CommitAndSendToReviewTest do
     {:ok, _working} =
       Pipeline.create_run(%{task_id: task.id, role_id: review_role.id, status: :running, started_at: DateTime.utc_now()})
 
+    {:ok, run} = Pipeline.update_run(run, %{error: "CI passed, but the branch could not be pushed: rejected"})
     File.write!(Path.join(repo, "feature.ex"), "one\n")
 
     assert {:error, :stage_running} = Pipeline.commit_and_send_to_review(scope, run)
     refute Git.branch_unpushed?(repo)
+    assert %Run{error: nil} = Repo.reload!(run)
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 end

@@ -32,11 +32,11 @@ defmodule Rail.Pipeline.Actions.CommitAndSendToReview do
   end
 
   # Starting CI moved the run on, and CI's finish sends it; with no CI, or CI
-  # already passed, the push was the whole of it.
+  # already passed, the push was the whole of it, and settles any push that failed.
   defp send_on(%Run{status: :running} = running), do: {:ok, running}
 
   defp send_on(%Run{} = pushed) do
-    {:ok, cleared} = pushed |> Run.changeset(%{review_on_ci_pass: false}) |> Repo.update()
+    {:ok, cleared} = pushed |> Run.changeset(%{review_on_ci_pass: false, error: nil}) |> Repo.update()
     Pipeline.send_to_review(cleared)
   end
 end
