@@ -100,6 +100,7 @@ defmodule Rail.Pipeline do
   defdelegate create_run(attrs), to: Actions.CreateRun
   defdelegate get_run(id), to: Actions.GetRun
   defdelegate list_runs(opts \\ []), to: Actions.ListRuns
+  defdelegate count_attention(), to: Actions.CountAttention
   defdelegate update_run(run, attrs), to: Actions.UpdateRun
 
   defdelegate append_run_events(run_id, os_process_id, lines), to: Actions.AppendRunEvents

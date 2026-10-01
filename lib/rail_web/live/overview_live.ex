@@ -6,7 +6,6 @@ defmodule RailWeb.OverviewLive do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Tools
-  alias RailWeb.Hooks.NavHook
 
   @throughput_days 30
   @activity_limit 8
@@ -197,7 +196,7 @@ defmodule RailWeb.OverviewLive do
     |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
     |> assign(:dispatch_disabled, Application.get_env(:rail, :no_dispatch, false))
     # The rail badge sits beside these stats, so it comes from the same reload.
-    |> assign(:attention_count, NavHook.count_attention(socket.assigns.projects))
+    |> assign(:attention_count, Pipeline.count_attention())
   end
 
   # An earlier run at the task's stage has been retried, and one at another stage
