@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.ListQaFindingsTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.QaFinding
 
   setup %{project: project} do
     scope = system_scope()
@@ -54,53 +55,71 @@ defmodule Rail.Pipeline.Actions.ListQaFindingsTest do
            ]
   end
 
-  test "what the human dismissed sinks below everything still standing", %{task: task} do
+  # Where a finding sits is what it is, so ruling on it never loses the reader's place.
+  test "a ruling moves nothing", %{task: task} do
     findings =
-      for {key, severity} <- [{"dismissed-blocker", :blocker}, {"standing-nit", :nit}] do
+      for {key, severity} <- [{"a-blocker", :blocker}, {"a-major", :major}, {"a-nit", :nit}] do
         %{key: key, title: key, check: "A check", severity: severity, recommendation: :fix, status: :open}
       end
 
-    {:ok, [dismissed, _standing]} = Pipeline.sync_qa_findings(task, findings)
-    {:ok, _ruled} = Pipeline.decide_qa_finding(dismissed, :skip)
+    {:ok, [blocker, major, _nit]} = Pipeline.sync_qa_findings(task, findings)
+    {:ok, _dismissed} = Pipeline.decide_qa_finding(blocker, :skip)
+    {:ok, _decided} = Pipeline.decide_qa_finding(major, :fix)
 
-    assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == ["standing-nit", "dismissed-blocker"]
+    assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == ["a-blocker", "a-major", "a-nit"]
   end
 
-  # Nothing moves until every finding has been ruled on, so the ones asking for a
-  # ruling are the ones to read - above a worse one already settled.
-  test "what is waiting on a human comes before what is settled", %{task: task} do
-    findings =
-      for {key, severity} <- [{"decided-blocker", :blocker}, {"undecided-nit", :nit}] do
-        %{key: key, title: key, check: "A check", severity: severity, recommendation: :fix, status: :open}
-      end
-
-    {:ok, [decided, _waiting]} = Pipeline.sync_qa_findings(task, findings)
-    {:ok, _ruled} = Pipeline.decide_qa_finding(decided, :fix)
-
-    assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == ["undecided-nit", "decided-blocker"]
-  end
-
-  # Fixed is finished with, and dismissed is the human's last word: both sit
-  # under what is still being worked through, in that order.
-  test "what is fixed sits under what is open, and dismissed under that", %{task: task} do
-    {:ok, [fixed, dismissed, _open]} =
+  test "a fixed finding stays where its severity puts it", %{task: task} do
+    {:ok, _synced} =
       Pipeline.sync_qa_findings(task, [
         %{
           key: "a-blocker",
           title: "A blocker",
-          check: "a-check",
+          check: "A check",
           severity: :blocker,
           recommendation: :fix,
           status: :fixed
         },
-        %{key: "a-major", title: "A major", check: "a-check", severity: :major, recommendation: :fix, status: :open},
-        %{key: "a-nit", title: "A nit", check: "a-check", severity: :nit, recommendation: :fix, status: :open}
+        %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
       ])
 
-    {:ok, _ruled} = Pipeline.decide_qa_finding(dismissed, :skip)
-    {:ok, _decided} = Pipeline.decide_qa_finding(fixed, :fix)
+    assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == ["a-blocker", "a-nit"]
+  end
 
-    assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == ["a-nit", "a-blocker", "a-major"]
+  test "findings of one severity keep the order they were raised in, however a later pass lists them", %{
+    task: task
+  } do
+    raised =
+      for key <- ["a", "b", "c"] do
+        %{key: key, title: key, check: "A check", severity: :nit, recommendation: :fix, status: :open}
+      end
+
+    {:ok, _first_pass} = Pipeline.sync_qa_findings(task, raised)
+
+    assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == ["a", "b", "c"]
+
+    {:ok, _second_pass} = Pipeline.sync_qa_findings(task, Enum.reverse(raised))
+
+    assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == ["a", "b", "c"]
+  end
+
+  test "a tie on when they were raised is broken the same way every time", %{task: task} do
+    {:ok, synced} =
+      Pipeline.sync_qa_findings(task, [
+        %{key: "a", title: "a", check: "A check", severity: :nit, recommendation: :fix, status: :open},
+        %{key: "b", title: "b", check: "A check", severity: :nit, recommendation: :fix, status: :open}
+      ])
+
+    # No factory builds findings, so the tie is arranged on the rows sync wrote.
+    {2, nil} =
+      Repo.update_all(from(f in QaFinding, where: f.task_id == ^task.id),
+        set: [inserted_at: ~U[2026-01-01 00:00:00.000000Z]]
+      )
+
+    by_id = synced |> Enum.sort_by(& &1.id) |> Enum.map(& &1.key)
+
+    assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == by_id
+    assert Enum.map(Pipeline.list_qa_findings(task), & &1.key) == by_id
   end
 
   test "a task QA has not reached has nothing to list", %{task: task} do

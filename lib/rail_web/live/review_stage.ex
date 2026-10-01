@@ -115,9 +115,16 @@ defmodule RailWeb.Live.ReviewStage do
   def handle_event("decide", %{"key" => key, "decision" => decision}, socket) do
     finding = Enum.find(socket.assigns.findings, &(&1.key == key))
 
+    # Judged before the ruling, since after it every finding looks decided and a
+    # changed ruling would move the reader on too.
+    selected_key =
+      if ReviewFinding.undecided?(finding),
+        do: (next_undecided(socket.assigns.findings, finding) || finding).key,
+        else: socket.assigns.selected_key
+
     socket =
       case Pipeline.decide_review_finding(finding, decision(decision)) do
-        {:ok, _decided} -> socket |> assign(:error, nil) |> load()
+        {:ok, _decided} -> socket |> assign(:error, nil) |> assign(:selected_key, selected_key) |> load() |> load_hunk()
         {:error, reason} -> assign(socket, :error, message_for(reason))
       end
 
@@ -192,6 +199,13 @@ defmodule RailWeb.Live.ReviewStage do
               ReviewFinding.state(finding) == :dismissed && "line-through"
             ]}>
               {finding.title}
+            </span>
+            <span
+              :if={ReviewFinding.undecided?(finding)}
+              data-qa="review_finding_needs_call"
+              class="block text-[10px] font-semibold text-blue-600 dark:text-blue-400"
+            >
+              Needs your call
             </span>
             <span class="block truncate font-mono text-[10px] text-slate-500 dark:text-slate-400">
               {list_subtitle(finding)}
@@ -430,8 +444,7 @@ defmodule RailWeb.Live.ReviewStage do
     """
   end
 
-  # Worst first, and what is settled last, so the list reads as the order to work
-  # through it in.
+  # The order is fixed by each finding itself, so ruling on one never moves it.
   defp load(socket) do
     findings = Pipeline.list_review_findings(socket.assigns.task)
     selected = Enum.find(findings, List.first(findings), &(&1.key == socket.assigns.selected_key))
@@ -476,6 +489,12 @@ defmodule RailWeb.Live.ReviewStage do
       },
       fn {side, key} -> {side, key || nil} end
     )
+  end
+
+  # The next one down that still needs a call, or else the first from the top.
+  defp next_undecided(findings, finding) do
+    {above, [_ruled | below]} = Enum.split_while(findings, &(&1.key != finding.key))
+    Enum.find(below ++ above, &ReviewFinding.undecided?/1)
   end
 
   defp tally(findings) do
