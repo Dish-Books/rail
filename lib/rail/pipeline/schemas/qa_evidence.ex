@@ -17,7 +17,7 @@ defmodule Rail.Pipeline.Schemas.QaEvidence do
 
   @kinds [:screenshot, :log, :query, :note]
   @pictures [".jpg", ".jpeg", ".png", ".gif", ".webp"]
-  @path ~r{\A[A-Za-z0-9._][A-Za-z0-9._/-]*\z}
+  @path ~r{\A[A-Za-z0-9._][A-Za-z0-9._/~-]*\z}
 
   @primary_key false
   embedded_schema do

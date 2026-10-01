@@ -87,6 +87,27 @@ defmodule RailWeb.QaControllerTest do
     assert ["nosniff"] = get_resp_header(conn, "x-content-type-options")
   end
 
+  # The name `qa_file` handed back is the name the agent was told to cite.
+  test "serves a filed log a finding cites by the name Rail gave it", %{conn: conn, task: task} do
+    {:ok, _raised} =
+      Pipeline.sync_qa_findings(task, [
+        %{
+          key: "cites-filed",
+          title: "The script reports a failure",
+          check: "script-runs",
+          severity: :minor,
+          recommendation: :fix,
+          status: :open,
+          evidence: [%{name: "the log", kind: :log, path: "evidence/script-runs~the-log.log"}]
+        }
+      ])
+
+    conn = get(conn, ~p"/tasks/#{task.id}/qa/cites-filed/evidence/0")
+
+    assert response(conn, 200) == "wrote 3 rows"
+    assert ["private, no-cache"] = get_resp_header(conn, "cache-control")
+  end
+
   test "a screenshot a finding cites is still served as a picture", %{conn: conn, task: task} do
     conn = get(conn, ~p"/tasks/#{task.id}/qa/total-unrounded/evidence/5")
 
@@ -119,6 +140,9 @@ defmodule RailWeb.QaControllerTest do
     assert response(conn, 200) == "wrote 3 rows"
     assert ["text/plain; charset=utf-8"] = get_resp_header(conn, "content-type")
     assert ["nosniff"] = get_resp_header(conn, "x-content-type-options")
+    # Filing again under the same check and caption replaces the file under the
+    # same name, so a browser has to ask again rather than show the last pass.
+    assert ["private, no-cache"] = get_resp_header(conn, "cache-control")
   end
 
   test "serves a filed PDF for the browser to open", %{conn: conn, task: task} do

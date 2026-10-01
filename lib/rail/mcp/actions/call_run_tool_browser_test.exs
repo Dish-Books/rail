@@ -307,6 +307,7 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
   # costs no browser, and the line lands once there is a file for the panel to read.
   test "a file is filed against its check without a browser", %{context: context, task: task, run: run} do
     reject(Tools, :start_browser_session, 2)
+    {:ok, _checklist} = Pipeline.write_qa_checklist(task, [%{"key" => "script-runs", "title" => "The script runs"}])
     File.mkdir_p!(Path.join([task.scratch_path, "qa", "evidence"]))
     File.write!(Path.join([task.scratch_path, "qa", "evidence", "run.log"]), "wrote 3 rows")
 
@@ -320,9 +321,18 @@ defmodule Rail.Mcp.Actions.CallRunToolBrowserTest do
     assert text =~ "evidence/script-runs~the-script-s-log.log"
     assert File.exists?(Path.join([task.scratch_path, "qa", "evidence", "script-runs~the-script-s-log.log"]))
 
+    # A refusal reads as one in the log, rather than as one more file filed.
+    {:ok, _refused} =
+      Mcp.call_run_tool(context, "qa_file", %{"check" => "script-runs", "name" => "Stolen", "path" => "/etc/passwd"})
+
+    {:ok, _usage} = Mcp.call_run_tool(context, "qa_file", %{"check" => "script-runs", "name" => "No path"})
+
     log = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
 
-    assert log =~ ~s([qa] file "The script's log")
+    assert log =~ ~s([qa] file "The script's log"\n)
+    refute log =~ ~s([qa] file "The script's log" · nothing filed)
+    assert log =~ ~s([qa] file "Stolen" · nothing filed)
+    assert log =~ ~s([qa] file "No path" · nothing filed)
   end
 
   test "the browser's own complaints are drained, not accumulated", %{context: context, page: page} do

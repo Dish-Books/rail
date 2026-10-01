@@ -28,6 +28,16 @@ defmodule Rail.Mcp.Utils.RunToolQaFileTest do
     %{task: task}
   end
 
+  setup %{task: task} do
+    {:ok, _checklist} =
+      Pipeline.write_qa_checklist(task, [
+        %{"key" => "script-runs", "title" => "The script writes its log"},
+        %{"key" => "totals", "title" => "The totals agree"}
+      ])
+
+    :ok
+  end
+
   test "files the file and names what to cite", %{task: task} do
     File.write!(Path.join([task.scratch_path, "qa", "evidence", "run.log"]), "wrote 3 rows")
 
@@ -50,10 +60,31 @@ defmodule Rail.Mcp.Utils.RunToolQaFileTest do
     assert {:ok, "No file at evidence/gone.log. Nothing was filed."} =
              run_tool_qa_file(task, %{"check" => "totals", "name" => "Gone", "path" => "evidence/gone.log"}, [])
 
-    assert {:ok, "qa_file needs a `check`, a `name` and a `path`."} =
+    File.write!(Path.join([task.scratch_path, "qa", "statement (1).pdf"]), "%PDF-1.7")
+
+    assert {:ok, "Rename it to letters, digits, `.`, `_`, `-`, `~` and `/` only, then file it again. Nothing was filed."} =
+             run_tool_qa_file(task, %{"check" => "totals", "name" => "Statement", "path" => "statement (1).pdf"}, [])
+
+    assert {:ok, "qa_file needs a `check`, a `name` and a `path`. Nothing was filed."} =
              run_tool_qa_file(task, %{"check" => "totals", "name" => "No path"}, [])
 
-    assert {:ok, "qa_file needs a `check`, a `name` and a `path`."} =
+    assert {:ok, "qa_file needs a `check`, a `name` and a `path`. Nothing was filed."} =
              run_tool_qa_file(task, %{"check" => "totals", "name" => "A number", "path" => 12}, [])
+  end
+
+  # A mistyped key would file evidence no row shows, while the agent believes the
+  # row is evidenced.
+  test "a check that is not on the checklist files nothing", %{task: task} do
+    File.write!(Path.join([task.scratch_path, "qa", "evidence", "run.log"]), "wrote 3 rows")
+
+    assert {:ok, ~s(No check called "no-such-row" is on the checklist. Nothing was filed.)} =
+             run_tool_qa_file(task, %{"check" => "no-such-row", "name" => "The log", "path" => "evidence/run.log"}, [])
+
+    File.rm!(Path.join([task.scratch_path, "qa", "checklist.json"]))
+
+    assert {:ok, "There is no checklist yet. Call qa_plan first. Nothing was filed."} =
+             run_tool_qa_file(task, %{"check" => "totals", "name" => "The log", "path" => "evidence/run.log"}, [])
+
+    assert ["run.log"] = File.ls!(Path.join([task.scratch_path, "qa", "evidence"]))
   end
 end

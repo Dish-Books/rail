@@ -15,14 +15,19 @@ defmodule Rail.Tools.Actions.FileQaEvidence do
   @doc """
   Copies `path`, relative to `task`'s QA directory, in as evidence captioned
   `name` against the check `key`, and returns `{:ok, file}` to cite in a finding.
+  A path that is absolute or climbs out is `:unconfined_path`; one that is only
+  spelled with characters Rail does not serve is `:unusable_name`.
   """
   def file_qa_evidence(%Task{scratch_path: scratch_path}, path, name, key) do
     qa = Path.join(scratch_path, "qa")
-    source = Path.join(qa, path)
+    source = Path.expand(Path.join(qa, path))
 
     cond do
-      not QaEvidence.confined?(path) ->
+      Path.type(path) == :absolute or ".." in Path.split(path) ->
         {:error, :unconfined_path}
+
+      not QaEvidence.confined?(path) ->
+        {:error, :unusable_name}
 
       not regular?(qa, Path.split(path)) ->
         {:error, :not_a_file}
@@ -30,7 +35,9 @@ defmodule Rail.Tools.Actions.FileQaEvidence do
       true ->
         extension = String.downcase(Path.extname(path))
 
-        {:ok, write_qa_evidence(scratch_path, name, key, extension, &File.cp!(source, &1))}
+        # Copying a file onto itself empties it, and a name Rail filed is a path
+        # the agent has just been handed.
+        {:ok, write_qa_evidence(scratch_path, name, key, extension, &(Path.expand(&1) == source or File.cp!(source, &1)))}
     end
   end
 

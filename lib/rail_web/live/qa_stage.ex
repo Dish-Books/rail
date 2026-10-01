@@ -1036,12 +1036,24 @@ defmodule RailWeb.Live.QaStage do
   # Text reads in the pane. A PDF or anything else opens in a tab of its own,
   # which is where a browser already knows what to do with it.
   defp file_figure(assigns) do
+    assigns =
+      assigns
+      |> assign(:show_text, assigns.preview != nil and assigns.preview.text != "")
+      |> assign(:show_empty, assigns.preview != nil and assigns.preview.text == "")
+
     ~H"""
     <figure data-qa="qa_check_detail_file" data-kind={@file.kind}>
       <pre
-        :if={@preview}
+        :if={@show_text}
         class="max-h-[480px] overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-3.5 py-3 font-mono text-[11.5px] text-slate-700 dark:text-slate-300"
       ><%= @preview.text %></pre>
+
+      <p
+        :if={@show_empty}
+        class="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 px-3.5 py-3 text-[12px] text-slate-500 dark:text-slate-400"
+      >
+        Empty file
+      </p>
 
       <p
         :if={@preview && @preview.truncated}

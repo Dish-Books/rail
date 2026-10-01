@@ -45,7 +45,9 @@ defmodule RailWeb.QaController do
     conn
     |> served_as(kind, file)
     |> put_resp_header("x-content-type-options", "nosniff")
-    |> put_resp_header("cache-control", "private, max-age=31536000")
+    # Filing again under the same check and caption replaces a file under the same
+    # name, so a browser has to ask again rather than show the last pass.
+    |> put_resp_header("cache-control", "private, no-cache")
     |> send_file(200, file)
   end
 

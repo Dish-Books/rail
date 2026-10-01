@@ -148,6 +148,31 @@ defmodule Rail.Pipeline.Actions.ReadQaReportTest do
              Pipeline.read_qa_report(task)
   end
 
+  # `qa_shot` and `qa_file` name what they file `<check>~<caption>`, and tell the
+  # agent to cite exactly that.
+  test "evidence citing a name Rail filed is kept", %{task: task, report_path: path} do
+    File.write!(path, """
+    {"findings": [
+      {"key": "one", "title": "One", "check": "statement", "severity": "nit", "recommendation": "skip",
+       "evidence": [
+         {"name": "the statement", "kind": "log", "path": "evidence/statement~the-statement.pdf"},
+         {"name": "the screen", "kind": "screenshot", "path": "evidence/statement~the-download.jpg"}
+       ]}
+    ]}
+    """)
+
+    assert %QaReport{
+             findings: [
+               %{
+                 evidence: [
+                   %{path: "evidence/statement~the-statement.pdf"},
+                   %{path: "evidence/statement~the-download.jpg"}
+                 ]
+               }
+             ]
+           } = Pipeline.read_qa_report(task)
+  end
+
   test "what QA left blank comes back as nothing, and what it left out has a default", %{
     task: task,
     report_path: path

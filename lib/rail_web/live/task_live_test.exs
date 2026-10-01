@@ -3632,6 +3632,7 @@ defmodule RailWeb.TaskLiveTest do
       File.write!(Path.join(evidence, "script-runs~the-script-s-log.log"), "wrote 3 rows")
       File.write!(Path.join(evidence, "invoice~the-invoice.pdf"), "%PDF-1.7")
       File.write!(Path.join(evidence, "invoice~the-raw-export.bin"), <<0, 159, 146, 150>>)
+      File.write!(Path.join(evidence, "invoice~nothing-written.log"), "")
       File.write!(Path.join(evidence, "script-runs~the-garbled-run.log"), String.duplicate("a", 9_000) <> <<0xFF>>)
 
       File.write!(
@@ -3685,6 +3686,9 @@ defmodule RailWeb.TaskLiveTest do
                "Download"
              )
 
+      # An empty log says so, rather than drawing a box nobody can tell from one that
+      # failed to load.
+      assert has_element?(view, "[data-qa='qa_check_detail_file']", "Empty file")
       refute has_element?(view, "[data-qa='qa_check_detail_file'] pre")
     end
 

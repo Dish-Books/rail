@@ -70,6 +70,29 @@ defmodule Rail.Tools.Actions.FileQaEvidenceTest do
     assert File.ls!(Path.join(qa, "evidence")) == []
   end
 
+  # A name Chrome gives a repeated download is neither absolute nor climbing, and
+  # the agent needs to hear that renaming it is all it takes.
+  test "a path with characters Rail does not serve is refused as a name", %{task: task, qa: qa} do
+    File.write!(Path.join(qa, "statement (1).pdf"), "%PDF-1.7")
+
+    assert {:error, :unusable_name} = Tools.file_qa_evidence(task, "statement (1).pdf", "The statement", "totals")
+    assert File.ls!(Path.join(qa, "evidence")) == []
+  end
+
+  # Copying a file onto itself empties it, and a filed name is a path the agent
+  # has just been handed.
+  test "filing a filed file again under its own name keeps it", %{task: task, qa: qa} do
+    File.write!(Path.join([qa, "evidence", "totals~the-log.log"]), "wrote 3 rows")
+
+    assert {:ok, "evidence/totals~the-log.log"} =
+             Tools.file_qa_evidence(task, "evidence/totals~the-log.log", "The log", "totals")
+
+    assert {:ok, "evidence/totals~the-log.log"} =
+             Tools.file_qa_evidence(task, "./evidence/totals~the-log.log", "The log", "totals")
+
+    assert File.read!(Path.join([qa, "evidence", "totals~the-log.log"])) == "wrote 3 rows"
+  end
+
   test "a symlink anywhere on the path is not a file", %{task: task, qa: qa, outside: outside} do
     File.write!(Path.join(outside, "secret.log"), "secret")
     File.ln_s!(Path.join(outside, "secret.log"), Path.join([qa, "evidence", "link.log"]))

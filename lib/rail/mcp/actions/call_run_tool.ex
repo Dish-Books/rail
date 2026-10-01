@@ -99,6 +99,12 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   # words with the moment they landed on rather than the receipt the agent read.
   defp said("demo_say", line, {:ok, "Said at " <> said}), do: "#{hd(String.split(said, "."))} #{line}"
 
+  # A refusal is a call that filed nothing, and a run log of them should not read
+  # as a run of files filed.
+  defp said("qa_file", line, {:ok, text}) do
+    if String.ends_with?(text, "Nothing was filed."), do: line <> " · nothing filed", else: line
+  end
+
   defp said(_name, line, _result), do: line
 
   defp proxy(%RunContext{role: %{mcp_tools: mcp_tools}, user: user}, name, arguments) do
