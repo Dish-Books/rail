@@ -61,10 +61,6 @@ defmodule Rail.Pipeline.Schemas.QaEvidence do
   """
   def error_line?(line) when is_binary(line), do: Regex.match?(@error_line, line)
 
-  @doc "Whether this evidence is read as text rather than looked at as a picture."
-  def text?(%__MODULE__{kind: :screenshot, path: path}) when is_binary(path), do: false
-  def text?(%__MODULE__{}), do: true
-
   # The format above already refuses a leading slash and anything exotic; `..`
   # is the segment that looks ordinary and is not.
   defp validate_confined(changeset) do

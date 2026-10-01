@@ -35,11 +35,4 @@ defmodule Rail.Pipeline.Schemas.QaEvidenceTest do
     refute QaEvidence.changeset(%QaEvidence{}, %{name: "n", kind: :screenshot, path: "~/secrets.txt"}).valid?
     refute QaEvidence.changeset(%QaEvidence{}, %{name: "n", kind: :screenshot, path: "evidence/../../x"}).valid?
   end
-
-  test "everything but a screenshot with a file is shown as text" do
-    assert QaEvidence.text?(%QaEvidence{kind: :log, path: "evidence/server.log"})
-    assert QaEvidence.text?(%QaEvidence{kind: :query, text: "amount_cents: 123450"})
-    assert QaEvidence.text?(%QaEvidence{kind: :screenshot, text: "described rather than taken"})
-    refute QaEvidence.text?(%QaEvidence{kind: :screenshot, path: "evidence/total.png"})
-  end
 end

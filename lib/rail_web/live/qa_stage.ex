@@ -160,6 +160,7 @@ defmodule RailWeb.Live.QaStage do
                 finding={@selected}
                 checklist={@checklist}
                 evidence_index={@evidence_index}
+                evidence_kinds={@evidence_kinds}
                 evidence_text={@evidence_text}
                 position={@position}
                 count={length(@findings)}
@@ -225,6 +226,10 @@ defmodule RailWeb.Live.QaStage do
         socket
         |> assign(:error, nil)
         |> assign(:selected_key, selected_key)
+        |> assign(
+          :evidence_index,
+          if(selected_key == socket.assigns.selected_key, do: socket.assigns.evidence_index, else: 0)
+        )
         |> assign(:advanced_to, if(selected_key != key, do: {selected_key, System.monotonic_time(:millisecond)}))
         |> load()
       else
@@ -528,6 +533,7 @@ defmodule RailWeb.Live.QaStage do
   attr :finding, :any, required: true
   attr :checklist, :any, required: true
   attr :evidence_index, :integer, required: true
+  attr :evidence_kinds, :list, required: true
   attr :evidence_text, :any, required: true
   attr :position, :integer, required: true
   attr :count, :integer, required: true
@@ -692,6 +698,7 @@ defmodule RailWeb.Live.QaStage do
           task={@task}
           finding={@finding}
           index={@evidence_index}
+          kinds={@evidence_kinds}
           shown={Enum.at(@finding.evidence, @evidence_index)}
           text={@evidence_text}
           target={@target}
@@ -760,14 +767,17 @@ defmodule RailWeb.Live.QaStage do
   attr :task, :any, required: true
   attr :finding, :any, required: true
   attr :index, :integer, required: true
+  attr :kinds, :list, required: true
   attr :shown, :any, required: true
   attr :text, :any, required: true
   attr :target, :any, required: true
 
   # One piece of evidence at a time, at full height, so a log gets the whole
-  # column. Nothing here links to a file that is not a picture: opening a finding
+  # column. A PDF or other file is linked rather than fetched: opening a finding
   # never downloads anything.
   defp evidence_viewer(assigns) do
+    assigns = assign(assigns, :kind, Enum.at(assigns.kinds, assigns.index))
+
     ~H"""
     <div
       id="qa-evidence-viewer"
@@ -788,12 +798,12 @@ defmodule RailWeb.Live.QaStage do
         class="shrink-0 flex items-end gap-1 overflow-x-auto px-4 pt-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40"
       >
         <button
-          :for={{evidence, index} <- Enum.with_index(@finding.evidence)}
+          :for={{{evidence, kind}, index} <- Enum.with_index(Enum.zip(@finding.evidence, @kinds))}
           type="button"
           role="tab"
           id={"qa-evidence-tab-#{index}"}
           data-qa="qa_evidence_tab"
-          data-kind={evidence.kind}
+          data-kind={tab_kind(kind, evidence)}
           aria-selected={to_string(index == @index)}
           phx-click="select_evidence"
           phx-target={@target}
@@ -806,18 +816,18 @@ defmodule RailWeb.Live.QaStage do
               "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
           ]}
         >
-          <.icon name={evidence_icon(evidence.kind)} class="size-[15px]" />
+          <.icon name={evidence_icon(tab_kind(kind, evidence))} class="size-[15px]" />
           <span class="shrink-0 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            {evidence.kind}
+            {tab_kind(kind, evidence)}
           </span>
-          <span class="truncate max-w-[150px]">{tab_name(evidence)}</span>
+          <span class="truncate max-w-[150px]">{tab_name(kind, evidence)}</span>
         </button>
       </div>
 
       <div
-        :if={@shown && not QaEvidence.text?(@shown)}
+        :if={@kind == :screenshot}
         data-qa="qa_evidence"
-        data-kind={@shown.kind}
+        data-kind="screenshot"
         class="flex-1 min-h-0 overflow-auto p-4 bg-white dark:bg-slate-900"
       >
         <div class="flex items-center gap-3 mb-3">
@@ -848,7 +858,36 @@ defmodule RailWeb.Live.QaStage do
         />
       </div>
 
-      <.text_evidence :if={@shown && QaEvidence.text?(@shown)} evidence={@shown} read={@text} />
+      <div
+        :if={@kind in [:pdf, :file]}
+        data-qa="qa_evidence"
+        data-kind={@kind}
+        class="flex-1 min-h-0 p-4 bg-white dark:bg-slate-900"
+      >
+        <div class="flex items-center gap-3">
+          <span
+            data-qa="qa_evidence_name"
+            class="min-w-0 truncate text-[13px] font-semibold text-slate-800 dark:text-slate-100"
+          >
+            {@shown.name}
+          </span>
+          <span class="min-w-0 truncate font-mono text-[11.5px] text-slate-500 dark:text-slate-400">
+            {@shown.path}
+          </span>
+          <a
+            href={~p"/tasks/#{@task.id}/qa/#{@finding.key}/evidence/#{@index}"}
+            target={@kind == :pdf && "_blank"}
+            download={@kind == :file}
+            rel="noopener"
+            data-qa="qa_evidence_open"
+            class="ml-auto shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            {open_label(@kind)} <.icon name="pi-arrow-up-right" class="size-3" />
+          </a>
+        </div>
+      </div>
+
+      <.text_evidence :if={@kind in [:text, :missing]} evidence={@shown} read={@text} />
     </div>
     """
   end
@@ -1581,9 +1620,12 @@ defmodule RailWeb.Live.QaStage do
     evidence = (selected && selected.evidence) || []
     index = if socket.assigns.evidence_index < length(evidence), do: socket.assigns.evidence_index, else: 0
 
+    kinds = Enum.map(evidence, &shown_as(socket.assigns.task, &1))
+
     socket
     |> assign(:evidence_index, index)
-    |> assign(:evidence_text, evidence_text(socket.assigns.task, Enum.at(evidence, index)))
+    |> assign(:evidence_kinds, kinds)
+    |> assign(:evidence_text, evidence_text(socket.assigns.task, Enum.at(evidence, index), Enum.at(kinds, index)))
   end
 
   # Picking something is picking what the middle shows, so the panel reloads
@@ -1689,16 +1731,25 @@ defmodule RailWeb.Live.QaStage do
   defp held?(%Run{evidence_reminders: reminders}, false, %QaReport{}) when reminders > 0, do: true
   defp held?(_run, _reported, _report), do: false
 
-  # Only the tab on screen is read, and a picture is the browser's to fetch.
-  defp evidence_text(%Task{} = task, %QaEvidence{} = evidence) do
-    cond do
-      not QaEvidence.text?(evidence) -> nil
-      is_binary(evidence.path) -> Pipeline.read_qa_evidence(task, evidence)
-      true -> {:ok, %{text: evidence.text, truncated: false}}
+  # QA picks the kind it cites a file as, and none of them is a PDF, so what the
+  # file holds decides how it is shown.
+  defp shown_as(%Task{} = task, %QaEvidence{path: path}) when is_binary(path) do
+    case Pipeline.classify_qa_evidence(task, path) do
+      {:ok, kind} -> kind
+      {:error, :not_found} -> :missing
     end
   end
 
-  defp evidence_text(%Task{}, nil), do: nil
+  defp shown_as(%Task{}, %QaEvidence{}), do: :text
+
+  # Only the tab on screen is read, and anything that is not text is the
+  # browser's to fetch.
+  defp evidence_text(%Task{} = task, %QaEvidence{path: path} = evidence, :text) when is_binary(path),
+    do: Pipeline.read_qa_evidence(task, evidence)
+
+  defp evidence_text(%Task{}, %QaEvidence{text: text}, :text), do: {:ok, %{text: text, truncated: false}}
+  defp evidence_text(%Task{}, %QaEvidence{}, :missing), do: {:error, :not_found}
+  defp evidence_text(%Task{}, _evidence, _kind), do: nil
 
   defp position(_findings, nil), do: 0
   defp position(findings, selected), do: Enum.find_index(findings, &(&1.key == selected.key)) + 1
@@ -1824,16 +1875,24 @@ defmodule RailWeb.Live.QaStage do
       "The findings it names are in the sidebar."
   end
 
+  # A file read as text keeps the kind QA cited it as, unless that was a picture
+  # it is not. Anything else is named for what it holds.
+  defp tab_kind(:text, %QaEvidence{kind: :screenshot}), do: :text
+  defp tab_kind(kind, %QaEvidence{kind: cited}) when kind in [:text, :missing], do: cited
+  defp tab_kind(kind, %QaEvidence{}), do: kind
+
   defp evidence_icon(:screenshot), do: "pi-image"
-  defp evidence_icon(:log), do: "pi-file-text"
+  defp evidence_icon(:pdf), do: "pi-file-pdf"
+  defp evidence_icon(:file), do: "pi-file"
   defp evidence_icon(:query), do: "pi-database"
   defp evidence_icon(:note), do: "pi-note"
+  defp evidence_icon(_log_or_text), do: "pi-file-text"
 
-  # A picture goes by what QA called it, since every qa_shot file from one check
-  # starts the same. Any other file goes by its file, and inline text by its name.
-  defp tab_name(%QaEvidence{kind: :screenshot, name: name}), do: name
-  defp tab_name(%QaEvidence{path: path}) when is_binary(path), do: Path.basename(path)
-  defp tab_name(%QaEvidence{name: name}), do: name
+  # A text file goes by its file, as a log does. Anything Rail filed with
+  # `qa_shot` or `qa_file` starts with its check's key, so it goes by what QA
+  # called it, and so does inline text.
+  defp tab_name(:text, %QaEvidence{path: path}) when is_binary(path), do: Path.basename(path)
+  defp tab_name(_kind, %QaEvidence{name: name}), do: name
 
   defp line_count(1), do: "1 line"
   defp line_count(count), do: "#{count} lines"

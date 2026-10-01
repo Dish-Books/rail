@@ -4240,7 +4240,7 @@ defmodule RailWeb.TaskLiveTest do
         "[info] POST /bills\n[error] boom in TaxRate.percent/1\n[info] Sent 500\n"
       )
 
-      File.write!(Path.join(evidence_dir, "dump.bin"), <<0xFF, 0xFE, 0x00, 0x81>>)
+      File.write!(Path.join(evidence_dir, "dump.bin"), String.duplicate("a", 9_000) <> <<0xFF, 0xFE, 0x00, 0x81>>)
       File.write!(Path.join(evidence_dir, "long.log"), String.duplicate("a", 300_000))
 
       {:ok, _synced} =
@@ -4329,6 +4329,90 @@ defmodule RailWeb.TaskLiveTest do
       for tab <- Floki.attribute(document, "[data-qa='qa_evidence_tab']", "class") do
         assert "shrink-0" in String.split(tab)
       end
+    end
+
+    # QA picks the kind it cites a file as, and there is no kind for a PDF, so the
+    # tab shows the file as what it holds rather than as what it was called.
+    test "a finding's evidence is shown as what its file holds, whatever it was cited as", %{
+      conn: conn,
+      task: task
+    } do
+      evidence_dir = Path.join([task.scratch_path, "qa", "evidence"])
+      File.write!(Path.join(evidence_dir, "invoice~the-invoice.pdf"), "%PDF-1.7\n" <> <<0xFF, 0xFE, 0x00, 0x81>>)
+      File.write!(Path.join(evidence_dir, "totals~the-total.png"), "png bytes")
+      File.write!(Path.join(evidence_dir, "export~the-archive.bin"), <<0xFF, 0xFE, 0x00, 0x81>>)
+      File.write!(Path.join(evidence_dir, "statement.pdf"), "%PDF-1.7")
+      File.write!(Path.join(evidence_dir, "export~the-output.txt"), "wrote 3 rows")
+
+      {:ok, _synced} =
+        Pipeline.sync_qa_findings(task, [
+          %{
+            key: "invoice-wrong",
+            title: "The invoice PDF is wrong",
+            check: "invoice",
+            severity: :major,
+            recommendation: :fix,
+            evidence: [
+              %{name: "The invoice", kind: :log, path: "evidence/invoice~the-invoice.pdf"},
+              %{name: "The total", kind: :log, path: "evidence/totals~the-total.png"},
+              %{name: "The archive", kind: :note, path: "evidence/export~the-archive.bin"},
+              %{name: "The statement", kind: :screenshot, path: "evidence/statement.pdf"},
+              %{name: "A picture that went", kind: :screenshot, path: "evidence/gone.png"},
+              %{name: "The output", kind: :screenshot, path: "evidence/export~the-output.txt"}
+            ]
+          }
+        ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      route = "/tasks/#{task.id}/qa/invoice-wrong/evidence"
+
+      assert has_element?(view, "#qa-evidence-tab-0[data-kind='pdf']", "The invoice")
+      assert has_element?(view, ~s(#qa-finding-detail a[target="_blank"][href="#{route}/0"]), "Open PDF")
+      refute has_element?(view, "[data-qa='qa_evidence_unreadable']")
+
+      view |> element("#qa-evidence-tab-1[data-kind='screenshot']") |> render_click()
+      assert has_element?(view, ~s(#qa-finding-detail img[src="#{route}/1"]))
+
+      view |> element("#qa-evidence-tab-2[data-kind='file']") |> render_click()
+      assert has_element?(view, ~s(#qa-finding-detail a[href="#{route}/2"][download]), "Download")
+      refute has_element?(view, ~s(#qa-finding-detail a[href="#{route}/2"][target]))
+
+      view |> element("#qa-evidence-tab-3[data-kind='pdf']") |> render_click()
+      refute has_element?(view, "#qa-finding-detail img")
+      assert has_element?(view, ~s(#qa-finding-detail a[target="_blank"][href="#{route}/3"]), "Open PDF")
+
+      view |> element("#qa-evidence-tab-4") |> render_click()
+      assert has_element?(view, "[data-qa='qa_evidence_unreadable']", "evidence/gone.png is not there any more.")
+      refute has_element?(view, "#qa-finding-detail img")
+
+      view |> element("#qa-evidence-tab-5[data-kind='text']") |> render_click()
+      assert has_element?(view, "[data-qa='qa_evidence_line']", "wrote 3 rows")
+      refute has_element?(view, "#qa-finding-detail img")
+    end
+
+    # Ruling moves the reader on to the next finding, which opens on its first
+    # piece of evidence rather than on whichever tab the last one was left at.
+    test "ruling on a finding opens the next one on its first piece of evidence", %{conn: conn, task: task} do
+      two = [
+        %{name: "the first", kind: :query, text: "first"},
+        %{name: "the second", kind: :query, text: "second"}
+      ]
+
+      {:ok, _synced} =
+        Pipeline.sync_qa_findings(task, [
+          %{key: "a-first", title: "A first", check: "c", severity: :major, recommendation: :fix, evidence: two},
+          %{key: "b-second", title: "B second", check: "c", severity: :major, recommendation: :fix, evidence: two}
+        ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#qa-evidence-tab-1") |> render_click()
+      assert has_element?(view, "#qa-evidence-tab-1[aria-selected='true']")
+
+      view |> element("#decide-fix-a-first") |> render_click()
+
+      assert has_element?(view, "[data-qa='qa_finding_detail']", "B second")
+      assert has_element?(view, "#qa-evidence-tab-0[aria-selected='true']")
     end
 
     # A finding raised before every finding had to carry evidence still opens.
