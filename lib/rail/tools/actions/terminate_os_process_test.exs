@@ -50,4 +50,19 @@ defmodule Rail.Tools.Actions.TerminateOsProcessTest do
     refute Tools.os_process_alive?(pid)
     eventually(fn -> refute Tools.os_process_alive?(child) end)
   end
+
+  # Something that takes a moment over its TERM is waited for rather than killed.
+  test "waits out a child that takes a moment to exit on TERM" do
+    port =
+      Port.open(
+        {:spawn_executable, "/bin/sh"},
+        [:binary, args: ["-c", "trap 'sleep 0.1; exit 0' TERM; while :; do sleep 0.01; done"]]
+      )
+
+    {:os_pid, pid} = Port.info(port, :os_pid)
+    assert Tools.os_process_alive?(pid)
+
+    assert Tools.terminate_os_process(pid, grace_period: 2_000) == :ok
+    refute Tools.os_process_alive?(pid)
+  end
 end

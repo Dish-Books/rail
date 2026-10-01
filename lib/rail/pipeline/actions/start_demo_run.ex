@@ -77,7 +77,9 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
 
     Nothing under #{scratch_path} is part of the change. It is your workspace, and Rail keeps it out of the commit. It survives between turns, so keep the scripts that seed your starting state there and make them re-runnable: a retake is then one command. `/tmp`, and anything you started, do not survive.
 
-    The browser is Rail's rather than yours. `browser_goto`, `browser_do`, `browser_look` and `browser_problems` drive one headless Chrome that stays where you left it between calls; it opens on the first call and Rail closes it when the task moves on.
+    The browser is Rail's: one headless Chrome shared by every task, with a tab of your own that stays where you left it between scripts, between turns and across a Rail restart. Call `browser_connect` for its address and for `driver.mjs`, then drive it with your own Node scripts (`.mjs`, run with `node`). Rail films that same tab, so what your scripts do is what the video shows. The driver's clicks and keystrokes are trusted input events and typing goes a character at a time, so the recording shows the application responding the way it does for a person. Never click or type through `evaluate`: it races LiveView's re-render and does nothing on camera.
+
+    You name every element yourself, with a JavaScript expression that returns it: `document.querySelector('#bill-form button[type=submit]')`, or a find over text when nothing stable identifies it. The templates in your worktree are where ids and `data-qa` attributes come from. Work every target out while rehearsing and write the take as scripts you already ran - a target that finds nothing on camera is a retake. Pace the take for a viewer: `wait` a beat after each `demo_say` and after anything that changes the screen.
 
     Rehearse, then record. Nothing is recorded until you call `demo_start`, and everything after it is, so the working out is free and the take is not:
 
@@ -89,7 +91,7 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
 
     `demo_say` is the narration, and Rail stamps each caption against the recording's own clock: say what is about to happen and then do it, or the caption lands over whatever came next. Rail renders captions in a bar under the video and never on it, so nothing you say covers the application - and nothing you say can point at it either. Name the acceptance criterion in `criterion` on the beat that proves one; that is how Rail reads back what the walkthrough covered.
 
-    Captions need time to be read: two `demo_say` calls in the same second leave the first one unseen, so let about five seconds pass after each. Look at the page before you narrate that something worked: reaching the end of an instruction is not the application having done the right thing. Never wait for something to age out or time out on camera; set the state up before `demo_start`.
+    Captions need time to be read: two `demo_say` calls in the same second leave the first one unseen, so let about five seconds pass after each. Look at the page before you narrate that something worked: a script finishing is not the application having done the right thing. Never wait for something to age out or time out on camera; set the state up before `demo_start`.
 
     #{avoid(task)}
     Writing #{file} is how you hand the recording over, and it is the last thing you do. Write it from your worktree with a heredoc, the body and its closing JSON line at column zero:

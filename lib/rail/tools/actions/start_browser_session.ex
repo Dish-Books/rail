@@ -2,17 +2,23 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
   @moduledoc """
   Gets the browser a task is being driven in, starting one if there is not one yet.
 
-  Asking twice gets the same session rather than a second Chrome: the registry is
+  Asking twice gets the same session rather than a second tab: the registry is
   keyed by task, so a pass that reconnects after a crash, or a second tool call
-  arriving before the first has finished starting, both land on the browser that
-  is already there.
+  arriving before the first has finished starting, both land on the tab that is
+  already there.
+
+  A task whose last session ended without closing its tab - Rail restarted, the
+  session crashed - gets that tab back: its row still names the context and the
+  target, and the new session attaches to them. A pass that was signed in and
+  half way through a form is still signed in and half way through it. Only a tab
+  that is not there any more is replaced.
 
   The row is written here rather than by the session itself. A process cannot
-  record its own unexpected death, and that record is exactly what tells a reaper
-  which Chrome to kill - so what the session launched is written down by the thing
-  that asked for it, and `Rail.Tools.reconcile_browser_sessions/1` settles
-  whatever ends without being asked to.
+  record its own unexpected death, and the row is what says which context is
+  still somebody's.
   """
+
+  import Ecto.Query
 
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
@@ -24,36 +30,69 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
   @doc """
   Returns `{:ok, pid}` for `task`'s browser session.
 
-  `opts` are passed to the session: `:headless` to watch it work,
-  `:subscribe` for a process that should receive the browser's own events, and
-  `:ready_timeout_ms` for how long Chrome gets to answer.
+  `opts` are passed to the session: `:subscribe` for a process that should
+  receive the browser's own events, and `:ready_timeout_ms` for how long a Chrome
+  that had to be started gets to answer.
   """
   def start_browser_session(%Task{} = task, opts \\ []) do
     case Tools.get_browser_session(task) do
       pid when is_pid(pid) -> {:ok, pid}
-      nil -> launch(task, opts)
+      nil -> resume(task, live(task), opts)
     end
   end
+
+  defp live(%Task{id: task_id}) do
+    Repo.one(from s in Session, where: s.task_id == ^task_id and s.status != :finished)
+  end
+
+  defp resume(%Task{} = task, %Session{browser_context_id: context, target_id: target} = session, opts)
+       when is_binary(context) and is_binary(target) do
+    resume = %{browser_context_id: context, target_id: target}
+
+    case start(task, session, [{:resume, resume} | opts]) do
+      {:ok, pid} ->
+        {:ok, pid}
+
+      {:error, {:browser_unavailable, :tab_gone}} ->
+        settle(session, :tab_gone)
+        launch(task, opts)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # A row that never got as far as a tab stands for nothing, and only one live row
+  # is allowed per task.
+  defp resume(%Task{} = task, %Session{} = session, opts) do
+    settle(session, :no_tab)
+    launch(task, opts)
+  end
+
+  defp resume(%Task{} = task, nil, opts), do: launch(task, opts)
 
   defp launch(%Task{} = task, opts) do
     {:ok, session} =
       %Session{}
-      |> Session.changeset(%{
-        task_id: task.id,
-        status: :starting,
-        started_at: DateTime.utc_now()
-      })
+      |> Session.changeset(%{task_id: task.id, status: :starting, started_at: DateTime.utc_now()})
       |> Repo.insert()
 
+    case start(task, session, opts) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, reason} -> {:error, settle(session, reason)}
+    end
+  end
+
+  defp start(%Task{} = task, %Session{} = session, opts) do
     child = {BrowserSession, [{:task, task}, {:session_id, session.id} | opts]}
 
     case DynamicSupervisor.start_child(BrowserSupervisor, child) do
       {:ok, pid} -> {:ok, record(session, pid)}
       # coveralls-ignore-start (two callers that both looked and both found
       # nothing, which is a window a test cannot stand inside)
-      {:error, {:already_started, pid}} -> {:ok, settle(session, pid)}
+      {:error, {:already_started, pid}} -> {:ok, pid}
       # coveralls-ignore-stop
-      {:error, reason} -> {:error, settle(session, reason)}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -66,9 +105,9 @@ defmodule Rail.Tools.Actions.StartBrowserSession do
     pid
   end
 
-  # Two sessions raced, or the browser never came up. Either way this row stands
-  # for nothing that is running, and a live row nobody settles is what stops the
-  # task ever getting a browser again.
+  # The browser never came up, or the tab the row pointed at is gone. Either way
+  # this row stands for nothing that is open, and a live row nobody settles is
+  # what stops the task ever getting a browser again.
   defp settle(%Session{} = session, outcome) do
     {:ok, _finished} =
       session

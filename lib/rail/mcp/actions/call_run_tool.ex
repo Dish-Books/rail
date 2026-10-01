@@ -7,16 +7,16 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   its server on the issue's assigned user's connection.
 
   That register is the whole of the gate, so there is no second idea of who may
-  call what: a review run calling `browser_goto` was offered no such tool, falls
+  call what: a review run calling `browser_connect` was offered no such tool, falls
   through to the proxy, and finds no server by that name either. The allowlist is
   rechecked here rather than trusted from `tools/list`, because an agent can call
   any name it likes.
 
   Each tool Rail serves is a `Rail.Mcp.Utils.RunTool*` of its own, so what is
-  here is the dispatch and the log. The browser tools log what they did as they
-  do it rather than when the call returns, so a run can be watched while it is
-  still going - and what is logged is what Rail executed, not what the agent
-  asked for.
+  here is the dispatch and the log. Each call is logged as it is made rather than
+  when it returns, so a run can be watched while it is still going. The page
+  itself is driven by the agent's own scripts, which Rail does not see; what the
+  panel shows of that is the tab.
 
   A line is filed under the namespace of the tool that wrote it - `[browser]`,
   `[qa]`, `[demo]` - because the panels read the log back for different reasons
@@ -24,11 +24,8 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   """
 
   import Rail.Mcp.Utils.McpTools
-  import Rail.Mcp.Utils.RunToolBrowserDo
-  import Rail.Mcp.Utils.RunToolBrowserGoto
-  import Rail.Mcp.Utils.RunToolBrowserLook
+  import Rail.Mcp.Utils.RunToolBrowserConnect
   import Rail.Mcp.Utils.RunToolBrowserProblems
-  import Rail.Mcp.Utils.RunToolBrowserStop
   import Rail.Mcp.Utils.RunToolDemoSay
   import Rail.Mcp.Utils.RunToolDemoStart
   import Rail.Mcp.Utils.RunToolQaCheck
@@ -65,7 +62,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
     with {:ok, task} <- task(context) do
       if not answers_itself?(name), do: log(context, name, line)
 
-      result = run(name, task, arguments, on_action: &log(context, name, action_line(&1)))
+      result = run(name, task, arguments, [])
 
       if answers_itself?(name), do: log(context, name, said(name, line, result))
 
@@ -76,8 +73,8 @@ defmodule Rail.Mcp.Actions.CallRunTool do
     end
   end
 
-  # Everything says what it is doing before it does it, because a page that takes
-  # ten seconds to load is ten seconds of a person watching nothing happen.
+  # Everything says what it is doing before it does it, because a tab that takes
+  # ten seconds to open is ten seconds of a person watching nothing happen.
   #
   # Five are the exception, for three reasons. The checklist and filing lines tell
   # the panel to read again, so one written first arrives before there is
@@ -121,18 +118,9 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp asked("qa_check", %{"key" => key, "outcome" => outcome}), do: "check #{inspect(key)} #{outcome}"
   defp asked("qa_shot", %{"name" => name}), do: "shot #{inspect(name)}"
   defp asked("qa_file", %{"name" => name}), do: "file #{inspect(name)}"
-  defp asked("browser_goto", %{"url" => url}), do: "goto #{url}"
-  defp asked("browser_do", %{"intent" => intent} = arguments), do: "do #{inspect(intent)}#{supplied(arguments)}"
   defp asked("demo_say", %{"text" => text}), do: "say #{inspect(text)}"
   defp asked("demo_say", _arguments), do: "say"
   defp asked(name, _arguments), do: name |> String.split("_", parts: 2) |> List.last()
-
-  defp supplied(%{"text" => text}) when is_binary(text), do: " ← #{inspect(text)}"
-  defp supplied(_arguments), do: ""
-
-  defp action_line(executed) do
-    "  #{executed.operation} #{inspect(executed.action)}#{supplied(%{"text" => executed.text})}"
-  end
 
   # A run that has not started has nowhere to write, which is every call made
   # while testing this rather than during a pass.
@@ -151,11 +139,8 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   # Each of these owns whatever it needs, the browser included: the ones that are
   # about the pass rather than the page never open one, and a pass that writes
   # its checklist and then stops has still told the human what it meant to do.
-  defp run("browser_goto", task, arguments, opts), do: run_tool_browser_goto(task, arguments, opts)
-  defp run("browser_do", task, arguments, opts), do: run_tool_browser_do(task, arguments, opts)
-  defp run("browser_look", task, arguments, opts), do: run_tool_browser_look(task, arguments, opts)
+  defp run("browser_connect", task, arguments, opts), do: run_tool_browser_connect(task, arguments, opts)
   defp run("browser_problems", task, arguments, opts), do: run_tool_browser_problems(task, arguments, opts)
-  defp run("browser_stop", task, arguments, opts), do: run_tool_browser_stop(task, arguments, opts)
   defp run("qa_plan", task, arguments, opts), do: run_tool_qa_plan(task, arguments, opts)
   defp run("qa_check", task, arguments, opts), do: run_tool_qa_check(task, arguments, opts)
   defp run("qa_shot", task, arguments, opts), do: run_tool_qa_shot(task, arguments, opts)

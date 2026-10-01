@@ -2,6 +2,11 @@
 
 ARG ELIXIR_IMAGE="hexpm/elixir:1.19.5-erlang-28.4.1-debian-bookworm-20260610-slim"
 ARG RUNNER_IMAGE="debian:bookworm-20260610-slim"
+ARG NODE_IMAGE="node:22-bookworm-slim"
+
+# Node for the sandbox. Bookworm's is 18, and the browser driver agents run needs the global
+# WebSocket that arrived in 22.
+FROM ${NODE_IMAGE} AS node
 
 # ------------------------------------------------------------------------------
 # Build Stage
@@ -51,7 +56,8 @@ RUN mix release rail
 # tools in its sandbox as it did beside Rail, without Rail's release or environment.
 FROM ${RUNNER_IMAGE} AS sandbox
 
-# chromium for QA and demos; the build tools let mise compile a project's Erlang.
+# chromium for QA and demos; the build tools let mise compile a project's Erlang; python because
+# agents reach for it to script whatever the shell makes awkward.
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
     autoconf \
     build-essential \
@@ -69,6 +75,10 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     m4 \
     openssh-client \
     openssl \
+    python-is-python3 \
+    python3 \
+    python3-pip \
+    python3-venv \
     unzip \
     xz-utils \
   && sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen \
@@ -82,6 +92,12 @@ RUN install -m 0755 -d /etc/apt/keyrings \
   && apt-get update -y \
   && apt-get install -y --no-install-recommends postgresql-client-17 \
   && rm -rf /var/lib/apt/lists/*
+
+# Node 22 and npm, for the browser driver in QA and demos and for any project script that wants them.
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+  && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
 ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US:en

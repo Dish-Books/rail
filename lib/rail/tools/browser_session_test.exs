@@ -1,6 +1,9 @@
 defmodule Rail.Tools.BrowserSessionTest do
   use Rail.DataCase, async: false
 
+  import Ecto.Query
+  import Rail.Tools.Utils.EnsureBrowserHost
+
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Tools
@@ -57,18 +60,19 @@ defmodule Rail.Tools.BrowserSessionTest do
       File.rm_rf(task.scratch_path)
     end)
 
-    %{task: task, page: "file://#{page}"}
+    %{task: task, page: "file://#{page}", project: project}
   end
 
-  test "drives a real browser and records what it launched", %{task: task, page: page} do
+  test "drives a tab in the shared Chrome and records where it is", %{task: task, page: page} do
     assert {:ok, session} = Tools.start_browser_session(task)
 
-    assert %Session{status: :running, os_pid: os_pid, debug_port: port, profile_path: profile} =
+    assert %Session{status: :running, debug_port: port, browser_context_id: context, target_id: target} =
              Repo.get_by!(Session, task_id: task.id)
 
-    assert is_integer(os_pid)
     assert is_integer(port)
-    assert File.dir?(profile)
+    assert context =~ ~r/^[0-9A-F]{32}$/
+    page_url = "ws://127.0.0.1:#{port}/devtools/page/#{target}"
+    assert %{page_url: ^page_url, browser_context_id: ^context} = BrowserSession.details(session)
 
     assert {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
 
@@ -91,24 +95,152 @@ defmodule Rail.Tools.BrowserSessionTest do
              })
   end
 
-  test "asking twice gets the browser that is already open", %{task: task} do
+  test "asking twice gets the tab that is already open", %{task: task} do
     assert {:ok, session} = Tools.start_browser_session(task)
     assert {:ok, ^session} = Tools.start_browser_session(task)
   end
 
-  # An agent that never reaches its last instruction still cannot leave a Chrome
-  # holding a core, because stopping is not the agent's to remember.
-  test "stopping takes the browser and its profile with it", %{task: task} do
+  # One Chrome between them, and nothing signed into one task's app is visible
+  # to another's.
+  test "two tasks share one Chrome and nothing else", %{task: task, project: project} do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issueCreate" => %{
+            "success" => true,
+            "issue" => %{"id" => "lin_brs_other", "identifier" => "BRS-2", "title" => "Other"}
+          }
+        }
+      })
+    end)
+
+    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Other"})
+    {:ok, other} = Pipeline.create_task(issue, :qa)
+
+    on_exit(fn ->
+      case Tools.get_browser_session(other) do
+        pid when is_pid(pid) -> GenServer.stop(pid, :normal, 10_000)
+        nil -> :ok
+      end
+    end)
+
+    {:ok, _mine} = Tools.start_browser_session(task)
+    {:ok, _theirs} = Tools.start_browser_session(other)
+
+    mine = Repo.get_by!(Session, task_id: task.id)
+    theirs = Repo.get_by!(Session, task_id: other.id)
+
+    assert mine.debug_port == theirs.debug_port
+    assert mine.browser_context_id != theirs.browser_context_id
+  end
+
+  # Rail stopping is not the task being done with its browser: a deploy in the
+  # middle of a pass comes back to the page the pass was on.
+  test "a session that ends with Rail leaves its tab, and the next one attaches to it", %{task: task, page: page} do
+    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
+    eventually(fn -> assert BrowserSession.where(session) == page end)
+    %Session{id: id, target_id: target} = Repo.get_by!(Session, task_id: task.id)
+
+    :ok = GenServer.stop(session, :shutdown, 10_000)
+
+    assert {:ok, again} = Tools.start_browser_session(task)
+    assert again != session
+    assert %Session{id: ^id, status: :running, target_id: ^target} = Repo.get_by!(Session, task_id: task.id)
+    assert BrowserSession.where(again) == page
+  end
+
+  # Chrome restarted, or the context was closed from under the row. The row is
+  # settled and the task gets a new tab rather than an error.
+  test "a tab that is not there any more is replaced", %{task: task} do
+    {:ok, session} = Tools.start_browser_session(task)
+    %Session{id: id, browser_context_id: context, target_id: target} = Repo.get_by!(Session, task_id: task.id)
+    :ok = GenServer.stop(session, :shutdown, 10_000)
+
+    {:ok, %{url: url}} = ensure_browser_host(start: false)
+    {:ok, connection} = Browser.start_link(url: url)
+    {:ok, _closed} = Browser.call(connection, "Target.disposeBrowserContext", %{browserContextId: context})
+    GenServer.stop(connection)
+
+    assert {:ok, _fresh} = Tools.start_browser_session(task)
+
+    assert %Session{status: :finished} = Repo.get!(Session, id)
+
+    assert %Session{target_id: fresh} =
+             Repo.one!(from s in Session, where: s.task_id == ^task.id and s.status == :running)
+
+    assert fresh != target
+  end
+
+  # A row left `starting` never got as far as a tab, so there is nothing to
+  # attach to - and it is still the one live row the task is allowed.
+  test "a row that never got a tab is settled and a tab opened", %{task: task} do
+    {:ok, %Session{id: stuck}} =
+      %Session{}
+      |> Session.changeset(%{task_id: task.id, status: :starting, started_at: DateTime.utc_now()})
+      |> Repo.insert()
+
+    assert {:ok, _session} = Tools.start_browser_session(task)
+
+    assert %Session{status: :finished} = Repo.get!(Session, stuck)
+
+    assert %Session{target_id: target} =
+             Repo.one!(from s in Session, where: s.task_id == ^task.id and s.status == :running)
+
+    assert byte_size(target) > 0
+  end
+
+  # A Chrome that cannot be started is no answer about whether the tab is still
+  # there, so the row pointing at it is left for when it can be.
+  test "a tab that cannot be reached for want of a browser keeps its row", %{task: task} do
+    {:ok, %Session{id: id}} =
+      %Session{}
+      |> Session.changeset(%{task_id: task.id, status: :running, browser_context_id: "CTX", target_id: "TGT"})
+      |> Repo.insert()
+
+    set_mimic_global()
+    root = Path.join(System.tmp_dir!(), "rail-no-browser-#{System.unique_integer([:positive])}")
+    stub(Rail, :browser_root, fn -> root end)
+    stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:error, :enoent} end)
+
+    assert {:error, {:browser_unavailable, :enoent}} = Tools.start_browser_session(task)
+    assert %Session{status: :running} = Repo.get!(Session, id)
+  end
+
+  # An agent that never reaches its last instruction still cannot leave a tab
+  # open, because stopping is not the agent's to remember.
+  test "stopping closes the tab and its context", %{task: task} do
     {:ok, _session} = Tools.start_browser_session(task)
-    %Session{id: id, os_pid: os_pid, profile_path: profile} = Repo.get_by!(Session, task_id: task.id)
+    %Session{id: id, target_id: target} = Repo.get_by!(Session, task_id: task.id)
 
     assert :ok = Tools.stop_browser_session(task)
 
-    eventually(fn ->
-      refute Tools.os_process_alive?(os_pid)
-      refute File.exists?(profile)
-      assert %Session{status: :finished, finished_at: %DateTime{}} = Repo.get(Session, id)
-    end)
+    assert %Session{status: :finished, finished_at: %DateTime{}} = Repo.get(Session, id)
+    assert Tools.get_browser_session(task) == nil
+
+    {:ok, %{url: url}} = ensure_browser_host(start: false)
+    {:ok, connection} = Browser.start_link(url: url)
+    {:ok, %{"targetInfos" => targets}} = Browser.call(connection, "Target.getTargets", %{})
+    GenServer.stop(connection)
+
+    refute Enum.any?(targets, &(&1["targetId"] == target))
+  end
+
+  # Rail restarted since the tab was opened, so nothing holds it - and it is
+  # still a tab to close.
+  test "stopping closes a tab nothing is connected to", %{task: task} do
+    {:ok, session} = Tools.start_browser_session(task)
+    %Session{target_id: target} = Repo.get_by!(Session, task_id: task.id)
+    :ok = GenServer.stop(session, :shutdown, 10_000)
+
+    assert :ok = Tools.stop_browser_session(task)
+
+    {:ok, %{url: url}} = ensure_browser_host(start: false)
+    {:ok, connection} = Browser.start_link(url: url)
+    {:ok, %{"targetInfos" => targets}} = Browser.call(connection, "Target.getTargets", %{})
+    GenServer.stop(connection)
+
+    refute Enum.any?(targets, &(&1["targetId"] == target))
   end
 
   # Where the tab is comes from Chrome rather than from the run's log: the log
@@ -213,84 +345,13 @@ defmodule Rail.Tools.BrowserSessionTest do
   # wrote on the way in has to be settled or the task never gets another.
   test "a browser that will not start leaves nothing live behind", %{task: task} do
     set_mimic_global()
+    root = Path.join(System.tmp_dir!(), "rail-no-browser-#{System.unique_integer([:positive])}")
+    stub(Rail, :browser_root, fn -> root end)
     stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:error, :enoent} end)
 
     assert {:error, {:browser_unavailable, :enoent}} = Tools.start_browser_session(task)
 
     assert %Session{status: :finished, finished_at: %DateTime{}} = Repo.get_by!(Session, task_id: task.id)
     assert Tools.get_browser_session(task) == nil
-  end
-
-  # Chrome's log is the only account of why it never answered, and a CI runner
-  # discards the profile it is written in.
-  test "a browser that never answers says what Chrome logged", %{task: task} do
-    set_mimic_global()
-    stub(Tools, :terminate_os_process, fn _os_pid, _opts -> :ok end)
-
-    stub(Tools, :spawn_os_process, fn _executable, _args, opts ->
-      File.write!(opts[:stdout_path], "starting\nNo usable sandbox!\n")
-      {:ok, nil, System.unique_integer([:positive])}
-    end)
-
-    assert {:error, {:browser_unavailable, {:devtools_never_answered, "starting\nNo usable sandbox!"}}} =
-             Tools.start_browser_session(task, ready_timeout_ms: 200)
-  end
-
-  # Chrome now and then hangs before it listens, so a hung one is killed with its
-  # children and started once more before the session gives up.
-  test "a browser that hangs on its way up is killed and started again", %{task: task} do
-    set_mimic_global()
-    test_pid = self()
-
-    stub(Tools, :spawn_os_process, fn _executable, _args, _opts ->
-      os_pid = System.unique_integer([:positive])
-      send(test_pid, {:spawned, os_pid})
-      {:ok, nil, os_pid}
-    end)
-
-    stub(Tools, :terminate_os_process, fn os_pid, opts -> send(test_pid, {:terminated, os_pid, opts}) && :ok end)
-
-    assert {:error, {:browser_unavailable, {:devtools_never_answered, _log}}} =
-             Tools.start_browser_session(task, ready_timeout_ms: 200)
-
-    assert_received {:spawned, first}
-    assert_received {:terminated, ^first, [group: true]}
-    assert_received {:spawned, second}
-    assert_received {:terminated, ^second, [group: true]}
-    refute_received {:spawned, _third}
-  end
-
-  test "a browser that never answers or logs says the log is missing", %{task: task} do
-    set_mimic_global()
-    stub(Tools, :terminate_os_process, fn _os_pid, _opts -> :ok end)
-    stub(Tools, :spawn_os_process, fn _executable, _args, _opts -> {:ok, nil, System.unique_integer([:positive])} end)
-
-    assert {:error, {:browser_unavailable, {:devtools_never_answered, "chrome.log unreadable: enoent"}}} =
-             Tools.start_browser_session(task, ready_timeout_ms: 200)
-  end
-
-  # The snapshot is what every decision is made from, so it has to survive a real
-  # page rather than only a fixture.
-  test "reads the page into an indexed table of what can be done to it", %{task: task, page: page} do
-    {:ok, session} = Tools.start_browser_session(task)
-    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
-
-    snapshot = File.read!(Application.app_dir(:rail, "priv/browser/snapshot.js"))
-
-    # A document still navigating reads as nothing, so the snapshot is asked for
-    # until the page it is a snapshot of is there.
-    state =
-      eventually(fn ->
-        assert {:ok, %{"result" => %{"value" => %{"actions" => [_first | _rest]} = state}}} =
-                 BrowserSession.call(session, "Runtime.evaluate", %{expression: snapshot, returnByValue: true})
-
-        state
-      end)
-
-    labels = Enum.map(state["actions"], & &1["label"])
-
-    assert "Amount" in labels
-    assert "Save" in labels
-    assert state["title"] == "Bill"
   end
 end

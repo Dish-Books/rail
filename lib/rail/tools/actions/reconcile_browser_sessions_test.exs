@@ -3,6 +3,7 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Roles
   alias Rail.Tools
   alias Rail.Tools.BrowserRegistry
   alias Rail.Tools.Schemas.BrowserSession
@@ -25,38 +26,32 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
     {:ok, task} = Pipeline.create_task(issue, :qa)
     on_exit(fn -> File.rm_rf(task.scratch_path) end)
 
-    %{task: task}
+    %{task: task, project: project}
   end
 
-  # The machine went down, or the session was killed outright. Nothing ran
-  # `terminate`, so the browser is still up and the row still says it is running.
-  test "reaps a session nothing is driving", %{task: task} do
-    profile = Path.join(System.tmp_dir!(), "rail-reconcile-#{System.unique_integer([:positive])}")
-    File.mkdir_p!(profile)
-
-    {:ok, %BrowserSession{id: reaped}} =
+  # The shared Chrome outlives everything, so a tab the task no longer needs is
+  # one somebody has to close - and it is closed whatever holds it.
+  test "closes the tab of a task that has left QA and demo", %{task: task} do
+    {:ok, %BrowserSession{id: closed}} =
       %BrowserSession{}
-      |> BrowserSession.changeset(%{
-        task_id: task.id,
-        status: :running,
-        profile_path: profile,
-        started_at: DateTime.utc_now()
-      })
+      |> BrowserSession.changeset(%{task_id: task.id, status: :running, started_at: DateTime.utc_now()})
       |> Repo.insert()
 
-    assert [%BrowserSession{id: ^reaped, status: :finished, finished_at: %DateTime{}}] =
-             Tools.reconcile_browser_sessions()
+    task |> Ecto.Changeset.change(stage: :merged) |> Repo.update!()
 
-    refute File.exists?(profile)
+    assert [%BrowserSession{id: ^closed, status: :finished, finished_at: %DateTime{}}] =
+             Tools.reconcile_browser_sessions()
   end
 
   # Only one live session is allowed per task, so a row nobody settled is what
   # stops that task ever being given another browser.
-  test "a reaped session lets its task have a browser again", %{task: task} do
+  test "a closed session lets its task have a browser again", %{task: task} do
     {:ok, _orphan} =
       %BrowserSession{}
       |> BrowserSession.changeset(%{task_id: task.id, status: :running})
       |> Repo.insert()
+
+    task |> Ecto.Changeset.change(stage: :engineer) |> Repo.update!()
 
     assert [%BrowserSession{}] = Tools.reconcile_browser_sessions()
 
@@ -66,8 +61,40 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
              |> Repo.insert()
   end
 
-  # A session with a process is that process's to settle, alive or dead: it holds
-  # the browser and it runs its own cleanup on the way out.
+  # Rail restarted in the middle of a pass. The tab is still open in the shared
+  # Chrome, and the panel and the problems it collects are what reconnecting gets
+  # back without waiting for the agent to call.
+  test "reconnects to the tab of a pass that is running", %{task: task, project: project} do
+    {:ok, _held} =
+      %BrowserSession{}
+      |> BrowserSession.changeset(%{task_id: task.id, status: :running, browser_context_id: "ctx", target_id: "tgt"})
+      |> Repo.insert()
+
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :qa)
+
+    {:ok, _run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
+
+    expect(Tools, :start_browser_session, fn %{id: id}, [] when id == task.id -> {:ok, self()} end)
+
+    assert Tools.reconcile_browser_sessions() == []
+  end
+
+  # A pass waiting on a human attaches when it next runs; until then there is
+  # nothing to watch.
+  test "leaves the tab of a pass that is not running for its next run", %{task: task} do
+    {:ok, _waiting} =
+      %BrowserSession{}
+      |> BrowserSession.changeset(%{task_id: task.id, status: :running, browser_context_id: "ctx", target_id: "tgt"})
+      |> Repo.insert()
+
+    reject(Tools, :start_browser_session, 2)
+    reject(Tools, :stop_browser_session, 1)
+
+    assert Tools.reconcile_browser_sessions() == []
+  end
+
+  # A session with a process is that process's while its task still wants it.
   test "leaves a session something is still driving", %{task: task} do
     {:ok, _held} =
       %BrowserSession{}
@@ -81,6 +108,7 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
       end)
 
     eventually(fn -> assert Registry.lookup(BrowserRegistry, task.id) != [] end)
+    reject(Tools, :start_browser_session, 2)
 
     assert Tools.reconcile_browser_sessions() == []
 
@@ -96,6 +124,9 @@ defmodule Rail.Tools.Actions.ReconcileBrowserSessionsTest do
         finished_at: DateTime.utc_now()
       })
       |> Repo.insert()
+
+    task |> Ecto.Changeset.change(stage: :merged) |> Repo.update!()
+    reject(Tools, :stop_browser_session, 1)
 
     assert Tools.reconcile_browser_sessions() == []
   end

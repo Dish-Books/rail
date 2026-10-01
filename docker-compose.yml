@@ -3,6 +3,8 @@
 # /srv/rail is mounted at the same path everywhere: worktree and scratch paths live in the DB.
 # Rail holds the docker socket to run each agent, worktree setup and CI command in a sandbox of
 # its own (rail-sandbox:latest, built by scripts/deploy.sh), which keeps running across a deploy.
+# The same way, it starts one rail-browser container: the headless Chrome every QA and demo pass
+# drives, a tab per task, which a deploy leaves open.
 # Agents still get no docker socket; a project's other services are started on the host, outside this stack.
 
 x-rail-env: &rail-env
@@ -75,11 +77,11 @@ services:
       <<: *rail-env
       RAIL_SANDBOX_RUNTIME: docker
       RAIL_SANDBOX_IMAGE: rail-sandbox:latest
+      RAIL_BROWSER_ROOT: /srv/rail/browser
     # The docker group's id on the host (scripts/deploy.sh), so rail can use the socket.
     group_add: ["${DOCKER_GID}"]
-    # Reaps the Chrome that rail spawns detached.
+    # Reaps whatever rail spawns detached.
     init: true
-    shm_size: 4gb
     volumes:
       - /srv/rail:/srv/rail
       - /var/run/docker.sock:/var/run/docker.sock
