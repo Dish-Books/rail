@@ -51,7 +51,7 @@ defmodule RailWeb.Live.DesignStage do
           <a
             :if={@design != nil and @design.picked != nil and @option != nil and @option.html != nil}
             id={"open-design-#{@option.key}"}
-            href={~p"/tasks/#{@task.id}/design/#{@option.key}"}
+            href={~p"/tasks/#{@task.id}/design/#{@option.key}?v=#{@option.html_version}"}
             target="_blank"
             rel="noopener"
             class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
@@ -142,7 +142,7 @@ defmodule RailWeb.Live.DesignStage do
             data-qa="design_option"
             class="flex flex-col gap-6"
           >
-            <.design_frame option={@option} />
+            <.design_frame task={@task} option={@option} />
 
             <div class="flex flex-col gap-6">
               <div class="flex flex-col gap-5 min-w-0">
@@ -216,7 +216,7 @@ defmodule RailWeb.Live.DesignStage do
                 <a
                   :if={@option.html != nil}
                   id={"open-design-#{@option.key}"}
-                  href={~p"/tasks/#{@task.id}/design/#{@option.key}"}
+                  href={~p"/tasks/#{@task.id}/design/#{@option.key}?v=#{@option.html_version}"}
                   target="_blank"
                   rel="noopener"
                   class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-semibold border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
@@ -326,10 +326,11 @@ defmodule RailWeb.Live.DesignStage do
     """
   end
 
+  attr :task, Task, required: true
   attr :option, :map, required: true
 
-  # The page is sandboxed without its origin: it can run the scripts a mockup
-  # needs, and nothing of Rail's.
+  # Loaded from Rail rather than inlined, and sandboxed without its origin. The
+  # version in its id and URL makes each revision a new frame no cache has seen.
   defp design_frame(assigns) do
     ~H"""
     <div
@@ -339,9 +340,10 @@ defmodule RailWeb.Live.DesignStage do
     >
       <iframe
         :if={@option.html != nil}
+        id={"design-page-#{@option.key}-#{@option.html_version}"}
         title={@option.title}
         sandbox="allow-scripts"
-        srcdoc={@option.html}
+        src={~p"/tasks/#{@task.id}/design/#{@option.key}?v=#{@option.html_version}"}
         class="absolute top-0 left-0 w-full h-full border-0"
       />
       <p

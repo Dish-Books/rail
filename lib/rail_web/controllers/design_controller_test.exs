@@ -43,6 +43,16 @@ defmodule RailWeb.DesignControllerTest do
 
     assert html_response(conn, 200) == "<h1>Cards</h1>"
     assert get_resp_header(conn, "content-security-policy") == ["sandbox allow-scripts"]
+    assert get_resp_header(conn, "cache-control") == ["private, no-store"]
+  end
+
+  test "a page asked for at an earlier version is served as it is now", %{conn: conn, task: task, design_dir: dir} do
+    %{options: [%{html_version: before}]} = Pipeline.read_design(task)
+    File.write!(Path.join(dir, "cards.html"), "<h1>Cards, without the links</h1>")
+
+    conn = get(conn, ~p"/tasks/#{task.id}/design/cards?v=#{before}")
+
+    assert html_response(conn, 200) == "<h1>Cards, without the links</h1>"
   end
 
   test "serves an option's screenshot", %{conn: conn, task: task} do
@@ -50,6 +60,7 @@ defmodule RailWeb.DesignControllerTest do
 
     assert response(conn, 200) == "png bytes"
     assert response_content_type(conn, :png) =~ "image/png"
+    assert get_resp_header(conn, "cache-control") == ["private, no-cache"]
   end
 
   test "serves nothing the manifest does not name", %{conn: conn, task: task, design_dir: dir} do
