@@ -15,6 +15,7 @@ import { LocalResetTime } from "./hooks/local_reset_time";
 import { DesignFrame } from "./hooks/design_frame";
 import { BrowserScreencast } from "./hooks/browser_screencast";
 import { DemoCaptions } from "./hooks/demo_captions";
+import { CurrentInView } from "./hooks/current_in_view";
 
 const Hooks = {
   DesignFrame,
@@ -29,7 +30,8 @@ const Hooks = {
   LocalTime,
   LocalResetTime,
   BrowserScreencast,
-  DemoCaptions
+  DemoCaptions,
+  CurrentInView
 };
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");

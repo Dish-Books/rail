@@ -43,6 +43,8 @@ defmodule RailWeb.Live.QaStage do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
 
+  @double_click_ms 400
+
   @impl true
   def update(assigns, socket) do
     socket =
@@ -50,6 +52,7 @@ defmodule RailWeb.Live.QaStage do
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
+      |> assign_new(:advanced_to, fn -> nil end)
       |> assign_new(:focus, fn -> nil end)
 
     {:ok, load(socket)}
@@ -199,8 +202,15 @@ defmodule RailWeb.Live.QaStage do
         else: socket.assigns.selected_key
 
     socket =
-      case Pipeline.decide_qa_finding(finding, decision(decision)) do
-        {:ok, _decided} -> socket |> assign(:error, nil) |> assign(:selected_key, selected_key) |> load()
+      with false <- double_click?(socket.assigns.advanced_to, key),
+           {:ok, _decided} <- Pipeline.decide_qa_finding(finding, decision(decision)) do
+        socket
+        |> assign(:error, nil)
+        |> assign(:selected_key, selected_key)
+        |> assign(:advanced_to, if(selected_key != key, do: {selected_key, System.monotonic_time(:millisecond)}))
+        |> load()
+      else
+        true -> socket
         {:error, reason} -> assign(socket, :error, message_for(reason))
       end
 
@@ -382,6 +392,7 @@ defmodule RailWeb.Live.QaStage do
           id={"qa-finding-#{finding.key}"}
           data-qa="qa_finding"
           data-state={QaFinding.state(finding)}
+          phx-hook="CurrentInView"
           phx-click="select_finding"
           phx-target={@target}
           phx-value-key={finding.key}
@@ -1276,6 +1287,11 @@ defmodule RailWeb.Live.QaStage do
     {above, [_ruled | below]} = Enum.split_while(findings, &(&1.key != finding.key))
     Enum.find(below ++ above, &QaFinding.undecided?/1)
   end
+
+  # The second click of a double click lands on the finding just moved to, which
+  # nobody has read yet.
+  defp double_click?({key, at}, key), do: System.monotonic_time(:millisecond) - at < @double_click_ms
+  defp double_click?(_advanced_to, _key), do: false
 
   defp list_subtitle(%QaFinding{status: :fixed} = finding), do: "fixed · #{finding.check}"
   defp list_subtitle(%QaFinding{decision: :skip}), do: "dismissed"
