@@ -81,13 +81,16 @@ defmodule Rail.Pipeline.Actions.StartDesignRun do
 
     3. #{dir}/<key>.png for each option: a screenshot of its page, taken with headless Chrome:
 
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --hide-scrollbars --window-size=1920,1080 --screenshot=#{dir}/<key>.png file://#{dir}/<key>.html
+    chromium --headless --no-sandbox --disable-gpu --hide-scrollbars --virtual-time-budget=8000 --window-size=1920,1170 --screenshot=#{dir}/<key>.png file://#{dir}/<key>.html
 
-    Use `google-chrome` or `chromium` in place of that path where that is what is installed.
+    Use `google-chrome`, or Google Chrome's full path on macOS, where that is what is installed. The window is taller than 1080 because headless Chrome keeps about 90px of it for itself.
 
     - A key is lowercase letters, digits and dashes, and names that option's files.
     - Retake an option's screenshot every time its page changes. The screenshot is what gets published.
+    - Keep working files under #{dir} too. It survives between turns; `/tmp` does not.
     - The human picks one option and refines it with you in chat. Rail records the pick in #{dir}/picked and deletes the options not picked; never write that file.
+    - If the ticket changes nothing anyone sees, say so in one line and write nothing. A human will skip the stage.
+    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each `[QUESTION: ...]` on a line of its own. Rail collects them and the human answers the lot in a single pass. A question you can settle from the ticket, the product or a named assumption is not a question, and neither is an edge case the ticket does not raise.
 
     The approved ticket:
 
