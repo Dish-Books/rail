@@ -29,7 +29,15 @@ defmodule Rail.Git.Actions.PushBranch do
   """
   def push_branch(%Scope{}, %Task{} = task) do
     with {:ok, env} <- Git.credential_env(Repo.get!(Project, task.project_id)) do
-      push(task.worktree_path, task.worktree_name, env)
+      case push(task.worktree_path, task.worktree_name, env) do
+        {:error, "" <> output} = refused ->
+          if output =~ "(stale info)" and own_push?(task.worktree_path, task.worktree_name, env),
+            do: push(task.worktree_path, task.worktree_name, env),
+            else: refused
+
+        pushed_or_failed ->
+          pushed_or_failed
+      end
     end
   end
 
@@ -46,6 +54,22 @@ defmodule Rail.Git.Actions.PushBranch do
       {output, code} when is_binary(output) and is_integer(code) -> {:error, String.trim(output)}
       # coveralls-ignore-next-line (git itself could not be started)
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # A push cut off after the remote took it never wrote the tracking ref, so the
+  # lease cannot match again. A remote holding only what HEAD has was Rail's push.
+  defp own_push?(worktree_path, branch, env) do
+    with {_fetched, 0} <-
+           Tools.run("git", ["fetch", "origin", branch], cd: worktree_path, env: env, stderr_to_stdout: true),
+         {_contained, 0} <-
+           Tools.run("git", ["merge-base", "--is-ancestor", "origin/#{branch}", "HEAD"],
+             cd: worktree_path,
+             stderr_to_stdout: true
+           ) do
+      true
+    else
+      _not_ours -> false
     end
   end
 end

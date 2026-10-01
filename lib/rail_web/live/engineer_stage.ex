@@ -369,7 +369,13 @@ defmodule RailWeb.Live.EngineerStage do
       socket
       |> assign(:committing, true)
       |> assign(:error, nil)
-      |> start_async(:commit, fn -> Pipeline.commit_and_send_to_review(scope, run) end)
+      |> start_async(:commit, fn ->
+        # Unlinked, so leaving the page does not cut a commit off between its go-ahead
+        # and the push, CI or review that settles it.
+        Rail.TaskSupervisor
+        |> Elixir.Task.Supervisor.async_nolink(fn -> Pipeline.commit_and_send_to_review(scope, run) end)
+        |> Elixir.Task.await(:infinity)
+      end)
 
     {:noreply, socket}
   end

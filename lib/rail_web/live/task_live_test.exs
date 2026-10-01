@@ -1456,6 +1456,43 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#send-to-review[disabled]")
     end
 
+    # A push lasts as long as the repository's hooks do, and leaving the page
+    # meanwhile takes back neither the commit nor the go-ahead that came with it.
+    test "a commit carries on to review after the page is left", %{
+      conn: conn,
+      task: task,
+      engineer_run: run,
+      repo: repo
+    } do
+      File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
+      test_pid = self()
+
+      stub(Git, :push_branch, fn _scope, %Task{worktree_path: path} ->
+        send(test_pid, {:pushing, self()})
+
+        receive do
+          :release ->
+            git!(path, ["push", "origin", "HEAD"])
+            :ok
+        end
+      end)
+
+      expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#commit-work") |> render_click()
+      assert_receive {:pushing, pusher}
+
+      Process.flag(:trap_exit, true)
+      Process.exit(view.pid, :kill)
+      pushing = Process.monitor(pusher)
+      send(pusher, :release)
+      assert_receive {:DOWN, ^pushing, :process, ^pusher, :normal}, 5_000
+
+      assert %Task{stage: :review} = Repo.reload!(task)
+      assert %Run{review_on_ci_pass: false} = Repo.reload!(run)
+    end
+
     # A push that takes the whole process down with it still has to leave the
     # pane usable rather than stuck on "Pushing…".
     test "a push that falls over releases the pane", %{conn: conn, task: task, repo: repo} do
