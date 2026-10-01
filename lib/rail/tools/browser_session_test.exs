@@ -299,6 +299,87 @@ defmodule Rail.Tools.BrowserSessionTest do
     assert Tools.get_browser_frame(task)
   end
 
+  # Frames are taken at most about fifteen a second, so a paint that lands while
+  # one is still being held back is never sent. A page that then holds still is
+  # still the page the panel and the demo end on. Read back in the tab itself,
+  # because Chrome is what can decode a JPEG.
+  test "the last frame is the page as it settled, however quickly it got there", %{task: task} do
+    page = Path.join(task.scratch_path, "settles.html")
+
+    File.write!(page, """
+    <!doctype html><body style="margin:0;background:rgb(255,0,0)"><script>
+      setTimeout(() => {
+        let shade = 0
+        const flicker = setInterval(() => { document.body.style.background = `rgb(0,0,${++shade * 40})` }, 10)
+        setTimeout(() => {
+          clearInterval(flicker)
+          document.body.style.background = 'rgb(0,160,0)'
+          document.title = 'settled'
+        }, 55)
+      }, 1000)
+    </script>
+    """)
+
+    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: "file://#{page}"})
+
+    eventually(
+      fn ->
+        assert {:ok, %{"result" => %{"value" => "settled"}}} =
+                 BrowserSession.call(session, "Runtime.evaluate", %{expression: "document.title", returnByValue: true})
+      end,
+      5_000
+    )
+
+    eventually(
+      fn ->
+        decode = """
+        new Promise(resolve => {
+          const image = new Image()
+          image.onload = () => {
+            const canvas = document.createElement('canvas')
+            canvas.width = image.width
+            canvas.height = image.height
+            const context = canvas.getContext('2d')
+            context.drawImage(image, 0, 0)
+            resolve(Array.from(context.getImageData(image.width / 2, image.height / 2, 1, 1).data.slice(0, 3)))
+          }
+          image.src = 'data:image/jpeg;base64,#{Tools.get_browser_frame(task)}'
+        })
+        """
+
+        assert {:ok, %{"result" => %{"value" => [red, green, blue]}}} =
+                 BrowserSession.call(session, "Runtime.evaluate", %{
+                   expression: decode,
+                   awaitPromise: true,
+                   returnByValue: true
+                 })
+
+        assert red < 40 and green > 120 and blue < 40
+      end,
+      3_000
+    )
+  end
+
+  # The tab closed from under the session between its last frame and the
+  # photograph of how it settled. The frame it had is the frame it keeps.
+  test "a tab that goes before it can be photographed keeps its last frame", %{task: task, page: page} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "browser:#{task.id}")
+    {:ok, session} = Tools.start_browser_session(task)
+    %Session{browser_context_id: context} = Repo.get_by!(Session, task_id: task.id)
+    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
+    assert_receive {:browser_frame, _task_id, _data}, 10_000
+
+    {:ok, %{url: url}} = ensure_browser_host(start: false)
+    {:ok, connection} = Browser.start_link(url: url)
+    {:ok, _closed} = Browser.call(connection, "Target.disposeBrowserContext", %{browserContextId: context})
+    GenServer.stop(connection)
+
+    Process.sleep(500)
+    assert Process.alive?(session)
+    assert Tools.get_browser_frame(task)
+  end
+
   # What a person doing QA would write down, and nothing else. Sent straight at
   # the session because a page cannot be asked to throw, log, 404 and crash on
   # command - and what matters here is which of those are kept and how they read.
