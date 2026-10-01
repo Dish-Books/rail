@@ -43,6 +43,8 @@ defmodule RailWeb.Live.QaStage do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
 
+  @double_click_ms 400
+
   @impl true
   def update(assigns, socket) do
     socket =
@@ -50,6 +52,7 @@ defmodule RailWeb.Live.QaStage do
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
+      |> assign_new(:advanced_to, fn -> nil end)
       |> assign_new(:focus, fn -> nil end)
 
     {:ok, load(socket)}
@@ -196,9 +199,23 @@ defmodule RailWeb.Live.QaStage do
   def handle_event("decide", %{"key" => key, "decision" => decision}, socket) do
     finding = Enum.find(socket.assigns.findings, &(&1.key == key))
 
+    # Judged before the ruling, since after it every finding looks decided and a
+    # changed ruling would move the reader on too.
+    selected_key =
+      if QaFinding.undecided?(finding),
+        do: (next_undecided(socket.assigns.findings, finding) || finding).key,
+        else: socket.assigns.selected_key
+
     socket =
-      case Pipeline.decide_qa_finding(finding, decision(decision)) do
-        {:ok, _decided} -> socket |> assign(:error, nil) |> load()
+      with false <- double_click?(socket.assigns.advanced_to, key),
+           {:ok, _decided} <- Pipeline.decide_qa_finding(finding, decision(decision)) do
+        socket
+        |> assign(:error, nil)
+        |> assign(:selected_key, selected_key)
+        |> assign(:advanced_to, if(selected_key != key, do: {selected_key, System.monotonic_time(:millisecond)}))
+        |> load()
+      else
+        true -> socket
         {:error, reason} -> assign(socket, :error, message_for(reason))
       end
 
@@ -382,6 +399,7 @@ defmodule RailWeb.Live.QaStage do
           id={"qa-finding-#{finding.key}"}
           data-qa="qa_finding"
           data-state={QaFinding.state(finding)}
+          phx-hook="CurrentInView"
           phx-click="select_finding"
           phx-target={@target}
           phx-value-key={finding.key}
@@ -404,6 +422,13 @@ defmodule RailWeb.Live.QaStage do
               QaFinding.state(finding) == :dismissed && "line-through"
             ]}>
               {finding.title}
+            </span>
+            <span
+              :if={QaFinding.undecided?(finding)}
+              data-qa="qa_finding_needs_call"
+              class="block text-[10px] font-semibold text-blue-600 dark:text-blue-400"
+            >
+              Needs your call
             </span>
             <span class="block truncate text-[10px] text-slate-500 dark:text-slate-400">
               {list_subtitle(finding)}
@@ -1253,8 +1278,8 @@ defmodule RailWeb.Live.QaStage do
     """
   end
 
-  # What this change broke, worst first; then what it only stands next to; then
-  # what the human has already settled.
+  # What this change broke, worst first; then what it only stands next to. Ruling
+  # on a finding never moves it.
   defp load(socket) do
     findings = Pipeline.list_qa_findings(socket.assigns.task)
     selected = Enum.find(findings, List.first(findings), &(&1.key == socket.assigns.selected_key))
@@ -1400,6 +1425,17 @@ defmodule RailWeb.Live.QaStage do
       fn {side, key} -> {side, key || nil} end
     )
   end
+
+  # The next one down that still needs a call, or else the first from the top.
+  defp next_undecided(findings, finding) do
+    {above, [_ruled | below]} = Enum.split_while(findings, &(&1.key != finding.key))
+    Enum.find(below ++ above, &QaFinding.undecided?/1)
+  end
+
+  # The second click of a double click lands on the finding just moved to, which
+  # nobody has read yet.
+  defp double_click?({key, at}, key), do: System.monotonic_time(:millisecond) - at < @double_click_ms
+  defp double_click?(_advanced_to, _key), do: false
 
   defp list_subtitle(%QaFinding{status: :fixed} = finding), do: "fixed · #{finding.check}"
   defp list_subtitle(%QaFinding{decision: :skip}), do: "dismissed"

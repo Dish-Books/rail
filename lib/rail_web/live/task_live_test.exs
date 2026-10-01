@@ -3251,6 +3251,177 @@ defmodule RailWeb.TaskLiveTest do
       _settled = render(view)
       assert has_element?(view, "[data-qa='review_finding_detail']", "Nil is not handled")
     end
+
+    test "ruling on a finding keeps the list in place and reads the next one needing a call", %{
+      conn: conn,
+      task: task
+    } do
+      {:ok, _raised} =
+        Pipeline.sync_review_findings(task, [
+          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+          %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
+          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+        ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#decide-fix-a-blocker") |> render_click()
+
+      assert ["finding-a-blocker", "finding-a-major", "finding-a-nit"] =
+               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='review_finding']", "id")
+
+      assert has_element?(view, "#finding-a-major[aria-current='true']")
+      assert has_element?(view, "[data-qa='review_finding_detail']", "A major")
+      assert has_element?(view, "[data-qa='finding_position']", "2 of 3")
+    end
+
+    test "a dismissed finding keeps its row", %{conn: conn, task: task} do
+      {:ok, _raised} =
+        Pipeline.sync_review_findings(task, [
+          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+        ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#decide-skip-a-blocker") |> render_click()
+
+      assert ["finding-a-blocker", "finding-a-nit"] =
+               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='review_finding']", "id")
+
+      assert has_element?(view, "#finding-a-blocker[data-state='dismissed']")
+    end
+
+    test "the list marks what still needs a call", %{conn: conn, task: task} do
+      {:ok, [blocker, _nit]} =
+        Pipeline.sync_review_findings(task, [
+          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+        ])
+
+      {:ok, _decided} = Pipeline.decide_review_finding(blocker, :fix)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#finding-a-nit [data-qa='review_finding_needs_call']", "Needs your call")
+      refute has_element?(view, "#finding-a-blocker [data-qa='review_finding_needs_call']")
+    end
+
+    test "the last ruling stays where it is and lets the change go on", %{conn: conn, task: task} do
+      {:ok, [blocker, _nit]} =
+        Pipeline.sync_review_findings(task, [
+          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+        ])
+
+      {:ok, _decided} = Pipeline.decide_review_finding(blocker, :fix)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#finding-a-nit") |> render_click()
+      view |> element("#decide-skip-a-nit") |> render_click()
+
+      assert has_element?(view, "#finding-a-nit[aria-current='true']")
+      refute has_element?(view, "[data-qa='review_finding_needs_call']")
+      assert has_element?(view, "#send-findings-to-engineer")
+    end
+
+    test "changing a ruling leaves the reader where they are", %{conn: conn, task: task} do
+      {:ok, [blocker, _major, _nit]} =
+        Pipeline.sync_review_findings(task, [
+          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+          %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
+          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+        ])
+
+      {:ok, _decided} = Pipeline.decide_review_finding(blocker, :fix)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#decide-skip-a-blocker") |> render_click()
+
+      assert ["finding-a-blocker", "finding-a-major", "finding-a-nit"] =
+               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='review_finding']", "id")
+
+      assert has_element?(view, "#finding-a-blocker[aria-current='true'][data-state='dismissed']")
+    end
+
+    test "with nothing needing a call below, the next one is above", %{conn: conn, task: task} do
+      {:ok, _raised} =
+        Pipeline.sync_review_findings(task, [
+          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+        ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#finding-a-nit") |> render_click()
+      view |> element("#decide-fix-a-nit") |> render_click()
+
+      assert has_element?(view, "#finding-a-blocker[aria-current='true']")
+    end
+
+    # A double click's second click lands on the finding just moved to, which nobody has read.
+    test "a double click rules only the finding that was read", %{conn: conn, task: task} do
+      {:ok, _raised} =
+        Pipeline.sync_review_findings(task, [
+          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+          %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
+          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+        ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#decide-fix-a-blocker") |> render_click()
+      view |> element("#decide-fix-a-major") |> render_click()
+
+      assert [%{key: "a-blocker", decision: :fix}, %{key: "a-major", decision: nil}, %{key: "a-nit", decision: nil}] =
+               Pipeline.list_review_findings(task)
+
+      assert has_element?(view, "#finding-a-major[aria-current='true'] [data-qa='review_finding_needs_call']")
+    end
+
+    test "the finding moved to can be ruled on once it has been seen", %{conn: conn, task: task} do
+      {:ok, _raised} =
+        Pipeline.sync_review_findings(task, [
+          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+          %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open}
+        ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#decide-fix-a-blocker") |> render_click()
+      Process.sleep(400)
+      view |> element("#decide-fix-a-major") |> render_click()
+
+      assert [%{key: "a-blocker", decision: :fix}, %{key: "a-major", decision: :fix}] =
+               Pipeline.list_review_findings(task)
+    end
+
+    test "the row being read keeps itself in view", %{conn: conn, task: task, raised: raised} do
+      {:ok, _raised} = Pipeline.sync_review_findings(task, raised)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert ["CurrentInView", "CurrentInView"] =
+               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='review_finding']", "phx-hook")
+    end
+
+    test "neither send button shows while a finding still needs a call", %{conn: conn, task: task} do
+      {:ok, _raised} =
+        Pipeline.sync_review_findings(task, [
+          %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
+          %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+        ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      refute has_element?(view, "#send-to-qa")
+
+      view |> element("#decide-fix-a-blocker") |> render_click()
+
+      refute has_element?(view, "#send-findings-to-engineer")
+    end
   end
 
   describe "the qa stage" do
@@ -4175,6 +4346,204 @@ defmodule RailWeb.TaskLiveTest do
 
       _settled = render(view)
       assert has_element?(view, "[data-qa='qa_finding_detail']", "The bill total renders as $1234.5")
+    end
+
+    test "ruling on a finding keeps the list in place and reads the next one needing a call", %{
+      conn: conn,
+      task: task
+    } do
+      {:ok, _raised} =
+        Pipeline.sync_qa_findings(task, [
+          %{
+            key: "a-blocker",
+            title: "A blocker",
+            check: "A check",
+            severity: :blocker,
+            recommendation: :fix,
+            status: :open
+          },
+          %{key: "a-major", title: "A major", check: "A check", severity: :major, recommendation: :fix, status: :open},
+          %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
+        ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#decide-fix-a-blocker") |> render_click()
+
+      assert ["qa-finding-a-blocker", "qa-finding-a-major", "qa-finding-a-nit"] =
+               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='qa_finding']", "id")
+
+      assert has_element?(view, "#qa-finding-a-major[aria-current='true']")
+      assert has_element?(view, "[data-qa='qa_finding_detail']", "A major")
+      assert has_element?(view, "[data-qa='qa_finding_position']", "2 of 3")
+    end
+
+    test "a dismissed finding keeps its row", %{conn: conn, task: task} do
+      {:ok, _raised} =
+        Pipeline.sync_qa_findings(task, [
+          %{
+            key: "a-blocker",
+            title: "A blocker",
+            check: "A check",
+            severity: :blocker,
+            recommendation: :fix,
+            status: :open
+          },
+          %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
+        ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#decide-skip-a-blocker") |> render_click()
+
+      assert ["qa-finding-a-blocker", "qa-finding-a-nit"] =
+               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='qa_finding']", "id")
+
+      assert has_element?(view, "#qa-finding-a-blocker[data-state='dismissed']")
+    end
+
+    test "the list marks what still needs a call", %{conn: conn, task: task} do
+      {:ok, [blocker, _nit]} =
+        Pipeline.sync_qa_findings(task, [
+          %{
+            key: "a-blocker",
+            title: "A blocker",
+            check: "A check",
+            severity: :blocker,
+            recommendation: :fix,
+            status: :open
+          },
+          %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
+        ])
+
+      {:ok, _decided} = Pipeline.decide_qa_finding(blocker, :fix)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#qa-finding-a-nit [data-qa='qa_finding_needs_call']", "Needs your call")
+      refute has_element?(view, "#qa-finding-a-blocker [data-qa='qa_finding_needs_call']")
+    end
+
+    test "the last ruling stays where it is and lets the change go on", %{conn: conn, task: task} do
+      {:ok, [blocker, _nit]} =
+        Pipeline.sync_qa_findings(task, [
+          %{
+            key: "a-blocker",
+            title: "A blocker",
+            check: "A check",
+            severity: :blocker,
+            recommendation: :fix,
+            status: :open
+          },
+          %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
+        ])
+
+      {:ok, _decided} = Pipeline.decide_qa_finding(blocker, :fix)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#qa-finding-a-nit") |> render_click()
+      view |> element("#decide-skip-a-nit") |> render_click()
+
+      assert has_element?(view, "#qa-finding-a-nit[aria-current='true']")
+      refute has_element?(view, "[data-qa='qa_finding_needs_call']")
+      assert has_element?(view, "#send-qa-findings-to-engineer")
+    end
+
+    test "changing a ruling leaves the reader where they are", %{conn: conn, task: task} do
+      {:ok, [blocker, _major, _nit]} =
+        Pipeline.sync_qa_findings(task, [
+          %{
+            key: "a-blocker",
+            title: "A blocker",
+            check: "A check",
+            severity: :blocker,
+            recommendation: :fix,
+            status: :open
+          },
+          %{key: "a-major", title: "A major", check: "A check", severity: :major, recommendation: :fix, status: :open},
+          %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
+        ])
+
+      {:ok, _decided} = Pipeline.decide_qa_finding(blocker, :fix)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#decide-skip-a-blocker") |> render_click()
+
+      assert ["qa-finding-a-blocker", "qa-finding-a-major", "qa-finding-a-nit"] =
+               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='qa_finding']", "id")
+
+      assert has_element?(view, "#qa-finding-a-blocker[aria-current='true'][data-state='dismissed']")
+    end
+
+    test "with nothing needing a call below, the next one is above", %{conn: conn, task: task} do
+      {:ok, _raised} =
+        Pipeline.sync_qa_findings(task, [
+          %{
+            key: "a-blocker",
+            title: "A blocker",
+            check: "A check",
+            severity: :blocker,
+            recommendation: :fix,
+            status: :open
+          },
+          %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
+        ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#qa-finding-a-nit") |> render_click()
+      view |> element("#decide-fix-a-nit") |> render_click()
+
+      assert has_element?(view, "#qa-finding-a-blocker[aria-current='true']")
+    end
+
+    # A double click's second click lands on the finding just moved to, which nobody has read.
+    test "a double click rules only the finding that was read", %{conn: conn, task: task} do
+      findings =
+        for {key, severity} <- [{"a-blocker", :blocker}, {"a-major", :major}, {"a-nit", :nit}] do
+          %{key: key, title: key, check: "A check", severity: severity, recommendation: :fix, status: :open}
+        end
+
+      {:ok, _raised} = Pipeline.sync_qa_findings(task, findings)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#decide-skip-a-blocker") |> render_click()
+      view |> element("#decide-skip-a-major") |> render_click()
+
+      assert [%{key: "a-blocker", decision: :skip}, %{key: "a-major", decision: nil}, %{key: "a-nit", decision: nil}] =
+               Pipeline.list_qa_findings(task)
+
+      assert has_element?(view, "#qa-finding-a-major[aria-current='true'] [data-qa='qa_finding_needs_call']")
+    end
+
+    test "the finding moved to can be ruled on once it has been seen", %{conn: conn, task: task} do
+      findings =
+        for {key, severity} <- [{"a-blocker", :blocker}, {"a-major", :major}] do
+          %{key: key, title: key, check: "A check", severity: severity, recommendation: :fix, status: :open}
+        end
+
+      {:ok, _raised} = Pipeline.sync_qa_findings(task, findings)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      view |> element("#decide-skip-a-blocker") |> render_click()
+      Process.sleep(400)
+      view |> element("#decide-skip-a-major") |> render_click()
+
+      assert [%{key: "a-blocker", decision: :skip}, %{key: "a-major", decision: :skip}] =
+               Pipeline.list_qa_findings(task)
+    end
+
+    test "the row being read keeps itself in view", %{conn: conn, task: task, raised: raised} do
+      {:ok, _raised} = Pipeline.sync_qa_findings(task, raised)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert ["CurrentInView", "CurrentInView"] =
+               view |> render() |> Floki.parse_fragment!() |> Floki.attribute("[data-qa='qa_finding']", "phx-hook")
     end
   end
 

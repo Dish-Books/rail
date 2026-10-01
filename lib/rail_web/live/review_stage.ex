@@ -22,6 +22,8 @@ defmodule RailWeb.Live.ReviewStage do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
 
+  @double_click_ms 400
+
   @impl true
   def update(assigns, socket) do
     socket =
@@ -29,6 +31,7 @@ defmodule RailWeb.Live.ReviewStage do
       |> assign(assigns)
       |> assign_new(:error, fn -> nil end)
       |> assign_new(:selected_key, fn -> nil end)
+      |> assign_new(:advanced_to, fn -> nil end)
 
     socket = socket |> load() |> load_hunk()
 
@@ -53,7 +56,7 @@ defmodule RailWeb.Live.ReviewStage do
           {render_slot(@actions)}
 
           <button
-            :if={@approvable and @reviewed and @outstanding != []}
+            :if={@approvable and @reviewed and @undecided == [] and @outstanding != []}
             type="button"
             id="send-findings-to-engineer"
             data-qa="send_findings_to_engineer"
@@ -65,7 +68,7 @@ defmodule RailWeb.Live.ReviewStage do
           </button>
 
           <button
-            :if={@approvable and @reviewed and @outstanding == []}
+            :if={@approvable and @reviewed and @undecided == [] and @outstanding == []}
             type="button"
             id="send-to-qa"
             data-qa="send_to_qa"
@@ -115,9 +118,24 @@ defmodule RailWeb.Live.ReviewStage do
   def handle_event("decide", %{"key" => key, "decision" => decision}, socket) do
     finding = Enum.find(socket.assigns.findings, &(&1.key == key))
 
+    # Judged before the ruling, since after it every finding looks decided and a
+    # changed ruling would move the reader on too.
+    selected_key =
+      if ReviewFinding.undecided?(finding),
+        do: (next_undecided(socket.assigns.findings, finding) || finding).key,
+        else: socket.assigns.selected_key
+
     socket =
-      case Pipeline.decide_review_finding(finding, decision(decision)) do
-        {:ok, _decided} -> socket |> assign(:error, nil) |> load()
+      with false <- double_click?(socket.assigns.advanced_to, key),
+           {:ok, _decided} <- Pipeline.decide_review_finding(finding, decision(decision)) do
+        socket
+        |> assign(:error, nil)
+        |> assign(:selected_key, selected_key)
+        |> assign(:advanced_to, if(selected_key != key, do: {selected_key, System.monotonic_time(:millisecond)}))
+        |> load()
+        |> load_hunk()
+      else
+        true -> socket
         {:error, reason} -> assign(socket, :error, message_for(reason))
       end
 
@@ -169,6 +187,7 @@ defmodule RailWeb.Live.ReviewStage do
           id={"finding-#{finding.key}"}
           data-qa="review_finding"
           data-state={ReviewFinding.state(finding)}
+          phx-hook="CurrentInView"
           phx-click="select_finding"
           phx-target={@target}
           phx-value-key={finding.key}
@@ -192,6 +211,13 @@ defmodule RailWeb.Live.ReviewStage do
               ReviewFinding.state(finding) == :dismissed && "line-through"
             ]}>
               {finding.title}
+            </span>
+            <span
+              :if={ReviewFinding.undecided?(finding)}
+              data-qa="review_finding_needs_call"
+              class="block text-[10px] font-semibold text-blue-600 dark:text-blue-400"
+            >
+              Needs your call
             </span>
             <span class="block truncate font-mono text-[10px] text-slate-500 dark:text-slate-400">
               {list_subtitle(finding)}
@@ -430,8 +456,7 @@ defmodule RailWeb.Live.ReviewStage do
     """
   end
 
-  # Worst first, and what is settled last, so the list reads as the order to work
-  # through it in.
+  # The order is fixed by each finding itself, so ruling on one never moves it.
   defp load(socket) do
     findings = Pipeline.list_review_findings(socket.assigns.task)
     selected = Enum.find(findings, List.first(findings), &(&1.key == socket.assigns.selected_key))
@@ -443,6 +468,7 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:position, position(findings, selected))
     |> assign(:neighbours, neighbours(findings, selected))
     |> assign(:outstanding, Enum.filter(findings, &ReviewFinding.outstanding?/1))
+    |> assign(:undecided, Enum.filter(findings, &ReviewFinding.undecided?/1))
     |> assign(:running, Run.running?(socket.assigns.run))
     |> assign(:reviewed, reviewed?(socket.assigns.run))
     |> assign(:pending, pending(socket.assigns.run, socket.assigns.task))
@@ -488,6 +514,17 @@ defmodule RailWeb.Live.ReviewStage do
       fn {side, key} -> {side, key || nil} end
     )
   end
+
+  # The next one down that still needs a call, or else the first from the top.
+  defp next_undecided(findings, finding) do
+    {above, [_ruled | below]} = Enum.split_while(findings, &(&1.key != finding.key))
+    Enum.find(below ++ above, &ReviewFinding.undecided?/1)
+  end
+
+  # The second click of a double click lands on the finding just moved to, which
+  # nobody has read yet.
+  defp double_click?({key, at}, key), do: System.monotonic_time(:millisecond) - at < @double_click_ms
+  defp double_click?(_advanced_to, _key), do: false
 
   defp tally(findings) do
     dismissed = Enum.count(findings, &(&1.decision == :skip and &1.status != :fixed))

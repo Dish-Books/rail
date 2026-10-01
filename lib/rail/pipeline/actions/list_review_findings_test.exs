@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.ListReviewFindingsTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.ReviewFinding
 
   setup %{project: project} do
     scope = system_scope()
@@ -38,51 +39,66 @@ defmodule Rail.Pipeline.Actions.ListReviewFindingsTest do
              task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
   end
 
-  # A dismissed finding is still shown, because what was dealt with is what makes
-  # "what is left" mean anything, but it is no longer something to read past.
-  test "what the human dismissed sinks below what still stands", %{task: task} do
-    {:ok, [blocker, _nit]} =
-      Pipeline.sync_review_findings(task, [
-        %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-        %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-      ])
-
-    assert ["a-blocker", "a-nit"] = task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
-
-    {:ok, _dismissed} = Pipeline.decide_review_finding(blocker, :skip)
-
-    assert ["a-nit", "a-blocker"] = task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
-  end
-
-  # Nothing moves until every finding has been ruled on, so the ones asking for
-  # a ruling are the ones to read - above a worse finding already settled.
-  test "what is waiting on a human comes before what is settled", %{task: task} do
-    {:ok, [blocker, _nit]} =
-      Pipeline.sync_review_findings(task, [
-        %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
-        %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
-      ])
-
-    {:ok, _decided} = Pipeline.decide_review_finding(blocker, :fix)
-
-    assert ["a-nit", "a-blocker"] = task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
-  end
-
-  # Fixed is finished with, and dismissed is the human's last word: both sit
-  # under what is still being worked through, in that order.
-  test "what is fixed sits under what is open, and dismissed under that", %{task: task} do
+  # Where a finding sits is what it is, so ruling on it never loses the reader's place.
+  test "a ruling moves nothing", %{task: task} do
     {:ok, [blocker, major, _nit]} =
       Pipeline.sync_review_findings(task, [
-        %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :fixed},
+        %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :open},
         %{key: "a-major", title: "A major", severity: :major, recommendation: :fix, status: :open},
         %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
       ])
 
-    {:ok, _dismissed} = Pipeline.decide_review_finding(major, :skip)
-    {:ok, _decided} = Pipeline.decide_review_finding(blocker, :fix)
+    {:ok, _dismissed} = Pipeline.decide_review_finding(blocker, :skip)
+    {:ok, _decided} = Pipeline.decide_review_finding(major, :fix)
 
-    assert ["a-nit", "a-blocker", "a-major"] =
+    assert ["a-blocker", "a-major", "a-nit"] =
              task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
+  end
+
+  test "a fixed finding stays where its severity puts it", %{task: task} do
+    {:ok, _synced} =
+      Pipeline.sync_review_findings(task, [
+        %{key: "a-blocker", title: "A blocker", severity: :blocker, recommendation: :fix, status: :fixed},
+        %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
+      ])
+
+    assert ["a-blocker", "a-nit"] = task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
+  end
+
+  test "findings of one severity keep the order they were raised in, however a later pass lists them", %{
+    task: task
+  } do
+    raised =
+      for key <- ["a", "b", "c"] do
+        %{key: key, title: key, severity: :nit, recommendation: :fix, status: :open}
+      end
+
+    {:ok, _first_pass} = Pipeline.sync_review_findings(task, raised)
+
+    assert ["a", "b", "c"] = task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
+
+    {:ok, _second_pass} = Pipeline.sync_review_findings(task, Enum.reverse(raised))
+
+    assert ["a", "b", "c"] = task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
+  end
+
+  test "a tie on when they were raised is broken the same way every time", %{task: task} do
+    {:ok, synced} =
+      Pipeline.sync_review_findings(task, [
+        %{key: "a", title: "a", severity: :nit, recommendation: :fix, status: :open},
+        %{key: "b", title: "b", severity: :nit, recommendation: :fix, status: :open}
+      ])
+
+    # No factory builds findings, so the tie is arranged on the rows sync wrote.
+    {2, nil} =
+      Repo.update_all(from(f in ReviewFinding, where: f.task_id == ^task.id),
+        set: [inserted_at: ~U[2026-01-01 00:00:00.000000Z]]
+      )
+
+    by_id = synced |> Enum.sort_by(& &1.id) |> Enum.map(& &1.key)
+
+    assert ^by_id = task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
+    assert ^by_id = task |> Pipeline.list_review_findings() |> Enum.map(& &1.key)
   end
 
   test "a task nobody has reviewed has no findings", %{task: task} do
