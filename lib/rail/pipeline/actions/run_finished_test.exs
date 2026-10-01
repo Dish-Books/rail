@@ -650,13 +650,13 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     exited: exited
   } do
     {:ok, task} = Pipeline.update_task(task, %{stage: :qa, worktree_path: create_temp_git_repo()})
-    %{head_sha: head_sha, dirty_digest: dirty_digest} = Git.branch_fingerprint(task.worktree_path)
+    %{head_sha: head_sha, content_digest: content_digest} = Git.content_fingerprint(task.worktree_path)
 
     {run, os_process} =
       exited.(:engineer, %{
         stage_outcome: :done,
         stage_fingerprint_head_sha: head_sha,
-        stage_fingerprint_dirty_digest: dirty_digest
+        stage_fingerprint_dirty_digest: content_digest
       })
 
     File.write!(Path.join(task.worktree_path, "asked_for.ex"), "the change\n")
@@ -674,7 +674,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     exited: exited
   } do
     {:ok, task} = Pipeline.update_task(task, %{stage: :demo, worktree_path: create_temp_git_repo()})
-    %{head_sha: head_sha, dirty_digest: dirty_digest} = Git.branch_fingerprint(task.worktree_path)
+    %{head_sha: head_sha, content_digest: content_digest} = Git.content_fingerprint(task.worktree_path)
 
     {:ok, demo_run} =
       Pipeline.create_run(%{
@@ -689,7 +689,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       exited.(:engineer, %{
         stage_outcome: :done,
         stage_fingerprint_head_sha: head_sha,
-        stage_fingerprint_dirty_digest: dirty_digest
+        stage_fingerprint_dirty_digest: content_digest
       })
 
     assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
@@ -705,17 +705,53 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
   } do
     {:ok, task} = Pipeline.update_task(task, %{stage: :demo, worktree_path: create_temp_git_repo()})
     File.write!(Path.join(task.worktree_path, "qa_leftover.log"), "from QA\n")
-    %{head_sha: head_sha, dirty_digest: dirty_digest} = Git.branch_fingerprint(task.worktree_path)
+    %{head_sha: head_sha, content_digest: content_digest} = Git.content_fingerprint(task.worktree_path)
 
     {_run, os_process} =
       exited.(:engineer, %{
         stage_outcome: :done,
         stage_fingerprint_head_sha: head_sha,
-        stage_fingerprint_dirty_digest: dirty_digest
+        stage_fingerprint_dirty_digest: content_digest
       })
 
     assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
     assert %Task{stage: :demo} = Repo.reload!(task)
+  end
+
+  # `git status` reads " M" before and after, so only the contents say the turn changed code.
+  test "an engineer turn at QA that rewrote a file already modified sends the task back to engineer", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa, worktree_path: create_temp_git_repo()})
+    File.write!(Path.join(task.worktree_path, "feature.ex"), "committed\n")
+    git!(task.worktree_path, ["add", "."])
+    git!(task.worktree_path, ["commit", "-m", "the engineer's round"])
+    File.write!(Path.join(task.worktree_path, "feature.ex"), "left uncommitted\n")
+
+    # The message queued during the last turn goes out as it ends, stamping the tree.
+    {run, os_process} =
+      exited.(:engineer, %{stage_outcome: :done, pending_chat: "Make the currency follow the entity"})
+
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0}, async: false)
+    assert %Task{stage: :qa} = Repo.reload!(task)
+
+    File.write!(Path.join(task.worktree_path, "feature.ex"), "follows the entity\n")
+
+    {:ok, turn} =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        stream_path: "/tmp/run_finished/#{run.id}-turn.ndjson",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert()
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(turn, %{exit_code: 0})
+    assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
   test "an engineer turn with no record of how the tree started moves nothing", %{task: task, exited: exited} do
@@ -1125,11 +1161,11 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       |> Repo.update!()
 
     expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
-    %{head_sha: head_sha, dirty_digest: dirty_digest} = Git.branch_fingerprint(task.worktree_path)
+    %{head_sha: head_sha, content_digest: content_digest} = Git.content_fingerprint(task.worktree_path)
 
     assert {:ok, %Run{status: :running}} = Pipeline.run_finished(os_process, %{exit_code: 1})
 
-    assert %Run{stage_fingerprint_head_sha: ^head_sha, stage_fingerprint_dirty_digest: ^dirty_digest} =
+    assert %Run{stage_fingerprint_head_sha: ^head_sha, stage_fingerprint_dirty_digest: ^content_digest} =
              Repo.reload!(run)
   end
 

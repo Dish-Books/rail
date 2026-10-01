@@ -14,9 +14,9 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
 
   import Rail.Pipeline.Utils.PrepareWorktree
   import Rail.Pipeline.Utils.StartWorktreeSetup
+  import Rail.Pipeline.Utils.TurnStamp
 
   alias Ecto.Adapters.SQL.Sandbox
-  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -93,13 +93,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
     message = run.pending_chat
 
     # The turn's end compares against this to tell whether the engineer changed code.
-    stamp =
-      if role.stage == :engineer and task.stage in [:review, :qa, :demo] do
-        fingerprint = Git.branch_fingerprint(worktree_path)
-        %{stage_fingerprint_head_sha: fingerprint[:head_sha], stage_fingerprint_dirty_digest: fingerprint[:dirty_digest]}
-      else
-        %{}
-      end
+    stamp = if role.stage == :engineer, do: turn_stamp(%{task | worktree_path: worktree_path}), else: %{}
 
     # The turn before this one is history the moment another starts. Its error
     # and exit code go with it: left on the row they read as this turn's, and a

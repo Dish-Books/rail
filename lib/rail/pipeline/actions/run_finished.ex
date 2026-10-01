@@ -37,8 +37,8 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   import Rail.Pipeline.Utils.ReturnToEngineer
   import Rail.Pipeline.Utils.ReviewRunFinished
   import Rail.Pipeline.Utils.SetupRunFinished
+  import Rail.Pipeline.Utils.TurnStamp
 
-  alias Rail.Git
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -143,7 +143,7 @@ defmodule Rail.Pipeline.Actions.RunFinished do
 
     # A turn with no stamp is one nobody can say changed anything.
     if is_binary(head_sha) and
-         not match?(%{head_sha: ^head_sha, dirty_digest: ^digest}, Git.branch_fingerprint(task.worktree_path)) do
+         turn_stamp(task) != %{stage_fingerprint_head_sha: head_sha, stage_fingerprint_dirty_digest: digest} do
       {:ok, _task} = return_to_engineer(task)
     end
 

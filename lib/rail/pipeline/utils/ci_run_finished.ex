@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   """
 
   import Rail.Pipeline.Utils.OpenPullRequest
+  import Rail.Pipeline.Utils.TurnStamp
 
   alias Rail.Git
   alias Rail.Pipeline
@@ -53,18 +54,10 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
     ])
 
     # The fix turn's end compares against this to tell whether the engineer changed code.
-    stamp =
-      if run.task.stage in [:review, :qa, :demo] do
-        fingerprint = Git.branch_fingerprint(run.task.worktree_path)
-        %{stage_fingerprint_head_sha: fingerprint[:head_sha], stage_fingerprint_dirty_digest: fingerprint[:dirty_digest]}
-      else
-        %{}
-      end
-
     briefed =
       update(
         run,
-        Map.merge(stamp, %{
+        Map.merge(turn_stamp(run.task), %{
           ci_failure_streak: streak + 1,
           pending_answer: note(run, os_process),
           status: :running,

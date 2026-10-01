@@ -2514,6 +2514,19 @@ defmodule RailWeb.TaskLiveTest do
       assert %Task{stage: :qa} = Repo.reload!(task)
     end
 
+    test "a clean review of code that has since gone back to engineer no longer invites sending it on", %{
+      conn: conn,
+      task: task,
+      role: role
+    } do
+      {:ok, _back} = Pipeline.update_task(task, %{stage: :engineer})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
+
+      assert has_element?(view, "#review-pending-title", "This pass was of earlier code")
+      refute has_element?(view, "#review-pending", "Send it to QA")
+    end
+
     test "dismissing the last outstanding finding is what opens QA", %{
       conn: conn,
       task: task,
@@ -2932,6 +2945,20 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#qa-pending-title", "Nothing to fix")
+    end
+
+    test "a clean pass of code that has since gone back to engineer no longer invites sending it on", %{
+      conn: conn,
+      task: task,
+      role: role
+    } do
+      {:ok, _raised} = Pipeline.sync_qa_findings(task, [])
+      {:ok, _back} = Pipeline.update_task(task, %{stage: :engineer})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
+
+      assert has_element?(view, "#qa-pending-title", "This pass was of earlier code")
+      refute has_element?(view, "#qa-pending", "Send it on")
     end
 
     test "a finding is ruled on from the detail pane", %{conn: conn, task: task, decide_as_advised: decide_as_advised} do

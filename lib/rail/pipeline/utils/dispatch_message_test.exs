@@ -91,7 +91,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
     {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
     File.write!(Path.join(task.worktree_path, "qa_leftover.log"), "from QA\n")
-    %{head_sha: head_sha, dirty_digest: dirty_digest} = Git.branch_fingerprint(task.worktree_path)
+    %{head_sha: head_sha, content_digest: content_digest} = Git.content_fingerprint(task.worktree_path)
 
     {:ok, run} =
       Pipeline.create_run(%{
@@ -108,7 +108,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
 
     assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
 
-    assert %Run{stage_fingerprint_head_sha: ^head_sha, stage_fingerprint_dirty_digest: ^dirty_digest} =
+    assert %Run{stage_fingerprint_head_sha: ^head_sha, stage_fingerprint_dirty_digest: ^content_digest} =
              Repo.reload!(run)
   end
 

@@ -155,7 +155,7 @@ defmodule RailWeb.Live.QaStage do
                 target={@myself}
               />
 
-              <.qa_pending :if={@pane == :pending} reported={@reported} report={@report} />
+              <.qa_pending :if={@pane == :pending} pending={@pending} report={@report} />
             </div>
           </div>
         </div>
@@ -1106,13 +1106,13 @@ defmodule RailWeb.Live.QaStage do
     """
   end
 
-  attr :reported, :boolean, required: true
+  attr :pending, :atom, required: true
   attr :report, :any, required: true
 
-  # Nothing running and nothing to read is two different situations: QA
-  # exercised the change and raised nothing, or it stopped without reporting at
-  # all - and only the first is a change anybody should send on. What it checked
-  # is in the sidebar either way.
+  # Nothing running and nothing to read is several situations: QA raised nothing,
+  # it stopped without reporting, or what it passed has since changed - and only
+  # a clean pass of the code as it stands is a change anybody should send on.
+  # What it checked is in the sidebar either way.
   defp qa_pending(assigns) do
     ~H"""
     <div
@@ -1121,16 +1121,16 @@ defmodule RailWeb.Live.QaStage do
       class="flex-1 min-h-0 flex flex-col items-center justify-center gap-5 p-8"
     >
       <div class="flex items-center justify-center size-14 rounded-2xl bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 ring-1 ring-blue-100 dark:ring-blue-900">
-        <.icon name={pending_icon(@reported)} class="size-7" />
+        <.icon name={pending_icon(@pending)} class="size-7" />
       </div>
 
       <div class="text-center max-w-md">
         <h2 id="qa-pending-title" class="text-base font-semibold text-slate-900 dark:text-slate-100">
-          {pending_title(@reported)}
+          {pending_title(@pending)}
         </h2>
 
         <p class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-          {pending_body(@reported)}
+          {pending_body(@pending)}
         </p>
       </div>
     </div>
@@ -1157,6 +1157,7 @@ defmodule RailWeb.Live.QaStage do
     |> assign(:undecided, Enum.filter(findings, &QaFinding.undecided?/1))
     |> assign(:running, running)
     |> assign(:reported, reported?(socket.assigns.run))
+    |> assign(:pending, pending(socket.assigns.run, socket.assigns.task))
     |> assign(:report, report(socket.assigns.task))
     |> assign(:checklist, checklist)
     |> assign(:shots, shots)
@@ -1240,6 +1241,15 @@ defmodule RailWeb.Live.QaStage do
   defp reported?(%Run{stage_outcome: :done}), do: true
   defp reported?(_not_concluded), do: false
 
+  # A clean pass of code that has since gone back to the engineer signs off nothing.
+  defp pending(%Run{} = run, %Task{} = task) do
+    cond do
+      not reported?(run) -> :stopped
+      task.stage in [:engineer, :review] -> :superseded
+      true -> :clean
+    end
+  end
+
   defp position(_findings, nil), do: 0
   defp position(findings, selected), do: Enum.find_index(findings, &(&1.key == selected.key)) + 1
 
@@ -1316,17 +1326,23 @@ defmodule RailWeb.Live.QaStage do
   defp recommendation_line(%QaFinding{recommendation: :fix}), do: "QA recommends fixing this."
   defp recommendation_line(%QaFinding{recommendation: :skip}), do: "QA recommends leaving this."
 
-  defp pending_icon(true), do: "pi-seal-check"
-  defp pending_icon(false), do: "pi-test-tube"
+  defp pending_icon(:clean), do: "pi-seal-check"
+  defp pending_icon(:superseded), do: "pi-arrows-clockwise"
+  defp pending_icon(:stopped), do: "pi-test-tube"
 
-  defp pending_title(true), do: "Nothing to fix"
-  defp pending_title(false), do: "No findings yet"
+  defp pending_title(:clean), do: "Nothing to fix"
+  defp pending_title(:superseded), do: "This pass was of earlier code"
+  defp pending_title(:stopped), do: "No findings yet"
 
-  defp pending_body(true) do
+  defp pending_body(:clean) do
     "QA exercised the change and raised nothing. Send it on when you are happy with it."
   end
 
-  defp pending_body(false) do
+  defp pending_body(:superseded) do
+    "The code has changed since, so it goes through review and QA again before it is sent on."
+  end
+
+  defp pending_body(:stopped) do
     "QA stopped without reporting. Send it a message in the conversation to pick up where it left off."
   end
 
