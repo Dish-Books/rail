@@ -65,7 +65,6 @@ end
 - Schemas contain the ecto schema and changeset for each data model.
 - Schemas may also contain functions for working directly with the schema.
 - Schemas can be referenced directly from other contexts.
-- Schemas should also include a `factory/0` (or `factory/1` for attrs-aware factories) function for creating a test instance of the schema. Register it for ExMachina in [test/support/factory.ex](test/support/factory.ex) with `defdelegate {name}_factory, to: Schema, as: :factory` so tests can build records with `insert(:name, ...)` / `build(:name, ...)`.
 - Schemas should define a custom primary key using the `UXID` type.
 - Schemas should `use Rail.Schema`.
 - Fields that should not be user defined such as `project_id` should be set from the parent entity/context and not castable in a changeset.
@@ -94,13 +93,6 @@ defmodule Rail.Projects.Schemas.Project do
     project
     |> cast(attrs, [:name, :github_repo])
     |> validate_required([:name, :github_repo])
-  end
-
-  def factory do
-    %__MODULE__{
-      name: "Rail Core",
-      github_repo: "example/rail"
-    }
   end
 end
 ```

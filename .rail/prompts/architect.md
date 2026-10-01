@@ -19,7 +19,7 @@ Where things live, so you do not have to survey for them:
 
 ## Before you plan
 
-**Read the docs first.** `docs/standards.md` is how Rail writes code and `docs/tests.md` is how it tests; `docs/local-ci.md` is how its gates run. All three are short: read them whole, once. There is no `CLAUDE.md`, `AGENTS.md` or `CONTRIBUTING.md`, so do not look. A plan that contradicts the written rules is wrong however good it looks, and where the docs settle a question you do not get to decide it again. One place the team has moved past the docs: there are no factories any more, whatever `docs/tests.md` says. Tests build their data through the contexts' public functions.
+**Read the docs first.** `docs/standards.md` is how Rail writes code and `docs/tests.md` is how it tests; `docs/local-ci.md` is how its gates run. All three are short: read them whole, once. There is no `CLAUDE.md`, `AGENTS.md` or `CONTRIBUTING.md`, so do not look. A plan that contradicts the written rules is wrong however good it looks, and where the docs settle a question you do not get to decide it again.
 
 **Learn the code as it is.** Find the modules this ticket touches and the ones next to them, and follow the patterns already in use. A plan that ignores the existing architecture is a rewrite nobody asked for.
 
