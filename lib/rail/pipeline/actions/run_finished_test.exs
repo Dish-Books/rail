@@ -655,6 +655,124 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{stage: :engineer} = Repo.reload!(task)
   end
 
+  test "an engineer turn at QA that changed files sends the task back to engineer, uncommitted", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa, worktree_path: create_temp_git_repo()})
+    %{head_sha: head_sha, content_digest: content_digest} = Git.content_fingerprint(task.worktree_path)
+
+    {run, os_process} =
+      exited.(:engineer, %{
+        stage_outcome: :done,
+        stage_fingerprint_head_sha: head_sha,
+        stage_fingerprint_dirty_digest: content_digest
+      })
+
+    File.write!(Path.join(task.worktree_path, "asked_for.ex"), "the change\n")
+    reject(&Git.commit_worktree/3)
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :engineer} = Repo.reload!(task)
+    assert %Run{stage_outcome: :done} = Repo.reload!(run)
+    assert Git.worktree_dirty?(task.worktree_path)
+  end
+
+  test "an engineer turn at demo that only answered leaves the task and its demo where they were", %{
+    task: task,
+    roles: roles,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, worktree_path: create_temp_git_repo()})
+    %{head_sha: head_sha, content_digest: content_digest} = Git.content_fingerprint(task.worktree_path)
+
+    {:ok, demo_run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:demo].id,
+        status: :finished,
+        stage_outcome: :done,
+        started_at: DateTime.utc_now()
+      })
+
+    {_run, os_process} =
+      exited.(:engineer, %{
+        stage_outcome: :done,
+        stage_fingerprint_head_sha: head_sha,
+        stage_fingerprint_dirty_digest: content_digest
+      })
+
+    assert {:ok, %Run{stage_outcome: :done}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :demo} = Repo.reload!(task)
+    assert %Run{status: :finished, stage_outcome: :done} = Repo.reload!(demo_run)
+  end
+
+  # Files a QA or demo agent left behind were there before the turn, so they are
+  # not the engineer changing anything.
+  test "an engineer turn at demo in a worktree already dirty, left as it was, moves nothing", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :demo, worktree_path: create_temp_git_repo()})
+    File.write!(Path.join(task.worktree_path, "qa_leftover.log"), "from QA\n")
+    %{head_sha: head_sha, content_digest: content_digest} = Git.content_fingerprint(task.worktree_path)
+
+    {_run, os_process} =
+      exited.(:engineer, %{
+        stage_outcome: :done,
+        stage_fingerprint_head_sha: head_sha,
+        stage_fingerprint_dirty_digest: content_digest
+      })
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :demo} = Repo.reload!(task)
+  end
+
+  # `git status` reads " M" before and after, so only the contents say the turn changed code.
+  test "an engineer turn at QA that rewrote a file already modified sends the task back to engineer", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa, worktree_path: create_temp_git_repo()})
+    File.write!(Path.join(task.worktree_path, "feature.ex"), "committed\n")
+    git!(task.worktree_path, ["add", "."])
+    git!(task.worktree_path, ["commit", "-m", "the engineer's round"])
+    File.write!(Path.join(task.worktree_path, "feature.ex"), "left uncommitted\n")
+
+    # The message queued during the last turn goes out as it ends, stamping the tree.
+    {run, os_process} =
+      exited.(:engineer, %{stage_outcome: :done, pending_chat: "Make the currency follow the entity"})
+
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0}, async: false)
+    assert %Task{stage: :qa} = Repo.reload!(task)
+
+    File.write!(Path.join(task.worktree_path, "feature.ex"), "follows the entity\n")
+
+    {:ok, turn} =
+      %OsProcess{}
+      |> OsProcess.changeset(%{
+        run_id: run.id,
+        task_id: task.id,
+        stream_path: "/tmp/run_finished/#{run.id}-turn.ndjson",
+        status: :running,
+        started_at: DateTime.utc_now()
+      })
+      |> Repo.insert()
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(turn, %{exit_code: 0})
+    assert %Task{stage: :engineer} = Repo.reload!(task)
+  end
+
+  test "an engineer turn with no record of how the tree started moves nothing", %{task: task, exited: exited} do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :review, worktree_path: create_temp_git_repo()})
+    {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
+    File.write!(Path.join(task.worktree_path, "unknown.ex"), "when\n")
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert %Task{stage: :review} = Repo.reload!(task)
+  end
+
   test "an architect run that left no plan stays open for the message that fixes it", %{
     task: task,
     exited: exited
@@ -1051,6 +1169,35 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
              Pipeline.list_run_events(run)
   end
 
+  # The fix turn's end compares against how the tree stood when it started, not
+  # against whatever an earlier turn left on the run.
+  test "CI that failed on a task past engineer stamps how the tree stood for the fix turn", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa, worktree_path: create_temp_git_repo()})
+
+    {run, os_process} =
+      exited.(:engineer, %{
+        stage_outcome: :done,
+        stage_fingerprint_head_sha: "an_earlier_turn",
+        stage_fingerprint_dirty_digest: "an_earlier_digest"
+      })
+
+    os_process =
+      os_process
+      |> OsProcess.changeset(%{kind: :ci, command: "mise run ci", stream_path: "/tmp/gone.log"})
+      |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    %{head_sha: head_sha, content_digest: content_digest} = Git.content_fingerprint(task.worktree_path)
+
+    assert {:ok, %Run{status: :running}} = Pipeline.run_finished(os_process, %{exit_code: 1})
+
+    assert %Run{stage_fingerprint_head_sha: ^head_sha, stage_fingerprint_dirty_digest: ^content_digest} =
+             Repo.reload!(run)
+  end
+
   test "CI that timed out goes back to the engineer saying so", %{task: task, exited: exited} do
     {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
     {_run, os_process} = exited.(:engineer, %{})
@@ -1126,18 +1273,25 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
              Pipeline.run_finished(os_process, %{exit_code: 0})
   end
 
+  # The conflicts already sent the task back to engineer, and finishing the rebase
+  # leaves it there for review to see the result.
   test "conflicts the engineer resolved are carried on and the branch sent on", %{task: task, exited: exited} do
     {:ok, task} =
-      Pipeline.update_task(task, %{stage: :review, is_rebasing: true, worktree_path: create_temp_git_repo()})
+      Pipeline.update_task(task, %{stage: :engineer, is_rebasing: true, worktree_path: create_temp_git_repo()})
 
     {_run, os_process} = exited.(:engineer, %{stage_outcome: :done})
 
     stub(Git, :rebase_in_progress?, fn _path -> true end)
-    expect(Git, :rebase_branch, fn _scope, _task -> :ok end)
+
+    expect(Git, :rebase_branch, fn _scope, _task ->
+      git!(task.worktree_path, ["commit", "--allow-empty", "-m", "replayed onto main"])
+      :ok
+    end)
+
     expect(Git, :push_branch, fn _scope, _task -> :ok end)
 
     assert {:ok, %Run{stage_outcome: :done, error: nil}} = Pipeline.run_finished(os_process, %{exit_code: 0})
-    assert %Task{is_rebasing: false, stage: :review} = Repo.reload!(task)
+    assert %Task{is_rebasing: false, stage: :engineer} = Repo.reload!(task)
   end
 
   test "a rebase carried on through CI is not done until CI passes", %{project: project, task: task, exited: exited} do

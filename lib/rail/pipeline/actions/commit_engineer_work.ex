@@ -13,6 +13,7 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWork do
   import Rail.Pipeline.Utils.CiPassed
   import Rail.Pipeline.Utils.CommitMessage
   import Rail.Pipeline.Utils.OpenPullRequest
+  import Rail.Pipeline.Utils.ReturnToEngineer
   import Rail.Pipeline.Utils.StartCi
 
   alias Rail.Git
@@ -37,7 +38,8 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWork do
   def commit_engineer_work(%Scope{} = scope, %Task{} = task) do
     task = Repo.preload(task, [:issue, :project])
 
-    with {:ok, _sha} <- commit(scope, task),
+    with {:ok, sha} <- commit(scope, task),
+         {:ok, _task} <- return_if_committed(sha, task),
          :ok <- send_on(scope, task) do
       drop_message_file(task)
       :ok
@@ -75,6 +77,10 @@ defmodule Rail.Pipeline.Actions.CommitEngineerWork do
       do: Git.commit_worktree(scope, task, commit_message(task, Pipeline.read_commit_message(task))),
       else: {:ok, :nothing_to_commit}
   end
+
+  # Code changed past Engineer is reviewed again, even when the push then fails.
+  defp return_if_committed(:nothing_to_commit, %Task{} = task), do: {:ok, task}
+  defp return_if_committed(_sha, %Task{} = task), do: return_to_engineer(task)
 
   # The file being gone is what makes its absence mean something next round.
   defp drop_message_file(%Task{scratch_path: scratch_path, issue: %Issue{identifier: identifier}}) do

@@ -22,6 +22,7 @@ defmodule Rail.Git do
   defdelegate remove_worktree(repo_path, worktree_path, opts \\ []), to: Actions.RemoveWorktree
   defdelegate delete_branch(repo_path, branch, opts \\ []), to: Actions.DeleteBranch
   defdelegate branch_fingerprint(worktree_path), to: Actions.BranchFingerprint
+  defdelegate content_fingerprint(worktree_path), to: Actions.ContentFingerprint
 
   defdelegate worktree_dirty?(worktree_path), to: Actions.WorktreeDirty
   defdelegate branch_unpushed?(worktree_path), to: Actions.BranchUnpushed

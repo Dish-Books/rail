@@ -8,6 +8,7 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
   """
 
   import Rail.Pipeline.Utils.OpenPullRequest
+  import Rail.Pipeline.Utils.TurnStamp
 
   alias Rail.Git
   alias Rail.Pipeline
@@ -52,8 +53,17 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
       "[rail] CI failed, so its output went back to the engineer (#{streak + 1} of #{@failure_limit})."
     ])
 
+    # The fix turn's end compares against this to tell whether the engineer changed code.
     briefed =
-      update(run, %{ci_failure_streak: streak + 1, pending_answer: note(run, os_process), status: :running, error: nil})
+      update(
+        run,
+        Map.merge(turn_stamp(run.task), %{
+          ci_failure_streak: streak + 1,
+          pending_answer: note(run, os_process),
+          status: :running,
+          error: nil
+        })
+      )
 
     case Pipeline.start_engineer_run(briefed) do
       {:ok, %OsProcess{run: %Run{} = resumed}} ->

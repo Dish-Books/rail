@@ -1254,6 +1254,33 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#rebase-task[disabled]", "Rebasing…")
     end
 
+    test "a clean rebase of a task at QA brings it back to engineer, ready to send to review", %{
+      conn: conn,
+      task: task,
+      repo: repo
+    } do
+      {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
+      expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
+
+      expect(Git, :rebase_branch, fn _scope, _task ->
+        git!(repo, ["commit", "--allow-empty", "-m", "replayed onto main"])
+        :ok
+      end)
+
+      expect(Git, :push_branch, fn _scope, _task ->
+        git!(repo, ["push", "origin", "feature"])
+        :ok
+      end)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "[data-qa='task_status_chip']", "Queued for QA")
+
+      view |> element("#rebase-task") |> render_click()
+
+      assert has_element?(view, "[data-qa='task_status_chip']", "Review the diff")
+      assert has_element?(view, "[data-qa='send_to_review']:not([disabled])")
+    end
+
     test "rebase says why for each way it can be refused", %{conn: conn, task: task, engineer_run: run, repo: repo} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -2942,6 +2969,19 @@ defmodule RailWeb.TaskLiveTest do
       assert %Task{stage: :qa} = Repo.reload!(task)
     end
 
+    test "a clean review of code that has since gone back to engineer no longer invites sending it on", %{
+      conn: conn,
+      task: task,
+      role: role
+    } do
+      {:ok, _back} = Pipeline.update_task(task, %{stage: :engineer})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
+
+      assert has_element?(view, "#review-pending-title", "This pass was of earlier code")
+      refute has_element?(view, "#review-pending", "Send it to QA")
+    end
+
     test "dismissing the last outstanding finding is what opens QA", %{
       conn: conn,
       task: task,
@@ -3360,6 +3400,20 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#qa-pending-title", "Nothing to fix")
+    end
+
+    test "a clean pass of code that has since gone back to engineer no longer invites sending it on", %{
+      conn: conn,
+      task: task,
+      role: role
+    } do
+      {:ok, _raised} = Pipeline.sync_qa_findings(task, [])
+      {:ok, _back} = Pipeline.update_task(task, %{stage: :engineer})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{role.id}")
+
+      assert has_element?(view, "#qa-pending-title", "This pass was of earlier code")
+      refute has_element?(view, "#qa-pending", "Send it on")
     end
 
     test "a finding is ruled on from the detail pane", %{conn: conn, task: task, decide_as_advised: decide_as_advised} do

@@ -83,7 +83,7 @@ defmodule RailWeb.Live.ReviewStage do
           </p>
         </:alerts>
 
-        <.review_pending :if={@findings == []} running={@running} reviewed={@reviewed} />
+        <.review_pending :if={@findings == []} running={@running} pending={@pending} />
 
         <div :if={@findings != []} id="review-findings" data-qa="review_findings" class="h-full flex">
           <.finding_list findings={@findings} selected={@selected} target={@myself} />
@@ -387,11 +387,11 @@ defmodule RailWeb.Live.ReviewStage do
   end
 
   attr :running, :boolean, required: true
-  attr :reviewed, :boolean, required: true
+  attr :pending, :atom, required: true
 
-  # No findings is three different situations: the reviewer is still reading, it
-  # read the change and raised nothing, or it stopped without reporting at all -
-  # and only the middle one is a change anybody should send on.
+  # No findings is several situations: the reviewer is still reading, it raised
+  # nothing, it stopped without reporting, or what it passed has since changed -
+  # and only a clean pass of the code as it stands is a change anybody should send on.
   defp review_pending(assigns) do
     ~H"""
     <div id="review-pending" data-qa="review_pending" class="flex flex-col items-center gap-10 py-10">
@@ -401,18 +401,18 @@ defmodule RailWeb.Live.ReviewStage do
             :if={@running}
             class="absolute inset-0 rounded-2xl ring-2 ring-blue-400/40 motion-safe:animate-ping"
           />
-          <.icon name={pending_icon(@running, @reviewed)} class="size-7" />
+          <.icon name={pending_icon(@pending)} class="size-7" />
         </div>
 
         <h2
           id="review-pending-title"
           class="mt-5 text-base font-semibold text-slate-900 dark:text-slate-100"
         >
-          {pending_title(@running, @reviewed)}
+          {pending_title(@pending)}
         </h2>
 
         <p class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-          {pending_body(@running, @reviewed)}
+          {pending_body(@pending)}
         </p>
       </div>
 
@@ -445,6 +445,7 @@ defmodule RailWeb.Live.ReviewStage do
     |> assign(:outstanding, Enum.filter(findings, &ReviewFinding.outstanding?/1))
     |> assign(:running, Run.running?(socket.assigns.run))
     |> assign(:reviewed, reviewed?(socket.assigns.run))
+    |> assign(:pending, pending(socket.assigns.run, socket.assigns.task))
   end
 
   # The change a finding points at is read off the worktree, so it is loaded only
@@ -460,6 +461,16 @@ defmodule RailWeb.Live.ReviewStage do
   # otherwise, and only one of them is a change anybody should send to QA.
   defp reviewed?(%Run{stage_outcome: :done}), do: true
   defp reviewed?(_not_concluded), do: false
+
+  # A clean pass of code that has since gone back to the engineer signs off nothing.
+  defp pending(%Run{} = run, %Task{} = task) do
+    cond do
+      Run.running?(run) -> :reading
+      not reviewed?(run) -> :stopped
+      task.stage == :engineer -> :superseded
+      true -> :clean
+    end
+  end
 
   defp position(_findings, nil), do: 0
   defp position(findings, selected), do: Enum.find_index(findings, &(&1.key == selected.key)) + 1
@@ -556,23 +567,29 @@ defmodule RailWeb.Live.ReviewStage do
   defp recommendation_line(%ReviewFinding{recommendation: :fix}), do: "The reviewer recommends fixing this."
   defp recommendation_line(%ReviewFinding{recommendation: :skip}), do: "The reviewer recommends leaving this."
 
-  defp pending_icon(true, _reviewed), do: "pi-magnifying-glass"
-  defp pending_icon(false, true), do: "pi-seal-check"
-  defp pending_icon(false, false), do: "pi-eye"
+  defp pending_icon(:reading), do: "pi-magnifying-glass"
+  defp pending_icon(:clean), do: "pi-seal-check"
+  defp pending_icon(:superseded), do: "pi-arrows-clockwise"
+  defp pending_icon(:stopped), do: "pi-eye"
 
-  defp pending_title(true, _reviewed), do: "Reading the change"
-  defp pending_title(false, true), do: "Nothing to fix"
-  defp pending_title(false, false), do: "No findings yet"
+  defp pending_title(:reading), do: "Reading the change"
+  defp pending_title(:clean), do: "Nothing to fix"
+  defp pending_title(:superseded), do: "This pass was of earlier code"
+  defp pending_title(:stopped), do: "No findings yet"
 
-  defp pending_body(true, _reviewed) do
+  defp pending_body(:reading) do
     "The reviewer is reading the branch against the plan it was built from. Whatever it finds appears here as soon as it reports."
   end
 
-  defp pending_body(false, true) do
+  defp pending_body(:clean) do
     "The reviewer read the change and raised nothing. Send it to QA when you are happy with it."
   end
 
-  defp pending_body(false, false) do
+  defp pending_body(:superseded) do
+    "The code has changed since, so it goes through review and QA again once it is sent to review."
+  end
+
+  defp pending_body(:stopped) do
     "The reviewer stopped without reporting. Send it a message in the conversation to pick up where it left off."
   end
 

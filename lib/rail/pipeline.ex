@@ -12,7 +12,8 @@ defmodule Rail.Pipeline do
   the engineer or hands the change to QA. QA drives the running application and
   reports the same way, with a verdict over the top of it, and what the human
   sends back from there goes to the engineer and comes round through review
-  again before QA sees it a second time.
+  again before QA sees it a second time. A task past Engineer whose code changes
+  goes back there, and has to come through review and QA again.
 
   Demo drives the same application QA did, for the opposite reason: it records a
   walkthrough of the change working, narrated a beat at a time, for somebody who

@@ -7,7 +7,10 @@ defmodule Rail.Pipeline.Utils.RebasePass do
   or pushed. Stopping on conflicts hands them to the engineer, who resolves and
   stages them and nothing more, so that Rail's `--continue` signs every commit.
   Each pass says in the engineer's log what it did and what it asked for.
+  A rebase that rewrites the branch sends a task past Engineer back there.
   """
+
+  import Rail.Pipeline.Utils.ReturnToEngineer
 
   alias Rail.Git
   alias Rail.Pipeline
@@ -23,11 +26,19 @@ defmodule Rail.Pipeline.Utils.RebasePass do
   """
   def rebase_pass(%Scope{} = scope, %Run{task: %Task{} = task} = run) do
     %Project{default_branch: base} = Repo.get!(Project, task.project_id)
+    head_sha = Git.branch_fingerprint(task.worktree_path)[:head_sha]
 
     case Git.rebase_branch(scope, task) do
       :ok ->
         say(run, "Rebased onto origin/#{base}.")
-        send_on(run)
+
+        # A branch already up to date keeps its HEAD, and has nothing new to review.
+        {:ok, task} =
+          if match?(%{head_sha: ^head_sha}, Git.branch_fingerprint(task.worktree_path)),
+            do: {:ok, task},
+            else: return_to_engineer(task)
+
+        send_on(%{run | task: task})
 
       {:conflicts, files} ->
         say(
@@ -35,7 +46,8 @@ defmodule Rail.Pipeline.Utils.RebasePass do
           "Rebase onto origin/#{base} stopped on conflicts in #{Enum.join(files, ", ")}. Asked the engineer to resolve them."
         )
 
-        resolve(run, base, files)
+        {:ok, task} = return_to_engineer(task)
+        resolve(%{run | task: task}, base, files)
 
       {:error, reason} ->
         say(run, "Rebase onto origin/#{base} failed.")

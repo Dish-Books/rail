@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Actions.RebaseTaskTest do
   use Rail.DataCase, async: true
 
   alias Rail.Git
+  alias Rail.GitHub.Client
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -82,13 +83,49 @@ defmodule Rail.Pipeline.Actions.RebaseTaskTest do
     expect(Git, :push_branch, fn _scope, _task -> :ok end)
     reject(Tools, :start_os_process, 2)
 
-    Req.Test.stub(Rail.GitHub.Client, fn conn ->
+    Req.Test.stub(Client, fn conn ->
       conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})
     end)
 
     assert {:ok, %Task{is_rebasing: false}} = Pipeline.rebase_task(system_scope(), task)
     assert %Run{status: :finished, stage_outcome: :done, ci_failure_streak: 0} = Repo.reload!(run)
     assert "[rail] Rebased onto origin/main." in Enum.map(Pipeline.list_run_events(run), & &1.line)
+  end
+
+  # Nothing to replay leaves HEAD where it was, so there is no new code to review.
+  test "a rebase that finds the branch up to date leaves the task where it was", %{task: task} do
+    stub(Git, :fetch_default_branch, fn _project, _path -> :ok end)
+    expect(Git, :rebase_branch, fn _scope, _task -> :ok end)
+    stub(Git, :push_branch, fn _scope, _task -> :ok end)
+
+    Req.Test.stub(Client, fn conn ->
+      conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})
+    end)
+
+    assert {:ok, %Task{stage: :review}} = Pipeline.rebase_task(system_scope(), task)
+  end
+
+  test "a rebase that rewrites the branch of a task at QA sends it back to engineer", %{
+    task: task,
+    run: run,
+    worktree_path: worktree_path
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
+    stub(Git, :fetch_default_branch, fn _project, _path -> :ok end)
+
+    expect(Git, :rebase_branch, fn _scope, %Task{} ->
+      git!(worktree_path, ["commit", "--allow-empty", "-m", "replayed onto main"])
+      :ok
+    end)
+
+    stub(Git, :push_branch, fn _scope, _task -> :ok end)
+
+    Req.Test.stub(Client, fn conn ->
+      conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})
+    end)
+
+    assert {:ok, %Task{stage: :engineer, is_rebasing: false}} = Pipeline.rebase_task(system_scope(), task)
+    assert %Run{status: :finished, stage_outcome: :done} = Repo.reload!(run)
   end
 
   test "a rebase that stops on conflicts goes to the engineer to resolve", %{task: task, run: run} do
@@ -102,7 +139,7 @@ defmodule Rail.Pipeline.Actions.RebaseTaskTest do
       {:ok, %OsProcess{run: spawned}}
     end)
 
-    assert {:ok, %Task{is_rebasing: true}} = Pipeline.rebase_task(system_scope(), task)
+    assert {:ok, %Task{stage: :engineer, is_rebasing: true}} = Pipeline.rebase_task(system_scope(), task)
     assert %Run{status: :running} = Repo.reload!(run)
 
     assert [
@@ -116,6 +153,7 @@ defmodule Rail.Pipeline.Actions.RebaseTaskTest do
 
     assert {:error, "fatal: invalid upstream 'origin/main'"} = Pipeline.rebase_task(system_scope(), task)
     assert ["[rail] Rebase onto origin/main failed."] = Enum.map(Pipeline.list_run_events(run), & &1.line)
+    assert %Task{stage: :review} = Repo.reload!(task)
   end
 
   test "a fetch that fails rebases nothing", %{task: task} do
@@ -123,6 +161,7 @@ defmodule Rail.Pipeline.Actions.RebaseTaskTest do
     reject(&Git.rebase_branch/2)
 
     assert {:error, "could not read from remote"} = Pipeline.rebase_task(system_scope(), task)
+    assert %Task{stage: :review} = Repo.reload!(task)
   end
 
   test "an engineer that cannot be resumed on the conflicts says why", %{task: task} do
@@ -162,14 +201,17 @@ defmodule Rail.Pipeline.Actions.RebaseTaskTest do
 
     File.write!(Path.join(worktree_path, "loose.ex"), "one\n")
     assert {:error, :uncommitted_changes} = Pipeline.rebase_task(system_scope(), task)
+    assert %Task{stage: :review} = Repo.reload!(task)
     File.rm!(Path.join(worktree_path, "loose.ex"))
 
     {:ok, running} = Pipeline.update_run(run, %{status: :running})
     assert {:error, :task_busy} = Pipeline.rebase_task(system_scope(), task)
+    assert %Task{stage: :review} = Repo.reload!(task)
     {:ok, _idle} = Pipeline.update_run(running, %{status: :finished})
 
     {:ok, gone} = Pipeline.update_task(task, %{worktree_path: "/tmp/gone_#{System.unique_integer([:positive])}"})
     assert {:error, :no_worktree} = Pipeline.rebase_task(system_scope(), gone)
+    assert %Task{stage: :review} = Repo.reload!(gone)
 
     {:ok, cleaned} = Pipeline.update_task(task, %{cleaned_up_at: DateTime.utc_now()})
     assert {:error, :cleaned_up} = Pipeline.rebase_task(system_scope(), cleaned)

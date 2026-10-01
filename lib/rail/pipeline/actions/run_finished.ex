@@ -18,7 +18,9 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   A run that already had its say is latched at `stage_outcome: :done` and is left
   alone however many times it is messaged afterwards. `enter_stage/3` is what
   unlatches it, which is why nothing here moves a task: a stage's own finish
-  does, when what it concluded leaves nobody anything to decide.
+  does, when what it concluded leaves nobody anything to decide. The one
+  exception is an engineer turn past Engineer that changed the tree, which sends
+  the task back there.
   """
 
   import Rail.Pipeline.Utils.ArchitectRunFinished
@@ -33,8 +35,10 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   import Rail.Pipeline.Utils.QuestionQueue
   import Rail.Pipeline.Utils.RebaseRunFinished
   import Rail.Pipeline.Utils.RegisterAskedQuestions
+  import Rail.Pipeline.Utils.ReturnToEngineer
   import Rail.Pipeline.Utils.ReviewRunFinished
   import Rail.Pipeline.Utils.SetupRunFinished
+  import Rail.Pipeline.Utils.TurnStamp
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -127,6 +131,31 @@ defmodule Rail.Pipeline.Actions.RunFinished do
       [] -> rebase_run_finished(run)
       _asked -> run
     end
+  end
+
+  # A chat turn after the engineer's round is left on the diff for the Commit
+  # button, but code changed past Engineer has to be reviewed again.
+  defp finish(
+         %Run{
+           role: %Role{stage: :engineer},
+           task: %Task{stage: stage} = task,
+           stage_outcome: :done,
+           stage_fingerprint_head_sha: head_sha,
+           stage_fingerprint_dirty_digest: digest
+         } = run,
+         %OsProcess{} = os_process,
+         _opts
+       )
+       when stage in [:review, :qa, :demo] do
+    _asked = register_asked_questions(os_process, run)
+
+    # A turn with no stamp is one nobody can say changed anything.
+    if is_binary(head_sha) and
+         turn_stamp(task) != %{stage_fingerprint_head_sha: head_sha, stage_fingerprint_dirty_digest: digest} do
+      {:ok, _task} = return_to_engineer(task)
+    end
+
+    run
   end
 
   defp finish(%Run{} = run, %OsProcess{} = os_process, opts) do
