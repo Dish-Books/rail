@@ -45,7 +45,7 @@ defmodule Rail.Pipeline.Actions.ApproveDesignTest do
 
     File.write!(
       Path.join(design_dir, "manifest.json"),
-      ~s({"options": [{"key": "cards", "title": "Cards", "summary": "Big tiles."}, {"key": "table", "title": "Table"}]})
+      ~s({"options": [{"key": "cards", "title": "Cards", "summary": "Big tiles."}]})
     )
 
     File.write!(Path.join(design_dir, "cards.html"), "<h1>Cards</h1>")

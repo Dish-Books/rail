@@ -5,7 +5,7 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
   The pick is Rail's, not the agent's: it is written to `<scratch>/design/picked`,
   a file the brief tells the designer never to write. Everything after it is a
   conversation, so the designer hears about it the way it hears anything else,
-  as a message from the human.
+  as a message from the human. The pick also deletes the options not picked.
   """
 
   alias Rail.Pipeline
@@ -20,11 +20,25 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
   """
   def pick_design_option(%Run{} = run, key) when is_binary(key) do
     run = Repo.preload(run, [task: :runs], force: true)
+    dir = Path.join(run.task.scratch_path, "design")
 
     with :ok <- pickable(run.task),
-         {:ok, option} <- option(run.task, key),
+         {:ok, option, others} <- option(run.task, key),
          {:ok, _delivery, sent} <- Pipeline.send_message(run, message(option)) do
-      File.write!(Path.join([run.task.scratch_path, "design", "picked"]), option.key)
+      manifest = Path.join(dir, "manifest.json")
+      %{"options" => entries} = manifest |> File.read!() |> Jason.decode!()
+      entry = Enum.find(entries, &match?(%{"key" => ^key}, &1))
+      File.write!(manifest, Jason.encode!(%{"options" => [entry]}, pretty: true))
+
+      # An option may never have had its screenshot taken.
+      for other <- others, path <- [other.html_path, other.screenshot_path] do
+        case File.rm(path) do
+          :ok -> :ok
+          {:error, :enoent} -> :ok
+        end
+      end
+
+      File.write!(Path.join(dir, "picked"), option.key)
       {:ok, sent}
     end
   end
@@ -38,19 +52,19 @@ defmodule Rail.Pipeline.Actions.PickDesignOption do
   defp option(%Task{} = task, key) do
     case Pipeline.read_design(task) do
       %{picked: picked} when is_binary(picked) -> {:error, :already_picked}
-      %{options: options} -> options |> Enum.find(&(&1.key == key)) |> found()
+      %{options: options} -> options |> Enum.split_with(&(&1.key == key)) |> found()
       nil -> {:error, :design_not_found}
     end
   end
 
-  defp found(nil), do: {:error, :option_not_found}
-  defp found(option), do: {:ok, option}
+  defp found({[], _others}), do: {:error, :option_not_found}
+  defp found({[option | _duplicates], others}), do: {:ok, option, others}
 
   defp message(option) do
     """
     I picked #{option.title} (#{option.key}). From here on we refine only that option: \
-    change #{option.key}.html, retake #{option.key}.png every time it changes, and leave \
-    manifest.json and the other options as they are.
+    change #{option.key}.html and retake #{option.key}.png every time it changes. The other \
+    options are deleted and manifest.json now lists only #{option.key}; keep it that way.
     """
   end
 end

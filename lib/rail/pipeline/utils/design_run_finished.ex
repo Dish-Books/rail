@@ -4,8 +4,9 @@ defmodule Rail.Pipeline.Utils.DesignRunFinished do
 
   The designer's options stay in scratch until a human picks one and approves
   it: nothing is captured here and nothing moves. What a design run can get wrong
-  is leaving fewer than three complete options behind, and that is recorded on
-  the run so the stage stays open for the message that fixes it.
+  is leaving other than three complete options before the pick, or the picked one
+  incomplete after it, and that is recorded on the run so the stage stays open for
+  the message that fixes it.
   """
 
   alias Rail.Pipeline
@@ -21,7 +22,7 @@ defmodule Rail.Pipeline.Utils.DesignRunFinished do
     error =
       cond do
         design == nil -> "The designer did not write design/manifest.json."
-        length(options) != 3 -> "The designer wrote #{length(options)} design options, not 3."
+        design.picked == nil and length(options) != 3 -> "The designer wrote #{length(options)} design options, not 3."
         incomplete != [] -> "Design options missing a page or screenshot: #{Enum.map_join(incomplete, ", ", & &1.key)}."
         true -> nil
       end

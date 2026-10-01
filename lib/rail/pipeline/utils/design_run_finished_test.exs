@@ -69,6 +69,23 @@ defmodule Rail.Pipeline.Utils.DesignRunFinishedTest do
     assert %Run{error: "Design options missing a page or screenshot: b, c."} = design_run_finished(run, [])
   end
 
+  test "a picked design refined down to its one option finishes cleanly", %{run: run, design_dir: dir} do
+    File.write!(Path.join(dir, "manifest.json"), ~s({"options": [{"key": "b", "title": "B"}]}))
+    File.write!(Path.join(dir, "picked"), "b")
+    File.write!(Path.join(dir, "b.html"), "<p>b</p>")
+    File.write!(Path.join(dir, "b.png"), "png")
+
+    assert %Run{error: nil} = design_run_finished(run, [])
+  end
+
+  test "a picked option that lost its screenshot is named", %{run: run, design_dir: dir} do
+    File.write!(Path.join(dir, "manifest.json"), ~s({"options": [{"key": "b", "title": "B"}]}))
+    File.write!(Path.join(dir, "picked"), "b")
+    File.write!(Path.join(dir, "b.html"), "<p>b</p>")
+
+    assert %Run{error: "Design options missing a page or screenshot: b."} = design_run_finished(run, [])
+  end
+
   test "three complete options clear the error and leave the task where it is", %{run: run, design_dir: dir} do
     File.write!(
       Path.join(dir, "manifest.json"),
