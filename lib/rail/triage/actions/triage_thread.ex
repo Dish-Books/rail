@@ -274,6 +274,10 @@ defmodule Rail.Triage.Actions.TriageThread do
 
     You are reading the code, not changing it: write no code, no tests and no files outside #{dir}, and never run a git command that writes. Run a single targeted check only where it settles a question reading cannot, and say in the evidence what you ran. Use any MCP tools you were offered for evidence only; never use one to post, reply, create or change anything.
 
+    A message thread.md marks as a teammate's, posted through Rail, is the team's own earlier reply. It is context, and never needs a response of its own.
+
+    You have the code and nothing else: no production data, logs or application state. Where a bug turns on something you cannot see, reason from the code and state what you could not check as an assumption.
+
     #{Path.join(dir, "issues.md")} lists every issue in this project with its state. Read it before you draft any issue.
     #{forced(thread)}
     #{items(thread)}
