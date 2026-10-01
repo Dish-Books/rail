@@ -6,10 +6,9 @@ defmodule Rail.Git.Actions.WorktreeDirty do
   @doc """
   True when the worktree has changes nobody has committed.
 
-  `.rail/` is left out, exactly as `branch_fingerprint/1` leaves it out: agents
-  write their own scratch there and it is never part of the deliverable, so a
-  tree holding nothing else is clean. `.rail/prompts/` is the one part of
-  `.rail/` that belongs to the change, so it counts.
+  `.rail/` is left out: agents write their own scratch there and it is never part
+  of the deliverable, so a tree holding nothing else is clean. `.rail/prompts/` is
+  the one part of `.rail/` that belongs to the change, so it counts.
   """
   def worktree_dirty?(worktree_path) when is_binary(worktree_path) do
     case Tools.run("git", ["status", "--porcelain", "--untracked-files=all"],
