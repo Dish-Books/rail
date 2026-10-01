@@ -4,7 +4,7 @@ defmodule Rail.Pipeline.Actions.ReadDesign do
 
   The designer owns `<scratch>/design/manifest.json` and each option's
   `<key>.html` and `<key>.png`; Rail owns `<scratch>/design/picked`, which holds
-  the key of the option the human chose.
+  the key of the option the human chose, and deletes the other options when it writes it.
   """
 
   alias Rail.Pipeline.Schemas.Task

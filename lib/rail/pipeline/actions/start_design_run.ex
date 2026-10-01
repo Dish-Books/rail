@@ -87,7 +87,7 @@ defmodule Rail.Pipeline.Actions.StartDesignRun do
 
     - A key is lowercase letters, digits and dashes, and names that option's files.
     - Retake an option's screenshot every time its page changes. The screenshot is what gets published.
-    - The human picks one option and refines it with you in chat. Rail records the pick in #{dir}/picked; never write that file.
+    - The human picks one option and refines it with you in chat. Rail records the pick in #{dir}/picked and deletes the options not picked; never write that file.
 
     The approved ticket:
 

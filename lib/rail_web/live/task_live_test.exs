@@ -709,8 +709,12 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#pick-design-table") |> render_click()
 
       assert File.read!(Path.join(dir, "picked")) == "table"
+      refute File.exists?(Path.join(dir, "cards.html"))
+      refute File.exists?(Path.join(dir, "timeline.html"))
       assert has_element?(view, "#design-option-title", "Table")
       refute has_element?(view, "[data-qa='design_tab']")
+      refute has_element?(view, "#design-tab-cards")
+      refute has_element?(view, "#design-tab-timeline")
 
       # Once there is a pick, acting on it sits in the header with every other
       # action on the task; approving waits for the designer's turn to finish.
@@ -775,7 +779,14 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#design-tab-cards img[src$='?v=1900000060']")
     end
 
-    test "approving the picked design hands the task to the architect", %{conn: conn, task: task, design_dir: dir} do
+    test "approving the picked design hands the task to the architect", %{
+      conn: conn,
+      task: task,
+      design_run: design_run,
+      design_dir: dir
+    } do
+      File.write!(Path.join(dir, "manifest.json"), ~s({"options": [{"key": "cards", "title": "Cards"}]}))
+      for key <- ["table", "timeline"], do: File.rm!(Path.join(dir, "#{key}.html"))
       File.write!(Path.join(dir, "picked"), "cards")
       File.write!(Path.join(dir, "cards.png"), "png bytes")
 
@@ -801,6 +812,8 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#approve-design") |> render_click()
 
       assert %Task{stage: :architect} = Repo.reload!(task)
+      assert {:ok, approved, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{design_run.role_id}")
+      assert has_element?(approved, "#open-design-cards")
     end
 
     test "a design that cannot be approved says why", %{conn: conn, task: task, design_dir: dir} do
