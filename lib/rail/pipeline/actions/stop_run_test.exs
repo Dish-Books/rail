@@ -98,6 +98,15 @@ defmodule Rail.Pipeline.Actions.StopRunTest do
     assert ["[rail] Stopped by user."] = Enum.map(Pipeline.list_run_events(run), & &1.line)
   end
 
+  # A run that never got a sandbox has no process to settle, so the stop is all there is to announce.
+  test "stopping a run waiting in line tells whoever is watching the pipeline", %{task: %{id: task_id}, working: working} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    run = working.(%{status: :waiting_for_resources})
+
+    assert {:ok, %Run{status: :finished}, nil} = Pipeline.stop_run(system_scope(), run)
+    assert_received {:pipeline_changed, ^task_id}
+  end
+
   test "an undelivered message comes back rather than being discarded", %{working: working} do
     run = working.(%{pending_chat: "Please add a test"})
 

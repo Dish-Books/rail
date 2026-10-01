@@ -230,6 +230,31 @@ defmodule RailWeb.OverviewLiveTest do
     refute has_element?(view, "#project-switcher-dialog")
   end
 
+  test "the project switcher closes on Escape or a click outside it", %{conn: conn} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_overview_live_8",
+        login: "overview_live_user_8",
+        email: "overview_live_user_8@example.com",
+        admin: true
+      })
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/")
+
+    # Closed, it has nothing to close, so a click anywhere sends nothing.
+    refute has_element?(view, "#project-switcher[phx-click-away]")
+
+    view |> element("#project-switcher-button") |> render_click()
+
+    # The button sits inside, so clicking it again toggles the dialog shut rather
+    # than closing it and reopening it.
+    assert has_element?(view, "#project-switcher[phx-click-away='close_project_switcher']")
+    assert has_element?(view, "#project-switcher-dialog[phx-key='Escape']")
+
+    view |> element("#project-switcher-dialog") |> render_keydown(%{"key" => "Escape"})
+    refute has_element?(view, "#project-switcher-dialog")
+  end
+
   describe "the overview, which reads runs and the tasks they belong to" do
     setup %{conn: conn, project: project} do
       {:ok, user} =
@@ -1285,6 +1310,64 @@ defmodule RailWeb.OverviewLiveTest do
       assert has_element?(view, "#stat-shipped [data-qa='stat-value']", "1")
       assert has_element?(view, "#throughput-total", "1 total")
       assert has_element?(view, "#activity-shipped-#{task.issue.id}", "#{task.issue.identifier} shipped")
+    end
+
+    test "a task that shipped while its run waited on the user waits on nobody", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      task = task_for.("Failed then shipped", %{stage: :engineer})
+
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :failed,
+          error: "Exited with code 2",
+          started_at: DateTime.shift(DateTime.utc_now(), hour: -2),
+          completed_at: DateTime.shift(DateTime.utc_now(), hour: -1)
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      assert has_element?(view, "#up-next-featured-#{run.id}")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+
+      task.issue |> Issue.linear_changeset(%{completed_at: DateTime.utc_now()}) |> Repo.update!()
+      Phoenix.PubSub.broadcast(Rail.PubSub, "issues", {:issue_changed, task.issue.id})
+
+      refute has_element?(view, "[id^='up-next-'][href^='/tasks/#{task.id}']")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "0")
+      refute has_element?(view, "#attention-badge")
+    end
+
+    test "the rail's attention badge moves with the stats it sits beside", %{
+      conn: conn,
+      roles: roles,
+      task_for: task_for
+    } do
+      task = task_for.("About to fail", %{stage: :engineer})
+
+      {:ok, run} =
+        Pipeline.create_run(%{
+          task_id: task.id,
+          role_id: roles[:engineer].id,
+          status: :running,
+          started_at: DateTime.utc_now()
+        })
+
+      assert {:ok, view, _html} = live(conn, ~p"/")
+
+      refute has_element?(view, "#attention-badge")
+
+      {:ok, _failed} =
+        Pipeline.update_run(run, %{status: :failed, error: "Exited with code 2", completed_at: DateTime.utc_now()})
+
+      Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, task.id})
+
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+      assert has_element?(view, "#attention-badge", "1")
     end
 
     test "a task whose issue completes in a sync from Linear has shipped, without a reload", %{

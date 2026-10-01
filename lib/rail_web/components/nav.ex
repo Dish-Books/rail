@@ -208,7 +208,12 @@ defmodule RailWeb.Components.Nav do
         </h1>
 
         <!-- Project Switcher Pill Button -->
-        <div class="relative">
+        <!-- On the wrapper, so clicking the button toggles it shut rather than closing and reopening it. -->
+        <div
+          id="project-switcher"
+          class="relative"
+          phx-click-away={@show_project_switcher && "close_project_switcher"}
+        >
           <button
             type="button"
             id="project-switcher-button"
@@ -247,6 +252,8 @@ defmodule RailWeb.Components.Nav do
             :if={@show_project_switcher}
             id="project-switcher-dialog"
             data-qa="project_switcher_dialog"
+            phx-window-keydown="close_project_switcher"
+            phx-key="Escape"
             class="absolute left-0 mt-2 w-64 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-1.5 shadow-xl z-50 focus:outline-none"
           >
             <div class="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">

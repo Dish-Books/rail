@@ -10,6 +10,7 @@ defmodule Rail.Pipeline.Schemas.Run do
 
   import Rail.Pipeline.Utils.CompactNumber
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Pipeline.Schemas.Task
@@ -182,8 +183,8 @@ defmodule Rail.Pipeline.Schemas.Run do
 
   Only the run of the stage the task is in can be waiting: a stage latches its
   run to `:done` and leaves it that way, so the product run of a task already in
-  design is a finished verdict, not an outstanding one. Requires `role` and
-  `task` to be preloaded.
+  design is a finished verdict, not an outstanding one. Requires `role`, `task`
+  and the task's `issue` to be preloaded.
 
   A blocked run stays blocked until its answers are sent, so it keeps its place
   in the queue while the human works through the batch. A run at a stage a human
@@ -194,9 +195,11 @@ defmodule Rail.Pipeline.Schemas.Run do
   A run that failed or stopped is waiting too, and on the same person. Neither
   moves on its own - a failure is fixed by a message and a stopped run is resumed
   by one - so leaving them out is how a stage goes quiet with nobody told.
+
+  A task whose issue Linear completed has shipped, so it waits on nobody either.
   """
-  def needs_attention?(%__MODULE__{role: %Role{} = role, task: %Task{} = task} = run) do
-    task.stage != :merged and is_nil(task.merged_at) and role.stage == task.stage and
+  def needs_attention?(%__MODULE__{role: %Role{} = role, task: %Task{issue: %Issue{} = issue} = task} = run) do
+    task.stage != :merged and is_nil(task.merged_at) and is_nil(issue.completed_at) and role.stage == task.stage and
       waiting_state?(state(run), task.stage)
   end
 

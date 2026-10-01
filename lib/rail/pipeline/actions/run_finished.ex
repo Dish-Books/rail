@@ -70,9 +70,15 @@ defmodule Rail.Pipeline.Actions.RunFinished do
   defp settle_run(%OsProcess{run: %Run{} = run} = os_process, outcome) do
     os_process |> OsProcess.changeset(%{status: :finished}) |> Repo.update!()
 
+    status = settled_status(run)
+
+    # A run resumed after asking ends with this turn, not the one that asked.
+    completed_at =
+      if status == :blocked_on_input, do: run.completed_at || DateTime.utc_now(), else: DateTime.utc_now()
+
     attrs = %{
-      status: settled_status(run),
-      completed_at: run.completed_at || DateTime.utc_now(),
+      status: status,
+      completed_at: completed_at,
       exit_code: exit_code(outcome, run),
       error: error(outcome, run)
     }

@@ -13,6 +13,7 @@ defmodule Rail.Pipeline.Actions.StopRun do
   re-send or throw away.
   """
 
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.StopLiveProcess
 
   alias Rail.Pipeline
@@ -49,6 +50,7 @@ defmodule Rail.Pipeline.Actions.StopRun do
       |> Run.changeset(%{status: :finished})
       |> Repo.update()
 
-    %{stopped | task: run.task}
+    # A run stopped in line never ran, so no settle announces it.
+    broadcast_pipeline_changed(%{stopped | task: run.task})
   end
 end
