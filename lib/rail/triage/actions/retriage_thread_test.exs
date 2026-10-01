@@ -57,7 +57,7 @@ defmodule Rail.Triage.Actions.RetriageThreadTest do
              Triage.retriage_thread(Scope.for_user(%{id: nil}), thread)
 
     expect(Tools, :run_agent, fn _backend, argv, _opts ->
-      refute Enum.any?(argv, &(&1 =~ "needing no response"))
+      refute Enum.any?(argv, &(&1 =~ "having seen it marked as needing no response"))
       thread |> Thread.scratch_path() |> Path.join("result.json") |> File.write!(Jason.encode!(%{"items" => []}))
       {:ok, ""}
     end)

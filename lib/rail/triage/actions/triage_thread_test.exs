@@ -584,4 +584,265 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
              }
            ] = Repo.all(from i in Item, where: i.thread_id == ^thread_id)
   end
+
+  describe "images attached to messages" do
+    test "a screenshot posted with its text reaches the pass under that message, for the agent to open", %{
+      workspace: workspace,
+      channel: channel,
+      thread: thread,
+      result_path: result_path
+    } do
+      stub_slack(
+        users: %{"U_PRIYA" => "Priya"},
+        files: %{"/files-pri/T1-F_SHOT/button.png" => {"image/png", "png-bytes"}}
+      )
+
+      {:ok, thread} =
+        Triage.handle_slack_event(
+          workspace,
+          slack_message_event(channel, %{
+            "subtype" => "file_share",
+            "ts" => "1790000100.000200",
+            "thread_ts" => thread.external_id,
+            "text" => "this button is broken",
+            "files" => [
+              %{
+                "id" => "F_SHOT",
+                "name" => "button.png",
+                "mimetype" => "image/png",
+                "url_private" => "https://files.slack.com/files-pri/T1-F_SHOT/button.png"
+              }
+            ]
+          })
+        )
+
+      path = Path.join([Thread.scratch_path(thread), "images", "1790000100.000200-1.png"])
+
+      expect(Tools, :run_agent, fn _backend, argv, _opts ->
+        read = thread |> Thread.scratch_path() |> Path.join("thread.md") |> File.read!()
+
+        assert read =~
+                 ~r/### 1790000100\.000200 · Priya · [^\n]+\n\nthis button is broken\n\nImage attached: #{Regex.escape(path)} \(button\.png\)\n/
+
+        assert File.read!(path) == "png-bytes"
+        assert Enum.any?(argv, &(&1 =~ "open every one before you judge the message"))
+        File.write!(result_path, Jason.encode!(%{"items" => []}))
+        {:ok, ""}
+      end)
+
+      assert :ok = Triage.triage_thread(thread)
+    end
+
+    test "a screenshot with no text reaches the pass as more than an empty message", %{
+      workspace: workspace,
+      channel: channel,
+      thread: thread,
+      result_path: result_path
+    } do
+      stub_slack(
+        users: %{"U_PRIYA" => "Priya"},
+        files: %{"/files-pri/T1-F_SHOT/button.png" => {"image/png", "png-bytes"}}
+      )
+
+      {:ok, thread} =
+        Triage.handle_slack_event(
+          workspace,
+          slack_message_event(channel, %{
+            "subtype" => "file_share",
+            "ts" => "1790000100.000200",
+            "thread_ts" => thread.external_id,
+            "text" => "",
+            "files" => [
+              %{
+                "id" => "F_SHOT",
+                "name" => "button.png",
+                "mimetype" => "image/png",
+                "url_private" => "https://files.slack.com/files-pri/T1-F_SHOT/button.png"
+              }
+            ]
+          })
+        )
+
+      path = Path.join([Thread.scratch_path(thread), "images", "1790000100.000200-1.png"])
+
+      expect(Tools, :run_agent, fn _backend, argv, _opts ->
+        read = thread |> Thread.scratch_path() |> Path.join("thread.md") |> File.read!()
+
+        assert read =~
+                 ~r/### 1790000100\.000200 · Priya · [^\n]+\n\nImage attached: #{Regex.escape(path)} \(button\.png\)\n/
+
+        assert Enum.any?(argv, &(&1 =~ "never mark it as needing no response for having no text"))
+        assert Enum.any?(argv, &(&1 =~ "asks and reports nothing, in its text or its images"))
+        File.write!(result_path, Jason.encode!(%{"items" => []}))
+        {:ok, ""}
+      end)
+
+      assert :ok = Triage.triage_thread(thread)
+    end
+
+    test "an earlier message's image, read back from Slack, is tied to that message", %{
+      workspace: workspace,
+      channel: channel
+    } do
+      {:ok, thread} =
+        Triage.handle_slack_event(
+          workspace,
+          slack_message_event(channel, %{
+            "ts" => "1790000700.000200",
+            "thread_ts" => "1790000600.000100",
+            "text" => "Same for me"
+          })
+        )
+
+      stub_slack(
+        users: %{"U_PRIYA" => "Priya"},
+        files: %{"/files-pri/T1-F_FORM/form.jpg" => {"image/jpeg", "jpeg-bytes"}},
+        replies: [
+          %{
+            "ts" => "1790000600.000100",
+            "user" => "U_PRIYA",
+            "text" => "The form will not submit",
+            "files" => [
+              %{
+                "id" => "F_FORM",
+                "name" => "form.jpg",
+                "mimetype" => "image/jpeg",
+                "url_private" => "https://files.slack.com/files-pri/T1-F_FORM/form.jpg"
+              }
+            ]
+          },
+          %{
+            "ts" => "1790000700.000200",
+            "thread_ts" => "1790000600.000100",
+            "user" => "U_PRIYA",
+            "text" => "Same for me"
+          }
+        ]
+      )
+
+      path = Path.join([Thread.scratch_path(thread), "images", "1790000600.000100-1.jpg"])
+
+      expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+        read = thread |> Thread.scratch_path() |> Path.join("thread.md") |> File.read!()
+
+        assert read =~
+                 ~r/### 1790000600\.000100 · Priya · [^\n]+\n\nThe form will not submit\n\nImage attached: #{Regex.escape(path)} \(form\.jpg\)\n\n### 1790000700\.000200 · Priya · [^\n]+\n\nSame for me\n$/
+
+        assert File.read!(path) == "jpeg-bytes"
+        thread |> Thread.scratch_path() |> Path.join("result.json") |> File.write!(Jason.encode!(%{"items" => []}))
+        {:ok, ""}
+      end)
+
+      assert :ok = Triage.triage_thread(thread)
+    end
+
+    test "an image the Slack app cannot read is named as unread, and the pass runs without an error", %{
+      workspace: workspace,
+      channel: channel,
+      thread: %{id: thread_id} = thread,
+      bug: bug,
+      result_path: result_path
+    } do
+      stub_slack(users: %{"U_PRIYA" => "Priya"}, files: %{})
+
+      {:ok, thread} =
+        Triage.handle_slack_event(
+          workspace,
+          slack_message_event(channel, %{
+            "subtype" => "file_share",
+            "ts" => "1790000100.000200",
+            "thread_ts" => thread.external_id,
+            "text" => "this button is broken",
+            "files" => [
+              %{
+                "id" => "F_SHOT",
+                "name" => "button.png",
+                "mimetype" => "image/png",
+                "url_private" => "https://files.slack.com/files-pri/T1-F_SHOT/button.png"
+              }
+            ]
+          })
+        )
+
+      expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+        read = thread |> Thread.scratch_path() |> Path.join("thread.md") |> File.read!()
+        assert read =~ "this button is broken\n\nImage attached, but Rail could not read it: button.png\n"
+        File.write!(result_path, Jason.encode!(%{"items" => [bug]}))
+        {:ok, ""}
+      end)
+
+      assert :ok = Triage.triage_thread(thread)
+      assert %Thread{error: nil, status: :waiting} = Repo.get!(Thread, thread_id)
+      assert [%Item{key: "stuck-at-design"}] = Repo.all(from i in Item, where: i.thread_id == ^thread_id)
+    end
+
+    test "a file Slack withholds is named as an unread attachment", %{
+      workspace: workspace,
+      channel: channel,
+      thread: thread,
+      result_path: result_path
+    } do
+      {:ok, thread} =
+        Triage.handle_slack_event(
+          workspace,
+          slack_message_event(channel, %{
+            "subtype" => "file_share",
+            "ts" => "1790000100.000200",
+            "thread_ts" => thread.external_id,
+            "text" => "",
+            "files" => [%{"id" => "F_HIDDEN", "file_access" => "check_file_info"}]
+          })
+        )
+
+      expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+        read = thread |> Thread.scratch_path() |> Path.join("thread.md") |> File.read!()
+        assert read =~ ~r/### 1790000100\.000200 · [^\n]+\n\nA file was attached, but Rail could not read it\.\n/
+        File.write!(result_path, Jason.encode!(%{"items" => []}))
+        {:ok, ""}
+      end)
+
+      assert :ok = Triage.triage_thread(thread)
+    end
+
+    test "a later pass leaves no image behind that the thread no longer has", %{
+      workspace: workspace,
+      channel: channel,
+      thread: thread,
+      result_path: result_path
+    } do
+      parent = %{"ts" => thread.external_id, "user" => "U_PRIYA", "text" => "Approved BILL-88 and it sits at Design."}
+
+      stub_slack(
+        users: %{"U_PRIYA" => "Priya"},
+        files: %{"/files-pri/T1-F_SHOT/button.png" => {"image/png", "png-bytes"}},
+        replies: [
+          Map.put(parent, "files", [
+            %{
+              "id" => "F_SHOT",
+              "name" => "button.png",
+              "mimetype" => "image/png",
+              "url_private" => "https://files.slack.com/files-pri/T1-F_SHOT/button.png"
+            }
+          ])
+        ]
+      )
+
+      images = Path.join(Thread.scratch_path(thread), "images")
+      %Thread{} = triage_with(thread, %{"items" => []})
+      assert [_downloaded] = File.ls!(images)
+
+      reply = %{"ts" => "1790000100.000200", "thread_ts" => thread.external_id, "user" => "U_PRIYA", "text" => "+1"}
+      {:ok, thread} = Triage.handle_slack_event(workspace, slack_message_event(channel, reply))
+      stub_slack(users: %{"U_PRIYA" => "Priya"}, replies: [parent, reply])
+
+      expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+        assert [] = File.ls!(images)
+        refute thread |> Thread.scratch_path() |> Path.join("thread.md") |> File.read!() =~ "Image attached"
+        File.write!(result_path, Jason.encode!(%{"items" => []}))
+        {:ok, ""}
+      end)
+
+      assert :ok = Triage.triage_thread(thread)
+    end
+  end
 end
