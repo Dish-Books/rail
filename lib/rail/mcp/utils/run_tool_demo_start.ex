@@ -13,7 +13,9 @@ defmodule Rail.Mcp.Utils.RunToolDemoStart do
   the last one go, because a demo is the take that worked rather than all of them.
 
   The clock restarts with the frames, so a caption stamped after this lands where
-  it belongs in the video this is the start of.
+  it belongs in the video this is the start of. Chrome only paints when the page
+  changes, so the take opens on the frame already on screen rather than waiting
+  for the next change to start the clock.
   """
 
   alias Rail.Pipeline.Schemas.Task
@@ -24,7 +26,9 @@ defmodule Rail.Mcp.Utils.RunToolDemoStart do
   """
   def run_tool_demo_start(%Task{} = task, _arguments, _opts) do
     _discarded = Tools.stop_browser_recording(task)
-    {:ok, _recording} = Tools.start_browser_recording(task)
+    {:ok, recording} = Tools.start_browser_recording(task)
+
+    with "" <> frame <- Tools.get_browser_frame(task), do: send(recording, {:browser_frame, task.id, frame})
 
     {:ok, "Recording. Everything from here is in the video, so do the walkthrough you rehearsed."}
   end

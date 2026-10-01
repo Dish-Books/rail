@@ -69,9 +69,9 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
     String.trim("""
     QA the change described below by driving the running application. #{workspace(task)}
 
-    You are testing it, not changing it: write no application code and no tests, fix nothing you find, and never run a git command that writes - no commit, no push, no branch, no checkout, no stash. Reading the tree with git is how you know what changed.
+    You are testing it, not changing it: write no application code and no tests, fix nothing you find, and never run a git command that writes - no commit, no push, no fetch, no branch, no checkout, no stash. Reading the tree with git is how you know what changed.
 
-    Nothing under #{scratch_path} is part of the change. It is your workspace, and Rail keeps it out of the commit.
+    Nothing under #{scratch_path} is part of the change. It is your workspace, and Rail keeps it out of the commit. It survives between turns and between passes, so keep the scripts and data you set up there and re-run them; `/tmp`, and anything you started, such as a server, do not.
 
     The browser is Rail's rather than yours. `browser_goto`, `browser_do`, `browser_look`, `qa_shot` and `browser_problems` drive one headless Chrome that stays where you left it between calls; it opens on the first call and Rail closes it when the task moves on, so there is nothing to start and nothing to stop. `qa_file` needs no browser at all: a change with nothing on screen is proved by what it writes, not by opening the browser.
 
@@ -90,7 +90,7 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
     {
       "verdict": "fail",
       "summary": "one or two sentences: whether the change works, and the one thing most in the way if it does not",
-      "not_checked": "what you could not check, and why",
+      "not_checked": "what you could not check, and why, including anything you faked or stood in for",
       "findings": [
         {
           "key": "short-stable-slug",
@@ -130,7 +130,7 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
     - `status` is `open` for a defect that still stands. Leave findings out entirely rather than inventing them: `{"findings": []}` with a `pass` verdict is a clean QA pass and is the right answer when the change works.
     - Report only what you exercised. A finding you could have reproduced and did not is a guess, and a guess costs the engineer a whole round.
     - Write the file only once the pass is finished. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you.
-    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each `[QUESTION: ...]` on a line of its own. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the app, the ticket or the plan is not a question.
+    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the app, the ticket or the plan is not a question.
 
     #{outstanding(task)}
     #{plan(task)}
@@ -163,7 +163,7 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
 
         #{Enum.map_join(findings, "\n", &finding_line/1)}
 
-        Plan this pass with `qa_plan` as usual and give every check the key it had before. Rail keeps the outcome of any row you do not run again, marked as carried, so the list stays the account of the whole change rather than of this hour: re-run the checks the new commits could have touched - read the diff since your last pass and work out which those are - along with the check behind every finding above, and leave the rest to stand.
+        Plan this pass with `qa_plan` as usual and give every check the key it had before. Rail keeps the outcome of any row you do not run again, marked as carried, so the list stays the account of the whole change rather than of this hour: re-run the checks the new commits could have touched - read the diff since your last pass and work out which those are; when the branch has been rebased since, compare its own commits with `git range-diff` rather than reading main's changes as the branch's - along with the check behind every finding above, and leave the rest to stand.
 
         Re-run the check each finding came from and restate its key in the file you write, with `status` set to `fixed` where the application now behaves and `not_fixed` where it does not, and say in `detail` what you actually drove. Keep a dismissed finding listed with the `status` it has and never argue it again - the human has ruled on it. A finding you restate keeps its `evidence` entries, since the files are still in `evidence/`; add what you saw this time beside them. Anything new you find in the application as it now stands is a new finding with a new key, and is welcome.
         """

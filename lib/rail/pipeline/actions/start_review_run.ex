@@ -68,7 +68,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     String.trim("""
     Review the change described below. #{workspace(task)}
 
-    You are reading it, not changing it: write no application code and no tests, and never run a git command that writes - no commit, no push, no branch, no checkout, no stash. Reading the tree with git is exactly what you are here for.
+    You are reading it, not changing it: write no application code and no tests, and never run a git command that writes - no commit, no push, no fetch, no branch, no checkout, no stash. Reading the tree with git is exactly what you are here for.
 
     Do not run the project's test suite, its coverage run or its linters. Those are the engineer's to have passed before the change reached you, they take minutes you would spend not reading, and a number out of one of them is not a finding. Run a single targeted check only where it settles a question you cannot answer by reading, and say in the finding what you ran.
 
@@ -107,7 +107,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     - A finding with no file is fine. Give `file` and `line` whenever you can point at one.
     - Report only what you checked. You have the worktree: open the callers, read the test, run it. A finding you could have confirmed and did not is a guess, and a guess costs the engineer a whole round.
     - Read the whole change before you write anything, and write the file only once you have finished. A finding against one file that the next file already answers is noise. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you.
-    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each `[QUESTION: ...]` on a line of its own. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or the plan is not a question.
+    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or the plan is not a question.
 
     #{outstanding(task)}
     #{plan(task)}
@@ -160,7 +160,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
   defp plan(%Task{} = task) do
     case Pipeline.get_implementation_plan(task) do
       {:ok, %ImplementationPlan{content: content}} ->
-        "The approved implementation plan the change was built from. It is the specification: where it named a file and what changed in it, that is what should have changed, and a change that did something else, or stopped short of what it called for, is a finding however good the code is.\n\n#{String.trim(content)}\n"
+        "The approved implementation plan the change was built from. It is the specification: where it named a file and what changed in it, that is what should have changed, and a change that did something else instead, or stopped short of what it called for, is a finding however good the code is. Work beyond the plan is not a finding for being beyond it: a human usually asked for it in the engineer's chat, or QA sent it back. Judge it on whether it is right.\n\n#{String.trim(content)}\n"
 
       {:error, :not_found} ->
         "There is no implementation plan for this ticket, so the ticket below is the whole specification.\n"

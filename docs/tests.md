@@ -2,7 +2,7 @@
 
 ## Setup
 
-- Tests for code under `lib/rail/...` use `Rail.DataCase, async: true` (defined in [test/support/data_case.ex](../test/support/data_case.ex)). It pulls in Mimic, the `Rail.Factory` (ExMachina) helpers, `RailTest.Helpers`, and `verify_on_exit!`.
+- Tests for code under `lib/rail/...` use `Rail.DataCase, async: true` (defined in [test/support/data_case.ex](../test/support/data_case.ex)). It pulls in Mimic, the scope helpers, `RailTest.Helpers`, and `verify_on_exit!`.
 - Tests for LiveViews and controllers under `lib/rail_web/...` use `RailWeb.ConnCase, async: true` (defined in [test/support/conn_case.ex](../test/support/conn_case.ex)). On top of `DataCase` it adds verified routes and `Phoenix.ConnTest`.
 - Authentication and scopes come from **scopes**, not tags. Build them with `user_scope/1` (persisted or stubbed user), `temp_user_scope/1` (in-memory, when the database isn't needed), or `system_scope/0`, passing `admin:` / `linear_linked:`. Reach for these instead of assembling auth state by hand.
 - Tags that vary setup: `@moduletag :shared_sandbox` (see the `setup_all` section below), `async:`.
@@ -11,7 +11,7 @@
 
 Use the most shared mechanism that fits. **A test file must not define its own functions** - no `def`/`defp` helpers in a `*_test.exs`. A per-file helper doesn't compose across files and stops a test from being readable top-to-bottom, so every arrangement has a better home: `setup`/`setup_all` for shared context, `test/support` for something reused across files, or inline for what makes a single test distinct. This is enforced by the [`RailCredo.Checks.NoFunctionsInTests`](../credo/lib/rail_credo/checks/no_functions_in_tests.ex) lint.
 
-1. **Factory** (`build`/`insert`) - for constructing a valid record. Composable across every file.
+1. **The context's public functions** (`Projects.create_project/2`, `Pipeline.create_task/2`) - for constructing a valid record. A record built this way goes through the same changesets and rules as production, so a test cannot arrange a state the app could never reach. There are no factories.
 2. **`setup_all` block** - for context every test in the file shares (e.g. a `scope`, project), built once per module. Prefer this for shared fixtures. It requires `@moduletag :shared_sandbox`, which shares **one** DB sandbox across the whole module, so use it only for data tests read in common, never when a test asserts on a result set that must exclude other tests' rows.
 3. **`setup` block** - for context that must be isolated per test: data a test mutates, or rows a test creates and then asserts are the only ones returned. Each `setup` run gets its own sandbox. Reach for it when `setup_all` doesn't work.
 4. **`test/support`** - for a domain *operation* or fixture reused across multiple files (e.g. `user_scope/1`, `read_json_mock/1`). This is the only home for a named helper: put it here precisely because more than one test file relies on it.

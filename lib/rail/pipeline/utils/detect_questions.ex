@@ -3,7 +3,8 @@ defmodule Rail.Pipeline.Utils.DetectQuestions do
   Detects question markers emitted in agent prose: `[QUESTION: ...] [OPTIONS: ...]`.
 
   Matches lines that open with `[QUESTION: ...]` (optionally prefixed with whitespace,
-  blockquotes `>`, or list bullets `*`, `-`). Extracts comma-separated options when present.
+  blockquotes `>`, or list bullets `*`, `-`). Extracts options split by `|`, or by commas
+  when there is no `|`, so an option can hold a comma.
   Rejects placeholder prompts that echo role briefs or ellipses.
   """
 
@@ -47,7 +48,7 @@ defmodule Rail.Pipeline.Utils.DetectQuestions do
     case Regex.run(@options_regex, line) do
       [_full_match, raw_options] ->
         raw_options
-        |> String.split(",")
+        |> String.split(if(String.contains?(raw_options, "|"), do: "|", else: ","))
         |> Enum.map(&String.trim/1)
         |> Enum.reject(&(&1 == ""))
 

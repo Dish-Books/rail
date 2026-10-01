@@ -8,7 +8,10 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Roles
+  alias Rail.Tools
+  alias Rail.Tools.Schemas.OsProcess
 
   setup %{project: project} do
     scope = system_scope()
@@ -90,6 +93,28 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinishedTest do
 
     assert %Run{error: "The engineer said it was done but changed nothing in the worktree."} =
              engineer_run_finished(run, [])
+  end
+
+  test "after a CI failure, a message with nothing changed runs CI again on the same commit", %{
+    project: project,
+    task: task,
+    run: run,
+    worktree_path: repo,
+    message_path: message_path
+  } do
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{ci_command: "mise run ci"})
+    {:ok, run} = Pipeline.update_run(run, %{ci_failure_streak: 1})
+    File.write!(message_path, "EFN-1: rerun CI past a flaky test\n")
+
+    reject(&Git.push_branch/2)
+    stub(Git, :credential_env, fn _project -> {:ok, %{}} end)
+
+    expect(Tools, :start_command_process, fn spawned, :ci, "mise run ci", _opts ->
+      {:ok, %OsProcess{kind: :ci, run: spawned}}
+    end)
+
+    assert %Run{error: nil, status: :running} = engineer_run_finished(%{run | task: task}, [])
+    assert git!(repo, ["log", "-1", "--pretty=%s"]) =~ "initial commit"
   end
 
   test "a commit git refused is recorded on the run", %{

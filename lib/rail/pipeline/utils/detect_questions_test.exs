@@ -15,6 +15,11 @@ defmodule Rail.Pipeline.Utils.DetectQuestionsTest do
              detect_questions("[QUESTION: Scope to one repo?] [OPTIONS: yes, no]")
   end
 
+  test "options split by | keep the commas inside them" do
+    assert [%DetectedQuestion{options: ["Yes, keep both", "No, drop the old one"]}] =
+             detect_questions("[QUESTION: Keep the old column?] [OPTIONS: Yes, keep both | No, drop the old one]")
+  end
+
   test "options parsing trims and rejects empty options" do
     assert [%DetectedQuestion{options: ["vanilla", "chocolate", "strawberry"]}] =
              detect_questions("[QUESTION: Which flavor?] [OPTIONS:  vanilla , , chocolate , strawberry ]")

@@ -62,9 +62,11 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     String.trim("""
     Build the approved plan below. #{workspace(task)}
 
-    Never run git. No commits, no branches, no pushes, no pull request, and never switch or rename the branch you are on. Rail commits your worktree for you once you are finished, authored by the person the ticket is assigned to and signed with their key, which is exactly why it is not yours to do.
+    Never run git. No commits, no branches, no pushes, no pull request, and never switch or rename the branch you are on. Rail commits your worktree for you once you are finished, authored by the person the ticket is assigned to and signed with their key, which is exactly why it is not yours to do. Reading is the one exception: `git status`, `git diff` and `git log` are how you see your own change.
 
-    Nothing under #{scratch_path} is part of the change. It is your workspace, and Rail keeps it out of the commit.
+    Nothing under #{scratch_path} is part of the change. It is your workspace, and Rail keeps it out of the commit. It survives between turns; `/tmp` and anything you left running do not.
+
+    The machine is Rail's. Do not ask about it: work around what you can, and say in your last message what you could not. A headless Chrome you start yourself needs `--no-sandbox` here.
 
     Writing #{file} is how you say the work is finished, and it is the last thing you do. Write it from your worktree with a heredoc, the body and its closing MSG line at column zero:
 
@@ -76,10 +78,10 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     MSG
 
     - A heredoc into #{file}, never an inline string.
-    - Write it only when the work is actually finished and the project's own checks pass. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you rather than committing half a change.#{ci(task)}
-    - Run every command in the foreground and wait for it, however long it takes, the project's own test and coverage runs included. Never start one in the background meaning to read it when it finishes: your turn ends the moment you stop writing, the CLI carrying you exits, and it kills whatever you left running. Nothing wakes you when it is done, so "I have started X and will check it shortly" is the end of the round with X unread and the work unfinished.
+    - Write it only when the work is actually finished and the tests for what you changed pass. A test that fails only where your change does not touch is not a reason to hold it back: name the test in the commit body and finish. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you rather than committing half a change.#{ci(task)}
+    - Run every command in the foreground and wait for it, test runs included. Never start one in the background meaning to read it when it finishes: your turn ends the moment you stop writing, the CLI carrying you exits, and it kills whatever you left running. Nothing wakes you when it is done, so "I have started X and will check it shortly" is the end of the round with X unread and the work unfinished. A single command is cut off at ten minutes, so give a long one a `timeout` under that, or run it in parts, rather than backgrounding it.
     - Review and QA findings come back as further turns of this same conversation. Each round writes the file again and becomes a commit of its own, so describe that round's change, not the whole ticket over again.
-    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each `[QUESTION: ...]` on a line of its own. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or a named assumption is not a question.
+    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or a named assumption is not a question.
 
     #{plan(task)}
     #{design(task)}
@@ -92,10 +94,11 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     """)
   end
 
-  defp ci(%Task{project: %Project{ci_command: command}}) when command in [nil, ""], do: ""
+  defp ci(%Task{project: %Project{ci_command: command}}) when command in [nil, ""],
+    do: "\n- This project has no CI command for Rail to run, so run its own checks yourself before you finish."
 
   defp ci(%Task{project: %Project{ci_command: command}}) do
-    "\n- Once your commit is made, Rail runs `#{command}` on it before anything else sees it. If that fails, its output comes back to you as the next turn of this conversation."
+    "\n- Once your commit is made, Rail runs `#{command}` on it before anything else sees it. If that fails, its output comes back to you as the next turn of this conversation. So never run `#{command}` or the whole test suite yourself: it would only run twice. Run the tests for the files you changed."
   end
 
   defp workspace(%Task{worktree_path: worktree_path, worktree_name: branch, project: %Project{} = project}) do

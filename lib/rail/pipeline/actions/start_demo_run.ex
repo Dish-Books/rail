@@ -73,9 +73,9 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
     String.trim("""
     Record a walkthrough of the change described below, by driving the running application. #{workspace(task)}
 
-    You are showing it, not changing it: write no application code and no tests, fix nothing, and never run a git command that writes - no commit, no push, no branch, no checkout, no stash. Reading the tree with git is how you know what changed.
+    You are showing it, not changing it: write no application code and no tests, fix nothing, and never run a git command that writes - no commit, no push, no fetch, no branch, no checkout, no stash. Reading the tree with git is how you know what changed.
 
-    Nothing under #{scratch_path} is part of the change. It is your workspace, and Rail keeps it out of the commit.
+    Nothing under #{scratch_path} is part of the change. It is your workspace, and Rail keeps it out of the commit. It survives between turns, so keep the scripts that seed your starting state there and make them re-runnable: a retake is then one command. `/tmp`, and anything you started, do not survive.
 
     The browser is Rail's rather than yours. `browser_goto`, `browser_do`, `browser_look` and `browser_problems` drive one headless Chrome that stays where you left it between calls; it opens on the first call and Rail closes it when the task moves on.
 
@@ -88,6 +88,8 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
     Once `demo_start` is called you only drive the browser and narrate. Reading code, searching the repository, or working out why something did not behave is the take failing: the camera is on a still page the whole time you do it. Stop, put the data back, work it out off camera, and call `demo_start` again - it discards the last take, so a walkthrough that went wrong costs a retake rather than a bad video.
 
     `demo_say` is the narration, and Rail stamps each caption against the recording's own clock: say what is about to happen and then do it, or the caption lands over whatever came next. Rail renders captions in a bar under the video and never on it, so nothing you say covers the application - and nothing you say can point at it either. Name the acceptance criterion in `criterion` on the beat that proves one; that is how Rail reads back what the walkthrough covered.
+
+    Captions need time to be read: two `demo_say` calls in the same second leave the first one unseen, so let about five seconds pass after each. Look at the page before you narrate that something worked: reaching the end of an instruction is not the application having done the right thing. Never wait for something to age out or time out on camera; set the state up before `demo_start`.
 
     #{avoid(task)}
     Writing #{file} is how you hand the recording over, and it is the last thing you do. Write it from your worktree with a heredoc, the body and its closing JSON line at column zero:
@@ -102,9 +104,9 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
     JSON
 
     - A heredoc into #{file}, never an inline string. Write the whole file every recording; it describes the video that exists now, not what changed since the last one.
-    - `not_shown` is empty when the walkthrough covered everything.
+    - `not_shown` is empty when the walkthrough covered everything. Where an outside service or an agent was a stand-in that a viewer would take for the real thing, say so there.
     - Write the file only once the recording is finished. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you.
-    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each `[QUESTION: ...]` on a line of its own. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the app, the ticket or the plan is not a question.
+    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the app, the ticket or the plan is not a question.
 
     #{plan(task)}
     The ticket the change was built from:
