@@ -13,6 +13,12 @@ defmodule RailWeb.OverviewLive do
   @attention_rank %{done: 0, blocked: 0, failed: 1, stopped: 1, running: 2, waiting: 2, queued: 3}
 
   def mount(_params, _session, socket) do
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "sandboxes")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
+    end
+
     socket =
       socket
       |> assign(:page_title, "Overview")
@@ -118,6 +124,28 @@ defmodule RailWeb.OverviewLive do
     {:noreply, push_patch(socket, to: overview_path(socket.assigns, everyone: view == "everyone"))}
   end
 
+  # Every section comes from the one reload, so they never disagree; reassigning
+  # without a patch keeps the view, the open switcher and the scroll where they were.
+  def handle_info({:pipeline_changed, _task_id}, socket) do
+    {:noreply, load_overview_state(socket, socket.assigns.current_project_id, socket.assigns.view == :everyone)}
+  end
+
+  def handle_info(:sandboxes_changed, socket) do
+    {:noreply, load_overview_state(socket, socket.assigns.current_project_id, socket.assigns.view == :everyone)}
+  end
+
+  def handle_info({:issue_changed, _issue_id}, socket) do
+    {:noreply, load_overview_state(socket, socket.assigns.current_project_id, socket.assigns.view == :everyone)}
+  end
+
+  def handle_info({:issues_synced, _project_id}, socket) do
+    {:noreply, load_overview_state(socket, socket.assigns.current_project_id, socket.assigns.view == :everyone)}
+  end
+
+  # Neither moves a task.
+  def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, socket}
+  def handle_info({:issue_comments_changed, _issue_id}, socket), do: {:noreply, socket}
+
   # The overview is the tasks in flight and the runs behind them; a task stands
   # where the latest run at its own stage left it.
   defp load_overview_state(socket, project_id, everyone) do
@@ -167,6 +195,8 @@ defmodule RailWeb.OverviewLive do
     |> assign(:in_progress_groups, build_in_progress_groups(in_progress, stage_runs, user_id, now))
     |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
     |> assign(:dispatch_disabled, Application.get_env(:rail, :no_dispatch, false))
+    # The rail badge sits beside these stats, so it comes from the same reload.
+    |> assign(:attention_count, Pipeline.count_attention())
   end
 
   # An earlier run at the task's stage has been retried, and one at another stage

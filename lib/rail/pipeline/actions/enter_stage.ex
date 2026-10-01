@@ -15,6 +15,7 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   Entering a stage also moves the task's Linear ticket forward to match it.
   """
 
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
   import Rail.Pipeline.Utils.PrepareWorktree
   import Rail.Pipeline.Utils.StartWorktreeSetup
 
@@ -41,12 +42,17 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   def enter_stage(%Task{} = task, stage, opts \\ []) when is_atom(stage) do
     {:ok, task} = claim_stage(task, stage)
 
-    if Keyword.get(opts, :start, true) do
-      {:ok, %Role{} = role} = Roles.get_role(project_id: task.project_id, stage: stage)
-      start_role(task, role)
-    else
-      {:ok, task}
-    end
+    result =
+      if Keyword.get(opts, :start, true) do
+        {:ok, %Role{} = role} = Roles.get_role(project_id: task.project_id, stage: stage)
+        start_role(task, role)
+      else
+        {:ok, task}
+      end
+
+    # Outside claim_stage's transaction, so whoever reloads on it reads the new stage.
+    broadcast_pipeline_changed(task)
+    result
   end
 
   # The stage and the job that moves its Linear ticket land together or not at all.

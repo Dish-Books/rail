@@ -4,6 +4,8 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
   Releases local disk resources when a task is completed or being torn down.
   """
 
+  import Rail.Pipeline.Utils.BroadcastPipelineChanged
+
   alias Rail.Git
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
@@ -41,9 +43,12 @@ defmodule Rail.Pipeline.Actions.CleanupTask do
 
   defp mark_cleaned_up(%Task{cleaned_up_at: nil} = task) do
     # The worktree is gone, so its ports are free and a new one would need setting up.
-    task
-    |> Task.changeset(%{cleaned_up_at: DateTime.utc_now(), worktree_slot: nil, worktree_setup_at: nil})
-    |> Repo.update()
+    {:ok, cleaned} =
+      task
+      |> Task.changeset(%{cleaned_up_at: DateTime.utc_now(), worktree_slot: nil, worktree_setup_at: nil})
+      |> Repo.update()
+
+    {:ok, broadcast_pipeline_changed(cleaned)}
   end
 
   defp mark_cleaned_up(%Task{} = task), do: {:ok, task}

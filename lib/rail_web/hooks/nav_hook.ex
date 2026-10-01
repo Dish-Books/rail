@@ -3,14 +3,13 @@ defmodule RailWeb.Hooks.NavHook do
   use RailWeb, :live_view
 
   alias Rail.Pipeline
-  alias Rail.Pipeline.Schemas.Run
   alias Rail.Projects
   alias Rail.Triage
 
   def on_mount(:default, _params, session, socket) do
     projects = Projects.list_projects()
 
-    attention_count = count_attention(projects)
+    attention_count = Pipeline.count_attention()
 
     socket =
       socket
@@ -70,19 +69,5 @@ defmodule RailWeb.Hooks.NavHook do
 
   defp handle_nav_events(_event, _params, socket) do
     {:cont, socket}
-  end
-
-  # What needs a human is counted in tasks, the same as the overview lists them:
-  # a task waits only if the latest run at its stage does, not one it has retried.
-  defp count_attention(projects) do
-    projects
-    |> Enum.flat_map(fn project ->
-      Pipeline.list_runs(project_id: project.id, preload: [:role, :questions, task: :issue])
-    end)
-    |> Enum.filter(&(&1.role.stage == &1.task.stage))
-    |> Enum.group_by(& &1.task_id)
-    |> Enum.count(fn {_task_id, stage_runs} ->
-      stage_runs |> Enum.max_by(&(&1.started_at || &1.inserted_at), DateTime) |> Run.needs_attention?()
-    end)
   end
 end

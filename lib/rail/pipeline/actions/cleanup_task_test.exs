@@ -49,6 +49,13 @@ defmodule Rail.Pipeline.Actions.CleanupTaskTest do
     assert {:error, :task_busy} = Pipeline.cleanup_task(task)
   end
 
+  test "a cleaned-up task tells whoever is watching the pipeline", %{task: %Task{id: task_id} = task} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+
+    assert {:ok, %Task{cleaned_up_at: %DateTime{}}} = Pipeline.cleanup_task(task)
+    assert_received {:pipeline_changed, ^task_id}
+  end
+
   # Its own project, because cleanup removes the worktree from a real clone.
   test "cleans up worktree, branch and scratch directory, and broadcasts", %{
     project: %{linear_workspace_id: workspace_id},

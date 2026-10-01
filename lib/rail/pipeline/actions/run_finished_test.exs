@@ -127,11 +127,21 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     assert %Task{stage: :product} = Repo.reload!(task)
   end
 
-  test "a process whose run is gone has nothing to settle", %{exited: exited} do
+  test "a settled run tells whoever is watching the pipeline", %{task: %Task{id: task_id}, exited: exited} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
+    {_run, os_process} = exited.(:product, %{})
+
+    assert {:ok, %Run{}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+    assert_received {:pipeline_changed, ^task_id}
+  end
+
+  test "a process whose run is gone has nothing to settle", %{task: %Task{id: task_id}, exited: exited} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "pipeline")
     {run, os_process} = exited.(:product, %{})
     Repo.delete!(run)
 
     assert {:error, :invalid_state} = Pipeline.run_finished(os_process)
+    refute_received {:pipeline_changed, ^task_id}
   end
 
   test "a message queued while the run worked goes out once it is idle", %{task: task, exited: exited} do
@@ -758,6 +768,25 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     {_run, os_process} = exited.(:product, %{status: :blocked_on_input})
 
     assert {:ok, %Run{status: :blocked_on_input}} = Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  # It has been waiting on the human since it stopped to ask, not since a later exit.
+  test "a run still parked on a question keeps the time it stopped to ask", %{exited: exited} do
+    asked_at = DateTime.shift(DateTime.utc_now(), minute: -3)
+    {_run, os_process} = exited.(:product, %{status: :blocked_on_input, completed_at: asked_at})
+
+    assert {:ok, %Run{status: :blocked_on_input, completed_at: ^asked_at}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+  end
+
+  test "a run resumed after asking is dated from the turn that finished it", %{exited: exited} do
+    asked_at = DateTime.shift(DateTime.utc_now(), minute: -3)
+    {_run, os_process} = exited.(:product, %{completed_at: asked_at})
+
+    assert {:ok, %Run{status: :finished, completed_at: completed_at}} =
+             Pipeline.run_finished(os_process, %{exit_code: 0})
+
+    assert DateTime.diff(completed_at, asked_at, :second) >= 180
   end
 
   test "a worktree setup that succeeded marks the worktree set up and enters the stage it held up", %{

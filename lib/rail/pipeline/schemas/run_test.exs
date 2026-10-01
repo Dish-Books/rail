@@ -1,6 +1,7 @@
 defmodule Rail.Pipeline.Schemas.RunTest do
   use Rail.DataCase, async: true
 
+  alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
@@ -208,7 +209,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     blocked = %Run{
       status: :blocked_on_input,
       role: %Role{stage: :engineer},
-      task: %Task{stage: :engineer, merged_at: nil}
+      task: %Task{stage: :engineer, merged_at: nil, issue: %Issue{}}
     }
 
     assert Run.needs_attention?(blocked)
@@ -219,7 +220,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
       status: :finished,
       error: "The engineer did not write commits/UPN-1.md.",
       role: %Role{stage: :engineer},
-      task: %Task{stage: :engineer, merged_at: nil}
+      task: %Task{stage: :engineer, merged_at: nil, issue: %Issue{}}
     }
 
     assert Run.needs_attention?(failed)
@@ -231,7 +232,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     stopped = %Run{
       status: :finished,
       role: %Role{stage: :engineer},
-      task: %Task{stage: :engineer, merged_at: nil}
+      task: %Task{stage: :engineer, merged_at: nil, issue: %Issue{}}
     }
 
     assert Run.needs_attention?(stopped)
@@ -242,14 +243,19 @@ defmodule Rail.Pipeline.Schemas.RunTest do
       status: :finished,
       error: "It went wrong",
       role: %Role{stage: :product},
-      task: %Task{stage: :engineer, merged_at: nil}
+      task: %Task{stage: :engineer, merged_at: nil, issue: %Issue{}}
     }
 
     refute Run.needs_attention?(passed_by)
   end
 
   test "a run that is not blocked needs nothing" do
-    running = %Run{status: :running, role: %Role{stage: :engineer}, task: %Task{stage: :engineer, merged_at: nil}}
+    running = %Run{
+      status: :running,
+      role: %Role{stage: :engineer},
+      task: %Task{stage: :engineer, merged_at: nil, issue: %Issue{}}
+    }
+
     refute Run.needs_attention?(running)
   end
 
@@ -258,7 +264,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
       status: :finished,
       stage_outcome: :done,
       role: %Role{stage: :demo},
-      task: %Task{stage: :demo, merged_at: nil}
+      task: %Task{stage: :demo, merged_at: nil, issue: %Issue{}}
     }
 
     assert Run.needs_attention?(done)
@@ -269,7 +275,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
       status: :finished,
       stage_outcome: :done,
       role: %Role{stage: :product},
-      task: %Task{stage: :product, merged_at: nil}
+      task: %Task{stage: :product, merged_at: nil, issue: %Issue{}}
     }
 
     assert Run.needs_attention?(done)
@@ -280,7 +286,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
       status: :finished,
       stage_outcome: :done,
       role: %Role{stage: :design},
-      task: %Task{stage: :design, merged_at: nil}
+      task: %Task{stage: :design, merged_at: nil, issue: %Issue{}}
     }
 
     assert Run.needs_attention?(done)
@@ -291,7 +297,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
       status: :finished,
       stage_outcome: :done,
       role: %Role{stage: :product},
-      task: %Task{stage: :design, merged_at: nil}
+      task: %Task{stage: :design, merged_at: nil, issue: %Issue{}}
     }
 
     refute Run.needs_attention?(approved)
@@ -302,7 +308,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
       status: :finished,
       stage_outcome: :done,
       role: %Role{stage: :architect},
-      task: %Task{stage: :architect, merged_at: nil}
+      task: %Task{stage: :architect, merged_at: nil, issue: %Issue{}}
     }
 
     assert Run.needs_attention?(done)
@@ -313,7 +319,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
       status: :finished,
       stage_outcome: :done,
       role: %Role{stage: :engineer},
-      task: %Task{stage: :engineer, merged_at: nil}
+      task: %Task{stage: :engineer, merged_at: nil, issue: %Issue{}}
     }
 
     assert Run.needs_attention?(done)
@@ -324,7 +330,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
       status: :finished,
       stage_outcome: :done,
       role: %Role{stage: :debugger},
-      task: %Task{stage: :debugger, merged_at: nil}
+      task: %Task{stage: :debugger, merged_at: nil, issue: %Issue{}}
     }
 
     refute Run.needs_attention?(done)
@@ -334,7 +340,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     merged_stage = %Run{
       status: :blocked_on_input,
       role: %Role{stage: :merged},
-      task: %Task{stage: :merged, merged_at: nil}
+      task: %Task{stage: :merged, merged_at: nil, issue: %Issue{}}
     }
 
     refute Run.needs_attention?(merged_stage)
@@ -342,9 +348,20 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     merged_at = %Run{
       status: :blocked_on_input,
       role: %Role{stage: :engineer},
-      task: %Task{stage: :engineer, merged_at: DateTime.utc_now()}
+      task: %Task{stage: :engineer, merged_at: DateTime.utc_now(), issue: %Issue{}}
     }
 
     refute Run.needs_attention?(merged_at)
+  end
+
+  test "a task whose issue shipped needs nothing, however its run ended" do
+    failed = %Run{
+      status: :finished,
+      error: "It went wrong",
+      role: %Role{stage: :engineer},
+      task: %Task{stage: :engineer, merged_at: nil, issue: %Issue{completed_at: DateTime.utc_now()}}
+    }
+
+    refute Run.needs_attention?(failed)
   end
 end
