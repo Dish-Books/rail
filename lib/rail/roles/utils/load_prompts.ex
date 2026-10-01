@@ -1,4 +1,4 @@
-defmodule Rail.Roles.Actions.LoadPrompts do
+defmodule Rail.Roles.Utils.LoadPrompts do
   @moduledoc false
 
   alias Rail.Git

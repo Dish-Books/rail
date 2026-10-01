@@ -52,12 +52,12 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   # A worktree that still needs setting up gets that first, with the message left
   # queued: the setup's finish drains it.
   defp execute(%Run{} = run, opts) do
-    with %Run{task: %Task{}, role: %Role{} = role} = run <- reload(run),
+    with %Run{task: %Task{}, role: %Role{}} = run <- reload(run),
+         {:ok, role} <- Roles.get_role(id: run.role_id),
          %Project{} = project <- Repo.get(Project, run.task.project_id),
          {:ok, task, worktree_path} <- worktree(project, run.task) do
       case start_worktree_setup(%{run | task: task}) do
         :not_needed ->
-          [role] = Roles.load_prompts(project, [role])
           send_message(task, role, run, worktree_path, opts)
 
         {:ok, %OsProcess{} = os_process} ->

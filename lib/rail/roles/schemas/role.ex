@@ -70,7 +70,7 @@ defmodule Rail.Roles.Schemas.Role do
     field :model, :string
     field :reasoning_effort, Ecto.Enum, values: @reasoning_efforts
     field :system_prompt, :string
-    # Set only by Roles.load_prompts/2: the repo file the prompt was read from.
+    # Set by Roles.get_role/1 and Roles.list_roles/1: the repo file the prompt was read from.
     field :prompt_path, :string, virtual: true
     field :max_concurrent, :integer, default: 1
     field :position, :integer, default: 0

@@ -1,12 +1,14 @@
 defmodule Rail.Git.Actions.WorktreeDirty do
   @moduledoc false
 
+  import Rail.Git.Utils.AgentScratch
+
   alias Rail.Tools
 
   @doc """
   True when the worktree has changes nobody has committed.
 
-  `.rail/` is left out, exactly as `branch_fingerprint/1` leaves it out: agents
+  `.rail/scratch/` is left out, exactly as `branch_fingerprint/1` leaves it out: agents
   write their own scratch there and it is never part of the deliverable, so a
   tree holding nothing else is clean.
   """
@@ -27,7 +29,7 @@ defmodule Rail.Git.Actions.WorktreeDirty do
 
       _trimmed ->
         path = line |> String.slice(3..-1//1) |> String.trim() |> String.replace("\"", "")
-        not String.starts_with?(path, ".rail/") and path != ".rail"
+        not agent_scratch?(path)
     end
   end
 end

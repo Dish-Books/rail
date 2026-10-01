@@ -131,9 +131,9 @@ defmodule Rail.Triage.Actions.TriageThread do
     end
   end
 
-  defp role(%Thread{project: project}) do
-    case Roles.get_role(project_id: project.id, stage: :triage) do
-      {:ok, role} -> {:ok, hd(Roles.load_prompts(project, [role]))}
+  defp role(%Thread{project_id: project_id}) do
+    case Roles.get_role(project_id: project_id, stage: :triage) do
+      {:ok, role} -> {:ok, role}
       {:error, :role_not_found} -> {:error, :no_role}
     end
   end

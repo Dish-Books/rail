@@ -31,7 +31,7 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:projects, projects)
       |> assign(:roles_project_id, roles_project_id)
       |> assign(:roles_project, roles_project)
-      |> assign(:roles, if(roles_project, do: list_roles(roles_project), else: []))
+      |> assign(:roles, if(roles_project_id, do: Roles.list_roles(roles_project_id), else: []))
       |> assign(:backends, Tools.list_backends())
       |> assign(:mcp_servers, Mcp.list_servers())
       |> assign(:canonical_stages, Role.canonical_stages())
@@ -979,7 +979,7 @@ defmodule RailWeb.Settings.RolesLive do
 
     if role do
       {:ok, _role} = Roles.delete_role(scope, role)
-      refreshed = list_roles(socket.assigns.roles_project)
+      refreshed = Roles.list_roles(socket.assigns.roles_project_id)
 
       socket =
         socket
@@ -1009,7 +1009,7 @@ defmodule RailWeb.Settings.RolesLive do
 
     case Roles.copy_roles(scope, target_id, source_id, replace_all: replace_all) do
       {:ok, _roles} ->
-        refreshed = list_roles(socket.assigns.roles_project)
+        refreshed = Roles.list_roles(target_id)
 
         socket =
           socket
@@ -1055,6 +1055,7 @@ defmodule RailWeb.Settings.RolesLive do
 
   def handle_event("save_role", %{"role" => role_params}, socket) do
     scope = socket.assigns.current_scope
+    project_id = socket.assigns.roles_project_id
     modal = socket.assigns.active_modal
     existing_role = socket.assigns.modal_role
 
@@ -1063,7 +1064,7 @@ defmodule RailWeb.Settings.RolesLive do
 
     case execute_role_save(scope, socket.assigns.roles_project, modal, existing_role, attrs) do
       {:ok, _role} ->
-        refreshed = list_roles(socket.assigns.roles_project)
+        refreshed = Roles.list_roles(project_id)
 
         socket =
           socket
@@ -1172,9 +1173,6 @@ defmodule RailWeb.Settings.RolesLive do
       nil -> kind
     end
   end
-
-  # Shown as runs get them, so a prompt from the repo reads as the file, not the stored fallback.
-  defp list_roles(project), do: Roles.load_prompts(project, Roles.list_roles(project.id))
 
   defp unbound_stages(canonical_stages, roles) do
     Enum.reject(canonical_stages, &role_for_stage(roles, &1))

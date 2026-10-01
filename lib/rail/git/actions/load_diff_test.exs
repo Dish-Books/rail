@@ -161,12 +161,21 @@ defmodule Rail.Git.Actions.LoadDiffTest do
   end
 
   test "the agents' own scratch is not part of the diff", %{scope: scope, task: task, repo: repo} do
-    File.mkdir_p!(Path.join(repo, ".rail"))
-    File.write!(Path.join(repo, ".rail/notes.md"), "scratch\n")
+    File.mkdir_p!(Path.join(repo, ".rail/scratch"))
+    File.write!(Path.join(repo, ".rail/scratch/notes.md"), "scratch\n")
 
     assert {:ok, files} = Git.load_diff(scope, task, :branch)
 
-    refute Enum.any?(files, &String.starts_with?(&1.path, ".rail"))
+    refute Enum.any?(files, &String.starts_with?(&1.path, ".rail/scratch"))
+  end
+
+  test "a new prompt under .rail/prompts is part of the diff", %{scope: scope, task: task, repo: repo} do
+    File.mkdir_p!(Path.join(repo, ".rail/prompts"))
+    File.write!(Path.join(repo, ".rail/prompts/engineer.md"), "Prompt.\n")
+
+    assert {:ok, files} = Git.load_diff(scope, task, :branch)
+
+    assert Enum.any?(files, &(&1.path == ".rail/prompts/engineer.md"))
   end
 
   # Nothing has forked from the base yet, so there is no merge base to diff from.

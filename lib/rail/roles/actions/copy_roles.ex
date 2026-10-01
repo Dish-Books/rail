@@ -8,7 +8,12 @@ defmodule Rail.Roles.Actions.CopyRoles do
 
   def copy_roles(_scope, target_project_id, source_project_id, opts)
       when is_binary(target_project_id) and is_binary(source_project_id) do
-    source_roles = Rail.Roles.list_roles(source_project_id)
+    # Stored prompts, not repo files: a copy is of the roles as configured.
+    source_roles =
+      Repo.all(
+        from(r in Role, where: r.project_id == ^source_project_id, order_by: [asc: r.position, asc: r.inserted_at])
+      )
+
     replace_all = Keyword.get(opts, :replace_all, false)
 
     Repo.transaction(fn ->

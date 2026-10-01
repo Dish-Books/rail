@@ -446,7 +446,7 @@ defmodule RailWeb.Settings.RolesLiveTest do
     })
 
     refute has_element?(view, "#role-editor-modal")
-    assert {:ok, %Role{model: "claude-sonnet-5", system_prompt: "Stored engineer prompt."}} = Roles.get_role(id: role_id)
+    assert %Role{model: "claude-sonnet-5", system_prompt: "Stored engineer prompt."} = Rail.Repo.get!(Role, role_id)
   end
 
   test "a role with no prompt file in its repo shows no source and keeps an editable prompt", %{

@@ -34,7 +34,6 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
     %Issue{project: %Project{} = project} = issue = Repo.preload(issue, :project)
 
     {:ok, %Role{} = role} = Roles.get_role(project_id: project.id, stage: :product)
-    [role] = Roles.load_prompts(project, [role])
 
     with {:ok, {task, run, worktree_path}} <- record_run(issue, project, role) do
       write_scratch(task)

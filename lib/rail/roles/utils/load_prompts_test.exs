@@ -1,4 +1,4 @@
-defmodule Rail.Roles.Actions.LoadPromptsTest do
+defmodule Rail.Roles.Utils.LoadPromptsTest do
   use Rail.DataCase, async: true
 
   alias Rail.Projects.Schemas.Project
@@ -39,7 +39,6 @@ defmodule Rail.Roles.Actions.LoadPromptsTest do
   end
 
   test "a merged and fetched prompt file becomes the role's prompt, named by its path", %{
-    project: project,
     remote: remote,
     clone: clone,
     engineer: engineer
@@ -50,12 +49,11 @@ defmodule Rail.Roles.Actions.LoadPromptsTest do
     git!(remote, ["commit", "-m", "add prompt"])
     git!(clone, ["fetch", "origin", "main"])
 
-    assert [%Role{system_prompt: "From the repo.", prompt_path: ".rail/prompts/engineer.md"}] =
-             Roles.load_prompts(project, [engineer])
+    assert {:ok, %Role{system_prompt: "From the repo.", prompt_path: ".rail/prompts/engineer.md"}} =
+             Roles.get_role(id: engineer.id)
   end
 
   test "drops exactly one trailing newline, so a file written as prompt plus newline reads back as the prompt", %{
-    project: project,
     remote: remote,
     clone: clone,
     engineer: engineer
@@ -66,15 +64,14 @@ defmodule Rail.Roles.Actions.LoadPromptsTest do
     git!(remote, ["commit", "-m", "add prompt"])
     git!(clone, ["fetch", "origin", "main"])
 
-    assert [%Role{system_prompt: "Line one.\n\nLine two.\n"}] = Roles.load_prompts(project, [engineer])
+    assert {:ok, %Role{system_prompt: "Line one.\n\nLine two.\n"}} = Roles.get_role(id: engineer.id)
   end
 
   test "leaves a role with no file for its stage, or no stage at all, as stored", %{
     project: project,
     remote: remote,
     clone: clone,
-    backend: backend,
-    engineer: engineer
+    backend: backend
   } do
     File.mkdir_p!(Path.join(remote, ".rail/prompts"))
     File.write!(Path.join(remote, ".rail/prompts/review.md"), "Review prompt.\n")
@@ -82,10 +79,11 @@ defmodule Rail.Roles.Actions.LoadPromptsTest do
     git!(remote, ["commit", "-m", "add review prompt"])
     git!(clone, ["fetch", "origin", "main"])
 
-    {:ok, custom} =
+    {:ok, _custom} =
       Roles.create_role(system_scope(), project, %{
         backend_id: backend.id,
         name: "Custom",
+        position: 1,
         model: "claude-opus-5-5",
         system_prompt: "Stored custom prompt."
       })
@@ -93,21 +91,19 @@ defmodule Rail.Roles.Actions.LoadPromptsTest do
     assert [
              %Role{system_prompt: "Stored engineer prompt.", prompt_path: nil},
              %Role{system_prompt: "Stored custom prompt.", prompt_path: nil}
-           ] = Roles.load_prompts(project, [engineer, custom])
+           ] = Roles.list_roles(project.id)
   end
 
   test "leaves every role as stored when the repo has no .rail/prompts folder", %{
-    project: project,
     clone: clone,
     engineer: engineer
   } do
     git!(clone, ["fetch", "origin", "main"])
 
-    assert [%Role{system_prompt: "Stored engineer prompt.", prompt_path: nil}] = Roles.load_prompts(project, [engineer])
+    assert {:ok, %Role{system_prompt: "Stored engineer prompt.", prompt_path: nil}} = Roles.get_role(id: engineer.id)
   end
 
   test "never writes the file's text to the role's row", %{
-    project: project,
     remote: remote,
     clone: clone,
     engineer: engineer
@@ -118,13 +114,12 @@ defmodule Rail.Roles.Actions.LoadPromptsTest do
     git!(remote, ["commit", "-m", "add prompt"])
     git!(clone, ["fetch", "origin", "main"])
 
-    Roles.load_prompts(project, [engineer])
+    {:ok, _role} = Roles.get_role(id: engineer.id)
 
     assert %Role{system_prompt: "Stored engineer prompt."} = Repo.get!(Role, engineer.id)
   end
 
   test "falls back to the stored prompt once a later merge deletes the file", %{
-    project: project,
     remote: remote,
     clone: clone,
     engineer: engineer
@@ -137,11 +132,10 @@ defmodule Rail.Roles.Actions.LoadPromptsTest do
     git!(remote, ["commit", "-m", "remove prompt"])
     git!(clone, ["fetch", "origin", "main"])
 
-    assert [%Role{system_prompt: "Stored engineer prompt.", prompt_path: nil}] = Roles.load_prompts(project, [engineer])
+    assert {:ok, %Role{system_prompt: "Stored engineer prompt.", prompt_path: nil}} = Roles.get_role(id: engineer.id)
   end
 
   test "falls back to the stored prompt, never a blank one, once a later merge empties the file", %{
-    project: project,
     remote: remote,
     clone: clone,
     engineer: engineer
@@ -154,11 +148,10 @@ defmodule Rail.Roles.Actions.LoadPromptsTest do
     git!(remote, ["commit", "-am", "empty prompt"])
     git!(clone, ["fetch", "origin", "main"])
 
-    assert [%Role{system_prompt: "Stored engineer prompt.", prompt_path: nil}] = Roles.load_prompts(project, [engineer])
+    assert {:ok, %Role{system_prompt: "Stored engineer prompt.", prompt_path: nil}} = Roles.get_role(id: engineer.id)
   end
 
   test "ignores prompt files outside .rail/prompts/<stage>.md", %{
-    project: project,
     remote: remote,
     clone: clone,
     engineer: engineer
@@ -171,11 +164,10 @@ defmodule Rail.Roles.Actions.LoadPromptsTest do
     git!(remote, ["commit", "-m", "prompts elsewhere"])
     git!(clone, ["fetch", "origin", "main"])
 
-    assert [%Role{system_prompt: "Stored engineer prompt.", prompt_path: nil}] = Roles.load_prompts(project, [engineer])
+    assert {:ok, %Role{system_prompt: "Stored engineer prompt.", prompt_path: nil}} = Roles.get_role(id: engineer.id)
   end
 
   test "ignores a prompt file committed only on an unmerged branch", %{
-    project: project,
     remote: remote,
     clone: clone,
     engineer: engineer
@@ -187,15 +179,14 @@ defmodule Rail.Roles.Actions.LoadPromptsTest do
     git!(remote, ["commit", "-m", "unmerged prompt"])
     git!(clone, ["fetch", "origin", "main", "task-branch"])
 
-    assert [%Role{system_prompt: "Stored engineer prompt.", prompt_path: nil}] = Roles.load_prompts(project, [engineer])
+    assert {:ok, %Role{system_prompt: "Stored engineer prompt.", prompt_path: nil}} = Roles.get_role(id: engineer.id)
   end
 
   test "each project loads only the prompts in its own repo", %{
     project: project,
     remote: remote,
     clone: clone,
-    backend: backend,
-    engineer: engineer
+    backend: backend
   } do
     File.mkdir_p!(Path.join(remote, ".rail/prompts"))
     File.write!(Path.join(remote, ".rail/prompts/engineer.md"), "First project.\n")
@@ -224,7 +215,7 @@ defmodule Rail.Roles.Actions.LoadPromptsTest do
       })
       |> Repo.insert!()
 
-    {:ok, other_engineer} =
+    {:ok, _other_engineer} =
       Roles.create_role(system_scope(), other_project, %{
         backend_id: backend.id,
         stage: :engineer,
@@ -234,12 +225,6 @@ defmodule Rail.Roles.Actions.LoadPromptsTest do
       })
 
     assert {[%Role{system_prompt: "First project."}], [%Role{system_prompt: "Second project."}]} =
-             {Roles.load_prompts(project, [engineer]), Roles.load_prompts(other_project, [other_engineer])}
-  end
-
-  test "refuses a role that belongs to another project", %{project: project, engineer: engineer} do
-    assert_raise FunctionClauseError, fn ->
-      Roles.load_prompts(%{project | id: "prj_other"}, [engineer])
-    end
+             {Roles.list_roles(project.id), Roles.list_roles(other_project.id)}
   end
 end

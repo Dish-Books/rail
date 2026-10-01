@@ -72,6 +72,34 @@ defmodule Rail.Roles.Actions.CopyRolesTest do
            )
   end
 
+  test "copies a role's stored prompt, not the one its source repo's .rail/prompts stands in for", %{
+    backend: backend,
+    source: source,
+    target: target
+  } do
+    remote = create_temp_git_repo(prefix: "rail_copy_roles_remote")
+    File.mkdir_p!(Path.join(remote, ".rail/prompts"))
+    File.write!(Path.join(remote, ".rail/prompts/engineer.md"), "From the source repo.\n")
+    git!(remote, ["add", "."])
+    git!(remote, ["commit", "-m", "add prompt"])
+    clone = create_temp_git_repo(prefix: "rail_copy_roles_clone")
+    git!(clone, ["remote", "add", "origin", remote])
+    git!(clone, ["fetch", "origin", "main"])
+    {:ok, source} = Projects.update_project(system_scope(), source, %{clone_path: clone})
+
+    {:ok, _source_engineer} =
+      Roles.create_role(system_scope(), source, %{
+        backend_id: backend.id,
+        stage: :engineer,
+        name: "Source Engineer",
+        model: "claude-opus-5-5",
+        system_prompt: "Source Engineer prompt"
+      })
+
+    assert {:ok, [%Role{system_prompt: "Source Engineer prompt"}]} =
+             Roles.copy_roles(Scope.for_user(%{admin: true}), target.id, source.id)
+  end
+
   test "unbinds existing stage in target project when copied role shares the stage", %{
     backend: backend,
     source: source,

@@ -81,12 +81,13 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   # A worktree the project has a setup script for runs it first, and the stage is
   # entered again once it has succeeded.
   defp start_role(%Task{} = task, %Role{} = role) do
-    {task, worktree_path, project} = worktree(task)
+    {task, worktree_path} = worktree(task)
     {:ok, %Run{} = run} = Pipeline.start_or_resume_run(task, role, worktree_path)
 
     if worktree_path do
       case start_worktree_setup(run) do
-        :not_needed -> start_agent(project, run)
+        # The run's own role is the stored row; this one carries the prompt the repo merged.
+        :not_needed -> start_agent(%{run | role: role})
         {:ok, os_process} -> {:ok, os_process.run}
         {:error, %Run{} = failed} -> {:ok, failed}
       end
@@ -95,10 +96,8 @@ defmodule Rail.Pipeline.Actions.EnterStage do
     end
   end
 
-  defp start_agent(%Project{} = project, %Run{} = run) do
-    [role] = Roles.load_prompts(project, [run.role])
-
-    case start_process(%{run | role: role}) do
+  defp start_agent(%Run{} = run) do
+    case start_process(run) do
       {:ok, os_process} -> {:ok, os_process.run}
       {:error, {:spawn_failed, _reason, %Run{} = failed}} -> {:ok, failed}
       {:error, :dispatch_disabled} -> {:ok, fail(run, "Dispatch is off, so no agent was started for this stage.")}
@@ -108,9 +107,9 @@ defmodule Rail.Pipeline.Actions.EnterStage do
   defp worktree(%Task{} = task) do
     with %Project{} = project <- Repo.get(Project, task.project_id),
          {:ok, task, resolved} <- prepare_worktree(project, task) do
-      {task, resolved, project}
+      {task, resolved}
     else
-      _unavailable -> {task, nil, nil}
+      _unavailable -> {task, nil}
     end
   end
 

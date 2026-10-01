@@ -1,12 +1,14 @@
 defmodule Rail.Git.Actions.BranchFingerprint do
   @moduledoc false
 
+  import Rail.Git.Utils.AgentScratch
+
   alias Rail.Tools
 
   @doc """
   Computes a fingerprint snapshot of a worktree's HEAD SHA and working-copy status.
 
-  `.rail/` is left out of the working-copy digest: agents write their own
+  `.rail/scratch/` is left out of the working-copy digest: agents write their own
   reports and manifests there, so counting it would make every run look like it
   changed the tree. Returns nil if git cannot answer.
   """
@@ -54,7 +56,7 @@ defmodule Rail.Git.Actions.BranchFingerprint do
           |> String.trim()
           |> String.replace("\"", "")
 
-        not String.starts_with?(path, ".rail/") and path != ".rail"
+        not agent_scratch?(path)
     end
   end
 end

@@ -28,11 +28,11 @@ defmodule Rail.Git.Actions.CommitWorktree do
     end
   end
 
-  # `.rail/` is the agents' own scratch inside the worktree and never part of the
-  # change, so it is excluded here rather than left to a .gitignore Rail does not
-  # own.
+  # `.rail/scratch/` is the agents' own scratch inside the worktree and never part
+  # of the change, so it is excluded here rather than left to a .gitignore Rail
+  # does not own.
   defp stage(worktree_path) do
-    case Tools.run("git", ["add", "-A", "--", ".", ":!.rail"], cd: worktree_path, stderr_to_stdout: true) do
+    case Tools.run("git", ["add", "-A", "--", ".", ":!.rail/scratch"], cd: worktree_path, stderr_to_stdout: true) do
       {_output, 0} -> :ok
       {output, _code} -> {:error, String.trim(output)}
     end
