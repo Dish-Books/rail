@@ -88,6 +88,7 @@ defmodule Rail.Pipeline.Actions.StartDesignRun do
     - A key is lowercase letters, digits and dashes, and names that option's files.
     - Retake an option's screenshot every time its page changes. The screenshot is what gets published.
     - The human picks one option and refines it with you in chat. Rail records the pick in #{dir}/picked; never write that file.
+    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each `[QUESTION: ...]` on a line of its own. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the ticket or a named assumption is not a question.
 
     The approved ticket:
 
