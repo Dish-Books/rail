@@ -120,6 +120,22 @@ defmodule Rail.Pipeline.Actions.StartProductRunTest do
     assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue_id})
   end
 
+  test "starts with the product prompt merged to the project's .rail/prompts", %{project: project, issue: issue} do
+    remote = String.trim(git!(project.clone_path, ["remote", "get-url", "origin"]))
+    File.mkdir_p!(Path.join(remote, ".rail/prompts"))
+    File.write!(Path.join(remote, ".rail/prompts/product.md"), "From the repo.\n")
+    git!(remote, ["add", "."])
+    git!(remote, ["commit", "-m", "add prompt"])
+    git!(project.clone_path, ["fetch", "origin", "main"])
+
+    expect(Tools, :start_os_process, fn run, argv ->
+      assert ["--append-system-prompt", "From the repo."] in Enum.chunk_every(argv, 2, 1)
+      {:ok, %OsProcess{task_id: run.task_id, run: run, task: run.task}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_product_run(issue)
+  end
+
   test "leaves the owner on the issue the task links to", %{issue: issue} do
     {:ok, %User{id: user_id}} =
       Users.register_oauth_user(%{

@@ -53,26 +53,19 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRunTest do
     assert Repo.aggregate(Run, :count) == 1
   end
 
-  test "leaves .rail/ changes out of the dirty digest", %{
+  test "counts .rail/ changes in the dirty digest like any other", %{
     task: task,
     role: role,
     worktree: worktree
   } do
     {:ok, before} = Pipeline.start_or_resume_run(task, role, worktree)
 
-    File.mkdir_p!(Path.join(worktree, ".rail"))
-    File.write!(Path.join([worktree, ".rail", "notes.md"]), "scratch\n")
+    File.mkdir_p!(Path.join(worktree, ".rail/prompts"))
+    File.write!(Path.join([worktree, ".rail/prompts", "engineer.md"]), "Prompt.\n")
 
     {:ok, after_rail_write} = Pipeline.start_or_resume_run(task, role, worktree)
 
-    assert after_rail_write.stage_fingerprint_dirty_digest ==
-             before.stage_fingerprint_dirty_digest
-
-    File.write!(Path.join(worktree, "tracked.txt"), "edited\n")
-
-    {:ok, after_code_write} = Pipeline.start_or_resume_run(task, role, worktree)
-
-    refute after_code_write.stage_fingerprint_dirty_digest ==
+    refute after_rail_write.stage_fingerprint_dirty_digest ==
              before.stage_fingerprint_dirty_digest
   end
 

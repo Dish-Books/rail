@@ -57,11 +57,11 @@ defmodule Rail.Git.Actions.BranchChangedTest do
     assert Git.branch_changed?(task)
   end
 
-  test "the agents' own scratch is not a change", %{task: task, repo: repo} do
+  test "a new file under .rail is a change, like any other", %{task: task, repo: repo} do
     File.mkdir_p!(Path.join(repo, ".rail"))
-    File.write!(Path.join(repo, ".rail/notes.md"), "scratch\n")
+    File.write!(Path.join(repo, ".rail/notes.md"), "notes\n")
 
-    refute Git.branch_changed?(task)
+    assert Git.branch_changed?(task)
   end
 
   # The diff would draw nothing for it, so neither does this.

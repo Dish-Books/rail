@@ -80,16 +80,14 @@ defmodule Rail.Git.Actions.CommitWorktreeTest do
     assert git!(repo, ["cat-file", "commit", "HEAD"]) =~ "-----BEGIN SSH SIGNATURE-----"
   end
 
-  test "leaves the agents' own .rail scratch out of the commit", %{scope: scope, task: task, repo: repo} do
+  test "commits files under .rail like any other", %{scope: scope, task: task, repo: repo} do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
     File.mkdir_p!(Path.join(repo, ".rail"))
-    File.write!(Path.join(repo, ".rail/notes.md"), "scratch\n")
+    File.write!(Path.join(repo, ".rail/notes.md"), "notes\n")
 
     assert {:ok, _sha} = Git.commit_worktree(scope, task, "CWT-1: add feature")
 
-    files = git!(repo, ["show", "--name-only", "--pretty=", "HEAD"])
-    assert files =~ "feature.ex"
-    refute files =~ ".rail"
+    assert git!(repo, ["show", "--name-only", "--pretty=", "HEAD"]) == ".rail/notes.md\nfeature.ex\n"
   end
 
   test "refuses a worktree with nothing in it to commit", %{scope: scope, task: task} do

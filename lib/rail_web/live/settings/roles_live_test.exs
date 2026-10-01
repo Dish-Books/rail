@@ -387,6 +387,104 @@ defmodule RailWeb.Settings.RolesLiveTest do
     refute has_element?(view, "#role-editor-modal")
   end
 
+  test "a role whose prompt comes from the repo shows that file's text and path, and does not offer to edit it", %{
+    claude_backend: claude_backend,
+    admin_conn: conn,
+    admin_user: admin_user
+  } do
+    remote = create_temp_git_repo(prefix: "rail_roles_live_remote")
+    File.mkdir_p!(Path.join(remote, ".rail/prompts"))
+    File.write!(Path.join(remote, ".rail/prompts/engineer.md"), "From the repo.\n")
+    git!(remote, ["add", "."])
+    git!(remote, ["commit", "-m", "add prompt"])
+    clone = create_temp_git_repo(prefix: "rail_roles_live_clone")
+    git!(clone, ["remote", "add", "origin", remote])
+    git!(clone, ["fetch", "origin", "main"])
+
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13030",
+        github_repo: "org/roles-live-13030",
+        github_installation_id: 13_030,
+        linear_team_key: "P13030",
+        default_branch: "main",
+        clone_path: clone,
+        linear_state_ids: %{"triage" => "st_triage"}
+      })
+
+    assert {:ok, %Role{id: role_id}} =
+             Roles.create_role(Rail.Scope.for_user(admin_user), project, %{
+               name: "Engineer",
+               stage: :engineer,
+               backend_id: claude_backend.id,
+               model: "claude-opus-5-5",
+               system_prompt: "Stored engineer prompt."
+             })
+
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
+
+    assert has_element?(view, "#bound-role-prompt-source-engineer", ".rail/prompts/engineer.md")
+
+    view |> element("#edit-role-button-#{role_id}") |> render_click()
+    view |> element("#role-tab-prompt") |> render_click()
+
+    assert has_element?(view, "#role-prompt-source", ".rail/prompts/engineer.md")
+    assert has_element?(view, "#role-prompt-source", "main")
+    assert has_element?(view, "#role-prompt-readonly", "From the repo.")
+    refute has_element?(view, "#role-prompt-input")
+    refute has_element?(view, "#role-prompt-preview-button")
+
+    view
+    |> element("#role-form")
+    |> render_submit(%{
+      "role" => %{
+        "name" => "Engineer",
+        "stage" => "engineer",
+        "backend_id" => claude_backend.id,
+        "model_choice" => "claude-sonnet-5"
+      }
+    })
+
+    refute has_element?(view, "#role-editor-modal")
+    assert %Role{model: "claude-sonnet-5", system_prompt: "Stored engineer prompt."} = Rail.Repo.get!(Role, role_id)
+  end
+
+  test "a role with no prompt file in its repo shows no source and keeps an editable prompt", %{
+    claude_backend: claude_backend,
+    admin_conn: conn,
+    admin_user: admin_user
+  } do
+    {:ok, project} =
+      Projects.create_project(system_scope(), %{
+        name: "Roles Live Project 13031",
+        github_repo: "org/roles-live-13031",
+        github_installation_id: 13_031,
+        linear_team_key: "P13031",
+        default_branch: "main",
+        clone_path: "/tmp/repos/roles-live-13031",
+        linear_state_ids: %{"triage" => "st_triage"}
+      })
+
+    assert {:ok, %Role{id: role_id}} =
+             Roles.create_role(Rail.Scope.for_user(admin_user), project, %{
+               name: "Engineer",
+               stage: :engineer,
+               backend_id: claude_backend.id,
+               model: "claude-opus-5-5",
+               system_prompt: "Stored engineer prompt."
+             })
+
+    assert {:ok, view, _html} = live(init_test_session(conn, %{selected_project_id: project.id}), ~p"/settings/roles")
+
+    refute has_element?(view, "#bound-role-prompt-source-engineer")
+
+    view |> element("#edit-role-button-#{role_id}") |> render_click()
+    view |> element("#role-tab-prompt") |> render_click()
+
+    refute has_element?(view, "#role-prompt-source")
+    assert has_element?(view, "#role-prompt-input", "Stored engineer prompt.")
+  end
+
   # The test machine has 4 CPUs and 8 GB to reserve (config/test.exs).
   test "a role's sandbox reservation shows on its row, and the editor says how many fit and refuses what never would",
        %{claude_backend: claude_backend, admin_conn: conn, admin_user: admin_user} do

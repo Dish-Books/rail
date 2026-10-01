@@ -86,7 +86,8 @@ defmodule Rail.Pipeline.Actions.EnterStage do
 
     if worktree_path do
       case start_worktree_setup(run) do
-        :not_needed -> start_agent(run)
+        # The run's own role is the stored row; this one carries the prompt the repo merged.
+        :not_needed -> start_agent(%{run | role: role})
         {:ok, os_process} -> {:ok, os_process.run}
         {:error, %Run{} = failed} -> {:ok, failed}
       end

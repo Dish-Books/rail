@@ -6,9 +6,7 @@ defmodule Rail.Git.Actions.BranchFingerprint do
   @doc """
   Computes a fingerprint snapshot of a worktree's HEAD SHA and working-copy status.
 
-  `.rail/` is left out of the working-copy digest: agents write their own
-  reports and manifests there, so counting it would make every run look like it
-  changed the tree. Returns nil if git cannot answer.
+  Returns nil if git cannot answer.
   """
   def branch_fingerprint(worktree_path) when is_binary(worktree_path) do
     with {head_out, 0} <-
@@ -22,7 +20,7 @@ defmodule Rail.Git.Actions.BranchFingerprint do
            ) do
       dirty_digest =
         :sha256
-        |> :crypto.hash(filter_rail_status(status_out))
+        |> :crypto.hash(status_out)
         |> Base.encode16(case: :lower)
 
       %{
@@ -32,29 +30,6 @@ defmodule Rail.Git.Actions.BranchFingerprint do
     else
       _other ->
         nil
-    end
-  end
-
-  defp filter_rail_status(status_out) do
-    status_out
-    |> String.split(~r/\r?\n/)
-    |> Enum.filter(&keep_status_line?/1)
-    |> Enum.join("\n")
-  end
-
-  defp keep_status_line?(line) do
-    case String.trim(line) do
-      "" ->
-        false
-
-      _trimmed ->
-        path =
-          line
-          |> String.slice(3..-1//1)
-          |> String.trim()
-          |> String.replace("\"", "")
-
-        not String.starts_with?(path, ".rail/") and path != ".rail"
     end
   end
 end

@@ -160,13 +160,13 @@ defmodule Rail.Git.Actions.LoadDiffTest do
     assert %{rows: [%{kind: :hunk_header, text: "@@ -0,0 +1,0 @@"}]} = Enum.find(files, &(&1.path == "empty.ex"))
   end
 
-  test "the agents' own scratch is not part of the diff", %{scope: scope, task: task, repo: repo} do
+  test "a new file under .rail is part of the diff, like any other", %{scope: scope, task: task, repo: repo} do
     File.mkdir_p!(Path.join(repo, ".rail"))
-    File.write!(Path.join(repo, ".rail/notes.md"), "scratch\n")
+    File.write!(Path.join(repo, ".rail/notes.md"), "notes\n")
 
     assert {:ok, files} = Git.load_diff(scope, task, :branch)
 
-    refute Enum.any?(files, &String.starts_with?(&1.path, ".rail"))
+    assert Enum.any?(files, &(&1.path == ".rail/notes.md"))
   end
 
   # Nothing has forked from the base yet, so there is no merge base to diff from.
