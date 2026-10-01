@@ -616,6 +616,7 @@ defmodule RailWeb.TaskLive do
       id="rebase-task"
       data-qa="rebase_task"
       phx-click="rebase"
+      phx-disable-with="Rebasing…"
       disabled={Task.running?(@task)}
       title={"Rebase onto origin/#{@task.project.default_branch}"}
       class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"

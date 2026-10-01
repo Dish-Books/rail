@@ -466,6 +466,12 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "[data-qa='product-stage']")
     end
 
+    test "a tab shows the page-level progress bar while its stage loads", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#task-tab-issue[phx-click*='page_loading']")
+    end
+
     test "the issue tab reads the ticket Linear has", %{conn: conn, task: task, issue: issue} do
       {:ok, _described} =
         Issues.update_issue(issue, %{
@@ -1238,6 +1244,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "#rebase-task[title='Rebase onto origin/main']", "Rebase")
+      assert has_element?(view, "#rebase-task[phx-disable-with='Rebasing…']")
 
       view |> element("#rebase-task") |> render_click()
 
@@ -1277,6 +1284,7 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#rebase-task") |> render_click()
 
       assert render(view) =~ "Commit the engineer&#39;s work before rebasing it"
+      assert has_element?(view, "#rebase-task:not([disabled])", "Rebase")
     end
 
     test "a task past engineer offers review again for what the engineer changed since", %{

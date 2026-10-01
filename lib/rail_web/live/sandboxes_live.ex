@@ -431,7 +431,8 @@ defmodule RailWeb.SandboxesLive do
     turn =
       os_processes
       |> Enum.filter(&(&1.kind == :agent))
-      |> Enum.sort_by(&{&1.inserted_at, &1.id})
+      |> Enum.sort_by(& &1.id)
+      |> Enum.sort_by(& &1.inserted_at, DateTime)
       |> Enum.find_index(&(&1.id == sandbox.id))
 
     "Turn #{turn + 1}"

@@ -1,6 +1,7 @@
 import "phoenix_html";
 import { Socket } from "phoenix";
 import { LiveSocket } from "phoenix_live_view";
+import topbar from "../vendor/topbar";
 
 import { Theme } from "./hooks/theme";
 import { Shortcuts } from "./hooks/shortcuts";
@@ -37,6 +38,13 @@ const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
   hooks: Hooks
 });
+
+topbar.config({ barColors: { 0: "#6366f1" }, shadowColor: "rgba(0, 0, 0, 0)" });
+window.addEventListener("phx:page-loading-start", (info) => {
+  // An "error" load is a lost connection, which this bar does not report.
+  if (info.detail.kind !== "error") topbar.show(250);
+});
+window.addEventListener("phx:page-loading-stop", () => topbar.hide());
 
 liveSocket.connect();
 window.liveSocket = liveSocket;
