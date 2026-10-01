@@ -69,7 +69,7 @@ body {
   border-right-color: transparent;
   border-radius: 9999px;
   opacity: 0;
-  animation: busy-reveal 0s 250ms forwards, spin 1s linear 250ms infinite;
+  animation: busy-reveal 0s 250ms forwards, busy-spin 1s linear 250ms infinite;
 }
 
 .phx-click-loading:not(button) {
@@ -103,6 +103,12 @@ body {
 @keyframes busy-dim {
   to {
     opacity: 0.6;
+  }
+}
+
+@keyframes busy-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 

@@ -89,10 +89,12 @@ defmodule RailWeb.SandboxesLiveTest do
     ci = sandbox.(checking, %{kind: :ci, command: "mix ci"})
 
     {waiting_run, waiting_issue} = run_on.("Issues list remembers its filters per project")
-    _first_turn = sandbox.(waiting_run, %{status: :finished, inserted_at: DateTime.shift(now, hour: -1)})
+    # Turns that straddle a month are numbered by time, not by the day of the month.
+    _first_turn = sandbox.(waiting_run, %{status: :finished, inserted_at: ~U[2026-09-30 23:59:00.000000Z]})
 
     next =
       sandbox.(waiting_run, %{
+        inserted_at: ~U[2026-10-01 00:01:00.000000Z],
         status: :waiting_for_resources,
         reserved_cpus: 2,
         reserved_memory_gb: 4,
