@@ -21,12 +21,16 @@ defmodule Rail.Pipeline.Turn do
 
   `:command` is a shell command Rail ran on the run, such as a worktree's setup
   script: its whole output as one block, with the `process` that ran it.
+
+  `:reminder` is a note Rail sent the agent on its own, such as a QA report sent
+  back for evidence. `label` says which reminder it was, as in "reminder 1 of 2".
   """
-  defstruct author: :role, content: "", at: nil, duration_seconds: nil, process: nil
+  defstruct author: :role, content: "", label: nil, at: nil, duration_seconds: nil, process: nil
 
   @type t :: %__MODULE__{
-          author: :human | :role | :activity | :driving | :event | :turn_start | :command,
+          author: :human | :role | :activity | :driving | :event | :turn_start | :command | :reminder,
           content: String.t(),
+          label: String.t() | nil,
           at: DateTime.t() | nil,
           duration_seconds: non_neg_integer() | nil,
           process: struct() | nil

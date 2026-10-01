@@ -328,7 +328,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     File.write!(Path.join([task.scratch_path, "qa", "RUN-1.json"]), """
     {"verdict": "fail", "findings": [
       {"key": "total-unrounded", "title": "The total renders as $1234.5",
-       "check": "A bill's total reads as money", "severity": "major", "recommendation": "fix"}
+       "check": "A bill's total reads as money", "severity": "major", "recommendation": "fix",
+       "evidence": [{"name": "the total", "kind": "query", "text": "total: 1234.5"}]}
     ]}
     """)
 
@@ -575,7 +576,8 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     File.write!(report, """
     {"verdict": "fail", "findings": [
       {"key": "total-unrounded", "title": "The total renders as $1234.5",
-       "check": "A bill's total reads as money", "severity": "major", "recommendation": "fix"}
+       "check": "A bill's total reads as money", "severity": "major", "recommendation": "fix",
+       "evidence": [{"name": "the total", "kind": "query", "text": "total: 1234.5"}]}
     ]}
     """)
 
@@ -588,7 +590,7 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
     {"verdict": "pass", "findings": [
       {"key": "total-unrounded", "title": "The total renders as $1234.5",
        "check": "A bill's total reads as money", "severity": "major", "recommendation": "fix",
-       "status": "fixed"}
+       "status": "fixed", "evidence": [{"name": "the total now", "kind": "query", "text": "total: 1,234.50"}]}
     ]}
     """)
 

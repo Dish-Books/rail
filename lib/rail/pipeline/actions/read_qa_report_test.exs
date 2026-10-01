@@ -29,6 +29,9 @@ defmodule Rail.Pipeline.Actions.ReadQaReportTest do
   end
 
   test "reads the verdict, what it could not check, and the findings", %{task: task, report_path: path} do
+    File.mkdir_p!(Path.join(Path.dirname(path), "evidence"))
+    File.write!(Path.join([Path.dirname(path), "evidence", "total.png"]), "png bytes")
+
     File.write!(path, """
     {
       "verdict": "fail",
@@ -127,6 +130,9 @@ defmodule Rail.Pipeline.Actions.ReadQaReportTest do
     task: task,
     report_path: path
   } do
+    File.mkdir_p!(Path.join(Path.dirname(path), "evidence"))
+    File.write!(Path.join([Path.dirname(path), "evidence", "fine.png"]), "png bytes")
+
     File.write!(path, """
     {"findings": [
       {"key": "one", "title": "One", "check": "A check", "severity": "nit", "recommendation": "skip",
@@ -140,17 +146,77 @@ defmodule Rail.Pipeline.Actions.ReadQaReportTest do
          {"name": "unknown kind", "kind": "hologram", "path": "evidence/fine.png"},
          {"name": "shows nothing", "kind": "note"},
          {"name": "fine", "kind": "screenshot", "path": "evidence/fine.png"}
+       ]},
+      {"key": "two", "title": "Two", "check": "A check", "severity": "nit", "recommendation": "skip",
+       "evidence": [{"name": "the export", "kind": "log", "path": "../../tmp/x.csv"}]}
+    ]}
+    """)
+
+    assert %QaReport{
+             findings: [
+               %{
+                 evidence: [%{name: "nameless"}, %{name: "fine", path: "evidence/fine.png"}],
+                 refused: [
+                   "an entry with no name or kind",
+                   "an entry with no name or kind",
+                   "an entry with no name or kind",
+                   "../../etc/passwd is outside the QA folder",
+                   "/etc/passwd is outside the QA folder",
+                   "an entry with no name or kind",
+                   "shows nothing has no file and no text"
+                 ]
+               },
+               %{evidence: [], refused: ["../../tmp/x.csv is outside the QA folder"]}
+             ]
+           } = Pipeline.read_qa_report(task)
+  end
+
+  test "a path inside the QA folder that names no file is refused", %{task: task, report_path: path} do
+    File.write!(path, """
+    {"findings": [
+      {"key": "one", "title": "One", "check": "A check", "severity": "nit", "recommendation": "skip",
+       "evidence": [{"name": "the log", "kind": "log", "path": "evidence/server.log"}]}
+    ]}
+    """)
+
+    assert %QaReport{findings: [%{evidence: [], refused: ["evidence/server.log is not a file in the QA folder"]}]} =
+             Pipeline.read_qa_report(task)
+  end
+
+  test "text written inline is evidence on its own, even beside a path Rail refused", %{
+    task: task,
+    report_path: path
+  } do
+    File.write!(path, """
+    {"findings": [
+      {"key": "one", "title": "One", "check": "A check", "severity": "nit", "recommendation": "skip",
+       "evidence": [
+         {"name": "what the database holds", "kind": "query", "text": "amount_cents: 123450"},
+         {"name": "the log", "kind": "log", "path": "../server.log", "text": "[error] boom"}
        ]}
     ]}
     """)
 
-    assert %QaReport{findings: [%{evidence: [%{name: "nameless"}, %{name: "fine", path: "evidence/fine.png"}]}]} =
-             Pipeline.read_qa_report(task)
+    assert %QaReport{
+             findings: [
+               %{
+                 evidence: [
+                   %{name: "what the database holds", path: nil, text: "amount_cents: 123450"},
+                   %{name: "the log", path: nil, text: "[error] boom"}
+                 ],
+                 refused: ["../server.log is outside the QA folder"]
+               }
+             ]
+           } = Pipeline.read_qa_report(task)
   end
 
   # `qa_shot` and `qa_file` name what they file `<check>~<caption>`, and tell the
   # agent to cite exactly that.
   test "evidence citing a name Rail filed is kept", %{task: task, report_path: path} do
+    File.mkdir_p!(Path.join(Path.dirname(path), "evidence"))
+    File.write!(Path.join([Path.dirname(path), "evidence", "statement~the-statement.pdf"]), "%PDF-1.7")
+    File.write!(Path.join([Path.dirname(path), "evidence", "statement~the-download.jpg"]), "jpeg bytes")
+
     File.write!(path, """
     {"findings": [
       {"key": "one", "title": "One", "check": "statement", "severity": "nit", "recommendation": "skip",
@@ -199,7 +265,8 @@ defmodule Rail.Pipeline.Actions.ReadQaReportTest do
              suggestion: nil,
              status: :open,
              caused_by_change: true,
-             evidence: []
+             evidence: [],
+             refused: []
            } = finding
   end
 end

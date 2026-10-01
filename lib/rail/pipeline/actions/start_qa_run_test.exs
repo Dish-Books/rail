@@ -85,7 +85,7 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
       assert prompt =~ "then call `qa_file` with the row's key, a caption and the path relative to #{qa_dir}"
       assert prompt =~ "A check can carry both."
       assert prompt =~ "a change with nothing on screen is proved by what it writes, not by opening the browser"
-      assert prompt =~ "Files filed with `qa_file` sit next to the finding through its `check`, as pictures do"
+      assert prompt =~ "A file you filed with `qa_file` is cited the same way, by the name it handed back"
       refute prompt =~ "Take at least one for every check"
 
       {:ok, %OsProcess{run: spawned}}
@@ -122,6 +122,23 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
       assert prompt =~ "a finding nobody can re-run is a finding nobody can close"
       assert prompt =~ "`caused_by_change` is `false` for something that was already broken"
       assert prompt =~ "never absolute and never climbing out with `..`"
+
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = Pipeline.start_qa_run(run)
+  end
+
+  # A finding shows only its own evidence, so a reader who opens it sees the
+  # defect rather than every picture filed against the row it came from.
+  test "says a finding without usable evidence sends the whole report back", %{run: run} do
+    expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
+      assert ["-p", prompt | _rest] = argv
+      assert prompt =~ "Every finding must carry at least one piece of usable evidence"
+      assert prompt =~ "makes the whole report invalid, and Rail sends it back"
+      assert prompt =~ "A finding shows only its own `evidence`"
+      assert prompt =~ "goes in the finding's `evidence`"
+      refute prompt =~ "put the pictures you filed for that row next to the finding"
 
       {:ok, %OsProcess{run: spawned}}
     end)
@@ -174,6 +191,7 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
       assert prompt =~ "`spacing-nit` [nit, pre-existing, human decided: dismissed, leave it, status: open]"
       assert prompt =~ "(/bills/new)"
       assert prompt =~ "never argue it again"
+      assert prompt =~ "A finding you restate keeps its `evidence` entries"
 
       {:ok, %OsProcess{run: spawned}}
     end)

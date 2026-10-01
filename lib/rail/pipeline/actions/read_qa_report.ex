@@ -5,8 +5,8 @@ defmodule Rail.Pipeline.Actions.ReadQaReport do
   QA owns `<scratch>/qa/<identifier>.json` and rewrites the whole of it every
   pass. What comes out of it is the agent's word, not Rail's, so a finding
   missing a key, a title, the check it came from or a severity Rail knows is no
-  finding rather than a crash, and a piece of evidence naming a path that climbs
-  out of the QA directory is dropped while its finding survives without it.
+  finding rather than a crash. Evidence Rail cannot show is left out of the
+  finding and named in its `refused`, so a report can be sent back saying why.
   """
 
   alias Rail.Issues.Schemas.Issue
@@ -25,7 +25,8 @@ defmodule Rail.Pipeline.Actions.ReadQaReport do
   thing. Requires `issue` to be preloaded.
   """
   def read_qa_report(%Task{scratch_path: scratch_path, issue: %Issue{identifier: identifier}}) do
-    path = Path.join([scratch_path, "qa", "#{identifier}.json"])
+    qa_dir = Path.join(scratch_path, "qa")
+    path = Path.join(qa_dir, "#{identifier}.json")
 
     with {:ok, content} <- File.read(path),
          {:ok, %{"findings" => findings} = report} when is_list(findings) <- Jason.decode(content) do
@@ -33,7 +34,7 @@ defmodule Rail.Pipeline.Actions.ReadQaReport do
         verdict: enum(report["verdict"], QaReport.verdicts()),
         summary: text(report["summary"]),
         not_checked: text(report["not_checked"]),
-        findings: findings |> Enum.filter(&finding?/1) |> Enum.map(&finding/1)
+        findings: findings |> Enum.filter(&finding?/1) |> Enum.map(&finding(&1, qa_dir))
       }
     else
       _unreadable -> nil
@@ -49,7 +50,9 @@ defmodule Rail.Pipeline.Actions.ReadQaReport do
 
   defp finding?(_malformed), do: false
 
-  defp finding(%{"key" => key, "title" => title, "check" => check} = finding) do
+  defp finding(%{"key" => key, "title" => title, "check" => check} = finding, qa_dir) do
+    {evidence, refused} = evidence(finding["evidence"], qa_dir)
+
     %{
       key: key,
       title: String.trim(title),
@@ -65,38 +68,47 @@ defmodule Rail.Pipeline.Actions.ReadQaReport do
       recommendation: enum(finding["recommendation"], QaFinding.recommendations()),
       status: enum(finding["status"], QaFinding.statuses()) || :open,
       caused_by_change: caused_by_change(finding["caused_by_change"]),
-      evidence: evidence(finding["evidence"])
+      evidence: evidence,
+      refused: refused
     }
   end
 
-  defp evidence(entries) when is_list(entries) do
-    entries |> Enum.filter(&evidence?/1) |> Enum.map(&one_evidence/1)
+  defp evidence(entries, qa_dir) when is_list(entries) do
+    read = Enum.map(entries, &one_evidence(&1, qa_dir))
+
+    {read |> Enum.map(&elem(&1, 0)) |> Enum.reject(&is_nil/1), Enum.flat_map(read, &elem(&1, 1))}
   end
 
-  defp evidence(_missing), do: []
+  defp evidence(_missing, _qa_dir), do: {[], []}
 
   # A path that is not confined to the QA directory is the one thing here that
   # would reach the filesystem on a stranger's request, so it is refused at the
   # door as well as in the changeset behind it.
-  defp evidence?(%{"name" => name} = entry) when is_binary(name) do
-    String.trim(name) != "" and enum(entry["kind"], QaEvidence.kinds()) != nil and
-      (confined?(entry["path"]) or text(entry["text"]) != nil)
+  defp one_evidence(%{"name" => name} = entry, qa_dir) when is_binary(name) do
+    name = text(name)
+    kind = enum(entry["kind"], QaEvidence.kinds())
+    path = text(entry["path"])
+    shown = text(entry["text"])
+
+    path_refused =
+      cond do
+        path == nil -> nil
+        not QaEvidence.confined?(path) -> "#{path} is outside the QA folder"
+        not File.regular?(Path.join(qa_dir, path)) -> "#{path} is not a file in the QA folder"
+        true -> nil
+      end
+
+    kept_path = if path_refused == nil, do: path
+
+    cond do
+      name == nil or kind == nil -> {nil, ["an entry with no name or kind"]}
+      kept_path || shown -> {%{name: name, kind: kind, path: kept_path, text: shown}, List.wrap(path_refused)}
+      path_refused -> {nil, [path_refused]}
+      true -> {nil, ["#{name} has no file and no text"]}
+    end
   end
 
-  defp evidence?(_malformed), do: false
-
-  defp one_evidence(%{"name" => name} = entry) do
-    %{
-      name: String.trim(name),
-      kind: enum(entry["kind"], QaEvidence.kinds()),
-      path: if(confined?(entry["path"]), do: String.trim(entry["path"])),
-      text: text(entry["text"])
-    }
-  end
-
-  defp confined?(path) when is_binary(path), do: QaEvidence.confined?(String.trim(path))
-
-  defp confined?(_missing), do: false
+  defp one_evidence(_malformed, _qa_dir), do: {nil, ["an entry with no name or kind"]}
 
   defp caused_by_change(value) when is_boolean(value), do: value
   defp caused_by_change(_missing), do: true

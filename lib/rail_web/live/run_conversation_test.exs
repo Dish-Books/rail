@@ -132,6 +132,37 @@ defmodule RailWeb.Live.RunConversationTest do
     assert html =~ ~s(data-qa="system-event")
   end
 
+  # What Rail sent on its own is a message to the agent like a person's, but it
+  # says it was Rail and which reminder it was.
+  test "a note Rail sent the agent by itself reads as Rail's, not as the human's", %{
+    task: task,
+    roles: roles,
+    roles_map: roles_map
+  } do
+    {:ok, run} =
+      Pipeline.create_run(%{
+        task_id: task.id,
+        role_id: roles[:engineer].id,
+        status: :running,
+        conversation_id: "conv_reminded",
+        started_at: ~U[2026-09-09 10:00:00.000000Z]
+      })
+
+    Pipeline.append_run_events(run.id, nil, [
+      "[rail] 1 finding had no evidence, so the report went back to QA (1 of 2).",
+      "[reminder 1 of 2] This report is not valid yet.",
+      "[reminder 1 of 2]",
+      "[reminder 1 of 2] - Export button stays enabled (export-button-enabled): no evidence attached."
+    ])
+
+    html = render_component(RunConversation, id: "conv", task: task, runs: [run], roles_map: roles_map)
+
+    assert [bubble] = html |> Floki.parse_fragment!() |> Floki.find("[data-qa='reminder-bubble']")
+    assert Floki.text(bubble) =~ ~r/Rail, automatically\s*· reminder 1 of 2/
+    assert Floki.text(bubble) =~ "This report is not valid yet.\n\n- Export button stays enabled"
+    refute html =~ ~s(data-qa="human-bubble")
+  end
+
   test "reads the agent's stream as a conversation, not as JSON", %{task: task, roles: roles, roles_map: roles_map} do
     {:ok, run} =
       Pipeline.create_run(%{

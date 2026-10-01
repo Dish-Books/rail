@@ -3,6 +3,7 @@ defmodule Rail.Pipeline.Actions.ReadQaEvidenceTest do
 
   alias Rail.Issues
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.QaEvidence
 
   setup %{project: project} do
     scope = system_scope()
@@ -71,5 +72,44 @@ defmodule Rail.Pipeline.Actions.ReadQaEvidenceTest do
     File.rm!(Path.join(directory, "script-runs~the-log.log"))
 
     assert {:error, :not_found} = Pipeline.read_qa_evidence(task, listed)
+  end
+
+  test "reads a log a finding cites", %{task: task, directory: directory} do
+    File.write!(Path.join(directory, "server.log"), "[info] GET /bills\n[error] boom\n")
+
+    assert Pipeline.read_qa_evidence(task, %QaEvidence{kind: :log, path: "evidence/server.log"}) ==
+             {:ok, %{text: "[info] GET /bills\n[error] boom\n", truncated: false}}
+
+    File.write!(Path.join(directory, "quiet.log"), "")
+
+    assert Pipeline.read_qa_evidence(task, %QaEvidence{kind: :log, path: "evidence/quiet.log"}) ==
+             {:ok, %{text: "", truncated: false}}
+  end
+
+  # A finding's log gets the whole column, so it is read further than a preview.
+  test "a finding's file is cut at 256 KB, and says so", %{task: task, directory: directory} do
+    File.write!(Path.join(directory, "big.log"), String.duplicate("a", 256 * 1024 + 10))
+
+    shown = String.duplicate("a", 256 * 1024)
+
+    assert {:ok, %{text: ^shown, truncated: true}} =
+             Pipeline.read_qa_evidence(task, %QaEvidence{kind: :log, path: "evidence/big.log"})
+
+    File.write!(Path.join(directory, "wide.log"), String.duplicate("a", 256 * 1024 - 1) <> "é and more")
+
+    shown = String.duplicate("a", 256 * 1024 - 1)
+
+    assert {:ok, %{text: ^shown, truncated: true}} =
+             Pipeline.read_qa_evidence(task, %QaEvidence{kind: :log, path: "evidence/wide.log"})
+  end
+
+  test "a finding's file that is missing or not text is not shown", %{task: task, directory: directory} do
+    assert Pipeline.read_qa_evidence(task, %QaEvidence{kind: :log, path: "evidence/gone.log"}) ==
+             {:error, :not_found}
+
+    File.write!(Path.join(directory, "dump.bin"), <<0xFF, 0xFE, 0x00, 0x81, "x">>)
+
+    assert Pipeline.read_qa_evidence(task, %QaEvidence{kind: :log, path: "evidence/dump.bin"}) ==
+             {:error, :not_text}
   end
 end

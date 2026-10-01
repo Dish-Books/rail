@@ -11,6 +11,7 @@ import { ChatComposer } from "./hooks/chat_composer";
 import { DiffScroller } from "./hooks/diff_scroller";
 import { DiffSection } from "./hooks/diff_section";
 import { CopyText } from "./hooks/copy_text";
+import { JumpToLine } from "./hooks/jump_to_line";
 import { LocalTime } from "./hooks/local_time";
 import { LocalResetTime } from "./hooks/local_reset_time";
 import { DesignFrame } from "./hooks/design_frame";
@@ -28,6 +29,7 @@ const Hooks = {
   DiffScroller,
   DiffSection,
   CopyText,
+  JumpToLine,
   LocalTime,
   LocalResetTime,
   BrowserScreencast,

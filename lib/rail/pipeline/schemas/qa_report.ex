@@ -20,6 +20,7 @@ defmodule Rail.Pipeline.Schemas.QaReport do
   each finding is what actually moves the task.
   """
   @verdicts [:pass, :concerns, :fail]
+  @evidence_reminder_limit 2
 
   # A plain struct rather than an embedded schema: nothing casts this, nothing
   # queries it, and the only thing that builds one is the reader, which has
@@ -28,7 +29,19 @@ defmodule Rail.Pipeline.Schemas.QaReport do
 
   def verdicts, do: @verdicts
 
+  @doc "How many times Rail sends a report back for evidence before it stops asking."
+  def evidence_reminder_limit, do: @evidence_reminder_limit
+
   def verdict_label(:pass), do: "Passed"
   def verdict_label(:concerns), do: "Passed with concerns"
   def verdict_label(:fail), do: "Failed"
+
+  @doc """
+  Every finding in `report` left with no evidence, as `%{key:, title:, refused:}`
+  in report order. Any one of them makes the whole report not valid.
+  """
+  def unproven(%__MODULE__{findings: findings}) do
+    for %{evidence: [], key: key, title: title, refused: refused} <- findings,
+        do: %{key: key, title: title, refused: refused}
+  end
 end

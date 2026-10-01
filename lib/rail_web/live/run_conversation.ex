@@ -330,6 +330,25 @@ defmodule RailWeb.Live.RunConversation do
             class="text-[13px] whitespace-pre-wrap wrap-break-word select-text leading-relaxed"
           >{String.trim(@text)}</div>
         </div>
+      <% :reminder -> %>
+        <!-- What Rail sent the agent on its own: the human bubble's shape, because
+        it is a message to the agent, but saying it was Rail and which reminder. -->
+        <div
+          id={"msg-#{@idx}"}
+          data-qa="reminder-bubble"
+          class="w-fit max-w-[85%] ml-auto mt-3.5 px-3 py-2 rounded-xl rounded-br-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 space-y-1"
+        >
+          <div class="flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+            <.icon name="pi-robot" class="h-3 w-3 shrink-0" />
+            <span>Rail, automatically</span>
+            <span class="font-normal">· {@msg.label}</span>
+          </div>
+          <%!-- Kept on one line: pre-wrap would render the template's own indentation. --%>
+          <div
+            phx-no-format
+            class="text-[13px] whitespace-pre-wrap wrap-break-word select-text leading-relaxed"
+          >{String.trim(@text)}</div>
+        </div>
       <% :role -> %>
         <!-- 4.8 _RoleBubble (unframed markdown: the sidebar already says who is talking) -->
         <div

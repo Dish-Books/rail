@@ -3713,6 +3713,16 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#send-to-demo")
     end
 
+    test "a QA run that has written no report yet has no verdict to show", %{conn: conn, task: task} do
+      File.rm!(Path.join([task.scratch_path, "qa", "TLV-1.json"]))
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      refute has_element?(view, "[data-qa='qa_verdict']")
+      refute has_element?(view, "#qa-held")
+      assert has_element?(view, "#qa-pending-title", "Nothing to fix")
+    end
+
     # A pass in flight has no findings to read yet, so what is shown is what it is
     # doing: the checklist it wrote before it opened anything, beside the browser.
     test "a QA pass still running shows the checklist and the browser", %{conn: conn, task: task, qa_run: run} do
@@ -3926,7 +3936,7 @@ defmodule RailWeb.TaskLiveTest do
 
     # Evidence can be both: what the screen showed and what the run wrote, on one
     # row and on the finding raised from it.
-    test "a row with a picture and a file shows both, and so does its finding", %{conn: conn, task: task} do
+    test "a row with a picture and a file shows both, and its finding only what it cites", %{conn: conn, task: task} do
       {:ok, _checklist} = Pipeline.write_qa_checklist(task, [%{"key" => "totals", "title" => "The totals agree"}])
 
       {:ok, _synced} =
@@ -3936,7 +3946,8 @@ defmodule RailWeb.TaskLiveTest do
             title: "The journal entry is off by a cent",
             check: "totals",
             severity: :major,
-            recommendation: :fix
+            recommendation: :fix,
+            evidence: [%{name: "The ledger export", kind: :log, path: "evidence/totals~the-ledger-export.csv"}]
           }
         ])
 
@@ -3967,14 +3978,10 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("#qa-check-finding-off-by-a-cent") |> render_click()
 
-      assert has_element?(view, "[data-qa='qa_finding_check_shots']", "Filed for this check")
-      assert has_element?(view, "[data-qa='qa_finding_check_shot']", "The journal entry")
-
-      assert has_element?(
-               view,
-               ~s([data-qa='qa_finding_check_file'][href="/tasks/#{task.id}/qa/evidence/totals~the-ledger-export.csv"]),
-               "The ledger export"
-             )
+      refute has_element?(view, "[data-qa='qa_finding_check_shots']")
+      refute has_element?(view, "#qa-finding-detail img")
+      assert has_element?(view, "#qa-evidence-tab-0[aria-selected='true']", "totals~the-ledger-export.csv")
+      assert has_element?(view, "#qa-finding-detail [data-qa='qa_evidence_line']", "1,2500.00")
     end
 
     # A pass that proves a row with a file says so in its log, and that is what
@@ -4118,11 +4125,15 @@ defmodule RailWeb.TaskLiveTest do
             title: "The journal entry is off by a cent",
             check: "totals",
             severity: :major,
-            recommendation: :fix
+            recommendation: :fix,
+            evidence: [
+              %{name: "The entry a cent short", kind: :screenshot, path: "evidence/totals~the-entry-a-cent-short.png"}
+            ]
           }
         ])
 
       File.write!(Path.join([task.scratch_path, "qa", "evidence", "totals~the-journal-entry.png"]), "png bytes")
+      File.write!(Path.join([task.scratch_path, "qa", "evidence", "totals~the-entry-a-cent-short.png"]), "png bytes")
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4133,10 +4144,26 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#qa-check-finding-off-by-a-cent", "off by a cent")
       assert has_element?(view, "[data-qa='qa_check_detail_disagrees']", "only one of them can be right")
 
-      # The finding opens off the row, and the pictures filed for that row come
-      # with it - evidence a reader can see beats a paragraph describing it.
+      # The row shows every picture filed against it.
+      assert has_element?(view, "#qa-check-detail [data-qa='qa_check_detail_shot']", "The journal entry")
+      assert has_element?(view, "#qa-check-detail [data-qa='qa_check_detail_shot']", "The entry a cent short")
+
+      # The finding opens off the row with only what was attached to it, so
+      # everything under it is proof of that defect.
       view |> element("#qa-check-finding-off-by-a-cent") |> render_click()
-      assert has_element?(view, "[data-qa='qa_finding_check_shots']", "The journal entry")
+      refute has_element?(view, "[data-qa='qa_finding_check_shots']")
+      assert has_element?(view, "#qa-evidence-tab-0[aria-selected='true']", "totals~the-entry-a-cent-short.png")
+
+      assert [_its_own] =
+               view |> render() |> Floki.parse_fragment!() |> Floki.find("#qa-finding-detail img")
+
+      assert has_element?(view, ~s(#qa-finding-detail img[src="/tasks/#{task.id}/qa/off-by-a-cent/evidence/0"]))
+
+      assert has_element?(
+               view,
+               ~s(#qa-finding-detail a[href="/tasks/#{task.id}/qa/off-by-a-cent/evidence/0"][target="_blank"]),
+               "Full size"
+             )
 
       # A Close that arrives when the middle is no longer a picture closes to
       # nothing rather than crashing the panel.
@@ -4203,9 +4230,19 @@ defmodule RailWeb.TaskLiveTest do
       end
     end
 
-    # A queried value is small enough to read where it sits; a captured log is a
-    # file, and a file that is not a picture is offered rather than rendered.
-    test "evidence that is not a screenshot is read or offered", %{conn: conn, task: task} do
+    # A captured log is read where the finding is, with the lines that failed
+    # marked, rather than offered as a file to download and open somewhere else.
+    test "a log QA saved is read on the finding, its errors marked, and nothing downloads", %{conn: conn, task: task} do
+      evidence_dir = Path.join([task.scratch_path, "qa", "evidence"])
+
+      File.write!(
+        Path.join(evidence_dir, "server.log"),
+        "[info] POST /bills\n[error] boom in TaxRate.percent/1\n[info] Sent 500\n"
+      )
+
+      File.write!(Path.join(evidence_dir, "dump.bin"), <<0xFF, 0xFE, 0x00, 0x81>>)
+      File.write!(Path.join(evidence_dir, "long.log"), String.duplicate("a", 300_000))
+
       {:ok, _synced} =
         Pipeline.sync_qa_findings(task, [
           %{
@@ -4215,16 +4252,127 @@ defmodule RailWeb.TaskLiveTest do
             severity: :major,
             recommendation: :fix,
             evidence: [
-              %{name: "what the database holds", kind: :query, text: "amount_cents: 123450"},
-              %{name: "the server log", kind: :log, path: "evidence/server.log"}
+              %{name: "Server log during the export", kind: :log, path: "evidence/server.log"},
+              %{name: "Line items on INV-2025-0412", kind: :query, text: "amount_cents: 123450"},
+              %{name: "a log that went", kind: :log, path: "evidence/gone.log"},
+              %{name: "a dump", kind: :log, path: "evidence/dump.bin"},
+              %{name: "a long log", kind: :log, path: "evidence/long.log"},
+              %{name: "What the network tab showed", kind: :note, text: "POST /exports twice"}
             ]
           }
         ])
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "[data-qa='qa_evidence'][data-kind='query']", "amount_cents: 123450")
-      assert has_element?(view, "[data-qa='qa_evidence_file']", "Open evidence/server.log")
+      assert has_element?(view, "#qa-evidence-tab-0[aria-selected='true']", "server.log")
+      assert has_element?(view, "#qa-evidence-tab-1", "Line items on INV-2025-0412")
+      assert has_element?(view, "[data-qa='qa_evidence_name']", "Server log during the export")
+      assert has_element?(view, "[data-qa='qa_evidence_line_count']", "3 lines")
+      assert has_element?(view, "[data-qa='qa_evidence_line']", "[info] POST /bills")
+      assert has_element?(view, "#qa-evidence-first-error[data-qa='qa_evidence_line'][data-error]", "[error] boom")
+      refute has_element?(view, "[data-qa='qa_evidence_line'][data-error]", "[info] Sent 500")
+      assert has_element?(view, "[data-qa='qa_evidence_jump'][data-target='qa-evidence-first-error']", "Jump to error")
+      assert has_element?(view, "[data-qa='qa_evidence_copy'][phx-hook='CopyText']", "Copy")
+      assert has_element?(view, "[data-qa='qa_evidence_footer']", "marks lines logged at error level")
+      refute has_element?(view, "[data-qa='qa_evidence_file']")
+      refute has_element?(view, "a[href*='/evidence/']")
+
+      view |> element("#qa-evidence-tab-1") |> render_click()
+
+      assert has_element?(view, "#qa-evidence-tab-1[aria-selected='true']")
+      assert has_element?(view, "[data-qa='qa_evidence_line']", "amount_cents: 123450")
+      refute has_element?(view, "[data-qa='qa_evidence_jump']")
+
+      view |> element("#qa-evidence-tab-2") |> render_click()
+      assert has_element?(view, "[data-qa='qa_evidence_unreadable']", "evidence/gone.log is not there any more.")
+
+      view |> element("#qa-evidence-tab-3") |> render_click()
+      assert has_element?(view, "[data-qa='qa_evidence_unreadable']", "evidence/dump.bin is not text")
+
+      view |> element("#qa-evidence-tab-4") |> render_click()
+      assert has_element?(view, "[data-qa='qa_evidence_truncated']", "256 KB")
+
+      view |> element("#qa-evidence-tab-5[data-kind='note']") |> render_click()
+      assert has_element?(view, "[data-qa='qa_evidence_line']", "POST /exports twice")
+    end
+
+    # A finding raised before every finding had to carry evidence still opens.
+    test "a finding with no evidence says so", %{conn: conn, task: task} do
+      {:ok, _synced} =
+        Pipeline.sync_qa_findings(task, [
+          %{key: "a-nit", title: "A nit", check: "check", severity: :nit, recommendation: :skip}
+        ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='qa_evidence_none']", "QA attached no evidence to this finding.")
+      refute has_element?(view, "[data-qa='qa_evidence_tab']")
+    end
+
+    # Nothing from a report with a finding that proves nothing is put in front of
+    # a person, and what is wrong with it is said where the verdict would be.
+    test "a report sent back for evidence holds every finding back and says why", %{
+      conn: conn,
+      task: task,
+      qa_run: run,
+      raised: raised
+    } do
+      {:ok, _earlier} = Pipeline.sync_qa_findings(task, raised)
+
+      File.write!(Path.join([task.scratch_path, "qa", "TLV-1.json"]), """
+      {"verdict": "fail", "summary": "Export breaks.", "findings": [
+        {"key": "export-500", "title": "Export fails with a server error", "check": "export",
+         "severity": "blocker", "recommendation": "fix",
+         "evidence": [{"name": "the log", "kind": "log", "text": "[error] boom"}]},
+        {"key": "export-button-enabled", "title": "Export button stays enabled while a download is in progress",
+         "check": "export", "severity": "minor", "recommendation": "fix"},
+        {"key": "export-decimal-comma", "title": "Exported amounts use a comma as the decimal separator",
+         "check": "locale", "severity": "major", "recommendation": "fix",
+         "evidence": [{"name": "the export", "kind": "log", "path": "../../tmp/INV-2025-0412.csv"}]}
+      ]}
+      """)
+
+      {:ok, reminded} =
+        Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress, evidence_reminders: 1})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#qa-held[data-tone='sent_back']", "Sent back to QA")
+
+      assert has_element?(
+               view,
+               "[data-qa='qa_held_finding']",
+               "Export button stays enabled while a download is in progress"
+             )
+
+      assert has_element?(view, "[data-qa='qa_held_finding']", "No evidence attached")
+
+      assert has_element?(
+               view,
+               "[data-qa='qa_held_finding']",
+               "Evidence refused: ../../tmp/INV-2025-0412.csv is outside the QA folder"
+             )
+
+      refute has_element?(view, "[data-qa='qa_held_finding']", "Export fails with a server error")
+      assert has_element?(view, "#qa-held", "Reminder 1 of 2. Rail asked QA for evidence in the conversation.")
+      assert has_element?(view, "#qa-findings-held", "held back")
+      assert has_element?(view, "#qa-findings-held", "QA reported 3. None is shown until every one carries evidence.")
+      assert has_element?(view, "#qa-held-back-title", "Waiting for QA's evidence")
+      refute has_element?(view, "[data-qa='qa_finding']")
+      refute has_element?(view, "[data-qa='qa_verdict']")
+
+      error = "QA's report still has 2 findings without evidence after 2 reminders. They are named in the QA sidebar."
+      {:ok, _given_up} = Pipeline.update_run(reminded, %{status: :finished, evidence_reminders: 2, error: error})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#qa-held[data-tone='not_valid']", "Report not valid")
+      assert has_element?(view, "#qa-held", "Still missing after 2 reminders, so Rail stopped asking.")
+      assert has_element?(view, "#task-error-card", "They are named in the QA sidebar.")
+      assert has_element?(view, "#qa-held-back-title", "No findings to decide")
+      refute has_element?(view, "[data-qa='qa_finding']")
+      refute has_element?(view, "#send-qa-findings-to-engineer")
+      refute has_element?(view, "#send-to-demo")
     end
 
     # QA advises and the human decides, and the panel says so in both directions

@@ -6,6 +6,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
   alias Rail.Pipeline.Turn
 
   @human_prefix ~r/^\[human\]\s*/
+  @reminder_prefix ~r/^\[(reminder \d+ of \d+)\]\s*/
   @system_prefix ~r/^\[(run|init|tool|tool error|result|rail|handoff|denied|recovered|error|rate limit|stderr|human)(\s|\]|:)/
 
   @doc """
@@ -13,9 +14,10 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
 
   Consecutive lines of the same kind group into one turn: everything a human
   typed until the harness says otherwise, everything the role said until a tool
-  call interrupts, and each run of tool lines as one activity block. A browser
-  step is the exception: each one is its own turn, because each one is a separate
-  thing that happened to the page.
+  call interrupts, each run of tool lines as one activity block, and each note
+  Rail sent the agent on its own as one reminder. A browser step is the
+  exception: each one is its own turn, because each one is a separate thing that
+  happened to the page.
 
   Accepts a list of lines or one multiline string; a log with nothing in it
   parses to no turns rather than to an empty turn.
@@ -52,10 +54,11 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
         end
       end)
 
-    initial_state = %{human_lines: nil, activity_lines: [], role_lines: [], turns: []}
+    initial_state = %{human_lines: nil, reminder: nil, activity_lines: [], role_lines: [], turns: []}
 
     flat_lines
     |> Enum.reduce(initial_state, &process_log_line/2)
+    |> flush_reminder()
     |> flush_human()
     |> flush_activity()
     |> flush_role()
@@ -65,6 +68,18 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
 
   defp process_log_line(line, state) do
     cond do
+      Regex.match?(@reminder_prefix, line) ->
+        [prefix, label] = Regex.run(@reminder_prefix, line)
+
+        state
+        |> flush_human()
+        |> flush_activity()
+        |> flush_role()
+        |> append_reminder_line(label, String.replace_prefix(line, prefix, ""))
+
+      state.reminder != nil ->
+        process_log_line(line, flush_reminder(state))
+
       Regex.match?(@human_prefix, line) ->
         state = state |> flush_activity() |> flush_role()
 
@@ -128,6 +143,19 @@ defmodule Rail.Pipeline.Actions.ParseTranscript do
   defp append_activity_line(state, line), do: %{state | activity_lines: [line | state.activity_lines]}
   defp append_role_line(state, line), do: %{state | role_lines: [line | state.role_lines]}
   defp append_turn(state, turn), do: %{state | turns: [turn | state.turns]}
+
+  defp append_reminder_line(%{reminder: {label, lines}} = state, label, line) do
+    %{state | reminder: {label, [line | lines]}}
+  end
+
+  defp append_reminder_line(state, label, line), do: %{flush_reminder(state) | reminder: {label, [line]}}
+
+  defp flush_reminder(%{reminder: nil} = state), do: state
+
+  defp flush_reminder(%{reminder: {label, lines}} = state) do
+    turn = %Turn{author: :reminder, label: label, content: joined(lines)}
+    %{state | reminder: nil, turns: [turn | state.turns]}
+  end
 
   defp flush_human(%{human_lines: nil} = state), do: state
 
