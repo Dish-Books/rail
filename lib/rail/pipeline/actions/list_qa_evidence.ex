@@ -1,28 +1,31 @@
 defmodule Rail.Pipeline.Actions.ListQaEvidence do
   @moduledoc """
-  Every screenshot a QA pass has filed so far, newest first.
+  Every piece of evidence a QA pass has filed so far, newest first.
 
   The findings each name their own, but those only exist once the pass has
   written its report - and the whole point of watching a pass is seeing what it
   saw while it is still going. So this reads the directory rather than the rows.
 
   The check each one was filed against is in its name, because Rail put it there.
-  What the caption said is read from the captions written beside the pictures -
+  What the caption said is read from the captions written beside the files -
   a filename has lost the capitals and the punctuation by the time it is a
   filename, and a picture from before there were captions falls back to it.
 
-  Nothing else in that directory is a picture: an agent writing its own there is
-  writing somewhere no finding can cite.
+  A picture is listed whatever it is called. Any other file is listed only once
+  Rail has filed it against a check, and a link is never listed, because this
+  listing is what the panel serves.
   """
 
+  import Rail.Pipeline.Utils.QaEvidenceKind
+
+  alias Rail.Pipeline.Schemas.QaEvidence
   alias Rail.Pipeline.Schemas.Task
 
-  @shots [".jpg", ".jpeg", ".png", ".gif", ".webp"]
-
   @doc """
-  Lists `task`'s QA screenshots as `%{name:, file:, check:, taken_at:}`, newest
-  first. `check` is the key of the row it was taken for, or `nil` for a picture
-  filed before there was a checklist to file it against.
+  Lists `task`'s QA evidence as `%{name:, file:, check:, kind:, taken_at:}`,
+  newest first. `check` is the key of the row it was filed for, or `nil` for a
+  picture filed before there was a checklist. `kind` is `:screenshot`, `:pdf`,
+  `:text` or `:file`.
   """
   def list_qa_evidence(%Task{scratch_path: scratch_path}) do
     directory = Path.join([scratch_path, "qa", "evidence"])
@@ -31,7 +34,7 @@ defmodule Rail.Pipeline.Actions.ListQaEvidence do
       {:ok, entries} ->
         captions = captions(directory)
 
-        entries |> Enum.filter(&shot?/1) |> Enum.map(&shot(directory, &1, captions)) |> newest_first()
+        entries |> Enum.flat_map(&evidence(directory, &1, captions)) |> newest_first()
 
       {:error, _none} ->
         []
@@ -58,17 +61,27 @@ defmodule Rail.Pipeline.Actions.ListQaEvidence do
     end)
   end
 
-  defp shot?(entry), do: String.downcase(Path.extname(entry)) in @shots
-
-  defp shot(directory, entry, captions) do
+  # The name decides before anything is opened, and `lstat` rather than `stat`
+  # means a link is never followed out of the directory.
+  defp evidence(directory, entry, captions) do
+    path = Path.join(directory, entry)
     {check, caption} = split(entry)
 
-    %{
-      name: Map.get(captions, entry, caption),
-      file: entry,
-      check: check,
-      taken_at: File.stat!(Path.join(directory, entry), time: :posix).mtime
-    }
+    with true <- is_binary(check) or QaEvidence.picture?(entry),
+         {:ok, %File.Stat{type: :regular, mtime: taken_at}} <- File.lstat(path, time: :posix),
+         kind when kind == :screenshot or is_binary(check) <- qa_evidence_kind(path) do
+      [
+        %{
+          name: Map.get(captions, entry, caption),
+          file: entry,
+          check: check,
+          kind: kind,
+          taken_at: taken_at
+        }
+      ]
+    else
+      _unlisted -> []
+    end
   end
 
   # Rail joined the check's key to the slugged caption with a `~`, which neither

@@ -32,6 +32,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   import Rail.Mcp.Utils.RunToolDemoSay
   import Rail.Mcp.Utils.RunToolDemoStart
   import Rail.Mcp.Utils.RunToolQaCheck
+  import Rail.Mcp.Utils.RunToolQaFile
   import Rail.Mcp.Utils.RunToolQaPlan
   import Rail.Mcp.Utils.RunToolQaShot
   import Rail.Mcp.Utils.ToolAllowed
@@ -78,12 +79,12 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   # Everything says what it is doing before it does it, because a page that takes
   # ten seconds to load is ten seconds of a person watching nothing happen.
   #
-  # Four are the exception, for three reasons. The checklist lines are what tell
-  # the panel to read the file again, so one written first arrives before there
-  # is anything to read. A call whose arguments say nothing - `browser_problems`
+  # Five are the exception, for three reasons. The checklist and filing lines tell
+  # the panel to read again, so one written first arrives before there is
+  # anything to read. A call whose arguments say nothing - `browser_problems`
   # takes none - has nothing to log until it has an answer. And a caption is only
   # worth reading beside the time it was stamped at, which the tool works out.
-  defp answers_itself?(name), do: name in ["qa_plan", "qa_check", "browser_problems", "demo_say"]
+  defp answers_itself?(name), do: name in ["qa_plan", "qa_check", "qa_file", "browser_problems", "demo_say"]
 
   # What the browser complained about, counted rather than quoted: the agent has
   # the list, and a watcher wants to know whether there was one.
@@ -97,6 +98,12 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   # The caption is the agent's and the timestamp is Rail's, so the log carries the
   # words with the moment they landed on rather than the receipt the agent read.
   defp said("demo_say", line, {:ok, "Said at " <> said}), do: "#{hd(String.split(said, "."))} #{line}"
+
+  # A refusal is a call that filed nothing, and a run log of them should not read
+  # as a run of files filed.
+  defp said("qa_file", line, {:ok, text}) do
+    if String.ends_with?(text, "Nothing was filed."), do: line <> " · nothing filed", else: line
+  end
 
   defp said(_name, line, _result), do: line
 
@@ -113,6 +120,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp asked("qa_plan", %{"checks" => checks}) when is_list(checks), do: "plan #{length(checks)} checks"
   defp asked("qa_check", %{"key" => key, "outcome" => outcome}), do: "check #{inspect(key)} #{outcome}"
   defp asked("qa_shot", %{"name" => name}), do: "shot #{inspect(name)}"
+  defp asked("qa_file", %{"name" => name}), do: "file #{inspect(name)}"
   defp asked("browser_goto", %{"url" => url}), do: "goto #{url}"
   defp asked("browser_do", %{"intent" => intent} = arguments), do: "do #{inspect(intent)}#{supplied(arguments)}"
   defp asked("demo_say", %{"text" => text}), do: "say #{inspect(text)}"
@@ -151,6 +159,7 @@ defmodule Rail.Mcp.Actions.CallRunTool do
   defp run("qa_plan", task, arguments, opts), do: run_tool_qa_plan(task, arguments, opts)
   defp run("qa_check", task, arguments, opts), do: run_tool_qa_check(task, arguments, opts)
   defp run("qa_shot", task, arguments, opts), do: run_tool_qa_shot(task, arguments, opts)
+  defp run("qa_file", task, arguments, opts), do: run_tool_qa_file(task, arguments, opts)
   defp run("demo_start", task, arguments, opts), do: run_tool_demo_start(task, arguments, opts)
   defp run("demo_say", task, arguments, opts), do: run_tool_demo_say(task, arguments, opts)
 

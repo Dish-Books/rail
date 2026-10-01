@@ -16,7 +16,6 @@ defmodule Rail.Pipeline.Actions.ReadQaReport do
   alias Rail.Pipeline.Schemas.Task
 
   @key ~r/\A[a-z0-9][a-z0-9-]*\z/
-  @path ~r{\A[A-Za-z0-9._][A-Za-z0-9._/-]*\z}
 
   @doc """
   Returns the report `task`'s QA run wrote, or `nil` when there is none to read.
@@ -95,11 +94,7 @@ defmodule Rail.Pipeline.Actions.ReadQaReport do
     }
   end
 
-  defp confined?(path) when is_binary(path) do
-    trimmed = String.trim(path)
-
-    Regex.match?(@path, trimmed) and ".." not in Path.split(trimmed)
-  end
+  defp confined?(path) when is_binary(path), do: QaEvidence.confined?(String.trim(path))
 
   defp confined?(_missing), do: false
 

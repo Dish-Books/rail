@@ -3669,7 +3669,7 @@ defmodule RailWeb.TaskLiveTest do
 
       view |> element("#qa-check-totals") |> render_click()
 
-      assert has_element?(view, "[data-qa='qa_check_detail_shots']", "Nothing was filed against this row")
+      assert has_element?(view, "[data-qa='qa_check_detail_evidence']", "Nothing was filed against this row")
 
       # A row reads on its own; picking the next thing to read is how you leave
       # it, and only a picture has a way out of its own.
@@ -3678,6 +3678,159 @@ defmodule RailWeb.TaskLiveTest do
       view |> element("#qa-finding-a-nit") |> render_click()
 
       assert has_element?(view, "[data-qa='qa_finding_detail']", "A nit")
+    end
+
+    # A change with nothing on screen is proved by what it writes, and the row
+    # carries that file the way another carries a picture.
+    test "a checklist row opens with the files filed for it", %{conn: conn, task: task} do
+      {:ok, _checklist} =
+        Pipeline.write_qa_checklist(task, [
+          %{"key" => "script-runs", "title" => "The script writes its log"},
+          %{"key" => "invoice", "title" => "The invoice comes out as a PDF"}
+        ])
+
+      evidence = Path.join([task.scratch_path, "qa", "evidence"])
+      File.write!(Path.join(evidence, "script-runs~the-script-s-log.log"), "wrote 3 rows")
+      File.write!(Path.join(evidence, "invoice~the-invoice.pdf"), "%PDF-1.7")
+      File.write!(Path.join(evidence, "invoice~the-raw-export.bin"), <<0, 159, 146, 150>>)
+      File.write!(Path.join(evidence, "invoice~nothing-written.log"), "")
+      File.write!(Path.join(evidence, "script-runs~the-garbled-run.log"), String.duplicate("a", 9_000) <> <<0xFF>>)
+
+      File.write!(
+        Path.join(evidence, "captions.jsonl"),
+        Jason.encode!(%{file: "script-runs~the-script-s-log.log", name: "The script's log"}) <> "\n"
+      )
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='qa_check'][data-key='script-runs'] [data-qa='qa_check_files']", "2")
+      refute has_element?(view, "[data-qa='qa_check'][data-key='script-runs'] [data-qa='qa_check_shots']")
+
+      view |> element("#qa-check-script-runs") |> render_click()
+
+      assert has_element?(
+               view,
+               "[data-qa='qa_check_detail_evidence'] [data-qa='qa_check_detail_file']",
+               "The script's log"
+             )
+
+      assert has_element?(view, "[data-qa='qa_check_detail_file'] pre", "wrote 3 rows")
+
+      # A log that turns to bytes past where the listing looked still shows its
+      # caption and its link, without a preview.
+      assert has_element?(view, "[data-qa='qa_check_detail_file']", "The garbled run")
+      assert has_element?(view, "[data-qa='qa_check_detail_file'] pre", "wrote 3 rows")
+      refute has_element?(view, "[data-qa='qa_check_detail_file'] pre", "aaaa")
+
+      assert has_element?(
+               view,
+               ~s([data-qa='qa_check_detail_file'] a[href="/tasks/#{task.id}/qa/evidence/script-runs~the-script-s-log.log"]),
+               "Open"
+             )
+
+      refute has_element?(view, "#qa-check-detail img")
+      refute has_element?(view, "[data-qa='qa_check_detail_evidence']", "Nothing was filed against this row")
+
+      # A PDF opens in the browser rather than in the pane.
+      view |> element("#qa-check-invoice") |> render_click()
+
+      assert has_element?(
+               view,
+               ~s([data-qa='qa_check_detail_file'] a[target="_blank"][href="/tasks/#{task.id}/qa/evidence/invoice~the-invoice.pdf"]),
+               "Open PDF"
+             )
+
+      # Anything that is neither text nor a PDF is downloaded rather than shown.
+      assert has_element?(
+               view,
+               ~s([data-qa='qa_check_detail_file'][data-kind="file"] a[href="/tasks/#{task.id}/qa/evidence/invoice~the-raw-export.bin"]),
+               "Download"
+             )
+
+      # An empty log says so, rather than drawing a box nobody can tell from one that
+      # failed to load.
+      assert has_element?(view, "[data-qa='qa_check_detail_file']", "Empty file")
+      refute has_element?(view, "[data-qa='qa_check_detail_file'] pre")
+    end
+
+    # Evidence can be both: what the screen showed and what the run wrote, on one
+    # row and on the finding raised from it.
+    test "a row with a picture and a file shows both, and so does its finding", %{conn: conn, task: task} do
+      {:ok, _checklist} = Pipeline.write_qa_checklist(task, [%{"key" => "totals", "title" => "The totals agree"}])
+
+      {:ok, _synced} =
+        Pipeline.sync_qa_findings(task, [
+          %{
+            key: "off-by-a-cent",
+            title: "The journal entry is off by a cent",
+            check: "totals",
+            severity: :major,
+            recommendation: :fix
+          }
+        ])
+
+      evidence = Path.join([task.scratch_path, "qa", "evidence"])
+      File.write!(Path.join(evidence, "totals~the-journal-entry.png"), "png bytes")
+      File.write!(Path.join(evidence, "totals~the-ledger-export.csv"), String.duplicate("1,2500.00\n", 7_000))
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-qa='qa_check'][data-key='totals'] [data-qa='qa_check_shots']", "1")
+      assert has_element?(view, "[data-qa='qa_check'][data-key='totals'] [data-qa='qa_check_files']", "1")
+
+      view |> element("#qa-check-totals") |> render_click()
+
+      assert has_element?(
+               view,
+               "[data-qa='qa_check_detail_evidence'] [data-qa='qa_check_detail_shot']",
+               "The journal entry"
+             )
+
+      assert has_element?(
+               view,
+               "[data-qa='qa_check_detail_evidence'] [data-qa='qa_check_detail_file']",
+               "The ledger export"
+             )
+
+      assert has_element?(view, "[data-qa='qa_check_detail_file']", "Showing the first 64 KB")
+
+      view |> element("#qa-check-finding-off-by-a-cent") |> render_click()
+
+      assert has_element?(view, "[data-qa='qa_finding_check_shots']", "Filed for this check")
+      assert has_element?(view, "[data-qa='qa_finding_check_shot']", "The journal entry")
+
+      assert has_element?(
+               view,
+               ~s([data-qa='qa_finding_check_file'][href="/tasks/#{task.id}/qa/evidence/totals~the-ledger-export.csv"]),
+               "The ledger export"
+             )
+    end
+
+    # A pass that proves a row with a file says so in its log, and that is what
+    # tells the panel there is something new on the row it is on.
+    test "a file filed while the panel is open appears", %{conn: conn, task: task, qa_run: run} do
+      {:ok, _running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+
+      {:ok, _checklist} =
+        Pipeline.write_qa_checklist(task, [%{"key" => "script-runs", "title" => "The script writes its log"}])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      refute has_element?(view, "[data-qa='qa_check_files']")
+
+      File.write!(Path.join([task.scratch_path, "qa", "evidence", "script-runs~the-log.log"]), "wrote 3 rows")
+      Pipeline.append_run_events(run.id, nil, [~s([qa] file "The log")])
+
+      _settled = render(view)
+      assert has_element?(view, "[data-qa='qa_check'][data-key='script-runs'] [data-qa='qa_check_files']", "1")
+
+      # The row the pass is on, beside the browser it is driving.
+      assert has_element?(
+               view,
+               ~s([data-qa='qa_current_file'][href="/tasks/#{task.id}/qa/evidence/script-runs~the-log.log"]),
+               "The log"
+             )
+
+      assert has_element?(view, "[data-qa='qa_current_shots']", "Filed for this check")
     end
 
     # The first minute of a pass, before it has said what it means to do.

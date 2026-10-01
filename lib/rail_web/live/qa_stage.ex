@@ -6,7 +6,7 @@ defmodule RailWeb.Live.QaStage do
   is the human who just did that one, but what a finding holds is different: QA
   never saw the code, so there is no diff here. There is the check it came out
   of, the steps that reproduce it, what should have happened against what did,
-  and the screenshots it took while it was there.
+  and the screenshots and files it filed while it was there.
 
   QA's verdict on the whole change is the first row of the list rather than a
   banner over it, because it is one more thing to read and not a frame around the
@@ -16,8 +16,8 @@ defmodule RailWeb.Live.QaStage do
   to findings a person has read and dismissed is a change that ships.
 
   The middle shows one thing at a time and the sidebar is what picks it: the
-  verdict, a finding, a checklist row with the pictures taken for it, or one of
-  those pictures full size. While the pass is running and nothing has been picked,
+  verdict, a finding, a checklist row with the evidence filed for it, or one of
+  its pictures full size. While the pass is running and nothing has been picked,
   it is the browser.
 
   Neither button appears while anything is unruled. Sending then would drop a
@@ -114,6 +114,7 @@ defmodule RailWeb.Live.QaStage do
               check={@check}
               current={@current}
               shots={@shots}
+              files={@files}
               running={@running}
               target={@myself}
             />
@@ -127,7 +128,9 @@ defmodule RailWeb.Live.QaStage do
                 :if={@pane == :check}
                 task={@task}
                 check={@check}
-                shots={shots_for(@shots, @check)}
+                shots={filed_for(@shots, @check)}
+                files={filed_for(@files, @check)}
+                previews={@previews}
                 findings={found_for(@findings, @check)}
                 target={@myself}
               />
@@ -139,6 +142,7 @@ defmodule RailWeb.Live.QaStage do
                 current={@current}
                 driving={@driving}
                 shots={@shots}
+                files={@files}
                 target={@myself}
               />
 
@@ -148,6 +152,7 @@ defmodule RailWeb.Live.QaStage do
                 finding={@selected}
                 checklist={@checklist}
                 shots={@shots}
+                files={@files}
                 position={@position}
                 count={length(@findings)}
                 decidable={@approvable and not @running}
@@ -317,6 +322,7 @@ defmodule RailWeb.Live.QaStage do
   attr :check, :any, required: true
   attr :current, :any, required: true
   attr :shots, :list, required: true
+  attr :files, :list, required: true
   attr :running, :boolean, required: true
   attr :target, :any, required: true
 
@@ -346,6 +352,7 @@ defmodule RailWeb.Live.QaStage do
         check={@check}
         current={@current}
         shots={@shots}
+        files={@files}
         target={@target}
       />
     </div>
@@ -412,6 +419,7 @@ defmodule RailWeb.Live.QaStage do
   attr :finding, :any, required: true
   attr :checklist, :any, required: true
   attr :shots, :list, required: true
+  attr :files, :list, required: true
   attr :position, :integer, required: true
   attr :count, :integer, required: true
   attr :decidable, :boolean, required: true
@@ -424,7 +432,8 @@ defmodule RailWeb.Live.QaStage do
     assigns =
       assigns
       |> assign(:check_title, (row && row.title) || assigns.finding.check)
-      |> assign(:taken, row && shots_for(assigns.shots, row))
+      |> assign(:taken, (row && filed_for(assigns.shots, row)) || [])
+      |> assign(:filed, (row && filed_for(assigns.files, row)) || [])
 
     ~H"""
     <div
@@ -551,11 +560,14 @@ defmodule RailWeb.Live.QaStage do
           </div>
 
           <.section
-            :if={@taken not in [nil, []]}
-            title="Taken for this check"
+            :if={@taken != [] or @filed != []}
+            title="Filed for this check"
             qa="qa_finding_check_shots"
           >
-            <div class="grid gap-2.5 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
+            <div
+              :if={@taken != []}
+              class="grid gap-2.5 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]"
+            >
               <button
                 :for={shot <- @taken}
                 type="button"
@@ -578,6 +590,8 @@ defmodule RailWeb.Live.QaStage do
                 </span>
               </button>
             </div>
+
+            <.file_links :if={@filed != []} task={@task} files={@filed} qa="qa_finding_check_file" />
           </.section>
 
           <.section :if={@finding.evidence != []} title="Evidence" qa="qa_finding_evidence">
@@ -649,6 +663,31 @@ defmodule RailWeb.Live.QaStage do
   end
 
   attr :task, :any, required: true
+  attr :files, :list, required: true
+  attr :qa, :string, required: true
+
+  # A file filed for a row opens in a tab of its own, so the pane it was listed
+  # in stays where it was.
+  defp file_links(assigns) do
+    ~H"""
+    <div class="mt-2.5 first:mt-0 flex flex-col items-start gap-1.5">
+      <a
+        :for={file <- @files}
+        href={~p"/tasks/#{@task.id}/qa/evidence/#{file.file}"}
+        target="_blank"
+        rel="noopener"
+        data-qa={@qa}
+        class="max-w-full inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+      >
+        <.icon name="pi-file-text" class="size-3.5 shrink-0" />
+        <span class="truncate">{file.name}</span>
+        <.icon name="pi-arrow-up-right" class="size-3 shrink-0" />
+      </a>
+    </div>
+    """
+  end
+
+  attr :task, :any, required: true
   attr :finding, :any, required: true
   attr :evidence, :any, required: true
   attr :index, :integer, required: true
@@ -695,14 +734,18 @@ defmodule RailWeb.Live.QaStage do
   attr :driving, :map, required: true
   attr :task, :any, required: true
   attr :shots, :list, required: true
+  attr :files, :list, required: true
   attr :target, :any, required: true
 
   # A pass in flight, which is the one thing a spinner cannot show. What it is
   # looking at, where that is, and what Rail last did to it - the three things a
-  # person standing behind someone testing would ask - and under it the pictures
-  # taken for the row it is on.
+  # person standing behind someone testing would ask - and under it the evidence
+  # filed for the row it is on.
   defp browser_viewer(assigns) do
-    assigns = assign(assigns, :taken, assigns.current && shots_for(assigns.shots, assigns.current))
+    assigns =
+      assigns
+      |> assign(:taken, (assigns.current && filed_for(assigns.shots, assigns.current)) || [])
+      |> assign(:filed, (assigns.current && filed_for(assigns.files, assigns.current)) || [])
 
     ~H"""
     <div
@@ -770,12 +813,15 @@ defmodule RailWeb.Live.QaStage do
         </p>
       </div>
 
-      <div :if={@taken not in [nil, []]} class="shrink-0" data-qa="qa_current_shots">
+      <div :if={@taken != [] or @filed != []} class="shrink-0" data-qa="qa_current_shots">
         <p class="mb-2 text-[10.5px] font-extrabold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
-          Taken for this check
+          Filed for this check
         </p>
 
-        <div class="grid gap-2.5 grid-cols-[repeat(auto-fill,minmax(120px,1fr))]">
+        <div
+          :if={@taken != []}
+          class="grid gap-2.5 grid-cols-[repeat(auto-fill,minmax(120px,1fr))]"
+        >
           <button
             :for={shot <- @taken}
             type="button"
@@ -798,6 +844,8 @@ defmodule RailWeb.Live.QaStage do
             </span>
           </button>
         </div>
+
+        <.file_links :if={@filed != []} task={@task} files={@filed} qa="qa_current_file" />
       </div>
     </div>
     """
@@ -849,12 +897,14 @@ defmodule RailWeb.Live.QaStage do
   attr :task, :any, required: true
   attr :check, :any, required: true
   attr :shots, :list, required: true
+  attr :files, :list, required: true
+  attr :previews, :map, required: true
   attr :findings, :list, required: true
   attr :target, :any, required: true
 
-  # One row of the checklist, with the pictures the pass filed against it. This
+  # One row of the checklist, with the evidence the pass filed against it. This
   # is the answer to the question a reader actually has about a row that passed:
-  # what did it look like when you looked at it.
+  # what did it look like, or what did it write, when you looked at it.
   defp check_detail(assigns) do
     ~H"""
     <div id="qa-check-detail" data-qa="qa_check_detail" class="flex-1 min-w-0 min-h-0 flex flex-col">
@@ -933,9 +983,9 @@ defmodule RailWeb.Live.QaStage do
             {@check.note}
           </p>
 
-          <.section title="Screenshots" qa="qa_check_detail_shots">
+          <.section title="Evidence" qa="qa_check_detail_evidence">
             <p
-              :if={@shots == []}
+              :if={@shots == [] and @files == []}
               class="text-[13px] text-slate-500 dark:text-slate-400"
             >
               Nothing was filed against this row.
@@ -964,6 +1014,13 @@ defmodule RailWeb.Live.QaStage do
                   {shot.name}
                 </figcaption>
               </figure>
+
+              <.file_figure
+                :for={file <- @files}
+                task={@task}
+                file={file}
+                preview={@previews[file.file]}
+              />
             </div>
           </.section>
         </div>
@@ -972,18 +1029,68 @@ defmodule RailWeb.Live.QaStage do
     """
   end
 
+  attr :task, :any, required: true
+  attr :file, :map, required: true
+  attr :preview, :map, default: nil
+
+  # Text reads in the pane. A PDF or anything else opens in a tab of its own,
+  # which is where a browser already knows what to do with it.
+  defp file_figure(assigns) do
+    assigns =
+      assigns
+      |> assign(:show_text, assigns.preview != nil and assigns.preview.text != "")
+      |> assign(:show_empty, assigns.preview != nil and assigns.preview.text == "")
+
+    ~H"""
+    <figure data-qa="qa_check_detail_file" data-kind={@file.kind}>
+      <pre
+        :if={@show_text}
+        class="max-h-[480px] overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-3.5 py-3 font-mono text-[11.5px] text-slate-700 dark:text-slate-300"
+      ><%= @preview.text %></pre>
+
+      <p
+        :if={@show_empty}
+        class="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 px-3.5 py-3 text-[12px] text-slate-500 dark:text-slate-400"
+      >
+        Empty file
+      </p>
+
+      <p
+        :if={@preview && @preview.truncated}
+        class="mt-1 text-[11px] text-slate-400 dark:text-slate-500"
+      >
+        Showing the first 64 KB
+      </p>
+
+      <figcaption class="mt-1.5 flex items-center gap-3 text-[11.5px] text-slate-500 dark:text-slate-400">
+        <.icon name="pi-file-text" class="size-3.5 shrink-0" />
+        <span class="min-w-0 truncate">{@file.name}</span>
+        <a
+          href={~p"/tasks/#{@task.id}/qa/evidence/#{@file.file}"}
+          target="_blank"
+          rel="noopener"
+          class="shrink-0 inline-flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+        >
+          {open_label(@file.kind)} <.icon name="pi-arrow-up-right" class="size-3" />
+        </a>
+      </figcaption>
+    </figure>
+    """
+  end
+
   attr :checklist, :any, required: true
   attr :check, :any, default: nil
   attr :current, :any, default: nil
   attr :shots, :list, default: []
+  attr :files, :list, default: []
   attr :target, :any, required: true
 
   # What the pass said it would do, before it knew any of the answers. A row with
   # no outcome yet is one it has not reached, which is as much of the story as the
   # ones it has - and while the pass is going, the first of those is where it is.
   #
-  # Every row opens: what a reader wants from one is the pictures taken for it,
-  # and those are too big for a column this wide.
+  # Every row opens: what a reader wants from one is the evidence filed for it,
+  # and that is too big for a column this wide.
   defp checklist_panel(assigns) do
     ~H"""
     <div id="qa-checklist" data-qa="qa_checklist" class="flex-1 flex flex-col">
@@ -1084,12 +1191,21 @@ defmodule RailWeb.Live.QaStage do
             </span>
 
             <span
-              :if={shots_for(@shots, check) != []}
+              :if={filed_for(@shots, check) != []}
               data-qa="qa_check_shots"
               class="mt-0.5 shrink-0 flex items-center gap-1 text-[10.5px] text-slate-400 dark:text-slate-500"
             >
               <.icon name="pi-image" class="size-3.5" />
-              {length(shots_for(@shots, check))}
+              {length(filed_for(@shots, check))}
+            </span>
+
+            <span
+              :if={filed_for(@files, check) != []}
+              data-qa="qa_check_files"
+              class="mt-0.5 shrink-0 flex items-center gap-1 text-[10.5px] text-slate-400 dark:text-slate-500"
+            >
+              <.icon name="pi-file-text" class="size-3.5" />
+              {length(filed_for(@files, check))}
             </span>
           </button>
         </div>
@@ -1143,7 +1259,8 @@ defmodule RailWeb.Live.QaStage do
     findings = Pipeline.list_qa_findings(socket.assigns.task)
     selected = Enum.find(findings, List.first(findings), &(&1.key == socket.assigns.selected_key))
     checklist = checklist(socket.assigns.task)
-    shots = Pipeline.list_qa_evidence(socket.assigns.task)
+    {shots, files} = socket.assigns.task |> Pipeline.list_qa_evidence() |> Enum.split_with(&(&1.kind == :screenshot))
+    check = focused_check(socket.assigns.focus, checklist)
     running = Run.running?(socket.assigns.run)
     current = running && checklist && QaChecklist.current(checklist)
 
@@ -1161,8 +1278,10 @@ defmodule RailWeb.Live.QaStage do
     |> assign(:report, report(socket.assigns.task))
     |> assign(:checklist, checklist)
     |> assign(:shots, shots)
+    |> assign(:files, files)
     |> assign(:shot, focused_shot(socket.assigns.focus, shots))
-    |> assign(:check, focused_check(socket.assigns.focus, checklist))
+    |> assign(:check, check)
+    |> assign(:previews, previews(socket.assigns.task, check, files))
     |> assign(:current, current)
     |> assign(:driving, browser_driving(socket.assigns.run, socket.assigns.task))
     |> pane()
@@ -1216,11 +1335,26 @@ defmodule RailWeb.Live.QaStage do
     Enum.filter(findings, &(&1.check == key or &1.check == title))
   end
 
-  # The pictures a row has, oldest first: a row's shots read as the order they
-  # were taken in, unlike the roll underneath, where the newest is the news.
-  defp shots_for(shots, %QaCheck{key: key}) do
-    shots |> Enum.filter(&(&1.check == key)) |> Enum.reverse()
+  # The evidence a row has, oldest first: a row's reads as the order it was
+  # filed in, unlike the roll underneath, where the newest is the news.
+  defp filed_for(evidence, %QaCheck{key: key}) do
+    evidence |> Enum.filter(&(&1.check == key)) |> Enum.reverse()
   end
+
+  # Only the open row's text is read, because a log can run to megabytes and the
+  # rest of the checklist only needs to know it is there.
+  defp previews(%Task{} = task, %QaCheck{} = check, files) do
+    for %{kind: :text} = file <- filed_for(files, check),
+        {:ok, preview} <- [Pipeline.read_qa_evidence(task, file)],
+        into: %{},
+        do: {file.file, preview}
+  end
+
+  defp previews(%Task{}, nil, _files), do: %{}
+
+  defp open_label(:text), do: "Open"
+  defp open_label(:pdf), do: "Open PDF"
+  defp open_label(:file), do: "Download"
 
   # The verdict belongs to the pass rather than to any row, so it is read off the
   # report every time the panel draws rather than stored.

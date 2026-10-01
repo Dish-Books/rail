@@ -16,16 +16,18 @@ defmodule Rail.Mcp.Utils.McpTools do
   whole thing down when the task ends. Every other stage reads code, and a
   browser would be a thing to get lost in.
 
-  The agent never starts the browser and never names a file. Any tool opens the
-  session if it is not open, and a screenshot is described rather than located -
-  so nothing arriving from a model becomes a path, and there is no way to leave a
-  Chrome behind by forgetting the last instruction.
+  The agent never starts the browser and never names a file Rail serves. Any tool
+  opens the session if it is not open, a screenshot is described rather than
+  located, and a file the agent wrote is copied in under a name Rail chooses - so
+  nothing arriving from a model becomes a served path, and there is no way to
+  leave a Chrome behind by forgetting the last instruction.
 
   `@qa_tools` are about a pass rather than a page. `qa_plan` writes the checklist
   before anything is opened, `qa_check` marks a row off as it is reached, and
-  `qa_shot` files a picture against one of those rows - which is what the human
-  watching is actually shown: a list of what this pass said it would do, going
-  green a row at a time. None of the three opens a browser of its own.
+  `qa_shot` files a picture and `qa_file` an output file against one of those
+  rows - which is what the human watching is actually shown: a list of what this
+  pass said it would do, going green a row at a time with its evidence beside it.
+  None of the four opens a browser of its own.
 
   `@demo_tools` are about a recording. `demo_start` is the camera, and it is the
   agent's to switch on: a run filmed from its first call to its last is a film of
@@ -175,8 +177,8 @@ defmodule Rail.Mcp.Utils.McpTools do
         "Photograph the page and file it against one check. Say what the picture is of and which " <>
           "check it is for; Rail names the file and returns the name to put in a finding's " <>
           "evidence - the name, never the picture. The human reads the checklist row by row with " <>
-          "the pictures taken for each, so every check wants at least one: take it at the point " <>
-          "the check asserts something, not after every keystroke.",
+          "what was filed for each, so a check that asserts something on screen wants a picture of " <>
+          "it: take it at the point the check asserts it, not after every keystroke.",
       "inputSchema" => %{
         "type" => "object",
         "properties" => %{
@@ -184,6 +186,29 @@ defmodule Rail.Mcp.Utils.McpTools do
           "name" => %{"type" => "string", "description" => "What this picture shows."}
         },
         "required" => ["check", "name"]
+      }
+    },
+    %{
+      "name" => "qa_file",
+      "description" =>
+        "File an output file against one check: a log, a PDF, a CSV, whatever the check produced " <>
+          "that proves it. Write or copy it under the QA directory first and give its path relative " <>
+          "to that directory; Rail copies it in under a name of its own and returns the name to put " <>
+          "in a finding's evidence. A check proved by what it writes needs no picture, and a check " <>
+          "can carry both.",
+      "inputSchema" => %{
+        "type" => "object",
+        "properties" => %{
+          "check" => %{"type" => "string", "description" => "The key of the check this proves, from qa_plan."},
+          "name" => %{"type" => "string", "description" => "What this file shows."},
+          "path" => %{
+            "type" => "string",
+            "description" =>
+              "Where the file is, relative to the QA directory: a log, a PDF, a CSV, any output that " <>
+                "proves the check. Never absolute and never climbing out with `..`."
+          }
+        },
+        "required" => ["check", "name", "path"]
       }
     }
   ]

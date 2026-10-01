@@ -754,7 +754,7 @@ defmodule RailWeb.TaskLive do
 
   defp refresh_written(socket, _events), do: socket
 
-  defp checklist_line?(%{line: line}), do: String.starts_with?(line, ["[qa] plan ", "[qa] check "])
+  defp checklist_line?(%{line: line}), do: String.starts_with?(line, ["[qa] plan ", "[qa] check ", "[qa] file "])
 
   defp beat_line?(%{line: line}), do: String.starts_with?(line, "[demo] say ")
 

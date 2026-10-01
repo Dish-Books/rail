@@ -18,7 +18,8 @@ defmodule Rail.Mcp.Utils.McpToolsTest do
              "browser_stop",
              "qa_plan",
              "qa_check",
-             "qa_shot"
+             "qa_shot",
+             "qa_file"
            ]
   end
 
