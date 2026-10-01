@@ -18,6 +18,7 @@ defmodule Rail.Pipeline.Schemas.QaEvidence do
   @kinds [:screenshot, :log, :query, :note]
   @pictures [".jpg", ".jpeg", ".png", ".gif", ".webp"]
   @path ~r{\A[A-Za-z0-9._][A-Za-z0-9._/~-]*\z}
+  @error_line ~r/\[error\]|\bERROR\b|level=error|^\s*\*\* \(/
 
   @primary_key false
   embedded_schema do
@@ -54,6 +55,11 @@ defmodule Rail.Pipeline.Schemas.QaEvidence do
   True when `path` names a picture, which the panel shows and serves as one.
   """
   def picture?(path) when is_binary(path), do: String.downcase(Path.extname(path)) in @pictures
+
+  @doc """
+  Whether `line` of a log was written at error level or begins an exception.
+  """
+  def error_line?(line) when is_binary(line), do: Regex.match?(@error_line, line)
 
   # The format above already refuses a leading slash and anything exotic; `..`
   # is the segment that looks ordinary and is not.

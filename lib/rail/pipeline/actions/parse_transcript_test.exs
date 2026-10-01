@@ -2,6 +2,7 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
   use ExUnit.Case, async: true
 
   alias Rail.Pipeline
+  alias Rail.Pipeline.Turn
 
   test "a log with nothing in it has no turns" do
     assert Pipeline.parse_transcript([]) == []
@@ -62,6 +63,37 @@ defmodule Rail.Pipeline.Actions.ParseTranscriptTest do
     assert comment.author == :human
     assert comment.content == "First paragraph line 1\nFirst paragraph line 2"
     assert event.author == :event
+  end
+
+  # Rail's own note to the agent reads as a message to it, not as something
+  # the agent said, and the label says which of the reminders it was.
+  test "consecutive reminder lines are one reminder, ending whatever came before" do
+    logs = [
+      "[human] Please look again",
+      "[rail] 1 finding had no evidence, so the report went back to QA (1 of 2).",
+      "[reminder 1 of 2] This report is not valid yet.",
+      "[reminder 1 of 2]",
+      "[reminder 1 of 2] - Export button stays enabled (export-button-enabled): no evidence attached.",
+      "I attached a screenshot."
+    ]
+
+    assert [
+             %Turn{author: :human, content: "Please look again"},
+             %Turn{author: :event},
+             %Turn{
+               author: :reminder,
+               label: "reminder 1 of 2",
+               content:
+                 "This report is not valid yet.\n\n- Export button stays enabled (export-button-enabled): no evidence attached."
+             },
+             %Turn{author: :role, content: "I attached a screenshot."}
+           ] = Pipeline.parse_transcript(logs)
+
+    assert [%Turn{author: :human}, %Turn{author: :reminder, label: "reminder 2 of 2", content: "Again."}] =
+             Pipeline.parse_transcript(["[human] One", "more", "[reminder 2 of 2] Again."])
+
+    assert [%Turn{label: "reminder 1 of 2", content: "First."}, %Turn{label: "reminder 2 of 2", content: "Second."}] =
+             Pipeline.parse_transcript(["[reminder 1 of 2] First.", "[reminder 2 of 2] Second."])
   end
 
   test "consecutive tool lines group into one activity block" do

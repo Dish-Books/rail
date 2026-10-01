@@ -31,6 +31,24 @@ defmodule RailWeb.Utils.RoleStatusLabelTest do
     assert role_status_label(%Role{stage: :engineer}, done, %Task{stage: :engineer}) == "needs review"
   end
 
+  test "QA sent back for evidence says it is fixing its report, or that its report is not valid" do
+    qa = %Role{stage: :qa}
+    task = %Task{stage: :qa}
+
+    assert role_status_label(qa, %Run{status: :running, evidence_reminders: 1}, task) == "fixing its report"
+
+    assert role_status_label(qa, %Run{status: :finished, evidence_reminders: 2, error: "QA's report..."}, task) ==
+             "report not valid"
+
+    assert role_status_label(qa, %Run{status: :running, evidence_reminders: 0}, task) == "in progress"
+
+    assert role_status_label(qa, %Run{status: :running, evidence_reminders: 1}, %Task{stage: :demo}) ==
+             "fixing its report"
+
+    assert role_status_label(%Role{stage: :engineer}, %Run{status: :running, evidence_reminders: 1}, task) ==
+             "in progress"
+  end
+
   test "a role the task has moved past is only done" do
     done = %Run{status: :finished, stage_outcome: :done}
 

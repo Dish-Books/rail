@@ -105,8 +105,10 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
       |> Run.changeset(
         Map.merge(stamp, %{
           pending_chat: nil,
-          # A person stepping in is what lets CI send its failures back again.
+          # A person stepping in is what lets CI send its failures back again, and
+          # what earns QA two fresh reminders about evidence.
           ci_failure_streak: 0,
+          evidence_reminders: 0,
           status: :running,
           error: nil,
           exit_code: nil,

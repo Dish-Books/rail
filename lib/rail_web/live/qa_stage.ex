@@ -6,7 +6,7 @@ defmodule RailWeb.Live.QaStage do
   is the human who just did that one, but what a finding holds is different: QA
   never saw the code, so there is no diff here. There is the check it came out
   of, the steps that reproduce it, what should have happened against what did,
-  and the screenshots and files it filed while it was there.
+  and beside them the evidence QA attached to that finding and nothing else.
 
   QA's verdict on the whole change is the first row of the list rather than a
   banner over it, because it is one more thing to read and not a frame around the
@@ -38,6 +38,7 @@ defmodule RailWeb.Live.QaStage do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.QaCheck
   alias Rail.Pipeline.Schemas.QaChecklist
+  alias Rail.Pipeline.Schemas.QaEvidence
   alias Rail.Pipeline.Schemas.QaFinding
   alias Rail.Pipeline.Schemas.QaReport
   alias Rail.Pipeline.Schemas.Run
@@ -54,6 +55,7 @@ defmodule RailWeb.Live.QaStage do
       |> assign_new(:selected_key, fn -> nil end)
       |> assign_new(:advanced_to, fn -> nil end)
       |> assign_new(:focus, fn -> nil end)
+      |> assign_new(:evidence_index, fn -> 0 end)
 
     {:ok, load(socket)}
   end
@@ -111,6 +113,9 @@ defmodule RailWeb.Live.QaStage do
             <.qa_sidebar
               report={@report}
               summary_open={@pane == :summary}
+              held={@held}
+              unproven={@unproven}
+              reminders={@reminders}
               findings={@findings}
               selected={@selected}
               checklist={@checklist}
@@ -154,8 +159,9 @@ defmodule RailWeb.Live.QaStage do
                 task={@task}
                 finding={@selected}
                 checklist={@checklist}
-                shots={@shots}
-                files={@files}
+                evidence_index={@evidence_index}
+                evidence_kinds={@evidence_kinds}
+                evidence_text={@evidence_text}
                 position={@position}
                 count={length(@findings)}
                 decidable={@approvable and not @running}
@@ -164,6 +170,8 @@ defmodule RailWeb.Live.QaStage do
               />
 
               <.qa_pending :if={@pane == :pending} pending={@pending} report={@report} />
+
+              <.held_back :if={@pane == :held_back} running={@running} />
             </div>
           </div>
         </div>
@@ -176,7 +184,13 @@ defmodule RailWeb.Live.QaStage do
 
   @impl true
   def handle_event("select_finding", %{"key" => key}, socket) do
-    socket = socket |> assign(:selected_key, key) |> focus(nil)
+    socket = socket |> assign(:selected_key, key) |> assign(:evidence_index, 0) |> focus(nil)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("select_evidence", %{"index" => index}, socket) do
+    socket = socket |> assign(:evidence_index, String.to_integer(index)) |> load()
 
     {:noreply, socket}
   end
@@ -212,6 +226,10 @@ defmodule RailWeb.Live.QaStage do
         socket
         |> assign(:error, nil)
         |> assign(:selected_key, selected_key)
+        |> assign(
+          :evidence_index,
+          if(selected_key == socket.assigns.selected_key, do: socket.assigns.evidence_index, else: 0)
+        )
         |> assign(:advanced_to, if(selected_key != key, do: {selected_key, System.monotonic_time(:millisecond)}))
         |> load()
       else
@@ -333,6 +351,9 @@ defmodule RailWeb.Live.QaStage do
 
   attr :report, :any, required: true
   attr :summary_open, :boolean, required: true
+  attr :held, :boolean, required: true
+  attr :unproven, :list, required: true
+  attr :reminders, :integer, required: true
   attr :findings, :list, required: true
   attr :selected, :any, required: true
   attr :checklist, :any, required: true
@@ -355,14 +376,41 @@ defmodule RailWeb.Live.QaStage do
       data-qa="qa_sidebar"
       class="w-full lg:w-[300px] max-h-1/2 lg:max-h-none shrink-0 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/30"
     >
+      <.held_report
+        :if={@held}
+        unproven={@unproven}
+        running={@running}
+        reminders={@reminders}
+      />
+
       <.summary_item
-        :if={@report && not @running}
+        :if={@report != nil and not @running and not @held}
         report={@report}
         open={@summary_open}
         target={@target}
       />
 
-      <.finding_list :if={@findings != []} findings={@findings} selected={@selected} target={@target} />
+      <div
+        :if={@held}
+        id="qa-findings-held"
+        data-qa="qa_findings_held"
+        class="shrink-0 border-b border-slate-200 dark:border-slate-700"
+      >
+        <div class="flex items-baseline gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+          <span class="text-sm font-bold text-slate-900 dark:text-slate-100">Findings</span>
+          <span class="text-xs text-slate-500 dark:text-slate-400">held back</span>
+        </div>
+        <p class="px-4 py-3 text-[12.5px] text-slate-500 dark:text-slate-400">
+          QA reported {length(@report.findings)}. None is shown until every one carries evidence.
+        </p>
+      </div>
+
+      <.finding_list
+        :if={@findings != [] and not @held}
+        findings={@findings}
+        selected={@selected}
+        target={@target}
+      />
 
       <.checklist_panel
         checklist={@checklist}
@@ -372,6 +420,47 @@ defmodule RailWeb.Live.QaStage do
         files={@files}
         target={@target}
       />
+    </div>
+    """
+  end
+
+  attr :unproven, :list, required: true
+  attr :running, :boolean, required: true
+  attr :reminders, :integer, required: true
+
+  # Where the verdict sits once QA has reported, because until its report is
+  # valid what is wrong with the report is the verdict a reader can use.
+  defp held_report(assigns) do
+    assigns = assign(assigns, :limit, QaReport.evidence_reminder_limit())
+
+    ~H"""
+    <div
+      id="qa-held"
+      data-qa="qa_held"
+      data-tone={held_tone(@running)}
+      class={["shrink-0 w-full px-4 py-3 border-b", held_colors(@running)]}
+    >
+      <span class="flex items-center gap-2.5">
+        <.icon name="pi-clipboard-text" class="size-[15px]" />
+        <span class="text-sm font-bold">{held_title(@running)}</span>
+      </span>
+
+      <ul class="mt-2 space-y-2 text-[12.5px] leading-snug">
+        <li :for={finding <- @unproven} data-qa="qa_held_finding" class="flex gap-2">
+          <span class={["mt-1.5 size-1.5 rounded-full shrink-0", held_dot(@running)]} />
+          <span>
+            <span class="font-semibold">{finding.title}</span>
+            <span class="block opacity-80">{unproven_reason(finding)}</span>
+          </span>
+        </li>
+      </ul>
+
+      <p :if={@running} class="mt-2.5 text-[11.5px] opacity-80">
+        Reminder {@reminders} of {@limit}. Rail asked QA for evidence in the conversation.
+      </p>
+      <p :if={not @running and @reminders >= @limit} class="mt-2.5 text-[11.5px] opacity-80">
+        Still missing after {@limit} reminders, so Rail stopped asking.
+      </p>
     </div>
     """
   end
@@ -443,22 +532,21 @@ defmodule RailWeb.Live.QaStage do
   attr :task, :any, required: true
   attr :finding, :any, required: true
   attr :checklist, :any, required: true
-  attr :shots, :list, required: true
-  attr :files, :list, required: true
+  attr :evidence_index, :integer, required: true
+  attr :evidence_kinds, :list, required: true
+  attr :evidence_text, :any, required: true
   attr :position, :integer, required: true
   attr :count, :integer, required: true
   attr :decidable, :boolean, required: true
   attr :neighbours, :map, required: true
   attr :target, :any, required: true
 
+  # What QA says on the left and what it shows for it on the right, so the claim
+  # is read beside its proof rather than above a strip of pictures of the row.
   defp finding_detail(assigns) do
     row = row_for(assigns.checklist, assigns.finding)
 
-    assigns =
-      assigns
-      |> assign(:check_title, (row && row.title) || assigns.finding.check)
-      |> assign(:taken, (row && filed_for(assigns.shots, row)) || [])
-      |> assign(:filed, (row && filed_for(assigns.files, row)) || [])
+    assigns = assign(assigns, :check_title, (row && row.title) || assigns.finding.check)
 
     ~H"""
     <div
@@ -551,8 +639,11 @@ defmodule RailWeb.Live.QaStage do
         </div>
       </div>
 
-      <div class="flex-1 min-h-0 overflow-y-auto px-7 py-6">
-        <div class="max-w-4xl space-y-5">
+      <div class="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
+        <div
+          data-qa="qa_finding_claim"
+          class="w-full lg:w-[460px] shrink-0 lg:overflow-y-auto border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-700 px-6 py-5 space-y-4"
+        >
           <div
             :if={@finding.criterion}
             data-qa="qa_finding_criterion"
@@ -568,67 +659,18 @@ defmodule RailWeb.Live.QaStage do
             Found by: {@check_title}
           </p>
 
-          <.markdown :if={@finding.detail} content={@finding.detail} class="text-[13.5px]" />
+          <.markdown :if={@finding.detail} content={@finding.detail} class="text-[13px]" />
 
           <.section :if={@finding.steps} title="Steps to reproduce" qa="qa_finding_steps">
             <.markdown content={@finding.steps} class="text-[13px]" />
           </.section>
 
-          <div :if={@finding.expected || @finding.observed} class="grid gap-4 sm:grid-cols-2">
-            <.section :if={@finding.expected} title="Expected" qa="qa_finding_expected">
-              <.markdown content={@finding.expected} class="text-[13px]" />
-            </.section>
-
-            <.section :if={@finding.observed} title="Observed" qa="qa_finding_observed">
-              <.markdown content={@finding.observed} class="text-[13px]" />
-            </.section>
-          </div>
-
-          <.section
-            :if={@taken != [] or @filed != []}
-            title="Filed for this check"
-            qa="qa_finding_check_shots"
-          >
-            <div
-              :if={@taken != []}
-              class="grid gap-2.5 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]"
-            >
-              <button
-                :for={shot <- @taken}
-                type="button"
-                id={shot_id("qa-finding-shot", shot)}
-                data-qa="qa_finding_check_shot"
-                phx-click="select_shot"
-                phx-target={@target}
-                phx-value-file={shot.file}
-                title={shot.name}
-                class="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 text-left cursor-pointer hover:border-blue-400 dark:hover:border-blue-500"
-              >
-                <img
-                  src={~p"/tasks/#{@task.id}/qa/evidence/#{shot.file}"}
-                  alt={shot.name}
-                  loading="lazy"
-                  class="h-[78px] w-full object-cover object-top"
-                />
-                <span class="block truncate px-2 py-1.5 text-[10.5px] text-slate-500 dark:text-slate-400">
-                  {shot.name}
-                </span>
-              </button>
-            </div>
-
-            <.file_links :if={@filed != []} task={@task} files={@filed} qa="qa_finding_check_file" />
+          <.section :if={@finding.expected} title="Expected" qa="qa_finding_expected">
+            <.markdown content={@finding.expected} class="text-[13px]" />
           </.section>
 
-          <.section :if={@finding.evidence != []} title="Evidence" qa="qa_finding_evidence">
-            <div class="space-y-4">
-              <.evidence
-                :for={{evidence, index} <- Enum.with_index(@finding.evidence)}
-                task={@task}
-                finding={@finding}
-                evidence={evidence}
-                index={index}
-              />
-            </div>
+          <.section :if={@finding.observed} title="Observed" qa="qa_finding_observed">
+            <.markdown content={@finding.observed} class="text-[13px]" />
           </.section>
 
           <div
@@ -651,6 +693,16 @@ defmodule RailWeb.Live.QaStage do
             {recommendation_line(@finding)}
           </p>
         </div>
+
+        <.evidence_viewer
+          task={@task}
+          finding={@finding}
+          index={@evidence_index}
+          kinds={@evidence_kinds}
+          shown={Enum.at(@finding.evidence, @evidence_index)}
+          text={@evidence_text}
+          target={@target}
+        />
       </div>
 
       <div class="shrink-0 flex items-center gap-2 px-7 py-3 border-t border-slate-200 dark:border-slate-700 text-xs">
@@ -714,43 +766,249 @@ defmodule RailWeb.Live.QaStage do
 
   attr :task, :any, required: true
   attr :finding, :any, required: true
-  attr :evidence, :any, required: true
   attr :index, :integer, required: true
+  attr :kinds, :list, required: true
+  attr :shown, :any, required: true
+  attr :text, :any, required: true
+  attr :target, :any, required: true
 
-  # A screenshot is the whole point of the evidence: it is what tells the reader
-  # QA saw this rather than reasoned it. Everything else is read as text, and a
-  # file that is not an image is offered rather than rendered.
-  defp evidence(assigns) do
+  # One piece of evidence at a time, at full height, so a log gets the whole
+  # column. A PDF or other file is linked rather than fetched: opening a finding
+  # never downloads anything.
+  defp evidence_viewer(assigns) do
+    assigns = assign(assigns, :kind, Enum.at(assigns.kinds, assigns.index))
+
     ~H"""
-    <figure data-qa="qa_evidence" data-kind={@evidence.kind}>
-      <img
-        :if={@evidence.kind == :screenshot and @evidence.path}
-        src={~p"/tasks/#{@task.id}/qa/#{@finding.key}/evidence/#{@index}"}
-        alt={@evidence.name}
-        loading="lazy"
-        class="w-full rounded-xl border border-slate-200 dark:border-slate-700"
-      />
-
-      <pre
-        :if={@evidence.text}
-        class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-3.5 py-3 font-mono text-[11.5px] text-slate-700 dark:text-slate-300"
-      ><%= @evidence.text %></pre>
-
-      <a
-        :if={@evidence.kind != :screenshot and @evidence.path}
-        href={~p"/tasks/#{@task.id}/qa/#{@finding.key}/evidence/#{@index}"}
-        target="_blank"
-        rel="noopener"
-        data-qa="qa_evidence_file"
-        class="inline-flex items-center gap-1 text-[11.5px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+    <div
+      id="qa-evidence-viewer"
+      data-qa="qa_finding_evidence"
+      class="flex-1 min-w-0 min-h-[420px] lg:min-h-0 flex flex-col"
+    >
+      <p
+        :if={@shown == nil}
+        data-qa="qa_evidence_none"
+        class="px-6 py-5 text-[13px] text-slate-500 dark:text-slate-400"
       >
-        Open {@evidence.path} <.icon name="pi-arrow-up-right" class="size-3" />
-      </a>
+        QA attached no evidence to this finding.
+      </p>
 
-      <figcaption class="mt-1.5 text-[11.5px] text-slate-500 dark:text-slate-400">
-        {@evidence.name}
-      </figcaption>
-    </figure>
+      <div
+        :if={@shown}
+        role="tablist"
+        class="shrink-0 flex items-end gap-1 overflow-x-auto px-4 pt-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40"
+      >
+        <button
+          :for={{{evidence, kind}, index} <- Enum.with_index(Enum.zip(@finding.evidence, @kinds))}
+          type="button"
+          role="tab"
+          id={"qa-evidence-tab-#{index}"}
+          data-qa="qa_evidence_tab"
+          data-kind={tab_kind(kind, evidence)}
+          aria-selected={to_string(index == @index)}
+          phx-click="select_evidence"
+          phx-target={@target}
+          phx-value-index={index}
+          class={[
+            "shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-t-lg border text-[12.5px] cursor-pointer",
+            index == @index &&
+              "border-slate-200 dark:border-slate-700 border-b-white dark:border-b-slate-900 bg-white dark:bg-slate-900 font-semibold text-slate-900 dark:text-slate-100",
+            index != @index &&
+              "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+          ]}
+        >
+          <.icon name={evidence_icon(tab_kind(kind, evidence))} class="size-[15px]" />
+          <span class="shrink-0 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            {tab_kind(kind, evidence)}
+          </span>
+          <span class="truncate max-w-[150px]">{tab_name(kind, evidence)}</span>
+        </button>
+      </div>
+
+      <div
+        :if={@kind == :screenshot}
+        data-qa="qa_evidence"
+        data-kind="screenshot"
+        class="flex-1 min-h-0 overflow-auto p-4 bg-white dark:bg-slate-900"
+      >
+        <div class="flex items-center gap-3 mb-3">
+          <span
+            data-qa="qa_evidence_name"
+            class="min-w-0 truncate text-[13px] font-semibold text-slate-800 dark:text-slate-100"
+          >
+            {@shown.name}
+          </span>
+          <span class="min-w-0 truncate font-mono text-[11.5px] text-slate-500 dark:text-slate-400">
+            {@shown.path}
+          </span>
+          <a
+            href={~p"/tasks/#{@task.id}/qa/#{@finding.key}/evidence/#{@index}"}
+            target="_blank"
+            rel="noopener"
+            data-qa="qa_evidence_full_size"
+            class="ml-auto shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            Full size <.icon name="pi-arrows-out-simple" class="size-3" />
+          </a>
+        </div>
+
+        <img
+          src={~p"/tasks/#{@task.id}/qa/#{@finding.key}/evidence/#{@index}"}
+          alt={@shown.name}
+          class="w-full rounded-xl border border-slate-200 dark:border-slate-700"
+        />
+      </div>
+
+      <div
+        :if={@kind in [:pdf, :file]}
+        data-qa="qa_evidence"
+        data-kind={@kind}
+        class="flex-1 min-h-0 p-4 bg-white dark:bg-slate-900"
+      >
+        <div class="flex items-center gap-3">
+          <span
+            data-qa="qa_evidence_name"
+            class="min-w-0 truncate text-[13px] font-semibold text-slate-800 dark:text-slate-100"
+          >
+            {@shown.name}
+          </span>
+          <span class="min-w-0 truncate font-mono text-[11.5px] text-slate-500 dark:text-slate-400">
+            {@shown.path}
+          </span>
+          <a
+            href={~p"/tasks/#{@task.id}/qa/#{@finding.key}/evidence/#{@index}"}
+            target={@kind == :pdf && "_blank"}
+            download={@kind == :file}
+            rel="noopener"
+            data-qa="qa_evidence_open"
+            class="ml-auto shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            {open_label(@kind)} <.icon name="pi-arrow-up-right" class="size-3" />
+          </a>
+        </div>
+      </div>
+
+      <.text_evidence :if={@kind in [:text, :missing]} evidence={@shown} read={@text} />
+    </div>
+    """
+  end
+
+  attr :evidence, :any, required: true
+  attr :read, :any, required: true
+
+  # A log, a query or a note, read as QA saved it: numbered, so a line can be
+  # pointed at, and with the lines logged at error level marked.
+  defp text_evidence(%{read: {:ok, %{text: text, truncated: truncated}}} = assigns) do
+    lines = text |> String.trim_trailing("\n") |> String.split("\n")
+    errors = Enum.map(lines, &QaEvidence.error_line?/1)
+
+    assigns =
+      assigns
+      |> assign(:text, text)
+      |> assign(:truncated, truncated)
+      |> assign(:lines, Enum.zip([lines, errors, 1..length(lines)]))
+      |> assign(:first_error, Enum.find_index(errors, & &1) && Enum.find_index(errors, & &1) + 1)
+
+    ~H"""
+    <div
+      id="qa-evidence-text"
+      data-qa="qa_evidence"
+      data-kind={@evidence.kind}
+      class="group flex-1 min-h-0 flex flex-col bg-white dark:bg-slate-900"
+    >
+      <div class="shrink-0 flex items-center gap-3 px-4 py-2.5 border-b border-slate-200 dark:border-slate-700 text-[11.5px] text-slate-500 dark:text-slate-400">
+        <span
+          data-qa="qa_evidence_name"
+          class="min-w-0 truncate text-[13px] font-semibold text-slate-800 dark:text-slate-100"
+        >
+          {@evidence.name}
+        </span>
+        <span data-qa="qa_evidence_line_count" class="font-mono whitespace-nowrap">
+          {line_count(length(@lines))}
+        </span>
+
+        <button
+          :if={@first_error}
+          type="button"
+          id="qa-evidence-jump"
+          data-qa="qa_evidence_jump"
+          phx-hook="JumpToLine"
+          data-target="qa-evidence-first-error"
+          class="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 font-semibold whitespace-nowrap cursor-pointer"
+        >
+          <.icon name="pi-arrow-down" class="size-3" /> Jump to error
+        </button>
+
+        <button
+          type="button"
+          data-qa="qa_evidence_wrap"
+          phx-click={JS.toggle_class("wrapped", to: "#qa-evidence-text")}
+          class={[
+            "inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer",
+            @first_error == nil && "ml-auto"
+          ]}
+        >
+          <span class="inline-flex h-3.5 w-6 rounded-full bg-slate-300 dark:bg-slate-600 group-[.wrapped]:bg-blue-500 p-0.5">
+            <span class="size-2.5 rounded-full bg-white transition-transform group-[.wrapped]:translate-x-2.5" />
+          </span>
+          Wrap
+        </button>
+
+        <button
+          type="button"
+          id="qa-evidence-copy"
+          data-qa="qa_evidence_copy"
+          phx-hook="CopyText"
+          data-copy-text={@text}
+          class="inline-flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400 cursor-pointer data-[copied]:text-emerald-600"
+        >
+          <.icon name="pi-copy" class="size-3.5" /> Copy
+        </button>
+      </div>
+
+      <div
+        id="qa-evidence-lines"
+        class="flex-1 min-h-0 overflow-auto bg-slate-50 dark:bg-slate-800/40 py-2 font-mono text-[11.5px] leading-[1.65]"
+      >
+        <div
+          :for={{line, error, number} <- @lines}
+          id={number == @first_error && "qa-evidence-first-error"}
+          data-qa="qa_evidence_line"
+          data-error={error}
+          class={["flex", error && "bg-red-50 dark:bg-red-950/30"]}
+        >
+          <span class="w-10 shrink-0 pr-2 text-right text-slate-400 dark:text-slate-500 select-none">
+            {number}
+          </span>
+          <span class="w-3 shrink-0">
+            <span :if={error} class="font-bold text-red-600 dark:text-red-400">!</span>
+          </span>
+          <span class="pr-4 whitespace-pre group-[.wrapped]:whitespace-pre-wrap group-[.wrapped]:break-all text-slate-700 dark:text-slate-300">{line}</span>
+        </div>
+      </div>
+
+      <div class="shrink-0 px-4 py-2 border-t border-slate-200 dark:border-slate-700 text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
+        <p data-qa="qa_evidence_footer" class="flex items-center gap-2">
+          <span class="font-mono font-bold text-red-600 dark:text-red-400">!</span>
+          marks lines logged at error level. The log is shown as QA saved it.
+        </p>
+        <p :if={@truncated} data-qa="qa_evidence_truncated">
+          Only the first 256 KB of the file is shown; the rest was cut.
+        </p>
+      </div>
+    </div>
+    """
+  end
+
+  defp text_evidence(%{read: {:error, reason}} = assigns) do
+    assigns = assign(assigns, :sentence, unreadable(reason, assigns.evidence.path))
+
+    ~H"""
+    <p
+      data-qa="qa_evidence_unreadable"
+      class="flex-1 px-6 py-5 text-[13px] text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900"
+    >
+      {@sentence}
+    </p>
     """
   end
 
@@ -1278,6 +1536,37 @@ defmodule RailWeb.Live.QaStage do
     """
   end
 
+  attr :running, :boolean, required: true
+
+  # A report sent back for evidence has nothing in it to decide yet, and only
+  # one that Rail has stopped asking about needs a person.
+  defp held_back(assigns) do
+    ~H"""
+    <div
+      id="qa-held-back"
+      data-qa="qa_held_back"
+      class="flex-1 min-h-0 flex flex-col items-center justify-center gap-5 p-8"
+    >
+      <div class={[
+        "flex items-center justify-center size-14 rounded-2xl ring-1",
+        held_back_tone(@running)
+      ]}>
+        <.icon name={held_back_icon(@running)} class="size-7" />
+      </div>
+
+      <div class="text-center max-w-md">
+        <h2 id="qa-held-back-title" class="text-base font-semibold text-slate-900 dark:text-slate-100">
+          {held_back_title(@running)}
+        </h2>
+
+        <p class="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+          {held_back_body(@running)}
+        </p>
+      </div>
+    </div>
+    """
+  end
+
   # What this change broke, worst first; then what it only stands next to. Ruling
   # on a finding never moves it.
   defp load(socket) do
@@ -1288,6 +1577,8 @@ defmodule RailWeb.Live.QaStage do
     check = focused_check(socket.assigns.focus, checklist)
     running = Run.running?(socket.assigns.run)
     current = running && checklist && QaChecklist.current(checklist)
+    report = report(socket.assigns.task)
+    reported = reported?(socket.assigns.run)
 
     socket
     |> assign(:findings, findings)
@@ -1298,9 +1589,11 @@ defmodule RailWeb.Live.QaStage do
     |> assign(:outstanding, Enum.filter(findings, &QaFinding.outstanding?/1))
     |> assign(:undecided, Enum.filter(findings, &QaFinding.undecided?/1))
     |> assign(:running, running)
-    |> assign(:reported, reported?(socket.assigns.run))
+    |> assign(:reported, reported)
     |> assign(:pending, pending(socket.assigns.run, socket.assigns.task))
-    |> assign(:report, report(socket.assigns.task))
+    |> assign(:report, report)
+    |> assign_held(report, reported)
+    |> assign_evidence(selected)
     |> assign(:checklist, checklist)
     |> assign(:shots, shots)
     |> assign(:files, files)
@@ -1310,6 +1603,29 @@ defmodule RailWeb.Live.QaStage do
     |> assign(:current, current)
     |> assign(:driving, browser_driving(socket.assigns.run, socket.assigns.task))
     |> pane()
+  end
+
+  defp assign_held(socket, report, reported) do
+    held = held?(socket.assigns.run, reported, report)
+
+    socket
+    |> assign(:held, held)
+    |> assign(:unproven, if(held, do: QaReport.unproven(report), else: []))
+    |> assign(:reminders, socket.assigns.run.evidence_reminders)
+  end
+
+  # The tab picked stays picked while the finding does, and a finding that lost
+  # evidence under the reader falls back to its first.
+  defp assign_evidence(socket, selected) do
+    evidence = (selected && selected.evidence) || []
+    index = if socket.assigns.evidence_index < length(evidence), do: socket.assigns.evidence_index, else: 0
+
+    kinds = Enum.map(evidence, &shown_as(socket.assigns.task, &1))
+
+    socket
+    |> assign(:evidence_index, index)
+    |> assign(:evidence_kinds, kinds)
+    |> assign(:evidence_text, evidence_text(socket.assigns.task, Enum.at(evidence, index), Enum.at(kinds, index)))
   end
 
   # Picking something is picking what the middle shows, so the panel reloads
@@ -1334,6 +1650,7 @@ defmodule RailWeb.Live.QaStage do
 
   defp chosen(%{shot: %{}}), do: :shot
   defp chosen(%{focus: :summary, report: %QaReport{}, running: false}), do: :summary
+  defp chosen(%{held: true, check: nil}), do: :held_back
   defp chosen(%{running: true, check: check, current: check}), do: :browser
   defp chosen(%{check: %QaCheck{}}), do: :check
   defp chosen(%{running: true}), do: :browser
@@ -1408,6 +1725,31 @@ defmodule RailWeb.Live.QaStage do
       true -> :clean
     end
   end
+
+  # Only a report Rail has sent back is held, so a run that latched before
+  # reports were held keeps showing its findings.
+  defp held?(%Run{evidence_reminders: reminders}, false, %QaReport{}) when reminders > 0, do: true
+  defp held?(_run, _reported, _report), do: false
+
+  # QA picks the kind it cites a file as, and none of them is a PDF, so what the
+  # file holds decides how it is shown.
+  defp shown_as(%Task{} = task, %QaEvidence{path: path}) when is_binary(path) do
+    case Pipeline.classify_qa_evidence(task, path) do
+      {:ok, kind} -> kind
+      {:error, :not_found} -> :missing
+    end
+  end
+
+  defp shown_as(%Task{}, %QaEvidence{}), do: :text
+
+  # Only the tab on screen is read, and anything that is not text is the
+  # browser's to fetch.
+  defp evidence_text(%Task{} = task, %QaEvidence{path: path} = evidence, :text) when is_binary(path),
+    do: Pipeline.read_qa_evidence(task, evidence)
+
+  defp evidence_text(%Task{}, %QaEvidence{text: text}, :text), do: {:ok, %{text: text, truncated: false}}
+  defp evidence_text(%Task{}, %QaEvidence{}, :missing), do: {:error, :not_found}
+  defp evidence_text(%Task{}, _evidence, _kind), do: nil
 
   defp position(_findings, nil), do: 0
   defp position(findings, selected), do: Enum.find_index(findings, &(&1.key == selected.key)) + 1
@@ -1495,6 +1837,68 @@ defmodule RailWeb.Live.QaStage do
 
   defp recommendation_line(%QaFinding{recommendation: :fix}), do: "QA recommends fixing this."
   defp recommendation_line(%QaFinding{recommendation: :skip}), do: "QA recommends leaving this."
+
+  defp held_tone(true), do: "sent_back"
+  defp held_tone(false), do: "not_valid"
+
+  defp held_title(true), do: "Sent back to QA"
+  defp held_title(false), do: "Report not valid"
+
+  defp held_colors(true),
+    do: "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900 text-amber-900 dark:text-amber-200"
+
+  defp held_colors(false),
+    do: "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900 text-red-800 dark:text-red-200"
+
+  defp held_dot(true), do: "bg-amber-500"
+  defp held_dot(false), do: "bg-red-500"
+
+  defp unproven_reason(%{refused: []}), do: "No evidence attached"
+  defp unproven_reason(%{refused: refused}), do: "Evidence refused: #{Enum.join(refused, "; ")}"
+
+  defp held_back_tone(true),
+    do: "bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 ring-blue-100 dark:ring-blue-900"
+
+  defp held_back_tone(false),
+    do: "bg-red-50 dark:bg-red-950 text-red-600 dark:text-red-400 ring-red-100 dark:ring-red-900"
+
+  defp held_back_icon(true), do: "pi-hourglass-medium"
+  defp held_back_icon(false), do: "pi-warning-circle"
+
+  defp held_back_title(true), do: "Waiting for QA's evidence"
+  defp held_back_title(false), do: "No findings to decide"
+
+  defp held_back_body(true), do: "The findings show here once QA's report is valid. Nothing needs you yet."
+
+  defp held_back_body(false) do
+    "QA's report still has findings without evidence. Message QA to fix it, or run QA again. " <>
+      "The findings it names are in the sidebar."
+  end
+
+  # A file read as text keeps the kind QA cited it as, unless that was a picture
+  # it is not. Anything else is named for what it holds.
+  defp tab_kind(:text, %QaEvidence{kind: :screenshot}), do: :text
+  defp tab_kind(kind, %QaEvidence{kind: cited}) when kind in [:text, :missing], do: cited
+  defp tab_kind(kind, %QaEvidence{}), do: kind
+
+  defp evidence_icon(:screenshot), do: "pi-image"
+  defp evidence_icon(:pdf), do: "pi-file-pdf"
+  defp evidence_icon(:file), do: "pi-file"
+  defp evidence_icon(:query), do: "pi-database"
+  defp evidence_icon(:note), do: "pi-note"
+  defp evidence_icon(_log_or_text), do: "pi-file-text"
+
+  # A text file goes by its file, as a log does. Anything Rail filed with
+  # `qa_shot` or `qa_file` starts with its check's key, so it goes by what QA
+  # called it, and so does inline text.
+  defp tab_name(:text, %QaEvidence{path: path}) when is_binary(path), do: Path.basename(path)
+  defp tab_name(_kind, %QaEvidence{name: name}), do: name
+
+  defp line_count(1), do: "1 line"
+  defp line_count(count), do: "#{count} lines"
+
+  defp unreadable(:not_found, path), do: "The file QA saved at #{path} is not there any more."
+  defp unreadable(:not_text, path), do: "#{path} is not text, so it is not shown here."
 
   defp pending_icon(:clean), do: "pi-seal-check"
   defp pending_icon(:superseded), do: "pi-arrows-clockwise"

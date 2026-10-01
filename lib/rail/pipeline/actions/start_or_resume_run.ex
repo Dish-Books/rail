@@ -26,6 +26,7 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRun do
     attrs = %{
       status: :running,
       stage_outcome: :in_progress,
+      evidence_reminders: 0,
       started_at: DateTime.utc_now(),
       error: nil,
       stage_fingerprint_head_sha: head_sha,
