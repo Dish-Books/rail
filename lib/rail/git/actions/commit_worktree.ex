@@ -28,13 +28,17 @@ defmodule Rail.Git.Actions.CommitWorktree do
     end
   end
 
-  # `.rail/scratch/` is the agents' own scratch inside the worktree and never part
-  # of the change, so it is excluded here rather than left to a .gitignore Rail
-  # does not own.
+  # `.rail/` is the agents' own scratch inside the worktree and never part of the
+  # change, so it is excluded here rather than left to a .gitignore Rail does not
+  # own. `.rail/prompts/` is the one part of it that is, and needs an add of its
+  # own: git applies an exclusion after every path it is given, so it would win.
   defp stage(worktree_path) do
-    case Tools.run("git", ["add", "-A", "--", ".", ":!.rail/scratch"], cd: worktree_path, stderr_to_stdout: true) do
-      {_output, 0} -> :ok
-      {output, _code} -> {:error, String.trim(output)}
+    with {_output, 0} <- Tools.run("git", ["add", "-A", "--", ".", ":!.rail"], cd: worktree_path, stderr_to_stdout: true),
+         {_output, 0} <- Tools.run("git", ["add", "-A", "--", ".rail/prompts"], cd: worktree_path, stderr_to_stdout: true) do
+      :ok
+    else
+      # A project with no prompts folder has nothing there to stage.
+      {output, _code} -> if output =~ "did not match any files", do: :ok, else: {:error, String.trim(output)}
     end
   end
 

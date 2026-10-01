@@ -46,12 +46,12 @@ defmodule Rail.Git.Actions.BranchFingerprintTest do
     assert fp_clean.dirty_digest != fp_dirty.dirty_digest
   end
 
-  test "excludes .rail/scratch from the dirty digest" do
+  test "excludes .rail directory from dirty digest" do
     repo = create_temp_git_repo()
     fp_clean = Git.branch_fingerprint(repo)
 
-    File.mkdir_p!(Path.join(repo, ".rail/scratch"))
-    File.write!(Path.join(repo, ".rail/scratch/settings.json"), "{}\n")
+    File.mkdir_p!(Path.join(repo, ".rail"))
+    File.write!(Path.join(repo, ".rail/settings.json"), "{}\n")
 
     fp_rail_dirty = Git.branch_fingerprint(repo)
 

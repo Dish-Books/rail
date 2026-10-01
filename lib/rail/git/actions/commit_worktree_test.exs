@@ -80,44 +80,30 @@ defmodule Rail.Git.Actions.CommitWorktreeTest do
     assert git!(repo, ["cat-file", "commit", "HEAD"]) =~ "-----BEGIN SSH SIGNATURE-----"
   end
 
-  test "leaves the agents' own .rail/scratch out of the commit", %{scope: scope, task: task, repo: repo} do
+  test "leaves the agents' own .rail scratch out of the commit", %{scope: scope, task: task, repo: repo} do
     File.write!(Path.join(repo, "feature.ex"), "one\n")
-    File.mkdir_p!(Path.join(repo, ".rail/scratch"))
-    File.write!(Path.join(repo, ".rail/scratch/notes.md"), "scratch\n")
+    File.mkdir_p!(Path.join(repo, ".rail"))
+    File.write!(Path.join(repo, ".rail/notes.md"), "scratch\n")
 
     assert {:ok, _sha} = Git.commit_worktree(scope, task, "CWT-1: add feature")
 
     files = git!(repo, ["show", "--name-only", "--pretty=", "HEAD"])
     assert files =~ "feature.ex"
-    refute files =~ ".rail/scratch"
+    refute files =~ ".rail"
   end
 
-  test "commits a project's .rail/prompts with the change, and still no .rail/scratch", %{
+  test "commits a project's .rail/prompts with the change, and still no other .rail scratch", %{
     scope: scope,
     task: task,
     repo: repo
   } do
     File.mkdir_p!(Path.join(repo, ".rail/prompts"))
     File.write!(Path.join(repo, ".rail/prompts/engineer.md"), "Prompt.\n")
-    File.mkdir_p!(Path.join(repo, ".rail/scratch"))
-    File.write!(Path.join(repo, ".rail/scratch/notes.md"), "scratch\n")
+    File.write!(Path.join(repo, ".rail/notes.md"), "scratch\n")
 
     assert {:ok, _sha} = Git.commit_worktree(scope, task, "CWT-1: change a prompt")
 
     assert git!(repo, ["show", "--name-only", "--pretty=", "HEAD"]) == ".rail/prompts/engineer.md\n"
-  end
-
-  test "commits anything else under .rail, since only .rail/scratch is scratch", %{
-    scope: scope,
-    task: task,
-    repo: repo
-  } do
-    File.mkdir_p!(Path.join(repo, ".rail"))
-    File.write!(Path.join(repo, ".rail/settings.json"), "{}\n")
-
-    assert {:ok, _sha} = Git.commit_worktree(scope, task, "CWT-1: add settings")
-
-    assert git!(repo, ["show", "--name-only", "--pretty=", "HEAD"]) == ".rail/settings.json\n"
   end
 
   test "commits a .rail/prompts folder being deleted", %{scope: scope, task: task, repo: repo} do

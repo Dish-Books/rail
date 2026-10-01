@@ -58,8 +58,8 @@ defmodule Rail.Git.Actions.BranchChangedTest do
   end
 
   test "the agents' own scratch is not a change", %{task: task, repo: repo} do
-    File.mkdir_p!(Path.join(repo, ".rail/scratch"))
-    File.write!(Path.join(repo, ".rail/scratch/notes.md"), "scratch\n")
+    File.mkdir_p!(Path.join(repo, ".rail"))
+    File.write!(Path.join(repo, ".rail/notes.md"), "scratch\n")
 
     refute Git.branch_changed?(task)
   end

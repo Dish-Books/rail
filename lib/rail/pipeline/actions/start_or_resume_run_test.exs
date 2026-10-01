@@ -53,15 +53,15 @@ defmodule Rail.Pipeline.Actions.StartOrResumeRunTest do
     assert Repo.aggregate(Run, :count) == 1
   end
 
-  test "leaves .rail/scratch changes out of the dirty digest", %{
+  test "leaves .rail/ changes out of the dirty digest", %{
     task: task,
     role: role,
     worktree: worktree
   } do
     {:ok, before} = Pipeline.start_or_resume_run(task, role, worktree)
 
-    File.mkdir_p!(Path.join(worktree, ".rail/scratch"))
-    File.write!(Path.join([worktree, ".rail/scratch", "notes.md"]), "scratch\n")
+    File.mkdir_p!(Path.join(worktree, ".rail"))
+    File.write!(Path.join([worktree, ".rail", "notes.md"]), "scratch\n")
 
     {:ok, after_rail_write} = Pipeline.start_or_resume_run(task, role, worktree)
 

@@ -29,8 +29,9 @@ defmodule Rail.Git.Actions.ReadDefaultBranchFileTest do
     assert {:ok, "Merged prompt.\n"} = Git.read_default_branch_file(project, ".rail/prompts/engineer.md")
   end
 
-  test "fails for a path the default branch does not have", %{project: project} do
-    assert {:error, _output} = Git.read_default_branch_file(project, ".rail/prompts/review.md")
+  test "fails for a path the default branch does not have, saying so", %{project: project} do
+    assert {:error, message} = Git.read_default_branch_file(project, "missing.md")
+    assert message =~ "does not exist"
   end
 
   test "fails for a file committed only on another branch", %{project: project, remote: remote, clone: clone} do
