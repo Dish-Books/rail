@@ -3,18 +3,16 @@ defmodule Rail.Pipeline.Utils.QaEvidenceKind do
 
   import Rail.Pipeline.Utils.ReadTextHead
 
-  @shots [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+  alias Rail.Pipeline.Schemas.QaEvidence
 
   @doc """
   What the file at `path` is: `:screenshot`, `:pdf`, `:text` or `:file`. Text is
   read for rather than guessed from the extension, because the agent chose it.
   """
   def qa_evidence_kind(path) do
-    extension = String.downcase(Path.extname(path))
-
     cond do
-      extension in @shots -> :screenshot
-      extension == ".pdf" -> :pdf
+      QaEvidence.picture?(path) -> :screenshot
+      String.downcase(Path.extname(path)) == ".pdf" -> :pdf
       match?({:text, _text, _truncated}, read_text_head(path, 8_192)) -> :text
       true -> :file
     end

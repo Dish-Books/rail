@@ -16,6 +16,7 @@ defmodule Rail.Pipeline.Schemas.QaEvidence do
   use Rail.Schema
 
   @kinds [:screenshot, :log, :query, :note]
+  @pictures [".jpg", ".jpeg", ".png", ".gif", ".webp"]
   @path ~r{\A[A-Za-z0-9._][A-Za-z0-9._/-]*\z}
 
   @primary_key false
@@ -48,6 +49,11 @@ defmodule Rail.Pipeline.Schemas.QaEvidence do
   of it, which is the one test for a path a finding cites or `qa_file` files.
   """
   def confined?(path) when is_binary(path), do: path =~ @path and ".." not in Path.split(path)
+
+  @doc """
+  True when `path` names a picture, which the panel shows and serves as one.
+  """
+  def picture?(path) when is_binary(path), do: String.downcase(Path.extname(path)) in @pictures
 
   # The format above already refuses a leading slash and anything exotic; `..`
   # is the segment that looks ordinary and is not.

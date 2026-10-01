@@ -18,6 +18,7 @@ defmodule Rail.Pipeline.Actions.ListQaEvidence do
 
   import Rail.Pipeline.Utils.QaEvidenceKind
 
+  alias Rail.Pipeline.Schemas.QaEvidence
   alias Rail.Pipeline.Schemas.Task
 
   @doc """
@@ -60,12 +61,14 @@ defmodule Rail.Pipeline.Actions.ListQaEvidence do
     end)
   end
 
-  # `lstat` rather than `stat`, so a link is never followed out of the directory.
+  # The name decides before anything is opened, and `lstat` rather than `stat`
+  # means a link is never followed out of the directory.
   defp evidence(directory, entry, captions) do
     path = Path.join(directory, entry)
     {check, caption} = split(entry)
 
-    with {:ok, %File.Stat{type: :regular, mtime: taken_at}} <- File.lstat(path, time: :posix),
+    with true <- is_binary(check) or QaEvidence.picture?(entry),
+         {:ok, %File.Stat{type: :regular, mtime: taken_at}} <- File.lstat(path, time: :posix),
          kind when kind == :screenshot or is_binary(check) <- qa_evidence_kind(path) do
       [
         %{

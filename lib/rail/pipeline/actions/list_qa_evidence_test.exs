@@ -67,6 +67,16 @@ defmodule Rail.Pipeline.Actions.ListQaEvidenceTest do
            ] = Pipeline.list_qa_evidence(task)
   end
 
+  # An unfiled file is skipped on its name, so one the agent left unreadable
+  # costs the listing nothing.
+  test "an unfiled file is never opened", %{task: task, directory: directory} do
+    File.write!(Path.join(directory, "server.log"), "** (RuntimeError) boom")
+    File.chmod!(Path.join(directory, "server.log"), 0o000)
+    File.write!(Path.join(directory, "totals~the-total.png"), "png")
+
+    assert [%{file: "totals~the-total.png"}] = Pipeline.list_qa_evidence(task)
+  end
+
   # What a file is decides how the panel shows it and how it is served, and a
   # name says nothing a model could not have got wrong, so text is read for.
   test "each file says what kind of evidence it is", %{task: task, directory: directory} do
