@@ -7,7 +7,7 @@ defmodule Rail.Triage.Utils.UpsertSlackMessage do
   alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Thread
 
-  @restated [:author_external_id, :author_name, :from_bot, :text, :posted_at, :updated_at]
+  @restated [:author_external_id, :author_name, :from_bot, :text, :posted_at, :images, :updated_at]
 
   @doc """
   Records a Slack message in `thread`, keyed by its ts, so a redelivered event
@@ -32,7 +32,19 @@ defmodule Rail.Triage.Utils.UpsertSlackMessage do
             author_name: author.name,
             from_bot: author.bot?,
             text: text,
-            posted_at: posted_at(ts)
+            posted_at: posted_at(ts),
+            images:
+              Enum.flat_map(slack_message["files"] || [], fn
+                %{"id" => id, "mimetype" => "image/" <> _subtype = mimetype} = file ->
+                  [%{external_id: id, name: file["name"], mimetype: mimetype, url: file["url_private"]}]
+
+                # Slack withholds a file's details from an app outside where it was shared.
+                %{"id" => id, "file_access" => "check_file_info"} ->
+                  [%{external_id: id}]
+
+                _not_an_image ->
+                  []
+              end)
           })
           |> Repo.insert!(on_conflict: {:replace, @restated}, conflict_target: [:thread_id, :external_id])
 

@@ -108,6 +108,56 @@ defmodule Rail.Slack.ClientTest do
     assert {:ok, %{"ts" => "3.0"}} = Slack.post_message("xoxp-person", "C1", "1.0", "Thanks")
   end
 
+  describe "downloading a file" do
+    setup do
+      %{url: "https://files.slack.com/files-pri/T1-F1/shot.png"}
+    end
+
+    test "sends the bot token and hands back the image's bytes", %{workspace: workspace, url: url} do
+      Req.Test.expect(Slack, fn conn ->
+        assert conn.request_path == "/files-pri/T1-F1/shot.png"
+        assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer xoxb-bot"]
+        conn |> Plug.Conn.put_resp_content_type("image/png", nil) |> Plug.Conn.send_resp(200, "png-bytes")
+      end)
+
+      assert {:ok, "png-bytes"} = Slack.download_file(workspace, url)
+    end
+
+    test "a page that is not an image is an error, as Slack answers an app without files:read", %{
+      workspace: workspace,
+      url: url
+    } do
+      Req.Test.expect(Slack, &Req.Test.html(&1, "<html>Sign in to Slack</html>"))
+
+      assert {:error, {:slack_error, :not_an_image}} = Slack.download_file(workspace, url)
+    end
+
+    test "a file Slack will not serve is an error", %{workspace: workspace, url: url} do
+      Req.Test.expect(Slack, &Plug.Conn.send_resp(&1, 404, "gone"))
+
+      assert {:error, {:slack_error, 404}} = Slack.download_file(workspace, url)
+    end
+
+    test "never sends the token anywhere but Slack's file host", %{workspace: workspace} do
+      test = self()
+
+      Req.Test.stub(Slack, fn conn ->
+        send(test, :requested)
+        Plug.Conn.send_resp(conn, 200, "leaked")
+      end)
+
+      for url <- [
+            "https://evil.example/files-pri/T1-F1/shot.png",
+            "http://files.slack.com/files-pri/T1-F1/shot.png",
+            "https://files.slack.com.evil.example/shot.png"
+          ] do
+        assert {:error, :not_a_slack_file} = Slack.download_file(workspace, url)
+      end
+
+      refute_received :requested
+    end
+  end
+
   test "asks a person to let Rail post as them" do
     url = Slack.authorize_url(state: "st", team: "T1")
 

@@ -142,10 +142,34 @@ defmodule Rail.Triage.Actions.TriageThread do
     dir = Thread.scratch_path(thread)
     File.mkdir_p!(dir)
     File.rm(Path.join(dir, "result.json"))
-    File.write!(Path.join(dir, "thread.md"), thread_file(thread))
+    images_dir = Path.join(dir, "images")
+    File.rm_rf!(images_dir)
+    File.mkdir_p!(images_dir)
+
+    images =
+      Map.new(thread.messages, fn %Message{} = message ->
+        {message.id, message.images |> Enum.with_index(1) |> Enum.map(&image_file(&1, message, thread, images_dir))}
+      end)
+
+    File.write!(Path.join(dir, "thread.md"), thread_file(thread, images))
     File.write!(Path.join(dir, "issues.md"), issues_file(thread))
     :ok
   end
+
+  defp image_file({%Message.Image{url: url} = image, n}, %Message{} = message, %Thread{} = thread, dir)
+       when is_binary(url) do
+    case Slack.download_file(thread.slack_channel.slack_workspace, url) do
+      {:ok, body} ->
+        path = Path.join(dir, "#{message.external_id}-#{n}.#{List.first(MIME.extensions(image.mimetype), "img")}")
+        File.write!(path, body)
+        {:ok, path, image}
+
+      {:error, _unreadable} ->
+        {:unreadable, image}
+    end
+  end
+
+  defp image_file({%Message.Image{} = image, _n}, _message, _thread, _dir), do: {:unreadable, image}
 
   defp agent(%Thread{} = thread, role, worktree, token) do
     prompt =
@@ -199,7 +223,7 @@ defmodule Rail.Triage.Actions.TriageThread do
   defp error_message(reason) when is_binary(reason), do: reason
   defp error_message(reason), do: "Triage failed: #{inspect(reason)}"
 
-  defp thread_file(%Thread{} = thread) do
+  defp thread_file(%Thread{} = thread, images) do
     lines =
       Enum.map(thread.messages, fn %Message{} = message ->
         who =
@@ -209,7 +233,21 @@ defmodule Rail.Triage.Actions.TriageThread do
             true -> message.author_name
           end
 
-        "### #{message.external_id} · #{who} · #{DateTime.to_iso8601(message.posted_at)}\n\n#{message.text}\n"
+        attached =
+          Enum.map(Map.fetch!(images, message.id), fn
+            {:ok, path, image} ->
+              "Image attached: #{path} (#{image.name})"
+
+            {:unreadable, %{mimetype: mimetype, name: name}} when is_binary(mimetype) ->
+              "Image attached, but Rail could not read it: #{name}"
+
+            {:unreadable, _withheld} ->
+              "A file was attached, but Rail could not read it."
+          end)
+
+        body = [message.text, Enum.join(attached, "\n")] |> Enum.reject(&(&1 == "")) |> Enum.join("\n\n")
+
+        "### #{message.external_id} · #{who} · #{DateTime.to_iso8601(message.posted_at)}\n\n#{body}\n"
       end)
 
     "# Slack thread in ##{thread.slack_channel.name}\n\n" <> Enum.join(lines, "\n")
@@ -232,7 +270,7 @@ defmodule Rail.Triage.Actions.TriageThread do
     file = Path.join(dir, "result.json")
 
     String.trim("""
-    Triage the Slack thread in #{Path.join(dir, "thread.md")}. Your working directory is a checkout of #{thread.project.name}'s default branch, and every path you read is under it.
+    Triage the Slack thread in #{Path.join(dir, "thread.md")}. Images attached to a message are listed under it in thread.md with their paths: open every one before you judge the message, because a screenshot is often the report itself. Where thread.md says an attachment could not be read, the message still carried one, so never mark it as needing no response for having no text. Your working directory is a checkout of #{thread.project.name}'s default branch, and every path you read is under it.
 
     You are reading the code, not changing it: write no code, no tests and no files outside #{dir}, and never run a git command that writes. Run a single targeted check only where it settles a question reading cannot, and say in the evidence what you ran. Use any MCP tools you were offered for evidence only; never use one to post, reply, create or change anything.
 
@@ -275,7 +313,7 @@ defmodule Rail.Triage.Actions.TriageThread do
     }
     JSON
 
-    - List every message from thread.md under `messages`. `needs_response` is false for a message that asks and reports nothing, with the one-line `reason`.
+    - List every message from thread.md under `messages`. `needs_response` is false for a message that asks and reports nothing, in its text or its images, with the one-line `reason`.
     - `items` is every item this pass restates or raises. Raise none for a thread that needs no response: `"items": []` is the right answer then.
     - `key` is your name for the item, lowercase with hyphens, and it stays the same across passes. That is what lets a later message widen or narrow an item rather than raise it twice.
     - `change` is `raised` for the message that first brought an item up, `widened` or `narrowed` when a later message changes its scope, and `added` for a new item raised later in the thread. `passage` is quoted verbatim from the message.

@@ -2,7 +2,7 @@ defmodule Rail.Triage.Schemas.Message do
   @moduledoc """
   One Slack message in a triaged thread, with what the last pass that read it
   said about it: which passages raised or changed which item, or why it needed
-  no response.
+  no response. It keeps the images that came with the message.
   """
   use Rail.Schema
 
@@ -26,6 +26,13 @@ defmodule Rail.Triage.Schemas.Message do
       field :passage, :string
     end
 
+    embeds_many :images, Image, on_replace: :delete, primary_key: false do
+      field :external_id, :string
+      field :name, :string
+      field :mimetype, :string
+      field :url, :string
+    end
+
     belongs_to :thread, Thread
     # Set when a teammate posted it through Rail, which never triages its own posts.
     belongs_to :sent_by_user, User
@@ -37,6 +44,7 @@ defmodule Rail.Triage.Schemas.Message do
     %__MODULE__{thread_id: thread_id}
     |> cast(attrs, [:external_id, :author_external_id, :author_name, :from_bot, :text, :posted_at])
     |> validate_required([:external_id, :posted_at])
+    |> cast_embed(:images, with: &image_changeset/2)
     |> unique_constraint([:thread_id, :external_id])
   end
 
@@ -94,4 +102,6 @@ defmodule Rail.Triage.Schemas.Message do
   defp mark(_link, _text, _positions), do: []
 
   defp item_link_changeset(link, attrs), do: cast(link, attrs, [:item_key, :change, :passage])
+
+  defp image_changeset(image, attrs), do: cast(image, attrs, [:external_id, :name, :mimetype, :url])
 end

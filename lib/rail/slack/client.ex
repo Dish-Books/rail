@@ -53,6 +53,21 @@ defmodule Rail.Slack.Client do
     request(:post, user_token, "chat.postMessage", json: %{channel: channel, thread_ts: thread_ts, text: text})
   end
 
+  @doc """
+  Downloads an attached file, sending the bot token only to Slack's file host.
+  """
+  def download_file(%SlackWorkspace{token: token}, url) do
+    case URI.parse(url) do
+      %URI{scheme: "https", host: "files.slack.com"} ->
+        [method: :get, url: url, auth: {:bearer, token}, decode_body: false]
+        |> Req.request(Keyword.get(config(), :req_options, []))
+        |> image()
+
+      %URI{} ->
+        {:error, :not_a_slack_file}
+    end
+  end
+
   def authorize_url(opts \\ []) do
     params =
       Enum.reject(
@@ -107,6 +122,16 @@ defmodule Rail.Slack.Client do
     |> Req.request(opts)
     |> answer()
   end
+
+  # Without files:read, Slack answers a file URL with its HTML sign-in page, not an error.
+  defp image({:ok, %{status: 200} = response}) do
+    case Req.Response.get_header(response, "content-type") do
+      ["image/" <> _subtype | _rest] -> {:ok, response.body}
+      _not_an_image -> {:error, {:slack_error, :not_an_image}}
+    end
+  end
+
+  defp image(other), do: answer(other)
 
   defp answer({:ok, %{status: 200, body: %{"ok" => true} = body}}), do: {:ok, body}
   defp answer({:ok, %{status: 200, body: %{"error" => error}}}), do: {:error, {:slack_error, error}}

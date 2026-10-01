@@ -14,38 +14,46 @@ defmodule RailTest.TriageHelpers do
   Answers Slack's read endpoints for the calling test. `chat.postMessage` is
   deliberately absent, so a post the test did not expect crashes it.
 
-  Takes `:team_id`, `:channels` (`[{id, name}]`), `:users` (`%{id => name}`) and
-  `:replies` (the messages `conversations.replies` returns).
+  Takes `:team_id`, `:channels` (`[{id, name}]`), `:users` (`%{id => name}`),
+  `:replies` (the messages `conversations.replies` returns) and `:files`
+  (`%{path => {content_type, body}}`). A file path not in `:files` gets the HTML
+  sign-in page Slack serves an app without `files:read`.
   """
   def stub_slack(opts \\ []) do
     team_id = Keyword.get(opts, :team_id, "T_TEST")
     channels = Keyword.get(opts, :channels, [])
     users = Keyword.get(opts, :users, %{})
     replies = Keyword.get(opts, :replies, [])
+    files = Keyword.get(opts, :files, %{})
 
-    Req.Test.stub(Rail.Slack, fn conn ->
-      conn = Plug.Conn.fetch_query_params(conn)
+    Req.Test.stub(Rail.Slack, fn
+      %{request_path: "/files-pri/" <> _file} = conn ->
+        {content_type, body} = Map.get(files, conn.request_path, {"text/html", "<html>Sign in to Slack</html>"})
+        conn |> Plug.Conn.put_resp_content_type(content_type, nil) |> Plug.Conn.send_resp(200, body)
 
-      body =
-        case conn.request_path do
-          "/api/auth.test" ->
-            %{"team_id" => team_id, "bot_id" => "B_RAIL", "user_id" => "U_RAIL"}
+      conn ->
+        conn = Plug.Conn.fetch_query_params(conn)
 
-          "/api/conversations.list" ->
-            %{"channels" => Enum.map(channels, fn {id, name} -> %{"id" => id, "name" => name} end)}
+        body =
+          case conn.request_path do
+            "/api/auth.test" ->
+              %{"team_id" => team_id, "bot_id" => "B_RAIL", "user_id" => "U_RAIL"}
 
-          "/api/users.info" ->
-            user_id = conn.query_params["user"]
-            %{"user" => %{"id" => user_id, "real_name" => Map.get(users, user_id, user_id)}}
+            "/api/conversations.list" ->
+              %{"channels" => Enum.map(channels, fn {id, name} -> %{"id" => id, "name" => name} end)}
 
-          "/api/conversations.replies" ->
-            %{"messages" => replies}
+            "/api/users.info" ->
+              user_id = conn.query_params["user"]
+              %{"user" => %{"id" => user_id, "real_name" => Map.get(users, user_id, user_id)}}
 
-          "/api/chat.getPermalink" ->
-            %{"permalink" => "https://slack.example/archives/#{conn.query_params["channel"]}/p1"}
-        end
+            "/api/conversations.replies" ->
+              %{"messages" => replies}
 
-      Req.Test.json(conn, Map.put(body, "ok", true))
+            "/api/chat.getPermalink" ->
+              %{"permalink" => "https://slack.example/archives/#{conn.query_params["channel"]}/p1"}
+          end
+
+        Req.Test.json(conn, Map.put(body, "ok", true))
     end)
 
     :ok

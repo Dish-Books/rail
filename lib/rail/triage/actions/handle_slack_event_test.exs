@@ -36,6 +36,84 @@ defmodule Rail.Triage.Actions.HandleSlackEventTest do
              Repo.all(from m in Message, where: m.thread_id == ^thread_id)
   end
 
+  test "a screenshot posted with text is stored with the message and schedules a pass", %{
+    workspace: workspace,
+    channel: channel
+  } do
+    assert {:ok, %Thread{id: thread_id}} =
+             Triage.handle_slack_event(
+               workspace,
+               slack_message_event(channel, %{
+                 "subtype" => "file_share",
+                 "text" => "this button is broken",
+                 "files" => [
+                   %{
+                     "id" => "F_SHOT",
+                     "name" => "button.png",
+                     "mimetype" => "image/png",
+                     "url_private" => "https://files.slack.com/files-pri/T1-F_SHOT/button.png"
+                   }
+                 ]
+               })
+             )
+
+    assert_receive {:triage_scheduled, ^thread_id, 15_000}
+
+    assert [
+             %Message{
+               text: "this button is broken",
+               images: [
+                 %Message.Image{
+                   external_id: "F_SHOT",
+                   name: "button.png",
+                   mimetype: "image/png",
+                   url: "https://files.slack.com/files-pri/T1-F_SHOT/button.png"
+                 }
+               ]
+             }
+           ] = Repo.all(from m in Message, where: m.thread_id == ^thread_id)
+  end
+
+  test "of the files posted with a message only the images are kept, and a withheld file is kept unread", %{
+    workspace: workspace,
+    channel: channel
+  } do
+    assert {:ok, %Thread{id: thread_id}} =
+             Triage.handle_slack_event(
+               workspace,
+               slack_message_event(channel, %{
+                 "subtype" => "file_share",
+                 "text" => "",
+                 "files" => [
+                   %{
+                     "id" => "F_SHOT",
+                     "name" => "button.png",
+                     "mimetype" => "image/png",
+                     "url_private" => "https://files.slack.com/files-pri/T1-F_SHOT/button.png"
+                   },
+                   %{
+                     "id" => "F_PDF",
+                     "name" => "spec.pdf",
+                     "mimetype" => "application/pdf",
+                     "url_private" => "https://files.slack.com/files-pri/T1-F_PDF/spec.pdf"
+                   },
+                   %{"id" => "F_HIDDEN", "file_access" => "check_file_info"},
+                   "not a file"
+                 ]
+               })
+             )
+
+    assert [
+             %Message{
+               text: "",
+               images: [
+                 %Message.Image{external_id: "F_SHOT"},
+                 %Message.Image{external_id: "F_HIDDEN", name: nil, mimetype: nil, url: nil}
+               ]
+             }
+           ] = Repo.all(from m in Message, where: m.thread_id == ^thread_id)
+  end
+
   test "a reply joins its thread", %{workspace: workspace, channel: channel} do
     {:ok, %Thread{id: thread_id}} = Triage.handle_slack_event(workspace, slack_message_event(channel, %{}))
 
