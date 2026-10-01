@@ -16,11 +16,9 @@ defmodule Rail.Pipeline.Actions.ListQaEvidence do
   listing is what the panel serves.
   """
 
-  import Rail.Pipeline.Utils.ReadTextHead
+  import Rail.Pipeline.Utils.QaEvidenceKind
 
   alias Rail.Pipeline.Schemas.Task
-
-  @shots [".jpg", ".jpeg", ".png", ".gif", ".webp"]
 
   @doc """
   Lists `task`'s QA evidence as `%{name:, file:, check:, kind:, taken_at:}`,
@@ -62,40 +60,24 @@ defmodule Rail.Pipeline.Actions.ListQaEvidence do
     end)
   end
 
-  defp shot?(entry), do: String.downcase(Path.extname(entry)) in @shots
-
   # `lstat` rather than `stat`, so a link is never followed out of the directory.
   defp evidence(directory, entry, captions) do
     path = Path.join(directory, entry)
-    shot = shot?(entry)
     {check, caption} = split(entry)
 
-    case File.lstat(path, time: :posix) do
-      {:ok, %File.Stat{type: :regular, mtime: taken_at}} when shot or is_binary(check) ->
-        [
-          %{
-            name: Map.get(captions, entry, caption),
-            file: entry,
-            check: check,
-            kind: kind(path, shot),
-            taken_at: taken_at
-          }
-        ]
-
-      _unlisted ->
-        []
-    end
-  end
-
-  # Text is read for rather than guessed from the extension, because the agent
-  # chose the extension.
-  defp kind(_path, true), do: :screenshot
-
-  defp kind(path, false) do
-    cond do
-      String.downcase(Path.extname(path)) == ".pdf" -> :pdf
-      match?({:text, _text, _truncated}, read_text_head(path, 8_192)) -> :text
-      true -> :file
+    with {:ok, %File.Stat{type: :regular, mtime: taken_at}} <- File.lstat(path, time: :posix),
+         kind when kind == :screenshot or is_binary(check) <- qa_evidence_kind(path) do
+      [
+        %{
+          name: Map.get(captions, entry, caption),
+          file: entry,
+          check: check,
+          kind: kind,
+          taken_at: taken_at
+        }
+      ]
+    else
+      _unlisted -> []
     end
   end
 

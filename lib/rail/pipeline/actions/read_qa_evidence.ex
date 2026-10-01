@@ -14,15 +14,17 @@ defmodule Rail.Pipeline.Actions.ReadQaEvidence do
 
   @doc """
   Reads the first 64 KB of `evidence`, listed as `:text`, as
-  `{:ok, %{text:, truncated:}}`, or `{:error, :not_found}` once it has gone.
+  `{:ok, %{text:, truncated:}}`. `{:error, :not_text}` is a file that stops being
+  text past where the listing looked, and `{:error, :not_found}` one that has gone.
   """
   def read_qa_evidence(%Task{scratch_path: scratch_path}, %{file: file, kind: :text}) do
     path = Path.join([scratch_path, "qa", "evidence", file])
 
     if File.regular?(path) do
-      {:text, text, truncated} = read_text_head(path, @limit)
-
-      {:ok, %{text: text, truncated: truncated}}
+      case read_text_head(path, @limit) do
+        {:text, text, truncated} -> {:ok, %{text: text, truncated: truncated}}
+        :binary -> {:error, :not_text}
+      end
     else
       {:error, :not_found}
     end

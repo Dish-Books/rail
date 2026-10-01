@@ -37,6 +37,8 @@ defmodule RailWeb.QaControllerTest do
     File.write!(Path.join(evidence_dir, "invoice~the-invoice.pdf"), "%PDF-1.7")
     File.write!(Path.join(evidence_dir, "export~the-export.bin"), <<0, 159, 146, 150>>)
     File.write!(Path.join(evidence_dir, "page~the-page.html"), "<script>alert(1)</script>")
+    File.write!(Path.join(evidence_dir, "bill.jpg"), "jpeg bytes")
+    File.write!(Path.join(evidence_dir, "page.html"), "<script>alert(1)</script>")
 
     {:ok, _raised} =
       Pipeline.sync_qa_findings(task, [
@@ -51,7 +53,10 @@ defmodule RailWeb.QaControllerTest do
             %{name: "the total", kind: :screenshot, path: "evidence/total.png"},
             %{name: "the stacktrace", kind: :log, path: "evidence/server.log"},
             %{name: "the stored amount", kind: :query, text: "1234.50"},
-            %{name: "a file QA wrote and then deleted", kind: :screenshot, path: "evidence/gone.png"}
+            %{name: "a file QA wrote and then deleted", kind: :screenshot, path: "evidence/gone.png"},
+            %{name: "a page it wrote", kind: :log, path: "evidence/page.html"},
+            %{name: "the bill", kind: :screenshot, path: "evidence/bill.jpg"},
+            %{name: "a log QA wrote and then deleted", kind: :log, path: "evidence/gone.log"}
           ]
         }
       ])
@@ -70,6 +75,23 @@ defmodule RailWeb.QaControllerTest do
     conn = get(conn, ~p"/tasks/#{task.id}/qa/total-unrounded/evidence/1")
 
     assert response(conn, 200) == "** (RuntimeError) boom"
+  end
+
+  # The agent chose the name of anything a finding cites, so the type comes from
+  # what the file holds rather than from its extension.
+  test "serves a page a finding cites as text rather than as a page", %{conn: conn, task: task} do
+    conn = get(conn, ~p"/tasks/#{task.id}/qa/total-unrounded/evidence/4")
+
+    assert response(conn, 200) == "<script>alert(1)</script>"
+    assert ["text/plain; charset=utf-8"] = get_resp_header(conn, "content-type")
+    assert ["nosniff"] = get_resp_header(conn, "x-content-type-options")
+  end
+
+  test "a screenshot a finding cites is still served as a picture", %{conn: conn, task: task} do
+    conn = get(conn, ~p"/tasks/#{task.id}/qa/total-unrounded/evidence/5")
+
+    assert response(conn, 200) == "jpeg bytes"
+    assert ["image/jpeg" <> _charset] = get_resp_header(conn, "content-type")
   end
 
   # Watching a pass means seeing what it saw before any finding names it, so the
@@ -129,6 +151,7 @@ defmodule RailWeb.QaControllerTest do
   test "serves nothing a finding does not name", %{conn: conn, task: task} do
     assert conn |> get(~p"/tasks/#{task.id}/qa/total-unrounded/evidence/2") |> response(404)
     assert conn |> get(~p"/tasks/#{task.id}/qa/total-unrounded/evidence/3") |> response(404)
+    assert conn |> get(~p"/tasks/#{task.id}/qa/total-unrounded/evidence/6") |> response(404)
     assert conn |> get(~p"/tasks/#{task.id}/qa/total-unrounded/evidence/9") |> response(404)
     assert conn |> get(~p"/tasks/#{task.id}/qa/total-unrounded/evidence/-1") |> response(404)
     assert conn |> get(~p"/tasks/#{task.id}/qa/total-unrounded/evidence/first") |> response(404)

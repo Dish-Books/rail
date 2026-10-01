@@ -3632,6 +3632,7 @@ defmodule RailWeb.TaskLiveTest do
       File.write!(Path.join(evidence, "script-runs~the-script-s-log.log"), "wrote 3 rows")
       File.write!(Path.join(evidence, "invoice~the-invoice.pdf"), "%PDF-1.7")
       File.write!(Path.join(evidence, "invoice~the-raw-export.bin"), <<0, 159, 146, 150>>)
+      File.write!(Path.join(evidence, "script-runs~the-garbled-run.log"), String.duplicate("a", 9_000) <> <<0xFF>>)
 
       File.write!(
         Path.join(evidence, "captions.jsonl"),
@@ -3640,7 +3641,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      assert has_element?(view, "[data-qa='qa_check'][data-key='script-runs'] [data-qa='qa_check_files']", "1")
+      assert has_element?(view, "[data-qa='qa_check'][data-key='script-runs'] [data-qa='qa_check_files']", "2")
       refute has_element?(view, "[data-qa='qa_check'][data-key='script-runs'] [data-qa='qa_check_shots']")
 
       view |> element("#qa-check-script-runs") |> render_click()
@@ -3652,6 +3653,12 @@ defmodule RailWeb.TaskLiveTest do
              )
 
       assert has_element?(view, "[data-qa='qa_check_detail_file'] pre", "wrote 3 rows")
+
+      # A log that turns to bytes past where the listing looked still shows its
+      # caption and its link, without a preview.
+      assert has_element?(view, "[data-qa='qa_check_detail_file']", "The garbled run")
+      assert has_element?(view, "[data-qa='qa_check_detail_file'] pre", "wrote 3 rows")
+      refute has_element?(view, "[data-qa='qa_check_detail_file'] pre", "aaaa")
 
       assert has_element?(
                view,
@@ -3757,6 +3764,8 @@ defmodule RailWeb.TaskLiveTest do
                ~s([data-qa='qa_current_file'][href="/tasks/#{task.id}/qa/evidence/script-runs~the-log.log"]),
                "The log"
              )
+
+      assert has_element?(view, "[data-qa='qa_current_shots']", "Filed for this check")
     end
 
     # The first minute of a pass, before it has said what it means to do.

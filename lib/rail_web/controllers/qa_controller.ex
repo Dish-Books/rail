@@ -14,7 +14,7 @@ defmodule RailWeb.QaController do
   while it is still going.
 
   An agent wrote every one of these, so none is served as what its name claims:
-  the listed kind picks the type, and nothing is ever rendered as a page.
+  what the file holds picks the type, and nothing is ever rendered as a page.
   """
   use RailWeb, :controller
 
@@ -24,9 +24,9 @@ defmodule RailWeb.QaController do
 
   def evidence(conn, %{"task_id" => task_id, "key" => key, "index" => index}) do
     with {:ok, %Task{} = task} <- Pipeline.get_task(task_id),
-         %QaEvidence{path: path} when is_binary(path) <- evidence(task, key, index) do
-      file = Path.join([task.scratch_path, "qa", path])
-      send_shot(conn, file, :named)
+         %QaEvidence{path: path} when is_binary(path) <- evidence(task, key, index),
+         {:ok, kind} <- Pipeline.classify_qa_evidence(task, path) do
+      send_shot(conn, Path.join([task.scratch_path, "qa", path]), kind)
     else
       _missing -> send_resp(conn, 404, "Not found")
     end
@@ -42,23 +42,14 @@ defmodule RailWeb.QaController do
   end
 
   defp send_shot(conn, file, kind) do
-    if File.regular?(file) do
-      conn
-      |> served_as(kind, file)
-      |> put_resp_header("x-content-type-options", "nosniff")
-      |> put_resp_header("cache-control", "private, max-age=31536000")
-      |> send_file(200, file)
-    else
-      send_resp(conn, 404, "Not found")
-    end
+    conn
+    |> served_as(kind, file)
+    |> put_resp_header("x-content-type-options", "nosniff")
+    |> put_resp_header("cache-control", "private, max-age=31536000")
+    |> send_file(200, file)
   end
 
-  # A finding's own evidence keeps the type its name gives it; that is not this
-  # listing's to change.
-  defp served_as(conn, kind, file) when kind in [:named, :screenshot] do
-    put_resp_content_type(conn, MIME.from_path(file))
-  end
-
+  defp served_as(conn, :screenshot, file), do: put_resp_content_type(conn, MIME.from_path(file))
   defp served_as(conn, :pdf, _file), do: put_resp_content_type(conn, "application/pdf", nil)
   defp served_as(conn, :text, _file), do: put_resp_content_type(conn, "text/plain")
 

@@ -67,6 +67,7 @@ defmodule Rail.Pipeline do
   defdelegate record_qa_check(task, key, outcome, note \\ nil), to: Actions.RecordQaCheck
   defdelegate list_qa_evidence(task), to: Actions.ListQaEvidence
   defdelegate read_qa_evidence(task, evidence), to: Actions.ReadQaEvidence
+  defdelegate classify_qa_evidence(task, path), to: Actions.ClassifyQaEvidence
   defdelegate read_qa_report(task), to: Actions.ReadQaReport
   defdelegate sync_qa_findings(task, findings), to: Actions.SyncQaFindings
   defdelegate list_qa_findings(task), to: Actions.ListQaFindings

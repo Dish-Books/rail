@@ -815,7 +815,7 @@ defmodule RailWeb.Live.QaStage do
 
       <div :if={@taken != [] or @filed != []} class="shrink-0" data-qa="qa_current_shots">
         <p class="mb-2 text-[10.5px] font-extrabold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
-          Taken for this check
+          Filed for this check
         </p>
 
         <div

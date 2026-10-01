@@ -56,6 +56,15 @@ defmodule Rail.Pipeline.Actions.ReadQaEvidenceTest do
     assert {:ok, %{text: ^shown, truncated: true}} = Pipeline.read_qa_evidence(task, listed)
   end
 
+  # Listing reads less of the file than the preview does, so a log can turn to
+  # bytes past the point the listing looked at.
+  test "a file that stops being text past the listing's look is not text", %{task: task, directory: directory} do
+    File.write!(Path.join(directory, "script-runs~the-log.log"), String.duplicate("a", 9_000) <> <<0xFF>>)
+
+    assert [%{kind: :text} = listed] = Pipeline.list_qa_evidence(task)
+    assert {:error, :not_text} = Pipeline.read_qa_evidence(task, listed)
+  end
+
   test "a file gone since it was listed is not found", %{task: task, directory: directory} do
     File.write!(Path.join(directory, "script-runs~the-log.log"), "wrote 3 rows")
     assert [listed] = Pipeline.list_qa_evidence(task)
