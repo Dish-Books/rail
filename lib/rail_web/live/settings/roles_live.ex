@@ -31,7 +31,7 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:projects, projects)
       |> assign(:roles_project_id, roles_project_id)
       |> assign(:roles_project, roles_project)
-      |> assign(:roles, if(roles_project_id, do: Roles.list_roles(roles_project_id), else: []))
+      |> assign(:roles, if(roles_project, do: list_roles(roles_project), else: []))
       |> assign(:backends, Tools.list_backends())
       |> assign(:mcp_servers, Mcp.list_servers())
       |> assign(:canonical_stages, Role.canonical_stages())
@@ -49,6 +49,7 @@ defmodule RailWeb.Settings.RolesLive do
       |> assign(:modal_errors, %{})
       |> assign(:available_models, [])
       |> assign(:role_tab, :configuration)
+      |> assign(:prompt_source, nil)
       |> assign(:prompt_preview, false)
       |> assign(:expanded_mcp_servers, MapSet.new())
 
@@ -232,6 +233,15 @@ defmodule RailWeb.Settings.RolesLive do
                       <.icon name="pi-cpu" class="size-3.5 text-slate-400" />{format_reservation(
                         bound_role
                       )}
+                    </span>
+                    <span :if={bound_role.prompt_path}>•</span>
+                    <span
+                      :if={bound_role.prompt_path}
+                      id={"bound-role-prompt-source-#{stage}"}
+                      title="Its system prompt is this file on the default branch"
+                      class="inline-flex items-center gap-1 font-mono text-[11px] text-slate-700 dark:text-slate-300"
+                    >
+                      <.icon name="pi-git-branch" class="size-3.5 text-slate-400" />{bound_role.prompt_path}
                     </span>
                   </div>
 
@@ -579,6 +589,7 @@ defmodule RailWeb.Settings.RolesLive do
                         {prompt_chars(@modal_form)} chars
                       </span>
                       <.button
+                        :if={!@prompt_source}
                         size="sm"
                         phx-click="toggle_prompt_preview"
                         id="role-prompt-preview-button"
@@ -587,7 +598,27 @@ defmodule RailWeb.Settings.RolesLive do
                       </.button>
                     </div>
                   </div>
+                  <p
+                    :if={@prompt_source}
+                    id="role-prompt-source"
+                    class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"
+                  >
+                    <.icon name="pi-git-branch" class="size-3.5 shrink-0 text-slate-400" />
+                    <span>
+                      From
+                      <code class="font-mono text-slate-700 dark:text-slate-300">{@prompt_source}</code>
+                      on <code class="font-mono text-slate-700 dark:text-slate-300">{@roles_project.default_branch}</code>. Change it in the repo; runs use what is merged.
+                    </span>
+                  </p>
+                  <div
+                    :if={@prompt_source}
+                    id="role-prompt-readonly"
+                    class="min-h-[24rem] flex-1 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700/80 bg-slate-50 dark:bg-slate-900/60 px-6 py-5"
+                  >
+                    <.markdown content={@modal_form["system_prompt"]} />
+                  </div>
                   <textarea
+                    :if={!@prompt_source}
                     name="role[system_prompt]"
                     id="role-prompt-input"
                     phx-debounce="300"
@@ -875,6 +906,7 @@ defmodule RailWeb.Settings.RolesLive do
       socket
       |> assign(:active_modal, :create_role)
       |> assign(:modal_role, nil)
+      |> assign(:prompt_source, nil)
       |> assign(:modal_form, form_data)
       |> assign(:modal_original, form_data)
       |> assign(:modal_errors, %{})
@@ -911,6 +943,7 @@ defmodule RailWeb.Settings.RolesLive do
         socket
         |> assign(:active_modal, :edit_role)
         |> assign(:modal_role, role)
+        |> assign(:prompt_source, role.prompt_path)
         |> assign(:modal_form, form_data)
         |> assign(:modal_original, form_data)
         |> assign(:modal_errors, %{})
@@ -946,7 +979,7 @@ defmodule RailWeb.Settings.RolesLive do
 
     if role do
       {:ok, _role} = Roles.delete_role(scope, role)
-      refreshed = Roles.list_roles(socket.assigns.roles_project_id)
+      refreshed = list_roles(socket.assigns.roles_project)
 
       socket =
         socket
@@ -976,7 +1009,7 @@ defmodule RailWeb.Settings.RolesLive do
 
     case Roles.copy_roles(scope, target_id, source_id, replace_all: replace_all) do
       {:ok, _roles} ->
-        refreshed = Roles.list_roles(target_id)
+        refreshed = list_roles(socket.assigns.roles_project)
 
         socket =
           socket
@@ -1022,7 +1055,6 @@ defmodule RailWeb.Settings.RolesLive do
 
   def handle_event("save_role", %{"role" => role_params}, socket) do
     scope = socket.assigns.current_scope
-    project_id = socket.assigns.roles_project_id
     modal = socket.assigns.active_modal
     existing_role = socket.assigns.modal_role
 
@@ -1031,7 +1063,7 @@ defmodule RailWeb.Settings.RolesLive do
 
     case execute_role_save(scope, socket.assigns.roles_project, modal, existing_role, attrs) do
       {:ok, _role} ->
-        refreshed = Roles.list_roles(project_id)
+        refreshed = list_roles(socket.assigns.roles_project)
 
         socket =
           socket
@@ -1082,6 +1114,7 @@ defmodule RailWeb.Settings.RolesLive do
       socket
       |> assign(:active_modal, nil)
       |> assign(:modal_role, nil)
+      |> assign(:prompt_source, nil)
       |> assign(:modal_form, nil)
       |> assign(:modal_errors, %{})
 
@@ -1139,6 +1172,9 @@ defmodule RailWeb.Settings.RolesLive do
       nil -> kind
     end
   end
+
+  # Shown as runs get them, so a prompt from the repo reads as the file, not the stored fallback.
+  defp list_roles(project), do: Roles.load_prompts(project, Roles.list_roles(project.id))
 
   defp unbound_stages(canonical_stages, roles) do
     Enum.reject(canonical_stages, &role_for_stage(roles, &1))
@@ -1218,7 +1254,7 @@ defmodule RailWeb.Settings.RolesLive do
         _other -> nil
       end
 
-    %{
+    attrs = %{
       name: String.trim(role_params["name"] || ""),
       description: String.trim(role_params["description"] || ""),
       stage: stage,
@@ -1232,6 +1268,9 @@ defmodule RailWeb.Settings.RolesLive do
       mcp_tools: parse_mcp_tools(role_params["mcp_tools"]),
       position: if(existing_role, do: existing_role.position, else: roles_count)
     }
+
+    # A prompt read from the repo has no textarea to post, and its stored fallback must not change underneath.
+    if existing_role && existing_role.prompt_path, do: Map.delete(attrs, :system_prompt), else: attrs
   end
 
   # A server's "all tools" entry already covers each of its tools, so any it

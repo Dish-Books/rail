@@ -49,10 +49,11 @@ claude_backend =
     |> Repo.insert!()
 
 # 4. Default Roles for Project
-# A stage Rail drives has its real prompt in prompts/<stage>.md, which is the copy
-# that gets edited; the rest carry a one-liner until they have one. The path is
-# relative to the repo, which is the only place seeds are run from: prompts/ is not
-# shipped in a release.
+# What runs is .rail/prompts/<stage>.md on the project's default branch; the copy
+# seeded here is only the fallback for when that file is missing or blank. The path
+# is relative to the repo, the only place seeds are run from.
+read_prompt = &(".rail/prompts/#{&1}.md" |> File.read!() |> String.replace_suffix("\n", ""))
+
 default_roles = [
   %{
     stage: :product,
@@ -62,7 +63,7 @@ default_roles = [
     backend_id: claude_backend.id,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
-    system_prompt: File.read!("prompts/product.md"),
+    system_prompt: read_prompt.("product"),
     max_concurrent: 1,
     position: 0
   },
@@ -74,7 +75,7 @@ default_roles = [
     backend_id: claude_backend.id,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
-    system_prompt: File.read!("prompts/design.md"),
+    system_prompt: read_prompt.("design"),
     max_concurrent: 1,
     position: 1
   },
@@ -86,7 +87,7 @@ default_roles = [
     backend_id: claude_backend.id,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
-    system_prompt: File.read!("prompts/architect.md"),
+    system_prompt: read_prompt.("architect"),
     max_concurrent: 1,
     position: 2
   },
@@ -98,7 +99,7 @@ default_roles = [
     backend_id: claude_backend.id,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
-    system_prompt: File.read!("prompts/engineer.md"),
+    system_prompt: read_prompt.("engineer"),
     max_concurrent: 2,
     position: 3
   },
@@ -110,7 +111,7 @@ default_roles = [
     backend_id: claude_backend.id,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
-    system_prompt: File.read!("prompts/review.md"),
+    system_prompt: read_prompt.("review"),
     max_concurrent: 1,
     position: 4
   },
@@ -122,7 +123,7 @@ default_roles = [
     backend_id: claude_backend.id,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
-    system_prompt: File.read!("prompts/qa.md"),
+    system_prompt: read_prompt.("qa"),
     max_concurrent: 1,
     position: 5
   },
@@ -134,7 +135,7 @@ default_roles = [
     backend_id: claude_backend.id,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
-    system_prompt: File.read!("prompts/demo.md"),
+    system_prompt: read_prompt.("demo"),
     max_concurrent: 1,
     position: 6
   },
@@ -146,7 +147,7 @@ default_roles = [
     backend_id: claude_backend.id,
     model: "claude-opus-5-5",
     reasoning_effort: :high,
-    system_prompt: File.read!("prompts/triage.md"),
+    system_prompt: read_prompt.("triage"),
     max_concurrent: 1,
     position: 7
   }

@@ -24,12 +24,13 @@ config :posthog,
 
 config :rail, Oban,
   repo: Rail.Repo,
-  queues: [issues: 5, tools: 1],
+  queues: [issues: 5, tools: 1, git: 1],
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [
        {"* * * * *", Rail.Tools.Workers.ReconcileOsProcesses},
-       {"*/5 * * * *", Rail.Tools.Workers.RefreshUsage}
+       {"*/5 * * * *", Rail.Tools.Workers.RefreshUsage},
+       {"*/15 * * * *", Rail.Git.Workers.FetchDefaultBranches}
      ]}
   ]
 

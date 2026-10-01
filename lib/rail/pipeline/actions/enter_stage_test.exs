@@ -133,6 +133,37 @@ defmodule Rail.Pipeline.Actions.EnterStageTest do
     assert {:ok, %Run{role_id: ^qa_role_id, status: :running}} = Pipeline.enter_stage(task, :qa)
   end
 
+  test "an engineer starts with the prompt merged to its project's .rail/prompts, not the stored one", %{
+    project: project,
+    task: task
+  } do
+    remote = create_temp_git_repo(prefix: "rail_enter_prompt_remote")
+    File.mkdir_p!(Path.join(remote, ".rail/prompts"))
+    File.write!(Path.join(remote, ".rail/prompts/engineer.md"), "From the repo.\n")
+    git!(remote, ["add", "."])
+    git!(remote, ["commit", "-m", "add prompt"])
+    clone = create_temp_git_repo(prefix: "rail_enter_prompt_clone")
+    git!(clone, ["remote", "add", "origin", remote])
+    git!(clone, ["fetch", "origin", "main"])
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{clone_path: clone})
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      assert ["--append-system-prompt", "From the repo."] in Enum.chunk_every(argv, 2, 1)
+      {:ok, %OsProcess{run: spawned, task: task}}
+    end)
+
+    assert {:ok, %Run{status: :running}} = Pipeline.enter_stage(task, :engineer)
+  end
+
+  test "a stage with no prompt file in its repo starts with the stored prompt", %{task: task} do
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      assert ["--append-system-prompt", "You are the debugger agent."] in Enum.chunk_every(argv, 2, 1)
+      {:ok, %OsProcess{run: spawned, task: task}}
+    end)
+
+    assert {:ok, %Run{status: :running}} = Pipeline.enter_stage(task, :debugger)
+  end
+
   test "unlatches a run that had already concluded, so the stage can conclude again", %{
     task: task,
     roles: roles

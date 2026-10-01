@@ -63,6 +63,37 @@ defmodule Rail.Pipeline.Utils.DispatchMessageTest do
     assert_received {:run_changed, ^run_id}
   end
 
+  test "each turn carries the prompt merged to the project's .rail/prompts at the time", %{
+    project: project,
+    run: run
+  } do
+    remote = create_temp_git_repo(prefix: "rail_dispatch_prompt_remote")
+    File.mkdir_p!(Path.join(remote, ".rail/prompts"))
+    File.write!(Path.join(remote, ".rail/prompts/product.md"), "From the repo.\n")
+    git!(remote, ["add", "."])
+    git!(remote, ["commit", "-m", "add prompt"])
+    clone = create_temp_git_repo(prefix: "rail_dispatch_prompt_clone")
+    git!(clone, ["remote", "add", "origin", remote])
+    git!(clone, ["fetch", "origin", "main"])
+    {:ok, _project} = Projects.update_project(system_scope(), project, %{clone_path: clone})
+
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      assert ["--append-system-prompt", "From the repo."] in Enum.chunk_every(argv, 2, 1)
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+  end
+
+  test "a turn with no prompt file in the project's repo carries the stored prompt", %{run: run} do
+    expect(Tools, :start_os_process, fn spawned, argv ->
+      assert ["--append-system-prompt", "You are the product agent."] in Enum.chunk_every(argv, 2, 1)
+      {:ok, %OsProcess{run: spawned}}
+    end)
+
+    assert {:ok, %OsProcess{}} = dispatch_message(run, async: false)
+  end
+
   # How the last turn ended is not how this one has ended, and a run left wearing
   # an error is a run nothing will ever latch as done.
   test "a person's message starts the count of CI failures sent back over", %{run: run} do

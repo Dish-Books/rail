@@ -7,6 +7,8 @@ defmodule Rail.Roles do
 
   defdelegate list_roles(project_id), to: Actions.ListRoles
 
+  defdelegate load_prompts(project, roles), to: Actions.LoadPrompts
+
   defdelegate get_role(by), to: Actions.GetRole
 
   @decorate can?(resource: :roles, action: :manage)

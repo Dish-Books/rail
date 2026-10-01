@@ -22,6 +22,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
+  alias Rail.Roles
   alias Rail.Roles.Schemas.Role
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
@@ -56,6 +57,7 @@ defmodule Rail.Pipeline.Utils.DispatchMessage do
          {:ok, task, worktree_path} <- worktree(project, run.task) do
       case start_worktree_setup(%{run | task: task}) do
         :not_needed ->
+          [role] = Roles.load_prompts(project, [role])
           send_message(task, role, run, worktree_path, opts)
 
         {:ok, %OsProcess{} = os_process} ->

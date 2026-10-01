@@ -349,6 +349,40 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
     assert %Thread{mcp_token_hash: nil, triage_started_at: nil} = Repo.get!(Thread, thread_id)
   end
 
+  test "the agent runs the triage prompt merged to the project's .rail/prompts", %{
+    project: project,
+    remote: remote,
+    thread: thread,
+    result_path: result_path
+  } do
+    File.mkdir_p!(Path.join(remote, ".rail/prompts"))
+    File.write!(Path.join(remote, ".rail/prompts/triage.md"), "From the repo.\n")
+    git!(remote, ["add", "."])
+    git!(remote, ["commit", "-m", "add prompt"])
+    git!(project.clone_path, ["fetch", "origin", "main"])
+
+    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+      assert ["--append-system-prompt", "From the repo."] in Enum.chunk_every(argv, 2, 1)
+      File.write!(result_path, Jason.encode!(%{"items" => []}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Triage.triage_thread(thread)
+  end
+
+  test "the agent runs the stored triage prompt when the repo has no file for it", %{
+    thread: thread,
+    result_path: result_path
+  } do
+    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+      assert ["--append-system-prompt", "You triage."] in Enum.chunk_every(argv, 2, 1)
+      File.write!(result_path, Jason.encode!(%{"items" => []}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Triage.triage_thread(thread)
+  end
+
   test "a pass held by another snoozes", %{thread: thread, result_path: result_path} do
     expect(Tools, :run_agent, fn _backend, _argv, _opts ->
       assert {:snooze, 30} = Triage.triage_thread(thread)

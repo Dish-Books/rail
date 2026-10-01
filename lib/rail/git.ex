@@ -32,6 +32,7 @@ defmodule Rail.Git do
   defdelegate credential_env(project), to: Actions.CredentialEnv
   defdelegate ci_env(project, task), to: Actions.CiEnv
   defdelegate fetch_default_branch(project, worktree_path), to: Actions.FetchDefaultBranch
+  defdelegate read_default_branch_file(project, path), to: Actions.ReadDefaultBranchFile
   defdelegate rebased_onto?(worktree_path, base_branch), to: Actions.RebasedOnto
   defdelegate rebase_in_progress?(worktree_path), to: Actions.RebaseInProgress
   defdelegate conflicted_files(worktree_path), to: Actions.ConflictedFiles
