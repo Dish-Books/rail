@@ -28,6 +28,8 @@ defmodule RailWeb.CoreComponents do
   defdelegate markdown(assigns), to: Components.Markdown
   defdelegate nav(assigns), to: Components.Nav
   defdelegate overview_stats(assigns), to: Components.OverviewStats
+  defdelegate plan_diagram(assigns), to: Components.PlanDiagram
+  defdelegate plan_sheet(assigns), to: Components.PlanSheet
   defdelegate priority_icon(assigns), to: Components.IssueIcons
   defdelegate project_badge(assigns), to: Components.ProjectBadge
   defdelegate sandbox_meters(assigns), to: Components.SandboxMeters

@@ -118,7 +118,8 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     %ImplementationPlan{}
     |> ImplementationPlan.changeset(%{
       task_id: task.id,
-      content: "## Implementation plan\n\nExtend the invoice filter module.",
+      content:
+        ~s{## Implementation plan\n\nExtend the invoice filter module.\n\n```mermaid\nflowchart LR\n  A["InvoicesLive"] --> B["Invoices"]\n```\n\n```elixir\ndef list_invoices(scope, filters)\n```},
       captured_at: DateTime.utc_now()
     })
     |> Repo.insert!()
@@ -126,6 +127,8 @@ defmodule Rail.Pipeline.Actions.StartReviewRunTest do
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv
       assert prompt =~ "Extend the invoice filter module."
+      assert prompt =~ ~s(```mermaid\nflowchart LR\n  A["InvoicesLive"] --> B["Invoices"]\n```)
+      assert prompt =~ "```elixir\ndef list_invoices(scope, filters)\n```"
       assert prompt =~ "It is the specification:"
       refute prompt =~ "There is no implementation plan"
 

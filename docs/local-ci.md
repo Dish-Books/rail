@@ -8,7 +8,7 @@ mise run ci
 
 | Lane | Gates |
 |---|---|
-| dev (`_build/dev`) | compile (clean, no warnings) → format, credo, deps.audit, sobelow |
+| dev (`_build/dev`) | compile (clean, no warnings) → format, credo, deps.audit, sobelow, assets |
 | test (`_build/test`) | ecto.create/migrate, tests with coverage held at 100% |
 | `credo/` | the subproject's own gates, coverage held at 100% |
 

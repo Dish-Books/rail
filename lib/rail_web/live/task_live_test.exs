@@ -11,6 +11,7 @@ defmodule RailWeb.TaskLiveTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.DetectedQuestion
+  alias Rail.Pipeline.Schemas.ImplementationPlan
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
@@ -1167,7 +1168,133 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       assert has_element?(view, "#architect-plan", "Extend the invoices module.")
+      refute has_element?(view, "#plan-sheet")
       assert has_element?(view, "#approve-plan")
+    end
+
+    test "renders a plan in the old three-section format as the markdown it was written as", %{
+      conn: conn,
+      task: task,
+      plan_path: path
+    } do
+      File.write!(path, """
+      ## Implementation plan
+
+      ### Approach
+
+      Extend `Rail.Invoices` with a vendor filter.
+
+      ### File-level changes
+
+      - `lib/rail/invoices/actions/list_invoices.ex`: filters by `vendor_id` when given.
+
+      ### Verification
+
+      - `lib/rail/invoices/actions/list_invoices_test.exs` pins the filter.
+      """)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      refute has_element?(view, "#plan-sheet")
+      refute has_element?(view, "#architect-plan", "No program design")
+      assert has_element?(view, "#architect-plan [data-qa='markdown-body'] h3", "File-level changes")
+      assert has_element?(view, "#architect-plan [data-qa='markdown-body']", "filters by vendor_id when given.")
+    end
+
+    test "a plan in the sheet's sections draws both diagrams, and Source shows each as written", %{
+      conn: conn,
+      task: task,
+      plan_path: path
+    } do
+      File.write!(path, sheet_plan())
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#architect-plan #plan-sheet")
+      assert has_element?(view, "#architect-plan figure[id^='plan-diagram-change-'][phx-hook='PlanDiagram']")
+      assert has_element?(view, "#architect-plan figure[id^='plan-diagram-call_flow-'][phx-hook='PlanDiagram']")
+      refute has_element?(view, "figure pre[data-diagram-source]:not(.hidden)")
+
+      view |> element("button[phx-value-view='change:source']") |> render_click()
+
+      assert has_element?(view, "button[phx-value-view='change:source'][aria-pressed='true']")
+      assert has_element?(view, "figure[id^='plan-diagram-change-'] pre[data-diagram-source]:not(.hidden)")
+      refute has_element?(view, "figure[id^='plan-diagram-call_flow-'] pre[data-diagram-source]:not(.hidden)")
+
+      view |> element("button[phx-value-view='call_flow:source']") |> render_click()
+      assert has_element?(view, "figure[id^='plan-diagram-call_flow-'] pre[data-diagram-source]:not(.hidden)")
+
+      view |> element("button[phx-value-view='change:diagram']") |> render_click()
+      view |> element("button[phx-value-view='call_flow:diagram']") |> render_click()
+      refute has_element?(view, "figure pre[data-diagram-source]:not(.hidden)")
+    end
+
+    test "a plan whose files are a task list still opens, as the markdown it was written as", %{
+      conn: conn,
+      task: task,
+      plan_path: path
+    } do
+      File.write!(path, String.replace(sheet_plan(), "- `lib/rail/pipeline.ex`:", "- [ ] `lib/rail/pipeline.ex`:"))
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#architect-plan", "Sending a task back is a stage move")
+      assert has_element?(view, "#architect-plan input[type='checkbox']")
+      refute has_element?(view, "#plan-sheet")
+    end
+
+    # Whether a diagram draws is the browser's business; the server never judges it.
+    test "a plan whose diagram does not parse still approves", %{
+      conn: conn,
+      task: task,
+      roles: roles,
+      plan_path: path
+    } do
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+      broken = String.replace(sheet_plan(), ~s(--> P["Pipeline"]), ~s(-> P["Pipeline"]))
+      File.write!(path, broken)
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "figure[id^='plan-diagram-change-']")
+
+      view |> element("#approve-plan") |> render_click()
+
+      assert %Task{stage: :engineer} = Repo.reload!(task)
+      assert Repo.get_by(Run, task_id: task.id, role_id: roles[:engineer].id)
+      assert %ImplementationPlan{content: ^broken} = Repo.get_by(ImplementationPlan, task_id: task.id)
+    end
+
+    test "after approval the tab shows the plan as approved, not what scratch says now", %{
+      conn: conn,
+      task: task,
+      roles: roles,
+      plan_path: path,
+      architect_run: architect_run
+    } do
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned, task: task}} end)
+      File.write!(path, sheet_plan())
+      assert {:ok, _approved} = Pipeline.approve_plan(architect_run)
+      File.write!(path, "## Implementation plan\n\n### Approach\nSomething else entirely.\n")
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{roles[:architect].id}")
+
+      assert has_element?(view, "#plan-approved", "Plan approved")
+      assert has_element?(view, "#architect-plan #plan-sheet", "Sending a task back is a stage move")
+      refute has_element?(view, "#architect-plan", "Something else entirely.")
+      refute has_element?(view, "#approve-plan")
+    end
+
+    test "a task moved past architect without an approval shows what scratch holds, unapproved", %{
+      conn: conn,
+      task: task,
+      roles: roles
+    } do
+      {:ok, _moved} = Pipeline.update_task(task, %{stage: :engineer})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=#{roles[:architect].id}")
+
+      assert has_element?(view, "#architect-plan", "Extend the invoices module.")
+      refute has_element?(view, "#plan-approved")
     end
 
     test "says so when the architect has written nothing", %{conn: conn, task: task, plan_path: path} do

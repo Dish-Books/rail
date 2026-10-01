@@ -1,6 +1,7 @@
 {
   "private": true,
   "dependencies": {
-    "@phosphor-icons/core": "^2.1.1"
+    "@phosphor-icons/core": "^2.1.1",
+    "mermaid": "^11.17.2"
   }
 }

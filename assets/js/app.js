@@ -19,6 +19,8 @@ import { BrowserScreencast } from "./hooks/browser_screencast";
 import { DemoCaptions } from "./hooks/demo_captions";
 import { CurrentInView } from "./hooks/current_in_view";
 import { ScrollSelectedTab } from "./hooks/scroll_selected_tab";
+import { PlanDiagram } from "./hooks/plan_diagram";
+import { PlanLinks } from "./hooks/plan_links";
 
 const Hooks = {
   DesignFrame,
@@ -36,7 +38,9 @@ const Hooks = {
   BrowserScreencast,
   DemoCaptions,
   CurrentInView,
-  ScrollSelectedTab
+  ScrollSelectedTab,
+  PlanDiagram,
+  PlanLinks
 };
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");
