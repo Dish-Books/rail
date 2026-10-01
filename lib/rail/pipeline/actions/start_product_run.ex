@@ -119,7 +119,7 @@ defmodule Rail.Pipeline.Actions.StartProductRun do
     - Everything below the closing `---` becomes the ticket body verbatim, and the file replaces the ticket in full.
     - This file is the only way to publish a ticket.
     - A human's answers and corrections come back as further turns of this same conversation. Each one that changes the ticket means writing the file again: the next stage reads the file, never the chat.
-    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each `[QUESTION: ...]` on a line of its own. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question left in prose is one nobody answers. A question you can settle from the docs, the code or a named assumption is not a question.
+    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question left in prose is one nobody answers. A question you can settle from the docs, the code or a named assumption is not a question.
 
     Every comment on the issue, oldest first. This is the whole discussion; do not look for more.
 

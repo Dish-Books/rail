@@ -89,7 +89,7 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
 
     `demo_say` is the narration, and Rail stamps each caption against the recording's own clock: say what is about to happen and then do it, or the caption lands over whatever came next. Rail renders captions in a bar under the video and never on it, so nothing you say covers the application - and nothing you say can point at it either. Name the acceptance criterion in `criterion` on the beat that proves one; that is how Rail reads back what the walkthrough covered.
 
-    Captions need time to be read: two `demo_say` calls in the same second leave the first one unseen, so let about five seconds pass after each. The recording's clock starts at the first change on screen after `demo_start`, not at the call, so change the page (even reloading it) before the first caption. Look at the page before you narrate that something worked: reaching the end of an instruction is not the application having done the right thing. Never wait for something to age out or time out on camera; set the state up before `demo_start`.
+    Captions need time to be read: two `demo_say` calls in the same second leave the first one unseen, so let about five seconds pass after each. Look at the page before you narrate that something worked: reaching the end of an instruction is not the application having done the right thing. Never wait for something to age out or time out on camera; set the state up before `demo_start`.
 
     #{avoid(task)}
     Writing #{file} is how you hand the recording over, and it is the last thing you do. Write it from your worktree with a heredoc, the body and its closing JSON line at column zero:
@@ -106,7 +106,7 @@ defmodule Rail.Pipeline.Actions.StartDemoRun do
     - A heredoc into #{file}, never an inline string. Write the whole file every recording; it describes the video that exists now, not what changed since the last one.
     - `not_shown` is empty when the walkthrough covered everything. Where an outside service or an agent was a stand-in that a viewer would take for the real thing, say so there.
     - Write the file only once the recording is finished. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you.
-    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each `[QUESTION: ...]` on a line of its own. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the app, the ticket or the plan is not a question.
+    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the app, the ticket or the plan is not a question.
 
     #{plan(task)}
     The ticket the change was built from:

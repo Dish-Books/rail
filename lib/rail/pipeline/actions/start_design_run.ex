@@ -90,7 +90,7 @@ defmodule Rail.Pipeline.Actions.StartDesignRun do
     - Keep working files under #{dir} too. It survives between turns; `/tmp` does not.
     - The human picks one option and refines it with you in chat. Rail records the pick in #{dir}/picked and deletes the options not picked; never write that file.
     - If the ticket changes nothing anyone sees, say so in one line and write nothing. A human will skip the stage.
-    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each `[QUESTION: ...]` on a line of its own. Rail collects them and the human answers the lot in a single pass. A question you can settle from the ticket, the product or a named assumption is not a question, and neither is an edge case the ticket does not raise.
+    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass. A question you can settle from the ticket, the product or a named assumption is not a question, and neither is an edge case the ticket does not raise.
 
     The approved ticket:
 

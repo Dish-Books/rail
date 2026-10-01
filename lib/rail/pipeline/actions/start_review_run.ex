@@ -107,7 +107,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     - A finding with no file is fine. Give `file` and `line` whenever you can point at one.
     - Report only what you checked. You have the worktree: open the callers, read the test, run it. A finding you could have confirmed and did not is a guess, and a guess costs the engineer a whole round.
     - Read the whole change before you write anything, and write the file only once you have finished. A finding against one file that the next file already answers is noise. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you.
-    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each `[QUESTION: ...]` on a line of its own. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or the plan is not a question.
+    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or the plan is not a question.
 
     #{outstanding(task)}
     #{plan(task)}

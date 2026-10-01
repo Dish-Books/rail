@@ -130,7 +130,7 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
     - `status` is `open` for a defect that still stands. Leave findings out entirely rather than inventing them: `{"findings": []}` with a `pass` verdict is a clean QA pass and is the right answer when the change works.
     - Report only what you exercised. A finding you could have reproduced and did not is a guess, and a guess costs the engineer a whole round.
     - Write the file only once the pass is finished. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you.
-    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each `[QUESTION: ...]` on a line of its own. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the app, the ticket or the plan is not a question.
+    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the app, the ticket or the plan is not a question.
 
     #{outstanding(task)}
     #{plan(task)}

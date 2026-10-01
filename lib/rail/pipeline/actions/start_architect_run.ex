@@ -73,7 +73,7 @@ defmodule Rail.Pipeline.Actions.StartArchitectRun do
     - A heredoc into #{file}, never an inline string.
     - Keep the `## Implementation plan` heading on the first line.
     - Review comments come back as further turns of this same conversation. When that happens, write the file again with the correction carried everywhere it reaches: "do not store it" removes the column, the migration, the schema field and their tests, not only the sentence.
-    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each `[QUESTION: ...]` on a line of its own. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or a named assumption is not a question.
+    - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or a named assumption is not a question.
 
     The approved ticket:
 

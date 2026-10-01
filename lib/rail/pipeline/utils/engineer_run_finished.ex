@@ -10,7 +10,8 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinished do
 
   What an engineer run can get wrong is exiting cleanly having written no
   message, or having changed nothing at all, and both are recorded on the run so
-  the stage stays open for the message that fixes it.
+  the stage stays open for the message that fixes it. After a CI failure, a
+  message with nothing changed is the engineer asking for CI to run again.
   """
 
   alias Rail.Git
@@ -29,11 +30,11 @@ defmodule Rail.Pipeline.Utils.EngineerRunFinished do
       Pipeline.read_commit_message(task) == nil ->
         fail(run, "The engineer did not write #{message_file(task)}.")
 
-      not Git.worktree_dirty?(task.worktree_path) ->
-        fail(run, "The engineer said it was done but changed nothing in the worktree.")
+      Git.worktree_dirty?(task.worktree_path) or run.ci_failure_streak > 0 ->
+        commit(run, task)
 
       true ->
-        commit(run, task)
+        fail(run, "The engineer said it was done but changed nothing in the worktree.")
     end
   end
 

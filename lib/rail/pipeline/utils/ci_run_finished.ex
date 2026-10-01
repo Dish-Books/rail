@@ -127,7 +127,7 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
     #{String.trim(tail)}
     ```
 
-    The whole log is #{stream_path}. Fix what it reports, then finish the round as before, writing the commit message again. Rail runs CI once more when you do.
+    The whole log is #{stream_path}. Fix what it reports, then finish the round as before, writing the commit message again. Rail runs CI once more when you do. When the failure is not your change's to fix, such as a flaky test elsewhere, write the commit message without changing anything and Rail runs CI again on the same commit.
     """
   end
 
