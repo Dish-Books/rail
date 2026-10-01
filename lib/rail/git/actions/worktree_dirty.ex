@@ -5,29 +5,14 @@ defmodule Rail.Git.Actions.WorktreeDirty do
 
   @doc """
   True when the worktree has changes nobody has committed.
-
-  `.rail/` is left out: agents write their own scratch there and it is never part
-  of the deliverable, so a tree holding nothing else is clean. `.rail/prompts/` is
-  the one part of `.rail/` that belongs to the change, so it counts.
   """
   def worktree_dirty?(worktree_path) when is_binary(worktree_path) do
     case Tools.run("git", ["status", "--porcelain", "--untracked-files=all"],
            cd: worktree_path,
            stderr_to_stdout: true
          ) do
-      {output, 0} -> Enum.any?(String.split(output, ~r/\r?\n/), &counts?/1)
+      {output, 0} -> String.trim(output) != ""
       _unreadable -> false
-    end
-  end
-
-  defp counts?(line) do
-    case String.trim(line) do
-      "" ->
-        false
-
-      _trimmed ->
-        path = line |> String.slice(3..-1//1) |> String.trim() |> String.replace("\"", "")
-        String.starts_with?(path, ".rail/prompts/") or (path != ".rail" and not String.starts_with?(path, ".rail/"))
     end
   end
 end

@@ -23,18 +23,10 @@ defmodule Rail.Git.Actions.WorktreeDirtyTest do
     assert Git.worktree_dirty?(repo)
   end
 
-  test "an agent's own scratch under .rail does not" do
+  test "a file under .rail does, like any other" do
     repo = create_temp_git_repo()
     File.mkdir_p!(Path.join(repo, ".rail"))
     File.write!(Path.join(repo, ".rail/settings.json"), "{}\n")
-
-    refute Git.worktree_dirty?(repo)
-  end
-
-  test "a prompt under .rail/prompts does, since it is part of the change" do
-    repo = create_temp_git_repo()
-    File.mkdir_p!(Path.join(repo, ".rail/prompts"))
-    File.write!(Path.join(repo, ".rail/prompts/engineer.md"), "Prompt.\n")
 
     assert Git.worktree_dirty?(repo)
   end

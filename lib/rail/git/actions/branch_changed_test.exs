@@ -57,16 +57,9 @@ defmodule Rail.Git.Actions.BranchChangedTest do
     assert Git.branch_changed?(task)
   end
 
-  test "the agents' own scratch is not a change", %{task: task, repo: repo} do
+  test "a new file under .rail is a change, like any other", %{task: task, repo: repo} do
     File.mkdir_p!(Path.join(repo, ".rail"))
-    File.write!(Path.join(repo, ".rail/notes.md"), "scratch\n")
-
-    refute Git.branch_changed?(task)
-  end
-
-  test "a new prompt under .rail/prompts is a change", %{task: task, repo: repo} do
-    File.mkdir_p!(Path.join(repo, ".rail/prompts"))
-    File.write!(Path.join(repo, ".rail/prompts/engineer.md"), "Prompt.\n")
+    File.write!(Path.join(repo, ".rail/notes.md"), "notes\n")
 
     assert Git.branch_changed?(task)
   end

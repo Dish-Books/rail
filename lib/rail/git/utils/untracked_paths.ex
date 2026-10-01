@@ -5,9 +5,6 @@ defmodule Rail.Git.Utils.UntrackedPaths do
 
   @doc """
   The files in `worktree_path` git has never seen and is not told to ignore.
-
-  The agents' own scratch under `.rail/` is left out, because it is never part
-  of the change. `.rail/prompts/` is the one part of `.rail/` that is.
   """
   def untracked_paths(worktree_path) do
     case Tools.run("git", ["ls-files", "--others", "--exclude-standard"],
@@ -18,9 +15,7 @@ defmodule Rail.Git.Utils.UntrackedPaths do
         output
         |> String.split(~r/\r?\n/)
         |> Enum.map(&String.trim/1)
-        |> Enum.reject(
-          &(&1 == "" or (String.starts_with?(&1, ".rail/") and not String.starts_with?(&1, ".rail/prompts/")))
-        )
+        |> Enum.reject(&(&1 == ""))
 
       _unreadable ->
         []
