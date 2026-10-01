@@ -98,6 +98,15 @@ RUN curl -fsSL https://mise.run | sh \
   && curl -fsSL https://claude.ai/install.sh | bash \
   && curl -fsSL https://chatgpt.com/codex/install.sh | sh
 
+# prek on PATH, not only through mise. A pre-push hook calls prek by the path it
+# was installed from, and falls back to a bare `prek` when that path is gone -
+# which it is whenever the hook was written from a mise data dir that did not
+# survive, such as a sandbox's own home. Keep in step with mise.toml.
+ARG PREK_VERSION=0.4.14
+RUN curl --proto '=https' --tlsv1.2 -LsSf \
+    "https://github.com/j178/prek/releases/download/v${PREK_VERSION}/prek-installer.sh" \
+  | PREK_NO_MODIFY_PATH=1 sh
+
 ENV PATH=/home/rail/.local/bin:$PATH
 ENV DISABLE_AUTOUPDATER=1
 
