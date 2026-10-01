@@ -117,6 +117,24 @@ defmodule RailWeb.Components.UpNextTest do
     assert html =~ "asked 2 questions"
   end
 
+  test "a run whose questions are all dismissed is waiting to be closed, not sent", %{waiting: waiting} do
+    dismissed = %{
+      waiting.(:engineer)
+      | status: :blocked_on_input,
+        stage_outcome: :in_progress,
+        questions: [
+          %Question{status: :answered, prompt: "From an earlier round", delivered_at: DateTime.utc_now()},
+          %Question{status: :dismissed, prompt: "Which vendor field?"},
+          %Question{status: :dismissed, prompt: "Which index?"}
+        ]
+    }
+
+    html = render_component(&UpNext.up_next/1, runs: [dismissed])
+
+    assert html =~ "Every question is dismissed. Close the round from the task."
+    refute html =~ "ready to send"
+  end
+
   test "a run that asked one thing says so in the singular", %{waiting: waiting} do
     one = %{
       waiting.(:engineer)

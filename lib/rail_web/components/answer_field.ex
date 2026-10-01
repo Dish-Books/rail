@@ -324,8 +324,14 @@ defmodule RailWeb.Components.AnswerField do
     {label, "pi-check-circle-fill", "text-emerald-700 dark:text-emerald-300"}
   end
 
-  defp calculate_status_line(:dismissed, _changing?, all_dismissed?) do
-    label = if all_dismissed?, do: "Dismissed", else: "Dismissed · not sent yet"
+  defp calculate_status_line(:dismissed, changing?, all_dismissed?) do
+    label =
+      cond do
+        changing? -> "Dismissed · answering instead"
+        all_dismissed? -> "Dismissed"
+        true -> "Dismissed · not sent yet"
+      end
+
     {label, "pi-minus-circle", "text-slate-500 dark:text-slate-400"}
   end
 

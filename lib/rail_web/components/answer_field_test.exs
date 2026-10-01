@@ -268,5 +268,7 @@ defmodule RailWeb.Components.AnswerFieldTest do
     assert html =~ ~s(id="answer-textarea")
     assert html =~ ~s(id="cancel-answer-button")
     refute html =~ ~s(data-qa="dismissed-note")
+    assert html =~ "Dismissed · answering instead"
+    refute html =~ "Dismissed · not sent yet"
   end
 end
