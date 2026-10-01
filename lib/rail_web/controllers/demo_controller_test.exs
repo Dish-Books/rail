@@ -59,6 +59,19 @@ defmodule RailWeb.DemoControllerTest do
     assert get_resp_header(conn, "content-range") == ["bytes 7-9/10"]
   end
 
+  # A player hangs up on the rest of a file all the time, and an error raised past
+  # the response already sent is answered with a 500 the logs then count.
+  test "a player that hangs up mid-file ends the request, not a server error", %{conn: conn, task: task} do
+    # The test adapter reads the file where Bandit writes it to the socket.
+    expect(File, :open!, fn _path, _modes, _read ->
+      raise Bandit.TransportError, message: "Unrecoverable error: closed", error: :closed
+    end)
+
+    conn = conn |> put_req_header("range", "bytes=0-") |> get(~p"/tasks/#{task.id}/demo/video")
+
+    assert %Plug.Conn{state: :sent, status: 206} = conn
+  end
+
   test "a range past the end of the file is answered with the whole of it", %{conn: conn, task: task} do
     conn = conn |> put_req_header("range", "bytes=40-50") |> get(~p"/tasks/#{task.id}/demo/video")
 

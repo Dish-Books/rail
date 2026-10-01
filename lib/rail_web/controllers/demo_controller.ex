@@ -44,11 +44,19 @@ defmodule RailWeb.DemoController do
       {first, last} ->
         conn
         |> put_resp_header("content-range", "bytes #{first}-#{last}/#{size}")
-        |> send_file(206, file, first, last - first + 1)
+        |> send_video_file(206, file, first, last - first + 1)
 
       nil ->
-        send_file(conn, 200, file)
+        send_video_file(conn, 200, file, 0, :all)
     end
+  end
+
+  # A player hangs up on the rest of the file whenever it seeks or has enough, which
+  # ends the request. Raising instead has the error page answer it with a 500.
+  defp send_video_file(conn, status, file, offset, length) do
+    send_file(conn, status, file, offset, length)
+  rescue
+    _hung_up in Bandit.TransportError -> %{conn | status: status, state: :sent}
   end
 
   # Only the one form a video element actually sends: a single range, counted

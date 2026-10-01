@@ -14,6 +14,15 @@ export const DemoCaptions = {
     this.video = this.el.querySelector("video");
     this.caption = this.el.querySelector("#demo-caption");
 
+    // A video LiveView patched in was loaded inside its inert template document and
+    // arrives with no source, which Safari never recovers from, so load it again here.
+    if (
+      this.video.readyState === HTMLMediaElement.HAVE_NOTHING &&
+      this.video.networkState !== HTMLMediaElement.NETWORK_LOADING
+    ) {
+      this.video.load();
+    }
+
     this.onTime = () => this.paint(this.video.currentTime * 1000);
     this.video.addEventListener("timeupdate", this.onTime);
     this.video.addEventListener("seeked", this.onTime);
