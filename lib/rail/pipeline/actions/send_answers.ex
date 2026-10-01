@@ -34,6 +34,8 @@ defmodule Rail.Pipeline.Actions.SendAnswers do
 
       true ->
         mark_delivered(round)
+        # A page open elsewhere hears nothing else when the message cannot go out.
+        Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:run_changed, run.id})
         Pipeline.send_message(run, format(round))
     end
   end

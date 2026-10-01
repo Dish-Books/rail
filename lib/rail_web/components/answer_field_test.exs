@@ -271,4 +271,54 @@ defmodule RailWeb.Components.AnswerFieldTest do
     assert html =~ "Dismissed · answering instead"
     refute html =~ "Dismissed · not sent yet"
   end
+
+  test "a change on screen holds back Send answers until it is saved or cancelled" do
+    questions = [
+      %Question{id: "qst_1", prompt: "Which database?", status: :answered, answer: "Postgres", options: []},
+      %Question{id: "qst_2", prompt: "Ship behind a flag?", status: :answered, answer: "Yes", options: []}
+    ]
+
+    html =
+      render_component(&AnswerField.answer_field/1,
+        question: hd(questions),
+        questions: questions,
+        changing_answer: true,
+        role_name: "Product"
+      )
+
+    assert html =~ ~r/id="send-answers-button"[^>]*\sdisabled[\s>]/
+    assert html =~ "Save or cancel your change first"
+    refute html =~ "still to answer"
+  end
+
+  test "a change on screen holds back Dismiss questions too" do
+    questions = [
+      %Question{id: "qst_1", prompt: "Which database?", status: :dismissed, options: []},
+      %Question{id: "qst_2", prompt: "Ship behind a flag?", status: :dismissed, options: []}
+    ]
+
+    html =
+      render_component(&AnswerField.answer_field/1,
+        question: hd(questions),
+        questions: questions,
+        changing_answer: true,
+        role_name: "Product"
+      )
+
+    assert html =~ ~r/id="dismiss-questions-button"[^>]*\sdisabled[\s>]/
+    assert html =~ "Save or cancel your change first"
+  end
+
+  test "the tab strip scrolls sideways only, and keeps the selected tab in view" do
+    questions = [
+      %Question{id: "qst_1", prompt: "Which database?", options: []},
+      %Question{id: "qst_2", prompt: "Ship behind a flag?", options: []}
+    ]
+
+    html =
+      render_component(&AnswerField.answer_field/1, question: hd(questions), questions: questions, role_name: "Product")
+
+    assert html =~ ~r/id="question-tabs"[^>]*phx-hook="ScrollSelectedTab"/
+    assert html =~ ~r/id="question-tabs"[^>]*class="[^"]*overflow-x-auto overflow-y-hidden/
+  end
 end

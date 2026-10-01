@@ -48,6 +48,7 @@ defmodule Rail.Pipeline.Actions.DismissRound do
         end
       end)
 
+    Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:run_changed, run.id})
     Pipeline.append_run_events(run.id, nil, ["[rail] Questions dismissed. Nothing was sent to #{run.role.name}."])
 
     {:ok, closed}

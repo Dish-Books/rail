@@ -440,16 +440,16 @@ defmodule RailWeb.TaskLive do
       {:noreply, socket}
     else
       question_id = question_id(socket, params)
-      _answered = answer_one(question_id, answer)
-      socket = socket |> assign(:selected_question_id, question_id) |> reset_answer()
+      answered = answer_one(question_id, answer)
+      socket = socket |> assign(:selected_question_id, question_id) |> reset_answer() |> flash_already_sent(answered)
       {:noreply, socket}
     end
   end
 
   def handle_event("dismiss_question", params, socket) do
     question_id = question_id(socket, params)
-    _dismissed = dismiss_one(question_id)
-    socket = socket |> assign(:selected_question_id, question_id) |> reset_answer()
+    dismissed = dismiss_one(question_id)
+    socket = socket |> assign(:selected_question_id, question_id) |> reset_answer() |> flash_already_sent(dismissed)
     {:noreply, socket}
   end
 
@@ -785,10 +785,6 @@ defmodule RailWeb.TaskLive do
 
     asked = Pipeline.list_questions(task, order_by: [asc: :inserted_at, asc: :id])
     questions = Enum.filter(asked, &(&1.status == :pending))
-    round_questions = round_questions(asked, selected_run)
-
-    selected_question =
-      select_question(round_questions, socket.assigns.selected_question_id, socket.assigns.advance_question?)
 
     socket
     |> assign(:task, task)
@@ -807,11 +803,22 @@ defmodule RailWeb.TaskLive do
     |> assign(:engineer_tab, engineer_tab(started))
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
     |> assign(:watched_browser_task_id, watch_browser(socket, task))
+    |> assign_round(round_questions(asked, selected_run))
+    |> load_issue(task)
+  end
+
+  # The card follows the round: an advance asked for by a save is spent here, and a
+  # change in progress ends once its question has left the card.
+  defp assign_round(socket, round_questions) do
+    %{selected_question_id: selected_id, advance_question?: advance?, changing_answer?: changing?} = socket.assigns
+    selected_question = select_question(round_questions, selected_id, advance?)
+
+    socket
     |> assign(:round_questions, round_questions)
     |> assign(:selected_question, selected_question)
     |> assign(:selected_question_id, selected_question && selected_question.id)
     |> assign(:advance_question?, false)
-    |> load_issue(task)
+    |> assign(:changing_answer?, changing? and selected_question != nil)
   end
 
   # The issue is a tab of its own and costs a query of its own, so it is read
@@ -1037,6 +1044,14 @@ defmodule RailWeb.TaskLive do
     |> assign(:advance_question?, true)
     |> refresh_task()
   end
+
+  # A round sent from another tab or by another person can land between opening a
+  # change and saving it.
+  defp flash_already_sent(socket, {:error, :already_sent}) do
+    put_flash(socket, :error, "This round was already sent, so its answers can no longer be changed.")
+  end
+
+  defp flash_already_sent(socket, _result), do: socket
 
   defp claim_error(:already_assigned), do: "Somebody else claimed this issue first"
   defp claim_error(:linear_not_linked), do: "Link your Linear account in Settings before claiming an issue"

@@ -18,6 +18,7 @@ import { DesignFrame } from "./hooks/design_frame";
 import { BrowserScreencast } from "./hooks/browser_screencast";
 import { DemoCaptions } from "./hooks/demo_captions";
 import { CurrentInView } from "./hooks/current_in_view";
+import { ScrollSelectedTab } from "./hooks/scroll_selected_tab";
 
 const Hooks = {
   DesignFrame,
@@ -34,7 +35,8 @@ const Hooks = {
   LocalResetTime,
   BrowserScreencast,
   DemoCaptions,
-  CurrentInView
+  CurrentInView,
+  ScrollSelectedTab
 };
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");

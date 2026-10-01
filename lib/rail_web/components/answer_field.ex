@@ -44,7 +44,8 @@ defmodule RailWeb.Components.AnswerField do
       |> assign(:show_dismissed_note?, status == :dismissed and not changing?)
       |> assign(:show_cancel?, status != :pending)
       |> assign(:dismissed_note, dismissed_note)
-      |> assign(:open_count, open_count)
+      |> assign(:pending_note, calculate_pending_note(open_count, changing?))
+      |> assign(:send_blocked?, open_count > 0 or changing?)
       |> assign(:all_dismissed?, all_dismissed?)
 
     ~H"""
@@ -58,8 +59,9 @@ defmodule RailWeb.Components.AnswerField do
         :if={length(@questions) > 1}
         id="question-tabs"
         data-qa="question-tabs"
+        phx-hook="ScrollSelectedTab"
         role="tablist"
-        class="flex items-center gap-1 -mt-1 overflow-x-auto border-b border-slate-200 dark:border-slate-700"
+        class="flex items-center gap-1 -mt-1 overflow-x-auto overflow-y-hidden border-b border-slate-200 dark:border-slate-700"
       >
         <button
           :for={{tab, idx} <- Enum.with_index(@tabs)}
@@ -261,11 +263,11 @@ defmodule RailWeb.Components.AnswerField do
       <!-- Nothing reaches the agent until the human says the round is done. -->
       <div class="flex items-center justify-between gap-2 pt-3 border-t border-slate-200 dark:border-slate-700">
         <span
-          :if={@open_count > 0}
+          :if={@pending_note != nil}
           data-qa="questions-pending-note"
           class="text-xs text-slate-500 dark:text-slate-400"
         >
-          {@open_count} still to answer
+          {@pending_note}
         </span>
 
         <button
@@ -274,7 +276,7 @@ defmodule RailWeb.Components.AnswerField do
           id="send-answers-button"
           data-qa="send-answers-button"
           phx-click="send_answers"
-          disabled={@open_count > 0}
+          disabled={@send_blocked?}
           class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 transition-opacity shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <.icon name="pi-paper-plane-tilt" class="h-4 w-4 shrink-0" />
@@ -288,7 +290,8 @@ defmodule RailWeb.Components.AnswerField do
           id="dismiss-questions-button"
           data-qa="dismiss-questions-button"
           phx-click="dismiss_round"
-          class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+          disabled={@send_blocked?}
+          class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <.icon name="pi-x-circle" class="h-4 w-4 shrink-0" />
           <span>Dismiss questions</span>
@@ -314,6 +317,11 @@ defmodule RailWeb.Components.AnswerField do
       icon_class: icon_class
     }
   end
+
+  # An unsaved change on screen would otherwise go out as the answer it was replacing.
+  defp calculate_pending_note(_open_count, true), do: "Save or cancel your change first"
+  defp calculate_pending_note(0, false), do: nil
+  defp calculate_pending_note(open_count, false), do: "#{open_count} still to answer"
 
   defp calculate_status_line(:pending, _changing?, _all_dismissed?) do
     {"Not answered yet", "pi-circle-bold", "text-amber-700 dark:text-amber-300"}
