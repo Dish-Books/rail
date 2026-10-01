@@ -52,8 +52,25 @@ defmodule Rail.Pipeline.Utils.CiRunFinished do
       "[rail] CI failed, so its output went back to the engineer (#{streak + 1} of #{@failure_limit})."
     ])
 
+    # The fix turn's end compares against this to tell whether the engineer changed code.
+    stamp =
+      if run.task.stage in [:review, :qa, :demo] do
+        fingerprint = Git.branch_fingerprint(run.task.worktree_path)
+        %{stage_fingerprint_head_sha: fingerprint[:head_sha], stage_fingerprint_dirty_digest: fingerprint[:dirty_digest]}
+      else
+        %{}
+      end
+
     briefed =
-      update(run, %{ci_failure_streak: streak + 1, pending_answer: note(run, os_process), status: :running, error: nil})
+      update(
+        run,
+        Map.merge(stamp, %{
+          ci_failure_streak: streak + 1,
+          pending_answer: note(run, os_process),
+          status: :running,
+          error: nil
+        })
+      )
 
     case Pipeline.start_engineer_run(briefed) do
       {:ok, %OsProcess{run: %Run{} = resumed}} ->

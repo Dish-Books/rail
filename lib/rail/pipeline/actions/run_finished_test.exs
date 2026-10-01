@@ -1104,6 +1104,35 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
              Pipeline.list_run_events(run)
   end
 
+  # The fix turn's end compares against how the tree stood when it started, not
+  # against whatever an earlier turn left on the run.
+  test "CI that failed on a task past engineer stamps how the tree stood for the fix turn", %{
+    task: task,
+    exited: exited
+  } do
+    {:ok, task} = Pipeline.update_task(task, %{stage: :qa, worktree_path: create_temp_git_repo()})
+
+    {run, os_process} =
+      exited.(:engineer, %{
+        stage_outcome: :done,
+        stage_fingerprint_head_sha: "an_earlier_turn",
+        stage_fingerprint_dirty_digest: "an_earlier_digest"
+      })
+
+    os_process =
+      os_process
+      |> OsProcess.changeset(%{kind: :ci, command: "mise run ci", stream_path: "/tmp/gone.log"})
+      |> Repo.update!()
+
+    expect(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+    %{head_sha: head_sha, dirty_digest: dirty_digest} = Git.branch_fingerprint(task.worktree_path)
+
+    assert {:ok, %Run{status: :running}} = Pipeline.run_finished(os_process, %{exit_code: 1})
+
+    assert %Run{stage_fingerprint_head_sha: ^head_sha, stage_fingerprint_dirty_digest: ^dirty_digest} =
+             Repo.reload!(run)
+  end
+
   test "CI that timed out goes back to the engineer saying so", %{task: task, exited: exited} do
     {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer, worktree_path: create_temp_git_repo()})
     {_run, os_process} = exited.(:engineer, %{})
