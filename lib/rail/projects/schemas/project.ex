@@ -27,7 +27,7 @@ defmodule Rail.Projects.Schemas.Project do
 
     # Shared by every project on the same Linear workspace; each project is one team in it.
     belongs_to :linear_workspace, LinearWorkspace
-    # Whose MCP connections a triage pass uses; none leaves it working from code alone.
+    # Whose MCP connections a triage pass uses; a pass whose role names any it cannot reach fails.
     belongs_to :triage_user, User
 
     # Its threads hang off each one, so a channel sent back with its `id` is updated, never recreated,

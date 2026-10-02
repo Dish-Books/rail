@@ -11,6 +11,7 @@ defmodule Rail.Triage.Actions.SyncTriage do
 
   import Ecto.Query
 
+  alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
   alias Rail.Repo
   alias Rail.Triage.Schemas.Item
@@ -69,13 +70,13 @@ defmodule Rail.Triage.Actions.SyncTriage do
   defp next_position(existing),
     do: existing |> Map.values() |> Enum.map(& &1.position) |> Enum.max(fn -> 0 end) |> Kernel.+(1)
 
-  defp existing_issues(%Thread{project_id: project_id}, items) do
-    identifiers = items |> Enum.map(& &1.existing_issue) |> Enum.filter(&is_binary/1)
-
-    Map.new(
-      Repo.all(from i in Issue, where: i.project_id == ^project_id and i.identifier in ^identifiers),
-      &{&1.identifier, &1.id}
-    )
+  # The agent found these in Linear, so one Rail has not mirrored yet is brought
+  # in rather than lost. One Linear will not hand over is left unlinked.
+  defp existing_issues(%Thread{project: project}, items) do
+    for identifier <- items |> Enum.map(& &1.existing_issue) |> Enum.filter(&is_binary/1) |> Enum.uniq(),
+        {:ok, %Issue{id: id}} <- [Issues.import_issue(project, identifier)],
+        into: %{},
+        do: {identifier, id}
   end
 
   defp insert(thread, attrs, issues, position) do

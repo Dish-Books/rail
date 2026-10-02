@@ -1,7 +1,7 @@
 defmodule Rail.Mcp.Actions.ListRunTools do
   @moduledoc false
 
-  import Ecto.Query
+  import Rail.Mcp.Utils.AllowedServers
   import Rail.Mcp.Utils.McpTools
   import Rail.Mcp.Utils.ToolAllowed
   import Rail.Mcp.Utils.WithUpstreamToken
@@ -9,7 +9,6 @@ defmodule Rail.Mcp.Actions.ListRunTools do
   alias Rail.Mcp.Client
   alias Rail.Mcp.RunContext
   alias Rail.Mcp.Schemas.McpServer
-  alias Rail.Repo
 
   require Logger
 
@@ -36,12 +35,6 @@ defmodule Rail.Mcp.Actions.ListRunTools do
       end)
 
     {:ok, mcp_tools(context.role) ++ tools}
-  end
-
-  defp allowed_servers(mcp_tools) do
-    names = mcp_tools |> Enum.map(&(&1 |> String.split("__", parts: 2) |> hd())) |> Enum.uniq()
-
-    Repo.all(from s in McpServer, where: s.enabled and s.name in ^names, order_by: [asc: s.name])
   end
 
   defp server_tools(%McpServer{name: server_name} = server, mcp_tools, user) do

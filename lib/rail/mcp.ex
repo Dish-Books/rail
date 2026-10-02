@@ -39,5 +39,6 @@ defmodule Rail.Mcp do
   defdelegate issue_run_token(), to: Actions.IssueRunToken
   defdelegate authenticate_run_token(token), to: Actions.AuthenticateRunToken
   defdelegate list_run_tools(context), to: Actions.ListRunTools
+  defdelegate check_run_tools(context), to: Actions.CheckRunTools
   defdelegate call_run_tool(context, name, arguments), to: Actions.CallRunTool
 end

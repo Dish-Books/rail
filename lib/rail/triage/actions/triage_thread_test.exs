@@ -2,12 +2,16 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
   use Rail.DataCase, async: true
 
   alias Rail.Issues
+  alias Rail.Mcp
+  alias Rail.Mcp.Schemas.McpConnection
+  alias Rail.Projects
   alias Rail.Roles
   alias Rail.Tools
   alias Rail.Triage
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Thread
+  alias Rail.Users
 
   setup do
     %{project: project, role: role, remote: remote} = triage_project()
@@ -166,9 +170,9 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
     {:ok, %{id: issue_id}} = Issues.create_issue(system_scope(), project, %{title: "Wait times"})
 
-    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
-      issues = thread |> Thread.scratch_path() |> Path.join("issues.md") |> File.read!()
-      assert issues =~ "## TRI-23 · Triage · Wait times\n\nLink: https://linear.app/acme/issue/TRI-23"
+    expect(Tools, :run_agent, fn _backend, argv, _opts ->
+      assert Enum.any?(argv, &(&1 =~ "search Linear for one that already covers the item" and &1 =~ "on the TRI team"))
+      refute thread |> Thread.scratch_path() |> Path.join("issues.md") |> File.exists?()
       File.write!(result_path, Jason.encode!(%{"items" => [Map.put(request, "existing_issue", "TRI-23")]}))
       {:ok, ""}
     end)
@@ -177,6 +181,40 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
     assert [%Item{existing_issue_id: ^issue_id, issue_title: nil, issue_description: nil, reply_text: "Good call."}] =
              Repo.all(from i in Item, where: i.thread_id == ^thread_id)
+  end
+
+  test "an existing issue Rail has not mirrored yet is brought in from Linear and linked", %{
+    project: %{id: project_id},
+    thread: %{id: thread_id} = thread,
+    request: request,
+    result_path: result_path
+  } do
+    Req.Test.expect(Rail.Linear, fn conn ->
+      assert %{"variables" => %{"id" => "TRI-31"}} = conn |> Req.Test.raw_body() |> Jason.decode!()
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issue" => %{
+            "id" => "lin_tri_31",
+            "identifier" => "TRI-31",
+            "title" => "Wait times",
+            "url" => "https://linear.app/acme/issue/TRI-31",
+            "state" => %{"id" => "st_todo", "name" => "Todo", "type" => "unstarted"},
+            "team" => %{"id" => "lin_team_tri"}
+          }
+        }
+      })
+    end)
+
+    expect(Tools, :run_agent, fn _backend, _argv, _opts ->
+      File.write!(result_path, Jason.encode!(%{"items" => [Map.put(request, "existing_issue", "TRI-31")]}))
+      {:ok, ""}
+    end)
+
+    assert :ok = Triage.triage_thread(thread)
+
+    assert [%Item{existing_issue: %Issues.Schemas.Issue{project_id: ^project_id, identifier: "TRI-31"}, issue_title: nil}] =
+             Item |> where([i], i.thread_id == ^thread_id) |> preload(:existing_issue) |> Repo.all()
   end
 
   test "a bug and an unrelated request become two items, each linked from its passage", %{
@@ -438,6 +476,45 @@ defmodule Rail.Triage.Actions.TriageThreadTest do
 
       assert :ok = Triage.triage_thread(thread)
       assert %Thread{status: :waiting, error: "This project has no Triage role."} = Repo.get!(Thread, thread_id)
+    end
+
+    test "when the role's MCP servers need reconnecting, or cannot be reached", %{
+      project: project,
+      thread: %{id: thread_id} = thread,
+      role: role
+    } do
+      {:ok, server} =
+        Mcp.create_server(system_scope(), %{
+          name: "tt_linear",
+          url: "https://linear.example.com/mcp",
+          token_endpoint: "https://auth.example.com/token",
+          client_id: "client_1"
+        })
+
+      {:ok, _role} = Roles.update_role(system_scope(), role, %{mcp_tools: ["tt_linear__list_issues"]})
+      reject(&Tools.run_agent/3)
+
+      assert :ok = Triage.triage_thread(thread)
+
+      assert %Thread{error: "This project has no triage user to reach tt_linear as." <> _pick} =
+               Repo.get!(Thread, thread_id)
+
+      {:ok, user} = Users.register_oauth_user(%{github_id: "gh_tt", login: "tt", email: "tt@example.com"})
+      {:ok, _project} = Projects.update_project(system_scope(), project, %{"triage_user_id" => user.id})
+
+      assert :ok = Triage.triage_thread(thread)
+
+      assert %Thread{
+               error: "tt_linear needs reconnecting for tt. Reconnect it under Settings → Connected accounts, then retry."
+             } = Repo.get!(Thread, thread_id)
+
+      Repo.insert!(%McpConnection{user_id: user.id, mcp_server_id: server.id, access_token: "at_tt"})
+      Req.Test.stub(Mcp, &Plug.Conn.send_resp(&1, 500, "down"))
+
+      assert :ok = Triage.triage_thread(thread)
+
+      assert %Thread{error: "Could not reach tt_linear, so triage did not run. Retry once it answers."} =
+               Repo.get!(Thread, thread_id)
     end
 
     test "when the agent fails, times out or is not dispatched", %{thread: %{id: thread_id} = thread} do
