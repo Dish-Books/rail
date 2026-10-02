@@ -51,6 +51,7 @@ defmodule Rail.Tools.BrowserSession do
     :debug_port,
     :frame,
     :url,
+    :capture,
     frame_seq: 0,
     screenshot_echo?: false,
     problems: []
@@ -194,11 +195,16 @@ defmodule Rail.Tools.BrowserSession do
   # Whatever the page painted while an ack was held was never sent, and a page
   # that has since gone still will not paint again. So once the frames stop, the
   # page is photographed as it is, and that is the frame everyone ends on.
+  #
+  # Asked for rather than waited on: a busy Chrome can take half a minute over
+  # a screenshot, and everyone else calling this session - the agent's tools, a
+  # panel wanting the last frame - would wait that long behind it. The frame it
+  # paints doing so is the echo, whichever of the two arrives first.
   def handle_info({:settled, seq}, %__MODULE__{frame_seq: seq} = state) do
-    case command(state, "Page.captureScreenshot", %{format: "jpeg", quality: @screencast.quality}) do
-      {:ok, %{"data" => data}} -> {:noreply, %{show(state, data) | screenshot_echo?: true}}
-      {:error, _gone} -> {:noreply, state}
-    end
+    params = %{format: "jpeg", quality: @screencast.quality, session: state.cdp_session_id}
+    request = Browser.send_request(state.browser, "Page.captureScreenshot", params)
+
+    {:noreply, %{state | capture: {request, seq}, screenshot_echo?: true}}
   end
 
   def handle_info({:settled, _since_moved}, %__MODULE__{} = state), do: {:noreply, state}
@@ -217,6 +223,21 @@ defmodule Rail.Tools.BrowserSession do
     case problem(method, params) do
       %{} = problem -> {:noreply, %{state | problems: [problem | state.problems]}}
       nil -> {:noreply, state}
+    end
+  end
+
+  # The screenshot asked for once the frames stopped. A page that has moved since
+  # has newer frames than the photograph, which is then thrown away.
+  def handle_info(message, %__MODULE__{capture: {request, seq}} = state) do
+    case :gen_server.check_response(message, request) do
+      {:reply, {:ok, %{"data" => data}}} when seq == state.frame_seq ->
+        {:noreply, %{show(state, data) | capture: nil}}
+
+      :no_reply ->
+        {:noreply, state}
+
+      _stale_refused_or_down ->
+        {:noreply, %{state | capture: nil, screenshot_echo?: false}}
     end
   end
 

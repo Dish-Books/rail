@@ -64,6 +64,17 @@ defmodule Rail.Tools.BrowserTest do
     assert {:ok, %{"echo" => %{}}} = Browser.call(connection, "Browser.getVersion")
   end
 
+  # A caller that others wait on asks and carries on, and picks the answer out of
+  # its mailbox when it comes.
+  test "a request returns at once and its answer arrives as a message", %{url: url} do
+    {:ok, connection} = Browser.start_link(url: url)
+
+    request = Browser.send_request(connection, "Test.Slow", %{n: 1})
+
+    assert_receive message, 5_000
+    assert {:reply, {:ok, %{"echo" => %{"n" => 1}}}} = :gen_server.check_response(message, request)
+  end
+
   # A DevTools URL carries a query in some Chrome builds, and dropping it asks
   # the wrong endpoint for the socket.
   test "a url with a query keeps it", %{url: url} do
