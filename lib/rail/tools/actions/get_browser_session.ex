@@ -14,8 +14,10 @@ defmodule Rail.Tools.Actions.GetBrowserSession do
   Returns the session process for `task`, or nil.
   """
   def get_browser_session(%Task{id: task_id}) do
+    # The registry drops a session only once it has seen it exit, so for a moment
+    # after one stops, the lookup still names it.
     case Registry.lookup(BrowserRegistry, task_id) do
-      [{pid, _value}] -> pid
+      [{pid, _value}] -> if Process.alive?(pid), do: pid
       [] -> nil
     end
   end
