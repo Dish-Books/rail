@@ -7,8 +7,9 @@ defmodule Rail.Triage.Actions.TriageThread do
   runs the agent to completion in a detached checkout of the default branch,
   under a lock on the thread that also makes the pass's MCP token valid.
 
-  Nothing here reaches Slack beyond reading the thread, and nothing reaches
-  Linear: only a person accepting a proposal posts or creates anything.
+  Nothing here reaches Slack beyond reading the thread, and Linear only through
+  the searches the agent runs for existing issues: only a person accepting a
+  proposal posts or creates anything.
   """
 
   import Ecto.Query
@@ -17,9 +18,8 @@ defmodule Rail.Triage.Actions.TriageThread do
   import Rail.Triage.Utils.UpsertSlackMessage
 
   alias Rail.Git
-  alias Rail.Issues
-  alias Rail.Issues.Schemas.Issue
   alias Rail.Mcp
+  alias Rail.Mcp.RunContext
   alias Rail.Pipeline
   alias Rail.Repo
   alias Rail.Roles
@@ -30,6 +30,7 @@ defmodule Rail.Triage.Actions.TriageThread do
   alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Note
   alias Rail.Triage.Schemas.Thread
+  alias Rail.Users.Schemas.User
 
   @stale_after_minutes 45
   @timeout to_timeout(minute: 30)
@@ -73,6 +74,7 @@ defmodule Rail.Triage.Actions.TriageThread do
          thread = load(thread),
          {:ok, keys} <- pass_scope(thread),
          {:ok, role} <- role(thread),
+         :ok <- check_tools(thread, role),
          :ok <- write_files(thread),
          {:ok, worktree} <- Git.checkout_detached_worktree(thread.project, Thread.worktree_path(thread)),
          {:ok, _output} <- agent(thread, role, worktree, token),
@@ -107,13 +109,13 @@ defmodule Rail.Triage.Actions.TriageThread do
   defp load(thread) do
     thread
     |> Repo.reload!()
-    |> Repo.preload([
-      :project,
+    |> Repo.preload(
+      project: :triage_user,
       slack_channel: :slack_workspace,
       messages: from(m in Message, order_by: [asc: m.posted_at]),
       items: from(i in Item, order_by: [asc: i.position]),
       notes: from(n in Note, order_by: [asc: n.inserted_at], preload: :item)
-    ])
+    )
   end
 
   # New messages put every open item in play and allow new ones; a note with
@@ -138,6 +140,28 @@ defmodule Rail.Triage.Actions.TriageThread do
     end
   end
 
+  # The agent finds existing issues through the role's MCP servers, so a pass
+  # without them would draft duplicates rather than fail: it is stopped here,
+  # saying what to fix before a retry.
+  defp check_tools(%Thread{project: project}, role) do
+    case Mcp.check_run_tools(%RunContext{role: role, user: project.triage_user}) do
+      :ok -> :ok
+      {:error, reason} -> {:error, tools_error(reason, project.triage_user)}
+    end
+  end
+
+  defp tools_error({:mcp_reconnect, names}, nil),
+    do:
+      "This project has no triage user to reach #{Enum.join(names, ", ")} as. Pick one under Settings → Projects, then retry."
+
+  defp tools_error({:mcp_reconnect, names}, %User{} = user),
+    do:
+      "#{Enum.join(names, ", ")} needs reconnecting for #{user.name || user.login}. " <>
+        "Reconnect it under Settings → Connected accounts, then retry."
+
+  defp tools_error({:mcp_unreachable, names}, _user),
+    do: "Could not reach #{Enum.join(names, ", ")}, so triage did not run. Retry once it answers."
+
   defp write_files(%Thread{} = thread) do
     dir = Thread.scratch_path(thread)
     File.mkdir_p!(dir)
@@ -152,7 +176,6 @@ defmodule Rail.Triage.Actions.TriageThread do
       end)
 
     File.write!(Path.join(dir, "thread.md"), thread_file(thread, images))
-    File.write!(Path.join(dir, "issues.md"), issues_file(thread))
     :ok
   end
 
@@ -253,18 +276,6 @@ defmodule Rail.Triage.Actions.TriageThread do
     "# Slack thread in ##{thread.slack_channel.name}\n\n" <> Enum.join(lines, "\n")
   end
 
-  defp issues_file(%Thread{project_id: project_id}) do
-    %{issues: issues} = Issues.list_issues(project_id: project_id, show_finished: true)
-
-    entries =
-      Enum.map(issues, fn %Issue{} = issue ->
-        url = if issue.url, do: "Link: #{issue.url}\n\n", else: ""
-        "## #{issue.identifier} · #{Issue.state_label(issue.state)} · #{issue.title}\n\n#{url}#{issue.description}\n"
-      end)
-
-    "# Every issue in this project\n\n" <> Enum.join(entries, "\n")
-  end
-
   defp brief(%Thread{} = thread) do
     dir = Thread.scratch_path(thread)
     file = Path.join(dir, "result.json")
@@ -278,7 +289,7 @@ defmodule Rail.Triage.Actions.TriageThread do
 
     You have the code and nothing else: no production data, logs or application state. Where a bug turns on something you cannot see, reason from the code and state what you could not check as an assumption.
 
-    #{Path.join(dir, "issues.md")} lists every issue in this project with its state. Read it before you draft any issue.
+    Before you draft any issue, search Linear for one that already covers the item, with the Linear tools you were offered, on the #{thread.project.linear_team_key} team. Include finished issues, and try at least two phrasings, the thread's own words and the names you found in the code, before you decide none does. Open a likely match and read it before you cite it.
     #{forced(thread)}
     #{items(thread)}
     #{notes(thread)}
@@ -323,7 +334,7 @@ defmodule Rail.Triage.Actions.TriageThread do
     - `change` is `raised` for the message that first brought an item up, `widened` or `narrowed` when a later message changes its scope, and `added` for a new item raised later in the thread. `passage` is quoted verbatim from the message.
     - `kind` is `bug` or `feature_request`. A bug's `verdict` is `confirmed`, `not_reproduced` or `already_fixed`; a request's is `built`, `partly_built` or `not_built`.
     - Never propose a fix, a design or a plan, anywhere. There is no field for one.
-    - `existing_issue` is the identifier of the issue in issues.md that already covers the item, or null. When one does, leave `issue` null, and the reply says the item is already tracked in that issue, giving its identifier and its state from issues.md.
+    - `existing_issue` is the identifier of the Linear issue that already covers the item, such as `TRI-23`, or null. When one does, leave `issue` null, and the reply says the item is already tracked in that issue, giving its identifier and its state in Linear.
     - `priority` is `urgent`, `high`, `medium` or `low`.
     - A reply is posted by the teammate who accepts it, under their name. Write it in their voice. Where the issue should be linked, write `{issue link}`: Rail fills in the existing issue that tracks the item, or the one you draft once it exists. Leave `reply` null where only a bot would read it.
     """)

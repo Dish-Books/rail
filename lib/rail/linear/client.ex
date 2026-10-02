@@ -195,6 +195,27 @@ defmodule Rail.Linear.Client do
   end
 
   @doc """
+  Fetches one ticket by Linear's id or its identifier, such as `TRI-23`, with
+  the team it is on.
+  """
+  def issue(%Project{} = project, id, opts \\ []) do
+    query = """
+    query Issue($id: String!) {
+      issue(id: $id) {
+        #{@issue_fields}
+        team {
+          id
+        }
+      }
+    }
+    """
+
+    with {:ok, token} <- token(project, opts) do
+      execute_query(token, query, %{"id" => id}, opts)
+    end
+  end
+
+  @doc """
   Fetches a ticket's current workflow state and every state on its team.
 
   The team is the ticket's own, not the project's, so a ticket moved to another
