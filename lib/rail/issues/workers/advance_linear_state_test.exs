@@ -6,6 +6,7 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
   alias Rail.Issues.Workers.AdvanceLinearState
   alias Rail.Pipeline
   alias Rail.Repo
+  alias Rail.Users
 
   # DataCase verifies Mimic, not Req.Test: without this a move that never went out would pass.
   setup {Req.Test, :verify_on_exit!}
@@ -27,7 +28,11 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
       })
     end)
 
-    {:ok, issue} = Issues.create_issue(system_scope(), project, %{description: "Advance Issue"})
+    {:ok, owner} = Users.register_oauth_user(%{github_id: "gh_owner", login: "owner", email: "owner@example.com"})
+
+    {:ok, issue} =
+      Issues.create_issue(system_scope(), project, %{description: "Advance Issue", owner_user_id: owner.id})
+
     {:ok, task} = Pipeline.create_task(issue, :product)
 
     # In Review comes before In Progress, so the started pick has to go by position,
@@ -374,6 +379,14 @@ defmodule Rail.Issues.Workers.AdvanceLinearStateTest do
       Req.Test.json(conn, %{"data" => %{"issueUpdate" => %{"success" => true}}})
     end)
 
+    assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
+  end
+
+  test "an issue nobody has claimed leaves Linear untouched", %{issue: issue, task: task} do
+    issue |> Ecto.Changeset.change(owner_user_id: nil) |> Repo.update!()
+    {:ok, _task} = Pipeline.update_task(task, %{stage: :engineer})
+
+    # No Linear mock is queued, so a request would raise.
     assert :ok = perform_job(AdvanceLinearState, %{issue_id: issue.id})
   end
 
