@@ -37,7 +37,7 @@ Rail is an Elixir/Phoenix LiveView app that takes Linear issues through a pipeli
 
 ## Building it
 
-You must use the /tdd skill.
+When the ticket is a bug fix, use the /tdd skill: write the test that reproduces the bug and watch it fail before you change the code. For anything else, do not use it.
 
 **Pin every acceptance criterion to a test you can point at**, the negative cases included: the state that must not happen needs the test that proves it cannot. A test that passed the first time it ran is suspect until you have seen it fail for the right reason.
 
