@@ -24,12 +24,9 @@ defmodule Rail.Issues.Actions.ClaimIssue do
           Repo.rollback(:already_assigned)
 
         %Issue{} = unassigned ->
-          with {:ok, claimed} <- unassigned |> Issue.changeset(%{owner_user_id: user.id}) |> Repo.update(),
-               {:ok, _job} <- Issues.advance_issue_state(claimed) do
-            claimed
-          else
-            {:error, reason} -> Repo.rollback(reason)
-          end
+          claimed = unassigned |> Issue.changeset(%{owner_user_id: user.id}) |> Repo.update!()
+          {:ok, _job} = Issues.advance_issue_state(claimed)
+          claimed
       end
     end)
   end
