@@ -17,15 +17,17 @@ defmodule Rail.Tools.Actions.TerminateOsProcessTest do
     assert Tools.terminate_os_process(nil) == :ok
   end
 
+  # A TERM that lands before the trap is set kills the shell outright, so the
+  # shell says when it is set.
   test "escalates to SIGKILL if the child ignores SIGTERM" do
     port =
       Port.open(
         {:spawn_executable, "/bin/sh"},
-        [:binary, args: ["-c", "trap '' TERM; sleep 30"]]
+        [:binary, args: ["-c", "trap '' TERM; echo trapped; sleep 30"]]
       )
 
     {:os_pid, pid} = Port.info(port, :os_pid)
-    assert Tools.os_process_alive?(pid)
+    assert_receive {^port, {:data, "trapped\n"}}
 
     assert Tools.terminate_os_process(pid, grace_period: 40) == :ok
     refute Tools.os_process_alive?(pid)
@@ -56,11 +58,11 @@ defmodule Rail.Tools.Actions.TerminateOsProcessTest do
     port =
       Port.open(
         {:spawn_executable, "/bin/sh"},
-        [:binary, args: ["-c", "trap 'sleep 0.1; exit 0' TERM; while :; do sleep 0.01; done"]]
+        [:binary, args: ["-c", "trap 'sleep 0.1; exit 0' TERM; echo trapped; while :; do sleep 0.01; done"]]
       )
 
     {:os_pid, pid} = Port.info(port, :os_pid)
-    assert Tools.os_process_alive?(pid)
+    assert_receive {^port, {:data, "trapped\n"}}
 
     assert Tools.terminate_os_process(pid, grace_period: 2_000) == :ok
     refute Tools.os_process_alive?(pid)
