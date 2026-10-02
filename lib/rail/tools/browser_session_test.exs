@@ -377,6 +377,9 @@ defmodule Rail.Tools.BrowserSessionTest do
     {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
     assert_receive :photographing, 10_000
 
+    # Not the answer it is waiting for, which is most of what a session is sent.
+    send(session, :tick)
+
     assert "" <> _frame = BrowserSession.last_frame(session)
     assert {:ok, _evaluated} = BrowserSession.call(session, "Runtime.evaluate", %{expression: "1"})
   end
