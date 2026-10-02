@@ -16,14 +16,23 @@ defmodule Rail.Users.Actions.SignInOAuthUser do
     email = auth.info && auth.info.email && String.trim(auth.info.email)
     github_id = auth.uid && to_string(auth.uid)
 
-    Repo.transaction(fn ->
+    fn ->
       case admit(github_id, email) do
         :returning -> register(auth, false)
         :bootstrap -> register(auth, true)
         {:invite, invite} -> redeem(auth, invite)
         {:error, reason} -> Repo.rollback(reason)
       end
-    end)
+    end
+    |> Repo.transaction()
+    |> case do
+      {:ok, user} ->
+        Phoenix.PubSub.broadcast(Rail.PubSub, "users", {:users_changed, user.id})
+        {:ok, user}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   defp admit(github_id, email) do
@@ -50,7 +59,11 @@ defmodule Rail.Users.Actions.SignInOAuthUser do
   end
 
   defp redeem(auth, %Invite{} = invite) do
-    user = register(auth, invite.admin)
+    user =
+      auth
+      |> register(invite.admin)
+      |> User.changeset(%{project_ids: invite.project_ids})
+      |> Repo.update!()
 
     # Stamping the invite cannot fail on user input — it is two server-side fields on a
     # row we just read — so a failure here is a bug, not a rejected sign-in.

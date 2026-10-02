@@ -4,6 +4,7 @@ defmodule Rail.Triage.Actions.GetTriageThread do
   import Ecto.Query
 
   alias Rail.Repo
+  alias Rail.Scope
   alias Rail.Triage.Schemas.Item
   alias Rail.Triage.Schemas.Message
   alias Rail.Triage.Schemas.Note
@@ -12,8 +13,9 @@ defmodule Rail.Triage.Actions.GetTriageThread do
   @doc """
   Loads a thread with everything its page shows: the conversation oldest first,
   its items in order with the issues they link and created, and the notes people left on them.
+  A thread in a project the scope cannot see is not found.
   """
-  def get_triage_thread(_scope, id) when is_binary(id) do
+  def get_triage_thread(scope, id) when is_binary(id) do
     query =
       from t in Thread,
         where: t.id == ^id,
@@ -35,6 +37,8 @@ defmodule Rail.Triage.Actions.GetTriageThread do
             ),
           notes: ^from(n in Note, order_by: [asc: n.inserted_at], preload: [:user, :item])
         ]
+
+    query = if ids = Scope.project_ids(scope), do: where(query, [t], t.project_id in ^ids), else: query
 
     case Repo.one(query) do
       %Thread{} = thread -> {:ok, thread}

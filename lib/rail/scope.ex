@@ -36,6 +36,28 @@ defmodule Rail.Scope do
   def admin?(_scope), do: false
 
   @doc """
+  The projects the scope may see: nil means every project, and only admins and the system get it.
+  Anyone else gets their granted ids, where an empty list means no projects at all.
+  """
+  def project_ids(scope) do
+    cond do
+      admin?(scope) -> nil
+      match?(%__MODULE__{user: %{project_ids: ids}} when is_list(ids), scope) -> scope.user.project_ids
+      true -> []
+    end
+  end
+
+  @doc """
+  Returns true if the scope may see the project with this id.
+  """
+  def can_access_project?(scope, project_id) do
+    case project_ids(scope) do
+      ids when is_list(ids) -> is_binary(project_id) and project_id in ids
+      nil -> true
+    end
+  end
+
+  @doc """
   Returns true if the user in scope has linked a Linear account.
   """
   def linear_linked?(%__MODULE__{user: %{linear_access_token: token}}) when is_binary(token) and token != "", do: true
@@ -51,7 +73,7 @@ defmodule Rail.Scope do
 
   @doc """
   Helper to build a user scope.
-  Supports `:admin` (boolean), `:linear_linked` (boolean), and `:user` overrides.
+  Supports `:admin` (boolean), `:linear_linked` (boolean), `:project_ids` (list), and `:user` overrides.
   """
   def user_scope(attrs \\ []) do
     admin = Keyword.get(attrs, :admin, false)
@@ -67,6 +89,7 @@ defmodule Rail.Scope do
             id: UXID.generate!(prefix: "usr"),
             admin: admin,
             linear_linked: linear_linked,
+            project_ids: Keyword.get(attrs, :project_ids, []),
             email: "user@example.com",
             name: "Test User"
           }

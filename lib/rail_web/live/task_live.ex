@@ -20,6 +20,7 @@ defmodule RailWeb.TaskLive do
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Roles.Schemas.Role
+  alias Rail.Scope
   alias Rail.Tools
   alias Rail.Users
   alias RailWeb.Live.ArchitectStage
@@ -64,7 +65,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:approvable, false)
       |> assign(:tabs, [])
       |> assign(:issue, nil)
-      |> assign(:assignees, Users.list_linear_users())
+      |> assign(:assignees, [])
       |> assign(:assignee_query, "")
       |> assign(:comment_nonce, 0)
       |> assign(:subscribed_run_ids, MapSet.new())
@@ -610,7 +611,7 @@ defmodule RailWeb.TaskLive do
   attr :roles_map, :map, required: true
   attr :round_questions, :list, required: true
   attr :conversation_run, :any, required: true
-  attr :current_scope, Rail.Scope, required: true
+  attr :current_scope, Scope, required: true
 
   # Questions sit above the conversation they came out of. Answering only records:
   # the round reaches the agent when the human says it is done.
@@ -680,12 +681,22 @@ defmodule RailWeb.TaskLive do
   defp due?(nil, _now), do: true
   defp due?(last, now), do: now - last >= @diff_refresh_ms
 
+  # A task in a project the user cannot access reads the same as one that is gone.
   defp refresh_task(socket) do
-    case Pipeline.get_task(socket.assigns.task_id) do
-      {:ok, task} -> socket |> apply_task(task) |> watch_diff_comments(task) |> sync_tab_url()
-      {:error, _reason} -> assign(socket, :task, nil)
+    with {:ok, task} <- Pipeline.get_task(socket.assigns.task_id),
+         true <- Scope.can_access_project?(socket.assigns.current_scope, task.project_id) do
+      socket |> load_assignees(task) |> apply_task(task) |> watch_diff_comments(task) |> sync_tab_url()
+    else
+      _missing -> assign(socket, :task, nil)
     end
   end
+
+  # The owner menu offers only people who can open the task, read once per project rather than per refresh.
+  defp load_assignees(%{assigns: %{task: %Task{project_id: project_id}}} = socket, %Task{project_id: project_id}),
+    do: socket
+
+  defp load_assignees(socket, %Task{} = task),
+    do: assign(socket, :assignees, Users.list_linear_users(project_id: task.project_id))
 
   defp apply_task(socket, %Task{} = task) do
     roles = if task.project_id, do: Rail.Roles.list_roles(task.project_id), else: []

@@ -13,6 +13,8 @@ defmodule RailWeb.QaControllerTest do
         email: "qa_controller_user@example.com"
       })
 
+    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
+
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
         "data" => %{
@@ -187,5 +189,16 @@ defmodule RailWeb.QaControllerTest do
     conn = get(build_conn(), ~p"/tasks/#{task.id}/qa/total-unrounded/evidence/0")
 
     assert redirected_to(conn) =~ "/sign-in"
+  end
+
+  test "evidence of a task in a project the user cannot access is not found", %{conn: conn, task: task} do
+    {:ok, outsider} =
+      Users.register_oauth_user(%{github_id: "gh_outsider", login: "outsider", email: "outsider@example.com"})
+
+    {:ok, outsider} = Users.update_user(system_scope(), outsider, %{project_ids: ["prj_other"]})
+    conn = log_in_user(conn, outsider)
+
+    assert conn |> get(~p"/tasks/#{task.id}/qa/total-unrounded/evidence/0") |> response(404) == "Not found"
+    assert conn |> get(~p"/tasks/#{task.id}/qa/evidence/total.png") |> response(404) == "Not found"
   end
 end

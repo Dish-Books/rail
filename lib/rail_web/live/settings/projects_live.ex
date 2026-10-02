@@ -9,7 +9,7 @@ defmodule RailWeb.Settings.ProjectsLive do
   alias Rail.Users
 
   def mount(_params, _session, socket) do
-    projects = Projects.list_projects()
+    projects = Projects.list_projects(socket.assigns.current_scope)
     linear_workspaces = Projects.list_linear_workspaces()
     {:ok, users} = Users.list_users(socket.assigns.current_scope)
 

@@ -45,6 +45,20 @@ defmodule Rail.Users.Actions.InviteUserTest do
     assert Repo.aggregate(Invite, :count) == 1
   end
 
+  test "an invite carries the projects its person will get, and re-inviting replaces them", %{scope: scope} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "users")
+
+    assert {:ok, %Invite{id: invite_id, project_ids: ["prj_a"]}} =
+             Users.invite_user(scope, %{"email" => "projects@example.com", "project_ids" => ["prj_a", "", "prj_a"]})
+
+    assert_receive {:users_changed, ^invite_id}
+
+    assert {:ok, %Invite{id: ^invite_id, project_ids: ["prj_b"]}} =
+             Users.invite_user(scope, %{email: "projects@example.com", project_ids: ["prj_b"]})
+
+    assert {:ok, %Invite{id: ^invite_id, project_ids: []}} = Users.invite_user(scope, %{email: "projects@example.com"})
+  end
+
   test "will not reopen an invite that was already redeemed", %{scope: scope} do
     assert {:ok, %Invite{} = invite} = Users.invite_user(scope, %{email: "done@example.com"})
 

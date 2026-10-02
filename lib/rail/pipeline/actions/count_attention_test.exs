@@ -39,6 +39,7 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
   end
 
   test "counts each task waiting on a human once, and none that is still working", %{
+    project: project,
     roles: roles,
     task_for: task_for
   } do
@@ -60,6 +61,9 @@ defmodule Rail.Pipeline.Actions.CountAttentionTest do
       Pipeline.create_run(%{task_id: working.id, role_id: roles[:engineer].id, status: :running, started_at: now})
 
     assert Pipeline.count_attention() == 1
+    assert Pipeline.count_attention(project_id: [project.id]) == 1
+    assert Pipeline.count_attention(project_id: ["prj_other"]) == 0
+    assert Pipeline.count_attention(project_id: []) == 0
   end
 
   test "only the latest run at a task's stage counts, not one it has retried", %{roles: roles, task_for: task_for} do

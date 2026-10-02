@@ -15,7 +15,7 @@ defmodule RailWeb.Settings.RolesLive do
   }
 
   def mount(_params, _session, socket) do
-    projects = Projects.list_projects()
+    projects = Projects.list_projects(socket.assigns.current_scope)
 
     # The page always edits one project, so with none selected it takes the first.
     roles_project =

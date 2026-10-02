@@ -5,11 +5,11 @@ defmodule Rail.Pipeline.Actions.CountAttention do
   alias Rail.Pipeline.Schemas.Run
 
   @doc """
-  Counts the tasks waiting on a human, across every project, the same way the
-  Overview lists them: a task waits only if the latest run at its stage does.
+  Counts the tasks waiting on a human, across every project unless `:project_id` narrows it,
+  the same way the Overview lists them: a task waits only if the latest run at its stage does.
   """
-  def count_attention do
-    [preload: [:role, :questions, task: :issue]]
+  def count_attention(opts \\ []) do
+    [project_id: opts[:project_id], preload: [:role, :questions, task: :issue]]
     |> Pipeline.list_runs()
     |> Enum.filter(&(&1.role.stage == &1.task.stage))
     |> Enum.group_by(& &1.task_id)

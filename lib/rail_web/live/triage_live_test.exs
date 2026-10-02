@@ -51,6 +51,7 @@ defmodule RailWeb.TriageLiveTest do
       })
 
     user = slack_user(workspace.external_id, "Michael")
+    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
 
     %{
       conn: log_in_user(conn, user),
@@ -209,12 +210,15 @@ defmodule RailWeb.TriageLiveTest do
 
   test "a person who has not linked Slack cannot accept, and is told how to", %{
     conn: conn,
+    project: project,
     thread: %Thread{items: [bug, _request]} = thread
   } do
     unique = System.unique_integer([:positive])
 
     {:ok, unlinked} =
       Users.register_oauth_user(%{github_id: "tl_#{unique}", login: "tl_#{unique}", email: "tl#{unique}@x.com"})
+
+    {:ok, unlinked} = Users.update_user(system_scope(), unlinked, %{project_ids: [project.id]})
 
     {:ok, view, _html} = live(log_in_user(conn, unlinked), ~p"/triage/#{thread.id}")
 
@@ -355,6 +359,32 @@ defmodule RailWeb.TriageLiveTest do
     send(view.pid, {:issue_created, "iss_any"})
 
     assert has_element?(view, "#triage-thread-title", "Renamed elsewhere")
+  end
+
+  test "a project the user cannot access is left out of the queue, the counts and a link to its thread", %{
+    conn: conn,
+    thread: %Thread{id: thread_id}
+  } do
+    %{project: hidden_project} = triage_project()
+    %{workspace: workspace, channel: channel} = connect_slack_channel(hidden_project)
+
+    {:ok, hidden} =
+      Triage.handle_slack_event(workspace, slack_message_event(channel, %{"text" => "A secret request"}))
+
+    %Thread{id: hidden_id} = triage_with(hidden, %{"title" => "Hidden thread", "items" => [triage_bug()]})
+
+    {:ok, view, _html} = live(conn, ~p"/triage")
+
+    assert has_element?(view, "#triage-row-#{thread_id}")
+    refute has_element?(view, "#triage-row-#{hidden_id}")
+    assert has_element?(view, "#triage-filter-waiting", "Waiting · 1")
+    assert has_element?(view, "#triage-badge", "1")
+
+    {:ok, view, html} = live(conn, ~p"/triage/#{hidden_id}")
+
+    refute has_element?(view, "#triage-thread")
+    refute html =~ "A secret request"
+    refute render(view) =~ "Hidden thread"
   end
 
   test "an unknown thread opens nothing", %{conn: conn} do

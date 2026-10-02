@@ -9,7 +9,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
   alias Rail.Users
   alias Rail.Users.Schemas.User
 
-  setup %{conn: conn} do
+  setup %{conn: conn, project: project} do
     id = System.unique_integer([:positive])
 
     _first =
@@ -28,6 +28,8 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
                email: "live_#{id}@example.com",
                avatar_url: "https://example.com/avatar_#{id}.png"
              })
+
+    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
 
     user_token = Users.generate_user_session_token(user)
 
@@ -92,11 +94,15 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
     assert has_element?(view, "#github-avatar-placeholder", "N")
   end
 
-  test "counts the repositories Rail can reach as the projects it is configured for", %{authed_conn: conn} do
+  test "counts the repositories Rail can reach as the projects the user can access", %{
+    authed_conn: conn,
+    user: user,
+    project: project
+  } do
     assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
     assert has_element?(view, "#capability-repositories", "Read and write on 1 repository.")
 
-    {:ok, _project} =
+    {:ok, second} =
       Rail.Projects.create_project(system_scope(), %{
         name: "Second Project",
         github_repo: "org/second-project",
@@ -105,6 +111,11 @@ defmodule RailWeb.Settings.ConnectedAccountsLiveTest do
         default_branch: "main",
         clone_path: "/tmp/repos/second-project"
       })
+
+    assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
+    assert has_element?(view, "#capability-repositories", "Read and write on 1 repository.")
+
+    {:ok, _user} = Users.update_user(system_scope(), user, %{project_ids: [project.id, second.id]})
 
     assert {:ok, view, _html} = live(conn, ~p"/settings/connected-accounts")
     assert has_element?(view, "#capability-repositories", "Read and write on 2 repositories.")

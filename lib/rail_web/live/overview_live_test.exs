@@ -1223,6 +1223,90 @@ defmodule RailWeb.OverviewLiveTest do
       assert positions == Enum.sort(positions)
     end
 
+    test "a user granted one project sees its work in both views, other people's included, and none of another's", %{
+      conn: conn,
+      project: project,
+      roles: roles,
+      rival: rival,
+      task_for: task_for
+    } do
+      Req.Test.expect(Rail.Linear, fn conn ->
+        Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_other"}]}}})
+      end)
+
+      {:ok, other_project} =
+        Projects.create_project(system_scope(), %{
+          name: "Other Project",
+          github_repo: "example/other",
+          github_installation_id: 444,
+          linear_team_key: "OTH",
+          default_branch: "main",
+          clone_path: "/tmp/other",
+          linear_workspace_id: project.linear_workspace_id
+        })
+
+      {:ok, other_role} =
+        Roles.create_role(system_scope(), other_project, %{
+          stage: :product,
+          name: "Other Product",
+          model: "claude-opus-5-5",
+          system_prompt: "You write tickets.",
+          backend_id: "bkd_test_seed"
+        })
+
+      {:ok, rival} = Users.update_user(system_scope(), rival, %{project_ids: [project.id]})
+      now = DateTime.utc_now()
+
+      own = task_for.("My work here", %{owner_user_id: rival.id})
+      teammates = task_for.("A teammate's work here", %{})
+      elsewhere = task_for.("My work elsewhere", %{owner_user_id: rival.id, project: other_project})
+      hidden = task_for.("Someone's work elsewhere", %{project: other_project})
+
+      shipped_elsewhere =
+        task_for.("Shipped elsewhere", %{project: other_project, completed_at: DateTime.shift(now, hour: -2)})
+
+      for {task, role} <- [{own, roles[:product]}, {elsewhere, other_role}] do
+        {:ok, _done} =
+          Pipeline.create_run(%{
+            task_id: task.id,
+            role_id: role.id,
+            status: :finished,
+            stage_outcome: :done,
+            started_at: DateTime.shift(now, hour: -2),
+            completed_at: DateTime.shift(now, hour: -1)
+          })
+      end
+
+      assert {:ok, view, _html} = live(log_in_user(conn, rival), ~p"/")
+
+      assert has_element?(view, "#in-progress-task-#{own.id}")
+      refute has_element?(view, "#in-progress-task-#{elsewhere.id}")
+      assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "1")
+      assert has_element?(view, "#attention-badge", "1")
+
+      view |> element("#overview-view-everyone") |> render_click()
+
+      assert has_element?(view, "#in-progress-task-#{own.id}")
+      assert has_element?(view, "#in-progress-task-#{teammates.id}")
+      refute has_element?(view, "#in-progress-task-#{elsewhere.id}")
+      refute has_element?(view, "#in-progress-task-#{hidden.id}")
+      refute has_element?(view, "#activity-shipped-#{shipped_elsewhere.issue.id}")
+      refute has_element?(view, "[data-qa='in-progress-project-header']", "Other Project")
+      refute render(view) =~ "elsewhere"
+
+      Phoenix.PubSub.broadcast(Rail.PubSub, "pipeline", {:pipeline_changed, own.id})
+      assert has_element?(view, "#attention-badge", "1")
+
+      assert {:ok, admin_view, _html} = live(conn, ~p"/?everyone=true")
+
+      for task <- [own, teammates, elsewhere, hidden] do
+        assert has_element?(admin_view, "#in-progress-task-#{task.id}")
+      end
+
+      assert has_element?(admin_view, "#activity-shipped-#{shipped_elsewhere.issue.id}")
+      assert has_element?(admin_view, "#attention-badge", "2")
+    end
+
     test "a row opens its task", %{conn: conn, task_for: task_for} do
       task = task_for.("Open me", %{})
 

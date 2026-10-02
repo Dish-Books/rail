@@ -6,6 +6,7 @@ defmodule RailWeb.SandboxesLiveTest do
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Projects
   alias Rail.Repo
   alias Rail.Roles
   alias Rail.Tools
@@ -24,6 +25,8 @@ defmodule RailWeb.SandboxesLiveTest do
         name: "Lucas Stellet",
         email: "sandboxes_#{id}@example.com"
       })
+
+    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
 
     {:ok, engineer} = Roles.get_role(project_id: project.id, stage: :engineer)
     now = DateTime.utc_now()
@@ -128,6 +131,9 @@ defmodule RailWeb.SandboxesLiveTest do
     %{
       conn: log_in_user(conn, user),
       user: user,
+      engineer: engineer,
+      sandbox: sandbox,
+      now: now,
       building_issue: building_issue,
       waiting_issue: waiting_issue,
       busy: busy,
@@ -248,6 +254,82 @@ defmodule RailWeb.SandboxesLiveTest do
 
     refute has_element?(view, "#waiting-#{next.id}")
     assert {:ok, %OsProcess{ended_reason: :stopped, stopped_by_id: ^user_id}} = Tools.get_os_process(next.id)
+  end
+
+  test "another project's sandboxes count toward the machine but show no row, and cannot be stopped", %{
+    conn: conn,
+    engineer: engineer,
+    sandbox: sandbox,
+    now: now,
+    next: next,
+    behind: behind
+  } do
+    {:ok, hidden_project} =
+      Projects.create_project(system_scope(), %{
+        name: "Hidden Sandboxes",
+        github_repo: "example/hidden-sandboxes",
+        github_installation_id: 558,
+        linear_team_key: "HSB",
+        default_branch: "main",
+        clone_path: "/tmp/hidden-sandboxes"
+      })
+
+    issue =
+      Repo.insert!(%Issue{
+        project_id: hidden_project.id,
+        external_id: "lin_sbx_hidden",
+        identifier: "HSB-1",
+        title: "A secret sandbox",
+        state: :backlog
+      })
+
+    task =
+      %Task{}
+      |> Task.changeset(
+        %{
+          issue_id: issue.id,
+          stage: :engineer,
+          worktree_name: "sbx-hidden",
+          worktree_path: "/tmp/sbx",
+          scratch_path: "/tmp/sbx"
+        },
+        hidden_project.id
+      )
+      |> Repo.insert!()
+
+    {:ok, run} = Pipeline.create_run(%{task_id: task.id, role_id: engineer.id, status: :running, started_at: now})
+    running = sandbox.(run, %{})
+    waiting = sandbox.(run, %{status: :waiting_for_resources, queued_at: DateTime.shift(now, minute: -10)})
+    ended = sandbox.(run, %{status: :finished, ended_reason: :finished, ended_at: DateTime.shift(now, minute: -5)})
+
+    {:ok, view, html} = live(conn, ~p"/sandboxes")
+
+    assert has_element?(view, "#stat-running", "2 agent turns · 0 setup · 1 CI")
+    assert has_element?(view, "#stat-waiting [data-qa='stat-value']", "3")
+    assert has_element?(view, "#running-sandboxes-title", "Running · 2")
+
+    refute has_element?(view, "#running-#{running.id}")
+    refute has_element?(view, "#waiting-#{waiting.id}")
+    refute has_element?(view, "#ended-#{ended.id}")
+
+    refute html =~ "HSB-1"
+    refute html =~ "A secret sandbox"
+
+    # A row keeps its place in the whole machine's line.
+    assert has_element?(view, "#waiting-#{next.id} [data-qa='line']", "2nd")
+    assert has_element?(view, "#waiting-#{behind.id} [data-qa='line']", "3rd")
+
+    render_hook(view, "stop", %{"run_id" => run.id})
+    assert {:ok, %OsProcess{status: :running}} = Tools.get_os_process(running.id)
+
+    {:ok, admin} =
+      Users.register_oauth_user(%{github_id: "gh_sandboxes_admin", login: "sbx_admin", email: "sbx@x.com", admin: true})
+
+    {:ok, admin_view, _html} = live(log_in_user(conn, admin), ~p"/sandboxes")
+
+    assert has_element?(admin_view, "#running-#{running.id}", "HSB-1")
+    assert has_element?(admin_view, "#waiting-#{waiting.id} [data-qa='line']", "1st")
+    assert has_element?(admin_view, "#ended-#{ended.id}")
   end
 
   test "follows the line as it moves", %{conn: conn, behind: behind} do

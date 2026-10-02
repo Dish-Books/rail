@@ -17,7 +17,7 @@ defmodule Rail.Triage.Actions.DismissTriageThreadTest do
     assert {:ok, %Thread{status: :done, dismissed_by_id: ^user_id, dismissed_at: %DateTime{}}} =
              Triage.dismiss_triage_thread(Scope.for_user(user), thread)
 
-    assert {:ok, %Thread{items: [_item]} = dismissed} = Triage.get_triage_thread(Scope.for_user(user), thread.id)
+    assert {:ok, %Thread{items: [_item]} = dismissed} = Triage.get_triage_thread(Scope.for_system(), thread.id)
     assert "Dismissed by Jordan Ellis" = Thread.outcome_label(dismissed)
   end
 end

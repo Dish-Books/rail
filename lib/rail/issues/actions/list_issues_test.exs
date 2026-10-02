@@ -90,6 +90,10 @@ defmodule Rail.Issues.Actions.ListIssuesTest do
 
     assert %{total: 4} = Issues.list_issues(show_finished: true)
     assert %{total: 2} = Issues.list_issues()
+
+    assert %{issues: [%Issue{id: ^triage_id}], total: 1} = Issues.list_issues(project_id: [project_id])
+    assert %{total: 2} = Issues.list_issues(project_id: [project_id, other_project.id])
+    assert %{issues: [], total: 0, priority_counts: %{}} = Issues.list_issues(project_id: [], show_finished: true)
   end
 
   test "list_issues searches titles and identifiers, taking the search literally", %{project: project} do

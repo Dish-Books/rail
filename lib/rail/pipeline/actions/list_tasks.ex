@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.ListTasks do
   @doc """
   Lists tasks, filtered and preloaded as `opts` asks.
 
+  `:project_id` takes one id or a list, where an empty list matches nothing.
   `:owner_user_id` keeps the tasks whose issue that user owns, so an unowned issue's tasks drop out.
   Cleaned-up tasks are left out unless `include_cleaned_up: true`.
   """
@@ -29,6 +30,10 @@ defmodule Rail.Pipeline.Actions.ListTasks do
 
   defp filter_project(query, project_id) when is_binary(project_id) do
     where(query, [task: t], t.project_id == ^project_id)
+  end
+
+  defp filter_project(query, project_ids) when is_list(project_ids) do
+    where(query, [task: t], t.project_id in ^project_ids)
   end
 
   defp filter_project(query, _all_projects), do: query

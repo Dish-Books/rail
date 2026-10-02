@@ -69,6 +69,14 @@ defmodule Rail.Users.Actions.SignInOAuthUserTest do
       assert {:ok, %User{admin: true}} = Users.sign_in_oauth_user(auth)
     end
 
+    test "the invite decides which projects the new account can access", %{auth: auth, scope: scope} do
+      assert {:ok, %Invite{}} = Users.invite_user(scope, %{email: auth.info.email, project_ids: ["prj_a"]})
+      Phoenix.PubSub.subscribe(Rail.PubSub, "users")
+
+      assert {:ok, %User{id: user_id, project_ids: ["prj_a"]}} = Users.sign_in_oauth_user(auth)
+      assert_receive {:users_changed, ^user_id}
+    end
+
     test "the invite email matches regardless of case", %{auth: auth, scope: scope} do
       assert {:ok, %Invite{}} = Users.invite_user(scope, %{email: auth.info.email})
 
@@ -96,7 +104,10 @@ defmodule Rail.Users.Actions.SignInOAuthUserTest do
                  email: auth.info.email
                })
 
-      assert {:ok, %User{id: ^existing_id, admin: false}} = Users.sign_in_oauth_user(auth)
+      assert {:ok, %User{}} =
+               Users.update_user(Scope.for_system(), Repo.get!(User, existing_id), %{project_ids: ["prj_a"]})
+
+      assert {:ok, %User{id: ^existing_id, admin: false, project_ids: ["prj_a"]}} = Users.sign_in_oauth_user(auth)
       assert Repo.aggregate(Invite, :count) == 0
     end
 

@@ -12,6 +12,7 @@ defmodule Rail.Users.Schemas.User do
     field :email, :string
     field :avatar_url, :string
     field :admin, :boolean, default: false
+    field :project_ids, {:array, :string}, default: []
     field :github_token, EncryptedBinary, redact: true
     field :linear_user_id, :string
     field :linear_name, :string
@@ -38,6 +39,7 @@ defmodule Rail.Users.Schemas.User do
     :email,
     :avatar_url,
     :admin,
+    :project_ids,
     :github_token,
     :linear_user_id,
     :linear_name,
@@ -56,6 +58,8 @@ defmodule Rail.Users.Schemas.User do
   def changeset(user, attrs) do
     user
     |> cast(attrs, @updatable_fields)
+    # A form of checkboxes sends a blank alongside the ticked ones.
+    |> update_change(:project_ids, &(&1 |> Enum.reject(fn id -> id == "" end) |> Enum.uniq()))
     |> validate_required([:github_id, :login, :email])
     |> unique_constraint(:github_id)
     |> unique_constraint(:login)

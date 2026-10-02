@@ -42,6 +42,11 @@ defmodule Rail.Users.Actions.UpdateUserTest do
       assert {:ok, %User{name: "Renamed"}} = Users.update_user(scope, user, %{name: "Renamed"})
     end
 
+    test "an invalid update is rejected", %{admin_scope: scope, user: user} do
+      assert {:error, changeset} = Users.update_user(scope, user, %{email: nil})
+      assert "can't be blank" in errors_on(changeset).email
+    end
+
     test "rejects a nil or user-less scope", %{user: user} do
       assert {:error, :not_authorized} = Users.update_user(nil, user, %{name: "X"})
       assert {:error, :not_authorized} = Users.update_user(%Scope{user: nil}, user, %{name: "X"})
@@ -64,6 +69,26 @@ defmodule Rail.Users.Actions.UpdateUserTest do
     test "the system scope can set admin status", %{user: user, admin: admin} do
       assert {:ok, %User{admin: true}} = Users.update_user(Scope.for_system(), user, %{admin: true})
       assert {:ok, %User{admin: false}} = Users.update_user(Scope.for_system(), admin, %{admin: false})
+    end
+  end
+
+  describe "project access" do
+    test "an admin sets which projects a user can access, and open Users pages hear of it", %{
+      admin_scope: scope,
+      user: user,
+      user_id: user_id
+    } do
+      Phoenix.PubSub.subscribe(Rail.PubSub, "users")
+
+      assert {:ok, %User{id: ^user_id, project_ids: ["prj_a", "prj_b"]}} =
+               Users.update_user(scope, user, %{project_ids: ["prj_a", "prj_b"]})
+
+      assert_receive {:users_changed, ^user_id}
+    end
+
+    test "a non-admin cannot change anyone's projects", %{scope: scope, user: user} do
+      assert {:error, :not_authorized} = Users.update_user(scope, user, %{project_ids: ["prj_a"]})
+      assert %User{project_ids: []} = Repo.get!(User, user.id)
     end
   end
 

@@ -4,6 +4,7 @@ defmodule RailWeb.SandboxesLive do
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Scope
   alias Rail.Tools
   alias Rail.Tools.Schemas.OsProcess
 
@@ -83,13 +84,13 @@ defmodule RailWeb.SandboxesLive do
                 </tr>
               </thead>
               <tbody>
-                <tr :if={@waiting == []}>
+                <tr :if={@waiting_rows == []}>
                   <td colspan="8" class="px-4 py-4 text-sm text-slate-500 dark:text-slate-400">
                     Nothing is waiting for resources.
                   </td>
                 </tr>
                 <tr
-                  :for={{sandbox, position} <- Enum.with_index(@waiting, 1)}
+                  :for={{sandbox, position} <- @waiting_rows}
                   id={"waiting-#{sandbox.id}"}
                   class="border-t border-slate-200 dark:border-slate-700/70"
                 >
@@ -291,9 +292,15 @@ defmodule RailWeb.SandboxesLive do
     """
   end
 
+  # Only a run in a row this user can see, so a crafted id cannot stop another project's.
   def handle_event("stop", %{"run_id" => run_id}, socket) do
-    {:ok, run} = Pipeline.get_run(run_id)
-    {:ok, _stopped, _queued} = Pipeline.stop_run(socket.assigns.current_scope, run)
+    %{waiting_rows: waiting_rows, running: running} = socket.assigns
+
+    if Enum.any?(Enum.map(waiting_rows, &elem(&1, 0)) ++ running, &(&1.run_id == run_id)) do
+      {:ok, run} = Pipeline.get_run(run_id)
+      {:ok, _stopped, _queued} = Pipeline.stop_run(socket.assigns.current_scope, run)
+    end
+
     {:noreply, load_sandboxes(socket)}
   end
 
@@ -389,12 +396,19 @@ defmodule RailWeb.SandboxesLive do
       capacity &&
         %{cpus: capacity.cpus - capacity.reserved_cpus, memory_gb: capacity.memory_gb - capacity.reserved_memory_gb}
 
+    # The stats count the whole machine, but a row shows only a project the user can access,
+    # and a waiting row keeps its place in the whole line.
+    visible? = &Scope.can_access_project?(socket.assigns.current_scope, &1.run.task.project_id)
+
     socket
     |> assign(:now, now)
     |> assign(:free, free)
-    |> assign(:waiting, waiting)
-    |> assign(:running, running)
-    |> assign(:ended, ended)
+    |> assign(
+      :waiting_rows,
+      waiting |> Enum.with_index(1) |> Enum.filter(fn {sandbox, _position} -> visible?.(sandbox) end)
+    )
+    |> assign(:running, Enum.filter(running, visible?))
+    |> assign(:ended, Enum.filter(ended, visible?))
     |> assign(:stats, capacity && stats(capacity, free, running, waiting, now))
   end
 

@@ -18,15 +18,22 @@ defmodule Rail.Users.Actions.InviteUser do
   end
 
   defp save(invite, attrs) do
-    invite
-    |> Invite.changeset(attrs)
-    |> Repo.insert_or_update()
+    case invite |> Invite.changeset(attrs) |> Repo.insert_or_update() do
+      {:ok, invite} ->
+        Phoenix.PubSub.broadcast(Rail.PubSub, "users", {:users_changed, invite.id})
+        {:ok, invite}
+
+      {:error, changeset} ->
+        {:error, changeset}
+    end
   end
 
   defp normalize(attrs) do
     %{
       email: attrs |> Attrs.get(:email) |> to_string() |> String.trim() |> String.downcase(),
-      admin: Attrs.get(attrs, :admin) in [true, "true", "on"]
+      admin: Attrs.get(attrs, :admin) in [true, "true", "on"],
+      # A form of checkboxes sends a blank alongside the ticked ones.
+      project_ids: attrs |> Attrs.get(:project_ids) |> List.wrap() |> Enum.reject(&(&1 in [nil, ""])) |> Enum.uniq()
     }
   end
 end

@@ -848,6 +848,107 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "#task-cleaned-up")
   end
 
+  test "a task in a project the user cannot access reads as missing and shows nothing of it", %{
+    conn: conn,
+    task: task,
+    run: run
+  } do
+    {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+
+    {:ok, %Question{}} =
+      blocked |> Repo.preload(task: :issue) |> Pipeline.register_question(%DetectedQuestion{prompt: "Which database?"})
+
+    {:ok, outsider} =
+      Users.register_oauth_user(%{github_id: "gh_task_outsider", login: "task_outsider", email: "outsider@example.com"})
+
+    {:ok, outsider} = Users.update_user(system_scope(), outsider, %{project_ids: ["prj_other"]})
+    conn = log_in_user(conn, outsider)
+
+    assert {:ok, view, html} = live(conn, ~p"/tasks/#{task.id}")
+
+    assert has_element?(view, "#task-cleaned-up")
+    refute html =~ "Task Live Issue"
+    refute render(view) =~ "Task Live Issue"
+
+    # Nor its questions, so there is no card to answer them from.
+    refute has_element?(view, "[id^='question-card-']")
+    refute html =~ "Which database?"
+  end
+
+  test "the owner menu offers only admins and the people granted the task's project", %{
+    conn: conn,
+    task: task,
+    project: project
+  } do
+    linked = fn login, attrs ->
+      {:ok, user} =
+        Users.register_oauth_user(%{github_id: "gh_#{login}", login: login, name: login, email: "#{login}@example.com"})
+
+      user |> Ecto.Changeset.change(Map.put(attrs, :linear_user_id, "lin_#{login}")) |> Repo.update!()
+    end
+
+    granted = linked.("granted_teammate", %{project_ids: [project.id]})
+    elsewhere = linked.("elsewhere_teammate", %{project_ids: ["prj_other"]})
+    admin = linked.("admin_teammate", %{admin: true})
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=issue")
+
+    assert has_element?(view, "#issue-assign-#{granted.id}")
+    assert has_element?(view, "#issue-assign-#{admin.id}")
+    refute has_element?(view, "#issue-assign-#{elsewhere.id}")
+  end
+
+  test "a question that belongs to another task cannot be answered or dismissed from this one", %{
+    conn: conn,
+    task: task,
+    project: project,
+    role: role,
+    run: run
+  } do
+    {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+
+    {:ok, %Question{id: own_id}} =
+      blocked |> Repo.preload(task: :issue) |> Pipeline.register_question(%DetectedQuestion{prompt: "Which cache?"})
+
+    other_issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: project.id,
+        external_id: "lin_task_live_other",
+        identifier: "TLV-2",
+        title: "Another task's issue",
+        state: :todo
+      })
+      |> Repo.insert!()
+      |> Repo.preload(:project)
+
+    {:ok, other_task} = Pipeline.create_task(other_issue, :product)
+    on_exit(fn -> File.rm_rf(other_task.scratch_path) end)
+
+    {:ok, other_run} =
+      Pipeline.create_run(%{
+        task_id: other_task.id,
+        role_id: role.id,
+        status: :blocked_on_input,
+        stage_outcome: :in_progress,
+        started_at: DateTime.utc_now()
+      })
+
+    {:ok, %Question{id: question_id}} =
+      other_run
+      |> Repo.preload(task: :issue)
+      |> Pipeline.register_question(%DetectedQuestion{prompt: "Which database?"})
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    card = with_target(view, "#question-card-#{run.id}")
+
+    render_submit(card, "answer_question", %{"question_id" => question_id, "answer" => "Postgres"})
+    render_click(card, "dismiss_question", %{"question_id" => question_id})
+
+    assert {:ok, %Question{status: :pending, answer: nil}} = Pipeline.get_question(question_id)
+    assert {:ok, %Question{status: :pending}} = Pipeline.get_question(own_id)
+  end
+
   describe "the tabs across the header" do
     test "the issue comes first and the stage's role is the one open", %{conn: conn, task: task, role: role} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
@@ -2780,6 +2881,8 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, someone} =
         Users.register_oauth_user(%{github_id: "gh_task_live_other", login: "someone", email: "someone@example.com"})
 
+      {:ok, someone} = Users.update_user(system_scope(), someone, %{project_ids: [task.project_id]})
+
       assert {:ok, theirs, _html} = live(log_in_user(build_conn(), someone), ~p"/tasks/#{task.id}")
       refute has_element?(theirs, "[data-qa='diff_comment']")
       refute has_element?(theirs, "#send-diff-comments")
@@ -2797,6 +2900,8 @@ defmodule RailWeb.TaskLiveTest do
 
       {:ok, someone} =
         Users.register_oauth_user(%{github_id: "gh_task_live_other", login: "someone", email: "someone@example.com"})
+
+      {:ok, someone} = Users.update_user(system_scope(), someone, %{project_ids: [task.project_id]})
 
       assert {:ok, theirs, _html} = live(log_in_user(build_conn(), someone), ~p"/tasks/#{task.id}")
       refute has_element?(theirs, "#diff-comment-#{id}")

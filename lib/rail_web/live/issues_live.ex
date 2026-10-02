@@ -328,7 +328,7 @@ defmodule RailWeb.IssuesLive do
     projects =
       if project = socket.assigns.current_project,
         do: [project],
-        else: Projects.list_projects()
+        else: socket.assigns.projects
 
     Enum.each(projects, &Issues.sync_issues/1)
 
@@ -388,7 +388,7 @@ defmodule RailWeb.IssuesLive do
 
     %{issues: issues, total: total, priority_counts: priority_counts} =
       Issues.list_issues(
-        project_id: assigns.current_project_id,
+        project_id: assigns.project_filter,
         owner_user_id: if(assigns.mine, do: assigns.current_scope.user.id),
         show_finished: assigns.show_finished,
         search: assigns.search,

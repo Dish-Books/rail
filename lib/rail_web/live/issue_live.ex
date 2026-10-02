@@ -10,6 +10,7 @@ defmodule RailWeb.IssueLive do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Scope
   alias Rail.Users
 
   def mount(_params, _session, socket) do
@@ -20,15 +21,23 @@ defmodule RailWeb.IssueLive do
       |> assign(:page_title, "Issue")
       |> assign(:current_section, :issues)
       |> assign(:issue, nil)
-      |> assign(:assignees, Users.list_linear_users())
+      |> assign(:assignees, [])
       |> assign(:assignee_query, "")
       |> assign(:comment_nonce, 0)
 
     {:ok, socket}
   end
 
+  # The owner menu offers only people who can open the issue, so it waits for the issue's project.
   def handle_params(%{"id" => id}, _uri, socket) do
-    {:noreply, load_issue(socket, id)}
+    socket = load_issue(socket, id)
+
+    socket =
+      if issue = socket.assigns.issue,
+        do: assign(socket, :assignees, Users.list_linear_users(project_id: issue.project_id)),
+        else: socket
+
+    {:noreply, socket}
   end
 
   def render(assigns) do
@@ -125,13 +134,14 @@ defmodule RailWeb.IssueLive do
   defp load_issue(socket, id) do
     preload = [:project, :owner_user, task: [runs: :role], comments: [:author_user, replies: :author_user]]
 
-    case Issues.get_issue(id, preload: preload) do
-      {:ok, issue} ->
-        socket
-        |> assign(:issue, issue)
-        |> assign(:page_title, "#{issue.identifier} #{issue.title}")
-
-      {:error, :not_found} ->
+    # An issue in a project the user cannot access is one that does not exist, as far as they can tell.
+    with {:ok, issue} <- Issues.get_issue(id, preload: preload),
+         true <- Scope.can_access_project?(socket.assigns.current_scope, issue.project_id) do
+      socket
+      |> assign(:issue, issue)
+      |> assign(:page_title, "#{issue.identifier} #{issue.title}")
+    else
+      _not_found ->
         socket
         |> put_flash(:error, "Issue not found")
         |> push_navigate(to: ~p"/issues")

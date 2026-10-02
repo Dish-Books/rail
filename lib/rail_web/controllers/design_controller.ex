@@ -10,9 +10,10 @@ defmodule RailWeb.DesignController do
   use RailWeb, :controller
 
   alias Rail.Pipeline
+  alias Rail.Scope
 
   def show(conn, %{"task_id" => task_id, "key" => key}) do
-    case option(task_id, key) do
+    case option(conn, task_id, key) do
       %{html: html} when is_binary(html) ->
         conn
         |> put_resp_header("content-security-policy", "sandbox allow-scripts")
@@ -26,7 +27,7 @@ defmodule RailWeb.DesignController do
   end
 
   def screenshot(conn, %{"task_id" => task_id, "key" => key}) do
-    case option(task_id, key) do
+    case option(conn, task_id, key) do
       %{screenshot_version: version, screenshot_path: path} when is_integer(version) ->
         conn
         |> put_resp_content_type("image/png")
@@ -38,8 +39,9 @@ defmodule RailWeb.DesignController do
     end
   end
 
-  defp option(task_id, key) do
+  defp option(conn, task_id, key) do
     with {:ok, task} <- Pipeline.get_task(task_id),
+         true <- Scope.can_access_project?(conn.assigns.current_scope, task.project_id),
          %{options: options} <- Pipeline.read_design(task) do
       Enum.find(options, &(&1.key == key))
     else
