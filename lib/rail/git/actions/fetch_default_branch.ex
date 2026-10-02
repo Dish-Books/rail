@@ -11,17 +11,22 @@ defmodule Rail.Git.Actions.FetchDefaultBranch do
 
   @doc """
   Fetches `project`'s default branch from `origin` into the worktree at
-  `worktree_path`, with the same credentials Rail pushes with.
+  `worktree_path`, with the same credentials Rail pushes with, and moves the
+  clone's local branch of that name to it.
   """
   def fetch_default_branch(%Project{} = project, worktree_path) when is_binary(worktree_path) do
     with {:ok, env} <- Git.credential_env(project) do
       fetch = fn ->
-        Tools.run("git", ["fetch", "origin", project.default_branch],
-          cd: worktree_path,
-          env: env,
-          stderr_to_stdout: true,
-          timeout: @timeout_ms
-        )
+        fetched =
+          Tools.run("git", ["fetch", "origin", project.default_branch],
+            cd: worktree_path,
+            env: env,
+            stderr_to_stdout: true,
+            timeout: @timeout_ms
+          )
+
+        if match?({_output, 0}, fetched), do: follow_origin(project)
+        fetched
       end
 
       case with_clone_lock(project.clone_path, fetch) do
@@ -33,5 +38,13 @@ defmodule Rail.Git.Actions.FetchDefaultBranch do
         {:error, reason} -> {:error, reason}
       end
     end
+  end
+
+  # Agents read the local branch as the default as readily as origin's, and
+  # nothing else moves it. The clone is detached so it holds no branch that
+  # cannot be moved; one a person checked out elsewhere is left where it is.
+  defp follow_origin(%Project{clone_path: clone_path, default_branch: branch}) do
+    Tools.run("git", ["checkout", "--quiet", "--detach"], cd: clone_path, stderr_to_stdout: true)
+    Tools.run("git", ["branch", "--force", branch, "origin/#{branch}"], cd: clone_path, stderr_to_stdout: true)
   end
 end

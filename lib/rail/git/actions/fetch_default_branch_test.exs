@@ -14,7 +14,7 @@ defmodule Rail.Git.Actions.FetchDefaultBranchTest do
     %{project: project, remote: remote, repo: repo}
   end
 
-  test "fetches the default branch with a token minted for the project", %{
+  test "fetches the default branch with a token minted for the project, and the local branch follows it", %{
     project: project,
     remote: remote,
     repo: repo
@@ -26,6 +26,23 @@ defmodule Rail.Git.Actions.FetchDefaultBranchTest do
 
     assert :ok = Git.fetch_default_branch(project, repo)
     assert git!(repo, ["rev-parse", "origin/main"]) == git!(remote, ["rev-parse", "main"])
+    assert git!(repo, ["rev-parse", "main"]) == git!(remote, ["rev-parse", "main"])
+    assert git!(repo, ["branch", "--show-current"]) == ""
+  end
+
+  test "leaves a default branch a person checked out in another worktree where it was", %{
+    project: project,
+    remote: remote,
+    repo: repo
+  } do
+    Req.Test.expect(Client, &Req.Test.json(&1, %{"token" => "ghs_token"}))
+    local_main = git!(repo, ["rev-parse", "main"])
+    git!(repo, ["checkout", "--quiet", "--detach"])
+    git!(repo, ["worktree", "add", Path.join(repo, ".worktrees/person"), "main"])
+
+    assert :ok = Git.fetch_default_branch(project, repo)
+    assert git!(repo, ["rev-parse", "origin/main"]) == git!(remote, ["rev-parse", "main"])
+    assert git!(repo, ["rev-parse", "main"]) == local_main
   end
 
   test "says what git said when the fetch fails", %{project: project, repo: repo} do
