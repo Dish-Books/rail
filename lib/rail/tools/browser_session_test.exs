@@ -361,6 +361,26 @@ defmodule Rail.Tools.BrowserSessionTest do
     )
   end
 
+  # A busy Chrome can sit on a screenshot for half a minute. The session asks for
+  # one once the frames stop, and goes on answering everyone else while it waits -
+  # a demo starting wants the frame it already has, not the one Chrome is taking.
+  test "a screenshot Chrome is slow over holds nobody up", %{task: task, page: page} do
+    set_mimic_global()
+    test = self()
+
+    Mimic.stub(Browser, :send_request, fn _connection, "Page.captureScreenshot", _params ->
+      send(test, :photographing)
+      make_ref()
+    end)
+
+    {:ok, session} = Tools.start_browser_session(task)
+    {:ok, _navigated} = BrowserSession.call(session, "Page.navigate", %{url: page})
+    assert_receive :photographing, 10_000
+
+    assert "" <> _frame = BrowserSession.last_frame(session)
+    assert {:ok, _evaluated} = BrowserSession.call(session, "Runtime.evaluate", %{expression: "1"})
+  end
+
   # The tab closed from under the session between its last frame and the
   # photograph of how it settled. The frame it had is the frame it keeps.
   test "a tab that goes before it can be photographed keeps its last frame", %{task: task, page: page} do

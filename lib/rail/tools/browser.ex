@@ -50,6 +50,19 @@ defmodule Rail.Tools.Browser do
   end
 
   @doc """
+  Sends `method` like `call/4` and returns at once, with a request id rather than
+  the answer.
+
+  The answer arrives later as a message to the caller, and
+  `:gen_server.check_response/2` with this id is what recognises it. For a caller
+  that other processes are waiting on, which cannot stop answering them for as
+  long as Chrome takes over something slow.
+  """
+  def send_request(connection, method, params \\ %{}) do
+    :gen_server.send_request(connection, {:call, method, params})
+  end
+
+  @doc """
   Sends `method` without waiting for Chrome to answer it.
 
   For the commands whose answer carries nothing anybody reads and which happen
