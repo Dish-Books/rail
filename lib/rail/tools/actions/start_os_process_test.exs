@@ -271,6 +271,32 @@ defmodule Rail.Tools.Actions.StartOsProcessTest do
     assert File.read!("#{os_process.stream_path}.prompt") == prompt
   end
 
+  # In argv the role prompt is in the agent's own command line, so a `pgrep -f`
+  # for anything it mentions finds the agent, which then kills itself.
+  test "hands Claude its role prompt in a file, out of its command line", %{run: run} do
+    test_pid = self()
+
+    expect(Tools, :spawn_os_process, fn _executable, args, opts ->
+      send(test_pid, {:spawned, args, opts})
+      {:ok, nil, 4245}
+    end)
+
+    expect(FollowerSupervisor, :start_follower, fn _os_process, _opts -> {:ok, self()} end)
+
+    {:ok, os_process} =
+      Tools.start_os_process(run, [
+        "-p",
+        "the brief",
+        "--append-system-prompt",
+        "Start it with mix phx.server.",
+        "--verbose"
+      ])
+
+    system_prompt_path = "#{os_process.stream_path}.system-prompt"
+    assert_received {:spawned, ["-p", "--append-system-prompt-file", ^system_prompt_path, "--verbose"], _opts}
+    assert File.read!(system_prompt_path) == "Start it with mix phx.server."
+  end
+
   test "leaves the prompt in argv for other backends", %{backend: backend, run: run} do
     backend |> Ecto.Changeset.change(name: :agy) |> Repo.update!()
     test_pid = self()

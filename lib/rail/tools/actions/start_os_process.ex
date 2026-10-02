@@ -131,6 +131,7 @@ defmodule Rail.Tools.Actions.StartOsProcess do
   defp launch_spec(backend, argv, stream_path, %Task{project: %Project{} = project} = task, token) do
     trust_workspace(backend, [project.clone_path, task.worktree_path])
     {args, stdin_path} = prompt_on_stdin(backend, argv, stream_path)
+    args = system_prompt_in_file(backend, args, stream_path)
 
     %{
       "executable" => backend.executable_path,
@@ -157,4 +158,23 @@ defmodule Rail.Tools.Actions.StartOsProcess do
   end
 
   defp prompt_on_stdin(_backend, argv, _stream_path), do: {argv, nil}
+
+  # The role's prompt goes in a file for the same reason, and for one more: in
+  # argv it is in the agent's command line, where `pgrep -f` reads it. A demo
+  # prompt that says `mix phx.server` made the agent's own process match the
+  # `pgrep -f "mix phx.server"` it ran to stop its server in the worktree, so it
+  # killed itself and the run ended "Exited with code 143".
+  defp system_prompt_in_file(%Backend{name: :claude}, args, stream_path) do
+    case Enum.split_while(args, &(&1 != "--append-system-prompt")) do
+      {before, ["--append-system-prompt", system_prompt | rest]} ->
+        system_prompt_path = "#{stream_path}.system-prompt"
+        File.write!(system_prompt_path, system_prompt)
+        before ++ ["--append-system-prompt-file", system_prompt_path | rest]
+
+      {_all, []} ->
+        args
+    end
+  end
+
+  defp system_prompt_in_file(_backend, args, _stream_path), do: args
 end
