@@ -5,6 +5,9 @@ defmodule Rail.Issues.Workers.AdvanceLinearState do
   Only ever forward, judged against Linear's live state: somebody may have moved
   the ticket further by hand, and a send-back to the engineer must not undo In Review.
 
+  Only once somebody has claimed the issue: an unowned ticket stays where it is, and
+  the claim queues this job to catch it up with its task.
+
   One job per issue at a time, so two can never race their writes. That job covers
   any later stage: it reads the stage when it runs, and runs again if it moved meanwhile.
   """
@@ -29,8 +32,10 @@ defmodule Rail.Issues.Workers.AdvanceLinearState do
 
   # The target comes from where the task is now, not from when the job was queued,
   # so jobs for one issue that run together all aim at the same status.
-  defp advance(%Issue{project: %Project{} = project, task: %Task{stage: stage} = task} = issue)
-       when stage in [:product, :design, :architect, :engineer, :review, :qa, :demo] do
+  defp advance(
+         %Issue{owner_user_id: owner_user_id, project: %Project{} = project, task: %Task{stage: stage} = task} = issue
+       )
+       when is_binary(owner_user_id) and stage in [:product, :design, :architect, :engineer, :review, :qa, :demo] do
     with {:ok, %{"issue" => %{"state" => current, "team" => %{"states" => %{"nodes" => states}}}}} <-
            Linear.issue_workflow(project, issue.external_id) do
       # In Progress and In Review share Linear's "started" type, so In Review can

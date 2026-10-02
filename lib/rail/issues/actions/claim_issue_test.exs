@@ -4,6 +4,7 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
+  alias Rail.Issues.Workers.AdvanceLinearState
   alias Rail.Issues.Workers.SyncIssue
   alias Rail.Scope
   alias Rail.Users
@@ -34,6 +35,12 @@ defmodule Rail.Issues.Actions.ClaimIssueTest do
   test "makes the user the owner and tells Linear", %{issue: issue, claimer: %{id: claimer_id} = claimer} do
     assert {:ok, %Issue{owner_user_id: ^claimer_id}} = Issues.claim_issue(Scope.for_user(claimer), issue)
     assert_enqueued(worker: SyncIssue, args: %{issue_id: issue.id, fields: ["owner_user_id"]})
+  end
+
+  test "queues the move that catches the ticket's Linear status up", %{issue: issue, claimer: claimer} do
+    {:ok, _claimed} = Issues.claim_issue(Scope.for_user(claimer), issue)
+
+    assert_enqueued(worker: AdvanceLinearState, args: %{issue_id: issue.id})
   end
 
   test "refuses an issue somebody claimed since it was read", %{issue: issue, claimer: claimer, rival: rival} do
