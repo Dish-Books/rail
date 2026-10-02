@@ -70,7 +70,7 @@ The worktree's database starts with little or nothing in it. Build what each che
 - **Records**: through the contexts where you can, and with `Repo.insert!` the way
   `lib/test_helper.exs` does where you cannot. Issues go in through `Issue.linear_changeset`, with
   no Linear call. A project's `clone_path` must be a git repo: `git init` one under `<scratch>`,
-  with a local bare repo as its `origin` when the check pushes or rebases.
+  with a local bare repo as its `origin` when the check pushes or merges.
 - **Linear, GitHub and Slack**: never the real ones. Fake each over rpc with
   `Application.put_env(:rail, :linear | :github | :slack, req_options: [plug: fun])`. For GitHub,
   keep `app_id` and `private_key: "test/support/fixtures/github_app.pem"` in the list, since
@@ -111,7 +111,7 @@ Sources, in order:
 - **Twice.** Double click, double submit, two tabs acting at once, an action that auto-advances to
   the next item. The second one does nothing harmful, and nothing is posted to GitHub, Linear or
   Slack twice.
-- **Interruptions.** Leaving the page mid-action (a commit, a push, a rebase), back button, refresh
+- **Interruptions.** Leaving the page mid-action (a commit, a push, a branch update), back button, refresh
   mid-flow, Escape and cancel, an unsaved answer navigated away from.
 - **Whose work it is.** All projects against one project, the project switcher surviving a
   reload, an unknown project or task id in the URL, My work against Everyone. "Waiting on you" is

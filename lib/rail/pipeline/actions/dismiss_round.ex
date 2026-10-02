@@ -41,7 +41,7 @@ defmodule Rail.Pipeline.Actions.DismissRound do
           set: [delivered_at: now, updated_at: now]
         )
 
-        # A run something else already resumed, such as a rebase, is not this round's to stop.
+        # A run something else already resumed, such as a merge of its base branch, is not this round's to stop.
         case Repo.get!(Run, run.id) do
           %Run{status: :blocked_on_input} = parked -> parked |> Run.changeset(%{status: :finished}) |> Repo.update!()
           %Run{} = moved_on -> moved_on

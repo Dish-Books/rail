@@ -3,7 +3,7 @@ defmodule Rail.Pipeline.Schemas.Run do
   Schema for one role's execution on a task: the unit a user calls a run.
 
   A run outlives the OS processes that carry it out (see OsProcess) -- retries,
-  chat turns and rebases each spawn a new one against the same conversation -- and
+  chat turns and branch updates each spawn a new one against the same conversation -- and
   owns the whole RunEvent log.
   """
   use Rail.Schema

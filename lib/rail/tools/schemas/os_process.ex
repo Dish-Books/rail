@@ -2,7 +2,7 @@ defmodule Rail.Tools.Schemas.OsProcess do
   @moduledoc """
   Schema for one OS process executing an agent run.
 
-  A run spawns a new OS process for each attempt, each message, and each rebase.
+  A run spawns a new OS process for each attempt, each message, and each branch update.
   They are all the same thing: `run_finished/3` settles every one of them the
   same way, from the row the spawn wrote.
   """

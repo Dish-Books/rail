@@ -6,9 +6,9 @@ defmodule Rail.Git.Actions.PushBranch do
   than passed in: a token is not something a caller should be holding, and the
   installation is what keeps a branch pushable after whoever was assigned leaves.
 
-  Forced, because a rebased branch no longer extends what the remote has, but
-  only over what Rail has itself seen and built on: a push made outside Rail is
-  refused rather than overwritten.
+  Never forced: Rail only ever adds to a branch, merging its base in rather than
+  rebasing onto it, so a push that does not extend what the remote has is one
+  made outside Rail, and is refused rather than overwritten.
 
   The repository's own pre-push hooks run. A project whose CI runs before Rail
   pushes leaves a record a hook can recognise, so they should cost nothing; one
@@ -29,20 +29,12 @@ defmodule Rail.Git.Actions.PushBranch do
   """
   def push_branch(%Scope{}, %Task{} = task) do
     with {:ok, env} <- Git.credential_env(Repo.get!(Project, task.project_id)) do
-      case push(task.worktree_path, task.worktree_name, env) do
-        {:error, "" <> output} = refused ->
-          if output =~ "(stale info)" and own_push?(task.worktree_path, task.worktree_name, env),
-            do: push(task.worktree_path, task.worktree_name, env),
-            else: refused
-
-        pushed_or_failed ->
-          pushed_or_failed
-      end
+      push(task.worktree_path, task.worktree_name, env)
     end
   end
 
   defp push(worktree_path, branch, env) do
-    case Tools.run("git", ["push", "--force-with-lease", "--force-if-includes", "--set-upstream", "origin", branch],
+    case Tools.run("git", ["push", "--set-upstream", "origin", branch],
            cd: worktree_path,
            env: env,
            stderr_to_stdout: true,
@@ -54,22 +46,6 @@ defmodule Rail.Git.Actions.PushBranch do
       {output, code} when is_binary(output) and is_integer(code) -> {:error, String.trim(output)}
       # coveralls-ignore-next-line (git itself could not be started)
       {:error, reason} -> {:error, reason}
-    end
-  end
-
-  # A push cut off after the remote took it never wrote the tracking ref, so the
-  # lease cannot match again. A remote holding only what HEAD has was Rail's push.
-  defp own_push?(worktree_path, branch, env) do
-    with {_fetched, 0} <-
-           Tools.run("git", ["fetch", "origin", branch], cd: worktree_path, env: env, stderr_to_stdout: true),
-         {_contained, 0} <-
-           Tools.run("git", ["merge-base", "--is-ancestor", "origin/#{branch}", "HEAD"],
-             cd: worktree_path,
-             stderr_to_stdout: true
-           ) do
-      true
-    else
-      _not_ours -> false
     end
   end
 end

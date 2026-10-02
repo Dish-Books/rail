@@ -191,7 +191,7 @@ defmodule Rail.Git.Utils.ParseDiffTest do
   end
 
   # The digest is what a viewed mark is pinned to, so it has to ignore what a
-  # rebase rewrites and notice what a code change does.
+  # merge or rebase rewrites and notice what a code change does.
   test "the digest ignores index lines and follows the hunks" do
     with_index = """
     diff --git a/lib/x.ex b/lib/x.ex

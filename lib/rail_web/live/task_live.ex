@@ -138,7 +138,7 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
+            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
@@ -168,7 +168,7 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
+            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
@@ -198,7 +198,7 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
+            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
@@ -230,7 +230,7 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
+            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
@@ -262,7 +262,7 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
+            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
@@ -293,7 +293,7 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
+            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
@@ -324,7 +324,7 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
+            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <:sidebar>
@@ -353,7 +353,7 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
+            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <.issue_view
@@ -376,7 +376,7 @@ defmodule RailWeb.TaskLive do
           <:tabs><.task_tabs tabs={@tabs} /></:tabs>
           <:actions>
             <.claim_button task={@task} />
-            <.rebase_button task={@task} engineer_tab={@engineer_tab} />
+            <.update_branch_button task={@task} engineer_tab={@engineer_tab} />
             <.cleanup_button task={@task} cleaning_up={@cleaning_up} />
           </:actions>
           <div
@@ -498,14 +498,14 @@ defmodule RailWeb.TaskLive do
     {:noreply, refresh_task(socket)}
   end
 
-  def handle_event("rebase", _params, socket) do
+  def handle_event("update_branch", _params, socket) do
     socket =
-      case Pipeline.rebase_task(socket.assigns.current_scope, socket.assigns.task) do
+      case Pipeline.update_branch(socket.assigns.current_scope, socket.assigns.task) do
         {:ok, _task} -> socket
-        {:error, reason} -> put_flash(socket, :error, rebase_error(reason))
+        {:error, reason} -> put_flash(socket, :error, update_branch_error(reason))
       end
 
-    # The rebase is the engineer's work, and its tab is where it shows.
+    # The merge is the engineer's work, and its tab is where it shows.
     {:noreply, push_patch(socket, to: ~p"/tasks/#{socket.assigns.task_id}?tab=#{socket.assigns.engineer_tab}")}
   end
 
@@ -632,22 +632,22 @@ defmodule RailWeb.TaskLive do
   attr :task, :any, required: true
   attr :engineer_tab, :any, required: true
 
-  # Only a branch the engineer has built has anything to rebase, and only a task
-  # nothing is working on can be rebased under it.
-  defp rebase_button(assigns) do
+  # Only a branch the engineer has built has anything to merge into, and only a
+  # task nothing is working on can have its branch updated under it.
+  defp update_branch_button(assigns) do
     ~H"""
     <button
       :if={@task.cleaned_up_at == nil and @engineer_tab != nil}
       type="button"
-      id="rebase-task"
-      data-qa="rebase_task"
-      phx-click="rebase"
-      phx-disable-with="Rebasing…"
+      id="update-branch"
+      data-qa="update_branch"
+      phx-click="update_branch"
+      phx-disable-with="Updating…"
       disabled={Task.running?(@task)}
-      title={"Rebase onto origin/#{@task.project.default_branch}"}
+      title={"Merge origin/#{@task.project.default_branch} into this branch"}
       class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
     >
-      {if @task.is_rebasing and Task.running?(@task), do: "Rebasing…", else: "Rebase"}
+      {if @task.is_updating_branch and Task.running?(@task), do: "Updating…", else: "Update branch"}
     </button>
     """
   end
@@ -1056,9 +1056,9 @@ defmodule RailWeb.TaskLive do
   defp claim_error(:already_assigned), do: "Somebody else claimed this issue first"
   defp claim_error(:linear_not_linked), do: "Link your Linear account in Settings before claiming an issue"
 
-  defp rebase_error(:task_busy), do: "Stop the task's run before rebasing it"
-  defp rebase_error(:uncommitted_changes), do: "Commit the engineer's work before rebasing it"
-  defp rebase_error(:no_worktree), do: "The task's worktree is gone, so there is nothing to rebase"
-  defp rebase_error(reason) when is_binary(reason), do: "Could not rebase: #{reason}"
-  defp rebase_error(reason), do: "Could not rebase: #{inspect(reason)}"
+  defp update_branch_error(:task_busy), do: "Stop the task's run before updating its branch"
+  defp update_branch_error(:uncommitted_changes), do: "Commit the engineer's work before updating the branch"
+  defp update_branch_error(:no_worktree), do: "The task's worktree is gone, so there is nothing to update"
+  defp update_branch_error(reason) when is_binary(reason), do: "Could not update the branch: #{reason}"
+  defp update_branch_error(reason), do: "Could not update the branch: #{inspect(reason)}"
 end

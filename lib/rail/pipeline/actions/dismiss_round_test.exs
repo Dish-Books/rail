@@ -90,7 +90,7 @@ defmodule Rail.Pipeline.Actions.DismissRoundTest do
     {:ok, question} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Rebase onto main?"})
     {:ok, _dismissed} = Pipeline.dismiss_question(question)
 
-    # A rebase resumes the run without anyone answering what it asked.
+    # Updating the branch resumes the run without anyone answering what it asked.
     {:ok, resumed} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :running})
 
     assert {:ok, %Run{status: :running}} = resumed |> Repo.preload(:role) |> Pipeline.dismiss_round()

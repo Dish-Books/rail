@@ -42,8 +42,8 @@ defmodule Rail.Pipeline.Schemas.Task do
     field :pr_number, :integer
     field :pr_url, :string
     field :pr_is_draft, :boolean
-    # The engineer has been asked to rebase onto the default branch and has not yet.
-    field :is_rebasing, :boolean, default: false
+    # The default branch is being merged in, and has stopped on conflicts or not yet been sent on.
+    field :is_updating_branch, :boolean, default: false
     # A person settled the demo stage as not needed rather than recording one.
     field :demo_skipped_at, :utc_datetime_usec
 
@@ -71,7 +71,7 @@ defmodule Rail.Pipeline.Schemas.Task do
     :pr_number,
     :pr_url,
     :pr_is_draft,
-    :is_rebasing,
+    :is_updating_branch,
     :demo_skipped_at
   ]
 

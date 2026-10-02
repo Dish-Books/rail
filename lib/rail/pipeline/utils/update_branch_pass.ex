@@ -1,13 +1,13 @@
-defmodule Rail.Pipeline.Utils.RebasePass do
+defmodule Rail.Pipeline.Utils.UpdateBranchPass do
   @moduledoc """
-  One pass of rebasing a task's branch onto its default branch: Rail rebases, or
-  carries on the rebase already under way, and what comes of it decides what next.
+  One pass of merging the default branch into a task's branch: Rail merges, or
+  carries on the merge already under way, and what comes of it decides what next.
 
   Going through cleanly sends the branch on as any finished round is, through CI
   or pushed. Stopping on conflicts hands them to the engineer, who resolves and
-  stages them and nothing more, so that Rail's `--continue` signs every commit.
+  stages them and nothing more, so that Rail's `--continue` signs the merge.
   Each pass says in the engineer's log what it did and what it asked for.
-  A rebase that rewrites the branch sends a task past Engineer back there.
+  A merge that brings anything in sends a task past Engineer back there.
   """
 
   import Rail.Pipeline.Utils.ReturnToEngineer
@@ -22,16 +22,16 @@ defmodule Rail.Pipeline.Utils.RebasePass do
   alias Rail.Scope
 
   @doc """
-  Runs a rebase pass on the engineer's `run`. Returns `{:ok, run}` as the pass left
+  Runs a merge pass on the engineer's `run`. Returns `{:ok, run}` as the pass left
   it, or `{:error, reason}`.
   """
-  def rebase_pass(%Scope{} = scope, %Run{task: %Task{} = task} = run) do
+  def update_branch_pass(%Scope{} = scope, %Run{task: %Task{} = task} = run) do
     %Project{default_branch: base} = Repo.get!(Project, task.project_id)
     head_sha = Git.branch_fingerprint(task.worktree_path)[:head_sha]
 
-    case Git.rebase_branch(scope, task) do
+    case Git.merge_default_branch(scope, task) do
       :ok ->
-        say(run, "Rebased onto origin/#{base}.")
+        say(run, "Merged origin/#{base} in.")
 
         # A branch already up to date keeps its HEAD, and has nothing new to review.
         {:ok, task} =
@@ -44,14 +44,14 @@ defmodule Rail.Pipeline.Utils.RebasePass do
       {:conflicts, files} ->
         say(
           run,
-          "Rebase onto origin/#{base} stopped on conflicts in #{Enum.join(files, ", ")}. Asked the engineer to resolve them."
+          "Merging origin/#{base} in stopped on conflicts in #{Enum.join(files, ", ")}. Asked the engineer to resolve them."
         )
 
         {:ok, task} = return_to_engineer(task)
         resolve(%{run | task: task}, base, files)
 
       {:error, reason} ->
-        say(run, "Rebase onto origin/#{base} failed.")
+        say(run, "Merging origin/#{base} in failed.")
         {:error, reason}
     end
   end
@@ -59,7 +59,7 @@ defmodule Rail.Pipeline.Utils.RebasePass do
   defp say(%Run{id: run_id}, line), do: Pipeline.append_run_events(run_id, nil, ["[rail] #{line}"])
 
   defp send_on(%Run{task: %Task{} = task} = run) do
-    {:ok, task} = task |> Task.changeset(%{is_rebasing: false}) |> Repo.update()
+    {:ok, task} = task |> Task.changeset(%{is_updating_branch: false}) |> Repo.update()
 
     # CI that fails sends the engineer a round to fix, so the stage is open again.
     {:ok, open} = run |> Run.changeset(%{stage_outcome: :in_progress, ci_failure_streak: 0}) |> Repo.update()
@@ -74,7 +74,7 @@ defmodule Rail.Pipeline.Utils.RebasePass do
   end
 
   defp resolve(%Run{task: %Task{} = task} = run, base, files) do
-    {:ok, task} = task |> Task.changeset(%{is_rebasing: true}) |> Repo.update()
+    {:ok, task} = task |> Task.changeset(%{is_updating_branch: true}) |> Repo.update()
     attrs = %{pending_answer: brief(base, files), status: :running, error: nil, exit_code: nil}
     {:ok, briefed} = run |> Run.changeset(attrs) |> Repo.update()
     # Each turn's system prompt is the one it is spawned with, so it is read as the repo has it now.
@@ -89,11 +89,11 @@ defmodule Rail.Pipeline.Utils.RebasePass do
 
   defp brief(base, files) do
     """
-    Rail rebased this branch onto origin/#{base}, and it stopped on conflicts in:
+    Rail merged origin/#{base} into this branch, and it stopped on conflicts in:
 
     #{Enum.map_join(files, "\n", &"- #{&1}")}
 
-    Resolve each the way both sides meant it, then `git add` it. That is the only git you run: no commit, no `git rebase --continue` or `--abort`. Rail continues the rebase once you stop, and comes back to you if the next commit conflicts too.
+    Each conflict shows the branch's side, what the file was before either side changed it, and origin/#{base}'s side. `git log origin/#{base}..HEAD` shows what this branch set out to do, and `git log HEAD..origin/#{base}` what landed on #{base} since. Resolve each the way both sides meant it, then `git add` it. That is the only git you run: no commit, no `git merge --continue` or `--abort`. Rail commits the merge once you stop.
     """
   end
 end

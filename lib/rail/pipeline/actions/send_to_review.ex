@@ -50,7 +50,7 @@ defmodule Rail.Pipeline.Actions.SendToReview do
   end
 
   # A task that has moved on past engineer goes back to review only for what the
-  # engineer has changed since, such as a rebase it resolved or a fix asked for.
+  # engineer has changed since, such as a merge it resolved or a fix asked for.
   defp sendable(%Task{stage: stage}) when stage not in [:engineer, :review, :qa, :demo],
     do: {:error, {:invalid_stage, stage}}
 

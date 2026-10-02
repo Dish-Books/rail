@@ -376,7 +376,7 @@ defmodule RailWeb.TaskLiveTest do
     parked = Repo.preload(run, task: :issue)
     {:ok, question} = Pipeline.register_question(parked, %DetectedQuestion{prompt: "Rebase onto main?"})
 
-    # A rebase resumes the run without anyone answering what it asked.
+    # Updating the branch resumes the run without anyone answering what it asked.
     {:ok, _resumed} = run |> Repo.reload!() |> Pipeline.update_run(%{status: :finished})
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
@@ -1595,13 +1595,13 @@ defmodule RailWeb.TaskLiveTest do
       refute has_element?(view, "#task-pull-request", "Draft")
     end
 
-    test "rebase hands conflicts to the engineer and says it is rebasing", %{
+    test "updating the branch hands conflicts to the engineer and says it is updating", %{
       conn: conn,
       task: task,
       engineer_run: run
     } do
       expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
-      expect(Git, :rebase_branch, fn _scope, _task -> {:conflicts, ["shipped.ex"]} end)
+      expect(Git, :merge_default_branch, fn _scope, _task -> {:conflicts, ["shipped.ex"]} end)
 
       expect(Tools, :start_os_process, fn spawned, ["-p", prompt | _rest] ->
         assert prompt =~ "- shipped.ex"
@@ -1609,18 +1609,18 @@ defmodule RailWeb.TaskLiveTest do
       end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      assert has_element?(view, "#rebase-task[title='Rebase onto origin/main']", "Rebase")
-      assert has_element?(view, "#rebase-task[phx-disable-with='Rebasing…']")
+      assert has_element?(view, "#update-branch[title='Merge origin/main into this branch']", "Update branch")
+      assert has_element?(view, "#update-branch[phx-disable-with='Updating…']")
 
-      view |> element("#rebase-task") |> render_click()
+      view |> element("#update-branch") |> render_click()
 
       assert_patch(view, ~p"/tasks/#{task.id}?tab=#{run.role_id}")
-      assert %Task{is_rebasing: true} = Repo.reload!(task)
+      assert %Task{is_updating_branch: true} = Repo.reload!(task)
       assert %Run{status: :running} = Repo.reload!(run)
-      assert has_element?(view, "#rebase-task[disabled]", "Rebasing…")
+      assert has_element?(view, "#update-branch[disabled]", "Updating…")
     end
 
-    test "a clean rebase of a task at QA brings it back to engineer, ready to send to review", %{
+    test "a clean merge into a task at QA brings it back to engineer, ready to send to review", %{
       conn: conn,
       task: task,
       repo: repo
@@ -1628,8 +1628,8 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, task} = Pipeline.update_task(task, %{stage: :qa})
       expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
 
-      expect(Git, :rebase_branch, fn _scope, _task ->
-        git!(repo, ["commit", "--allow-empty", "-m", "replayed onto main"])
+      expect(Git, :merge_default_branch, fn _scope, _task ->
+        git!(repo, ["commit", "--allow-empty", "-m", "merged main in"])
         :ok
       end)
 
@@ -1641,43 +1641,48 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "[data-qa='task_status_chip']", "Queued for QA")
 
-      view |> element("#rebase-task") |> render_click()
+      view |> element("#update-branch") |> render_click()
 
       assert has_element?(view, "[data-qa='task_status_chip']", "Review the diff")
       assert has_element?(view, "[data-qa='send_to_review']:not([disabled])")
     end
 
-    test "rebase says why for each way it can be refused", %{conn: conn, task: task, engineer_run: run, repo: repo} do
+    test "updating the branch says why for each way it can be refused", %{
+      conn: conn,
+      task: task,
+      engineer_run: run,
+      repo: repo
+    } do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
       expect(Git, :fetch_default_branch, fn _project, _path -> {:error, "could not read from remote"} end)
-      view |> element("#rebase-task") |> render_click()
-      assert render(view) =~ "Could not rebase: could not read from remote"
+      view |> element("#update-branch") |> render_click()
+      assert render(view) =~ "Could not update the branch: could not read from remote"
 
       expect(Git, :fetch_default_branch, fn _project, _path -> :ok end)
-      expect(Git, :rebase_branch, fn _scope, _task -> {:conflicts, ["shipped.ex"]} end)
+      expect(Git, :merge_default_branch, fn _scope, _task -> {:conflicts, ["shipped.ex"]} end)
       expect(Tools, :start_os_process, fn _spawned, _argv -> {:error, :dispatch_disabled} end)
-      view |> element("#rebase-task") |> render_click()
-      assert render(view) =~ "Could not rebase: :dispatch_disabled"
+      view |> element("#update-branch") |> render_click()
+      assert render(view) =~ "Could not update the branch: :dispatch_disabled"
 
       {:ok, running} = Pipeline.update_run(Repo.reload!(run), %{status: :running})
-      render_click(view, "rebase", %{})
-      assert render(view) =~ "Stop the task&#39;s run before rebasing it"
+      render_click(view, "update_branch", %{})
+      assert render(view) =~ "Stop the task&#39;s run before updating its branch"
 
       {:ok, _idle} = Pipeline.update_run(running, %{status: :finished})
       File.rm_rf!(repo)
-      render_click(view, "rebase", %{})
-      assert render(view) =~ "The task&#39;s worktree is gone, so there is nothing to rebase"
+      render_click(view, "update_branch", %{})
+      assert render(view) =~ "The task&#39;s worktree is gone, so there is nothing to update"
     end
 
-    test "rebase says why when the branch cannot be handed back", %{conn: conn, task: task, repo: repo} do
+    test "updating the branch says why when the branch cannot be handed back", %{conn: conn, task: task, repo: repo} do
       File.write!(Path.join(repo, "wip.ex"), "uncommitted\n")
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
-      view |> element("#rebase-task") |> render_click()
+      view |> element("#update-branch") |> render_click()
 
-      assert render(view) =~ "Commit the engineer&#39;s work before rebasing it"
-      assert has_element?(view, "#rebase-task:not([disabled])", "Rebase")
+      assert render(view) =~ "Commit the engineer&#39;s work before updating the branch"
+      assert has_element?(view, "#update-branch:not([disabled])", "Update branch")
     end
 
     test "a task past engineer offers review again for what the engineer changed since", %{

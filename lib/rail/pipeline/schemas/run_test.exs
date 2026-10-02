@@ -56,7 +56,7 @@ defmodule Rail.Pipeline.Schemas.RunTest do
     assert "is already set and cannot be changed" in errors_on(changeset).conversation_id
   end
 
-  # A run waiting in line for its sandbox is in flight: nothing may approve, rebase or
+  # A run waiting in line for its sandbox is in flight: nothing may approve, update the branch or
   # clean up under it, and a message typed now waits for it.
   test "running?/1 is true for a run that is executing or waiting for resources" do
     assert Run.running?(%Run{status: :running})
