@@ -11,17 +11,16 @@
 export const DemoCaptions = {
   mounted() {
     this.beats = JSON.parse(this.el.dataset.beats || "[]");
-    this.video = this.el.querySelector("video");
     this.caption = this.el.querySelector("#demo-caption");
 
-    // A video LiveView patched in was loaded inside its inert template document and
-    // arrives with no source, which Safari never recovers from, so load it again here.
-    if (
-      this.video.readyState === HTMLMediaElement.HAVE_NOTHING &&
-      this.video.networkState !== HTMLMediaElement.NETWORK_LOADING
-    ) {
-      this.video.load();
-    }
+    // LiveView builds what it patches in inside an inert template document, and a
+    // video born there plays black in Safari even once it is moved and reloaded. So
+    // the rendered one carries no source and is swapped for one made in this page.
+    const rendered = this.el.querySelector("video");
+    this.video = document.createElement("video");
+    for (const { name, value } of rendered.attributes) this.video.setAttribute(name, value);
+    this.video.src = rendered.dataset.src;
+    rendered.replaceWith(this.video);
 
     this.onTime = () => this.paint(this.video.currentTime * 1000);
     this.video.addEventListener("timeupdate", this.onTime);

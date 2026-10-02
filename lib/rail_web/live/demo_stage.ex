@@ -198,7 +198,7 @@ defmodule RailWeb.Live.DemoStage do
           data-qa="demo_video"
           controls
           preload="metadata"
-          src={~p"/tasks/#{@task.id}/demo/video"}
+          data-src={~p"/tasks/#{@task.id}/demo/video"}
           class="block w-full aspect-video bg-slate-900"
         />
 

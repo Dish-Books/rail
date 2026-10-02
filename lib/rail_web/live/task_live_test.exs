@@ -5226,7 +5226,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-qa='demo_title']", "Bills can be filtered by vendor")
       assert has_element?(view, "[data-qa='demo_summary']", "narrowing the list as you type")
-      assert has_element?(view, "#demo-video[src='/tasks/#{task.id}/demo/video']")
+      assert has_element?(view, "#demo-video[data-src='/tasks/#{task.id}/demo/video']")
       assert has_element?(view, "[data-qa='demo_not_shown']", "The Plaid callback")
 
       assert has_element?(view, "#demo-beat-0", "Starting on the invoice index")
@@ -5238,8 +5238,8 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#demo-beat-5200", "0:05")
     end
 
-    # A player LiveView patches in is loaded again by its hook, so every way to the
-    # tab without a reload must bring the same hooked, sourced video a reload does.
+    # The hook builds the playing video from the rendered one's data-src, so every
+    # way to the tab without a reload must bring the same hooked placeholder a reload does.
     test "a recorded demo reached from another tab renders its player", %{
       conn: conn,
       task: task,
@@ -5253,7 +5253,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(
                view,
-               "#demo-video-frame[phx-hook='DemoCaptions'][phx-update='ignore'] #demo-video[src='/tasks/#{task.id}/demo/video']"
+               "#demo-video-frame[phx-hook='DemoCaptions'][phx-update='ignore'] #demo-video[data-src='/tasks/#{task.id}/demo/video']"
              )
     end
 
@@ -5269,7 +5269,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(
                view,
-               "#demo-video-frame[phx-hook='DemoCaptions'][phx-update='ignore'] #demo-video[src='/tasks/#{task.id}/demo/video']"
+               "#demo-video-frame[phx-hook='DemoCaptions'][phx-update='ignore'] #demo-video[data-src='/tasks/#{task.id}/demo/video']"
              )
     end
 
@@ -5288,7 +5288,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert has_element?(
                view,
-               "#demo-video-frame[phx-hook='DemoCaptions'][phx-update='ignore'] #demo-video[src='/tasks/#{task.id}/demo/video']"
+               "#demo-video-frame[phx-hook='DemoCaptions'][phx-update='ignore'] #demo-video[data-src='/tasks/#{task.id}/demo/video']"
              )
     end
 
