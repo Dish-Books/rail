@@ -309,6 +309,49 @@ defmodule RailWeb.Components.AnswerFieldTest do
     assert html =~ "Save or cancel your change first"
   end
 
+  test "every tab, chip, button and the form send to the target they are given, and to the page without one" do
+    open = %Question{id: "qst_1", prompt: "Which database?", status: :pending, options: ["Postgres", "MySQL"]}
+    answered = %Question{id: "qst_2", prompt: "Ship behind a flag?", status: :answered, answer: "Yes", options: []}
+    dismissed = %Question{id: "qst_3", prompt: "Who reviews it?", status: :dismissed, options: []}
+
+    rounds = [
+      [question: open, questions: [open, answered]],
+      [question: answered, questions: [open, answered]],
+      [question: answered, questions: [open, answered], changing_answer: true],
+      [question: dismissed, questions: [dismissed]]
+    ]
+
+    targeted =
+      Enum.flat_map(rounds, fn round ->
+        (&AnswerField.answer_field/1)
+        |> render_component([role_name: "Product", target: "#question-card"] ++ round)
+        |> Floki.parse_fragment!()
+        |> Floki.find("[phx-click], [phx-submit]")
+      end)
+
+    assert targeted |> Enum.flat_map(&Floki.attribute(&1, "phx-target")) |> Enum.uniq() == ["#question-card"]
+    assert length(Floki.attribute(targeted, "phx-target")) == length(targeted)
+
+    assert targeted
+           |> Enum.flat_map(&(Floki.attribute(&1, "phx-click") ++ Floki.attribute(&1, "phx-submit")))
+           |> Enum.uniq()
+           |> Enum.sort() ==
+             [
+               "answer_question",
+               "cancel_answer",
+               "change_answer",
+               "dismiss_question",
+               "dismiss_round",
+               "select_option",
+               "select_question",
+               "send_answers"
+             ]
+
+    for round <- rounds do
+      refute render_component(&AnswerField.answer_field/1, [role_name: "Product"] ++ round) =~ "phx-target"
+    end
+  end
+
   test "the tab strip scrolls sideways only, and keeps the selected tab in view" do
     questions = [
       %Question{id: "qst_1", prompt: "Which database?", options: []},
