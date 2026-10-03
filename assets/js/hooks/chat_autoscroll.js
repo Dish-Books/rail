@@ -1,5 +1,5 @@
-// Safari can drop the offset of a patched or resized scroller, so the reader's
-// place, taken only from their own scrolling, is put back after both.
+// Safari can throw a patched or resized scroller back to the top, so the reader's
+// place, taken only from their own scrolling, is put back after a reset to the top.
 export const ChatAutoscroll = {
   mounted() {
     this.follow = true;
@@ -8,7 +8,8 @@ export const ChatAutoscroll = {
 
     this.onScroll = () => {
       const distance = this.el.scrollHeight - this.el.scrollTop - this.el.clientHeight;
-      this.follow = distance <= 40;
+      // A clamp moves the offset up, so only moving down to the end turns following on.
+      this.follow = distance <= 40 && (this.follow || this.el.scrollTop > this.place);
       this.place = this.el.scrollTop;
     };
 
@@ -35,7 +36,7 @@ export const ChatAutoscroll = {
   restore() {
     if (this.follow && this.el.dataset.autoscroll !== "false") {
       this.scrollToBottom();
-    } else if (this.el.scrollTop !== this.place) {
+    } else if (this.el.scrollTop === 0 && this.place > 0) {
       this.el.scrollTop = this.place;
     }
   },
