@@ -20,6 +20,7 @@
     "lib/rail_web/router.ex",
     "lib/rail_web/gettext.ex",
     "lib/mix",
+    "deps/",
     "test/"
   ]
 }
