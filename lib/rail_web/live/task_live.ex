@@ -15,6 +15,8 @@ defmodule RailWeb.TaskLive do
   """
   use RailWeb, :live_view
 
+  import RailWeb.Utils.HandleIssueEvent
+
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -44,6 +46,9 @@ defmodule RailWeb.TaskLive do
   @frame_interval_ms 250
 
   @issue_tab "issue"
+
+  # What the Issue tab's owner menu and comments raise, handled as the issue page handles them.
+  @issue_events ["assign", "filter_assignees", "draft_comment", "comment"]
 
   def mount(_params, _session, socket) do
     socket =
@@ -376,6 +381,10 @@ defmodule RailWeb.TaskLive do
       </div>
     </Layouts.app>
     """
+  end
+
+  def handle_event(event, params, socket) when event in @issue_events do
+    {:noreply, handle_issue_event(event, params, socket, &refresh_task/1)}
   end
 
   def handle_event("select_tab", %{"tab" => tab}, socket) do

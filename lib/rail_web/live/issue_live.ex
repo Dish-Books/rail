@@ -7,11 +7,15 @@ defmodule RailWeb.IssueLive do
   """
   use RailWeb, :live_view
 
+  import RailWeb.Utils.HandleIssueEvent
+
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
   alias Rail.Scope
   alias Rail.Users
+
+  @issue_events ["assign", "filter_assignees", "draft_comment", "comment"]
 
   def mount(_params, _session, socket) do
     if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
@@ -67,32 +71,8 @@ defmodule RailWeb.IssueLive do
     end
   end
 
-  def handle_event("filter_assignees", %{"q" => query}, socket) do
-    {:noreply, assign(socket, :assignee_query, query)}
-  end
-
-  def handle_event("assign", %{"user_id" => ""}, socket) do
-    {:noreply, assign_owner(socket, nil)}
-  end
-
-  # Only a user with a linked Linear account can be assigned, since Linear has to
-  # be told who they are.
-  def handle_event("assign", %{"user_id" => user_id}, socket) do
-    if Enum.any?(socket.assigns.assignees, &(&1.id == user_id)) do
-      {:noreply, assign_owner(socket, user_id)}
-    else
-      {:noreply, socket}
-    end
-  end
-
-  # A draft lives in its textarea until it is sent.
-  def handle_event("draft_comment", _params, socket), do: {:noreply, socket}
-
-  def handle_event("comment", %{"body" => body} = params, socket) do
-    case String.trim(body) do
-      "" -> {:noreply, socket}
-      body -> {:noreply, post_comment(socket, %{body: body, parent_id: params["parent_id"]})}
-    end
+  def handle_event(event, params, socket) when event in @issue_events do
+    {:noreply, handle_issue_event(event, params, socket, &load_issue(&1, &1.assigns.issue.id))}
   end
 
   # A sync may have changed what Linear says about this issue.
@@ -116,20 +96,6 @@ defmodule RailWeb.IssueLive do
   def handle_info({:issue_changed, _other_issue_id}, socket), do: {:noreply, socket}
 
   def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, socket}
-
-  defp assign_owner(%{assigns: %{issue: issue}} = socket, owner_user_id) do
-    case Issues.update_issue(issue, %{owner_user_id: owner_user_id}) do
-      {:ok, _issue} -> socket |> assign(:assignee_query, "") |> load_issue(issue.id)
-      {:error, _changeset} -> put_flash(socket, :error, "Could not change the assignee")
-    end
-  end
-
-  defp post_comment(%{assigns: %{issue: issue, current_scope: scope}} = socket, attrs) do
-    case Issues.comment(scope, issue, attrs) do
-      {:ok, _comment} -> socket |> update(:comment_nonce, &(&1 + 1)) |> load_issue(issue.id)
-      {:error, _reason} -> put_flash(socket, :error, "Could not post the comment")
-    end
-  end
 
   defp load_issue(socket, id) do
     preload = [:project, :owner_user, task: [runs: :role], comments: [:author_user, replies: :author_user]]

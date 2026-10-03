@@ -898,6 +898,69 @@ defmodule RailWeb.TaskLiveTest do
     refute has_element?(view, "#issue-assign-#{elsewhere.id}")
   end
 
+  test "the Issue tab changes the owner and posts comments, as the issue page does", %{
+    conn: conn,
+    task: task,
+    project: project
+  } do
+    {:ok, %{id: teammate_id} = teammate} =
+      Users.register_oauth_user(%{github_id: "gh_tab_owner", login: "tab_owner", name: "Paulo Tab", email: "tab@x.io"})
+
+    teammate |> Ecto.Changeset.change(linear_user_id: "lin_tab_owner", project_ids: [project.id]) |> Repo.update!()
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}?tab=issue")
+    Req.Test.allow(Rail.Linear, self(), view.pid)
+
+    view |> element("#issue-owner-search-form") |> render_change(%{"q" => "nobody"})
+    refute has_element?(view, "#issue-assign-#{teammate_id}")
+
+    view |> element("#issue-owner-search-form") |> render_change(%{"q" => "paulo"})
+    view |> element("#issue-assign-#{teammate_id}") |> render_click()
+
+    assert has_element?(view, "#issue-owner", "Paulo Tab")
+    assert %Issue{owner_user_id: ^teammate_id} = Repo.get!(Issue, task.issue_id)
+
+    view |> element("#issue-assign-none") |> render_click()
+    assert %Issue{owner_user_id: nil} = Repo.get!(Issue, task.issue_id)
+
+    # Someone the menu does not offer cannot be assigned by a crafted event.
+    render_click(view, "assign", %{"user_id" => "usr_not_offered"})
+    assert %Issue{owner_user_id: nil} = Repo.get!(Issue, task.issue_id)
+
+    view |> element("#issue-comment-form") |> render_change(%{"body" => "draft"})
+
+    Req.Test.expect(Rail.Linear, fn conn ->
+      Req.Test.json(conn, %{
+        "data" => %{
+          "commentCreate" => %{
+            "success" => true,
+            "comment" => %{"id" => "lin_tab_comment", "body" => "From the task", "issue" => %{"id" => "lin_task_live_1"}}
+          }
+        }
+      })
+    end)
+
+    view |> element("#issue-comment-form") |> render_submit(%{"body" => "From the task"})
+
+    assert has_element?(view, "#issue-comments", "From the task")
+    assert has_element?(view, "#task-page")
+  end
+
+  test "a tab with no issue loaded changes nothing on an owner or comment event", %{
+    conn: conn,
+    task: task,
+    scope: scope
+  } do
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    refute has_element?(view, "#issue-page")
+
+    render_click(view, "assign", %{"user_id" => scope.user.id})
+    render_submit(view, "comment", %{"body" => "Nowhere to go"})
+
+    assert %Issue{owner_user_id: nil} = Repo.get!(Issue, task.issue_id)
+    assert has_element?(view, "#task-page")
+  end
+
   test "a question that belongs to another task cannot be answered or dismissed from this one", %{
     conn: conn,
     task: task,
