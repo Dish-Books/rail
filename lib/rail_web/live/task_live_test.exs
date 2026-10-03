@@ -2905,6 +2905,24 @@ defmodule RailWeb.TaskLiveTest do
       assert has_element?(view, "#metadata-run-conversation-id", "sess_design")
     end
 
+    # One scroller serves every tab, so the scroll hook tells another run from a patch by its id.
+    test "the conversation's scrollers name the run they show", %{
+      conn: conn,
+      task: task,
+      run: run,
+      other_role: other_role,
+      other_run: other_run
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#chat-messages[data-run-id='#{run.id}']")
+
+      view |> element("#task-tab-#{other_role.id}") |> render_click()
+      assert has_element?(view, "#chat-messages[data-run-id='#{other_run.id}']")
+
+      view |> element("#toggle-raw-log") |> render_click()
+      assert has_element?(view, "#raw-log-container[data-run-id='#{other_run.id}']")
+    end
+
     test "moving to the next stage moves the conversation to that stage's run", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "#metadata-run-conversation-id", "sess_product")
