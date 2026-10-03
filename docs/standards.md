@@ -10,8 +10,9 @@ We use Mise to manage our development environment and ensure all developers are 
 
 ## System dependencies
 
-Two things Rail shells out to are not Mise's to manage, because they are browsers and codecs rather than language runtimes:
+Three things Rail needs are not Mise's to manage, because they are a database extension, browsers and codecs rather than language runtimes:
 
+- **pgvector**, which the learnings tables store embeddings in. The local Postgres needs the extension: `docker-compose.yml` runs `pgvector/pgvector:pg17`, and `brew install pgvector` adds it to a Homebrew Postgres.
 - **Chrome**, which the QA and demo stages drive. Rail looks for Google Chrome or Chromium in the usual places.
 - **ffmpeg**, which encodes a demo recording's frames into the video the panel plays. Without it a demo still records, but the run reports that it could not be encoded. `brew install ffmpeg` on macOS; it is in the runner image's `apt-get` list for deploys.
 

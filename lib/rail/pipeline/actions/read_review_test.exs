@@ -118,4 +118,15 @@ defmodule Rail.Pipeline.Actions.ReadReviewTest do
 
     assert [%{status: :open}] = Pipeline.read_review(task)
   end
+
+  test "the checklist rule a finding names is passed through", %{task: task, report_path: path} do
+    File.write!(path, """
+    {"findings": [
+      {"key": "a", "title": "A", "severity": "nit", "recommendation": "skip", "rule": "lrn_abc"},
+      {"key": "b", "title": "B", "severity": "nit", "recommendation": "skip", "rule": null}
+    ]}
+    """)
+
+    assert [%{key: "a", rule: "lrn_abc"}, %{key: "b", rule: nil}] = Pipeline.read_review(task)
+  end
 end

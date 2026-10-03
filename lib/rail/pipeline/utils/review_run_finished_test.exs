@@ -80,7 +80,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
         %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :open}
       ])
 
-    {:ok, _to_fix} = Pipeline.decide_review_finding(finding, :fix)
+    {:ok, _to_fix} = Pipeline.decide_review_finding(system_scope(), finding, :fix)
 
     File.write!(path, """
     {"findings": [
@@ -105,7 +105,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
         %{key: "long-name", title: "The name is long", severity: :nit, recommendation: :skip, status: :open}
       ])
 
-    {:ok, _dismissed} = Pipeline.decide_review_finding(finding, :skip)
+    {:ok, _dismissed} = Pipeline.decide_review_finding(system_scope(), finding, :skip)
 
     File.write!(path, """
     {"findings": [
@@ -124,7 +124,7 @@ defmodule Rail.Pipeline.Utils.ReviewRunFinishedTest do
         %{key: "unhandled-nil", title: "Nil is not handled", severity: :major, recommendation: :fix, status: :open}
       ])
 
-    {:ok, _to_fix} = Pipeline.decide_review_finding(finding, :fix)
+    {:ok, _to_fix} = Pipeline.decide_review_finding(system_scope(), finding, :fix)
 
     File.write!(path, """
     {"findings": [

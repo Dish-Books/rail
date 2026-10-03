@@ -21,7 +21,10 @@ defmodule RailWeb.Components.NavTest do
 
     assert html =~ "id=\"nav-overview\""
     assert [_before, after_issues] = String.split(html, "id=\"nav-issues\"")
-    assert [_between, _after_sandboxes] = String.split(after_issues, "id=\"nav-sandboxes\"")
+    assert [before_sandboxes, _after_sandboxes] = String.split(after_issues, "id=\"nav-sandboxes\"")
+    assert before_sandboxes =~ ~s(id="nav-learnings")
+    assert before_sandboxes =~ ~s(href="/learnings")
+    refute before_sandboxes =~ "attention-badge"
     assert html =~ ~s(href="/sandboxes")
     assert html =~ "id=\"nav-settings\""
 

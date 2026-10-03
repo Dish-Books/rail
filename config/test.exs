@@ -38,5 +38,6 @@ config :rail, :slack, req_options: [plug: {Req.Test, Rail.Slack}, retry: false]
 config :rail, :slack_oauth, req_options: [plug: {Req.Test, Rail.Slack}, retry: false]
 config :rail, :slack_socket, false
 config :rail, :triage_runner, false
+config :rail, :vertex, req_options: [plug: {Req.Test, Rail.Learnings.Clients.Vertex}, retry: false]
 config :rail, dev_routes: true
 config :rail, scratch_root: Path.join(System.tmp_dir!(), "rail")

@@ -74,7 +74,7 @@ defmodule Rail.Pipeline.Actions.DismissRoundTest do
   test "a round with an answer in it is sent, not dismissed", %{run: run} do
     {:ok, first} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Which database?"})
     {:ok, second} = Pipeline.register_question(run, %DetectedQuestion{prompt: "Behind a flag?"})
-    {:ok, _answered} = Pipeline.answer_question(first, "Postgres")
+    {:ok, _answered} = Pipeline.answer_question(system_scope(), first, "Postgres")
     {:ok, _dismissed} = Pipeline.dismiss_question(second)
 
     assert {:error, :answers_to_send} = run |> Repo.reload!() |> Repo.preload(:role) |> Pipeline.dismiss_round()

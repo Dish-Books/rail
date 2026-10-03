@@ -502,7 +502,7 @@ defmodule RailWeb.TaskLiveTest do
     {:ok, question} =
       blocked |> Repo.preload(task: :issue) |> Pipeline.register_question(%DetectedQuestion{prompt: "Which database?"})
 
-    {:ok, _answered} = Pipeline.answer_question(question, "Postgres")
+    {:ok, _answered} = Pipeline.answer_question(system_scope(), question, "Postgres")
 
     assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
     view |> element("#change-answer-button") |> render_click()
@@ -768,7 +768,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert length(earlier) == 3
 
-      for question <- questions, do: {:ok, _answered} = Pipeline.answer_question(question, "Postgres")
+      for question <- questions, do: {:ok, _answered} = Pipeline.answer_question(system_scope(), question, "Postgres")
       _sent = run |> Repo.reload!() |> Repo.preload(:role) |> then(&Pipeline.send_answers(system_scope(), &1))
       Pipeline.append_run_events(run.id, nil, ["[tool] Edit lib/rail/repo.ex", "Carrying on with Postgres."])
 
@@ -3968,7 +3968,7 @@ defmodule RailWeb.TaskLiveTest do
         {:ok, findings} = Pipeline.sync_review_findings(task, raised)
 
         Enum.map(findings, fn finding ->
-          {:ok, decided} = Pipeline.decide_review_finding(finding, finding.recommendation)
+          {:ok, decided} = Pipeline.decide_review_finding(system_scope(), finding, finding.recommendation)
           decided
         end)
       end
@@ -4296,7 +4296,7 @@ defmodule RailWeb.TaskLiveTest do
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
-      for finding <- findings, do: {:ok, _dismissed} = Pipeline.decide_review_finding(finding, :skip)
+      for finding <- findings, do: {:ok, _dismissed} = Pipeline.decide_review_finding(system_scope(), finding, :skip)
       view |> element("#send-findings-to-engineer") |> render_click()
 
       assert has_element?(view, "#review-error", "nothing left for the engineer to fix")
@@ -4401,13 +4401,16 @@ defmodule RailWeb.TaskLiveTest do
     # outstanding while the reader was looking at it.
     test "a finding put back underneath the page stops it going to QA", %{conn: conn, task: task, raised: raised} do
       {:ok, findings} = Pipeline.sync_review_findings(task, raised)
-      Enum.each(findings, fn finding -> {:ok, _skipped} = Pipeline.decide_review_finding(finding, :skip) end)
+
+      Enum.each(findings, fn finding ->
+        {:ok, _skipped} = Pipeline.decide_review_finding(system_scope(), finding, :skip)
+      end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "#send-to-qa")
 
       [kept | _rest] = Pipeline.list_review_findings(task)
-      {:ok, _kept} = Pipeline.decide_review_finding(kept, :fix)
+      {:ok, _kept} = Pipeline.decide_review_finding(system_scope(), kept, :fix)
 
       view |> element("#send-to-qa") |> render_click()
 
@@ -4477,7 +4480,7 @@ defmodule RailWeb.TaskLiveTest do
           %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
         ])
 
-      {:ok, _decided} = Pipeline.decide_review_finding(blocker, :fix)
+      {:ok, _decided} = Pipeline.decide_review_finding(system_scope(), blocker, :fix)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4492,7 +4495,7 @@ defmodule RailWeb.TaskLiveTest do
           %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
         ])
 
-      {:ok, _decided} = Pipeline.decide_review_finding(blocker, :fix)
+      {:ok, _decided} = Pipeline.decide_review_finding(system_scope(), blocker, :fix)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4512,7 +4515,7 @@ defmodule RailWeb.TaskLiveTest do
           %{key: "a-nit", title: "A nit", severity: :nit, recommendation: :fix, status: :open}
         ])
 
-      {:ok, _decided} = Pipeline.decide_review_finding(blocker, :fix)
+      {:ok, _decided} = Pipeline.decide_review_finding(system_scope(), blocker, :fix)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -4675,7 +4678,7 @@ defmodule RailWeb.TaskLiveTest do
         {:ok, findings} = Pipeline.sync_qa_findings(task, raised)
 
         Enum.map(findings, fn finding ->
-          {:ok, decided} = Pipeline.decide_qa_finding(finding, finding.recommendation)
+          {:ok, decided} = Pipeline.decide_qa_finding(system_scope(), finding, finding.recommendation)
           decided
         end)
       end
@@ -4909,7 +4912,8 @@ defmodule RailWeb.TaskLiveTest do
     end
 
     test "a change with nothing left goes on to demo", %{conn: conn, task: task, decide_as_advised: decide_as_advised} do
-      for finding <- decide_as_advised.(), do: {:ok, _dismissed} = Pipeline.decide_qa_finding(finding, :skip)
+      for finding <- decide_as_advised.(),
+          do: {:ok, _dismissed} = Pipeline.decide_qa_finding(system_scope(), finding, :skip)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5763,7 +5767,7 @@ defmodule RailWeb.TaskLiveTest do
       # Everything dismissed leaves the engineer nothing to do.
       task
       |> Pipeline.list_qa_findings()
-      |> Enum.each(fn finding -> {:ok, _skipped} = Pipeline.decide_qa_finding(finding, :skip) end)
+      |> Enum.each(fn finding -> {:ok, _skipped} = Pipeline.decide_qa_finding(system_scope(), finding, :skip) end)
 
       view |> element("#send-qa-findings-to-engineer") |> render_click()
       assert has_element?(view, "#qa-error", "nothing left for the engineer")
@@ -5775,13 +5779,13 @@ defmodule RailWeb.TaskLiveTest do
       decide_as_advised: decide_as_advised
     } do
       findings = decide_as_advised.()
-      Enum.each(findings, fn finding -> {:ok, _skipped} = Pipeline.decide_qa_finding(finding, :skip) end)
+      Enum.each(findings, fn finding -> {:ok, _skipped} = Pipeline.decide_qa_finding(system_scope(), finding, :skip) end)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
       assert has_element?(view, "#send-to-demo")
 
       [kept | _rest] = Pipeline.list_qa_findings(task)
-      {:ok, _kept} = Pipeline.decide_qa_finding(kept, :fix)
+      {:ok, _kept} = Pipeline.decide_qa_finding(system_scope(), kept, :fix)
 
       view |> element("#send-to-demo") |> render_click()
       assert has_element?(view, "#qa-error", "still outstanding")
@@ -5911,7 +5915,7 @@ defmodule RailWeb.TaskLiveTest do
           %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
         ])
 
-      {:ok, _decided} = Pipeline.decide_qa_finding(blocker, :fix)
+      {:ok, _decided} = Pipeline.decide_qa_finding(system_scope(), blocker, :fix)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5933,7 +5937,7 @@ defmodule RailWeb.TaskLiveTest do
           %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
         ])
 
-      {:ok, _decided} = Pipeline.decide_qa_finding(blocker, :fix)
+      {:ok, _decided} = Pipeline.decide_qa_finding(system_scope(), blocker, :fix)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -5960,7 +5964,7 @@ defmodule RailWeb.TaskLiveTest do
           %{key: "a-nit", title: "A nit", check: "A check", severity: :nit, recommendation: :fix, status: :open}
         ])
 
-      {:ok, _decided} = Pipeline.decide_qa_finding(blocker, :fix)
+      {:ok, _decided} = Pipeline.decide_qa_finding(system_scope(), blocker, :fix)
 
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -6405,6 +6409,91 @@ defmodule RailWeb.TaskLiveTest do
 
       _settled = render(view)
       assert has_element?(view, "#demo-beat-800", "Saving the bill")
+    end
+  end
+
+  describe "the questions gate" do
+    setup %{project: project, run: run} do
+      {:ok, dana} =
+        Users.register_oauth_user(%{
+          github_id: "gh_gate",
+          login: "dana_gate",
+          name: "Dana Okafor",
+          email: "dana@gate.example"
+        })
+
+      earlier = learnings_task(project, "GATE-1")
+
+      past = %Question{
+        id: "qst_tlv_gate",
+        prompt: "Indigo or blue?",
+        answer: "Blue, to match the review tab.",
+        status: :answered,
+        answered_by_id: dana.id
+      }
+
+      {:ok, [rule]} = Rail.Learnings.record_corrections(earlier, [past])
+
+      {:ok, blocked} =
+        Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress, conversation_id: "sess_gate"})
+
+      blocked = Repo.preload(blocked, task: :issue)
+
+      {:ok, first} =
+        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Do dismissed findings count as decided?"})
+
+      {:ok, second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which color is the Send button?"})
+
+      {:ok, _by_rail} =
+        first
+        |> Question.changeset(%{
+          answer: "Yes. Only Fix goes back.",
+          status: :answered,
+          answered_by_rail: true,
+          suggested_learning_id: rule.id
+        })
+        |> Repo.update()
+
+      {:ok, _suggested} = second |> Question.changeset(%{suggested_learning_id: rule.id}) |> Repo.update()
+
+      %{questions: [first, second]}
+    end
+
+    test "a question Rail answered says so, with its source, and can be changed", %{conn: conn, task: task} do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      assert has_element?(view, "#rail-answer-1", "Rail answered question 1 from a past answer")
+      assert has_element?(view, "#rail-answer-1", "“Yes. Only Fix goes back.”")
+      assert has_element?(view, "#rail-answer-1", "Dana Okafor on")
+      assert has_element?(view, "#rail-answer-1 a", "GATE-1")
+      assert has_element?(view, "[data-qa='saved-answer']", "Yes. Only Fix goes back.")
+      assert render(view) =~ "Rail&#39;s answer, from a past answer"
+
+      view |> element("#change-rail-answer-1") |> render_click()
+      assert has_element?(view, "#answer-textarea", "Yes. Only Fix goes back.")
+    end
+
+    test "Use this answer answers with the past answer, and Answer myself puts the box away", %{
+      conn: conn,
+      task: task,
+      questions: [_first, second]
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#question-tab-1") |> render_click()
+
+      assert has_element?(view, "#likely-answer", "Blue, to match the review tab.")
+      assert has_element?(view, "#likely-answer", "Dana Okafor on")
+
+      view |> element("#answer-myself") |> render_click()
+      refute has_element?(view, "#likely-answer")
+      assert has_element?(view, "#answer-textarea")
+
+      {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#question-tab-1") |> render_click()
+      view |> element("#use-likely-answer") |> render_click()
+
+      assert %{status: :answered, answer: "Blue, to match the review tab.", answered_by_rail: false} =
+               Repo.reload!(second)
     end
   end
 end

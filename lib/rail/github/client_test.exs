@@ -231,4 +231,65 @@ defmodule Rail.GitHub.ClientTest do
     Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
     assert {:error, %Req.TransportError{}} = Client.update_pull_request("ghs_token", "acme/app", 43, %{})
   end
+
+  describe "reading pull requests for learnings" do
+    test "lists a page of pull requests with GitHub's own params" do
+      Req.Test.expect(Client, fn conn ->
+        conn = Plug.Conn.fetch_query_params(conn)
+        assert conn.request_path == "/repos/acme/app/pulls"
+        assert conn.query_params == %{"state" => "closed", "page" => "2"}
+        assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer ghs_token"]
+        Req.Test.json(conn, [%{"number" => 7}])
+      end)
+
+      assert {:ok, [%{"number" => 7}]} = Client.list_pull_requests("ghs_token", "acme/app", state: "closed", page: 2)
+
+      Req.Test.expect(Client, &Req.Test.json(Plug.Conn.put_status(&1, 404), %{"message" => "Not Found"}))
+      assert {:error, {:github_api_error, 404, _body}} = Client.list_pull_requests("ghs_token", "acme/app", [])
+
+      Req.Test.expect(Client, &Req.Test.transport_error(&1, :econnrefused))
+      assert {:error, %Req.TransportError{}} = Client.list_pull_requests("ghs_token", "acme/app", [])
+    end
+
+    test "reads every review comment and review on a pull request, across pages" do
+      full = for id <- 1..100, do: %{"id" => id}
+
+      Req.Test.expect(Client, 3, fn conn ->
+        conn = Plug.Conn.fetch_query_params(conn)
+        assert conn.query_params["per_page"] == "100"
+
+        case {conn.request_path, conn.query_params["page"]} do
+          {"/repos/acme/app/pulls/7/comments", "1"} -> Req.Test.json(conn, full)
+          {"/repos/acme/app/pulls/7/comments", "2"} -> Req.Test.json(conn, [%{"id" => 101}])
+          {"/repos/acme/app/pulls/7/reviews", "1"} -> Req.Test.json(conn, [%{"id" => 9}])
+        end
+      end)
+
+      assert {:ok, comments} = Client.list_review_comments("ghs_token", "acme/app", 7)
+      assert length(comments) == 101
+      assert {:ok, [%{"id" => 9}]} = Client.list_reviews("ghs_token", "acme/app", 7)
+
+      Req.Test.expect(Client, &Req.Test.json(Plug.Conn.put_status(&1, 403), %{"message" => "Forbidden"}))
+      assert {:error, {:github_api_error, 403, _body}} = Client.list_reviews("ghs_token", "acme/app", 7)
+
+      Req.Test.expect(Client, &Req.Test.transport_error(&1, :timeout))
+      assert {:error, %Req.TransportError{}} = Client.list_review_comments("ghs_token", "acme/app", 7)
+    end
+
+    test "compares two commits" do
+      Req.Test.expect(Client, fn conn ->
+        assert conn.request_path == "/repos/acme/app/compare/aaa...bbb"
+        Req.Test.json(conn, %{"files" => [%{"filename" => "lib/a.ex", "patch" => "+x"}]})
+      end)
+
+      assert {:ok, %{"files" => [%{"filename" => "lib/a.ex"}]}} =
+               Client.compare_commits("ghs_token", "acme/app", "aaa", "bbb")
+
+      Req.Test.expect(Client, &Req.Test.json(Plug.Conn.put_status(&1, 404), %{"message" => "No common ancestor"}))
+      assert {:error, {:github_api_error, 404, _body}} = Client.compare_commits("ghs_token", "acme/app", "aaa", "bbb")
+
+      Req.Test.expect(Client, &Req.Test.transport_error(&1, :closed))
+      assert {:error, %Req.TransportError{}} = Client.compare_commits("ghs_token", "acme/app", "aaa", "bbb")
+    end
+  end
 end

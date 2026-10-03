@@ -237,4 +237,11 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     assert [project_id: project.id] |> Pipeline.list_tasks() |> Enum.map(& &1.id) |> Enum.sort() ==
              Enum.sort([unowned_id, mine_id, theirs_id])
   end
+
+  test "filters to one issue's tasks", %{project: project} do
+    %{id: task_id} = task = learnings_task(project, "LTI-1")
+    _other = learnings_task(project, "LTI-2")
+
+    assert [%Task{id: ^task_id}] = Pipeline.list_tasks(issue_id: task.issue_id)
+  end
 end

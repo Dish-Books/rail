@@ -99,7 +99,7 @@ defmodule Rail.Pipeline.Actions.SyncQaFindingsTest do
     finding = %{key: "one", title: "One", check: "A check", severity: :major, recommendation: :fix, status: :open}
 
     {:ok, [raised]} = Pipeline.sync_qa_findings(task, [finding])
-    {:ok, _dismissed} = Pipeline.decide_qa_finding(raised, :skip)
+    {:ok, _dismissed} = Pipeline.decide_qa_finding(system_scope(), raised, :skip)
 
     assert {:ok, [%QaFinding{decision: :skip, recommendation: :fix}]} =
              Pipeline.sync_qa_findings(task, [%{finding | recommendation: :fix}])

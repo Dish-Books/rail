@@ -3,14 +3,17 @@ defmodule Rail.Pipeline.Actions.SendAnswers do
   Hands a run the answers to everything it asked, as one message once nothing is open.
 
   A dismissed question travels with the answers, said plainly; a round with no answer at all is `dismiss_round/1`'s.
+  A person's answers are learned from once they have gone out, since until then they can change.
   """
 
   import Ecto.Query
   import Rail.Pipeline.Utils.UnsentRound
 
+  alias Rail.Learnings
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Scope
 
@@ -37,7 +40,12 @@ defmodule Rail.Pipeline.Actions.SendAnswers do
         mark_delivered(round)
         # A page open elsewhere hears nothing else when the message cannot go out.
         Phoenix.PubSub.broadcast(Rail.PubSub, "run:#{run.id}", {:run_changed, run.id})
-        Pipeline.send_message(scope, run, format(round))
+
+        with {:ok, _delivery, _run} = sent <- Pipeline.send_message(scope, run, format(round)) do
+          answered = Enum.filter(round, &(&1.status == :answered and not &1.answered_by_rail))
+          {:ok, _learned} = Learnings.record_corrections(Repo.get!(Task, run.task_id), answered)
+          sent
+        end
     end
   end
 

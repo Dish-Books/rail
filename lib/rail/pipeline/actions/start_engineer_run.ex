@@ -9,6 +9,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
 
   import Rail.Pipeline.Utils.FormatComments
   import Rail.Pipeline.Utils.FormatTicket
+  import Rail.Pipeline.Utils.LearningsBrief
 
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
@@ -36,7 +37,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
         task: task,
         backend: role.backend,
         role_instructions: role.system_prompt,
-        context_snippet: brief(task),
+        context_snippet: brief(task, run),
         pending_answer: run.pending_answer,
         conversation_id: run.conversation_id
       )
@@ -55,7 +56,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     Tools.start_os_process(run, args)
   end
 
-  defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue} = task) do
+  defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue} = task, %Run{} = run) do
     dir = Path.join(scratch_path, "commits")
     file = Path.join(dir, "#{issue.identifier}.md")
 
@@ -84,7 +85,7 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
     - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or a named assumption is not a question.
 
     #{plan(task)}
-    #{design(task)}
+    #{design(task)}#{learnings_brief(run, fn -> ["#{issue.title}\n\n#{issue.description}" | plan_text(task)] end)}
     The ticket it was planned from:
 
     #{format_ticket(issue)}
@@ -127,6 +128,13 @@ defmodule Rail.Pipeline.Actions.StartEngineerRun do
       """
     else
       _no_approved_design -> ""
+    end
+  end
+
+  defp plan_text(%Task{} = task) do
+    case Pipeline.get_implementation_plan(task) do
+      {:ok, %ImplementationPlan{content: content}} -> [content]
+      {:error, :not_found} -> []
     end
   end
 

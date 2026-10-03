@@ -94,6 +94,21 @@ defmodule Rail.Slack.ClientTest do
     assert {:ok, "wss://wss.slack.example/link"} = Slack.open_connection(workspace)
   end
 
+  test "posts a new message in a channel as the bot, outside any thread, and hands back its ts", %{workspace: workspace} do
+    Req.Test.expect(Slack, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert conn.request_path == "/api/chat.postMessage"
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer xoxb-bot"]
+      assert Jason.decode!(body) == %{"channel" => "C1", "text" => "Learnings for rail"}
+      Req.Test.json(conn, %{"ok" => true, "ts" => "1790000000.000200"})
+    end)
+
+    assert {:ok, "1790000000.000200"} = Slack.post_channel_message(workspace, "C1", "Learnings for rail")
+
+    Req.Test.expect(Slack, &Req.Test.json(&1, %{"ok" => false, "error" => "missing_scope"}))
+    assert {:error, {:slack_error, "missing_scope"}} = Slack.post_channel_message(workspace, "C1", "x")
+  end
+
   test "posts in a thread on the token it is given" do
     Req.Test.expect(Slack, fn conn ->
       assert conn.request_path == "/api/chat.postMessage"

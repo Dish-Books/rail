@@ -58,7 +58,7 @@ defmodule Rail.Pipeline do
   defdelegate read_review(task), to: Actions.ReadReview
   defdelegate sync_review_findings(task, findings), to: Actions.SyncReviewFindings
   defdelegate list_review_findings(task), to: Actions.ListReviewFindings
-  defdelegate decide_review_finding(finding, decision), to: Actions.DecideReviewFinding
+  defdelegate decide_review_finding(scope, finding, decision), to: Actions.DecideReviewFinding
   defdelegate send_findings_to_engineer(run), to: Actions.SendFindingsToEngineer
   defdelegate send_to_qa(run), to: Actions.SendToQa
 
@@ -72,7 +72,7 @@ defmodule Rail.Pipeline do
   defdelegate read_qa_report(task), to: Actions.ReadQaReport
   defdelegate sync_qa_findings(task, findings), to: Actions.SyncQaFindings
   defdelegate list_qa_findings(task), to: Actions.ListQaFindings
-  defdelegate decide_qa_finding(finding, decision), to: Actions.DecideQaFinding
+  defdelegate decide_qa_finding(scope, finding, decision), to: Actions.DecideQaFinding
   defdelegate send_qa_findings_to_engineer(run), to: Actions.SendQaFindingsToEngineer
   defdelegate send_to_demo(run), to: Actions.SendToDemo
   defdelegate record_demo(scope, task), to: Actions.RecordDemo
@@ -90,7 +90,7 @@ defmodule Rail.Pipeline do
   defdelegate cleanup_task(task), to: Actions.CleanupTask
 
   defdelegate register_question(run, question), to: Actions.RegisterQuestion
-  defdelegate answer_question(question, answer), to: Actions.AnswerQuestion
+  defdelegate answer_question(scope, question, answer), to: Actions.AnswerQuestion
   defdelegate send_answers(scope, run), to: Actions.SendAnswers
   defdelegate dismiss_round(run), to: Actions.DismissRound
   defdelegate dismiss_question(question), to: Actions.DismissQuestion

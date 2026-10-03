@@ -182,8 +182,8 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
       ])
 
     {:ok, _stopped} = Pipeline.update_run(run, %{status: :finished})
-    {:ok, _to_fix} = Pipeline.decide_qa_finding(outstanding, :fix)
-    {:ok, _skipped} = Pipeline.decide_qa_finding(dismissed, :skip)
+    {:ok, _to_fix} = Pipeline.decide_qa_finding(system_scope(), outstanding, :fix)
+    {:ok, _skipped} = Pipeline.decide_qa_finding(system_scope(), dismissed, :skip)
 
     expect(Tools, :start_os_process, fn %Run{} = spawned, argv ->
       assert ["-p", prompt | _rest] = argv
@@ -249,5 +249,41 @@ defmodule Rail.Pipeline.Actions.StartQaRunTest do
     end)
 
     assert {:ok, %OsProcess{}} = Pipeline.start_qa_run(run)
+  end
+
+  describe "what the project has learned" do
+    test "the brief carries the rules retrieved with the ticket and the files the change touched", %{
+      project: project,
+      run: run
+    } do
+      stub_vertex(%{"lib/rail_web/live/bills_live.ex" => vector([1.0])})
+
+      stub(Rail.Git, :load_diff, fn _scope, _task, :branch ->
+        {:ok, [%{path: "lib/rail_web/live/bills_live.ex", rows: []}]}
+      end)
+
+      learning(project, %{rule: "Seed bills through the factory", kind: :qa, roles: [:qa]}, embedding: [1.0])
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, ["-p", prompt | _rest] ->
+        assert prompt =~ "- QA: Seed bills through the factory"
+        {:ok, %OsProcess{run: spawned}}
+      end)
+
+      assert {:ok, %OsProcess{}} = Pipeline.start_qa_run(run)
+      assert_received {:embedded, "Invoice filters\n\nFilter invoices by vendor.", "RETRIEVAL_QUERY"}
+      assert_received {:embedded, "lib/rail_web/live/bills_live.ex", "RETRIEVAL_QUERY"}
+    end
+
+    test "a change with no files, or no worktree, is queried by its ticket alone", %{project: project, run: run} do
+      stub_vertex()
+      stub(Rail.Git, :load_diff, fn _scope, _task, :branch -> {:error, :no_worktree} end)
+      learning(project, %{rule: "Anything", kind: :qa}, embedding: [1.0])
+
+      expect(Tools, :start_os_process, fn %Run{} = spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      assert {:ok, %OsProcess{}} = Pipeline.start_qa_run(run)
+      assert_received {:embedded, "Invoice filters" <> _ticket, "RETRIEVAL_QUERY"}
+      refute_received {:embedded, _files, _task_type}
+    end
   end
 end

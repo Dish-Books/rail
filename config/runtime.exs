@@ -30,6 +30,9 @@ config :rail, :github,
   app_id: get_env.("GITHUB_APP_ID", "test_app_id"),
   private_key: get_env.("GITHUB_APP_PRIVATE_KEY", "test/support/fixtures/github_app.pem")
 
+# Goth reads GOOGLE_APPLICATION_CREDENTIALS(_JSON), or the metadata server when neither is set.
+config :rail, :goth_enabled, config_env() == :prod or get_env.("ENABLE_GOTH", nil) == "true"
+
 config :rail, :linear_oauth,
   client_id: get_env.("LINEAR_CLIENT_ID", "linear_client_id"),
   client_secret: get_env.("LINEAR_CLIENT_SECRET", "linear_client_secret")

@@ -7,12 +7,17 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
   covers every process it spawned, so only the lines carrying this process are read:
   that is what makes a question asked in this turn distinguishable from the same
   question asked, and answered, two turns ago.
+
+  Each new question goes through the questions gate first: one a person already
+  answered is answered by Rail with that answer, and a likely match is offered.
   """
 
   import Ecto.Query
   import Rail.Pipeline.Utils.DetectQuestions
 
+  alias Rail.Learnings
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.Question
   alias Rail.Pipeline.Schemas.Run
   alias Rail.Pipeline.Schemas.RunEvent
   alias Rail.Repo
@@ -50,9 +55,35 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
     run = Repo.preload(run, [task: :issue, role: :backend], force: true)
     questions = os_process |> agent_log(run) |> detect_questions()
 
-    Enum.each(questions, &Pipeline.register_question(run, &1))
+    for detected <- questions,
+        {:ok, %Question{status: :pending, suggested_learning_id: nil} = question} <- [
+          Pipeline.register_question(run, detected)
+        ] do
+      gate(run, question)
+    end
 
     questions
+  end
+
+  defp gate(%Run{task: task}, %Question{} = question) do
+    case Learnings.match_past_answer(task, question) do
+      {:answer, %{learning: learning, observation: %{excerpt: answer}}} when is_binary(answer) ->
+        question
+        |> Question.changeset(%{
+          answer: answer,
+          status: :answered,
+          answered_at: DateTime.utc_now(),
+          answered_by_rail: true,
+          suggested_learning_id: learning.id
+        })
+        |> Repo.update!()
+
+      {_answer_or_suggestion, %{learning: learning}} ->
+        question |> Question.changeset(%{suggested_learning_id: learning.id}) |> Repo.update!()
+
+      nil ->
+        question
+    end
   end
 
   # The agent's own words for one OS process, oldest first.

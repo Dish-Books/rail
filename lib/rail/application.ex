@@ -6,16 +6,21 @@ defmodule Rail.Application do
   def start(_type, _args) do
     # Each context supervises its own processes, so the tree lists the contexts and
     # the infrastructure they all share.
-    children = [
-      Rail.Vault,
-      Rail.Repo,
-      {Oban, Application.fetch_env!(:rail, Oban)},
-      {Phoenix.PubSub, name: Rail.PubSub},
-      {Task.Supervisor, name: Rail.TaskSupervisor},
-      Rail.Tools,
-      Rail.Triage,
-      RailWeb.Endpoint
-    ]
+    children =
+      Enum.reject(
+        [
+          Rail.Vault,
+          Rail.Repo,
+          {Oban, Application.fetch_env!(:rail, Oban)},
+          {Phoenix.PubSub, name: Rail.PubSub},
+          {Task.Supervisor, name: Rail.TaskSupervisor},
+          (Rail.goth_enabled?() && {Goth, name: Rail.Goth}) || nil,
+          Rail.Tools,
+          Rail.Triage,
+          RailWeb.Endpoint
+        ],
+        &is_nil/1
+      )
 
     opts = [strategy: :one_for_one, name: Rail.Supervisor]
     Supervisor.start_link(children, opts)

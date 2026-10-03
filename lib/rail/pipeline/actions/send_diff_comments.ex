@@ -3,16 +3,18 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
   Sends the comments a person left on the diff and has not sent yet to the
   engineer, as one message, and marks them sent.
 
-  Each quotes its line as it read when it was written, since line numbers move
-  as the engineer edits.
+  Each quotes the code around its line as written, since line numbers move as the
+  engineer edits. What was sent is learned from.
   """
 
   import Ecto.Query
   import Rail.Pipeline.Utils.BroadcastDiffComments
 
+  alias Rail.Learnings
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Pipeline.Schemas.Task
   alias Rail.Repo
   alias Rail.Scope
 
@@ -37,6 +39,7 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
 
     with [_first | _rest] <- comments,
          {:ok, _delivery, _run} = sent <- Pipeline.send_message(scope, run, format(comments)) do
+      {:ok, _learned} = Learnings.record_corrections(Repo.get!(Task, task_id), comments)
       broadcast_diff_comments(task_id, :everyone)
       sent
     else
@@ -61,8 +64,13 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
   end
 
   defp block(%DiffComment{} = comment) do
-    "#{comment.path}, #{line_label(comment)}\n#{glyph(comment.line_kind)} #{String.trim_trailing(comment.line_text)}\n#{comment.body}"
+    "#{comment.path}, #{line_label(comment)}\n#{quote_code(comment)}\n#{comment.body}"
   end
+
+  # A comment saved before blocks were kept has only its line to quote.
+  defp quote_code(%DiffComment{context_text: context}) when is_binary(context) and context != "", do: context
+
+  defp quote_code(%DiffComment{} = comment), do: "#{glyph(comment.line_kind)} #{String.trim_trailing(comment.line_text)}"
 
   defp line_label(%DiffComment{line_kind: :deleted, line: line}), do: "removed line #{line}"
   defp line_label(%DiffComment{line: line}), do: "line #{line}"

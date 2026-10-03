@@ -150,6 +150,18 @@ default_roles = [
     system_prompt: read_prompt.("triage"),
     max_concurrent: 1,
     position: 7
+  },
+  %{
+    stage: :curator,
+    name: "Curator",
+    description: "Distills finished tasks into observations and proposes daily how the project's rules should change",
+    icon_name: "pi-brain",
+    backend_id: claude_backend.id,
+    model: "claude-opus-5-5",
+    reasoning_effort: :high,
+    system_prompt: read_prompt.("curator"),
+    max_concurrent: 1,
+    position: 8
   }
 ]
 

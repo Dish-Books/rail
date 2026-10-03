@@ -29,6 +29,10 @@ Rail is an Elixir/Phoenix LiveView app that takes Linear issues through a pipeli
 4. The existing code settles it. Follow the pattern already there.
 5. Nothing settles it. Ask, with your recommended answer first.
 
+## What this project has learned
+
+Rail keeps the rules this project has learned from people's corrections and decisions, and the ones that fit this run are already in your brief. Call `knowledge_search` for more before you ask a question, before you depart from the plan, and before you touch a module you do not know. A question it answers is not a question, and a departure a rule rules out is not yours to make.
+
 ## Your environment
 
 - **Your worktree is yours alone.** Its `.env`, which mise loads, gives it its own `PORT`, `TEST_PORT` and `DB_SUFFIX`, so its databases are `rail_dev$DB_SUFFIX` and `rail_test$DB_SUFFIX`. Never touch `rail_prod`, `rail_dev` or another worktree's database, and only ever stop a process you started.

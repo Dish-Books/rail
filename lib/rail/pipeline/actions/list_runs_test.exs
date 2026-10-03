@@ -87,4 +87,16 @@ defmodule Rail.Pipeline.Actions.ListRunsTest do
     assert [project_id: project.id] |> Pipeline.list_runs() |> Enum.map(& &1.id) |> Enum.sort() ==
              Enum.sort([unowned_id, mine_id, theirs_id])
   end
+
+  test "filters to one task's runs", %{project: project} do
+    task = learnings_task(project, "LRT-1")
+    other = learnings_task(project, "LRT-2")
+    {:ok, role} = Roles.get_role(project_id: project.id, stage: :engineer)
+
+    [{:ok, %{id: run_id}}, {:ok, _other}] =
+      for t <- [task, other],
+          do: Pipeline.create_run(%{task_id: t.id, role_id: role.id, status: :finished, started_at: DateTime.utc_now()})
+
+    assert [%Run{id: ^run_id}] = Pipeline.list_runs(task_id: task.id)
+  end
 end

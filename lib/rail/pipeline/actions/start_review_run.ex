@@ -14,7 +14,9 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
   import Rail.Pipeline.Utils.FormatComments
   import Rail.Pipeline.Utils.FormatTicket
+  import Rail.Pipeline.Utils.LearningsBrief
 
+  alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ImplementationPlan
@@ -24,7 +26,12 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
+  alias Rail.Scope
   alias Rail.Tools
+
+  # Enough of a large change to find the rules it touches without embedding all of it.
+  @files 40
+  @file_chars 6_000
 
   @doc """
   Spawns `run`'s role to review its task.
@@ -42,7 +49,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
         task: task,
         backend: role.backend,
         role_instructions: role.system_prompt,
-        context_snippet: brief(task),
+        context_snippet: brief(task, run),
         pending_answer: run.pending_answer,
         conversation_id: run.conversation_id
       )
@@ -61,7 +68,7 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     Tools.start_os_process(run, args)
   end
 
-  defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue} = task) do
+  defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue} = task, %Run{} = run) do
     dir = Path.join(scratch_path, "reviews")
     file = Path.join(dir, "#{issue.identifier}.json")
 
@@ -89,7 +96,8 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
           "line": 42,
           "severity": "major",
           "recommendation": "fix",
-          "status": "open"
+          "status": "open",
+          "rule": null
         }
       ]
     }
@@ -105,12 +113,13 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
     - Nothing in `suggestion` restates or reconsiders `recommendation`. "Leave it", "only if you think it matters", or a fix offered as one branch of a choice hands the engineer a decision the human has already taken, and it will be built as the hedge rather than the fix. Recommend `skip` in the field for recommending it; still write the fix you would apply if told to.
     - `status` is `open` for a problem that still stands. Leave findings out entirely rather than inventing them: `{"findings": []}` is a clean review and is the right answer when the change is good.
     - A finding with no file is fine. Give `file` and `line` whenever you can point at one.
+    - `rule` is the id of the checklist rule a finding comes from, and null when it comes from none. A finding a calibration rule says not to raise is still written, with that rule's id.
     - Report only what you checked. You have the worktree: open the callers, read the test, run it. A finding you could have confirmed and did not is a guess, and a guess costs the engineer a whole round.
     - Read the whole change before you write anything, and write the file only once you have finished. A finding against one file that the next file already answers is noise. If you stop part way, for a question or anything else, leave the file unwritten and the task waits for you.
     - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the docs, the code or the plan is not a question.
 
     #{outstanding(task)}
-    #{plan(task)}
+    #{plan(task)}#{learnings_brief(run, fn -> file_queries(task) end)}
     The ticket the change was built from:
 
     #{format_ticket(issue)}
@@ -118,6 +127,20 @@ defmodule Rail.Pipeline.Actions.StartReviewRun do
 
     #{format_comments(issue.comments)}
     """)
+  end
+
+  # One query per changed file, its changed lines, so each finds the rules about that kind of code.
+  defp file_queries(%Task{} = task) do
+    case Git.load_diff(Scope.for_system(), task, :branch) do
+      {:ok, files} ->
+        for file <- Enum.take(files, @files) do
+          changed = for %{kind: :line, line_kind: kind, text: text} <- file.rows, kind != :context, do: text
+          {file.path, changed |> Enum.join("\n") |> String.slice(0, @file_chars)}
+        end
+
+      {:error, :no_worktree} ->
+        []
+    end
   end
 
   defp workspace(%Task{worktree_path: worktree_path, worktree_name: branch, project: %Project{} = project}) do

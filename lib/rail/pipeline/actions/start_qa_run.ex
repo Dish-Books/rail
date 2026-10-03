@@ -14,7 +14,9 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
 
   import Rail.Pipeline.Utils.FormatComments
   import Rail.Pipeline.Utils.FormatTicket
+  import Rail.Pipeline.Utils.LearningsBrief
 
+  alias Rail.Git
   alias Rail.Issues.Schemas.Issue
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.ImplementationPlan
@@ -24,6 +26,7 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
   alias Rail.Projects.Schemas.Project
   alias Rail.Repo
   alias Rail.Roles.Schemas.Role
+  alias Rail.Scope
   alias Rail.Tools
 
   @doc """
@@ -42,7 +45,7 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
         task: task,
         backend: role.backend,
         role_instructions: role.system_prompt,
-        context_snippet: brief(task),
+        context_snippet: brief(task, run),
         pending_answer: run.pending_answer,
         conversation_id: run.conversation_id
       )
@@ -61,7 +64,7 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
     Tools.start_os_process(run, args)
   end
 
-  defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue} = task) do
+  defp brief(%Task{scratch_path: scratch_path, issue: %Issue{} = issue} = task, %Run{} = run) do
     dir = Path.join(scratch_path, "qa")
     file = Path.join(dir, "#{issue.identifier}.json")
     evidence = Path.join(dir, "evidence")
@@ -135,7 +138,7 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
     - Ask everything at once. Research to the end before you stop, then put every question you could not close in that one message, each on a line of its own as `[QUESTION: ...] [OPTIONS: <recommended> | <other>]`, your recommended answer first and the options split by `|`. Leave out `[OPTIONS: ...]` where the answer is free text. Rail collects them and the human answers the lot in a single pass, so one question at a time costs them a round trip each. A question you can settle from the app, the ticket or the plan is not a question.
 
     #{outstanding(task)}
-    #{plan(task)}
+    #{plan(task)}#{learnings_brief(run, fn -> ["#{issue.title}\n\n#{issue.description}" | changed_files(task)] end)}
     The ticket the change was built from. Its acceptance criteria are the first source of your checklist:
 
     #{format_ticket(issue)}
@@ -143,6 +146,14 @@ defmodule Rail.Pipeline.Actions.StartQaRun do
 
     #{format_comments(issue.comments)}
     """)
+  end
+
+  # The files the branch changed stand in for the screens under test, which nothing names before QA runs.
+  defp changed_files(%Task{} = task) do
+    case Git.load_diff(Scope.for_system(), task, :branch) do
+      {:ok, [_first | _rest] = files} -> [Enum.map_join(files, "\n", & &1.path)]
+      _nothing_changed_or_gone -> []
+    end
   end
 
   defp workspace(%Task{worktree_path: worktree_path, worktree_name: branch, project: %Project{} = project}) do
