@@ -347,6 +347,69 @@ defmodule RailWeb.TaskLiveTest do
     assert has_element?(view, "#question-prompt", "Which region?")
   end
 
+  test "working in the question card does not read the ticket again", %{conn: conn, task: task, run: run} do
+    {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+    blocked = Repo.preload(blocked, task: :issue)
+
+    {:ok, _first} =
+      Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?", options: ["Postgres", "MySQL"]})
+
+    {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which region?"})
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+    reject(&Pipeline.read_ticket/1)
+
+    for typed <- ["P", "Po", "Postgres", "Postgres, on the managed plan"] do
+      view |> form("#answer-question-form", %{"answer" => typed}) |> render_change()
+      assert has_element?(view, "#answer-textarea", typed)
+    end
+
+    view |> element("#question-option-1") |> render_click()
+    assert has_element?(view, "#question-option-1.bg-blue-100")
+
+    view |> element("#question-tab-1") |> render_click()
+    assert has_element?(view, "#question-prompt", "Which region?")
+  end
+
+  test "an answer saved straight after typing is the text submitted, to its last character", %{
+    conn: conn,
+    task: task,
+    run: run
+  } do
+    {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+    blocked = Repo.preload(blocked, task: :issue)
+
+    {:ok, question} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    view |> form("#answer-question-form", %{"answer" => "Post"}) |> render_change()
+    view |> form("#answer-question-form", %{"answer" => "Postgres 1"}) |> render_change()
+    view |> form("#answer-question-form", %{"answer" => "Postgres 16"}) |> render_submit()
+
+    assert {:ok, %{status: :answered, answer: "Postgres 16"}} = Pipeline.get_question(question.id)
+  end
+
+  test "a picked chip stays in step with the text under it", %{conn: conn, task: task, run: run} do
+    {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+    blocked = Repo.preload(blocked, task: :issue)
+
+    {:ok, _question} =
+      Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?", options: ["Postgres", "MySQL"]})
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    view |> element("#question-option-0") |> render_click()
+    assert has_element?(view, "#question-option-0.bg-blue-100")
+    refute has_element?(view, "#question-option-1.bg-blue-100")
+
+    view |> form("#answer-question-form", %{"answer" => "Postgres, but"}) |> render_change()
+    refute has_element?(view, "#question-option-0.bg-blue-100")
+
+    view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_change()
+    assert has_element?(view, "#question-option-0.bg-blue-100")
+  end
+
   test "a blocked run's questions are answered here and sent as one round", %{
     conn: conn,
     task: task,
@@ -411,6 +474,25 @@ defmodule RailWeb.TaskLiveTest do
 
     view |> form("#answer-question-form", %{"answer" => "   "}) |> render_submit()
 
+    assert {:ok, %{status: :pending}} = Pipeline.get_question(question.id)
+  end
+
+  # The ids come back from the browser, so a page drawn before a question went away can still name it.
+  test "a question that is gone is neither answered nor dismissed", %{conn: conn, task: task, run: run} do
+    {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+    blocked = Repo.preload(blocked, task: :issue)
+
+    {:ok, question} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
+
+    assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+    view
+    |> element("#answer-question-form")
+    |> render_submit(%{"question_id" => "qst_gone", "answer" => "Postgres"})
+
+    view |> element("#dismiss-question-button") |> render_click(%{"question_id" => "qst_gone"})
+
+    assert has_element?(view, "#question-prompt", "Which database?")
     assert {:ok, %{status: :pending}} = Pipeline.get_question(question.id)
   end
 
@@ -873,6 +955,30 @@ defmodule RailWeb.TaskLiveTest do
       %{task: task, design_run: design_run, design_dir: design_dir}
     end
 
+    test "working in the question card does not read the design again", %{conn: conn, task: task, design_run: run} do
+      {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+      blocked = Repo.preload(blocked, task: :issue)
+
+      {:ok, _first} =
+        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which layout?", options: ["Cards", "Table"]})
+
+      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "How many per page?"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      reject(&Pipeline.read_design/1)
+
+      for typed <- ["C", "Ca", "Cards", "Cards, twelve to a page"] do
+        view |> form("#answer-question-form", %{"answer" => typed}) |> render_change()
+        assert has_element?(view, "#answer-textarea", typed)
+      end
+
+      view |> element("#question-option-1") |> render_click()
+      assert has_element?(view, "#question-option-1.bg-blue-100")
+
+      view |> element("#question-tab-1") |> render_click()
+      assert has_element?(view, "#question-prompt", "How many per page?")
+    end
+
     test "says so when the designer has written nothing", %{conn: conn, task: task, design_dir: dir} do
       File.rm!(Path.join(dir, "manifest.json"))
 
@@ -1177,6 +1283,31 @@ defmodule RailWeb.TaskLiveTest do
       %{task: task, roles: roles, architect_run: architect_run, plan_path: plan_path}
     end
 
+    test "working in the question card does not read the plan again", %{conn: conn, task: task, architect_run: run} do
+      {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+      blocked = Repo.preload(blocked, task: :issue)
+
+      {:ok, _first} =
+        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Extend or add?", options: ["Extend", "Add"]})
+
+      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which module?"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      reject(&Pipeline.read_plan/1)
+      reject(&Pipeline.get_implementation_plan/1)
+
+      for typed <- ["E", "Ex", "Extend", "Extend the invoices module"] do
+        view |> form("#answer-question-form", %{"answer" => typed}) |> render_change()
+        assert has_element?(view, "#answer-textarea", typed)
+      end
+
+      view |> element("#question-option-1") |> render_click()
+      assert has_element?(view, "#question-option-1.bg-blue-100")
+
+      view |> element("#question-tab-1") |> render_click()
+      assert has_element?(view, "#question-prompt", "Which module?")
+    end
+
     test "renders the plan the architect wrote", %{conn: conn, task: task} do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -1441,6 +1572,92 @@ defmodule RailWeb.TaskLiveTest do
         })
 
       %{task: task, role: role, engineer_run: engineer_run, repo: repo}
+    end
+
+    test "working in the question card does not read the diff, the worktree or CI again", %{
+      conn: conn,
+      task: task,
+      engineer_run: run
+    } do
+      {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+      blocked = Repo.preload(blocked, task: :issue)
+
+      {:ok, _first} =
+        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?", options: ["Postgres", "MySQL"]})
+
+      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which region?"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      reject(&Git.load_diff/3)
+      reject(&Git.load_diff/4)
+      reject(&Git.worktree_dirty?/1)
+      reject(&Git.branch_unpushed?/1)
+      reject(&Pipeline.get_ci_status/1)
+
+      for typed <- [
+            "U",
+            "Us",
+            "Use",
+            "Use Postgres",
+            "Use Postgres 16 with the default extensions, and keep the pool at ten connections"
+          ] do
+        view |> form("#answer-question-form", %{"answer" => typed}) |> render_change()
+        assert has_element?(view, "#answer-textarea", typed)
+      end
+
+      view |> element("#question-option-1") |> render_click()
+      assert has_element?(view, "#question-option-1.bg-blue-100")
+
+      view |> element("#question-tab-1") |> render_click()
+      assert has_element?(view, "#question-prompt", "Which region?")
+    end
+
+    test "the diff keeps refreshing under a draft, and the draft stays", %{
+      conn: conn,
+      task: task,
+      engineer_run: run,
+      repo: repo
+    } do
+      {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+      blocked = Repo.preload(blocked, task: :issue)
+      {:ok, _question} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> form("#answer-question-form", %{"answer" => "Half typed"}) |> render_change()
+
+      File.write!(Path.join(repo, "fresh.ex"), "just written\n")
+      send(view.pid, {:run_events, run.id, []})
+      # The page forwards to the stage, and the stage to the file it changed, each
+      # on a turn of its own, so each needs a sync before the file can be read.
+      _settled = render(view)
+      _settled = render(view)
+
+      assert has_element?(view, "[data-qa='diff-file-row']", "fresh.ex")
+      assert has_element?(view, "#answer-textarea", "Half typed")
+    end
+
+    test "a draft typed in one view stays out of another view of the same task", %{
+      conn: conn,
+      task: task,
+      engineer_run: run,
+      repo: repo
+    } do
+      {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+      blocked = Repo.preload(blocked, task: :issue)
+      {:ok, _question} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
+
+      assert {:ok, typing, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert {:ok, idle, _html} = live(conn, ~p"/tasks/#{task.id}")
+      typing |> form("#answer-question-form", %{"answer" => "Half typed"}) |> render_change()
+
+      File.write!(Path.join(repo, "fresh.ex"), "just written\n")
+      _logged = Pipeline.append_run_events(run.id, nil, ["[tool write_file] fresh.ex"])
+      _settled = render(idle)
+      _settled = render(idle)
+
+      assert has_element?(idle, "[data-qa='diff-file-row']", "fresh.ex")
+      refute has_element?(idle, "#answer-textarea", "Half typed")
+      assert has_element?(typing, "#answer-textarea", "Half typed")
     end
 
     test "renders the diff the engineer produced", %{conn: conn, task: task} do
@@ -3194,6 +3411,30 @@ defmodule RailWeb.TaskLiveTest do
       }
     end
 
+    test "working in the question card does not read the findings again", %{conn: conn, task: task, review_run: run} do
+      {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+      blocked = Repo.preload(blocked, task: :issue)
+
+      {:ok, _first} =
+        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Fix it here?", options: ["Yes", "No"]})
+
+      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Who owns it?"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      reject(&Pipeline.list_review_findings/1)
+
+      for typed <- ["Y", "Ye", "Yes", "Yes, in this branch"] do
+        view |> form("#answer-question-form", %{"answer" => typed}) |> render_change()
+        assert has_element?(view, "#answer-textarea", typed)
+      end
+
+      view |> element("#question-option-1") |> render_click()
+      assert has_element?(view, "#question-option-1.bg-blue-100")
+
+      view |> element("#question-tab-1") |> render_click()
+      assert has_element?(view, "#question-prompt", "Who owns it?")
+    end
+
     test "lists every finding, worst first, with where it is", %{
       conn: conn,
       task: task,
@@ -3869,6 +4110,56 @@ defmodule RailWeb.TaskLiveTest do
       end
 
       %{task: task, role: role, qa_run: qa_run, raised: raised, decide_as_advised: decide_as_advised}
+    end
+
+    test "working in the question card does not read the findings, checklist or evidence again", %{
+      conn: conn,
+      task: task,
+      qa_run: run
+    } do
+      {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+      blocked = Repo.preload(blocked, task: :issue)
+
+      {:ok, _first} =
+        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which browser?", options: ["Chrome", "Safari"]})
+
+      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which account?"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      reject(&Pipeline.list_qa_findings/1)
+      reject(&Pipeline.list_qa_evidence/1)
+      reject(&Pipeline.read_qa_checklist/1)
+      reject(&Pipeline.read_qa_report/1)
+
+      for typed <- ["C", "Ch", "Chrome", "Chrome, at 1280 wide"] do
+        view |> form("#answer-question-form", %{"answer" => typed}) |> render_change()
+        assert has_element?(view, "#answer-textarea", typed)
+      end
+
+      view |> element("#question-option-1") |> render_click()
+      assert has_element?(view, "#question-option-1.bg-blue-100")
+
+      view |> element("#question-tab-1") |> render_click()
+      assert has_element?(view, "#question-prompt", "Which account?")
+    end
+
+    test "the checklist keeps filling under a draft, and the draft stays", %{conn: conn, task: task, qa_run: run} do
+      {:ok, running} = Pipeline.update_run(run, %{status: :running, stage_outcome: :in_progress})
+
+      {:ok, _question} =
+        running |> Repo.preload(task: :issue) |> Pipeline.register_question(%DetectedQuestion{prompt: "Which browser?"})
+
+      {:ok, _checklist} = Pipeline.write_qa_checklist(task, [%{"key" => "totals", "title" => "The totals agree"}])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> form("#answer-question-form", %{"answer" => "Half typed"}) |> render_change()
+
+      {:ok, _marked} = Pipeline.record_qa_check(task, "totals", "fail", "off by a cent")
+      Pipeline.append_run_events(run.id, nil, [~s([qa] check "totals" fail)])
+      _settled = render(view)
+
+      assert has_element?(view, "[data-qa='qa_checklist_progress']", "1 of 1")
+      assert has_element?(view, "#answer-textarea", "Half typed")
     end
 
     test "lists every finding with QA's verdict over the top", %{
@@ -5215,6 +5506,35 @@ defmodule RailWeb.TaskLiveTest do
       end
 
       %{task: task, role: role, demo_run: demo_run, demo_dir: demo_dir, recorded: recorded}
+    end
+
+    test "working in the question card does not read the demo or its beats again", %{
+      conn: conn,
+      task: task,
+      demo_run: run
+    } do
+      {:ok, blocked} = Pipeline.update_run(run, %{status: :blocked_on_input, stage_outcome: :in_progress})
+      blocked = Repo.preload(blocked, task: :issue)
+
+      {:ok, _first} =
+        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which flow?", options: ["Checkout", "Refund"]})
+
+      {:ok, _second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "How long?"})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      reject(&Pipeline.read_demo/1)
+      reject(&Pipeline.list_demo_beats/1)
+
+      for typed <- ["C", "Ch", "Checkout", "Checkout, start to paid"] do
+        view |> form("#answer-question-form", %{"answer" => typed}) |> render_change()
+        assert has_element?(view, "#answer-textarea", typed)
+      end
+
+      view |> element("#question-option-1") |> render_click()
+      assert has_element?(view, "#question-option-1.bg-blue-100")
+
+      view |> element("#question-tab-1") |> render_click()
+      assert has_element?(view, "#question-prompt", "How long?")
     end
 
     # A demo concludes nothing and moves nothing, so the panel is a player and an

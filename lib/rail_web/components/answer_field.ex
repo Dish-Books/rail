@@ -12,6 +12,7 @@ defmodule RailWeb.Components.AnswerField do
   attr :changing_answer, :boolean, default: false
   attr :role_name, :string, required: true
   attr :submitting, :boolean, default: false
+  attr :target, :any, default: nil
 
   def answer_field(assigns) do
     question = assigns.question
@@ -72,6 +73,7 @@ defmodule RailWeb.Components.AnswerField do
           aria-selected={to_string(tab.id == @selected_id)}
           aria-label={tab.aria_label}
           phx-click="select_question"
+          phx-target={@target}
           phx-value-question_id={tab.id}
           class={[
             "inline-flex items-center gap-1.5 shrink-0 px-3 py-1.5 -mb-px text-xs font-semibold border-b-2 transition-colors cursor-pointer",
@@ -131,6 +133,7 @@ defmodule RailWeb.Components.AnswerField do
           id="dismiss-question-button"
           data-qa="dismiss-question-button"
           phx-click="dismiss_question"
+          phx-target={@target}
           phx-value-question_id={get_field(@question, :id)}
           class="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
         >
@@ -142,6 +145,7 @@ defmodule RailWeb.Components.AnswerField do
           id="change-answer-button"
           data-qa="change-answer-button"
           phx-click="change_answer"
+          phx-target={@target}
           class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
         >
           <.icon name="pi-pencil-simple" class="h-4 w-4 shrink-0" />
@@ -164,6 +168,7 @@ defmodule RailWeb.Components.AnswerField do
           id="answer-instead-button"
           data-qa="answer-instead-button"
           phx-click="change_answer"
+          phx-target={@target}
           class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
         >
           <.icon name="pi-pencil-simple" class="h-4 w-4 shrink-0" />
@@ -184,6 +189,7 @@ defmodule RailWeb.Components.AnswerField do
           id={"question-option-#{idx}"}
           data-qa={"question-option-#{idx}"}
           phx-click="select_option"
+          phx-target={@target}
           phx-value-option={option}
           class={[
             "px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer border",
@@ -203,6 +209,7 @@ defmodule RailWeb.Components.AnswerField do
         id="answer-question-form"
         phx-submit="answer_question"
         phx-change="answer_form_change"
+        phx-target={@target}
         class="space-y-3"
       >
         <input type="hidden" name="question_id" value={get_field(@question, :id)} />
@@ -231,6 +238,7 @@ defmodule RailWeb.Components.AnswerField do
             id="dismiss-question-button"
             data-qa="dismiss-question-button"
             phx-click="dismiss_question"
+            phx-target={@target}
             phx-value-question_id={get_field(@question, :id)}
             class="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
           >
@@ -243,6 +251,7 @@ defmodule RailWeb.Components.AnswerField do
             id="cancel-answer-button"
             data-qa="cancel-answer-button"
             phx-click="cancel_answer"
+            phx-target={@target}
             class="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
           >
             Cancel
@@ -276,6 +285,7 @@ defmodule RailWeb.Components.AnswerField do
           id="send-answers-button"
           data-qa="send-answers-button"
           phx-click="send_answers"
+          phx-target={@target}
           disabled={@send_blocked?}
           class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 dark:bg-blue-500 text-white hover:opacity-90 transition-opacity shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
@@ -290,6 +300,7 @@ defmodule RailWeb.Components.AnswerField do
           id="dismiss-questions-button"
           data-qa="dismiss-questions-button"
           phx-click="dismiss_round"
+          phx-target={@target}
           disabled={@send_blocked?}
           class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >

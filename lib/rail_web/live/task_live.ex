@@ -28,6 +28,7 @@ defmodule RailWeb.TaskLive do
   alias RailWeb.Live.EngineerStage
   alias RailWeb.Live.ProductStage
   alias RailWeb.Live.QaStage
+  alias RailWeb.Live.QuestionCard
   alias RailWeb.Live.ReviewStage
   alias RailWeb.Live.RunConversation
 
@@ -72,12 +73,7 @@ defmodule RailWeb.TaskLive do
       |> assign(:frame_window_open?, false)
       |> assign(:held_frame, nil)
       |> assign(:roles_map, %{})
-      |> assign(:selected_question, nil)
       |> assign(:round_questions, [])
-      |> assign(:selected_question_id, nil)
-      |> assign(:advance_question?, false)
-      |> assign(:answer_text, "")
-      |> assign(:changing_answer?, false)
       |> assign(:cleaning_up, false)
       |> assign(:focus_file, nil)
       |> assign(:engineer_tab, nil)
@@ -146,10 +142,7 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              selected_question={@selected_question}
               round_questions={@round_questions}
-              answer_text={@answer_text}
-              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -176,10 +169,7 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              selected_question={@selected_question}
               round_questions={@round_questions}
-              answer_text={@answer_text}
-              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -206,10 +196,7 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              selected_question={@selected_question}
               round_questions={@round_questions}
-              answer_text={@answer_text}
-              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -238,10 +225,7 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              selected_question={@selected_question}
               round_questions={@round_questions}
-              answer_text={@answer_text}
-              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -270,10 +254,7 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              selected_question={@selected_question}
               round_questions={@round_questions}
-              answer_text={@answer_text}
-              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -301,10 +282,7 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              selected_question={@selected_question}
               round_questions={@round_questions}
-              answer_text={@answer_text}
-              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -332,10 +310,7 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              selected_question={@selected_question}
               round_questions={@round_questions}
-              answer_text={@answer_text}
-              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -391,10 +366,7 @@ defmodule RailWeb.TaskLive do
               task={@task}
               current_scope={@current_scope}
               roles_map={@roles_map}
-              selected_question={@selected_question}
               round_questions={@round_questions}
-              answer_text={@answer_text}
-              changing_answer?={@changing_answer?}
               conversation_run={@conversation_run}
             />
           </:sidebar>
@@ -405,76 +377,7 @@ defmodule RailWeb.TaskLive do
   end
 
   def handle_event("select_tab", %{"tab" => tab}, socket) do
-    socket =
-      socket
-      |> assign(:selected_question_id, nil)
-      |> assign(:changing_answer?, false)
-      |> push_patch(to: ~p"/tasks/#{socket.assigns.task_id}?tab=#{tab}")
-
-    {:noreply, socket}
-  end
-
-  def handle_event("select_option", %{"option" => option}, socket) do
-    {:noreply, assign(socket, :answer_text, option)}
-  end
-
-  def handle_event("select_question", %{"question_id" => question_id}, socket) do
-    socket =
-      socket
-      |> assign(:selected_question_id, question_id)
-      |> assign(:answer_text, "")
-      |> assign(:changing_answer?, false)
-      |> refresh_task()
-
-    {:noreply, socket}
-  end
-
-  def handle_event("answer_form_change", params, socket) do
-    {:noreply, assign(socket, :answer_text, Map.get(params, "answer") || "")}
-  end
-
-  def handle_event("answer_question", params, socket) do
-    answer = params |> Map.get("answer", socket.assigns.answer_text) |> to_string() |> String.trim()
-
-    if answer == "" do
-      {:noreply, socket}
-    else
-      question_id = question_id(socket, params)
-      answered = answer_one(question_id, answer)
-      socket = socket |> assign(:selected_question_id, question_id) |> reset_answer() |> flash_already_sent(answered)
-      {:noreply, socket}
-    end
-  end
-
-  def handle_event("dismiss_question", params, socket) do
-    question_id = question_id(socket, params)
-    dismissed = dismiss_one(question_id)
-    socket = socket |> assign(:selected_question_id, question_id) |> reset_answer() |> flash_already_sent(dismissed)
-    {:noreply, socket}
-  end
-
-  def handle_event("change_answer", _params, socket) do
-    socket =
-      socket
-      |> assign(:changing_answer?, true)
-      |> assign(:answer_text, socket.assigns.selected_question.answer || "")
-
-    {:noreply, socket}
-  end
-
-  def handle_event("cancel_answer", _params, socket) do
-    socket = socket |> assign(:changing_answer?, false) |> assign(:answer_text, "")
-    {:noreply, socket}
-  end
-
-  def handle_event("send_answers", _params, socket) do
-    _sent = Pipeline.send_answers(socket.assigns.conversation_run)
-    {:noreply, refresh_task(socket)}
-  end
-
-  def handle_event("dismiss_round", _params, socket) do
-    _dismissed = Pipeline.dismiss_round(socket.assigns.conversation_run)
-    {:noreply, refresh_task(socket)}
+    {:noreply, push_patch(socket, to: ~p"/tasks/#{socket.assigns.task_id}?tab=#{tab}")}
   end
 
   def handle_event("cleanup", _params, socket) do
@@ -604,6 +507,17 @@ defmodule RailWeb.TaskLive do
     {:noreply, refresh_task(socket)}
   end
 
+  # A round sent from another tab or by another person can land between opening a
+  # change and saving it. The card's own flash would not reach the layout.
+  def handle_info(:round_already_sent, socket) do
+    socket =
+      socket
+      |> put_flash(:error, "This round was already sent, so its answers can no longer be changed.")
+      |> refresh_task()
+
+    {:noreply, socket}
+  end
+
   # A cleaned-up task is gone, so the issue is where it can be started again.
   def handle_async(:cleanup, {:ok, {:ok, %Task{issue_id: issue_id}}}, socket) do
     {:noreply, push_navigate(socket, to: ~p"/issues/#{issue_id}")}
@@ -693,29 +607,22 @@ defmodule RailWeb.TaskLive do
 
   attr :task, :any, required: true
   attr :roles_map, :map, required: true
-  attr :selected_question, :any, required: true
   attr :round_questions, :list, required: true
-  attr :answer_text, :string, required: true
-  attr :changing_answer?, :boolean, required: true
   attr :conversation_run, :any, required: true
   attr :current_scope, Rail.Scope, required: true
 
   # Questions sit above the conversation they came out of. Answering only records:
   # the round reaches the agent when the human says it is done.
   defp conversation_sidebar(assigns) do
-    assigns =
-      assign(assigns, :role_name, assigns.selected_question && assigns.roles_map[assigns.conversation_run.role_id].name)
-
     ~H"""
-    <div :if={@selected_question != nil} class="p-4 border-b border-slate-200 dark:border-slate-700">
-      <.answer_field
-        question={@selected_question}
-        questions={@round_questions}
-        answer_text={@answer_text}
-        changing_answer={@changing_answer?}
-        role_name={@role_name}
-      />
-    </div>
+    <.live_component
+      :if={@round_questions != []}
+      module={QuestionCard}
+      id={"question-card-#{@conversation_run.id}"}
+      questions={@round_questions}
+      run={@conversation_run}
+      role_name={@roles_map[@conversation_run.role_id].name}
+    />
 
     <.live_component
       module={RunConversation}
@@ -803,22 +710,8 @@ defmodule RailWeb.TaskLive do
     |> assign(:engineer_tab, engineer_tab(started))
     |> assign(:subscribed_run_ids, sync_run_subscriptions(socket, task.runs))
     |> assign(:watched_browser_task_id, watch_browser(socket, task))
-    |> assign_round(round_questions(asked, selected_run))
+    |> assign(:round_questions, round_questions(asked, selected_run))
     |> load_issue(task)
-  end
-
-  # The card follows the round: an advance asked for by a save is spent here, and a
-  # change in progress ends once its question has left the card.
-  defp assign_round(socket, round_questions) do
-    %{selected_question_id: selected_id, advance_question?: advance?, changing_answer?: changing?} = socket.assigns
-    selected_question = select_question(round_questions, selected_id, advance?)
-
-    socket
-    |> assign(:round_questions, round_questions)
-    |> assign(:selected_question, selected_question)
-    |> assign(:selected_question_id, selected_question && selected_question.id)
-    |> assign(:advance_question?, false)
-    |> assign(:changing_answer?, changing? and selected_question != nil)
   end
 
   # The issue is a tab of its own and costs a query of its own, so it is read
@@ -956,19 +849,6 @@ defmodule RailWeb.TaskLive do
 
   defp round_questions(_asked, nil), do: []
 
-  # The tab the human picked stays put across refreshes; saving one moves on to the
-  # next open question, or stays put once none is left.
-  defp select_question(questions, selected_id, advance?) do
-    open = Enum.find(questions, &(&1.status == :pending))
-    selected = Enum.find(questions, &(&1.id == selected_id))
-
-    cond do
-      advance? and open != nil -> open
-      selected != nil -> selected
-      true -> List.first(questions)
-    end
-  end
-
   # `run:<id>` carries the run's log lines and the finish of its OS process. A
   # LiveComponent cannot subscribe, so the page holds this and forwards. Every run
   # on the task is followed, not just the one being read: the conversation can be
@@ -1020,38 +900,6 @@ defmodule RailWeb.TaskLive do
     |> assign(:frame_window_open?, true)
     |> push_event("browser:frame", %{data: data})
   end
-
-  defp question_id(socket, params) do
-    Map.get(params, "question_id") || (socket.assigns.selected_question && socket.assigns.selected_question.id)
-  end
-
-  defp answer_one(question_id, answer) do
-    with {:ok, question} <- Pipeline.get_question(question_id) do
-      Pipeline.answer_question(question, answer)
-    end
-  end
-
-  defp dismiss_one(question_id) do
-    with {:ok, question} <- Pipeline.get_question(question_id) do
-      Pipeline.dismiss_question(question)
-    end
-  end
-
-  defp reset_answer(socket) do
-    socket
-    |> assign(:answer_text, "")
-    |> assign(:changing_answer?, false)
-    |> assign(:advance_question?, true)
-    |> refresh_task()
-  end
-
-  # A round sent from another tab or by another person can land between opening a
-  # change and saving it.
-  defp flash_already_sent(socket, {:error, :already_sent}) do
-    put_flash(socket, :error, "This round was already sent, so its answers can no longer be changed.")
-  end
-
-  defp flash_already_sent(socket, _result), do: socket
 
   defp claim_error(:already_assigned), do: "Somebody else claimed this issue first"
   defp claim_error(:linear_not_linked), do: "Link your Linear account in Settings before claiming an issue"
