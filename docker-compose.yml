@@ -26,7 +26,7 @@ services:
   # configs hardcode it; it listens on localhost only. Settings match dishbooks' init.sql.
   db:
     logging: *logging
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:pg17-trixie
     restart: unless-stopped
     network_mode: host
     user: "1000:1000"
