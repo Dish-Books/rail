@@ -524,7 +524,9 @@ defmodule RailWeb.TaskLiveTest do
 
       blocked = Repo.preload(blocked, task: :issue)
 
-      {:ok, first} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?"})
+      {:ok, first} =
+        Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which database?", options: ["Postgres", "MySQL"]})
+
       {:ok, second} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Which region?"})
       {:ok, third} = Pipeline.register_question(blocked, %DetectedQuestion{prompt: "Who reviews it?"})
 
@@ -694,6 +696,94 @@ defmodule RailWeb.TaskLiveTest do
       {:ok, _closed} = run |> Repo.reload!() |> Repo.preload(:role) |> Pipeline.dismiss_round()
 
       refute has_element?(view, "#answer-field-card")
+    end
+
+    # The card shares the sidebar with the conversation, and the browser keeps the
+    # reader's place there only while nothing the card does reaches the messages.
+    test "using the card leaves the conversation as it was", %{conn: conn, task: task, run: run} do
+      Pipeline.append_run_events(run.id, nil, [
+        "[human] Where were we?",
+        "[tool] Read lib/rail/repo.ex",
+        "The schema needs a new column."
+      ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      conversation = view |> element("#chat-messages") |> render()
+      assert conversation =~ "The schema needs a new column."
+
+      view |> element("#question-option-1") |> render_click()
+      assert view |> element("#chat-messages") |> render() == conversation
+
+      view |> form("#answer-question-form", %{"answer" => "MySQL"}) |> render_submit()
+      assert view |> element("#chat-messages") |> render() == conversation
+
+      view |> element("#dismiss-question-button") |> render_click()
+      assert view |> element("#chat-messages") |> render() == conversation
+
+      view |> element("#question-tab-0") |> render_click()
+      assert view |> element("#chat-messages") |> render() == conversation
+
+      view |> element("#change-answer-button") |> render_click()
+      assert view |> element("#chat-messages") |> render() == conversation
+
+      view |> element("#cancel-answer-button") |> render_click()
+      assert view |> element("#chat-messages") |> render() == conversation
+    end
+
+    test "saving an answer with the raw log showing leaves the log as it was", %{conn: conn, task: task, run: run} do
+      Pipeline.append_run_events(run.id, nil, [
+        "[human] Where were we?",
+        "[tool] Read lib/rail/repo.ex",
+        "The schema needs a new column."
+      ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#toggle-raw-log") |> render_click()
+      log = view |> element("#raw-log-container") |> render()
+      assert log =~ "The schema needs a new column."
+
+      view |> form("#answer-question-form", %{"answer" => "Postgres"}) |> render_submit()
+
+      assert view |> element("#raw-log-container") |> render() == log
+    end
+
+    test "a round sent from another tab adds its lines after the ones being read", %{
+      conn: conn,
+      task: task,
+      run: run,
+      questions: questions
+    } do
+      stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
+
+      Pipeline.append_run_events(run.id, nil, [
+        "[human] Where were we?",
+        "[tool] Read lib/rail/repo.ex",
+        "The schema needs a new column."
+      ])
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+
+      earlier =
+        view |> render() |> Floki.parse_fragment!() |> Floki.find("#chat-messages > *") |> Enum.map(&Floki.raw_html/1)
+
+      assert length(earlier) == 3
+
+      for question <- questions, do: {:ok, _answered} = Pipeline.answer_question(question, "Postgres")
+      _sent = run |> Repo.reload!() |> Repo.preload(:role) |> Pipeline.send_answers()
+      Pipeline.append_run_events(run.id, nil, ["[tool] Edit lib/rail/repo.ex", "Carrying on with Postgres."])
+
+      _settled = render(view)
+      assert has_element?(view, "[data-qa='role-bubble']", "Carrying on with Postgres.")
+
+      {held, added} =
+        view
+        |> render()
+        |> Floki.parse_fragment!()
+        |> Floki.find("#chat-messages > *")
+        |> Enum.split(length(earlier))
+
+      assert Enum.map(held, &Floki.raw_html/1) == earlier
+      assert Floki.attribute(added, "data-qa") == ["human-bubble", "activity-tile", "role-bubble"]
     end
 
     test "saving an answer the round already sent says so", %{conn: conn, task: task, questions: [first | _rest]} do
@@ -3030,6 +3120,24 @@ defmodule RailWeb.TaskLiveTest do
 
       send(view.pid, :task_changed)
       assert has_element?(view, "#metadata-run-conversation-id", "sess_design")
+    end
+
+    # One scroller serves every tab, so the scroll hook tells another run from a patch by its id.
+    test "the conversation's scrollers name the run they show", %{
+      conn: conn,
+      task: task,
+      run: run,
+      other_role: other_role,
+      other_run: other_run
+    } do
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      assert has_element?(view, "#chat-messages[data-run-id='#{run.id}']")
+
+      view |> element("#task-tab-#{other_role.id}") |> render_click()
+      assert has_element?(view, "#chat-messages[data-run-id='#{other_run.id}']")
+
+      view |> element("#toggle-raw-log") |> render_click()
+      assert has_element?(view, "#raw-log-container[data-run-id='#{other_run.id}']")
     end
 
     test "moving to the next stage moves the conversation to that stage's run", %{conn: conn, task: task} do

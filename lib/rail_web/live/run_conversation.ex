@@ -225,6 +225,7 @@ defmodule RailWeb.Live.RunConversation do
       <div
         id="chat-messages"
         data-qa="chat-messages"
+        data-run-id={@run.id}
         phx-hook="ChatAutoscroll"
         class="flex-1 overflow-y-auto overflow-x-hidden px-5 py-5 space-y-4"
       >
@@ -849,6 +850,7 @@ defmodule RailWeb.Live.RunConversation do
     <div
       id="raw-log-container"
       data-qa="raw_log_container"
+      data-run-id={@run.id}
       phx-hook="ChatAutoscroll"
       class="w-full flex-1 min-h-0 p-4 bg-zinc-950 text-zinc-300 font-mono text-xs overflow-y-auto overflow-x-hidden select-text"
     >
