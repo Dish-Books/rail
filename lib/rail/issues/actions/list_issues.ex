@@ -10,7 +10,7 @@ defmodule Rail.Issues.Actions.ListIssues do
   Lists a page of issues, most recently updated first, along with how many
   match in all.
 
-  Options: `:project_id`, `:owner_user_id`, `:state`, `:show_finished`, `:search`,
+  Options: `:project_id` (one id or a list), `:owner_user_id`, `:state`, `:show_finished`, `:search`,
   `:completed_after`, `:priority`, `:limit`, `:offset` and `:preload`.
 
   Returns `%{issues: [...], total: n, priority_counts: %{priority => n}}`.
@@ -47,6 +47,7 @@ defmodule Rail.Issues.Actions.ListIssues do
   end
 
   defp filter_project(query, nil), do: query
+  defp filter_project(query, project_ids) when is_list(project_ids), do: where(query, [i], i.project_id in ^project_ids)
   defp filter_project(query, project_id), do: where(query, [i], i.project_id == ^project_id)
 
   defp filter_owner(query, nil), do: query

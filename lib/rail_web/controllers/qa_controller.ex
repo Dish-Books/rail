@@ -21,9 +21,11 @@ defmodule RailWeb.QaController do
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.QaEvidence
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Scope
 
   def evidence(conn, %{"task_id" => task_id, "key" => key, "index" => index}) do
     with {:ok, %Task{} = task} <- Pipeline.get_task(task_id),
+         true <- Scope.can_access_project?(conn.assigns.current_scope, task.project_id),
          %QaEvidence{path: path} when is_binary(path) <- evidence(task, key, index),
          {:ok, kind} <- Pipeline.classify_qa_evidence(task, path) do
       send_shot(conn, Path.join([task.scratch_path, "qa", path]), kind)
@@ -34,6 +36,7 @@ defmodule RailWeb.QaController do
 
   def shot(conn, %{"task_id" => task_id, "file" => file}) do
     with {:ok, %Task{} = task} <- Pipeline.get_task(task_id),
+         true <- Scope.can_access_project?(conn.assigns.current_scope, task.project_id),
          %{file: listed, kind: kind} <- Enum.find(Pipeline.list_qa_evidence(task), &(&1.file == file)) do
       send_shot(conn, Path.join([task.scratch_path, "qa", "evidence", listed]), kind)
     else

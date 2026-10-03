@@ -10,7 +10,7 @@ defmodule Rail.Pipeline.Actions.ListRuns do
   @doc """
   Lists runs, filtered and preloaded as `opts` asks.
 
-  `:project_id` reaches through the task each run belongs to, so a caller showing
+  `:project_id`, one id or a list, reaches through the task each run belongs to, so a caller showing
   one project's work asks for runs and gets exactly those. `:owner_user_id` reaches
   on to the task's issue and keeps the runs on issues that user owns.
 
@@ -30,6 +30,10 @@ defmodule Rail.Pipeline.Actions.ListRuns do
 
   defp filter_project(query, project_id) when is_binary(project_id) do
     where(query, [task: t], t.project_id == ^project_id)
+  end
+
+  defp filter_project(query, project_ids) when is_list(project_ids) do
+    where(query, [task: t], t.project_id in ^project_ids)
   end
 
   defp filter_project(query, _all_projects), do: query

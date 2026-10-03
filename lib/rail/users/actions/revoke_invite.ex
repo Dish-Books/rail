@@ -9,9 +9,16 @@ defmodule Rail.Users.Actions.RevokeInvite do
   # erase the record of how that account came to exist.
   def revoke_invite(_scope, invite_id) do
     case Repo.get(Invite, invite_id) do
-      %Invite{accepted_at: nil} = invite -> Repo.delete(invite)
-      %Invite{} -> {:error, :already_accepted}
-      nil -> {:error, :not_found}
+      %Invite{accepted_at: nil} = invite ->
+        {:ok, invite} = Repo.delete(invite)
+        Phoenix.PubSub.broadcast(Rail.PubSub, "users", {:users_changed, invite.id})
+        {:ok, invite}
+
+      %Invite{} ->
+        {:error, :already_accepted}
+
+      nil ->
+        {:error, :not_found}
     end
   end
 end

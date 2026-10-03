@@ -5,7 +5,7 @@ defmodule RailWeb.ProjectSelectionControllerTest do
 
   alias Rail.Users
 
-  setup %{conn: conn} do
+  setup %{conn: conn, project: project} do
     {:ok, user} =
       Users.register_oauth_user(%{
         github_id: "gh_project_selection",
@@ -13,6 +13,8 @@ defmodule RailWeb.ProjectSelectionControllerTest do
         email: "project_selection_user@example.com",
         admin: false
       })
+
+    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
 
     %{conn: log_in_user(conn, user)}
   end

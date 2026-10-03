@@ -3,7 +3,6 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
   use RailWeb, :live_view
 
   alias Rail.Mcp
-  alias Rail.Projects
   alias Rail.Scope
   alias Rail.Users
   alias Rail.Users.Schemas.User
@@ -24,7 +23,7 @@ defmodule RailWeb.Settings.ConnectedAccountsLive do
       |> assign(:slack_connected, Scope.slack_linked?(current_scope))
       |> assign(:slack_name, user && user.slack_name)
       |> assign(:signing_error, nil)
-      |> assign(:repository_access, repository_access(Projects.list_projects()))
+      |> assign(:repository_access, repository_access(socket.assigns.projects))
       |> assign(:mcp_servers, Enum.filter(Mcp.list_servers(), &(&1.enabled and &1.auth == :oauth)))
       |> assign(:mcp_connected_ids, mcp_connected_ids(current_scope))
 

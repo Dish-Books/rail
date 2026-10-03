@@ -5,6 +5,7 @@ defmodule RailWeb.OverviewLive do
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
+  alias Rail.Scope
   alias Rail.Tools
 
   @throughput_days 30
@@ -35,7 +36,7 @@ defmodule RailWeb.OverviewLive do
     socket =
       socket
       |> assign(:view, if(everyone, do: :everyone, else: :mine))
-      |> load_overview_state(socket.assigns.current_project_id, everyone)
+      |> load_overview_state(socket.assigns.project_filter, everyone)
 
     {:noreply, socket}
   end
@@ -127,19 +128,19 @@ defmodule RailWeb.OverviewLive do
   # Every section comes from the one reload, so they never disagree; reassigning
   # without a patch keeps the view, the open switcher and the scroll where they were.
   def handle_info({:pipeline_changed, _task_id}, socket) do
-    {:noreply, load_overview_state(socket, socket.assigns.current_project_id, socket.assigns.view == :everyone)}
+    {:noreply, load_overview_state(socket, socket.assigns.project_filter, socket.assigns.view == :everyone)}
   end
 
   def handle_info(:sandboxes_changed, socket) do
-    {:noreply, load_overview_state(socket, socket.assigns.current_project_id, socket.assigns.view == :everyone)}
+    {:noreply, load_overview_state(socket, socket.assigns.project_filter, socket.assigns.view == :everyone)}
   end
 
   def handle_info({:issue_changed, _issue_id}, socket) do
-    {:noreply, load_overview_state(socket, socket.assigns.current_project_id, socket.assigns.view == :everyone)}
+    {:noreply, load_overview_state(socket, socket.assigns.project_filter, socket.assigns.view == :everyone)}
   end
 
   def handle_info({:issues_synced, _project_id}, socket) do
-    {:noreply, load_overview_state(socket, socket.assigns.current_project_id, socket.assigns.view == :everyone)}
+    {:noreply, load_overview_state(socket, socket.assigns.project_filter, socket.assigns.view == :everyone)}
   end
 
   # Neither moves a task.
@@ -196,7 +197,7 @@ defmodule RailWeb.OverviewLive do
     |> assign(:throughput, throughput(completed, DateTime.to_date(now)))
     |> assign(:dispatch_disabled, Application.get_env(:rail, :no_dispatch, false))
     # The rail badge sits beside these stats, so it comes from the same reload.
-    |> assign(:attention_count, Pipeline.count_attention())
+    |> assign(:attention_count, Pipeline.count_attention(project_id: Scope.project_ids(socket.assigns.current_scope)))
   end
 
   # An earlier run at the task's stage has been retried, and one at another stage

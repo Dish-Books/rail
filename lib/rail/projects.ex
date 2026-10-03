@@ -8,7 +8,7 @@ defmodule Rail.Projects do
   @decorate can?(resource: :projects, action: :create)
   defdelegate create_project(scope, attrs), to: Actions.CreateProject
 
-  defdelegate list_projects(), to: Actions.ListProjects
+  defdelegate list_projects(scope), to: Actions.ListProjects
 
   defdelegate get_project(id), to: Actions.GetProject
 

@@ -12,6 +12,8 @@ defmodule RailWeb.IssueAssetControllerTest do
         email: "issue_asset_user@example.com"
       })
 
+    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
+
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
         "data" => %{
@@ -56,5 +58,26 @@ defmodule RailWeb.IssueAssetControllerTest do
     conn = get(conn, ~p"/issues/iss_missing/assets/ws_id/screenshot.png")
 
     assert response(conn, 404) == "Not found"
+  end
+
+  test "an issue in a project the user cannot access has no files, while an admin is served", %{
+    conn: conn,
+    issue: issue
+  } do
+    {:ok, outsider} =
+      Users.register_oauth_user(%{github_id: "gh_outsider", login: "outsider", email: "outsider@example.com"})
+
+    {:ok, outsider} = Users.update_user(system_scope(), outsider, %{project_ids: ["prj_other"]})
+    conn = log_in_user(conn, outsider)
+
+    assert conn |> get(~p"/issues/#{issue.id}/assets/ws_id/screenshot.png") |> response(404) == "Not found"
+
+    {:ok, admin} =
+      Users.register_oauth_user(%{github_id: "gh_asset_admin", login: "asset_admin", email: "a@x.com", admin: true})
+
+    Req.Test.expect(Rail.Linear, fn conn -> Plug.Conn.send_resp(conn, 200, "PNG_BYTES") end)
+
+    assert conn |> log_in_user(admin) |> get(~p"/issues/#{issue.id}/assets/ws_id/screenshot.png") |> response(200) ==
+             "PNG_BYTES"
   end
 end

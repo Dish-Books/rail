@@ -57,6 +57,30 @@ defmodule Rail.ScopeTest do
     assert %Scope{user: nil, system: true} = Scope.system_scope()
   end
 
+  test "project_ids is nil, meaning every project, for admins and the system scope" do
+    assert Scope.project_ids(Scope.for_system()) == nil
+    assert Scope.project_ids(Scope.for_user(%{admin: true, project_ids: ["prj_a"]})) == nil
+    assert Scope.can_access_project?(Scope.for_system(), "prj_b")
+    assert Scope.can_access_project?(Scope.for_user(%{admin: true, project_ids: []}), "prj_b")
+  end
+
+  test "project_ids is a user's granted projects, and an empty list when they have none" do
+    scope = Scope.for_user(%{admin: false, project_ids: ["prj_a"]})
+    assert Scope.project_ids(scope) == ["prj_a"]
+    assert Scope.can_access_project?(scope, "prj_a")
+    refute Scope.can_access_project?(scope, "prj_b")
+
+    none = Scope.for_user(%{admin: false, project_ids: []})
+    assert Scope.project_ids(none) == []
+    refute Scope.can_access_project?(none, "prj_a")
+    refute Scope.can_access_project?(none, nil)
+  end
+
+  test "user_scope accepts project ids" do
+    assert %Scope{user: %{project_ids: []}} = Scope.user_scope()
+    assert %Scope{user: %{project_ids: ["prj_a"]}} = Scope.user_scope(project_ids: ["prj_a"])
+  end
+
   test "linear_linked? returns true when user has linear_access_token or linear_linked flag" do
     assert Scope.linear_linked?(%Scope{user: %{linear_access_token: "lin_at_valid"}})
     assert Scope.linear_linked?(%Scope{user: %{linear_linked: true}})

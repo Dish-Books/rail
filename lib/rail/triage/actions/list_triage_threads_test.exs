@@ -42,6 +42,9 @@ defmodule Rail.Triage.Actions.ListTriageThreadsTest do
     assert [%Thread{id: ^newer_id}] = Triage.list_triage_threads(project_id: project.id, status: :waiting)
     assert [] = Triage.list_triage_threads(project_id: project.id, status: :triaging)
     assert [] = Triage.list_triage_threads(project_id: "prj_other", status: :waiting)
+    assert [%Thread{id: ^newer_id}] = Triage.list_triage_threads(project_id: [project.id, "prj_other"])
+    assert [] = Triage.list_triage_threads(project_id: ["prj_other"])
+    assert [] = Triage.list_triage_threads(project_id: [])
     assert Enum.any?(Triage.list_triage_threads(status: :waiting), &(&1.id == newer_id))
   end
 
@@ -71,6 +74,9 @@ defmodule Rail.Triage.Actions.ListTriageThreadsTest do
     {:ok, _done} = Triage.dismiss_triage_thread(Scope.for_user(%{id: nil}), older)
 
     assert %{waiting: 1, triaging: 0, done: 1} = Triage.count_triage_threads(project_id: project.id)
+    assert %{waiting: 1, done: 1} = Triage.count_triage_threads(project_id: [project.id])
+    assert %{waiting: 0, done: 0} = Triage.count_triage_threads(project_id: ["prj_other"])
+    assert %{waiting: 0, done: 0} = Triage.count_triage_threads(project_id: [])
     assert %{waiting: 1, done: 1} = Triage.count_triage_threads(slack_channel_id: [older.slack_channel_id])
     assert %{waiting: 0, done: 0} = Triage.count_triage_threads(slack_channel_id: ["sch_other"])
     assert %{waiting: waiting} = Triage.count_triage_threads([])

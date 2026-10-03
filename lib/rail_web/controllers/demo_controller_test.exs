@@ -13,6 +13,8 @@ defmodule RailWeb.DemoControllerTest do
         email: "demo_controller_user@example.com"
       })
 
+    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
+
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{
         "data" => %{
@@ -96,5 +98,15 @@ defmodule RailWeb.DemoControllerTest do
 
   test "a task that is not a task has nothing to serve", %{conn: conn} do
     assert conn |> get(~p"/tasks/tsk_missing/demo/video") |> response(404)
+  end
+
+  test "the recording of a task in a project the user cannot access is not found", %{conn: conn, task: task} do
+    {:ok, outsider} =
+      Users.register_oauth_user(%{github_id: "gh_outsider", login: "outsider", email: "outsider@example.com"})
+
+    {:ok, outsider} = Users.update_user(system_scope(), outsider, %{project_ids: ["prj_other"]})
+    conn = log_in_user(conn, outsider)
+
+    assert conn |> get(~p"/tasks/#{task.id}/demo/video") |> response(404) == "Not found"
   end
 end

@@ -4,7 +4,6 @@ defmodule RailWeb.IssuesLive do
 
   alias Rail.Issues
   alias Rail.Issues.Schemas.Issue
-  alias Rail.Projects
   alias RailWeb.Components.CaptureIssueModal
 
   @page_size 50
@@ -16,7 +15,8 @@ defmodule RailWeb.IssuesLive do
       socket
       |> assign(:page_title, "Issues")
       |> assign(:current_section, :issues)
-      |> load_project(socket.assigns.current_project_id)
+      # The navigation only selects a project it lists, so the selection is always one of these.
+      |> assign(:current_project, Enum.find(socket.assigns.projects, &(&1.id == socket.assigns.current_project_id)))
       |> assign(:syncing_project_ids, MapSet.new())
       |> assign(:is_syncing, false)
 
@@ -328,7 +328,7 @@ defmodule RailWeb.IssuesLive do
     projects =
       if project = socket.assigns.current_project,
         do: [project],
-        else: Projects.list_projects()
+        else: socket.assigns.projects
 
     Enum.each(projects, &Issues.sync_issues/1)
 
@@ -368,27 +368,13 @@ defmodule RailWeb.IssuesLive do
 
   # --- Private Helpers ---
 
-  defp load_project(socket, nil) do
-    assign(socket, :current_project, nil)
-  end
-
-  defp load_project(socket, project_id) when is_binary(project_id) do
-    case Projects.get_project(project_id) do
-      {:ok, project} ->
-        assign(socket, :current_project, project)
-
-      _error ->
-        assign(socket, :current_project, nil)
-    end
-  end
-
   defp reload_data(socket) do
     assigns = socket.assigns
     offset = (assigns.page - 1) * @page_size
 
     %{issues: issues, total: total, priority_counts: priority_counts} =
       Issues.list_issues(
-        project_id: assigns.current_project_id,
+        project_id: assigns.project_filter,
         owner_user_id: if(assigns.mine, do: assigns.current_scope.user.id),
         show_finished: assigns.show_finished,
         search: assigns.search,

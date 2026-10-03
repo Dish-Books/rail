@@ -81,7 +81,7 @@ defmodule RailWeb.Live.QuestionCard do
       question_id = question_id(socket, params)
 
       answered =
-        with {:ok, question} <- Pipeline.get_question(question_id) do
+        with {:ok, question} <- round_question(socket, question_id) do
           Pipeline.answer_question(question, answer)
         end
 
@@ -93,7 +93,7 @@ defmodule RailWeb.Live.QuestionCard do
     question_id = question_id(socket, params)
 
     dismissed =
-      with {:ok, question} <- Pipeline.get_question(question_id) do
+      with {:ok, question} <- round_question(socket, question_id) do
         Pipeline.dismiss_question(question)
       end
 
@@ -132,6 +132,13 @@ defmodule RailWeb.Live.QuestionCard do
   end
 
   defp question_id(socket, params), do: Map.get(params, "question_id") || socket.assigns.selected_id
+
+  # Only a question of this card's round, so a crafted id cannot reach another task's.
+  defp round_question(socket, question_id) do
+    if Enum.any?(socket.assigns.questions, &(&1.id == question_id)),
+      do: Pipeline.get_question(question_id),
+      else: {:error, :not_found}
+  end
 
   # The saved question is folded in at once, so the card moves on to the next open
   # question without waiting for the page to read the round again.

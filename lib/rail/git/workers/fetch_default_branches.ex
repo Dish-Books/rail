@@ -7,12 +7,13 @@ defmodule Rail.Git.Workers.FetchDefaultBranches do
 
   alias Rail.Git
   alias Rail.Projects
+  alias Rail.Scope
 
   require Logger
 
   @impl Oban.Worker
   def perform(%Oban.Job{}) do
-    for project <- Projects.list_projects(), project.active and Git.git_repo?(project.clone_path) do
+    for project <- Projects.list_projects(Scope.for_system()), project.active and Git.git_repo?(project.clone_path) do
       case Git.fetch_default_branch(project, project.clone_path) do
         :ok -> :ok
         {:error, reason} -> Logger.warning("Could not fetch #{project.name}'s default branch: #{inspect(reason)}")

@@ -38,6 +38,7 @@ defmodule RailWeb.CoreComponents do
   defdelegate sandbox_usage_meter(assigns), to: Components.SandboxUsageMeter
   defdelegate segmented_control(assigns), to: Components.SegmentedControl
   defdelegate settings_nav(assigns), to: Components.SettingsNav
+  defdelegate side_sheet(assigns), to: Components.SideSheet
   defdelegate status_icon(assigns), to: Components.IssueIcons
   defdelegate task_layout(assigns), to: Components.TaskLayout
   defdelegate task_tabs(assigns), to: Components.TaskTabs

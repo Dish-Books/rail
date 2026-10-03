@@ -23,9 +23,11 @@ defmodule Rail.Users.Actions.RevokeInviteTest do
 
   test "revoking removes the standing permission", %{scope: scope} do
     assert {:ok, %Invite{id: invite_id}} = Users.invite_user(scope, %{email: "gone@example.com"})
+    Phoenix.PubSub.subscribe(Rail.PubSub, "users")
 
     assert {:ok, %Invite{}} = Users.revoke_invite(scope, invite_id)
     assert Repo.get(Invite, invite_id) == nil
+    assert_receive {:users_changed, ^invite_id}
   end
 
   test "an accepted invite is kept as the record of how the account got in", %{scope: scope} do

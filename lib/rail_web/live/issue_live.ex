@@ -7,10 +7,15 @@ defmodule RailWeb.IssueLive do
   """
   use RailWeb, :live_view
 
+  import RailWeb.Utils.HandleIssueEvent
+
   alias Rail.Issues
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Scope
   alias Rail.Users
+
+  @issue_events ["assign", "filter_assignees", "draft_comment", "comment"]
 
   def mount(_params, _session, socket) do
     if connected?(socket), do: Phoenix.PubSub.subscribe(Rail.PubSub, "issues")
@@ -20,15 +25,23 @@ defmodule RailWeb.IssueLive do
       |> assign(:page_title, "Issue")
       |> assign(:current_section, :issues)
       |> assign(:issue, nil)
-      |> assign(:assignees, Users.list_linear_users())
+      |> assign(:assignees, [])
       |> assign(:assignee_query, "")
       |> assign(:comment_nonce, 0)
 
     {:ok, socket}
   end
 
+  # The owner menu offers only people who can open the issue, so it waits for the issue's project.
   def handle_params(%{"id" => id}, _uri, socket) do
-    {:noreply, load_issue(socket, id)}
+    socket = load_issue(socket, id)
+
+    socket =
+      if issue = socket.assigns.issue,
+        do: assign(socket, :assignees, Users.list_linear_users(project_id: issue.project_id)),
+        else: socket
+
+    {:noreply, socket}
   end
 
   def render(assigns) do
@@ -58,32 +71,8 @@ defmodule RailWeb.IssueLive do
     end
   end
 
-  def handle_event("filter_assignees", %{"q" => query}, socket) do
-    {:noreply, assign(socket, :assignee_query, query)}
-  end
-
-  def handle_event("assign", %{"user_id" => ""}, socket) do
-    {:noreply, assign_owner(socket, nil)}
-  end
-
-  # Only a user with a linked Linear account can be assigned, since Linear has to
-  # be told who they are.
-  def handle_event("assign", %{"user_id" => user_id}, socket) do
-    if Enum.any?(socket.assigns.assignees, &(&1.id == user_id)) do
-      {:noreply, assign_owner(socket, user_id)}
-    else
-      {:noreply, socket}
-    end
-  end
-
-  # A draft lives in its textarea until it is sent.
-  def handle_event("draft_comment", _params, socket), do: {:noreply, socket}
-
-  def handle_event("comment", %{"body" => body} = params, socket) do
-    case String.trim(body) do
-      "" -> {:noreply, socket}
-      body -> {:noreply, post_comment(socket, %{body: body, parent_id: params["parent_id"]})}
-    end
+  def handle_event(event, params, socket) when event in @issue_events do
+    {:noreply, handle_issue_event(event, params, socket, &load_issue(&1, &1.assigns.issue.id))}
   end
 
   # A sync may have changed what Linear says about this issue.
@@ -108,30 +97,17 @@ defmodule RailWeb.IssueLive do
 
   def handle_info({:issue_created, _issue_id}, socket), do: {:noreply, socket}
 
-  defp assign_owner(%{assigns: %{issue: issue}} = socket, owner_user_id) do
-    case Issues.update_issue(issue, %{owner_user_id: owner_user_id}) do
-      {:ok, _issue} -> socket |> assign(:assignee_query, "") |> load_issue(issue.id)
-      {:error, _changeset} -> put_flash(socket, :error, "Could not change the assignee")
-    end
-  end
-
-  defp post_comment(%{assigns: %{issue: issue, current_scope: scope}} = socket, attrs) do
-    case Issues.comment(scope, issue, attrs) do
-      {:ok, _comment} -> socket |> update(:comment_nonce, &(&1 + 1)) |> load_issue(issue.id)
-      {:error, _reason} -> put_flash(socket, :error, "Could not post the comment")
-    end
-  end
-
   defp load_issue(socket, id) do
     preload = [:project, :owner_user, task: [runs: :role], comments: [:author_user, replies: :author_user]]
 
-    case Issues.get_issue(id, preload: preload) do
-      {:ok, issue} ->
-        socket
-        |> assign(:issue, issue)
-        |> assign(:page_title, "#{issue.identifier} #{issue.title}")
-
-      {:error, :not_found} ->
+    # An issue in a project the user cannot access is one that does not exist, as far as they can tell.
+    with {:ok, issue} <- Issues.get_issue(id, preload: preload),
+         true <- Scope.can_access_project?(socket.assigns.current_scope, issue.project_id) do
+      socket
+      |> assign(:issue, issue)
+      |> assign(:page_title, "#{issue.identifier} #{issue.title}")
+    else
+      _not_found ->
         socket
         |> put_flash(:error, "Issue not found")
         |> push_navigate(to: ~p"/issues")

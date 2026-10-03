@@ -28,6 +28,8 @@ defmodule RailWeb.IssueLiveTest do
         email: "issue_live_user@example.com"
       })
 
+    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
+
     %{conn: log_in_user(conn, user), user: user, project: project}
   end
 
@@ -73,7 +75,18 @@ defmodule RailWeb.IssueLiveTest do
         email: "teammate@example.com"
       })
 
-    teammate |> Ecto.Changeset.change(linear_user_id: "lin_usr_teammate") |> Repo.update!()
+    teammate |> Ecto.Changeset.change(linear_user_id: "lin_usr_teammate", project_ids: [project.id]) |> Repo.update!()
+
+    # Only people who can open the issue are offered: admins and those granted its project.
+    linked = fn login, attrs ->
+      {:ok, other} =
+        Users.register_oauth_user(%{github_id: "gh_#{login}", login: login, name: login, email: "#{login}@example.com"})
+
+      other |> Ecto.Changeset.change(Map.put(attrs, :linear_user_id, "lin_#{login}")) |> Repo.update!()
+    end
+
+    elsewhere = linked.("elsewhere", %{project_ids: ["prj_other"]})
+    admin = linked.("admin", %{admin: true})
 
     issue =
       %Issue{}
@@ -92,6 +105,8 @@ defmodule RailWeb.IssueLiveTest do
 
     # Only users who linked Linear are offered; the signed-in user has not.
     refute has_element?(view, "#issue-assign-#{user.id}")
+    refute has_element?(view, "#issue-assign-#{elsewhere.id}")
+    assert has_element?(view, "#issue-assign-#{admin.id}")
 
     view |> element("#issue-owner-search-form") |> render_change(%{"q" => "nobody"})
     refute has_element?(view, "#issue-assign-#{teammate.id}")
@@ -473,7 +488,7 @@ defmodule RailWeb.IssueLiveTest do
         email: "failing_teammate@example.com"
       })
 
-    teammate |> Ecto.Changeset.change(linear_user_id: "lin_usr_failing") |> Repo.update!()
+    teammate |> Ecto.Changeset.change(linear_user_id: "lin_usr_failing", project_ids: [project.id]) |> Repo.update!()
 
     issue =
       %Issue{}
@@ -537,5 +552,36 @@ defmodule RailWeb.IssueLiveTest do
   test "an unknown issue goes back to the list", %{conn: conn} do
     assert {:error, {:live_redirect, %{to: "/issues", flash: %{"error" => "Issue not found"}}}} =
              live(conn, ~p"/issues/iss_missing")
+  end
+
+  test "an issue in a project the user cannot access is not found, and shows nothing of it", %{conn: conn} do
+    {:ok, other_project} =
+      Projects.create_project(system_scope(), %{
+        name: "Hidden Project",
+        github_repo: "example/hidden-issue",
+        github_installation_id: 557,
+        linear_team_key: "HID",
+        default_branch: "main",
+        clone_path: "/tmp/hidden-issue"
+      })
+
+    issue =
+      %Issue{}
+      |> Issue.linear_changeset(%{
+        project_id: other_project.id,
+        external_id: "lin_hidden_1",
+        identifier: "HID-1",
+        title: "A secret title",
+        state: :todo
+      })
+      |> Repo.insert!()
+
+    for path <- [~p"/issues/#{issue.identifier}", ~p"/issues/#{issue.id}"] do
+      assert {:error, {:live_redirect, %{to: "/issues", flash: %{"error" => "Issue not found"}}}} = live(conn, path)
+    end
+
+    dead = get(conn, ~p"/issues/#{issue.identifier}")
+    assert redirected_to(dead) == "/issues"
+    refute dead.resp_body =~ "A secret title"
   end
 end

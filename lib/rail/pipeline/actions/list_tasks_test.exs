@@ -128,7 +128,10 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
              Pipeline.list_tasks(project_id: project.id, order_by: [desc: :inserted_at])
   end
 
-  test "lists tasks across all projects when project_id is nil", %{project: project, task: task} do
+  test "lists tasks across all projects when project_id is nil, and in the listed ones for a list", %{
+    project: project,
+    task: task
+  } do
     Req.Test.expect(Rail.Linear, fn conn ->
       Req.Test.json(conn, %{"data" => %{"teams" => %{"nodes" => [%{"id" => "lin_team_id"}]}}})
     end)
@@ -184,6 +187,13 @@ defmodule Rail.Pipeline.Actions.ListTasksTest do
     all_ids_user = Enum.map(all_tasks_user, & &1.id)
     assert id1 in all_ids_user
     assert id2 in all_ids_user
+
+    assert [%Task{id: ^id2}] = Pipeline.list_tasks(project_id: [p2.id])
+
+    assert [project_id: [project.id, p2.id]] |> Pipeline.list_tasks() |> Enum.map(& &1.id) |> Enum.sort() ==
+             Enum.sort([id1, id2])
+
+    assert [] = Pipeline.list_tasks(project_id: [])
   end
 
   test "supports preload option", %{project: %Project{id: expected_project_id}, task: task} do

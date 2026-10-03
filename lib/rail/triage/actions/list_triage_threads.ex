@@ -12,7 +12,7 @@ defmodule Rail.Triage.Actions.ListTriageThreads do
 
   @doc """
   Lists the threads in one status for the queue, `:waiting` unless `:status`
-  says otherwise, across every project unless `:project_id` names one. Open
+  says otherwise, across every project unless `:project_id` names one or a list. Open
   threads come by their latest message, finished ones by when they finished, at
   most `:limit` of them (100 unless given). Each carries only its first message,
   which is all a row shows.
@@ -24,7 +24,7 @@ defmodule Rail.Triage.Actions.ListTriageThreads do
 
     Thread
     |> where([t], t.status == ^status)
-    |> then(&if(project_id = opts[:project_id], do: where(&1, [t], t.project_id == ^project_id), else: &1))
+    |> filter_project(opts[:project_id])
     |> order_by(^order)
     |> limit(^Keyword.get(opts, :limit, @limit))
     |> preload([
@@ -36,4 +36,8 @@ defmodule Rail.Triage.Actions.ListTriageThreads do
     ])
     |> Repo.all()
   end
+
+  defp filter_project(query, nil), do: query
+  defp filter_project(query, project_ids) when is_list(project_ids), do: where(query, [t], t.project_id in ^project_ids)
+  defp filter_project(query, project_id), do: where(query, [t], t.project_id == ^project_id)
 end

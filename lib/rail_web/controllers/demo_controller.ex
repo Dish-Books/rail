@@ -15,9 +15,11 @@ defmodule RailWeb.DemoController do
 
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Task
+  alias Rail.Scope
 
   def video(conn, %{"task_id" => task_id}) do
     with {:ok, %Task{} = task} <- Pipeline.get_task(task_id),
+         true <- Scope.can_access_project?(conn.assigns.current_scope, task.project_id),
          file = Path.join([task.scratch_path, "demo", "demo.webm"]),
          %File.Stat{size: size} <- stat(file) do
       send_video(conn, file, size)

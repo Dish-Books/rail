@@ -4,12 +4,14 @@ defmodule RailWeb.Hooks.NavHook do
 
   alias Rail.Pipeline
   alias Rail.Projects
+  alias Rail.Scope
   alias Rail.Triage
 
   def on_mount(:default, _params, session, socket) do
-    projects = Projects.list_projects()
-
-    attention_count = Pipeline.count_attention()
+    scope = socket.assigns.current_scope
+    projects = Projects.list_projects(scope)
+    # A lost project stays in the session, so it comes back selected if access is granted again.
+    current_project_id = Enum.find_value(projects, &(&1.id == session["selected_project_id"] && &1.id))
 
     socket =
       socket
@@ -17,9 +19,11 @@ defmodule RailWeb.Hooks.NavHook do
       |> assign(:theme, "dark")
       |> assign(:show_project_switcher, false)
       |> assign(:projects, projects)
-      |> assign(:attention_count, attention_count)
-      |> assign(:triage_count, Triage.count_triage_threads([]).waiting)
-      |> assign(:current_project_id, session["selected_project_id"])
+      |> assign(:attention_count, Pipeline.count_attention(project_id: Scope.project_ids(scope)))
+      |> assign(:triage_count, Triage.count_triage_threads(project_id: Scope.project_ids(scope)).waiting)
+      |> assign(:current_project_id, current_project_id)
+      # What a page lists: the selected project, or else every project the user can see.
+      |> assign(:project_filter, current_project_id || Scope.project_ids(scope))
       |> assign(:current_section, :overview)
       |> attach_hook(:nav_handle_params, :handle_params, &handle_nav_params/3)
       |> attach_hook(:nav_handle_events, :handle_event, &handle_nav_events/3)

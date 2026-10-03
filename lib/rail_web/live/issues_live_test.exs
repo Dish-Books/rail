@@ -365,6 +365,49 @@ defmodule RailWeb.IssuesLiveTest do
     assert has_element?(view, "#issue-card-#{theirs.id}")
   end
 
+  test "a user granted one project lists and syncs only that project's issues", %{conn: conn, project: project} do
+    {:ok, user} =
+      Users.register_oauth_user(%{
+        github_id: "gh_issues_live_granted",
+        login: "issues_live_user_granted",
+        email: "issues_live_user_granted@example.com"
+      })
+
+    {:ok, user} = Users.update_user(system_scope(), user, %{project_ids: [project.id]})
+
+    {:ok, %Project{id: other_id}} =
+      Projects.create_project(system_scope(), %{
+        name: "Hidden Project",
+        github_repo: "example/hidden",
+        github_installation_id: 556,
+        linear_team_key: "HID",
+        default_branch: "main",
+        clone_path: "/tmp/hidden"
+      })
+
+    [here, hidden] =
+      for {project_id, n} <- [{project.id, 1}, {other_id, 2}] do
+        %Issue{}
+        |> Issue.changeset(%{
+          project_id: project_id,
+          external_id: "lin_granted_#{n}",
+          identifier: "GRA-#{n}",
+          title: "Granted #{n}",
+          state: :backlog
+        })
+        |> Repo.insert!()
+      end
+
+    assert {:ok, view, _html} = live(log_in_user(conn, user), ~p"/issues")
+    assert has_element?(view, "#issue-card-#{here.id}")
+    refute has_element?(view, "#issue-card-#{hidden.id}")
+    assert has_element?(view, "#filter-priority-all", "All (1)")
+
+    view |> element("#sync-issues-button") |> render_click()
+    assert_enqueued(worker: LinearSync, args: %{project_id: project.id})
+    refute_enqueued(worker: LinearSync, args: %{project_id: other_id})
+  end
+
   test "toggles Show finished filter chip", %{conn: conn, project: %Project{id: _project_id} = project} do
     {:ok, user} =
       Users.register_oauth_user(%{

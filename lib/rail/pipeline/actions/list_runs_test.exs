@@ -47,6 +47,9 @@ defmodule Rail.Pipeline.Actions.ListRunsTest do
   test "lists only the runs of one project", %{project: project, run: %Run{id: run_id}} do
     assert [%Run{id: ^run_id}] = Pipeline.list_runs(project_id: project.id)
     assert [] = Pipeline.list_runs(project_id: "prj_other")
+    assert [%Run{id: ^run_id}] = Pipeline.list_runs(project_id: [project.id, "prj_other"])
+    assert [] = Pipeline.list_runs(project_id: ["prj_other"])
+    assert [] = Pipeline.list_runs(project_id: [])
   end
 
   test "filters runs to the ones on issues a user owns", %{project: project, role: role, run: %Run{id: unowned_id}} do
