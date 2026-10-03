@@ -1565,7 +1565,16 @@ defmodule Rail.Pipeline.Actions.RunFinishedTest do
       assert [%Question{answered_by_rail: true, delivered_at: %DateTime{}}] =
                Repo.all(from q in Question, where: q.task_id == ^task.id)
 
-      assert run |> Pipeline.list_run_events() |> Enum.any?(&(&1.line =~ "The answer is: Postgres."))
+      lines = run |> Pipeline.list_run_events() |> Enum.map(& &1.line)
+      assert "[answered from past answers] You asked: Which database?" in lines
+
+      assert Enum.any?(
+               lines,
+               &(&1 =~ ~s([answered from past answers] Answered by Rail from Rail's answer on RFG-1, ) and
+                   &1 =~ ~s(: When asked "Postgres or SQLite?": Postgres.))
+             )
+
+      refute Enum.any?(lines, &String.starts_with?(&1, "[human]"))
     end
 
     test "waits while a person still has a question to answer", %{task: task, exited: exited, asked: asked} do

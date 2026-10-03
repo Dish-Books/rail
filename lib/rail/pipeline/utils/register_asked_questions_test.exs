@@ -199,7 +199,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestionsTest do
                %Question{
                  prompt: "Which database?",
                  status: :answered,
-                 answer: "Postgres.",
+                 answer: ~s(When asked "Postgres or SQLite?": Postgres.),
                  answered_by_rail: true,
                  suggested_learning_id: ^rule_id
                },

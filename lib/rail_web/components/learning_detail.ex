@@ -26,6 +26,7 @@ defmodule RailWeb.Components.LearningDetail do
       assigns
       |> assign(:flagged, stats.pending_override != nil)
       |> assign(:byline, calculate_byline(assigns.learning))
+      |> assign(:why, calculate_why(assigns.learning.why))
       |> assign(:rows, rows)
       |> assign(:more, length(stats.suppressed_findings) - length(rows))
       |> assign(:source_count, length(stats.sources) + if(stats.activated_by, do: 1, else: 0))
@@ -97,18 +98,26 @@ defmodule RailWeb.Components.LearningDetail do
             </.button>
           </div>
 
-          <p
-            :if={@learning.why}
-            id="learning-why"
-            phx-no-format
-            class="text-[13.5px] leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words"
-          >{@learning.why}</p>
+          <div :if={@why} id="learning-why" class="space-y-2">
+            <p
+              phx-no-format
+              class="text-[13.5px] leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words"
+            >{elem(@why, 0)}</p>
+            <pre
+              :if={elem(@why, 1)}
+              phx-no-format
+              class="font-mono text-xs leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 px-3 py-2"
+            >{elem(@why, 1)}</pre>
+          </div>
 
           <div
             id="learning-figures"
             class="grid grid-cols-4 rounded-xl border border-slate-200 dark:border-slate-700 divide-x divide-slate-200 dark:divide-slate-700"
           >
-            <.figure value={@stats.runs} label="runs given it" />
+            <.figure
+              value={@stats.runs}
+              label={if @stats.runs == 1, do: "retrieval", else: "retrievals"}
+            />
             <.figure value={@stats.broken} label="broken anyway" />
             <.figure value={@stats.suppressed} label="findings suppressed" />
             <.figure
@@ -296,6 +305,16 @@ defmodule RailWeb.Components.LearningDetail do
     ~H"""
     <span class="block truncate text-[13px] text-slate-700 dark:text-slate-300">{@observation.text}</span>
     """
+  end
+
+  # A diff comment's rule quotes the code it was left on, which reads as code.
+  defp calculate_why(nil), do: nil
+
+  defp calculate_why(why) do
+    case Regex.run(~r/\A(From a diff comment on [^\n]*)\n\n(.+)\z/s, why, capture: :all_but_first) do
+      [intro, block] -> {intro, block}
+      nil -> {why, nil}
+    end
   end
 
   defp calculate_byline(%Learning{status: :retired, retired_at: at}), do: "retired #{calculate_date(at)}"

@@ -1,7 +1,7 @@
 defmodule Rail.Learnings.Actions.RecordCorrections do
   @moduledoc """
   Turns the corrections a person sent into provisional rules the same day, each source once, so a resend adds nothing.
-  An answer taken from the past answer Rail suggested joins that rule instead of making another.
+  An answer taken from the rule Rail suggested, or a Fix on a finding raised from a rule, joins that rule instead.
   """
 
   import Ecto.Query
@@ -74,7 +74,8 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
       source_id: finding.id,
       actor_id: finding.decided_by_id,
       text: finding.title,
-      excerpt: finding.detail
+      excerpt: finding.detail,
+      learning_id: finding.rule_id
     }
   end
 
@@ -118,27 +119,28 @@ defmodule Rail.Learnings.Actions.RecordCorrections do
 
   defp rule(%ReviewFinding{} = finding, _observation) do
     where = if finding.file, do: " on #{finding.file}", else: ""
-
-    %{
-      kind: :convention,
-      roles: [:engineer, :review],
-      rule: clip(finding.title),
-      why: Enum.join(Enum.reject(["Raised in review#{where} and sent to be fixed.", finding.detail], &is_nil/1), "\n\n")
-    }
+    Map.merge(%{kind: :convention, roles: [:engineer, :review]}, finding_rule(finding, "Raised in review#{where}"))
   end
 
   defp rule(%QaFinding{} = finding, _observation) do
-    %{
-      kind: :convention,
-      roles: [:engineer, :qa],
-      rule: clip(finding.title),
-      why: Enum.join(Enum.reject(["Raised by QA and sent to be fixed.", finding.detail], &is_nil/1), "\n\n")
-    }
+    Map.merge(%{kind: :convention, roles: [:engineer, :qa]}, finding_rule(finding, "Raised by QA"))
   end
 
+  # A bare answer such as "Yes" means nothing to a later run without the question it settled.
   defp rule(%Question{} = question, _observation) do
-    %{kind: :decision, roles: [], rule: clip(question.answer), why: "The answer when asked: #{question.prompt}"}
+    %{kind: :decision, roles: [], rule: clip(~s(When asked "#{question.prompt}": #{question.answer})), why: nil}
   end
+
+  # A finding's title names what was wrong; its suggestion, where it has one, says what to do instead.
+  defp finding_rule(%{suggestion: suggestion} = finding, raised) when is_binary(suggestion) and suggestion != "" do
+    %{rule: clip(suggestion), why: why(["#{raised} and sent to be fixed: #{finding.title}", finding.detail])}
+  end
+
+  defp finding_rule(finding, raised) do
+    %{rule: clip(finding.title), why: why(["#{raised} and sent to be fixed.", finding.detail])}
+  end
+
+  defp why(parts), do: parts |> Enum.reject(&is_nil/1) |> Enum.join("\n\n")
 
   defp block(%DiffComment{context_text: context}) when is_binary(context) and context != "", do: context
   defp block(%DiffComment{line_text: line}), do: line

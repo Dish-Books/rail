@@ -10,6 +10,7 @@ defmodule RailWeb.LearningsLive do
   alias Rail.Scope
 
   @statuses [:review, :active, :provisional, :retired]
+  @double_click_ms 400
 
   @errors %{
     already_decided: "Someone already decided this proposal.",
@@ -39,6 +40,7 @@ defmodule RailWeb.LearningsLive do
       |> assign(:error, nil)
       |> assign(:show_all_suppressed, false)
       |> assign(:query_embedding, nil)
+      |> assign(:decided, nil)
 
     {:ok, socket}
   end
@@ -217,7 +219,7 @@ defmodule RailWeb.LearningsLive do
     case result do
       {:ok, saved} ->
         socket = socket |> assign(:form, nil) |> assign(:form_target, nil)
-        {:noreply, saved_to(socket, saved)}
+        {:noreply, saved_to(socket, socket.assigns.proposal, saved)}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, :form, changeset)}
@@ -235,7 +237,7 @@ defmodule RailWeb.LearningsLive do
   end
 
   # Each decision names its proposal, so a second click lands on the one already
-  # decided, never on whichever the queue opened after it.
+  # decided, or is dropped when it lands on the proposal the queue opened after it.
   def handle_event("keep_rule", %{"id" => id}, socket) do
     with {:ok, proposal} <- visible_proposal(socket, id),
          {:ok, _kept} <- Learnings.reject_learning_proposal(socket.assigns.current_scope, proposal) do
@@ -270,10 +272,17 @@ defmodule RailWeb.LearningsLive do
 
   # A decided proposal leaves the queue, so the next one is opened in its place.
   defp decide(socket, id, action) do
-    with {:ok, proposal} <- visible_proposal(socket, id),
+    with false <- double_click?(socket.assigns.decided, id),
+         {:ok, proposal} <- visible_proposal(socket, id),
          {:ok, _decided} <- action.(proposal) do
-      {:noreply, push_patch(socket, to: list_path(socket.assigns, []))}
+      socket =
+        socket
+        |> assign(:decided, {id, System.monotonic_time(:millisecond)})
+        |> push_patch(to: list_path(socket.assigns, []))
+
+      {:noreply, socket}
     else
+      true -> {:noreply, socket}
       {:error, reason} -> refused(socket, reason)
     end
   end
@@ -288,12 +297,22 @@ defmodule RailWeb.LearningsLive do
     end
   end
 
+  defp double_click?({decided_id, at}, id) when decided_id != id,
+    do: System.monotonic_time(:millisecond) - at < @double_click_ms
+
+  defp double_click?(_decided, _id), do: false
+
   defp refused(socket, reason) do
     socket = socket |> load() |> assign(:error, error_message(reason))
     {:noreply, socket}
   end
 
-  defp saved_to(socket, %Learning{id: id, status: status}) do
+  # A proposal's draft is edited on the way to deciding it, so saving goes back to the proposal.
+  defp saved_to(socket, %LearningProposal{id: proposal_id, learning_id: id}, %Learning{id: id}) do
+    push_patch(socket, to: ~p"/learnings/proposals/#{proposal_id}?#{socket.assigns.params}")
+  end
+
+  defp saved_to(socket, _proposal, %Learning{id: id, status: status}) do
     params = Keyword.put(socket.assigns.params, :status, status)
     push_patch(socket, to: ~p"/learnings/#{id}?#{params}")
   end

@@ -480,4 +480,68 @@ defmodule Rail.Learnings.Actions.CurateLearningsTest do
     assert_received {:dir, failed_dir}
     refute File.exists?(failed_dir)
   end
+
+  test "an add citing a sighting that made a provisional rule leaves the sighting with that rule", %{
+    project: project,
+    tasks: [one, two | _rest],
+    sighting: sighting
+  } do
+    %{id: provisional_id} = learning(project, %{rule: "Scope lists to the task", kind: :convention}, status: :provisional)
+    corrected = sighting.(one, %{source_kind: :diff_comment, learning_id: provisional_id})
+    loose = sighting.(two, %{})
+
+    expect(Tools, :run_agent, fn _backend, _argv, opts ->
+      File.write!(
+        Path.join(opts[:cd], "result.json"),
+        Jason.encode!(%{
+          "proposals" => [
+            %{"action" => "add", "rule" => "Scope", "kind" => "convention", "evidence" => [corrected.id, loose.id]}
+          ]
+        })
+      )
+
+      {:ok, ""}
+    end)
+
+    {:ok, _pass} = Learnings.curate_learnings(project)
+    %Learning{id: draft_id} = Repo.get_by!(Learning, rule: "Scope")
+
+    assert %Observation{learning_id: ^provisional_id} = Repo.reload!(corrected)
+    assert %Observation{learning_id: ^draft_id} = Repo.reload!(loose)
+    assert %LearningProposal{evidence_ids: [_corrected, _loose]} = Repo.get_by!(LearningProposal, learning_id: draft_id)
+  end
+
+  test "a proposal the same as one still pending is dropped, from a later pass or the same one", %{project: project} do
+    [one, two, three] = for n <- 1..3, do: learning(project, %{rule: "Rule #{n}", kind: :convention})
+
+    same = [
+      %{"action" => "retire", "learning" => one.id},
+      %{"action" => "promote", "learning" => one.id, "promote_to" => "credo_check"},
+      %{"action" => "conflict", "learning" => two.id, "targets" => [three.id]},
+      %{"action" => "merge", "targets" => [two.id, three.id], "rule" => "Merged", "kind" => "convention"},
+      %{"action" => "merge", "targets" => [three.id, two.id], "rule" => "Merged again", "kind" => "convention"}
+    ]
+
+    different = [
+      %{"action" => "retire", "learning" => two.id},
+      %{"action" => "conflict", "learning" => two.id, "targets" => [one.id]},
+      %{"action" => "rewrite", "targets" => [two.id, three.id], "rule" => "Rewritten", "kind" => "convention"}
+    ]
+
+    for proposals <- [same, same ++ different] do
+      expect(Tools, :run_agent, fn _backend, _argv, opts ->
+        File.write!(Path.join(opts[:cd], "result.json"), Jason.encode!(%{"proposals" => proposals}))
+        {:ok, ""}
+      end)
+
+      {:ok, _pass} = Learnings.curate_learnings(project)
+    end
+
+    assert [:conflict, :conflict, :merge, :promote, :retire, :retire, :rewrite] =
+             Repo.all(
+               from p in LearningProposal, where: p.project_id == ^project.id, order_by: p.action, select: p.action
+             )
+
+    refute Repo.get_by(Learning, rule: "Merged again")
+  end
 end

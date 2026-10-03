@@ -10,6 +10,7 @@ defmodule RailWeb.LearningsLiveTest do
   alias Rail.Learnings.Schemas.LearningProposal
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
+  alias Rail.Pipeline.Schemas.DiffComment
   alias Rail.Repo
   alias Rail.Users
 
@@ -224,8 +225,34 @@ defmodule RailWeb.LearningsLiveTest do
     assert %LearningProposal{status: :approved} = Repo.reload!(first)
     assert %LearningProposal{status: :pending} = Repo.reload!(second)
 
+    {:ok, view, _html} = live(conn, ~p"/learnings/proposals/#{second.id}")
     render_click(view, "reject_proposal", %{"id" => "lpr_none"})
     assert has_element?(view, "#learnings-error", "Someone already decided this proposal.")
+  end
+
+  # The second click of a double click lands on the proposal the queue moved to, which nobody has read.
+  test "a double click on Approve or Reject decides only the proposal that was open", %{conn: conn, project: project} do
+    [first, second, third] =
+      for n <- 1..3 do
+        draft = learning(project, %{rule: "Draft #{n}", kind: :convention}, status: :proposed)
+        Repo.insert!(%LearningProposal{project_id: project.id, action: :add, learning_id: draft.id})
+      end
+
+    {:ok, view, _html} = live(conn, ~p"/learnings/proposals/#{first.id}")
+    view |> element("#approve-proposal-button") |> render_click()
+    assert has_element?(view, "#proposal-detail", "Draft 2")
+    view |> element("#approve-proposal-button") |> render_click()
+
+    assert %LearningProposal{status: :approved} = Repo.reload!(first)
+    assert %LearningProposal{status: :pending} = Repo.reload!(second)
+
+    Process.sleep(400)
+    view |> element("#reject-proposal-button") |> render_click()
+    view |> element("#reject-proposal-button") |> render_click()
+
+    assert %LearningProposal{status: :rejected} = Repo.reload!(second)
+    assert %LearningProposal{status: :pending} = Repo.reload!(third)
+    assert has_element?(view, "#proposal-detail", "Draft 3")
   end
 
   test "Keep rule clicked twice decides its override once and leaves the page working", %{conn: conn, project: project} do
@@ -319,6 +346,12 @@ defmodule RailWeb.LearningsLiveTest do
     assert has_element?(view, "#learning-form-modal", "Edit the proposed rule")
     view |> element("#cancel-learning-button") |> render_click()
     refute has_element?(view, "#learning-form-modal")
+
+    view |> element("#edit-proposal-button") |> render_click()
+    view |> form("#learning-form", learning: %{rule: "Edited draft", kind: "convention"}) |> render_submit()
+    assert_patch(view, ~p"/learnings/proposals/#{proposal.id}?status=review")
+    assert has_element?(view, "[data-qa=proposal-draft]", "Edited draft")
+    assert has_element?(view, "#approve-proposal-button")
   end
 
   test "Retire retires the rule, and its stats show what it suppressed and where it came from", %{
@@ -352,6 +385,7 @@ defmodule RailWeb.LearningsLiveTest do
     assert has_element?(view, "#learning-override-banner", "Flagged: Dana Okafor decided Fix on")
     assert has_element?(view, "#learning-override-banner", "LLV-1")
     assert has_element?(view, "#learning-figures", "findings suppressed")
+    assert has_element?(view, "#learning-figures", "0 retrievals")
     assert has_element?(view, "#learning-suppressed", "9 across 2 tasks")
     refute has_element?(view, "#suppressed-#{first.id}")
     assert has_element?(view, "#suppressed-more", "3 more")
@@ -461,7 +495,7 @@ defmodule RailWeb.LearningsLiveTest do
 
     {:ok, [rule]} =
       Learnings.record_corrections(task, [
-        %Rail.Pipeline.Schemas.DiffComment{id: "dcm_llv", path: "a.ex", line_text: "x", body: "Say why"}
+        %DiffComment{id: "dcm_llv", path: "a.ex", line_text: "x", body: "Say why"}
       ])
 
     assert has_element?(view, "#learning-card-#{rule.id}", "Say why")
@@ -675,5 +709,34 @@ defmodule RailWeb.LearningsLiveTest do
     assert has_element?(view, "#learnings-match-line", "Newest 100 of 101 active")
     assert has_element?(view, "#learning-card-#{pinned.id}", "1 run")
     assert has_element?(view, "#learning-card-#{pinned.id} .text-red-600", "1 broken")
+  end
+
+  test "a rule given to one run reads 1 retrieval, and a diff comment's block in its why is set as code", %{
+    conn: conn,
+    project: project
+  } do
+    task = learnings_task(project, "LLV-9")
+
+    comment = %DiffComment{
+      id: "dcm_llv_9",
+      path: "lib/a.ex",
+      line_text: "Repo.insert!(row)",
+      context_text: "  + rows = build()\n> + Repo.insert!(row)",
+      body: "Use the factory here"
+    }
+
+    {:ok, [rule]} = Learnings.record_corrections(task, [comment])
+    {:ok, role} = Rail.Roles.get_role(project_id: project.id, stage: :engineer)
+
+    {:ok, run} =
+      Pipeline.create_run(%{task_id: task.id, role_id: role.id, status: :running, started_at: DateTime.utc_now()})
+
+    Repo.insert!(%Rail.Learnings.Schemas.LearningRetrieval{run_id: run.id, learning_id: rule.id})
+
+    {:ok, view, _html} = live(conn, ~p"/learnings/#{rule.id}")
+    assert has_element?(view, "#learning-figures", "1 retrieval")
+    refute has_element?(view, "#learning-figures", "1 retrievals")
+    assert has_element?(view, "#learning-why", "From a diff comment on lib/a.ex:")
+    assert view |> element("#learning-why pre.font-mono") |> render() =~ "  + rows = build()\n&gt; + Repo.insert!(row)"
   end
 end

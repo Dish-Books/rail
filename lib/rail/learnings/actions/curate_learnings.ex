@@ -187,10 +187,17 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
 
     {:ok, folded} =
       Repo.transaction(fn ->
-        proposals =
-          for attrs <- List.wrap(result["proposals"]),
-              proposal = propose(attrs, project_id, pass_id, read, rules),
-              do: proposal
+        {proposals, _pending} =
+          result["proposals"]
+          |> List.wrap()
+          |> Enum.reduce({[], pending(project_id)}, fn attrs, {proposals, pending} ->
+            case propose(attrs, project_id, pass_id, read, rules, pending) do
+              %LearningProposal{} = proposal -> {[proposal | proposals], MapSet.put(pending, same(proposal))}
+              nil -> {proposals, pending}
+            end
+          end)
+
+        proposals = Enum.reverse(proposals)
 
         linked = for attrs <- List.wrap(result["outcomes"]), proposal = link(attrs, project_id, read, rules), do: proposal
 
@@ -211,8 +218,8 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
   end
 
   # The curator's word is an agent's, so a proposal naming anything outside this
-  # project, or anything this pass did not read, is dropped whole.
-  defp propose(%{"action" => action} = attrs, project_id, pass_id, read, rules) when is_binary(action) do
+  # project, or anything this pass did not read, is dropped whole, as is one already waiting.
+  defp propose(%{"action" => action} = attrs, project_id, pass_id, read, rules, pending) when is_binary(action) do
     action = Enum.find(@proposed, &(Atom.to_string(&1) == action))
     subject = attrs["learning"]
     targets = strings(attrs["targets"])
@@ -221,6 +228,7 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     with true <- action != nil,
          true <- Enum.all?(evidence, &MapSet.member?(read, &1)),
          true <- Enum.all?(targets, &Map.has_key?(rules, &1)),
+         false <- MapSet.member?(pending, same(action, subject, targets)),
          {:ok, learning} <- subject(action, subject, attrs, project_id, rules, targets) do
       proposal =
         %LearningProposal{project_id: project_id}
@@ -236,8 +244,11 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
         })
         |> Repo.insert!()
 
+      # A sighting that already made or joined a rule stays that rule's source; the proposal keeps it as evidence.
       if action == :add do
-        Repo.update_all(from(o in Observation, where: o.id in ^evidence), set: [learning_id: learning.id])
+        Repo.update_all(from(o in Observation, where: o.id in ^evidence and is_nil(o.learning_id)),
+          set: [learning_id: learning.id]
+        )
       end
 
       proposal
@@ -246,7 +257,23 @@ defmodule Rail.Learnings.Actions.CurateLearnings do
     end
   end
 
-  defp propose(_malformed, _project_id, _pass_id, _read, _rules), do: nil
+  defp propose(_malformed, _project_id, _pass_id, _read, _rules, _pending), do: nil
+
+  defp pending(project_id) do
+    from(p in LearningProposal, where: p.project_id == ^project_id and p.status == :pending)
+    |> Repo.all()
+    |> MapSet.new(&same/1)
+  end
+
+  # What makes two proposals the same: a merge or rewrite drafts a new rule each time, so its targets are what it is about.
+  defp same(%LearningProposal{action: action, target_ids: targets}) when action in [:merge, :rewrite],
+    do: same(action, nil, targets)
+
+  defp same(%LearningProposal{action: action, learning_id: id, target_ids: targets}), do: same(action, id, targets)
+
+  # An add drafting a new rule has nothing to be the same as but its wording, which an agent rewords.
+  defp same(:add, nil, _targets), do: make_ref()
+  defp same(action, id, targets), do: {action, id, MapSet.new(targets)}
 
   # An add names a provisional rule to confirm, or drafts a new one; so do merge and rewrite.
   defp subject(:add, id, _attrs, _project_id, rules, _targets) when is_binary(id) do

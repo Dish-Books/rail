@@ -38,6 +38,7 @@ defmodule Rail.Pipeline.Utils.RegisterAskedQuestions do
     "[rail]",
     "[human",
     "[reminder",
+    "[answered from past answers]",
     "[handoff]",
     "[stderr]",
     "[error]"

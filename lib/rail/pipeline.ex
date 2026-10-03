@@ -97,7 +97,7 @@ defmodule Rail.Pipeline do
   defdelegate get_question(id), to: Actions.GetQuestion
   defdelegate list_questions(task, opts \\ []), to: Actions.ListQuestions
 
-  defdelegate send_message(scope, run, text), to: Actions.SendMessage
+  defdelegate send_message(scope, run, text, opts \\ []), to: Actions.SendMessage
   defdelegate create_diff_comment(scope, task, attrs), to: Actions.CreateDiffComment
   defdelegate list_diff_comments(scope, task), to: Actions.ListDiffComments
   defdelegate delete_diff_comment(scope, comment), to: Actions.DeleteDiffComment
