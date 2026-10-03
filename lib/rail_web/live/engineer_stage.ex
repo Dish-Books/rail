@@ -9,8 +9,8 @@ defmodule RailWeb.Live.EngineerStage do
   is what review means, and only what is uncommitted, which is what "what has it
   changed since I last looked" means. Marking a file read is per person and
   pinned to the file as it was read, so a file the engineer touches again comes
-  back unread. Comments on lines are the reader's own; Send sends the ones not sent
-  yet as one message, and they stay on the diff for the reader to resolve.
+  back unread. Comments on lines are the reader's own until Send sends them as one
+  message; then everyone sees them, and their author resolves them.
   """
   use RailWeb, :live_component
 
@@ -363,10 +363,12 @@ defmodule RailWeb.Live.EngineerStage do
     end
   end
 
-  # A resolve that finds the comment unsent or gone was clicked on a stale page,
-  # which reading the list again puts right.
+  # Only a comment's author resolves it. One found unsent or gone was clicked on a
+  # stale page, which reading the list again puts right.
   def handle_event("resolve_diff_comment", %{"id" => id, "resolved" => resolved}, socket) do
-    case Enum.find(socket.assigns.comments, &(&1.id == id)) do
+    %{comments: comments, current_scope: %{user: %{id: user_id}}} = socket.assigns
+
+    case Enum.find(comments, &(&1.id == id and &1.user_id == user_id)) do
       %{} = comment ->
         {_outcome, _comment_or_reason} =
           Pipeline.set_diff_comment_resolved(socket.assigns.current_scope, comment, resolved == "true")
@@ -615,6 +617,7 @@ defmodule RailWeb.Live.EngineerStage do
       target: assigns.myself,
       empty_message: empty_message(assigns.filter),
       comments: assigns.comments,
+      reader_id: assigns.current_scope.user.id,
       open_comments: assigns.open_comments,
       comment_list: assigns.comment_list,
       selected_comment: assigns.selected_comment,

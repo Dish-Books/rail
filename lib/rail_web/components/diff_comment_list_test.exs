@@ -31,9 +31,9 @@ defmodule RailWeb.Components.DiffCommentListTest do
 
     %{
       groups: [
-        %{status: :unsent, label: "Not sent", rows: [%{comment: comment, changed?: false}]},
-        %{status: :sent, label: "Sent", rows: [%{comment: sent, changed?: true}]},
-        %{status: :resolved, label: "Resolved", rows: [%{comment: resolved, changed?: false}]}
+        %{status: :unsent, label: "Not sent", rows: [%{comment: comment, changed?: false, mine?: true}]},
+        %{status: :sent, label: "Sent", rows: [%{comment: sent, changed?: true, mine?: true}]},
+        %{status: :resolved, label: "Resolved", rows: [%{comment: resolved, changed?: false, mine?: true}]}
       ]
     }
   end
@@ -56,7 +56,7 @@ defmodule RailWeb.Components.DiffCommentListTest do
 
   test "says so when there are none" do
     assert render_component(&DiffCommentList.diff_comment_list/1, groups: [], target: nil) =~
-             "You have no comments on this diff."
+             "Nobody has commented on this diff yet."
   end
 
   test "only a sent or resolved comment can be resolved from here, ticked when it is", %{groups: groups} do
@@ -86,5 +86,24 @@ defmodule RailWeb.Components.DiffCommentListTest do
 
     assert ["false", "true", "false"] =
              document |> Floki.find("[data-qa='diff_comment_list_row']") |> Floki.attribute("aria-current")
+  end
+
+  test "someone else's comment names them and has no box to resolve it", %{groups: groups} do
+    [_unsent, %{rows: [%{comment: sent}]} = sent_group, %{rows: [%{comment: resolved}]} = resolved_group] = groups
+    grace = %Rail.Users.Schemas.User{login: "grace", name: "Grace Hopper"}
+
+    theirs = [
+      %{sent_group | rows: [%{comment: %{sent | user: grace}, changed?: false, mine?: false}]},
+      %{resolved_group | rows: [%{comment: %{resolved | user: grace}, changed?: false, mine?: false}]}
+    ]
+
+    html = render_component(&DiffCommentList.diff_comment_list/1, groups: theirs, target: nil)
+    document = Floki.parse_fragment!(html)
+
+    assert [] = Floki.find(document, "[data-qa='diff_comment_list_resolve']")
+    assert [_sent, _resolved] = Floki.find(document, "[data-qa='diff_comment_list_mark']")
+
+    assert ["Grace Hopper", "Grace Hopper"] =
+             document |> Floki.find("[data-qa='diff_comment_list_author']") |> Enum.map(&String.trim(Floki.text(&1)))
   end
 end

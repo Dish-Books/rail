@@ -31,7 +31,7 @@ defmodule Rail.Pipeline.Actions.SetDiffCommentResolved do
 
     case Repo.update_all(query, set: [status: status, updated_at: DateTime.utc_now()]) do
       {1, [updated]} ->
-        broadcast_diff_comments(task_id, user_id)
+        broadcast_diff_comments(task_id, :everyone)
         {:ok, updated}
 
       {0, []} ->

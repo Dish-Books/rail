@@ -185,6 +185,7 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
     comment = %{path: "lib/a.ex", line_kind: :added, line: 1, line_text: "def feature, do: :ok", filter: :branch}
     {:ok, %{id: first_id}} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Name it."))
     {:ok, %{id: second_id}} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "And this."))
+    Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task.id}")
     Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task.id}:#{ada.user.id}")
 
     assert {:error, :chat_unavailable} = Pipeline.send_diff_comments(ada, fresh)
@@ -198,8 +199,8 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
   test "another person's comments are neither sent nor marked sent", %{task: task, run: run, ada: ada, grace: grace} do
     comment = %{path: "lib/a.ex", line_kind: :added, line: 1, line_text: "def feature, do: :ok", filter: :branch}
 
-    {:ok, _adas} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Ada's"))
-    {:ok, graces} = Pipeline.create_diff_comment(grace, task, Map.put(comment, :body, "Grace's"))
+    {:ok, %{id: adas_id}} = Pipeline.create_diff_comment(ada, task, Map.put(comment, :body, "Ada's"))
+    {:ok, %{id: graces_id}} = Pipeline.create_diff_comment(grace, task, Map.put(comment, :body, "Grace's"))
 
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
@@ -208,15 +209,18 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
     lines = run |> Pipeline.list_run_events() |> Enum.map_join("\n", & &1.line)
     assert lines =~ "Ada's"
     refute lines =~ "Grace's"
-    assert [%DiffComment{status: :unsent} = ^graces] = Pipeline.list_diff_comments(grace, task)
+
+    assert [%DiffComment{id: ^adas_id, status: :sent}, %DiffComment{id: ^graces_id, status: :unsent}] =
+             Pipeline.list_diff_comments(grace, task)
   end
 
-  test "tells the author's pages on the task once the comments are sent, not before", %{
+  # Everyone sees a sent comment, so every page on the task hears of the send.
+  test "tells every page on the task once the comments are sent, not before", %{
     task: %{id: task_id} = task,
     run: run,
     ada: ada
   } do
-    Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}:#{ada.user.id}")
+    Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}")
 
     assert {:error, :nothing_to_send} = Pipeline.send_diff_comments(ada, run)
     refute_receive {:diff_comments_changed, ^task_id}
@@ -231,7 +235,8 @@ defmodule Rail.Pipeline.Actions.SendDiffCommentsTest do
         body: "Name it."
       })
 
-    assert_receive {:diff_comments_changed, ^task_id}
+    # An unsent comment is its author's alone, so only their own pages hear of it.
+    refute_receive {:diff_comments_changed, ^task_id}
     stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
 
     assert {:ok, :sent, %Run{}} = Pipeline.send_diff_comments(ada, run)

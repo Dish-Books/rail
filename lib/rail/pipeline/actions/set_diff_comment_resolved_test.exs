@@ -63,16 +63,17 @@ defmodule Rail.Pipeline.Actions.SetDiffCommentResolvedTest do
       %{sent: sent}
     end
 
-    test "is resolved by its author, and every page of theirs on the task hears of it", %{
+    test "is resolved by its author, and every page on the task hears of it", %{
       task: %{id: task_id} = task,
       ada: ada,
+      grace: grace,
       sent: %{id: id} = sent
     } do
-      Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}:#{ada.user.id}")
+      Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}")
 
       assert {:ok, %DiffComment{id: ^id, status: :resolved}} = Pipeline.set_diff_comment_resolved(ada, sent, true)
       assert_receive {:diff_comments_changed, ^task_id}
-      assert [%DiffComment{id: ^id, status: :resolved}] = Pipeline.list_diff_comments(ada, task)
+      assert [%DiffComment{id: ^id, status: :resolved}] = Pipeline.list_diff_comments(grace, task)
     end
 
     test "unresolved goes back to sent without telling the engineer", %{task: task, run: run, ada: ada, sent: sent} do
@@ -99,6 +100,7 @@ defmodule Rail.Pipeline.Actions.SetDiffCommentResolvedTest do
   end
 
   test "an unsent comment cannot be resolved", %{task: %{id: task_id} = task, ada: ada, comment: comment} do
+    Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}")
     Phoenix.PubSub.subscribe(Rail.PubSub, "diff_comments:#{task_id}:#{ada.user.id}")
 
     assert {:error, :not_found} = Pipeline.set_diff_comment_resolved(ada, comment, true)

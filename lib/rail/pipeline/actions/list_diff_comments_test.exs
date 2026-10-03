@@ -35,7 +35,7 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
     %{task: task, other_task: other_task, ada: user_scope(user: ada), grace: user_scope(user: grace)}
   end
 
-  test "lists only this person's comments on this task, by file and then as written", %{
+  test "lists only this person's unsent comments on this task, by file and then as written", %{
     task: task,
     other_task: other_task,
     ada: ada,
@@ -52,7 +52,7 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
     assert Enum.map(Pipeline.list_diff_comments(ada, task), & &1.id) == [first.id, second.id, second_file.id]
   end
 
-  test "a different person sees none of them", %{task: task, ada: ada, grace: grace} do
+  test "a different person sees none of their unsent comments", %{task: task, ada: ada, grace: grace} do
     {:ok, _adas} =
       Pipeline.create_diff_comment(ada, task, %{
         path: "lib/a.ex",
@@ -66,7 +66,7 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
     assert Pipeline.list_diff_comments(grace, task) == []
   end
 
-  test "sent and resolved comments are still listed for their author, and for nobody else", %{
+  test "sent and resolved comments are listed for everyone, unsent ones only for their author", %{
     project: project,
     task: task,
     ada: ada,
@@ -98,10 +98,15 @@ defmodule Rail.Pipeline.Actions.ListDiffCommentsTest do
              %DiffComment{id: ^unsent_id, status: :unsent}
            ] = Pipeline.list_diff_comments(ada, task)
 
-    assert Pipeline.list_diff_comments(grace, task) == []
+    for reader <- [grace, system_scope()] do
+      assert [
+               %DiffComment{id: ^resolved_id, status: :resolved, user: %{login: "ada"}},
+               %DiffComment{id: ^sent_id, status: :sent, user: %{login: "ada"}}
+             ] = Pipeline.list_diff_comments(reader, task)
+    end
   end
 
-  test "a scope with nobody in it has none", %{task: task} do
+  test "a scope with nobody in it has none while nothing is sent", %{task: task} do
     assert Pipeline.list_diff_comments(system_scope(), task) == []
   end
 end

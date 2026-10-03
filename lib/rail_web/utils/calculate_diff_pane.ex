@@ -61,7 +61,7 @@ defmodule RailWeb.Utils.CalculateDiffPane do
       file_count: length(assigns.files),
       comment_count: length(assigns.comments),
       selected_comment: assigns.selected_comment,
-      groups: comment_groups(assigns.comments, comments, assigns.files, assigns.filter)
+      groups: comment_groups(assigns.comments, comments, assigns.files, assigns.filter, assigns.reader_id)
     }
   end
 
@@ -88,7 +88,7 @@ defmodule RailWeb.Utils.CalculateDiffPane do
   end
 
   # Empty groups are left out; each keeps the order the comments were listed in.
-  defp comment_groups(comments, by_path, files, filter) do
+  defp comment_groups(comments, by_path, files, filter, reader_id) do
     changed =
       for file <- files,
           comment <- Map.get(by_path, file.path, []),
@@ -103,7 +103,11 @@ defmodule RailWeb.Utils.CalculateDiffPane do
         do: %{
           status: status,
           label: label,
-          rows: Enum.map(by_status[status], &%{comment: &1, changed?: MapSet.member?(changed, &1.id)})
+          rows:
+            Enum.map(
+              by_status[status],
+              &%{comment: &1, changed?: MapSet.member?(changed, &1.id), mine?: &1.user_id == reader_id}
+            )
         }
   end
 
@@ -131,6 +135,7 @@ defmodule RailWeb.Utils.CalculateDiffPane do
       changed_count: Enum.count(lifted, fn {comment, changed?} -> changed? and comment.status == :unsent end),
       unsent: unsent(comments),
       open: for(comment <- comments, MapSet.member?(open, comment.id), do: comment.id),
+      reader_id: assigns.reader_id,
       viewed?: file.viewed?,
       collapsed?: file.path in assigns.collapsed,
       expanded_gaps: Map.take(assigns.expanded_gaps, gap_keys)

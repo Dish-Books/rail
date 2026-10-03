@@ -2756,11 +2756,9 @@ defmodule RailWeb.TaskLiveTest do
       assert Pipeline.list_run_events(run) == []
     end
 
-    test "comments are still there after a reload, and nobody else sees them in any state", %{
+    test "unsent comments are still there after a reload, and only their author sees them", %{
       conn: conn,
-      task: task,
-      scope: scope,
-      engineer_run: run
+      task: task
     } do
       assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
 
@@ -2785,17 +2783,63 @@ defmodule RailWeb.TaskLiveTest do
       assert {:ok, theirs, _html} = live(log_in_user(build_conn(), someone), ~p"/tasks/#{task.id}")
       refute has_element?(theirs, "[data-qa='diff_comment']")
       refute has_element?(theirs, "#send-diff-comments")
+      theirs |> element("#diff-list-comments", "Comments 0") |> render_click()
+      assert has_element?(theirs, "#diff-comment-list", "Nobody has commented on this diff yet.")
+    end
+
+    test "everyone on the task sees sent and resolved comments as they happen, and only the author acts on them", %{
+      conn: conn,
+      task: task,
+      scope: scope,
+      engineer_run: run
+    } do
+      comment = %{path: "shipped.ex", line_kind: :added, line: 1, line_text: "committed", filter: :branch}
+      {:ok, %{id: id}} = Pipeline.create_diff_comment(scope, task, Map.put(comment, :body, "Say what was committed."))
+
+      {:ok, someone} =
+        Users.register_oauth_user(%{github_id: "gh_task_live_other", login: "someone", email: "someone@example.com"})
+
+      assert {:ok, theirs, _html} = live(log_in_user(build_conn(), someone), ~p"/tasks/#{task.id}")
+      refute has_element?(theirs, "#diff-comment-#{id}")
 
       stub(Tools, :start_os_process, fn spawned, _argv -> {:ok, %OsProcess{run: spawned}} end)
       {:ok, _delivery, _run} = Pipeline.send_diff_comments(scope, run)
-      [sent] = Pipeline.list_diff_comments(scope, task)
-      {:ok, _resolved} = Pipeline.set_diff_comment_resolved(scope, sent, true)
-      {:ok, _unsent} = Pipeline.create_diff_comment(scope, task, Map.from_struct(sent))
+      {:ok, _unsent} = Pipeline.create_diff_comment(scope, task, Map.put(comment, :body, "Still a draft."))
 
-      assert {:ok, theirs, _html} = live(log_in_user(build_conn(), someone), ~p"/tasks/#{task.id}")
-      refute has_element?(theirs, "[data-qa='diff_comment']")
-      theirs |> element("#diff-list-comments", "Comments 0") |> render_click()
-      assert has_element?(theirs, "#diff-comment-list", "You have no comments on this diff.")
+      # The page hears of it and forwards to the stage, each on a turn of its own.
+      _settled = render(theirs)
+      _settled = render(theirs)
+      author = scope.user.name || scope.user.login
+      assert has_element?(theirs, "#diff-comment-#{id}", author)
+      assert has_element?(theirs, "#diff-comment-#{id}", "Sent")
+      refute has_element?(theirs, "#diff-comment-#{id}", "You")
+      refute has_element?(theirs, "#diff-comment-#{id} [data-qa='diff_comment_resolve']")
+      refute has_element?(theirs, "[data-qa='diff_comment']", "Still a draft.")
+      refute has_element?(theirs, "#send-diff-comments")
+
+      theirs |> element("#diff-list-comments", "Comments 1") |> render_click()
+      assert has_element?(theirs, "[data-qa='diff_comment_list_author']", author)
+      refute has_element?(theirs, "[data-qa='diff_comment_list_resolve']")
+
+      # A resolve forged from the teammate's page changes nothing.
+      theirs
+      |> with_target("#engineer-stage")
+      |> render_click("resolve_diff_comment", %{"id" => id, "resolved" => "true"})
+
+      assert [%{status: :sent}, %{status: :unsent}] = Pipeline.list_diff_comments(scope, task)
+
+      [sent, _draft] = Pipeline.list_diff_comments(scope, task)
+      {:ok, _resolved} = Pipeline.set_diff_comment_resolved(scope, sent, true)
+      _settled = render(theirs)
+      _settled = render(theirs)
+      assert has_element?(theirs, "#diff-comment-#{id}[aria-expanded='false']", "Resolved")
+
+      theirs |> element("#diff-comment-#{id}") |> render_click()
+      assert has_element?(theirs, "#diff-comment-#{id}", "Say what was committed.")
+      refute has_element?(theirs, "#diff-comment-#{id} [data-qa='diff_comment_unresolve']")
+
+      assert {:ok, again, _html} = live(log_in_user(build_conn(), someone), ~p"/tasks/#{task.id}")
+      assert has_element?(again, "#diff-comment-#{id}[aria-expanded='false']", "Resolved")
     end
 
     test "sending to an idle engineer starts a turn on one message holding every comment, and they stay, sent", %{

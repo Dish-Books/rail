@@ -31,6 +31,7 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
         empty_message: "Nothing yet.",
         scroll_to: nil,
         comments: [],
+        reader_id: "usr_reader",
         open_comments: [],
         comment_list: :files,
         selected_comment: nil,
@@ -107,7 +108,8 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
               body: "Name this for what it does."
             }
             | id: UXID.generate!(prefix: "dcm"),
-              path: diff.path
+              path: diff.path,
+              user_id: "usr_reader"
           },
           attrs
         )
@@ -246,7 +248,10 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
       folded = comment.(line_kind: :context, line: 3, line_text: rows.closing.text, status: :resolved)
       %{id: gone_id} = gone = comment.(path: "lib/gone.ex", status: :resolved)
 
-      assert %{sections: [{_id, %{open: [^open_id]}}], frame: %{stray: [{"lib/gone.ex", [{^gone, true}]}]}} =
+      assert %{
+               sections: [{_id, %{open: [^open_id], reader_id: "usr_reader"}}],
+               frame: %{stray: [{"lib/gone.ex", [{^gone, true}]}]}
+             } =
                calculate_diff_pane(%{
                  assigns
                  | files: [diff],
@@ -262,7 +267,7 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
     } do
       %{id: selected_id} = unsent = comment.(line: 40)
       rewritten = comment.(line_kind: :added, line: 2, line_text: "  was here", status: :resolved)
-      gone = comment.(path: "lib/gone.ex", status: :resolved)
+      gone = comment.(path: "lib/gone.ex", status: :resolved, user_id: "usr_teammate")
       other = %{diff | path: "mix.exs", display_path: "mix.exs", digest: "mix_digest"}
 
       assert %{
@@ -272,11 +277,14 @@ defmodule RailWeb.Utils.CalculateDiffPaneTest do
                  comment_count: 3,
                  selected_comment: ^selected_id,
                  groups: [
-                   %{status: :unsent, label: "Not sent", rows: [%{comment: ^unsent, changed?: false}]},
+                   %{status: :unsent, label: "Not sent", rows: [%{comment: ^unsent, changed?: false, mine?: true}]},
                    %{
                      status: :resolved,
                      label: "Resolved",
-                     rows: [%{comment: ^rewritten, changed?: true}, %{comment: ^gone, changed?: false}]
+                     rows: [
+                       %{comment: ^rewritten, changed?: true, mine?: true},
+                       %{comment: ^gone, changed?: false, mine?: false}
+                     ]
                    }
                  ]
                }

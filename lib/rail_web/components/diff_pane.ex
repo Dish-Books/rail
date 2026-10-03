@@ -33,7 +33,12 @@ defmodule RailWeb.Components.DiffPane do
   attr :empty_message, :string, default: "Nothing has been changed on this branch yet."
   attr :scroll_to, :string, default: nil
   attr :target, :any, default: nil
-  attr :comments, :list, default: [], doc: "the reader's comments on this task, whatever their state"
+
+  attr :comments, :list,
+    default: [],
+    doc: "everyone's sent and resolved comments on this task, and the reader's unsent ones"
+
+  attr :reader_id, :string, default: nil
   attr :open_comments, :list, default: [], doc: "ids of the resolved comments the reader has unfolded"
   attr :comment_list, :atom, default: :files, doc: "which of files or comments the column beside the diff lists"
   attr :selected_comment, :string, default: nil
@@ -63,6 +68,7 @@ defmodule RailWeb.Components.DiffPane do
             :for={{path, comments} <- @pane.frame.stray}
             name={diff_file_name(%{display_path: path})}
             comments={comments}
+            reader_id={@reader_id}
             target={@target}
           />
         </div>
@@ -104,6 +110,7 @@ defmodule RailWeb.Components.DiffPane do
               :for={{path, comments} <- @pane.frame.stray}
               name={diff_file_name(%{display_path: path})}
               comments={comments}
+              reader_id={@reader_id}
               target={@target}
             />
           </div>
@@ -115,6 +122,7 @@ defmodule RailWeb.Components.DiffPane do
 
   attr :name, :map, required: true
   attr :comments, :list, required: true, doc: "each comment and whether it is unfolded"
+  attr :reader_id, :string, required: true
   attr :target, :any, required: true
 
   # A file this view does not draw, such as a committed one under Uncommitted,
@@ -148,6 +156,7 @@ defmodule RailWeb.Components.DiffPane do
           target={@target}
           lifted?={true}
           open?={open?}
+          mine?={comment.user_id == @reader_id}
         />
       </div>
     </div>

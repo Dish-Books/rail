@@ -1,11 +1,15 @@
 defmodule RailWeb.Components.DiffCommentList do
   @moduledoc """
-  The reader's comments on the diff, listed beside it under Not sent, Sent and
-  Resolved. A row jumps to its comment, and a sent one can be resolved from here.
+  The comments the reader sees on the diff, listed beside it under Not sent, Sent
+  and Resolved. A row jumps to its comment, and the reader's own sent ones can be
+  resolved from here.
   """
   use RailWeb, :html
 
-  attr :groups, :list, required: true, doc: "`%{status, label, rows}`, each row a comment and whether its line changed"
+  attr :groups, :list,
+    required: true,
+    doc: "`%{status, label, rows}`, each row a comment, whether its line changed and whether the reader wrote it"
+
   attr :selected, :string, default: nil, doc: "the id of the comment last jumped to"
   attr :target, :any, required: true
 
@@ -16,7 +20,7 @@ defmodule RailWeb.Components.DiffCommentList do
         :if={@groups == []}
         class="px-2 py-1.5 text-xs text-slate-500 dark:text-slate-400"
       >
-        You have no comments on this diff.
+        Nobody has commented on this diff yet.
       </p>
 
       <div
@@ -44,8 +48,22 @@ defmodule RailWeb.Components.DiffCommentList do
           >
             <.icon name="pi-chat-text-fill" class="size-3" />
           </span>
+          <span
+            :if={not row.mine? and row.comment.status == :sent}
+            data-qa="diff_comment_list_mark"
+            class="mt-0.5 size-3.5 shrink-0 grid place-items-center text-slate-500 dark:text-slate-400"
+          >
+            <.icon name="pi-paper-plane-tilt" class="size-3" />
+          </span>
+          <span
+            :if={not row.mine? and row.comment.status == :resolved}
+            data-qa="diff_comment_list_mark"
+            class="mt-0.5 size-3.5 shrink-0 grid place-items-center text-emerald-600 dark:text-emerald-400"
+          >
+            <.icon name="pi-check-circle-fill" class="size-3.5" />
+          </span>
           <button
-            :if={row.comment.status != :unsent}
+            :if={row.mine? and row.comment.status != :unsent}
             type="button"
             role="checkbox"
             aria-checked={to_string(row.comment.status == :resolved)}
@@ -82,6 +100,13 @@ defmodule RailWeb.Components.DiffCommentList do
               >
                 <.icon name="pi-arrows-clockwise-bold" class="size-2.5" />changed
               </span>
+              <span
+                :if={not row.mine?}
+                data-qa="diff_comment_list_author"
+                class="truncate max-w-20"
+              >
+                {author_name(row.comment)}
+              </span>
               <span class="truncate">{Path.basename(row.comment.path)}</span>
             </span>
             <span class={[
@@ -100,4 +125,6 @@ defmodule RailWeb.Components.DiffCommentList do
 
   defp line_label(%{line_kind: :deleted, line: line}), do: "Removed line #{line}"
   defp line_label(%{line: line}), do: "Line #{line}"
+
+  defp author_name(%{user: user}), do: user.name || user.login
 end

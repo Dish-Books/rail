@@ -1,7 +1,7 @@
 defmodule RailWeb.Components.DiffComment do
   @moduledoc """
-  One comment on a line of the diff, as its author sees it: unsent, sent, or
-  resolved and folded to one line until they open it.
+  One comment on a line of the diff: unsent, sent, or resolved and folded to one
+  line until the reader opens it. Only its author can remove, resolve or unresolve it.
 
   A comment lifted off its line quotes the line as it read when it was written,
   because that quote is what the engineer is sent.
@@ -13,6 +13,7 @@ defmodule RailWeb.Components.DiffComment do
   attr :lifted?, :boolean, default: false, doc: "drawn away from its line, so it quotes it"
   attr :changed?, :boolean, default: false, doc: "its line is drawn and reads differently now"
   attr :open?, :boolean, default: false, doc: "a resolved comment the reader has unfolded"
+  attr :mine?, :boolean, required: true, doc: "the reader wrote it"
 
   def diff_comment(%{comment: %{status: :resolved}, open?: false} = assigns) do
     ~H"""
@@ -45,6 +46,9 @@ defmodule RailWeb.Components.DiffComment do
   end
 
   def diff_comment(assigns) do
+    author = if assigns.mine?, do: "You", else: author_name(assigns.comment)
+    assigns = assigns |> assign(:author, author) |> assign(:quoted_by, if(assigns.mine?, do: "you", else: author))
+
     ~H"""
     <div
       id={"diff-comment-#{@comment.id}"}
@@ -71,7 +75,7 @@ defmodule RailWeb.Components.DiffComment do
           <.icon name="pi-caret-down" class="size-3.5" />
         </button>
         <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0">
-          <.icon name="pi-user" class="size-3" />You
+          <.icon name="pi-user" class="size-3" />{@author}
         </span>
         <span
           :if={@comment.status == :unsent}
@@ -110,7 +114,7 @@ defmodule RailWeb.Components.DiffComment do
           <.icon name="pi-trash" class="size-3.5" />Remove
         </button>
         <button
-          :if={@comment.status == :sent}
+          :if={@mine? and @comment.status == :sent}
           type="button"
           phx-click="resolve_diff_comment"
           phx-value-id={@comment.id}
@@ -122,7 +126,7 @@ defmodule RailWeb.Components.DiffComment do
           <.icon name="pi-check-circle" class="size-3.5" />Resolve
         </button>
         <button
-          :if={@comment.status == :resolved}
+          :if={@mine? and @comment.status == :resolved}
           type="button"
           phx-click="resolve_diff_comment"
           phx-value-id={@comment.id}
@@ -136,7 +140,7 @@ defmodule RailWeb.Components.DiffComment do
       </div>
 
       <p :if={@lifted?} class="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-        {quote_label(@comment)}
+        {quote_label(@comment)} when {@quoted_by} commented
       </p>
       <div
         :if={@lifted?}
@@ -166,8 +170,10 @@ defmodule RailWeb.Components.DiffComment do
     "ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
   end
 
-  defp quote_label(%{line_kind: :deleted, line: line}), do: "Removed line #{line} when you commented"
-  defp quote_label(%{line: line}), do: "Line #{line} when you commented"
+  defp quote_label(%{line_kind: :deleted, line: line}), do: "Removed line #{line}"
+  defp quote_label(%{line: line}), do: "Line #{line}"
+
+  defp author_name(%{user: user}), do: user.name || user.login
 
   defp quote_tone(:added), do: "border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-500"
   defp quote_tone(:deleted), do: "border-rose-500 bg-rose-500/10 text-rose-600 dark:text-rose-500"

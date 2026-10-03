@@ -84,7 +84,7 @@ defmodule RailWeb.Live.DiffFileTreeTest do
     tree = %{
       tree
       | comment_count: 1,
-        groups: [%{status: :sent, label: "Sent", rows: [%{comment: comment, changed?: false}]}]
+        groups: [%{status: :sent, label: "Sent", rows: [%{comment: comment, changed?: false, mine?: true}]}]
     }
 
     files = render_component(DiffFileTree, tree)

@@ -32,6 +32,7 @@ defmodule RailWeb.Live.DiffFileTest do
         changed_count: 0,
         unsent: 0,
         open: [],
+        reader_id: "usr_reader",
         viewed?: false,
         collapsed?: false,
         expanded_gaps: %{}
@@ -90,6 +91,7 @@ defmodule RailWeb.Live.DiffFileTest do
             body: "Name this for what it does."
           }
           | id: "dcm_on_removed",
+            user_id: "usr_reader",
             line_kind: :deleted,
             line: 2,
             body: "Keep this one."

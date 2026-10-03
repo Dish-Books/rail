@@ -37,7 +37,7 @@ defmodule Rail.Pipeline.Actions.SendDiffComments do
 
     with [_first | _rest] <- comments,
          {:ok, _delivery, _run} = sent <- Pipeline.send_message(run, format(comments)) do
-      broadcast_diff_comments(task_id, user_id)
+      broadcast_diff_comments(task_id, :everyone)
       sent
     else
       [] ->
