@@ -19,6 +19,7 @@ defmodule RailWeb.TaskLive do
 
   alias Rail.Issues
   alias Rail.Learnings
+  alias Rail.Learnings.Schemas.Learning
   alias Rail.Learnings.Schemas.Observation
   alias Rail.Pipeline
   alias Rail.Pipeline.Schemas.Run
@@ -761,14 +762,14 @@ defmodule RailWeb.TaskLive do
         {:ok, rules} = Learnings.list_learnings(ids: Enum.uniq(ids), sources: true)
         rules = Map.new(rules, &{&1.id, &1})
 
-        # The answer, who gave it, where and when are the rule's latest answer's, as the gate's are.
+        # The answer is the gate's; who gave it, where and when are the rule's latest answer's.
         for %{suggested_learning_id: id} = question <- round_questions,
             rule = rules[id],
             source = Enum.find(rule.observations, &(&1.source_kind == :answer)),
             into: %{} do
           {question.id,
            %{
-             answer: source.excerpt,
+             answer: Learning.calculate_answer(rule, rule.observations),
              by: Observation.actor_label(source),
              identifier: source.task && source.task.issue.identifier,
              task_id: source.task_id,

@@ -17,7 +17,8 @@ defmodule Rail.Learnings.Actions.MatchPastAnswer do
   @suggest 0.80
 
   @doc """
-  Returns `{:answer, source}`, `{:suggestion, source}` or nil, `source` being `%{learning:, observation:}` with the past answer.
+  Returns `{:answer, source}`, `{:suggestion, source}` or nil, `source` being `%{learning:, observation:, answer:}`:
+  the rule, its latest answer, and what Rail answers with.
   """
   def match_past_answer(%Task{project_id: project_id}, %Question{prompt: prompt}) do
     scope = [project_id: project_id, statuses: [:active, :provisional], kind: :decision, source_kind: :answer]
@@ -26,18 +27,19 @@ defmodule Rail.Learnings.Actions.MatchPastAnswer do
          {:ok, embedding} <- Vertex.embed(prompt, "RETRIEVAL_QUERY"),
          [%Learning{similarity: similarity} = learning] when similarity >= @suggest <-
            search_learnings([{:limit, 1} | scope], embedding) do
-      {if(similarity >= @answer, do: :answer, else: :suggestion), %{learning: learning, observation: source(learning)}}
+      [latest | _earlier] = sources = sources(learning)
+      source = %{learning: learning, observation: latest, answer: Learning.calculate_answer(learning, sources)}
+      {if(similarity >= @answer, do: :answer, else: :suggestion), source}
     else
       _no_match -> nil
     end
   end
 
-  defp source(%Learning{id: id}) do
-    Repo.one(
+  defp sources(%Learning{id: id}) do
+    Repo.all(
       from o in Observation,
         where: o.learning_id == ^id and o.source_kind == :answer,
         order_by: [desc: o.inserted_at, desc: o.id],
-        limit: 1,
         preload: [:actor, task: :issue]
     )
   end

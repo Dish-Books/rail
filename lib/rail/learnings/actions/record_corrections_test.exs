@@ -165,7 +165,7 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
     assert %Observation{learning_id: ^past_id} = Repo.get_by!(Observation, source_id: "qst_rc_2")
   end
 
-  test "an answer taken from a rule reworded since, as the person's answer offered, joins that rule", %{
+  test "Use this answer on a rule a person reworded joins that rule", %{
     project: project,
     task: task,
     records: records
@@ -177,7 +177,7 @@ defmodule Rail.Learnings.Actions.RecordCorrectionsTest do
     taken = %Question{
       id: "qst_rc_4",
       prompt: "Blue or indigo?",
-      answer: "Blue, to match the review tab.",
+      answer: "Blue, as the review tab is.",
       status: :answered,
       suggested_learning_id: past_id
     }

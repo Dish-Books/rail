@@ -6456,7 +6456,7 @@ defmodule RailWeb.TaskLiveTest do
 
       {:ok, _suggested} = second |> Question.changeset(%{suggested_learning_id: rule.id}) |> Repo.update()
 
-      %{questions: [first, second]}
+      %{questions: [first, second], rule: rule}
     end
 
     test "a question Rail answered says so, with its source, and can be changed", %{conn: conn, task: task} do
@@ -6495,6 +6495,16 @@ defmodule RailWeb.TaskLiveTest do
 
       assert %{status: :answered, answer: "Blue, to match the review tab.", answered_by_rail: false} =
                Repo.reload!(second)
+    end
+
+    test "a rule a person reworded is offered as it reads now", %{conn: conn, task: task, rule: rule} do
+      {:ok, _edited} = Rail.Learnings.update_learning(system_scope(), rule, %{rule: "Blue, as the review tab is."})
+
+      assert {:ok, view, _html} = live(conn, ~p"/tasks/#{task.id}")
+      view |> element("#question-tab-1") |> render_click()
+
+      assert has_element?(view, "#likely-answer", "Blue, as the review tab is.")
+      refute has_element?(view, "#likely-answer", "Blue, to match the review tab.")
     end
   end
 end

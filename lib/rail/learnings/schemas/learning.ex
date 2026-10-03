@@ -96,6 +96,20 @@ defmodule Rail.Learnings.Schemas.Learning do
   def embedding_text(%__MODULE__{rule: rule, why: why}) when is_binary(why), do: "#{rule}\n\n#{why}"
   def embedding_text(%__MODULE__{rule: rule}), do: rule
 
+  @doc "The rule a person's answer makes: the question with its answer, so a later run can read it on its own."
+  def answer_rule(prompt, answer), do: ~s(When asked "#{prompt}": #{answer}) |> String.slice(0, 2_000) |> String.trim()
+
+  @doc """
+  What a decision rule answers with: the person's own words while it reads as made from one of its answer `sources`,
+  and the rule itself once a person has reworded it.
+  """
+  def calculate_answer(%__MODULE__{rule: rule}, sources) do
+    Enum.find_value(sources, rule, fn
+      %{source_kind: :answer, text: prompt, excerpt: answer} -> answer_rule(prompt, answer) == rule && answer
+      _other_source -> nil
+    end)
+  end
+
   defp trim(text) when is_binary(text), do: String.trim(text)
   defp trim(nil), do: nil
 

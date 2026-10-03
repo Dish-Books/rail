@@ -2,6 +2,7 @@ defmodule Rail.Learnings.Schemas.LearningTest do
   use Rail.DataCase, async: true
 
   alias Rail.Learnings.Schemas.Learning
+  alias Rail.Learnings.Schemas.Observation
 
   setup do
     %{
@@ -56,5 +57,15 @@ defmodule Rail.Learnings.Schemas.LearningTest do
   test "what is embedded is the rule and its why" do
     assert Learning.embedding_text(%Learning{rule: "A", why: "B"}) == "A\n\nB"
     assert Learning.embedding_text(%Learning{rule: "A"}) == "A"
+  end
+
+  test "a decision answers with the person's words until someone rewords it, whatever else sighted it" do
+    sighting = %Observation{source_kind: :extraction, text: "Postgres?", excerpt: "Postgres."}
+    answer = %Observation{source_kind: :answer, text: "Postgres or SQLite?", excerpt: "Postgres."}
+    made = %Learning{rule: Learning.answer_rule("Postgres or SQLite?", "Postgres.")}
+
+    assert made.rule == ~s(When asked "Postgres or SQLite?": Postgres.)
+    assert "Postgres." = Learning.calculate_answer(made, [sighting, answer])
+    assert "Postgres, with pgvector." = Learning.calculate_answer(%Learning{rule: "Postgres, with pgvector."}, [answer])
   end
 end
