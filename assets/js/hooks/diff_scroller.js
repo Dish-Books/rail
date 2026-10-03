@@ -35,9 +35,13 @@ export const DiffScroller = {
     });
 
     // A comment in a folded file is only drawn once that file's own patch lands,
-    // which can be after the event asking for it. It is looked for that once.
+    // which can be after the event asking for it. It is looked for that once, and
+    // reaching it drops the place held from before the jump.
     this.el.addEventListener("diff:section-updated", () => {
-      if (this.retryComment()) return;
+      if (this.retryComment()) {
+        this.anchor = null;
+        return;
+      }
 
       this.restoreAnchor();
     });
